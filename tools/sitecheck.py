@@ -9,6 +9,7 @@ Three checks, all offline:
 2. Every link into this repository on GitHub (and every relative link in
    README.md) names a committed file, and a line range that file has.
 3. Every name in an **In code:** line became a link to its code.
+4. No link detours through a package page that only forwards to the home page.
 
 Links built by JavaScript at runtime are checked by the pages themselves.
 """
@@ -107,6 +108,22 @@ def repo_link_problems() -> dict[str, set[str]]:
     return bad
 
 
+def links_through_forwards() -> dict[str, set[str]]:
+    """Links that land on a forwarding package page instead of going straight to the home page."""
+    from tools.docsite import package_forwards
+
+    forwarded = {(SITE / f).resolve() for f in package_forwards()}
+    found: dict[str, set[str]] = {}
+    for page in SITE.rglob("*.html"):
+        if page.resolve() in forwarded:
+            continue
+        html = re.sub(r"<script\b.*?</script>", "", page.read_text(errors="ignore"), flags=re.S | re.I)
+        for ref in re.findall(r'href="([^"#?]+)', html):
+            if not EXTERNAL.match(ref) and (page.parent / ref).resolve() in forwarded:
+                found.setdefault(page.relative_to(SITE).as_posix(), set()).add(ref)
+    return found
+
+
 def main() -> int:
     if not SITE.exists():
         print("docs/html doesn't exist yet: run `make docs` first")
@@ -126,7 +143,12 @@ def main() -> int:
     print(f"In code lines: {sum(map(len, unlinked.values()))} names that did not become links")
     for page, names in sorted(unlinked.items()):
         print(f"  ✗ {page}: {', '.join(names)}")
-    return 1 if bad or repo_bad or unlinked else 0
+
+    detours = links_through_forwards()
+    print(f"links through forwarding pages: {sum(map(len, detours.values()))}")
+    for page, refs in sorted(detours.items()):
+        print(f"  ✗ {page} -> {', '.join(sorted(refs))}")
+    return 1 if bad or repo_bad or unlinked or detours else 0
 
 
 if __name__ == "__main__":

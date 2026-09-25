@@ -375,6 +375,56 @@ NAV_CSS = """
 """
 
 
+def package_forwards() -> dict[str, str]:
+    """Package pages pdoc would render, each mapped to the home-page section listing the same lessons.
+
+    A package's own page holds little but a reading list the home page already shows,
+    so readers who land on one (from pdoc's sidebar or title links) go there instead.
+    """
+    from primer.curriculum import CURRICULUM
+
+    forwards = {"primer.html": "index.html#lessons"}
+    for lesson in CURRICULUM:
+        package = lesson.module.rsplit(".", 1)[0]
+        if package != "primer":
+            page = _page(package)
+            forwards.setdefault(page, _rel(f"index.html#{lesson.part}", page))
+    return forwards
+
+
+def skip_forwarded_pages(page_html: str, page: str) -> str:
+    """Point links that lead to a forwarded package page straight at its home-page section."""
+    import posixpath
+
+    forwards = package_forwards()
+    targets = {forwarded: target_from_root for forwarded, target_from_root in
+               ((f, posixpath.normpath(posixpath.join(posixpath.dirname(f), t))) for f, t in forwards.items())}
+    page_dir = posixpath.dirname(page)
+
+    def fix(m: re.Match) -> str:
+        href = m.group(1)
+        if EXTERNAL_HREF.match(href) or href.startswith("#"):
+            return m.group(0)
+        path = posixpath.normpath(posixpath.join(page_dir, href.split("#")[0]))
+        if path not in targets:
+            return m.group(0)
+        return f'href="{_rel(targets[path], page)}"'
+
+    return re.sub(r'href="([^"]*)"', fix, page_html)
+
+
+EXTERNAL_HREF = re.compile(r"^(https?:|mailto:|data:|javascript:|//)")
+
+
+def forward_page(target: str) -> str:
+    """A page that sends the reader straight on to `target`, with a plain link as a fallback."""
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        f'<meta http-equiv="refresh" content="0; url={target}"><title>primer</title></head>'
+        f'<body><p>This page moved to <a href="{target}">the home page</a>.</p></body></html>\n'
+    )
+
+
 def render_home() -> str:
     """The site's front page: every part, every lesson, every paper, generated."""
     from primer.curriculum import BIG_QUESTIONS, CURRICULUM, PARTS, lessons_in
@@ -444,7 +494,7 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 Hover over any underlined term for a plain-English definition.</p></header>
 <nav class="jump" aria-label="Jump to">
 <a href="#big">Big questions</a><a href="#lessons">Lessons</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
-<a href="#papers">Annotated papers</a><a href="primer.html">Browse the code</a>
+<a href="#papers">Annotated papers</a>
 <a href="{{REPO}}">Source on GitHub</a></nav>
 <section id="big"><h2>Big questions</h2>
 <p class="blurb">The lessons build the field from the bottom up. Start here for the top-down view: open a question to see the
@@ -493,6 +543,7 @@ def _postprocess(path: Path, terms: dict[str, tuple]) -> None:
     else:
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + site_nav(page), text, count=1)
     text = link_members_to_source(text, module, page)
+    text = skip_forwarded_pages(text, page)
     text = text.replace("</head>", NAV_CSS + "</head>", 1)
     text = add_theme(text, page)
     text = text.replace("</body>", TOOLTIP_ASSETS + "</body>", 1)
@@ -532,6 +583,8 @@ def build() -> int:
     pages = sorted((SITE / "primer").rglob("*.html"))
     for p in pages:
         _postprocess(p, terms)
+    for page, target in package_forwards().items():
+        (SITE / page).write_text(forward_page(target), encoding="utf-8")
     print(f"built {len(pages)} lesson pages into {SITE.relative_to(ROOT)}/  (open docs/html/index.html)")
     return 0
 

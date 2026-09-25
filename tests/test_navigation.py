@@ -401,3 +401,51 @@ class TestOneThemeEverywhere:
     def test_given_a_paper_companion_it_uses_the_shared_theme(self, companion):
         head = (ROOT / "docs" / "papers" / companion).read_text().split("</head>")[0]
         assert 'href="../assets/theme.css"' in head and 'src="../assets/theme.js"' in head
+
+
+class TestNoPageRepeatsTheHomePage:
+    # pdoc makes a page for each package, but a package's page would only repeat the reading list the
+    # home page already shows, so each one forwards to that section of the home page instead.
+
+    def test_given_the_package_pages_each_forwards_to_the_home_page_section_listing_its_lessons(self):
+        from tools.docsite import package_forwards
+
+        assert package_forwards() == {
+            "primer.html": "index.html#lessons",
+            "primer/ml.html": "../index.html#ml",
+            "primer/ml/embeddings.html": "../../index.html#embeddings",
+            "primer/agents.html": "../index.html#agents",
+        }
+
+    def test_given_a_forwarded_page_it_still_offers_a_plain_link_for_browsers_that_do_not_redirect(self):
+        from tools.docsite import forward_page
+
+        page = forward_page("../index.html#ml")
+        assert 'http-equiv="refresh" content="0; url=../index.html#ml"' in page and 'href="../index.html#ml"' in page
+
+    def test_given_the_home_page_every_section_a_package_forwards_to_exists(self):
+        from tools.docsite import package_forwards, render_home
+
+        home = render_home()
+        anchors = {target.split("#")[1] for target in package_forwards().values()}
+        assert [a for a in anchors if f'id="{a}"' not in home] == []
+
+    def test_given_the_home_page_it_no_longer_sends_readers_to_the_package_overview(self):
+        from tools.docsite import render_home
+
+        assert 'href="primer.html"' not in render_home()
+
+    def test_given_pdocs_links_to_a_package_page_they_go_straight_to_the_home_page_instead(self):
+        from tools.docsite import skip_forwarded_pages
+
+        # pdoc's title and sidebar link each lesson to its package pages.
+        page = '<a href="./../../../primer.html">primer</a>.<a href="./../../ml.html">ml</a> <a href="../embeddings.html">up</a>'
+        linked = skip_forwarded_pages(page, "primer/ml/embeddings/ann.html")
+        assert linked == ('<a href="../../../index.html#lessons">primer</a>.<a href="../../../index.html#ml">ml</a> '
+                          '<a href="../../../index.html#embeddings">up</a>')
+
+    def test_given_a_link_to_a_lesson_it_is_left_alone(self):
+        from tools.docsite import skip_forwarded_pages
+
+        page = '<a href="../attention.html#softmax">softmax</a>'
+        assert skip_forwarded_pages(page, "primer/ml/transformer.html") == page
