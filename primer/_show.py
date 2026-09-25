@@ -1,5 +1,6 @@
 """
-Tiny printing helpers used by every module's `demo()`.
+Tiny printing helpers used by every lesson's walkthrough (for example
+`primer.ml.attention.demo`).
 
 They keep the walkthrough output readable in a terminal: a banner per
 section, aligned tables, and short "key takeaway" callouts. None

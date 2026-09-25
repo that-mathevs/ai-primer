@@ -48,9 +48,9 @@ make docs            # builds the site; open docs/html/index.html in a browser
   underlined term. Every page has previous/next links, and every **In code:**
   line links to the function it names, with its source one click away (View
   Source on the page, or its exact lines on GitHub).
-- **In your editor**: each lesson is one file, such as `primer/ml/attention.py`.
+- **In your editor**: each lesson is one file, such as [`primer/ml/attention.py`](primer/ml/attention.py).
   The explanation is the docstring at the top and the code follows it.
-- **In the terminal**: `python -m primer.ml.attention` runs a lesson as a
+- **In the terminal**: [`python -m primer.ml.attention`](primer/ml/attention.py) runs a lesson as a
   narrated walkthrough with real numbers.
 
 **3. Open lesson 0, then lesson 1.** Lesson 0, [`primer.notation`](primer/notation.py), turns every
@@ -210,7 +210,7 @@ lesson's self-test questions and answers, in reading order.
 
 ## The papers
 
-`docs/papers/` holds annotated, interactive companions to the papers behind
+[`docs/papers/`](docs/papers) holds annotated, interactive companions to the papers behind
 the lessons, starting with *Attention Is All You Need*. The full list is in
 [`docs/papers/CATALOG.md`](docs/papers/CATALOG.md). Companions quote briefly,
 redraw figures, and link to the original paper for the full text.

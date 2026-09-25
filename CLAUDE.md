@@ -6,16 +6,16 @@ A public, open-source **primer on how modern AI works, built from scratch in
 Python**, written as a gift to engineers who want to understand the machinery
 rather than call it. Two parts:
 
-- `primer/ml/`: ML foundations. Neural nets, attention, transformers,
+- [`primer/ml/`](primer/ml): ML foundations. Neural nets, attention, transformers,
   tokenization, training and inference, losses and metrics, and the
-  centerpiece, `primer/ml/embeddings/`.
-- `primer/agents/`: applied AI. Agent loops, tools, MCP, RAG, memory,
+  centerpiece, [`primer/ml/embeddings/`](primer/ml/embeddings).
+- [`primer/agents/`](primer/agents): applied AI. Agent loops, tools, MCP, RAG, memory,
   planning, evals, guardrails, cost, observability, deployment.
 
-`primer/common/` holds the shared toy corpus and the deterministic
-`ConceptEmbedder`; `primer/agents/llm.py` holds the `LLM` interface with the
-offline `ScriptedLLM` and the real `ClaudeLLM`. The reading order lives in
-`README.md` and each package's `__init__.py`.
+[`primer/common/`](primer/common) holds the shared toy corpus and the deterministic
+[`ConceptEmbedder`](primer/common/embedder.py); [`primer/agents/llm.py`](primer/agents/llm.py) holds the [`LLM`](primer/agents/llm.py) interface with the
+offline [`ScriptedLLM`](primer/agents/llm.py) and the real [`ClaudeLLM`](primer/agents/llm.py). The reading order lives in
+[`README.md`](README.md) and each package's `__init__.py`.
 
 ## The purpose: demystify everything
 
@@ -38,7 +38,7 @@ explain it. See [Diagrams](#diagrams).
    symbols mean.
 5. **Why it matters in practice**: where it shows up, what breaks without it.
 
-Every section of every lesson climbs the full ladder. `primer/ml/attention.py`
+Every section of every lesson climbs the full ladder. [`primer/ml/attention.py`](primer/ml/attention.py)
 is the gold standard; every module meets it.
 
 **Every formula is decoded.** Directly under each `$$…$$` block comes:
@@ -62,14 +62,14 @@ notation is a bug.
    refers to hiring, job preparation or any company's evaluation process.
 2. **No em dashes, anywhere**: code, comments, docstrings, markdown, HTML.
    Use a colon, a comma, parentheses or a new sentence.
-   `tests/test_house_style.py` enforces it.
+   [`tests/test_house_style.py`](tests/test_house_style.py) enforces it.
 3. **Every module is a lesson.** It has a markdown docstring (pdoc renders it)
    with, in order: `# Title`, `Run: python -m <module>`, the idea in plain
    English, formulas in `$$…$$`, diagrams and figures (see
    [Diagrams](#diagrams)), `## In 20 seconds`, `## Self-test questions` (each followed by its answer),
    and `## Further reading`. It ends with a `demo()` that narrates the lesson
    through [`primer._show`](primer/_show.py) and an `if __name__ == "__main__": demo()`.
-   `primer/ml/attention.py` is the reference lesson; match it.
+   [`primer/ml/attention.py`](primer/ml/attention.py) is the reference lesson; match it.
 4. **Links are real.** Every URL in Further reading points at a primary
    source you are certain exists: the paper (arXiv), the official docs, the
    canonical post. Omit a link rather than guess one.
@@ -84,8 +84,8 @@ notation is a bug.
    runs in under 5 seconds. No network in tests or demos.
 8. **Comments explain why.** Explain the reason a line exists, the shape of
    a tensor, the failure it prevents. Let the code say what it does.
-9. **One source of truth.** Shared vocabulary lives in `primer/common` and
-   `primer/agents/llm.py`; import it rather than redefine it. Change a shared
+9. **One source of truth.** Shared vocabulary lives in [`primer/common`](primer/common) and
+   [`primer/agents/llm.py`](primer/agents/llm.py); import it rather than redefine it. Change a shared
    file only when the change serves every caller, and run the full suite
    after.
 
@@ -97,9 +97,9 @@ lesson ends its docstring (before Further reading) with
 primary-source link, one sentence on what it contributed, and a link to its
 annotated companion `docs/papers/<slug>.html`. Companions are interactive
 HTML walkthroughs with hover guidance on every term and equation symbol,
-built on the shared assets in `docs/papers/assets/`. The slugs live in
-`docs/papers/CATALOG.md`, and how to write a companion is in
-`docs/papers/README.md`. Companions quote briefly and link to the original.
+built on the shared assets in [`docs/papers/assets/`](docs/papers/assets). The slugs live in
+[`docs/papers/CATALOG.md`](docs/papers/CATALOG.md), and how to write a companion is in
+[`docs/papers/README.md`](docs/papers/README.md). Companions quote briefly and link to the original.
 They never republish a paper's full text.
 
 ## Navigable, and always current
@@ -110,15 +110,15 @@ sources of truth:
 
 | To add… | Edit only | Generated from it |
 |---|---|---|
-| a lesson | `primer/curriculum.py` | README reading order and `docs/SELF_TEST.md` (`make readme`), package reading lists, site home page, breadcrumbs, previous/next links |
-| a big question | `BIG_QUESTIONS` in `primer/curriculum.py` | README's big-questions map and `docs/BIG_QUESTIONS.md` (`make readme`), the home page's Big questions |
-| a term | `primer/glossary.py` | the Glossary page, hover definitions on every page (`glossary.js`) |
-| a paper | `docs/papers/CATALOG.md` | papers index, `catalog.js`, companion nav, the home page's paper list |
+| a lesson | [`primer/curriculum.py`](primer/curriculum.py) | README reading order and [`docs/SELF_TEST.md`](docs/SELF_TEST.md) (`make readme`), package reading lists, site home page, breadcrumbs, previous/next links |
+| a big question | `BIG_QUESTIONS` in [`primer/curriculum.py`](primer/curriculum.py) | README's big-questions map and [`docs/BIG_QUESTIONS.md`](docs/BIG_QUESTIONS.md) (`make readme`), the home page's Big questions |
+| a term | [`primer/glossary.py`](primer/glossary.py) | the Glossary page, hover definitions on every page (`glossary.js`) |
+| a paper | [`docs/papers/CATALOG.md`](docs/papers/CATALOG.md) | papers index, `catalog.js`, companion nav, the home page's paper list |
 | a link from prose to code | an `**In code:**` line naming the function or class in backticks (fully dotted if it lives in another module) | a link to its entry on the page, with View Source and its exact lines on GitHub |
-| the site's address | `SITE_URL` in `primer/curriculum.py` | the README's links to the live site (absolute, because the built HTML isn't committed) |
+| the site's address | `SITE_URL` in [`primer/curriculum.py`](primer/curriculum.py) | the README's links to the live site (absolute, because the built HTML isn't committed) |
 
 Text between `<!-- BEGIN … -->` and `<!-- END … -->` markers is generated.
-Edit its source, never the text itself. `tests/test_navigation.py` fails
+Edit its source, never the text itself. [`tests/test_navigation.py`](tests/test_navigation.py) fails
 when anything drifts: a lesson on disk that isn't in the curriculum, a stale
 README, a link to an unknown paper, a lesson missing a required section.
 Every new term a lesson introduces gets a glossary entry in the same change.
@@ -128,17 +128,21 @@ naming what implements it, so a reader clicks from the explanation straight
 to the code. `make sitecheck` fails if a named thing didn't become a link, or
 if any link into the repository points at a missing file or line.
 
-In Markdown (README, docs), GitHub renders the page but not docstrings, so
-every module named as code is a relative link to its file:
-[`primer.agents.llm`](primer/agents/llm.py). The generators do this with
-`link_module_names`; a test fails on any unlinked name, and `make sitecheck`
-checks every relative link in every committed Markdown file.
+Nothing that names code is left unlinked. On the site, the builder links
+every code mention it can resolve: public members to their entry, dunder
+methods and private classes to their lines, a lesson's own name (its title,
+its `python -m` line) to its code. In Markdown, GitHub renders the page but not
+docstrings, so every code span naming a module, a committed file, a lesson's
+run command or a class defined in one module is a relative link
+(`link_code_references`, which the generators use). Write a name from
+another module fully dotted. Tests and `make sitecheck` fail on any leftover,
+and on any link to a missing file, line or anchor.
 
 Code links are never hardcoded. A site built locally links to the files in
 the reader's own checkout (relative paths). The published site, built by
 GitHub Actions, links to GitHub at the exact commit it was built from, so
 line numbers always match. The repository's address comes from the build
-(`tools/docsite.py`: `repo_url`, `code_link`), so a fork's site links to the fork.
+([`tools/docsite.py`](tools/docsite.py): `repo_url`, `code_link`), so a fork's site links to the fork.
 
 ## Diagrams
 
@@ -200,8 +204,8 @@ python -m primer.ml.attention        # any single lesson
 
 ## Definition of done for a module
 
-- It has its entry in `primer/curriculum.py`, and every new term it
-  introduces has an entry in `primer/glossary.py`.
+- It has its entry in [`primer/curriculum.py`](primer/curriculum.py), and every new term it
+  introduces has an entry in [`primer/glossary.py`](primer/glossary.py).
 
 - Its scenarios were written first and watched fail.
 - `make test` passes and `make spec` reads as a clear description.
@@ -212,4 +216,4 @@ python -m primer.ml.attention        # any single lesson
 - Every section climbs the ladder, and every formula has its Symbols table,
   In words line and worked numbers.
 - The docstring has every section from rule 3. Its self-test questions reach
-  `docs/SELF_TEST.md` through `make readme`; that file is generated.
+  [`docs/SELF_TEST.md`](docs/SELF_TEST.md) through `make readme`; that file is generated.

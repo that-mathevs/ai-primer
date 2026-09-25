@@ -2,7 +2,7 @@
 
 The lessons build the field from the bottom up. Real conversations about AI systems start from the top, with questions like these. For each one: the lessons that answer it, in order, and the **spine** of a complete answer, meaning the points to cover, in the order to cover them. Practise by answering each question out loud in about two minutes, following its spine, then open the lessons to go one level deeper wherever you hesitated.
 
-Generated from `primer/curriculum.py` by `make readme`; edit it there.
+Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme`; edit it there.
 
 
 ## 1. What happens, step by step, when I send a prompt to a language model?

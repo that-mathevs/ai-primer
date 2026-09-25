@@ -264,6 +264,167 @@ def link_members_to_source(page_html: str, module_name: str, page: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# No code mention left unlinked. pdoc links the names it can resolve on a page;
+# this pass links the rest: names imported from another module, dunder methods,
+# private classes in signatures, and a lesson's own name (its title and its
+# "python -m" line), which links to the lesson's code.
+# ---------------------------------------------------------------------------
+
+_PASS_THROUGH = {"script", "style", "title", "head", "pre", "textarea"}
+_DOTTED = re.compile(r"(?<![\w./#-])primer(?:\.\w+)+")
+_CODE_NAME = re.compile(r"[A-Za-z_]\w*(?:\.\w+)*")
+
+
+def _resolve_code_name(name: str, module: str):
+    """The object `name` means on `module`'s page: a dotted primer.* path, or a name in the module's namespace."""
+    import importlib
+
+    if name.startswith("primer."):
+        parts = name.split(".")
+        for i in range(len(parts), 0, -1):
+            try:
+                obj = importlib.import_module(".".join(parts[:i]))
+            except ImportError:
+                continue
+            for part in parts[i:]:
+                obj = getattr(obj, part, None)
+            return obj
+        return None
+    obj = importlib.import_module(module)
+    for part in name.split("."):
+        obj = getattr(obj, part, None)
+    return obj
+
+
+def _code_target(name: str, module: str, page: str, page_html: str) -> str | None:
+    """Where a code mention on `page` should link, or None if it names nothing in this repository."""
+    import inspect
+
+    obj = _resolve_code_name(name, module)
+    if obj is None:
+        return None
+    if inspect.ismodule(obj):
+        if not obj.__name__.startswith("primer"):
+            return None
+        if obj.__name__ == module:
+            # A lesson's own name: the page is already here, so the name leads to the code.
+            return code_link(Path(obj.__file__).resolve().relative_to(ROOT).as_posix(), page)
+        target = _page(obj.__name__)
+        forwards = package_forwards()
+        if target in forwards:
+            import posixpath
+
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(target), forwards[target]))
+        return _rel(target, page)
+    obj = getattr(obj, "fget", obj)
+    owner = getattr(obj, "__module__", None)
+    if owner is None:
+        # Plain data (a dict, a list): link only to an entry this page actually has.
+        return f"#{name}" if "." not in name and f'id="{name}"' in page_html else None
+    if not str(owner).startswith("primer."):
+        return None
+    qual = getattr(obj, "__qualname__", "")
+    if qual and "<locals>" not in qual and not any(part.startswith("_") for part in qual.split(".")):
+        # A public member has its own entry on its module's page.
+        return f"#{qual}" if owner == module else f"{_rel(_page(owner), page)}#{qual}"
+    # pdoc documents neither dunder methods nor private names, so link their lines instead.
+    try:
+        lines, first = inspect.getsourcelines(inspect.unwrap(obj))
+        source = Path(inspect.getsourcefile(obj)).resolve().relative_to(ROOT).as_posix()
+    except (TypeError, OSError, ValueError):
+        return None
+    return code_link(source, page, first, first + len(lines) - 1)
+
+
+def _scan_code_mentions(page_html: str, module: str, page: str, fix: bool) -> tuple[str, list[str]]:
+    """Find (and with fix=True, link) every unlinked mention of code on a page."""
+    found: list[str] = []
+
+    def link(text: str, name: str) -> str:
+        target = _code_target(name, module, page, page_html)
+        if target is None:
+            return text
+        found.append(name)
+        return f'<a href="{target}">{text}</a>' if fix else text
+
+    def in_code(text: str) -> str:
+        from primer.curriculum import _class_homes, _is_committed
+
+        bare = text.strip().removesuffix("()")
+        if _CODE_NAME.fullmatch(bare):
+            linked = link(bare, bare)
+            homes = _class_homes().get(bare.split(".")[0], [])
+            if linked == bare and homes and _resolve_code_name(bare, module) is None:
+                if len(homes) == 1:
+                    # A class from another module, named without it: there's only one it can be.
+                    target = _code_target(f"{homes[0]}.{bare}", module, page, page_html)
+                    if target:
+                        found.append(bare)
+                        linked = f'<a href="{target}">{bare}</a>' if fix else bare
+                else:
+                    # Two modules define a class by this name: only the author can say which, so report it.
+                    found.append(bare)
+            return text.replace(bare, linked, 1) if linked != bare else text
+        if re.fullmatch(r"[\w.-]+(?:/[\w.-]+)+/?", bare) and _is_committed(ROOT / bare):
+            found.append(bare)
+            return text.replace(bare, f'<a href="{code_link(bare, page)}">{bare}</a>', 1) if fix else text
+        return _DOTTED.sub(lambda m: link(m.group(0), m.group(0)), text)
+
+    out: list[str] = []
+    stack: list[str] = []
+    for piece in re.split(r"(<[^>]+>)", page_html):
+        if piece.startswith("<"):
+            out.append(piece)
+            m = re.match(r"<\s*(/?)\s*([a-zA-Z][\w-]*)", piece)
+            if not m or piece.startswith("<!") or piece.endswith("/>") or m.group(2).lower() in _VOID:
+                continue
+            name = m.group(2).lower()
+            if m.group(1):
+                if name in stack:
+                    del stack[len(stack) - 1 - stack[::-1].index(name):]
+            else:
+                stack.append(name)
+            continue
+        if not piece or "a" in stack or any(t in stack for t in _PASS_THROUGH):
+            out.append(piece)
+        elif "code" in stack:
+            out.append(in_code(piece))
+        else:
+            out.append(_DOTTED.sub(lambda m: link(m.group(0), m.group(0)), piece))
+    text = "".join(out)
+
+    # The title's last part is the lesson's own name, left as plain text by pdoc.
+    def title(m: re.Match) -> str:
+        return m.group(1) + link(m.group(2), module) + m.group(3)
+
+    text = re.sub(r'(<h1 class="modulename">.*<wbr>\.)(\w+)(\s*</h1>)', title, text, count=1, flags=re.S)
+
+    # pdoc also links to entries it never writes (a private base class's members), so those
+    # links would land nowhere: send them to the code, or to the nearest enclosing code.
+    ids = set(re.findall(r'\bid="([^"]+)"', text))
+
+    def dead(m: re.Match) -> str:
+        name = m.group(1)
+        if name in ids or not _CODE_NAME.fullmatch(name):
+            return m.group(0)
+        parts = name.split(".")
+        for i in range(len(parts), 0, -1):
+            target = _code_target(".".join(parts[:i]), module, page, text)
+            if target and not (target.startswith("#") and target[1:] not in ids):
+                found.append(name)
+                return f'href="{target}"' if fix else m.group(0)
+        return m.group(0)
+
+    text = re.sub(r'href="#([^"]+)"', dead, text)
+    return text, found
+
+
+def link_code_mentions(page_html: str, module: str, page: str) -> str:
+    """Link every mention of code on a lesson page that pdoc left as plain text."""
+    return _scan_code_mentions(page_html, module, page, fix=True)[0]
+
+
+# ---------------------------------------------------------------------------
 # Navigation: generated from primer/curriculum.py and docs/papers/CATALOG.md,
 # so it can never drift from the lessons and papers that actually exist.
 # ---------------------------------------------------------------------------
@@ -290,7 +451,8 @@ def catalog() -> list[dict]:
                 "slug": slug,
                 "title": paper,
                 "sources": re.findall(r"https?://\S+", sources),
-                "lessons": ["primer." + l.strip() for l in lessons.split(",") if l.strip()],
+                # Each lesson is written as a link to its file: [ml.attention](../../primer/ml/attention.py).
+                "lessons": ["primer." + name for name in re.findall(r"\[?((?:ml|agents|common)(?:\.\w+)+)\]?", lessons)],
                 "exists": (ROOT / "docs" / "papers" / f"{slug}.html").exists(),
             }
         )
@@ -542,6 +704,7 @@ def _postprocess(path: Path, terms: dict[str, tuple]) -> None:
         text = text.replace("</main>", nav.replace('class="primer-nav"', 'class="primer-nav pn-bottom"') + "</main>", 1)
     else:
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + site_nav(page), text, count=1)
+    text = link_code_mentions(text, module, page)
     text = link_members_to_source(text, module, page)
     text = skip_forwarded_pages(text, page)
     text = text.replace("</head>", NAV_CSS + "</head>", 1)

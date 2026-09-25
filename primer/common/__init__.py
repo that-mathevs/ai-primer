@@ -2,7 +2,7 @@
 Shared building blocks used by both parts.
 
 * `primer.common.text`: a tiny tokenizer (lowercase words, stopwords removed).
-* `primer.common.embedder`: `ConceptEmbedder`, a deterministic stand-in for a
+* `primer.common.embedder`: `primer.common.embedder.ConceptEmbedder`, a deterministic stand-in for a
   real embedding model. It knows a small synonym lexicon, so "car" and
   "automobile" land close together (like a dense model) while exact IDs such
   as "ERR-4012" only match themselves (the classic weakness BM25 fixes).

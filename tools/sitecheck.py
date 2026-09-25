@@ -10,6 +10,9 @@ Three checks, all offline:
    a committed Markdown file) names a committed file, and a line range that file has.
 3. Every name in an **In code:** line became a link to its code.
 4. No link detours through a package page that only forwards to the home page.
+5. No mention of code is left unlinked (the same scan the site builder links with).
+6. Every #anchor a link points at exists on its page.
+7. Every lesson a paper companion's script links to exists.
 
 Links built by JavaScript at runtime are checked by the pages themselves.
 """
@@ -131,6 +134,46 @@ def links_through_forwards() -> dict[str, set[str]]:
     return found
 
 
+def unlinked_code_mentions(page_html: str, module: str, page: str | None = None) -> list[str]:
+    """Names on a page that mean code in this repository but aren't links."""
+    from tools.docsite import _page, _scan_code_mentions
+
+    return _scan_code_mentions(page_html, module, page or _page(module), fix=False)[1]
+
+
+def missing_anchors(site: Path = SITE) -> dict[str, set[str]]:
+    """Links to an #anchor that the target page doesn't have."""
+    ids: dict[Path, set[str]] = {}
+
+    def anchors_of(path: Path) -> set[str]:
+        if path not in ids:
+            ids[path] = set(re.findall(r'\b(?:id|name)="([^"]+)"', path.read_text(errors="ignore")))
+        return ids[path]
+
+    missing: dict[str, set[str]] = {}
+    for page in site.rglob("*.html"):
+        html = re.sub(r"<script\b.*?</script>", "", page.read_text(errors="ignore"), flags=re.S | re.I)
+        for ref in re.findall(r'href="([^"]*#[^"]+)"', html):
+            if EXTERNAL.match(ref):
+                continue
+            path, anchor = ref.split("#", 1)
+            target = (page.parent / path).resolve() if path else page.resolve()
+            if target.suffix == ".html" and target.exists() and anchor not in anchors_of(target):
+                missing.setdefault(page.relative_to(site).as_posix(), set()).add(ref)
+    return missing
+
+
+def broken_companion_lessons(site: Path = SITE) -> dict[str, set[str]]:
+    """Lesson links that paper companions write as data (data-lesson, lesson: "...") for their script to build."""
+    broken: dict[str, set[str]] = {}
+    for page in sorted((site / "papers").glob("*.html")):
+        for a, b in re.findall(r'data-lesson="([^"]+)"|\blesson:\s*"([^"]+)"', page.read_text(errors="ignore")):
+            path = a or b
+            if not (site / path.split("#")[0]).exists():
+                broken.setdefault(page.name, set()).add(path)
+    return broken
+
+
 def main() -> int:
     if not SITE.exists():
         print("docs/html doesn't exist yet: run `make docs` first")
@@ -155,7 +198,30 @@ def main() -> int:
     print(f"links through forwarding pages: {sum(map(len, detours.values()))}")
     for page, refs in sorted(detours.items()):
         print(f"  ✗ {page} -> {', '.join(sorted(refs))}")
-    return 1 if bad or repo_bad or unlinked or detours else 0
+
+    leftovers: dict[str, list[str]] = {}
+    for page in sorted((SITE / "primer").rglob("*.html")):
+        name = page.relative_to(SITE).as_posix()
+        module = name.removesuffix(".html").replace("/", ".")
+        html = page.read_text(errors="ignore")
+        if 'http-equiv="refresh"' in html:
+            continue
+        if names := unlinked_code_mentions(html, module, name):
+            leftovers[name] = names
+    print(f"code mentions left unlinked: {sum(map(len, leftovers.values()))}")
+    for page, names in leftovers.items():
+        print(f"  ✗ {page}: {', '.join(names)}")
+
+    missing = missing_anchors()
+    print(f"links to anchors that don't exist: {sum(map(len, missing.values()))}")
+    for page, refs in sorted(missing.items()):
+        print(f"  ✗ {page} -> {', '.join(sorted(refs)[:8])}{' ...' if len(refs) > 8 else ''}")
+
+    companions = broken_companion_lessons()
+    print(f"companion links to lessons that don't exist: {sum(map(len, companions.values()))}")
+    for page, refs in sorted(companions.items()):
+        print(f"  ✗ papers/{page} -> {', '.join(sorted(refs))}")
+    return 1 if bad or repo_bad or unlinked or detours or leftovers or missing or companions else 0
 
 
 if __name__ == "__main__":

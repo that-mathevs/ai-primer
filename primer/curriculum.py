@@ -31,11 +31,20 @@ def source_path(module: str) -> str:
     return module.replace(".", "/") + ".py"
 
 
-def link_module_names(markdown: str, from_dir: str) -> str:
-    """Make every module named as code (`primer.agents.llm`, `primer.agents.llm.ClaudeLLM`) a link to its file.
+def link_code_references(markdown: str, from_dir: str) -> str:
+    """Make every code span that names something in this repository a link GitHub can follow.
 
-    GitHub renders Markdown but not docstrings, so in a .md file a module name
-    only helps a reader if it's a relative link they can follow.
+    GitHub renders Markdown but not docstrings, so in a .md file a reference to
+    code only helps a reader if it's a relative link. Linked, when written as code:
+
+    * a module, or a name inside one: `primer.agents.llm`, `primer.agents.llm.ClaudeLLM`;
+    * a command that runs a lesson: `python -m primer.ml.attention`;
+    * a committed file or folder, written from the repository root (`primer/glossary.py`,
+      `CLAUDE.md`) or from the Markdown file's own folder;
+    * a class defined in exactly one module: `ScriptedLLM`.
+
+    Anything else (build output such as `docs/html/index.html`, commands, other
+    projects' names) stays plain. Existing links and fenced code blocks are untouched.
 
     Args:
         markdown: the text to link.
@@ -46,28 +55,95 @@ def link_module_names(markdown: str, from_dir: str) -> str:
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
+    here = root / from_dir
 
-    def file_for(name: str) -> Path | None:
-        # The longest prefix that is a module or package: primer.agents.llm.ClaudeLLM -> primer/agents/llm.py.
-        parts = name.split(".")
-        for i in range(len(parts), 0, -1):
-            base = root.joinpath(*parts[:i])
-            if base.with_suffix(".py").is_file():
-                return base.with_suffix(".py")
-            if (base / "__init__.py").is_file():
-                return base / "__init__.py"
+    def rel(target: Path) -> str:
+        return os.path.relpath(target, here).replace(os.sep, "/")
+
+    def target_for(code: str) -> Path | None:
+        run = re.fullmatch(r"python -m (primer(?:\.\w+)+)", code)
+        dotted = run.group(1) if run else code
+        if re.fullmatch(r"primer(?:\.\w+)+", dotted):
+            return _module_file(dotted)
+        if re.fullmatch(r"[\w.-]+(?:/[\w.-]+)*/?", code) and ("/" in code or "." in code):
+            for base in (root, here):
+                if _is_committed(base / code):
+                    return base / code
+            return None
+        if re.fullmatch(r"[A-Z]\w+(?:\(\))?", code):
+            homes = _class_homes().get(code.removesuffix("()"), ())
+            return _module_file(homes[0]) if len(homes) == 1 else None
         return None
 
     def link(m: re.Match) -> str:
-        target = file_for(m.group(1))
-        if target is None:
-            return m.group(0)
-        return f"[`{m.group(1)}`]({os.path.relpath(target, root / from_dir).replace(os.sep, '/')})"
+        target = target_for(m.group(1))
+        return f"[`{m.group(1)}`]({rel(target)})" if target else m.group(0)
 
-    # Names already inside [ ](…) are links; names in fenced code blocks are code, not prose.
-    name = re.compile(r"(?<!\[)`(primer(?:\.\w+)+)`(?!\])")
+    # A code span that is already a link's text is followed by "]"; one inside [..] is preceded by "[".
+    span = re.compile(r"(?<!\[)`([^`\n]+)`(?!\])")
     pieces = re.split(r"(```.*?```)", markdown, flags=re.S)
-    return "".join(piece if i % 2 else name.sub(link, piece) for i, piece in enumerate(pieces))
+    return "".join(piece if i % 2 else span.sub(link, piece) for i, piece in enumerate(pieces))
+
+
+def _module_file(name: str):
+    """The file that defines a dotted name: primer.agents.llm.ClaudeLLM -> primer/agents/llm.py."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    parts = name.split(".")
+    for i in range(len(parts), 0, -1):
+        base = root.joinpath(*parts[:i])
+        if base.with_suffix(".py").is_file():
+            return base.with_suffix(".py")
+        if (base / "__init__.py").is_file():
+            return base / "__init__.py"
+    return None
+
+
+_COMMITTED: set[str] | None = None
+
+
+def _is_committed(path) -> bool:
+    """Whether GitHub will have this file or folder: it is tracked by git (or exists, outside a checkout)."""
+    import subprocess
+    from pathlib import Path
+
+    global _COMMITTED
+    root = Path(__file__).resolve().parent.parent
+    if _COMMITTED is None:
+        out = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True)
+        _COMMITTED = set(out.stdout.split("\n")) if out.returncode == 0 else set()
+    try:
+        rel = Path(path).resolve().relative_to(root).as_posix()
+    except ValueError:
+        return False
+    if not _COMMITTED:
+        return Path(path).exists()
+    return rel in _COMMITTED or any(f.startswith(rel.rstrip("/") + "/") for f in _COMMITTED)
+
+
+_CLASS_HOMES: dict[str, list[str]] | None = None
+
+
+def _class_homes() -> dict[str, list[str]]:
+    """Every public class in the package, mapped to the modules that define one by that name."""
+    import importlib
+    import inspect
+    import pkgutil
+
+    import primer
+
+    global _CLASS_HOMES
+    if _CLASS_HOMES is None:
+        _CLASS_HOMES = {}
+        for info in pkgutil.walk_packages(primer.__path__, "primer."):
+            if info.name.rsplit(".", 1)[-1].startswith("_"):
+                continue
+            mod = importlib.import_module(info.name)
+            for n, o in vars(mod).items():
+                if inspect.isclass(o) and o.__module__ == info.name and not n.startswith("_"):
+                    _CLASS_HOMES.setdefault(n, []).append(info.name)
+    return _CLASS_HOMES
 
 
 def tests_for(module: str) -> str:
@@ -165,7 +241,7 @@ def readme_section() -> str:
             for i, l in lessons_in(part.key)
         ]
         out.append("")
-    return link_module_names("\n".join(out) + "\n", '.')
+    return link_code_references("\n".join(out) + "\n", '.')
 
 
 def reading_list(package: str) -> str:
@@ -369,7 +445,7 @@ def big_questions_table() -> str:
     for q in BIG_QUESTIONS:
         route = ", ".join(f"[{_lesson(m).title}]({m.replace('.', '/')}.py)" for m in q.route)
         rows.append(f"| {q.question} | {route} |")
-    return link_module_names("\n".join(rows) + "\n", '.')
+    return link_code_references("\n".join(rows) + "\n", '.')
 
 
 def big_questions_page() -> str:
@@ -387,7 +463,7 @@ def big_questions_page() -> str:
         route = " → ".join(f"[{_lesson(m).title}](../{m.replace('.', '/')}.py)" for m in q.route)
         spine = "\n".join(f"{i}. {point}" for i, point in enumerate(q.spine, 1))
         out.append(f"\n## {n}. {q.question}\n\n**Route:** {route}\n\n**Spine of the answer:**\n\n{spine}\n")
-    return link_module_names("\n".join(out), 'docs')
+    return link_code_references("\n".join(out), 'docs')
 
 
 def self_test_book() -> str:
@@ -417,7 +493,7 @@ def self_test_book() -> str:
             body = re.sub(r"^(#+) ", lambda h: "#" * (len(h.group(1)) + 2) + " ", m.group(1).strip(), flags=re.M)
             link = lesson.module.replace(".", "/") + ".py"
             out.append(f"\n### {i}. {lesson.title}\n\nFrom [`{lesson.module}`](../{link}).\n\n{body}\n")
-    return link_module_names("\n".join(out), "docs")
+    return link_code_references("\n".join(out), "docs")
 
 
 def _render_doc() -> str:

@@ -4,7 +4,7 @@ A companion is one self-contained HTML page, `docs/papers/<slug>.html`,
 that walks a landmark paper section by section. Every term and equation
 symbol explains itself on hover, the paper's figures are redrawn as diagrams
 you can explore, and each idea links to the lesson that builds it in code.
-The rules in `CLAUDE.md` apply in full.
+The rules in [`CLAUDE.md`](../../CLAUDE.md) apply in full.
 
 **The reference companion is
 [`attention-is-all-you-need.html`](attention-is-all-you-need.html).** Copy
@@ -15,7 +15,7 @@ its structure; this guide explains the parts.
 1. Find the slug in [`CATALOG.md`](CATALOG.md). It is the single source of
    truth for slugs, titles, primary sources and related lessons. The site nav,
    the "Lessons that build this" box, previous/next links and the papers index
-   are all generated from it (via `assets/catalog.js`, written by
+   are all generated from it (via [`assets/catalog.js`](assets/catalog.js), written by
    `make docs`), so you never hand-write them.
 2. Read the paper itself, end to end.
 
@@ -39,7 +39,7 @@ Companions explain; they never republish.
 ## How each section is written
 
 Follow the paper's own section order. Inside each section, climb the ladder
-from `CLAUDE.md` using `<h4>` labels:
+from [`CLAUDE.md`](../../CLAUDE.md) using `<h4>` labels:
 
 1. **Everyday picture**: an analogy with no jargon.
 2. **Tiny example**: numbers small enough to check by hand.
@@ -110,8 +110,8 @@ the glossary list. You write none of them.
 
 ## Marking a term
 
-Terms that exist in the shared glossary (`primer/glossary.py`, the single
-source of truth, exported to `assets/glossary.js`) take a key:
+Terms that exist in the shared glossary ([`primer/glossary.py`](../../primer/glossary.py), the single
+source of truth, exported to [`assets/glossary.js`](assets/glossary.js)) take a key:
 
 ```html
 <span class="t" data-t="softmax">softmax</span>
@@ -128,7 +128,7 @@ page's glossary:
 ```
 
 If a general term is missing from the shared glossary, add it to
-`primer/glossary.py` rather than defining it inline. In the browser console,
+[`primer/glossary.py`](../../primer/glossary.py) rather than defining it inline. In the browser console,
 `Papers.missingTerms()` lists any `data-t` key that has no definition.
 
 ## Hoverable equations
@@ -227,7 +227,7 @@ illustrative (non-computed) numbers as illustrative, on the page.
 
 - To a lesson: `<a data-lesson="primer/ml/attention.html">the attention lesson</a>`.
   `papers.js` resolves it for both the built site (`docs/html/papers/`) and
-  the source tree (`docs/papers/`).
+  the source tree ([`docs/papers/`](.)).
 - To another companion: `<a href="roformer.html">RoFormer companion</a>`.
 - Every external URL must be a primary source you are certain exists.
 

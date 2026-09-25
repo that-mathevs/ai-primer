@@ -470,36 +470,197 @@ class TestModuleNamesOnGitHub:
     # GitHub renders Markdown but not docstrings, so a module named in a .md file must be a link to its file.
 
     def test_given_a_module_name_in_markdown_it_becomes_a_link_to_its_file(self):
-        from primer.curriculum import link_module_names
+        from primer.curriculum import link_code_references
 
-        assert link_module_names("See `primer.agents.llm`.", "docs") == "See [`primer.agents.llm`](../primer/agents/llm.py)."
+        assert link_code_references("See `primer.agents.llm`.", "docs") == "See [`primer.agents.llm`](../primer/agents/llm.py)."
 
     def test_given_a_name_inside_a_module_the_link_goes_to_the_module_that_defines_it(self):
-        from primer.curriculum import link_module_names
+        from primer.curriculum import link_code_references
 
         text = "The adapter (`primer.agents.llm.ClaudeLLM`)."
-        assert link_module_names(text, ".") == "The adapter ([`primer.agents.llm.ClaudeLLM`](primer/agents/llm.py))."
+        assert link_code_references(text, ".") == "The adapter ([`primer.agents.llm.ClaudeLLM`](primer/agents/llm.py))."
 
     def test_given_a_package_name_the_link_goes_to_its_init_file(self):
-        from primer.curriculum import link_module_names
+        from primer.curriculum import link_code_references
 
-        assert link_module_names("`primer.common`", ".") == "[`primer.common`](primer/common/__init__.py)"
+        assert link_code_references("`primer.common`", ".") == "[`primer.common`](primer/common/__init__.py)"
 
     def test_given_a_name_that_is_already_a_link_it_is_left_alone(self):
-        from primer.curriculum import link_module_names
+        from primer.curriculum import link_code_references
 
         text = "From [`primer.agents.llm`](../primer/agents/llm.py)."
-        assert link_module_names(text, "docs") == text
+        assert link_code_references(text, "docs") == text
 
     def test_given_a_name_in_a_fenced_code_block_it_is_left_alone(self):
-        from primer.curriculum import link_module_names
+        from primer.curriculum import link_code_references
 
         text = "```\n`primer.agents.llm`\n```"
-        assert link_module_names(text, ".") == text
+        assert link_code_references(text, ".") == text
+
+    def test_given_a_path_to_a_committed_file_it_becomes_a_link_to_that_file(self):
+        from primer.curriculum import link_code_references
+
+        # Paths in the docs are written from the repository root, wherever the Markdown file sits.
+        text = "Edit `primer/glossary.py`, then see `CLAUDE.md`."
+        assert link_code_references(text, "docs/papers") == (
+            "Edit [`primer/glossary.py`](../../primer/glossary.py), then see [`CLAUDE.md`](../../CLAUDE.md).")
+
+    def test_given_a_path_to_build_output_that_is_not_committed_it_stays_plain(self):
+        from primer.curriculum import link_code_references
+
+        assert link_code_references("open `docs/html/index.html`", ".") == "open `docs/html/index.html`"
+
+    def test_given_a_run_command_the_whole_command_links_to_the_lesson_it_runs(self):
+        from primer.curriculum import link_code_references
+
+        text = "`python -m primer.ml.attention` runs a lesson"
+        assert link_code_references(text, ".") == "[`python -m primer.ml.attention`](primer/ml/attention.py) runs a lesson"
+
+    def test_given_a_class_defined_in_exactly_one_module_it_links_to_that_module(self):
+        from primer.curriculum import link_code_references
+
+        assert link_code_references("the `ScriptedLLM`", ".") == "the [`ScriptedLLM`](primer/agents/llm.py)"
+
+    def test_given_a_word_that_is_not_code_in_this_repository_it_stays_plain(self):
+        from primer.curriculum import link_code_references
+
+        assert link_code_references("`make readme` and `numpy`", ".") == "`make readme` and `numpy`"
+
+    @pytest.mark.parametrize("markdown", _committed_markdown())
+    def test_given_a_markdown_file_it_names_no_lesson_in_plain_text(self, markdown):
+        text = re.sub(r"```.*?```", "", (ROOT / markdown).read_text(), flags=re.S)
+        prose = re.sub(r"\[[^\]]*\]\([^)]*\)", "", text)
+        # Short lesson names like ml.embeddings.word2vec, outside any link.
+        assert re.findall(r"(?<![\w/.`])(?:ml|agents)\.(?:embeddings\.)?[a-z_]+\b", prose) == []
 
     @pytest.mark.parametrize("markdown", _committed_markdown())
     def test_given_a_markdown_file_every_module_it_names_is_a_link_github_can_follow(self, markdown):
-        from primer.curriculum import link_module_names
+        from primer.curriculum import link_code_references
 
         text = (ROOT / markdown).read_text()
-        assert link_module_names(text, str(Path(markdown).parent)) == text
+        assert link_code_references(text, str(Path(markdown).parent)) == text
+
+
+def _line_inside(path: str, outer: str, inner: str) -> int:
+    """The line of `inner` after the line starting `outer`, read straight from the file."""
+    lines = (ROOT / path).read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(outer))
+    return next(i for i, line in enumerate(lines[start:], start + 1) if line.startswith(inner))
+
+
+class TestNoCodeMentionIsLeftUnlinked:
+    # Anything on a page that names code in this repository is a link: public members to their entry,
+    # everything else (dunder methods, private classes) to its lines, a lesson's own name to its code.
+
+    def test_given_a_lessons_run_command_the_module_name_links_to_its_code(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = "<p>Run: <code>python -m primer.ml.embeddings.word2vec</code></p>"
+        linked = link_code_mentions(page, "primer.ml.embeddings.word2vec", "primer/ml/embeddings/word2vec.html")
+        # docs/html/primer/ml/embeddings/ is five folders below the repository root.
+        assert '<code>python -m <a href="../../../../../primer/ml/embeddings/word2vec.py">primer.ml.embeddings.word2vec</a></code>' in linked
+
+    def test_given_a_lessons_title_its_own_name_links_to_its_code(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = '<h1 class="modulename">\n<a href="../ml.html">ml</a><wbr>.<a href="../embeddings.html">embeddings</a><wbr>.word2vec    </h1>'
+        linked = link_code_mentions(page, "primer.ml.embeddings.word2vec", "primer/ml/embeddings/word2vec.html")
+        assert '<wbr>.<a href="../../../../../primer/ml/embeddings/word2vec.py">word2vec</a>' in linked
+
+    def test_given_a_short_name_imported_from_another_lesson_it_links_to_that_lessons_entry(self, local):
+        from tools.docsite import link_code_mentions
+
+        linked = link_code_mentions("<p><code>LLM.complete</code></p>", "primer.agents.agent_loop", "primer/agents/agent_loop.html")
+        assert '<code><a href="llm.html#LLM.complete">LLM.complete</a></code>' in linked
+
+    def test_given_a_dunder_method_it_links_to_its_exact_lines(self, published):
+        from tools.docsite import link_code_mentions
+
+        linked = link_code_mentions("<p><code>TinyGPT.__call__</code></p>", "primer.ml.transformer", "primer/ml/transformer.html")
+        line = _line_inside("primer/ml/transformer.py", "class TinyGPT", "    def __call__(")
+        assert f"/blob/{SHA}/primer/ml/transformer.py#L{line}-L" in linked
+
+    def test_given_a_private_class_in_a_signature_it_links_to_its_exact_lines(self, published):
+        from tools.docsite import link_code_mentions
+
+        page = '<span class="return-annotation">: list[primer.agents.cost._Entry]</span>'
+        linked = link_code_mentions(page, "primer.agents.cost", "primer/agents/cost.html")
+        line = _first_line_of("primer/agents/cost.py", "class _Entry")
+        # The range starts at the class's decorator, if it has one, so it must contain the class line.
+        first, last = map(int, re.search(rf"/blob/{SHA}/primer/agents/cost\.py#L(\d+)-L(\d+)", linked).groups())
+        assert first <= line <= last and ">primer.agents.cost._Entry</a>" in linked
+
+    def test_given_code_that_names_nothing_in_the_repository_it_is_left_alone(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = "<p><code>n_heads</code> and <code>np.exp</code></p>"
+        assert link_code_mentions(page, "primer.ml.attention", "primer/ml/attention.html") == page
+
+    def test_given_a_source_listing_it_is_left_alone(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = "<pre><code>TinyGPT.__call__</code></pre>"
+        assert link_code_mentions(page, "primer.ml.transformer", "primer/ml/transformer.html") == page
+
+    def test_given_a_name_that_is_already_a_link_it_is_left_alone(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = '<p><code><a href="llm.html#LLM">LLM</a></code></p>'
+        assert link_code_mentions(page, "primer.agents.agent_loop", "primer/agents/agent_loop.html") == page
+
+    def test_given_a_page_with_an_unlinked_mention_the_site_check_reports_it(self, local):
+        from tools.sitecheck import unlinked_code_mentions
+
+        assert unlinked_code_mentions("<p><code>LLM</code></p>", "primer.agents.agent_loop") == ["LLM"]
+
+
+class TestEveryAnchorExists:
+    def test_given_a_link_to_an_anchor_the_page_does_not_have_it_is_reported(self, tmp_path):
+        from tools.sitecheck import missing_anchors
+
+        (tmp_path / "a.html").write_text('<a href="b.html#there">x</a> <a href="b.html#nowhere">y</a> <a href="#here">z</a><p id="here"></p>')
+        (tmp_path / "b.html").write_text('<section id="there"></section>')
+        assert missing_anchors(tmp_path) == {"a.html": {"b.html#nowhere"}}
+
+    def test_given_pdoc_links_to_a_private_class_it_does_not_document_the_link_goes_to_its_lines(self, published):
+        from tools.docsite import link_code_mentions
+
+        # pdoc names private base classes in "inherited members" but gives them no entry to land on.
+        page = '<a href="#_Index.dim">dim</a>'
+        linked = link_code_mentions(page, "primer.ml.embeddings.ann", "primer/ml/embeddings/ann.html")
+        assert f"/blob/{SHA}/primer/ml/embeddings/ann.py#L" in linked
+
+
+class TestNamesWrittenWithoutTheirModule:
+    def test_given_a_class_defined_in_exactly_one_other_module_it_links_to_that_classs_entry(self, local):
+        from tools.docsite import link_code_mentions
+
+        linked = link_code_mentions("<p><code>ClaudeLLM</code></p>", "primer.agents.evals", "primer/agents/evals.html")
+        assert '<code><a href="llm.html#ClaudeLLM">ClaudeLLM</a></code>' in linked
+
+    def test_given_a_class_name_two_modules_define_the_site_check_reports_it_for_the_author_to_qualify(self, local):
+        from tools.sitecheck import unlinked_code_mentions
+
+        # SemanticCache exists in both the cost lesson and the clustering lesson; only the author knows which.
+        assert unlinked_code_mentions("<p><code>SemanticCache</code></p>", "primer.agents.evals") == ["SemanticCache"]
+
+    def test_given_a_path_to_a_committed_file_it_links_to_that_file(self, local):
+        from tools.docsite import link_code_mentions
+
+        linked = link_code_mentions("<p><code>primer/glossary.py</code></p>", "primer.curriculum", "primer/curriculum.html")
+        assert '<code><a href="../../../primer/glossary.py">primer/glossary.py</a></code>' in linked
+
+    def test_given_a_parameter_that_shares_a_functions_name_the_site_check_leaves_it_alone(self, local):
+        from tools.sitecheck import unlinked_code_mentions
+
+        assert unlinked_code_mentions("<p><code>answer</code></p>", "primer.agents.evals") == []
+
+    def test_given_a_companion_whose_script_links_a_lesson_that_does_not_exist_it_is_reported(self, tmp_path):
+        from tools.sitecheck import broken_companion_lessons
+
+        # Companions write lesson links as data for their script, so a normal crawl never sees them.
+        (tmp_path / "papers").mkdir()
+        (tmp_path / "primer").mkdir()
+        (tmp_path / "primer" / "real.html").write_text("")
+        (tmp_path / "papers" / "p.html").write_text('<a data-lesson="primer/real.html">a</a> <a data-lesson="primer/gone.html">b</a>')
+        assert broken_companion_lessons(tmp_path) == {"p.html": {"primer/gone.html"}}
