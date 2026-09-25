@@ -118,3 +118,11 @@ nav.pdoc input[type="search"] {
   :root:not([data-theme="light"]) .pdoc-code .n { color: #d4d4d2; }
   :root:not([data-theme="light"]) .pdoc-code .hll { background: #3a3620; }
 }
+
+/* ---- Phone widths: nothing may push the page wider than the screen. ---- */
+/* Long URLs and dotted names break anywhere rather than overflow. */
+.pdoc a, .pdoc code { overflow-wrap: anywhere; }
+/* A formula wider than the screen scrolls inside its own box. MathJax gives display
+   formulas an inline min-width as wide as the formula, which would widen the page. */
+.pdoc mjx-container[display="true"] { display: block; overflow-x: auto; overflow-y: hidden; max-width: 100%; min-width: 0 !important; }
+.pdoc mjx-container:not([display="true"]) { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; }

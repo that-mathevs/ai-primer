@@ -7,7 +7,7 @@ export MKL_NUM_THREADS := 1
 export VECLIB_MAXIMUM_THREADS := 1
 MODULES = $(shell find primer -name '*.py' ! -name '__init__.py' ! -name '_*' | sed 's|/|.|g; s|\.py$$||' | sort)
 
-.PHONY: test spec readme demos figures docs links clean
+.PHONY: test spec readme demos figures docs sitecheck phonecheck links clean
 
 test:  ## run the full suite
 	$(PY) -m pytest
@@ -32,6 +32,9 @@ docs: readme  ## figures + pdoc + papers + hover glossary -> docs/html (uses pdo
 
 sitecheck:  ## crawl the built site and fail on any broken internal link (run after make docs)
 	$(PY) tools/sitecheck.py
+
+phonecheck:  ## load every built page at phone width in headless Chrome; fail on sideways scrolling (after make docs)
+	$(PY) tools/phonecheck.py
 
 links:  ## check every URL in lessons, README and the paper catalog (needs network)
 	$(PY) tools/links.py

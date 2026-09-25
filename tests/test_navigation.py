@@ -1000,3 +1000,21 @@ class TestDiagramsDrawOnce:
         (tmp_path / "a.html").write_text('<div class="mermaid">flowchart LR</div><script>mermaid.run()</script>')
         (tmp_path / "b.html").write_text('<div class="mermaid">flowchart LR</div><script>mermaid.initialize({ startOnLoad: false })</script>')
         assert diagram_problems(tmp_path) == ["a.html"]
+
+
+class TestEveryPageFitsAPhone:
+    # tools/phonecheck.py loads every page at 390px in headless Chrome; these specify what it counts as a problem.
+
+    def test_given_a_page_wider_than_the_screen_it_is_reported(self):
+        from tools.phonecheck import too_wide
+
+        results = [{"page": "a.html", "width": 968, "screen": 390, "wide": ["mjx-container: ..."]},
+                   {"page": "b.html", "width": 390, "screen": 390, "wide": []}]
+        assert [r["page"] for r in too_wide(results)] == ["a.html"]
+
+    def test_given_the_built_site_forwarding_stubs_are_not_checked(self):
+        from tools.phonecheck import pages_to_check
+
+        # They show nothing: the browser moves straight on to the home page.
+        pages = pages_to_check()
+        assert "primer.html" not in pages and "index.html" in pages
