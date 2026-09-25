@@ -497,7 +497,8 @@
     const mod = dotted.startsWith("primer.") ? dotted : `primer.${dotted}`;
     return P.lessonHref(mod.replace(/\./g, "/") + ".html");
   };
-  const lessonName = (dotted) => dotted.replace(/^primer\./, "");
+  // A lesson's title ("Attention"), as the home page names it; its module path only if the title is unknown.
+  const lessonName = (dotted) => (window.PRIMER_LESSONS || {})[dotted] || dotted.replace(/^primer\./, "");
   const paperSlug = () =>
     document.body.dataset.paper || decodeURIComponent(location.pathname).split("/").pop().replace(/\.html$/, "");
   const paperHref = (p) => (p.exists ? `${p.slug}.html` : `index.html#${p.slug}`);
@@ -512,6 +513,7 @@
       `<a href="${root}index.html#lessons">Lessons</a>` +
       `<a href="index.html">Papers</a>` +
       `<a href="${root}primer/glossary.html">Glossary</a>` +
+      `<a href="${root}primer/notation.html">Notation</a>` +
       (window.PRIMER_REPO ? `<a href="${window.PRIMER_REPO}">Code on GitHub</a>` : "");
     document.body.prepend(nav);
 

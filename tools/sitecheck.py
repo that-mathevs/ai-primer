@@ -16,6 +16,7 @@ Three checks, all offline:
 8. No link has an empty address (it would only reload the page).
 9. The specification page lists the whole suite, and every count the site states matches it.
 10. Nothing renders broken: no indented lines collapsed into one paragraph, no raw Markdown.
+11. Every page can be reached: some other page links to it.
 
 Links built by JavaScript at runtime are checked by the pages themselves.
 """
@@ -209,6 +210,24 @@ def nonexistent_code(page_html: str, module: str) -> list[str]:
     return found
 
 
+def orphan_pages(site: Path = SITE) -> list[str]:
+    """Pages no other page links to (the home page excepted), counting companions' data-lesson links."""
+    pages = {p.resolve() for p in site.rglob("*.html")}
+    reached = {(site / "index.html").resolve()}
+    for page in pages:
+        html = page.read_text(errors="ignore")
+        for ref in re.findall(r'href="([^"#?]+)', html):
+            if not EXTERNAL.match(ref):
+                target = (page.parent / ref).resolve()
+                if target != page:
+                    reached.add(target)
+        for ref in re.findall(r'data-lesson="([^"#?]+)', html):
+            reached.add((site / ref).resolve())
+    # Forwarding pages exist only for old bookmarks and pdoc's search; nothing should link to them.
+    forwards = {p for p in pages if 'http-equiv="refresh"' in p.read_text(errors="ignore")}
+    return sorted(p.relative_to(site.resolve()).as_posix() for p in pages - reached - forwards)
+
+
 def empty_links(site: Path = SITE) -> dict[str, list[str]]:
     """Links whose address is empty: clicking one just reloads the page."""
     found: dict[str, list[str]] = {}
@@ -327,6 +346,11 @@ def main() -> int:
     for page, names in sorted(ghosts.items()):
         print(f"  ✗ {page}: {', '.join(names)}")
 
+    orphans = orphan_pages()
+    print(f"pages nothing links to: {len(orphans)}")
+    for page in orphans:
+        print(f"  ✗ {page}")
+
     empties = empty_links()
     print(f"links with an empty address: {sum(map(len, empties.values()))}")
     for page, texts in sorted(empties.items()):
@@ -347,7 +371,7 @@ def main() -> int:
         for problem in problems[:5]:
             print(f"  ✗ {page}: {problem[:110]}")
     return 1 if (bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties
-                 or counts or rendering or ghosts) else 0
+                 or counts or rendering or ghosts or orphans) else 0
 
 
 if __name__ == "__main__":

@@ -599,7 +599,7 @@ def lesson_nav(module: str, tests: int | None = None) -> str:
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
         f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
-        f'<a href="{repo_url()}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div>'
+        f'<a href="{repo_url()}">Code on GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div>'
         f'<div class="pn-code">Code: <a href="{code_link(source_path(module), page)}">{source_path(module)}</a> · '
         f'Specified by: <a href="{code_link(tests_for(module), page)}">{tests_for(module)}</a>{count} · '
         f"Run: <code>python -m {module}</code></div>"
@@ -755,7 +755,7 @@ def site_nav(page: str) -> str:
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
         f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
-        f'<a href="{repo_url()}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div></div>'
+        f'<a href="{repo_url()}">Code on GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div></div>'
     )
 
 
@@ -902,6 +902,7 @@ def render_home(tests: int | None = None) -> str:
 
     repo = repo_url()
     return HOME_TEMPLATE.replace("{{EXAMPLE_TESTS}}", code_link("tests/test_attention.py", "index.html")).replace(
+        "{{EXAMPLE_CODE}}", code_link("primer/ml/attention.py", "index.html")).replace(
         "{{HOME_REPO}}", REPO_URL).replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
         "{{REPO_LABEL}}", repo.split("://", 1)[-1]).replace("{{LICENSE}}", code_link("LICENSE", "index.html")).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
         "{{COUNT}}", str(len(CURRICULUM))).replace(
@@ -941,14 +942,16 @@ lessons claim. They were written before the code (test-driven), and each is name
 form <em>given</em> a situation, <em>then</em> a result (behaviour-driven), such as
 <em>given a causal mask, future tokens receive zero attention</em> (<a href="{{EXAMPLE_TESTS}}">the attention lesson's tests</a>). Read together,
 they are a precise specification of what every lesson teaches: <a href="spec.html">read the specification</a>.</p>
-<p>Every lesson also runs on its own in a terminal as a narrated walkthrough (<code>python -m <a href="primer/ml/attention.html">primer.ml.attention</a></code>),
+<p>Every lesson also runs on its own in a terminal as a narrated walkthrough (<code>python -m <a href="{{EXAMPLE_CODE}}">primer.ml.attention</a></code>),
 and ends with links to the primary sources. The shared toy data and stand-in embedder the lessons use live in
 <a href="primer/common.html"><code>primer.common</code></a>.</p>
-<p class="repo">The code: <a href="{{HOME_REPO}}">{{HOME_REPO}}</a></p></header>
+<p class="repo">The code: <a href="{{HOME_REPO}}">{{HOME_REPO}}</a></p>
+<p>Every map on this site (this page, the reading order, each lesson's previous and next) is generated from one file,
+<a href="primer/curriculum.html"><code>primer.curriculum</code></a>, so none of them can go stale.</p></header>
 <nav class="jump" aria-label="Jump to">
 <a href="#lessons">Lessons</a><a href="#big">Big questions</a><a href="spec.html">Specification</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
 <a href="#papers">Annotated papers</a>
-<a href="{{REPO}}">Source on GitHub</a></nav>
+<a href="{{REPO}}">Code on GitHub</a></nav>
 <div id="lessons">{{PARTS}}</div>
 <section id="big"><h2>Big questions</h2>
 <p class="blurb">The lessons build the field from the bottom up. These questions give the top-down view: open one to see the
@@ -969,9 +972,13 @@ python -m primer.ml.attention</code></pre>
 def catalog_js() -> str:
     import json
 
+    from primer.curriculum import CURRICULUM
+
     return (
         "window.PRIMER_PAPERS = " + json.dumps(catalog(), ensure_ascii=False, indent=1) + ";\n"
         + f"window.PRIMER_REPO = {json.dumps(repo_url())};\n"
+        # Companions name each lesson by its title, as the home page does.
+        + "window.PRIMER_LESSONS = " + json.dumps({l.module: l.title for l in CURRICULUM}, ensure_ascii=False) + ";\n"
     )
 
 
@@ -1021,7 +1028,8 @@ def build() -> int:
         pdoc = ["uvx", "--with", "numpy", "--with", "matplotlib", "pdoc"]
     subprocess.run(
         pdoc
-        + ["primer", "--docformat", "google", "--math", "--mermaid",
+        # primer._show is a private helper for the terminal walkthroughs, not something a reader studies.
+        + ["primer", "!primer._show", "--docformat", "google", "--math", "--mermaid",
            "--footer-text", "primer: how modern AI works, built from scratch", "-o", str(SITE)],
         cwd=ROOT, check=True, env={**os.environ, "PYTHONPATH": str(ROOT)},
     )

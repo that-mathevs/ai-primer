@@ -711,10 +711,11 @@ class TestTheHomePageKeepsEachPartsIntroduction:
         # Written out in full, so a reader sees exactly where the code lives.
         assert f'<a href="{REPO_URL}">{REPO_URL}</a>' in header
 
-    def test_given_the_home_page_the_example_run_command_links_to_the_lesson_it_runs(self):
+    def test_given_the_home_page_the_example_run_command_links_to_the_code_it_runs(self, local):
         from tools.docsite import render_home
 
-        assert '<code>python -m <a href="primer/ml/attention.html">primer.ml.attention</a></code>' in render_home()
+        # A run command links to the code it runs, on every page.
+        assert '<code>python -m <a href="../../primer/ml/attention.py">primer.ml.attention</a></code>' in render_home()
 
     def test_given_the_home_page_it_says_what_a_test_is_and_shows_a_real_one(self, local):
         from tools.docsite import render_home
@@ -898,3 +899,42 @@ class TestEveryWayOfNamingCodeIsLinked:
             text = " ".join(re.sub(r"<[^>]+>", " ", prose).split())
             sentences = [s.strip() for s in re.split(r"(?<=\.)\s+", text) if s.strip()]
             assert len(sentences) == len(set(sentences)), part.key
+
+
+class TestTheSameThingLooksTheSameEverywhere:
+    def test_given_any_bar_or_page_the_repository_link_reads_code_on_github(self):
+        from tools.docsite import lesson_nav, render_home, site_nav
+
+        for html in (lesson_nav("primer.ml.attention"), site_nav("primer/glossary.html"), render_home()):
+            assert ">Code on GitHub</a>" in html and ">GitHub</a>" not in html and ">Source on GitHub</a>" not in html
+
+    def test_given_the_companion_bar_it_names_the_repository_link_the_same_way(self):
+        assert "Code on GitHub" in (ROOT / "docs/papers/assets/papers.js").read_text()
+
+    def test_given_the_companion_bar_it_links_the_notation_lesson_like_every_other_bar(self):
+        assert 'primer/notation.html">Notation</a>' in (ROOT / "docs/papers/assets/papers.js").read_text()
+
+    def test_given_the_catalog_script_it_gives_companions_each_lessons_title(self):
+        from tools.docsite import catalog_js
+
+        # Companions name a lesson by its title, as the home page does, not by its module path.
+        assert '"primer.ml.attention": "Attention"' in catalog_js()
+
+    def test_given_the_companion_script_it_names_lessons_by_title(self):
+        js = (ROOT / "docs/papers/assets/papers.js").read_text()
+        assert "PRIMER_LESSONS" in js
+
+
+class TestEveryPageCanBeReached:
+    def test_given_a_page_no_other_page_links_to_the_site_check_reports_it(self, tmp_path):
+        from tools.sitecheck import orphan_pages
+
+        (tmp_path / "index.html").write_text('<a href="a.html">a</a>')
+        (tmp_path / "a.html").write_text('<a href="index.html">home</a>')
+        (tmp_path / "lost.html").write_text("")
+        assert orphan_pages(tmp_path) == ["lost.html"]
+
+    def test_given_the_home_page_it_links_the_map_the_site_is_generated_from(self):
+        from tools.docsite import render_home
+
+        assert 'href="primer/curriculum.html"' in render_home()
