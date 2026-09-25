@@ -725,3 +725,66 @@ class TestTheHomePageKeepsEachPartsIntroduction:
         assert "given a causal mask, future tokens receive zero attention" in header
         assert "def test_given_a_causal_mask_future_tokens_receive_zero_attention" in (ROOT / "tests/test_attention.py").read_text()
         assert 'href="../../tests/test_attention.py"' in header
+
+
+# A small collected suite, in pytest's "path::Class::test[param]" form, so these specs don't run pytest.
+_FAKE_SUITE = [
+    "tests/test_attention.py::TestCausalMasking::test_given_a_causal_mask_future_tokens_receive_zero_attention",
+    "tests/test_attention.py::TestSoftmax::test_given_equal_scores_attention_is_shared_equally[2]",
+    "tests/test_attention.py::TestSoftmax::test_given_equal_scores_attention_is_shared_equally[3]",
+    "tests/test_navigation.py::TestTheCurriculum::test_given_the_curriculum_no_lesson_appears_twice",
+]
+
+
+class TestTheSpecificationIsPublished:
+    # The suite is behaviour-driven and written test-first; the site shows it as the readable spec it is.
+
+    def test_given_a_collected_suite_each_lesson_is_counted_by_its_own_test_file(self):
+        from tools.docsite import tests_per_file
+
+        assert tests_per_file(_FAKE_SUITE) == {"tests/test_attention.py": 3, "tests/test_navigation.py": 1}
+
+    def test_given_the_spec_page_each_behaviour_reads_as_a_sentence_under_its_lesson(self, local):
+        from tools.docsite import spec_page
+
+        page = spec_page(_FAKE_SUITE)
+        lesson = page.split('id="primer.ml.attention"')[1].split("</section>")[0]
+        assert "given a causal mask future tokens receive zero attention" in lesson and "causal masking" in lesson
+
+    def test_given_a_parametrised_test_the_spec_page_lists_its_behaviour_once(self, local):
+        from tools.docsite import spec_page
+
+        assert spec_page(_FAKE_SUITE).count("given equal scores attention is shared equally") == 1
+
+    def test_given_a_behaviour_on_the_spec_page_it_links_to_the_exact_lines_of_the_test_that_checks_it(self, published):
+        from tools.docsite import spec_page
+
+        line = _line_inside("tests/test_attention.py", "class TestCausalMasking", "    def test_given_a_causal_mask")
+        assert f"/blob/{SHA}/tests/test_attention.py#L{line}-L" in spec_page(_FAKE_SUITE)
+
+    def test_given_the_spec_page_each_lesson_section_links_to_the_lesson(self, local):
+        from tools.docsite import spec_page
+
+        lesson = spec_page(_FAKE_SUITE).split('id="primer.ml.attention"')[1].split("</section>")[0]
+        assert 'href="primer/ml/attention.html"' in lesson
+
+    def test_given_a_test_count_the_lesson_nav_says_how_many_tests_specify_it_and_links_to_them(self):
+        from tools.docsite import lesson_nav
+
+        nav = lesson_nav("primer.ml.attention", tests=32)
+        assert '<a href="../../spec.html#primer.ml.attention">32 tests</a>' in nav
+
+    def test_given_a_test_count_the_home_page_states_it_and_links_to_the_specification(self):
+        from tools.docsite import render_home
+
+        header = render_home(tests=1200).split("</header>")[0]
+        assert "1,200 tests" in header and 'href="spec.html"' in header
+
+    def test_given_a_site_that_states_a_different_count_from_the_suite_the_site_check_reports_it(self, tmp_path, monkeypatch):
+        import tools.docsite
+        from tools.sitecheck import spec_count_problems
+
+        monkeypatch.setattr(tools.docsite, "collect_tests", lambda: _FAKE_SUITE)  # a suite of 4
+        (tmp_path / "spec.html").write_text("<h1>The specification: 4 tests</h1>")
+        (tmp_path / "index.html").write_text("pinned down by a suite of 1,200 tests")
+        assert spec_count_problems(tmp_path) == ["index.html states ['1,200'], the suite has 4"]

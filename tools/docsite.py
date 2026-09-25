@@ -471,8 +471,8 @@ def catalog() -> list[dict]:
     return papers
 
 
-def lesson_nav(module: str) -> str:
-    """Breadcrumb plus previous/next links for one lesson page."""
+def lesson_nav(module: str, tests: int | None = None) -> str:
+    """Breadcrumb plus previous/next links for one lesson page, and how many tests specify it."""
     from primer.curriculum import CURRICULUM, PARTS, neighbours, source_path, tests_for
 
     page = _page(module)
@@ -481,6 +481,7 @@ def lesson_nav(module: str) -> str:
     part = next(p for p in PARTS if p.key == lesson.part)
     before, after = neighbours(module)
     home = _rel("index.html", page)
+    count = f' (<a href="{_rel("spec.html", page)}#{module}">{tests} tests</a>)' if tests else ""
 
     def link(l, arrow_first: bool) -> str:
         if l is None:
@@ -502,11 +503,140 @@ def lesson_nav(module: str) -> str:
         f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
         f'<a href="{repo_url()}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div>'
         f'<div class="pn-code">Code: <a href="{code_link(source_path(module), page)}">{source_path(module)}</a> · '
-        f'Specified by: <a href="{code_link(tests_for(module), page)}">{tests_for(module)}</a> · '
+        f'Specified by: <a href="{code_link(tests_for(module), page)}">{tests_for(module)}</a>{count} · '
         f"Run: <code>python -m {module}</code></div>"
         f'<div class="pn-steps">{link(before, True)}{link(after, False)}</div>'
         "</div>"
     )
+
+
+# ---------------------------------------------------------------------------
+# The specification. The suite is behaviour-driven and written test-first:
+# every test names one behaviour as a sentence. Published as a page, it is a
+# precise statement of what each lesson's code does, one click from the test.
+# ---------------------------------------------------------------------------
+
+
+def collect_tests() -> list[str]:
+    """Every test in the suite, as pytest names it: "tests/test_x.py::TestArea::test_name[param]"."""
+    out = subprocess.run(
+        # No -q here: the project's pytest settings already add one, and -qq would print only per-file totals.
+        [sys.executable, "-m", "pytest", "--collect-only", "-p", "no:cacheprovider"],
+        cwd=ROOT, capture_output=True, text=True,
+    ).stdout
+    return [line.strip() for line in out.splitlines() if "::" in line]
+
+
+def tests_per_file(collected: list[str]) -> dict[str, int]:
+    """How many tests each test file holds, counting every parametrised case."""
+    counts: dict[str, int] = {}
+    for test in collected:
+        path = test.split("::")[0]
+        counts[path] = counts.get(path, 0) + 1
+    return counts
+
+
+def _test_lines(path: str) -> dict[tuple[str | None, str], tuple[int, int]]:
+    """(class, test) -> (first line, last line) of each test function in a test file."""
+    import ast
+
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    lines = {}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            lines[(None, node.name)] = (node.lineno, node.end_lineno)
+        elif isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef):
+                    lines[(node.name, item.name)] = (item.lineno, item.end_lineno)
+    return lines
+
+
+def spec_page(collected: list[str]) -> str:
+    """The whole suite as a readable specification: one sentence per behaviour, grouped by lesson."""
+    from primer.curriculum import CURRICULUM, tests_for
+    from tools.spec import humanize_class, humanize_test
+
+    page = "spec.html"
+    by_file: dict[str, dict[str | None, list[str]]] = {}
+    for test in collected:
+        parts = test.split("::")
+        path, klass, name = parts[0], (parts[1] if len(parts) == 3 else None), parts[-1].split("[")[0]
+        areas = by_file.setdefault(path, {})
+        # A parametrised test is one behaviour checked on several inputs: list it once.
+        if name not in areas.setdefault(klass, []):
+            areas[klass].append(name)
+    counts = tests_per_file(collected)
+
+    def behaviours(path: str) -> str:
+        lines = _test_lines(path) if (ROOT / path).exists() else {}
+        html = []
+        for klass, names in by_file.get(path, {}).items():
+            if klass:
+                html.append(f"<h3>{htmllib.escape(humanize_class(klass))}</h3>")
+            items = "".join(
+                f'<li><a href="{code_link(path, page, *lines.get((klass, n), ()))}">{htmllib.escape(humanize_test(n))}</a></li>'
+                for n in names
+            )
+            html.append(f"<ul>{items}</ul>")
+        return "".join(html)
+
+    sections, toc = [], []
+    lesson_files = set()
+    for i, lesson in enumerate(CURRICULUM):
+        path = tests_for(lesson.module)
+        lesson_files.add(path)
+        if path not in by_file:
+            continue
+        n = counts[path]
+        toc.append(f'<li><a href="#{lesson.module}">{i}. {htmllib.escape(lesson.title)}</a> <span class="n">{n}</span></li>')
+        sections.append(
+            f'<section id="{lesson.module}"><h2><a href="{_page(lesson.module)}">{i}. {htmllib.escape(lesson.title)}</a></h2>'
+            f'<p class="file">{n} tests in <a href="{code_link(path, page)}">{path}</a></p>{behaviours(path)}</section>'
+        )
+    others = sorted(p for p in by_file if p not in lesson_files)
+    for path in others:
+        anchor_id = Path(path).stem
+        label = humanize_test(Path(path).stem.removeprefix("test_"))
+        toc.append(f'<li><a href="#{anchor_id}">{htmllib.escape(label)}</a> <span class="n">{counts[path]}</span></li>')
+        sections.append(
+            f'<section id="{anchor_id}"><h2>{htmllib.escape(label)}</h2>'
+            f'<p class="file">{counts[path]} tests in <a href="{code_link(path, page)}">{path}</a></p>{behaviours(path)}</section>'
+        )
+    total = len(collected)
+    return (SPEC_TEMPLATE.replace("{{NAV}}", site_nav(page)).replace("{{TOTAL}}", f"{total:,}")
+            .replace("{{TOC}}", "".join(toc)).replace("{{SECTIONS}}", "".join(sections)).replace("{{NAV_CSS}}", NAV_CSS.replace("<style>", "").replace("</style>", "")))
+
+
+SPEC_TEMPLATE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>primer: the specification</title>
+<link rel="stylesheet" href="assets/theme.css"><script src="assets/theme.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font:16px/1.6 system-ui,-apple-system,sans-serif}
+main{max-width:980px;margin:0 auto;padding:1.5rem 16px 4rem}a{color:var(--p-accent)}
+h1{font-size:2rem;margin:.5rem 0}h2{margin-top:2.5rem;border-bottom:1px solid var(--p-border);padding-bottom:.3rem}
+h2 a{color:inherit;text-decoration:none}h2 a:hover{color:var(--p-accent)}h3{font-size:1rem;margin:1.2rem 0 .3rem;color:var(--p-muted)}
+p{max-width:46rem}.file{color:var(--p-muted);font-size:.92rem}ul{margin:.2rem 0;padding-left:1.2rem}li{margin:.15rem 0}
+ul a{color:var(--p-fg);text-decoration:none}ul a:hover{color:var(--p-accent);text-decoration:underline}
+.toc{columns:2 18rem;list-style:none;padding:0}.toc a{text-decoration:none}.n{color:var(--p-muted);font-size:.85rem}
+{{NAV_CSS}}
+</style></head>
+<body><main>
+{{NAV}}
+<h1>The specification: {{TOTAL}} tests</h1>
+<p>A test is a small program that runs the lessons' code and checks that it does what the lesson claims. Every test
+here was written <em>before</em> the code it checks: first the behaviour is stated and seen to fail, then only
+enough code is written to make it pass (this is called test-driven development). Each test is named as a plain
+sentence, usually in the form <em>given</em> a situation, <em>when</em> something happens, <em>then</em> a result
+(behaviour-driven development), so the whole suite reads as a specification.</p>
+<p>Every sentence below is one behaviour; click it to read the test that checks it. A behaviour checked on several
+inputs counts as several tests but appears once. The whole suite runs in a few seconds with <code>make test</code>,
+offline, and <code>make spec</code> prints this page in a terminal.</p>
+<ul class="toc">{{TOC}}</ul>
+{{SECTIONS}}
+</main></body></html>
+"""
 
 
 def add_theme(page_html: str, page: str) -> str:
@@ -626,7 +756,7 @@ def part_intro(part_key: str) -> str:
     return "".join(f'<p class="blurb">{inline(para)}</p>' for para in re.split(r"\n\s*\n", intro) if para.strip())
 
 
-def render_home() -> str:
+def render_home(tests: int | None = None) -> str:
     """The site's front page: every part, every lesson, every paper, generated."""
     from primer.curriculum import BIG_QUESTIONS, CURRICULUM, PARTS, lessons_in
 
@@ -664,8 +794,8 @@ def render_home() -> str:
     return HOME_TEMPLATE.replace("{{EXAMPLE_TESTS}}", code_link("tests/test_attention.py", "index.html")).replace(
         "{{HOME_REPO}}", REPO_URL).replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
         "{{REPO_LABEL}}", repo.split("://", 1)[-1]).replace("{{LICENSE}}", code_link("LICENSE", "index.html")).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
-        "{{COUNT}}", str(len(CURRICULUM))
-    )
+        "{{COUNT}}", str(len(CURRICULUM))).replace(
+        "{{TESTS}}", f"a suite of {tests:,} tests" if tests else "a suite of tests")
 
 
 HOME_TEMPLATE = """<!doctype html>
@@ -694,18 +824,19 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 </style></head>
 <body><main>
 <header><div class="top"><h1>primer: how modern AI works, built from scratch</h1><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
-<p>{{COUNT}} lessons. Every idea is built in plain Python, drawn, and decoded symbol by symbol. Each lesson also
-comes with tests: small programs that run its code and check it does what the lesson claims, each named as a
-plain sentence, such as <em>given a causal mask, future tokens receive zero attention</em>
-(<a href="{{EXAMPLE_TESTS}}">the attention lesson's tests</a>). Read together, a lesson's tests are a precise
-summary of what it teaches.
+<p>{{COUNT}} lessons. Every idea is built in plain Python, drawn, and decoded symbol by symbol.
 Hover over any underlined term for a plain-English definition.</p>
+<p>All of it is pinned down by {{TESTS}}: small programs that run the lessons' code and check it does what the
+lessons claim. They were written before the code (test-driven), and each is named as a plain sentence in the
+form <em>given</em> a situation, <em>then</em> a result (behaviour-driven), such as
+<em>given a causal mask, future tokens receive zero attention</em> (<a href="{{EXAMPLE_TESTS}}">the attention lesson's tests</a>). Read together,
+they are a precise specification of what every lesson teaches: <a href="spec.html">read the specification</a>.</p>
 <p>Every lesson also runs on its own in a terminal as a narrated walkthrough (<code>python -m <a href="primer/ml/attention.html">primer.ml.attention</a></code>),
 and ends with links to the primary sources. The shared toy data and stand-in embedder the lessons use live in
 <a href="primer/common.html"><code>primer.common</code></a>.</p>
 <p class="repo">The code: <a href="{{HOME_REPO}}">{{HOME_REPO}}</a></p></header>
 <nav class="jump" aria-label="Jump to">
-<a href="#lessons">Lessons</a><a href="#big">Big questions</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
+<a href="#lessons">Lessons</a><a href="#big">Big questions</a><a href="spec.html">Specification</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
 <a href="#papers">Annotated papers</a>
 <a href="{{REPO}}">Source on GitHub</a></nav>
 <div id="lessons">{{PARTS}}</div>
@@ -734,7 +865,7 @@ def catalog_js() -> str:
     )
 
 
-def _postprocess(path: Path, terms: dict[str, tuple]) -> None:
+def _postprocess(path: Path, terms: dict[str, tuple], counts: dict[str, int] | None = None) -> None:
     page = path.relative_to(SITE).as_posix()
     depth = os.path.relpath(SITE, path.parent).replace(os.sep, "/")
     text = path.read_text(encoding="utf-8")
@@ -749,7 +880,9 @@ def _postprocess(path: Path, terms: dict[str, tuple]) -> None:
 
     module = page.removesuffix(".html").replace("/", ".")
     if any(l.module == module for l in CURRICULUM):
-        nav = lesson_nav(module)
+        from primer.curriculum import tests_for
+
+        nav = lesson_nav(module, tests=(counts or {}).get(tests_for(module)))
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + nav, text, count=1)
         text = text.replace("</main>", nav.replace('class="primer-nav"', 'class="primer-nav pn-bottom"') + "</main>", 1)
     else:
@@ -790,12 +923,15 @@ def build() -> int:
         for target in (ROOT / "docs" / "papers" / "assets" / name, SITE / "papers" / "assets" / name):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(js, encoding="utf-8")
-    (SITE / "index.html").write_text(render_home(), encoding="utf-8")
+    collected = collect_tests()
+    counts = tests_per_file(collected)
+    (SITE / "index.html").write_text(render_home(tests=len(collected)), encoding="utf-8")
+    (SITE / "spec.html").write_text(spec_page(collected), encoding="utf-8")
 
     terms = {t: (e.definition, lesson_path(e.lesson) if e.lesson else None, e.scope) for t, e in GLOSSARY.items()}
     pages = sorted((SITE / "primer").rglob("*.html"))
     for p in pages:
-        _postprocess(p, terms)
+        _postprocess(p, terms, counts)
     for page, target in package_forwards().items():
         (SITE / page).write_text(forward_page(target), encoding="utf-8")
     print(f"built {len(pages)} lesson pages into {SITE.relative_to(ROOT)}/  (open docs/html/index.html)")

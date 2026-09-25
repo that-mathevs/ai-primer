@@ -14,6 +14,7 @@ Three checks, all offline:
 6. Every #anchor a link points at exists on its page.
 7. Every lesson a paper companion's script links to exists.
 8. No link has an empty address (it would only reload the page).
+9. The specification page lists the whole suite, and every count the site states matches it.
 
 Links built by JavaScript at runtime are checked by the pages themselves.
 """
@@ -186,6 +187,24 @@ def empty_links(site: Path = SITE) -> dict[str, list[str]]:
     return found
 
 
+def spec_count_problems(site: Path = SITE) -> list[str]:
+    """Every place the site states a test count that isn't what the suite actually holds."""
+    from tools.docsite import collect_tests
+
+    total = len(collect_tests())
+    problems = []
+    if total == 0:
+        problems.append("the suite collected no tests")
+    stated = {
+        "spec.html": re.findall(r"The specification: ([\d,]+) tests", (site / "spec.html").read_text(errors="ignore")),
+        "index.html": re.findall(r"a suite of ([\d,]+) tests", (site / "index.html").read_text(errors="ignore")),
+    }
+    for page, found in stated.items():
+        if [int(n.replace(",", "")) for n in found] != [total]:
+            problems.append(f"{page} states {found or 'no count'}, the suite has {total:,}")
+    return problems
+
+
 def main() -> int:
     if not SITE.exists():
         print("docs/html doesn't exist yet: run `make docs` first")
@@ -239,7 +258,12 @@ def main() -> int:
     print(f"links with an empty address: {sum(map(len, empties.values()))}")
     for page, texts in sorted(empties.items()):
         print(f"  ✗ {page}: {', '.join(texts)}")
-    return 1 if bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties else 0
+
+    counts = spec_count_problems()
+    print(f"test counts that don't match the suite: {len(counts)}")
+    for problem in counts:
+        print(f"  ✗ {problem}")
+    return 1 if bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties or counts else 0
 
 
 if __name__ == "__main__":
