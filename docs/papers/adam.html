@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adam, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Kingma and Ba (2014), the paper that introduced the Adam optimizer.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  #race-canvas { cursor: crosshair; touch-action: none; }
+  .race-legend i { height: 4px; }
+</style>
+</head>
+<body data-paper="adam">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 The algorithm</a>
+        <ol><li><a href="#s2-1">2.1 The update rule</a></li></ol>
+      </li>
+      <li><a href="#s3">3 Bias correction</a></li>
+      <li><a href="#s4">4 Convergence analysis</a></li>
+      <li><a href="#s5">5 Related work</a></li>
+      <li><a href="#s6">6 Experiments</a></li>
+      <li><a href="#s7">7 Extensions</a>
+        <ol>
+          <li><a href="#s7-1">7.1 AdaMax</a></li>
+          <li><a href="#s7-2">7.2 Temporal averaging</a></li>
+        </ol>
+      </li>
+      <li><a href="#s8">8 Conclusion</a></li>
+      <li><a href="#today">What changed since 2014</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Adam: A Method for Stochastic Optimization, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Diederik P. Kingma and Jimmy Lei Ba (2014, published at ICLR 2015), the paper behind the optimizer that trains almost every modern neural network.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1412.6980">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1412.6980">PDF</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. Equations are reproduced with every symbol decoded. The paper's figures are not reproduced: the diagrams and demos here are drawn from scratch, and experimental results are summarized in our own words with attribution. Read the original alongside: every section heading links to the page of the PDF (version 9) where that section begins.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon.</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and every equation is followed by a table of its symbols.</li>
+  <li>The diagrams and demos are live. The optimizer race in §2.1 is the fastest way to feel what Adam does.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it matters today</strong>. The <a data-lesson="primer/ml/optimizers.html">optimizers lesson</a> builds SGD, momentum, Adam and AdamW from scratch in NumPy.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=1">original</a></span></h2>
+<blockquote class="quote">“We introduce Adam, an algorithm for first-order gradient-based optimization of stochastic objective functions, based on adaptive estimates of lower-order moments.”<cite>Kingma and Ba (2014), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Training a neural network means walking downhill on a landscape made of the model's error (the <span class="t" data-t="loss">loss</span>), in thick fog, feeling the slope under your feet (the <span class="t" data-t="gradient">gradient</span>). The question every <span class="t" data-t="optimizer">optimizer</span> answers is: how big a step should I take, in which direction? Adam's answer: keep a running average of the slopes you have felt (so a single bumpy step doesn't throw you), keep a running average of how <em>large</em> the slopes have been, and take each step in proportion to their ratio. Where the ground has been steep and erratic you tread carefully; where it has been gentle but consistent you stride out. And it does this separately for every one of the model's millions of adjustable numbers.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>A method that needs only gradients (“first-order”), little memory, and is simple to implement.</li>
+  <li>Step sizes that do not change if every gradient is multiplied by a constant, and that are roughly capped by one setting, the step size α.</li>
+  <li>Hyperparameters that “typically require little tuning”, with defaults that became universal: α = 0.001, β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.999, ε = 10<sup>−8</sup>.</li>
+  <li>A convergence guarantee for convex problems, and experiments where Adam matches or beats the alternatives on logistic regression, fully connected nets and convolutional nets.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Adam, and its descendant <span class="t" data-t="adamw">AdamW</span>, is the default optimizer for Transformers, including every large language model. If you train anything with a neural network today, this paper is probably running inside your training loop.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=1">original</a></span></h2>
+<blockquote class="quote">“The method computes individual adaptive learning rates for different parameters from estimates of first and second moments of the gradients; the name Adam is derived from adaptive moment estimation.”<cite>Kingma and Ba (2014), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Imagine tuning a mixing desk with a thousand sliders, where some sliders make a huge difference with a tiny nudge and others barely matter. A single “how far to move” setting for all of them is hopeless: too big and the sensitive sliders overshoot, too small and the insensitive ones never get anywhere. Adam gives every slider its own step size, learned from that slider's own history. The paper names the two things it tracks after statistics: the <em>first moment</em> (the average) and the <em>second moment</em> (the average of the squares, a measure of size).</p>
+<h4>Tiny example</h4>
+<p>Suppose weight A's recent gradients were (10, 12, 8) and weight B's were (0.1, 0.12, 0.08). Plain <span class="t" data-t="stochastic gradient descent">stochastic gradient descent</span> with learning rate 0.01 moves A by about 0.1 and B by about 0.001: a hundredfold difference, purely because of scale. Adam divides each average gradient by the typical size of that weight's gradients. For A that is roughly 10 / 10 = 1, for B roughly 0.1 / 0.1 = 1, so both move by about the same step, α.</p>
+<h4>Two ancestors it combines</h4>
+<ul>
+  <li><span class="t" data-tip-title="AdaGrad" data-tip="An optimizer (Duchi et al., 2011) that divides each weight's step by the square root of the sum of all its past squared gradients. Great for rare features, but the sum only grows, so steps shrink forever.">AdaGrad</span> works well when gradients are <span class="t" data-tip-title="Sparse gradients" data-tip="Gradients that are zero most of the time for a given weight, for example the weight for a rare word that appears in few examples. The weight gets few updates, so it needs larger ones when they come.">sparse</span>.</li>
+  <li><span class="t" data-tip-title="RMSProp" data-tip="An optimizer (Tieleman and Hinton, 2012, from a lecture slide) that divides each step by the square root of a running average of recent squared gradients. It forgets old gradients, so it copes with changing conditions.">RMSProp</span> works well when the problem keeps changing (“non-stationary”).</li>
+</ul>
+<p>Adam takes RMSProp's running average of squared gradients, adds a running average of the gradients themselves (<span class="t" data-t="momentum">momentum</span>), and fixes a start-up flaw both share (§3).</p>
+<h4>Why it matters today</h4>
+<p>Per-weight step sizes are exactly what deep networks need: the gradients of an embedding table, an attention matrix and a layer-norm gain differ by orders of magnitude. The <a data-lesson="primer/ml/optimizers.html">optimizers lesson</a> races these methods on an ill-conditioned bowl.</p>
+</section>
+
+<section id="s2">
+<h2>2 The algorithm <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Think of a hiker with two notebooks. In the first, after every step, they update a running average of which way the ground slopes: mostly the old average, a little of the newest reading. In the second, they update a running average of how <em>steep</em> the ground has been, ignoring direction. Before each step they divide the first by the square root of the second: “which way, relative to how steep it usually is.” That ratio, times a fixed stride length α, is the step.</p>
+<h4>Tiny example: three steps on one weight</h4>
+<p>One weight θ starts at 1.0. Settings: α = 0.1, β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.999, ε = 10<sup>−8</sup>. The gradients arrive as 2, then 1, then 1.5.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>t</th><th class="num">g<sub>t</sub></th><th class="num">m<sub>t</sub></th><th class="num">v<sub>t</sub></th><th class="num">m̂<sub>t</sub></th><th class="num">v̂<sub>t</sub></th><th class="num">step α·m̂/√v̂</th><th class="num">θ<sub>t</sub></th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td class="num">2</td><td class="num">0.1 × 2 = 0.2</td><td class="num">0.001 × 4 = 0.004</td><td class="num">0.2 / 0.1 = 2</td><td class="num">0.004 / 0.001 = 4</td><td class="num">0.1 × 2 / 2 = 0.1</td><td class="num">0.9</td></tr>
+    <tr><td>2</td><td class="num">1</td><td class="num">0.9 × 0.2 + 0.1 × 1 = 0.28</td><td class="num">0.999 × 0.004 + 0.001 × 1 = 0.004996</td><td class="num">0.28 / 0.19 = 1.474</td><td class="num">0.004996 / 0.001999 = 2.499</td><td class="num">0.1 × 1.474 / 1.581 = 0.0932</td><td class="num">0.8068</td></tr>
+    <tr><td>3</td><td class="num">1.5</td><td class="num">0.402</td><td class="num">0.007241</td><td class="num">1.483</td><td class="num">2.416</td><td class="num">0.0954</td><td class="num">0.7114</td></tr>
+  </tbody>
+</table></div>
+<p>Notice that the first step is exactly α = 0.1, and later steps stay close to it even though the gradients vary. That is the “step size roughly capped at α” property of §2.1, visible in three rows.</p>
+
+<figure class="ix" id="fig-alg">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 420" role="img" aria-label="Algorithm 1 of the paper as a data-flow diagram">
+    <defs><marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M160,392 V372" marker-end="url(#arrA)"/>
+    <path class="wire" d="M160,340 V326 H80 V306" marker-end="url(#arrA)"/>
+    <path class="wire" d="M160,326 H240 V306" marker-end="url(#arrA)"/>
+    <path class="wire" d="M80,274 V246" marker-end="url(#arrA)"/>
+    <path class="wire" d="M240,274 V246" marker-end="url(#arrA)"/>
+    <path class="wire" d="M240,214 V186" marker-end="url(#arrA)"/>
+    <path class="wire" d="M80,214 V140 H132" marker-end="url(#arrA)"/>
+    <path class="wire" d="M240,154 V140 H188" marker-end="url(#arrA)"/>
+    <path class="wire" d="M160,126 V96" marker-end="url(#arrA)"/>
+    <path class="wire" d="M160,64 V40" marker-end="url(#arrA)"/>
+    <g class="blk plain" data-block="grad" tabindex="0" role="button" aria-label="Gradient g_t"><rect x="95" y="392" width="130" height="24" rx="6"/><text x="160" y="408" text-anchor="middle">gradient g</text></g>
+    <g class="blk plain" data-block="square" tabindex="0" role="button" aria-label="Square the gradient"><rect x="110" y="340" width="100" height="32" rx="6"/><text x="160" y="360" text-anchor="middle">g and g²</text></g>
+    <g class="blk ff" data-block="mupd" tabindex="0" role="button" aria-label="First moment update"><rect x="20" y="274" width="120" height="32" rx="7"/><text x="80" y="294" text-anchor="middle">average g → m</text></g>
+    <g class="blk attn" data-block="vupd" tabindex="0" role="button" aria-label="Second moment update"><rect x="180" y="274" width="120" height="32" rx="7"/><text x="240" y="294" text-anchor="middle">average g² → v</text></g>
+    <g class="blk norm" data-block="mcorr" tabindex="0" role="button" aria-label="Bias-correct m"><rect x="20" y="214" width="120" height="32" rx="7"/><text x="80" y="234" text-anchor="middle">m̂ = m / (1 − β₁ᵗ)</text></g>
+    <g class="blk norm" data-block="vcorr" tabindex="0" role="button" aria-label="Bias-correct v"><rect x="180" y="214" width="120" height="32" rx="7"/><text x="240" y="234" text-anchor="middle">v̂ = v / (1 − β₂ᵗ)</text></g>
+    <g class="blk lin" data-block="sqrt" tabindex="0" role="button" aria-label="Square root plus epsilon"><rect x="190" y="154" width="100" height="32" rx="7"/><text x="240" y="174" text-anchor="middle">√v̂ + ε</text></g>
+    <g class="blk soft" data-block="ratio" tabindex="0" role="button" aria-label="Divide"><rect x="132" y="126" width="56" height="28" rx="7"/><text x="160" y="145" text-anchor="middle">÷</text></g>
+    <g class="blk lin" data-block="alpha" tabindex="0" role="button" aria-label="Multiply by alpha"><rect x="110" y="64" width="100" height="32" rx="7"/><text x="160" y="84" text-anchor="middle">× α</text></g>
+    <g class="blk emb" data-block="update" tabindex="0" role="button" aria-label="Update the weight"><rect x="90" y="8" width="140" height="32" rx="7"/><text x="160" y="28" text-anchor="middle">θ ← θ − step</text></g>
+    <g class="blk frame" data-block="memory" tabindex="0" role="button" aria-label="Optimizer state kept in memory"><rect x="10" y="262" width="300" height="56" rx="10"/></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. Start with the <strong>gradient</strong> at the bottom and follow the arrows up.</p></div>
+  </div>
+  <figcaption>Algorithm 1 of the paper, redrawn as a data-flow diagram. Based on Kingma and Ba (2014), Algorithm 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the bottom up; this loop runs once per training step, separately for every weight. The fresh gradient splits into two lanes. The left lane (blue) averages the gradient itself into <em>m</em>, which gives the direction. The right lane (orange) averages the <em>squared</em> gradient into <em>v</em>, which gives the typical size of the gradient. Both averages start at zero, so the yellow boxes rescale them to undo that start-up bias (§3). The right lane is square-rooted to get back to gradient units, the left lane is divided by it, and the result times α is subtracted from the weight. The dashed box marks the optimizer's memory: <em>m</em> and <em>v</em> are two extra numbers stored for every weight in the model.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=g}{g_t} = \htmlData{sym=nabla}{\nabla_\theta} \htmlData{sym=ft}{f_t}(\htmlData{sym=thetaprev}{\theta_{t-1}})" data-fallback="g_t = ∇_θ f_t(θ_{t−1})"></div>
+<div class="eq" data-tex="\htmlData{sym=m}{m_t} = \htmlData{sym=b1}{\beta_1}\, \htmlData{sym=mprev}{m_{t-1}} + (1-\htmlData{sym=b1}{\beta_1})\, \htmlData{sym=g}{g_t} \qquad \htmlData{sym=v}{v_t} = \htmlData{sym=b2}{\beta_2}\, \htmlData{sym=vprev}{v_{t-1}} + (1-\htmlData{sym=b2}{\beta_2})\, \htmlData{sym=gsq}{g_t^2}" data-fallback="m_t = β1 m_{t−1} + (1 − β1) g_t,   v_t = β2 v_{t−1} + (1 − β2) g_t²"></div>
+<div class="eq" data-tex="\htmlData{sym=mhat}{\hat m_t} = \frac{\htmlData{sym=m}{m_t}}{1-\htmlData{sym=b1t}{\beta_1^t}} \qquad \htmlData{sym=vhat}{\hat v_t} = \frac{\htmlData{sym=v}{v_t}}{1-\htmlData{sym=b2t}{\beta_2^t}} \qquad \htmlData{sym=theta}{\theta_t} = \htmlData{sym=thetaprev}{\theta_{t-1}} - \htmlData{sym=alpha}{\alpha}\,\frac{\htmlData{sym=mhat}{\hat m_t}}{\htmlData{sym=sqrtv}{\sqrt{\hat v_t}} + \htmlData{sym=eps}{\epsilon}}" data-fallback="m̂_t = m_t / (1 − β1^t),  v̂_t = v_t / (1 − β2^t),  θ_t = θ_{t−1} − α m̂_t / (√v̂_t + ε)"></div>
+<div class="symtable" data-syms="t,g,nabla,ft,theta,thetaprev,m,mprev,v,vprev,gsq,b1,b2,b1t,b2t,mhat,vhat,sqrtv,alpha,eps"></div>
+<p class="inwords"><strong>In words:</strong> “get the gradient; blend it into a running average of gradients and its square into a running average of squared gradients; scale both averages up to undo their zero start; then move the weight by α times the average gradient divided by the square root of the average squared gradient.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at t = 2 in the table: m<sub>2</sub> = 0.9 × 0.2 + 0.1 × 1 = 0.28, v<sub>2</sub> = 0.999 × 0.004 + 0.001 × 1² = 0.004996, m̂<sub>2</sub> = 0.28 / (1 − 0.81) = 1.474, v̂<sub>2</sub> = 0.004996 / (1 − 0.998001) = 2.499, so θ<sub>2</sub> = 0.9 − 0.1 × 1.474 / 1.581 = 0.8068.</p>
+<h4>Why it matters today</h4>
+<p>Every operation is element-wise: no matrix inverses, no second derivatives. That is why Adam scales to billions of weights. The price is memory: two extra numbers (m and v) per weight. For a 7-billion-parameter model with 32-bit optimizer state, that is 2 × 7 × 10<sup>9</sup> × 4 bytes = 56 GB before you store the weights themselves.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Adam's update rule <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=2">original</a></span></h3>
+<blockquote class="quote">“This can be understood as establishing a trust region around the current parameter value, beyond which the current gradient estimate does not provide sufficient information.”<cite>Kingma and Ba (2014), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A careful driver in fog never goes faster than they can see. Adam's steps are capped the same way: whatever the gradients look like, a step is usually no bigger than α. And the ratio m̂ / √v̂ behaves like a <em>signal-to-noise ratio</em>: when the gradients agree with each other it is close to ±1 and Adam strides; when they point every which way, the average cancels out, the ratio shrinks, and Adam tiptoes. Near the bottom of the valley the gradients become noisy, so the steps shrink automatically.</p>
+<h4>Tiny example: scale invariance</h4>
+<p>Multiply every gradient in the §2 table by 100 (as if the loss were measured in cents instead of dollars). Then m̂ grows 100×, v̂ grows 100² = 10,000×, and √v̂ grows 100×, so the ratio is unchanged: the first step is still exactly 0.1 and the second still 0.0932. Plain SGD's step would grow 100×.</p>
+<div class="eq" data-tex="\htmlData{sym=Delta}{\Delta_t} = \htmlData{sym=alpha}{\alpha}\cdot \frac{\htmlData{sym=mhat}{\hat m_t}}{\htmlData{sym=sqrtv}{\sqrt{\hat v_t}}}, \qquad |\htmlData{sym=Delta}{\Delta_t}| \;\htmlData{sym=lessapprox}{\lessapprox}\; \htmlData{sym=alpha}{\alpha}, \qquad \frac{\htmlData{sym=c}{c}\,\htmlData{sym=mhat}{\hat m_t}}{\sqrt{\htmlData{sym=c}{c}^2\, \htmlData{sym=vhat}{\hat v_t}}} = \frac{\htmlData{sym=mhat}{\hat m_t}}{\htmlData{sym=sqrtv}{\sqrt{\hat v_t}}}" data-fallback="Δ_t = α · m̂_t / √v̂_t,  |Δ_t| ≲ α,  (c m̂_t) / √(c² v̂_t) = m̂_t / √v̂_t"></div>
+<div class="symtable" data-syms="Delta,lessapprox,c"></div>
+<p class="inwords"><strong>In words:</strong> “the step is α times the ratio of the average gradient to its typical size; that ratio is usually between −1 and 1, so the step is usually at most α; and multiplying every gradient by c changes the top and bottom of the ratio equally, so it cancels.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with c = 100 at t = 1: 100 × 2 / √(100² × 4) = 200 / 200 = 1, the same ratio as 2 / √4 = 1, so the step stays 0.1 × 1 = 0.1.</p>
+
+<h4>Try it: the optimizer race</h4>
+<div class="plot" id="race">
+  <div class="controls ui">
+    <button type="button" id="race-run">Run</button>
+    <button type="button" id="race-reset">Reset start</button>
+    <label><input type="checkbox" id="race-noise"> noisy gradients</label>
+  </div>
+  <div class="sliders ui" id="race-sliders"></div>
+  <canvas id="race-canvas" width="720" height="380" aria-label="Loss surface with three optimizer paths. Click to choose a starting point."></canvas>
+  <div class="legend race-legend"><span><i style="background:var(--ff-stroke)"></i>SGD</span><span><i style="background:var(--attn-stroke)"></i>SGD with momentum</span><span><i style="background:var(--soft-stroke)"></i>Adam</span><span>Contours: loss 0.5·(x² + 25·y²) × c</span></div>
+  <p class="readout" id="race-readout">Click anywhere on the surface to choose where all three start, then press Run.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the picture is a map of the loss seen from above; the rings are contour lines and the minimum is the centre. The valley is 25 times steeper across (up and down) than along (left to right), which is the typical shape of a real network's loss. Press Run. SGD (blue) has to use a small step, because a bigger one would overshoot the steep walls: it drops down the wall at once, then crawls along the nearly flat floor. Momentum (orange) builds speed but swings from wall to wall. Adam (green) rescales each direction separately, so it takes similar-sized steps across and along the valley, cutting diagonally towards the centre before settling, and ends with the lowest loss. Now drag <strong>loss scale c</strong>, which multiplies the whole loss (and so every gradient) by c. Down at 0.1, SGD and momentum barely move. Above about 3, SGD overshoots the steep walls and flies off; above about 30, momentum does too. Adam's path does not change at all: watch its end point in the readout stay at the same coordinates for every c. That is the scale invariance from the equation above. Tick <strong>noisy gradients</strong> to see Adam's steps shrink near the minimum as the signal-to-noise ratio falls. This is a toy two-weight problem computed live in your browser, not a result from the paper.</p>
+<h4>Why it matters today</h4>
+<p>Because the step is roughly bounded by α, you can often guess a sensible α before training starts. The shrinking-near-the-optimum behaviour is also why Adam is usually paired with a <span class="t" data-t="learning-rate schedule">learning-rate schedule</span>: the schedule handles the global pace, Adam handles the per-weight balance.</p>
+</section>
+
+<section id="s3">
+<h2>3 Initialization bias correction <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=3">original</a></span></h2>
+<blockquote class="quote">“In algorithm 1 we therefore divide by this term to correct the initialization bias.”<cite>Kingma and Ba (2014), §3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You start a running average of daily temperatures with an empty notebook, so you write down “0°” as yesterday's average. After one warm day of 20°, a 90%-old / 10%-new average says 2°, which is absurd. Your average is dragged towards the made-up zero until enough real days have washed it out. The fix is to divide by the fraction of the average that is real data so far: after one day that fraction is 10%, and 2° / 0.1 = 20°, which is right.</p>
+<h4>Tiny example</h4>
+<p>In the §2 table, v<sub>1</sub> = 0.004 although the squared gradient was 4. Only 1 − 0.999<sup>1</sup> = 0.1% of v is real data, so v̂<sub>1</sub> = 0.004 / 0.001 = 4. Without the correction the first step would be 0.1 × 0.2 / √0.004 = 0.316, more than 3× too big, and by step 12 the uncorrected step would be about 6.6× too big. For v, with β<sub>2</sub> = 0.999, it takes about 1,000 steps before the correction stops mattering.</p>
+<div class="eq" data-tex="\htmlData{sym=v}{v_t} = (1-\htmlData{sym=b2}{\beta_2})\htmlData{sym=sumi}{\sum_{i=1}^{t}} \htmlData{sym=b2}{\beta_2}^{\,t-i}\, \htmlData{sym=gisq}{g_i^2} \qquad \htmlData{sym=E}{\mathbb{E}}[\htmlData{sym=v}{v_t}] = \htmlData{sym=E}{\mathbb{E}}[\htmlData{sym=gsq}{g_t^2}]\,(1-\htmlData{sym=b2t}{\beta_2^t}) + \htmlData{sym=zeta}{\zeta}" data-fallback="v_t = (1 − β2) Σ_{i=1..t} β2^(t−i) g_i²,   E[v_t] = E[g_t²] (1 − β2^t) + ζ"></div>
+<div class="symtable" data-syms="sumi,gisq,E,zeta"></div>
+<p class="inwords"><strong>In words:</strong> “unrolled, v is a weighted sum of all past squared gradients whose weights add up to only 1 − β<sub>2</sub><sup>t</sup>, not 1; so on average v is the true squared gradient shrunk by that factor, and dividing by it undoes the shrinkage.”</p>
+<p class="inwords"><strong>With the numbers:</strong> after t = 10 steps, the weights in v add up to 1 − 0.999<sup>10</sup> = 0.00995, so v is about 1% of the truth; after 1,000 steps they add up to 1 − 0.999<sup>1000</sup> = 0.632.</p>
+<div class="plot">
+  <div class="controls ui"><label for="bias-b2">β<sub>2</sub> = <strong id="bias-b2-v">0.999</strong></label><input type="range" id="bias-b2" min="0" max="3" step="0.01" value="2"><span>(β<sub>1</sub> = 0.9)</span></div>
+  <div id="bias-chart"></div>
+  <p class="readout" id="bias-readout">Hover or tap the chart to read values at any step.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the training step on a log scale. The two lower curves show how much of m and of v is real data so far (1 − β<sub>1</sub><sup>t</sup> and 1 − β<sub>2</sub><sup>t</sup>); both start near zero and climb to 1. The top curve is how much bigger each step would be <em>without</em> bias correction: the ratio (1 − β<sub>1</sub><sup>t</sup>) / √(1 − β<sub>2</sub><sup>t</sup>). With the default β<sub>2</sub> = 0.999 it peaks at about 6.6× at step 12. Slide β<sub>2</sub> to 0.9999, as sparse problems need, and the peak grows to about 21×. The paper's §6.4 found exactly this: without the correction, β<sub>2</sub> close to 1 made training unstable early on.</p>
+<h4>Why it matters today</h4>
+<p>This is the one ingredient that separates Adam from “RMSProp with momentum”, and it is what makes the first few hundred steps of training safe. Learning-rate <span class="t" data-t="warmup">warmup</span>, now standard for Transformers, attacks the same early-training fragility from a different side.</p>
+</section>
+
+<section id="s4">
+<h2>4 Convergence analysis <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Picture a weather forecaster who has to commit to a forecast each morning before seeing the day's weather, and is scored against the single best fixed forecast they could have chosen with hindsight. The shortfall, added up over all days, is called <span class="t" data-tip-title="Regret" data-tip="In online learning: the total extra loss you suffered by choosing each day's parameters before seeing that day's data, compared with the best single fixed choice made with hindsight.">regret</span>. A good strategy's regret grows more slowly than the number of days, so its <em>average</em> shortfall per day shrinks to zero: you end up as good as the best fixed choice.</p>
+<h4>Tiny example</h4>
+<p>If regret grows like √T, then after 100 days the average shortfall is proportional to √100 / 100 = 0.1, and after 10,000 days to √10000 / 10000 = 0.01. More days means a smaller average gap, heading to zero.</p>
+<div class="eq" data-tex="\htmlData{sym=RT}{R(T)} = \htmlData{sym=sumT}{\sum_{t=1}^{T}} \big[\htmlData{sym=ft}{f_t}(\htmlData{sym=theta}{\theta_t}) - \htmlData{sym=ft}{f_t}(\htmlData{sym=thetastar}{\theta^*})\big] \qquad \htmlData{sym=RT}{R(T)} = \htmlData{sym=bigO}{O}(\sqrt{\htmlData{sym=T}{T}}) \;\Rightarrow\; \frac{\htmlData{sym=RT}{R(T)}}{\htmlData{sym=T}{T}} \to 0" data-fallback="R(T) = Σ_{t=1..T} [f_t(θ_t) − f_t(θ*)],   R(T) = O(√T) ⇒ R(T)/T → 0"></div>
+<div class="symtable" data-syms="RT,sumT,thetastar,T,bigO"></div>
+<p class="inwords"><strong>In words:</strong> “regret adds up, over every step, how much worse Adam's current weights did on that step's data than the best fixed weights would have; the paper proves this total grows no faster than the square root of the number of steps, so the per-step average vanishes.”</p>
+<p class="inwords"><strong>With the numbers:</strong> √T / T = 1/√T, so at T = 1,000,000 steps the average regret is on the order of 1/1000 of its scale.</p>
+<p>The proof needs assumptions that real networks break: the loss must be <span class="t" data-tip-title="Convex" data-tip="Bowl-shaped everywhere, with no separate dips: any downhill path leads to the same bottom. Linear and logistic regression are convex; neural networks are not.">convex</span>, gradients bounded, the step size decaying like α/√t, and β<sub>1</sub> decaying over time. The paper is explicit that the analysis does not cover non-convex problems.</p>
+<h4>Why it matters today</h4>
+<p>In 2018 Reddi, Kale and Kumar showed a flaw in this proof and simple convex problems on which Adam does not converge (their fix is called AMSGrad). In practice this rarely bites, and nobody picks Adam for its theorem: it won on its behaviour in experiments, the subject of §6.</p>
+</section>
+
+<section id="s5">
+<h2>5 Related work <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Three hikers, three note-taking habits. The AdaGrad hiker writes down every squared slope forever and divides by the square root of the running total, so they get more and more cautious and eventually barely move. The RMSProp hiker keeps only a fading memory of recent squared slopes, so their caution tracks current conditions. The Adam hiker keeps RMSProp's fading memory, adds a fading memory of direction, and corrects both for the empty-notebook start.</p>
+<div class="tablewrap"><table>
+  <caption>How the paper relates Adam to earlier methods (summarized from §5)</caption>
+  <thead><tr><th>Method</th><th>Direction</th><th>Divides by</th><th>Bias correction</th><th>Relation to Adam</th></tr></thead>
+  <tbody>
+    <tr><td>SGD</td><td>current gradient</td><td>nothing</td><td>n/a</td><td>no per-weight scaling at all</td></tr>
+    <tr><td>AdaGrad</td><td>current gradient</td><td>√(sum of all past g²)</td><td>n/a</td><td>Adam with β<sub>1</sub> = 0, β<sub>2</sub> → 1 and α decaying as 1/√t</td></tr>
+    <tr><td>RMSProp (with momentum)</td><td>momentum on the rescaled gradient</td><td>√(running average of g²)</td><td>no</td><td>closest relative; lacks the correction, which matters most when β<sub>2</sub> is close to 1</td></tr>
+    <tr class="hl"><td>Adam</td><td>running average of g</td><td>√(running average of g²)</td><td>yes</td><td></td></tr>
+  </tbody>
+</table></div>
+<p>The paper also links Adam to <span class="t" data-tip-title="Natural gradient" data-tip="A family of optimizers that rescale the gradient by how sensitive the model's predictions are to each parameter (the Fisher information). Adam's divisor √v̂ is a cheap, per-weight, diagonal stand-in for this idea.">natural gradient</span> methods: dividing by √v̂ is a cheap, per-weight approximation to rescaling by the curvature of the problem, but a more conservative one.</p>
+<h4>Why it matters today</h4>
+<p>The family has kept growing (AdamW, Adafactor, Lion, Shampoo, Sophia), but nearly every member is still recognisably a running average of gradients divided by some estimate of their size.</p>
+</section>
+
+<section id="s6">
+<h2>6 Experiments <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=5">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>The authors race optimizers on four courses of increasing difficulty and give every competitor its best settings, found by a grid search. Winning on a bowl-shaped course (logistic regression) is expected; the interesting courses are the bumpy ones (deep networks), where the theory says nothing.</p>
+<div class="tablewrap"><table>
+  <caption>The experiments, summarized in our own words from §6 (Kingma and Ba, 2014)</caption>
+  <thead><tr><th>§</th><th>Problem</th><th>Setup</th><th>What the paper found</th></tr></thead>
+  <tbody>
+    <tr><td>6.1</td><td>Logistic regression, MNIST digits</td><td>784 pixel inputs, minibatch 128, step size decaying as α/√t</td><td>Adam converges about as fast as SGD with Nesterov momentum; both beat AdaGrad</td></tr>
+    <tr><td>6.1</td><td>Logistic regression, IMDB movie reviews</td><td>10,000-word bag-of-words (very sparse) with 50% input dropout</td><td>Adam matches AdaGrad, which excels on sparse features, and beats SGD</td></tr>
+    <tr><td>6.2</td><td>Fully connected net, MNIST</td><td>2 hidden layers of 1,000 ReLU units, minibatch 128, with and without dropout</td><td>Adam makes faster progress than the alternatives, including a quasi-Newton method (SFO) that was 5 to 10× slower per iteration</td></tr>
+    <tr><td>6.3</td><td>Convolutional net, CIFAR-10</td><td>three 5×5 conv stages with pooling, then 1,000 ReLU units, minibatch 128</td><td>Adam and SGD converge well ahead of AdaGrad; Adam's edge over tuned SGD is marginal but it adapts step sizes per layer automatically</td></tr>
+    <tr><td>6.4</td><td>Variational autoencoder, bias correction on and off</td><td>β<sub>1</sub> ∈ [0, 0.9], β<sub>2</sub> ∈ {0.99, 0.999, 0.9999}, α from 10<sup>−5</sup> to 10<sup>−1</sup></td><td>Without correction, β<sub>2</sub> near 1 causes instability early in training; with correction, Adam did as well as or better than RMSProp at every setting</td></tr>
+  </tbody>
+</table></div>
+<blockquote class="quote">“In summary, Adam performed equal or better than RMSProp, regardless of hyper-parameter setting.”<cite>Kingma and Ba (2014), §6.4</cite></blockquote>
+<h4>Tiny example: why AdaGrad fades on the CNN</h4>
+<p>The paper notes that on the CNN, v̂ fell towards zero after a few epochs and was dominated by ε. AdaGrad's divisor, a <em>sum</em> of all past squared gradients, only grows: after 10,000 steps of gradients of size 0.1 it is √(10000 × 0.01) = 10, so every step is divided by 10 and keeps shrinking. A running average (RMSProp, Adam) of the same gradients stays at √0.01 = 0.1.</p>
+<h4>Why it matters today</h4>
+<p>“Works well with little tuning across very different models” is exactly the property that made Adam the default. The paper's own §6.3 also hints at the caveat still discussed today: carefully tuned SGD with momentum can match Adam on convolutional networks, and sometimes generalizes slightly better.</p>
+</section>
+
+<section id="s7">
+<h2>7 Extensions <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=8">original</a></span></h2>
+<section id="s7-1">
+<h3>7.1 AdaMax</h3>
+<h4>Everyday picture</h4>
+<p>Adam's divisor is a fading average of squared gradients: a “typical size”. AdaMax replaces it with a fading <em>record</em>: the largest gradient seen recently, with old records slowly discounted. It is like judging how rough a road is by the worst pothole you remember, fading as it recedes behind you.</p>
+<h4>Tiny example</h4>
+<p>With β<sub>2</sub> = 0.999, gradients of size 1 and then a single spike of 10: u jumps to max(0.999 × 1, 10) = 10 at the spike, then decays by 0.1% per step, 9.99, 9.98, …, so it takes about 2,300 steps to fall back to 1. Adam's √v̂ also jumps at the spike, but far less (to about 2.45 at step 20 in the chart below), and then eases back.</p>
+<div class="eq" data-tex="\htmlData{sym=u}{u_t} = \max(\htmlData{sym=b2}{\beta_2}\cdot \htmlData{sym=uprev}{u_{t-1}},\; |\htmlData{sym=g}{g_t}|) \qquad \htmlData{sym=theta}{\theta_t} = \htmlData{sym=thetaprev}{\theta_{t-1}} - \frac{\htmlData{sym=alpha}{\alpha}}{1-\htmlData{sym=b1t}{\beta_1^t}}\cdot\frac{\htmlData{sym=m}{m_t}}{\htmlData{sym=u}{u_t}}" data-fallback="u_t = max(β2 · u_{t−1}, |g_t|),   θ_t = θ_{t−1} − (α / (1 − β1^t)) · m_t / u_t"></div>
+<div class="symtable" data-syms="u,uprev"></div>
+<p class="inwords"><strong>In words:</strong> “keep a slowly fading record of the largest gradient magnitude, and divide the bias-corrected average gradient by that record instead of by a root-mean-square.”</p>
+<p class="inwords"><strong>With the numbers:</strong> u = 1 before the spike; at the spike, max(0.999 × 1, |10|) = 10; next step, max(0.999 × 10, 1) = 9.99.</p>
+<div class="plot">
+  <div id="adamax-chart"></div>
+  <p class="readout" id="adamax-readout">Hover or tap to compare the two divisors at any step.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the gradient is 1 at every step except a spike of 10 at step 20. The AdaMax divisor u (orange) leaps to the spike's size and then decays in a straight, slow line. The Adam divisor √v̂ (green) jumps only to about 2.45, because it averages the spike's square with everything before it, then eases back. The paper derives u as the limit of Adam's p-th power average as p → ∞; the max is what remains. AdaMax also needs no bias correction for u, because a max of values never drifts towards the made-up zero start.</p>
+</section>
+<section id="s7-2">
+<h3>7.2 Temporal averaging</h3>
+<h4>Everyday picture</h4>
+<p>The last position of a jittery walker is a noisy guess of where they are heading; the average of their last few positions is steadier. Averaging the weights over the final stretch of training often generalizes better than taking the very last weights.</p>
+<div class="eq" data-tex="\htmlData{sym=thetabar}{\bar\theta_t} = \htmlData{sym=b2}{\beta_2}\cdot \htmlData{sym=thetabarprev}{\bar\theta_{t-1}} + (1-\htmlData{sym=b2}{\beta_2})\,\htmlData{sym=theta}{\theta_t}" data-fallback="θ̄_t = β2 · θ̄_{t−1} + (1 − β2) θ_t"></div>
+<div class="symtable" data-syms="thetabar,thetabarprev"></div>
+<p class="inwords"><strong>In words:</strong> “keep a fading average of the weights themselves, and use that average, corrected for its zero start by dividing by 1 − β<sub>2</sub><sup>t</sup>, as the final model.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with the weights 0.9, 0.8068, 0.7114 from §2 and β<sub>2</sub> = 0.999, θ̄<sub>3</sub> = 0.001 × (0.7114 + 0.999 × 0.8068 + 0.999² × 0.9) ≈ 0.002416, and dividing by 1 − 0.999<sup>3</sup> = 0.002997 gives 0.806, close to the average of the three weights.</p>
+<h4>Why it matters today</h4>
+<p>Exponential moving averages of weights (often called EMA weights) are standard in image generation models and common in large-scale training. The <a href="attention-is-all-you-need.html">Transformer paper</a> used a close cousin: averaging the last few saved checkpoints.</p>
+</section>
+</section>
+
+<section id="s8">
+<h2>8 Conclusion <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=9">original</a></span></h2>
+<blockquote class="quote">“Overall, we found Adam to be robust and well-suited to a wide range of non-convex optimization problems in the field machine learning.”<cite>Kingma and Ba (2014), §8</cite></blockquote>
+<p>The paper's summary is modest: AdaGrad's strength with sparse gradients plus RMSProp's strength with changing problems, cheap to compute, light on memory. History was less modest. Adam went on to become one of the most cited papers in computer science, and a nice detail from its footnotes survives it: the author order was decided by a coin flip.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2014</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where to learn more</th></tr></thead>
+  <tbody>
+    <tr><td>L2 weight decay added to the gradient</td><td>AdamW: decay applied directly to the weights, separately from the adaptive step</td><td>Adding decay to the gradient lets √v̂ rescale it, so heavily updated weights are barely regularized (Loshchilov and Hutter, 2017)</td><td><a data-lesson="primer/ml/optimizers.html">optimizers lesson</a></td></tr>
+    <tr><td>β<sub>2</sub> = 0.999</td><td>β<sub>2</sub> = 0.95 for large language models</td><td>A shorter memory for the squared gradient reacts faster to sudden gradient spikes, which destabilize very large training runs (GPT-3 used 0.95)</td><td><a href="gpt-3.html">GPT-3 companion</a></td></tr>
+    <tr><td>α decaying as α/√t in the theory; fixed in most experiments</td><td>Warmup, then cosine decay</td><td>Warmup protects the fragile first steps; decay lets the model settle</td><td><a data-lesson="primer/ml/optimizers.html">optimizers lesson</a></td></tr>
+    <tr><td>Convergence proof for convex problems</td><td>Known to have a gap (Reddi et al., 2018; AMSGrad)</td><td>Rarely matters in practice, but a reminder that the empirical case is what carried Adam</td><td></td></tr>
+    <tr><td>Two 32-bit numbers per weight of optimizer state</td><td>8-bit optimizer states, sharded across GPUs</td><td>For billion-parameter models, the optimizer state outweighs the model itself</td><td><a data-lesson="primer/ml/inference.html">memory math in the inference lesson</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Diederik P. Kingma and Jimmy Lei Ba, <em>Adam: A Method for Stochastic Optimization</em>, ICLR 2015. <a href="https://arxiv.org/abs/1412.6980">arXiv:1412.6980</a>. Quotations are brief and attributed; results are summarized in our own words and the paper's figures are not reproduced. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion. Shared behaviour lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    t: { tex: "t", name: "Step number", meaning: "How many updates have been made so far, counting from 1.", shape: "1, 2, 3, …", example: "t = 2 in the worked example" },
+    g: { tex: "g_t", name: "Gradient at step t", meaning: "The slope of this step's loss with respect to each weight: which way is uphill, and how steeply. Adam works on each weight's entry separately.", shape: "one number per weight", example: "2, then 1, then 1.5" },
+    nabla: { tex: "\\nabla_\\theta", name: "Gradient with respect to θ", meaning: "“Take the slope along every weight.” The result is one number per weight.", shape: "an operation", example: "∇ of x² + y² at (1, 2) is (2, 4)" },
+    ft: { tex: "f_t", name: "This step's loss", meaning: "The loss measured on the current minibatch. It changes from step to step because each minibatch is different: that is what “stochastic” means.", shape: "one number", example: "the loss on batch number t" },
+    theta: { tex: "\\theta_t", name: "The weights after step t", meaning: "All the model's adjustable numbers after this update.", shape: "one number per weight", example: "0.8068 after step 2" },
+    thetaprev: { tex: "\\theta_{t-1}", name: "The weights before this step", meaning: "Where we are standing when we measure the gradient.", shape: "one number per weight", example: "0.9 before step 2" },
+    m: { tex: "m_t", name: "First moment estimate", meaning: "A running (exponentially fading) average of the gradients: the smoothed direction.", shape: "one number per weight", example: "0.2, then 0.28" },
+    mprev: { tex: "m_{t-1}", name: "Previous first moment", meaning: "The running average from the step before. Starts at 0.", shape: "one number per weight", example: "0.2 before step 2" },
+    v: { tex: "v_t", name: "Second moment estimate", meaning: "A running average of the squared gradients: the typical size of the gradient, ignoring its sign.", shape: "one number per weight", example: "0.004, then 0.004996" },
+    vprev: { tex: "v_{t-1}", name: "Previous second moment", meaning: "The running average of squared gradients from the step before. Starts at 0.", shape: "one number per weight", example: "0.004 before step 2" },
+    gsq: { tex: "g_t^2", name: "Squared gradient", meaning: "Each weight's gradient multiplied by itself, element by element. Always positive, so it measures size, not direction.", shape: "one number per weight", example: "2² = 4" },
+    b1: { tex: "\\beta_1", name: "Decay rate for the average gradient", meaning: "How much of the old average to keep each step. 0.9 means the average mostly reflects roughly the last 10 steps.", shape: "between 0 and 1", example: "0.9" },
+    b2: { tex: "\\beta_2", name: "Decay rate for the average squared gradient", meaning: "How much of the old average of squares to keep. 0.999 means a memory of roughly the last 1,000 steps.", shape: "between 0 and 1", example: "0.999" },
+    b1t: { tex: "\\beta_1^t", name: "β₁ to the power t", meaning: "β₁ multiplied by itself t times. It shrinks towards 0 as training goes on, so the correction 1 / (1 − β₁ᵗ) fades to 1.", shape: "between 0 and 1", example: "0.9² = 0.81" },
+    b2t: { tex: "\\beta_2^t", name: "β₂ to the power t", meaning: "β₂ multiplied by itself t times. With β₂ = 0.999 it shrinks slowly, so v needs correcting for about a thousand steps.", shape: "between 0 and 1", example: "0.999² = 0.998001" },
+    mhat: { tex: "\\hat m_t", name: "Bias-corrected average gradient", meaning: "m divided by the fraction of it that is real data, undoing the pull towards the zero it started from.", shape: "one number per weight", example: "0.28 / 0.19 = 1.474" },
+    vhat: { tex: "\\hat v_t", name: "Bias-corrected average squared gradient", meaning: "v divided by 1 − β₂ᵗ, undoing the pull towards zero.", shape: "one number per weight", example: "0.004996 / 0.001999 = 2.499" },
+    sqrtv: { tex: "\\sqrt{\\hat v_t}", name: "Typical gradient size", meaning: "The square root brings the average of squares back to gradient units: a root-mean-square size.", shape: "one number per weight", example: "√2.499 = 1.581" },
+    alpha: { tex: "\\alpha", name: "Step size", meaning: "The stride length: roughly the largest distance any weight moves in one step. The paper's default is 0.001.", shape: "a small positive number", example: "0.1 in the worked example" },
+    eps: { tex: "\\epsilon", name: "Epsilon", meaning: "A tiny number added to the divisor so it can never be zero.", shape: "a tiny positive number", example: "10⁻⁸" },
+    Delta: { tex: "\\Delta_t", name: "Effective step", meaning: "How far a weight actually moves this step (ignoring ε).", shape: "one number per weight", example: "0.0932 at step 2" },
+    lessapprox: { tex: "\\lessapprox", name: "“Is roughly at most”", meaning: "Not a strict bound in every case, but the step almost always stays below this.", shape: "a relation", example: "0.0932 ≲ 0.1" },
+    c: { tex: "c", name: "A rescaling constant", meaning: "Any positive number every gradient is multiplied by, for example because the loss was multiplied by c.", shape: "a positive number", example: "100" },
+    sumi: { tex: "\\sum_{i=1}^{t}", name: "Sum over all past steps", meaning: "Add up the following for every step i from the first to the current one.", shape: "an operation", example: "i = 1, 2, …, t" },
+    gisq: { tex: "g_i^2", name: "Squared gradient at step i", meaning: "An older squared gradient; its weight in the sum shrinks by a factor of β₂ for every step it recedes into the past.", shape: "one number per weight", example: "g₁² = 4" },
+    E: { tex: "\\mathbb{E}", name: "Expected value", meaning: "The average you would get over many repetitions, here over the randomness of minibatches.", shape: "an operation", example: "E[g²] is the true mean squared gradient" },
+    zeta: { tex: "\\zeta", name: "Zeta: a small error term", meaning: "Zero if the gradient's true size never changes; small if it changes slowly, because old gradients have tiny weights.", shape: "one number", example: "≈ 0" },
+    RT: { tex: "R(T)", name: "Regret after T steps", meaning: "The total extra loss from using Adam's evolving weights instead of the best fixed weights chosen in hindsight.", shape: "one number", example: "grows like √T" },
+    sumT: { tex: "\\sum_{t=1}^{T}", name: "Sum over all T steps", meaning: "Add up each step's shortfall.", shape: "an operation", example: "t = 1 … T" },
+    thetastar: { tex: "\\theta^*", name: "The best fixed weights", meaning: "The single set of weights that would have had the lowest total loss over all T steps, chosen with hindsight.", shape: "one number per weight", example: "the hindsight winner" },
+    T: { tex: "T", name: "Total number of steps", meaning: "How long training (or the online game) runs.", shape: "a whole number", example: "10,000" },
+    bigO: { tex: "O(\\cdot)", name: "Big-O", meaning: "“Grows no faster than, up to a constant factor.”", shape: "a growth rate", example: "O(√T)" },
+    u: { tex: "u_t", name: "AdaMax divisor", meaning: "A fading record of the largest gradient magnitude seen, standing in for Adam's √v̂.", shape: "one number per weight", example: "10 right after the spike" },
+    uprev: { tex: "u_{t-1}", name: "Previous AdaMax divisor", meaning: "The record from the step before, discounted by β₂ before being compared with the new gradient.", shape: "one number per weight", example: "1 before the spike" },
+    thetabar: { tex: "\\bar\\theta_t", name: "Averaged weights", meaning: "A fading average of the weights over training, used as the final model.", shape: "one number per weight", example: "0.002416 before correction" },
+    thetabarprev: { tex: "\\bar\\theta_{t-1}", name: "Previous averaged weights", meaning: "The running weight average from the step before. Starts at 0.", shape: "one number per weight", example: "0" },
+  },
+
+  blocks: {
+    grad: { title: "The gradient g", body: "<p>Computed by backpropagation on the current minibatch: for each weight, how much the loss would rise if that weight were nudged up. Adam never needs second derivatives, only this.</p>", shape: "one number per weight", lesson: "primer/ml/neural_net.html" },
+    square: { title: "Split: g and g²", body: "<p>The gradient goes down two lanes. One keeps its sign (direction). The other squares it, keeping only its size.</p>", shape: "one number per weight, twice" },
+    mupd: { title: "Average the gradient: m", body: "<p>m ← 0.9·m + 0.1·g. A fading average that smooths out noise from minibatch to minibatch: this is momentum.</p>", shape: "stored: one number per weight" },
+    vupd: { title: "Average the squared gradient: v", body: "<p>v ← 0.999·v + 0.001·g². A slow-fading average of how big this weight's gradients typically are.</p>", shape: "stored: one number per weight" },
+    mcorr: { title: "Bias-correct m", body: "<p>m started at 0, so early on it underestimates. Dividing by 1 − β₁ᵗ (0.1 at step 1, 0.19 at step 2, about 1 after 50 steps) fixes it. See §3.</p>", shape: "one number per weight" },
+    vcorr: { title: "Bias-correct v", body: "<p>Same fix for v, with 1 − β₂ᵗ (0.001 at step 1). Without it, early steps would be several times too large.</p>", shape: "one number per weight" },
+    sqrt: { title: "√v̂ + ε", body: "<p>The square root turns an average of squares back into gradient units (a root-mean-square). ε = 10⁻⁸ prevents division by zero.</p>", shape: "one number per weight" },
+    ratio: { title: "Divide: m̂ / (√v̂ + ε)", body: "<p>Direction relative to typical size: usually between −1 and 1. Consistent gradients give values near ±1; noisy ones give values near 0.</p>", shape: "one number per weight, roughly in [−1, 1]" },
+    alpha: { title: "Multiply by α", body: "<p>Turns the ratio into a stride length. Because the ratio is usually at most 1, α is roughly the largest step any weight takes.</p>", shape: "one number per weight" },
+    update: { title: "Update the weight", body: "<p>θ ← θ − α·m̂ / (√v̂ + ε). Subtract, because the gradient points uphill and we want to go down.</p>", shape: "one number per weight" },
+    memory: { title: "Optimizer state", body: "<p>m and v persist between steps: two extra numbers for every weight in the model. For a 7-billion-parameter model in 32-bit floats that is 56 GB of optimizer state.</p>", shape: "2 × number of weights" },
+  },
+
+  onReady(P) {
+    race(P);
+    biasChart(P);
+    adamaxChart(P);
+  },
+};
+
+/* ---- optimizer race on 0.5·(x² + 25y²) · c, computed live ---- */
+function race(P) {
+  const canvas = document.getElementById("race-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const X0 = -5, X1 = 5, Y0 = -1.9, Y1 = 1.9;
+  const toPx = (x, y) => [((x - X0) / (X1 - X0)) * W, H - ((y - Y0) / (Y1 - Y0)) * H];
+  const toXY = (px, py) => [X0 + (px / W) * (X1 - X0), Y0 + ((H - py) / H) * (Y1 - Y0)];
+  const settings = { sgd: 0.03, mom: 0.005, adam: 0.1, logc: 0, steps: 120 };
+  let start = [-4.5, 1.4];
+  let paths = null;
+  let seed = 1;
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const gauss = () => Math.sqrt(-2 * Math.log(rand() + 1e-12)) * Math.cos(2 * Math.PI * rand());
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  const sliders = document.getElementById("race-sliders");
+  const defs = [
+    ["sgd", "SGD step size", 0.001, 0.1, 0.001, (v) => v.toFixed(3)],
+    ["mom", "momentum step size", 0.0005, 0.02, 0.0005, (v) => v.toFixed(4)],
+    ["adam", "Adam α", 0.01, 0.4, 0.01, (v) => v.toFixed(2)],
+    ["logc", "loss scale c", -1, 2, 0.05, (v) => (10 ** v).toFixed(2)],
+    ["steps", "steps", 20, 300, 10, (v) => String(v)],
+  ];
+  defs.forEach(([key, label, min, max, step, fmt]) => {
+    const id = "race-" + key;
+    const l = document.createElement("label"); l.htmlFor = id; l.textContent = label;
+    const r = document.createElement("input"); Object.assign(r, { type: "range", id, min, max, step, value: settings[key] });
+    const o = document.createElement("output"); o.textContent = fmt(settings[key]);
+    r.addEventListener("input", () => { settings[key] = +r.value; o.textContent = fmt(+r.value); paths = simulate(); draw(paths, Infinity); });
+    sliders.append(l, r, o);
+  });
+
+  function grad(x, y, c, noisy) {
+    let gx = c * x, gy = c * 25 * y;
+    if (noisy) { gx += c * 1.5 * gauss(); gy += c * 1.5 * gauss(); }
+    return [gx, gy];
+  }
+  function simulate() {
+    const c = 10 ** settings.logc;
+    const noisy = document.getElementById("race-noise").checked;
+    const out = {};
+    for (const opt of ["sgd", "mom", "adam"]) {
+      seed = 7;
+      let [x, y] = start;
+      let m = [0, 0], v = [0, 0], vel = [0, 0];
+      const pts = [[x, y]];
+      for (let t = 1; t <= settings.steps; t++) {
+        const g = grad(x, y, c, noisy);
+        if (opt === "sgd") { x -= settings.sgd * g[0]; y -= settings.sgd * g[1]; }
+        if (opt === "mom") { vel = [0.9 * vel[0] + g[0], 0.9 * vel[1] + g[1]]; x -= settings.mom * vel[0]; y -= settings.mom * vel[1]; }
+        if (opt === "adam") {
+          m = [0.9 * m[0] + 0.1 * g[0], 0.9 * m[1] + 0.1 * g[1]];
+          v = [0.999 * v[0] + 0.001 * g[0] ** 2, 0.999 * v[1] + 0.001 * g[1] ** 2];
+          const c1 = 1 - 0.9 ** t, c2 = 1 - 0.999 ** t;
+          x -= settings.adam * (m[0] / c1) / (Math.sqrt(v[0] / c2) + 1e-8);
+          y -= settings.adam * (m[1] / c1) / (Math.sqrt(v[1] / c2) + 1e-8);
+        }
+        if (!isFinite(x) || !isFinite(y) || Math.abs(x) > 1e6 || Math.abs(y) > 1e6) { pts.push([Math.sign(x) * 1e6 || 1e6, Math.sign(y) * 1e6 || 1e6]); break; }
+        pts.push([x, y]);
+      }
+      out[opt] = pts;
+    }
+    return out;
+  }
+  function background() {
+    const img = ctx.createImageData(W, H);
+    const dark = document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+    for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+      const [x, y] = toXY(px, py);
+      const f = 0.5 * (x * x + 25 * y * y);
+      const lv = Math.log(f + 0.05);
+      const ring = Math.abs(lv * 3 - Math.round(lv * 3)) < 0.06;
+      const shade = Math.max(0, Math.min(1, (lv + 3) / 8));
+      const i = 4 * (py * W + px);
+      const base = dark ? [22, 26, 33] : [255, 255, 255];
+      const tint = dark ? [60, 70, 95] : [210, 222, 245];
+      for (let k = 0; k < 3; k++) img.data[i + k] = Math.round(base[k] + (tint[k] - base[k]) * (1 - shade)) - (ring ? (dark ? -40 : 45) : 0);
+      img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.fillStyle = css("--fg");
+    const [cx, cy] = toPx(0, 0);
+    ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 7); ctx.fill();
+  }
+  const colors = () => ({ sgd: css("--ff-stroke"), mom: css("--attn-stroke"), adam: css("--soft-stroke") });
+  function draw(p, upto) {
+    background();
+    const col = colors();
+    for (const opt of ["sgd", "mom", "adam"]) {
+      const pts = p[opt].slice(0, Math.min(upto, p[opt].length));
+      ctx.strokeStyle = col[opt]; ctx.lineWidth = 2.2; ctx.beginPath();
+      pts.forEach(([x, y], i) => { const [px, py] = toPx(Math.max(-60, Math.min(60, x)), Math.max(-30, Math.min(30, y))); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+      ctx.stroke();
+      ctx.fillStyle = col[opt];
+      pts.forEach(([x, y]) => { const [px, py] = toPx(x, y); if (px > -5 && px < W + 5 && py > -5 && py < H + 5) { ctx.beginPath(); ctx.arc(px, py, 1.8, 0, 7); ctx.fill(); } });
+    }
+    const [sx, sy] = toPx(...start);
+    ctx.strokeStyle = css("--fg"); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.stroke();
+    const c = 10 ** settings.logc;
+    const loss = (pts) => { const [x, y] = pts[Math.min(upto, pts.length) - 1]; const f = c * 0.5 * (x * x + 25 * y * y); return Math.abs(x) >= 1e5 || !isFinite(f) ? "diverged" : f.toExponential(1); };
+    document.getElementById("race-readout").innerHTML =
+      `After ${Math.min(upto, settings.steps)} steps, loss: SGD <strong>${loss(p.sgd)}</strong> · momentum <strong>${loss(p.mom)}</strong> · Adam <strong>${loss(p.adam)}</strong>. Adam ends at (${p.adam[Math.min(upto, p.adam.length) - 1].map((z) => z.toFixed(4)).join(", ")}). Start (${start[0].toFixed(1)}, ${start[1].toFixed(1)}), loss scale c = ${c.toFixed(2)}.`;
+  }
+  let anim = null;
+  function run() {
+    paths = simulate();
+    cancelAnimationFrame(anim);
+    let k = 1;
+    const tick = () => { draw(paths, k); k += 2; if (k <= settings.steps + 1) anim = requestAnimationFrame(tick); };
+    tick();
+  }
+  canvas.addEventListener("pointerdown", (ev) => {
+    const r = canvas.getBoundingClientRect();
+    start = toXY(((ev.clientX - r.left) / r.width) * W, ((ev.clientY - r.top) / r.height) * H);
+    run();
+  });
+  document.getElementById("race-run").addEventListener("click", run);
+  document.getElementById("race-reset").addEventListener("click", () => { start = [-4.5, 1.4]; run(); });
+  document.getElementById("race-noise").addEventListener("change", run);
+  document.addEventListener("papers:theme", () => paths && draw(paths, Infinity));
+  paths = simulate();
+  draw(paths, Infinity);
+}
+
+/* ---- how much bias correction matters, by step ---- */
+function biasChart(P) {
+  const slider = document.getElementById("bias-b2");
+  const label = document.getElementById("bias-b2-v");
+  // slider 0 → 3 maps to β₂ = 0.9 → 0.9999 (1 − 10^−(1+s))
+  const b2 = () => 1 - 10 ** -(1 + +slider.value);
+  const steps = [];
+  for (let e = 0; e <= 4.5; e += 0.02) steps.push(Math.round(10 ** e));
+  const uniq = [...new Set(steps)];
+  const series = (b) => [
+    { name: "uncorrected step ÷ corrected step", points: uniq.map((t) => [t, (1 - 0.9 ** t) / Math.sqrt(1 - b ** t)]) },
+    { name: "1 − β₁ᵗ (share of m that is real)", points: uniq.map((t) => [t, 1 - 0.9 ** t]) },
+    { name: "1 − β₂ᵗ (share of v that is real)", points: uniq.map((t) => [t, 1 - b ** t]) },
+  ];
+  const chart = P.lineChart(document.getElementById("bias-chart"), {
+    series: series(b2()), logX: true, xLabel: "training step", yLabel: "ratio",
+    xFmt: (v) => (v >= 1000 ? `${v / 1000}k` : String(Math.round(v))), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("bias-readout"), ariaLabel: "Bias correction factors against training step",
+  });
+  slider.addEventListener("input", () => {
+    const b = b2();
+    label.textContent = b.toFixed(4).replace(/0+$/, "");
+    chart.update(series(b));
+  });
+}
+
+/* ---- AdaMax's u versus Adam's sqrt(v-hat) around a gradient spike ---- */
+function adamaxChart(P) {
+  const b2 = 0.999;
+  let v = 0, u = 0;
+  const adam = [], amax = [], grad = [];
+  for (let t = 1; t <= 120; t++) {
+    const g = t === 20 ? 10 : 1;
+    v = b2 * v + (1 - b2) * g * g;
+    u = Math.max(b2 * u, Math.abs(g));
+    adam.push([t, Math.sqrt(v / (1 - b2 ** t))]);
+    amax.push([t, u]);
+    grad.push([t, g]);
+  }
+  P.lineChart(document.getElementById("adamax-chart"), {
+    series: [
+      { name: "AdaMax u", points: amax, color: getComputedStyle(document.documentElement).getPropertyValue("--attn-stroke").trim() },
+      { name: "Adam √v̂", points: adam, color: getComputedStyle(document.documentElement).getPropertyValue("--soft-stroke").trim() },
+    ],
+    xLabel: "step", yLabel: "divisor", yMin: 0, yMax: 11,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("adamax-readout"), ariaLabel: "AdaMax and Adam divisors around a gradient spike",
+  });
+}
+</script>
+</body>
+</html>

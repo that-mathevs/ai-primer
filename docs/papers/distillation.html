@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knowledge Distillation, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Hinton, Vinyals and Dean (2015), the paper that introduced knowledge distillation with softened targets.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .digits { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; align-items: end; height: 150px; margin: 0.6rem 0 0.2rem; }
+  .digits .col { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+  .digits .bar { background: var(--accent); border-radius: 4px 4px 0 0; min-height: 1px; transition: height 0.12s; }
+  .digits .bar.hard { background: var(--wire); }
+  .digit-labels { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; text-align: center; font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--muted); }
+  .digit-labels span.pct { font-size: 0.68rem; }
+</style>
+</head>
+<body data-paper="distillation">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Distillation</a>
+        <ol><li><a href="#s2-1">2.1 Matching logits</a></li></ol>
+      </li>
+      <li><a href="#s3">3 MNIST</a></li>
+      <li><a href="#s4">4 Speech recognition</a></li>
+      <li><a href="#s5">5 Specialists on huge data</a></li>
+      <li><a href="#s6">6 Soft targets as regularizers</a></li>
+      <li><a href="#s7">7 Mixtures of experts</a></li>
+      <li><a href="#s8">8 Discussion</a></li>
+      <li><a href="#today">What changed since 2015</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Distilling the Knowledge in a Neural Network, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Geoffrey Hinton, Oriol Vinyals and Jeff Dean (2015), the paper that showed how a small model can learn from a big one's softened opinions, and gave the technique its name.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1503.02531">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1503.02531">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1503.02531">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. Equations are reproduced with every symbol decoded. Diagrams and demos are drawn from scratch, and only selected numbers from the paper's tables are shown, each with attribution. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap; so does every symbol in every equation.</li>
+  <li>The temperature slider in §2 is the heart of the paper: drag it and watch hidden knowledge appear.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>math</strong>, <strong>why it matters today</strong>. The <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> implements the distillation loss from scratch, and the <a data-lesson="primer/agents/cost.html">cost lesson</a> shows why distilled models are often the biggest saving in production.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531">original</a></span></h2>
+<blockquote class="quote">“Caruana and his collaborators have shown that it is possible to compress the knowledge in an ensemble into a single model which is much easier to deploy and we develop this approach further using a different compression technique.”<cite>Hinton, Vinyals and Dean (2015), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A master chef can't open a restaurant in every town, so they train apprentices. Handing an apprentice only the finished dishes (“this is a soufflé”) teaches a little. Letting them hear the master think aloud (“this is mostly soufflé, a bit like a mousse, nothing like a steak”) teaches far more. <span class="t" data-t="distillation">Distillation</span> trains a small model (the student) on a big model's (the teacher's) full spread of opinions instead of on bare right answers.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Averaging many models (an ensemble) is accurate but too expensive to deploy. Its knowledge can be squeezed into one small model.</li>
+  <li>The trick is to raise the <span class="t" data-t="temperature">temperature</span> of the teacher's <span class="t" data-t="softmax">softmax</span>, so its small probabilities become visible, and train the student to match them.</li>
+  <li>It works on MNIST digits and on a speech recognizer used by Android voice search.</li>
+  <li>A new kind of ensemble, one generalist plus many cheap “specialists”, helps on a dataset of 100 million images.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Many of the small, fast models you use every day were distilled from larger ones. Whenever someone says “we trained the small model on the big model's outputs”, this paper is the root.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S1">original</a></span></h2>
+<blockquote class="quote">“An image of a BMW, for example, may only have a very small chance of being mistaken for a garbage truck, but that mistake is still many times more probable than mistaking it for a carrot.”<cite>Hinton, Vinyals and Dean (2015), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The paper opens with insects: a larva is built for eating and growing, an adult for flying and reproducing, and the two forms look nothing alike. Machine learning usually uses the same model for learning (where you can afford to be huge and slow) and for serving millions of users (where you must be small and fast). Distillation separates the two: learn with a cumbersome model, then transfer what it learned into a compact one.</p>
+<h4>Tiny example: dark knowledge</h4>
+<p>A trained model shown a BMW might say 0.99 BMW, 0.009 garbage truck, 0.001 carrot, …. The “right answer” label only says BMW. But the <em>ratios</em> of the wrong answers, garbage truck nine times likelier than carrot, reveal how the model sees the world: cars resemble trucks more than vegetables. That similarity structure is the knowledge worth transferring, and it lives in numbers so small that normal training barely notices them. It has been nicknamed <span class="t" data-t="dark knowledge">dark knowledge</span>.</p>
+<h4>Why it matters today</h4>
+<p>The key conceptual step is to stop thinking of a model's knowledge as its weights and think of it as its input-to-output mapping. Then you can move the knowledge into a model with completely different weights, and a completely different shape.</p>
+</section>
+
+<section id="s2">
+<h2>2 Distillation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A confident teacher's opinions are like a photo so over-exposed that everything except the brightest object is white: 0.997 for the right answer and nothing visible anywhere else. Raising the temperature is like turning down the exposure: the bright object dims and the faint details appear. Train the student on the dimmed photo, at the same temperature, and it sees everything the teacher saw.</p>
+<h4>Tiny example</h4>
+<p>Scores (<span class="t" data-t="logits">logits</span>) of (4, 1, 0). At temperature 1, e<sup>4</sup> = 54.6, e<sup>1</sup> = 2.72, e<sup>0</sup> = 1, total 58.3, giving probabilities (0.936, 0.047, 0.017). At temperature 4, divide the scores first: (1, 0.25, 0), so e<sup>1</sup> = 2.718, e<sup>0.25</sup> = 1.284, e<sup>0</sup> = 1, total 5.002, giving (0.543, 0.257, 0.200). Same ranking, but the second and third options now carry real information.</p>
+<div class="eq" data-tex="\htmlData{sym=qi}{q_i} = \frac{\htmlData{sym=exp}{\exp}(\htmlData{sym=zi}{z_i}/\htmlData{sym=T}{T})}{\htmlData{sym=sumj}{\sum_j} \htmlData{sym=exp}{\exp}(\htmlData{sym=zj}{z_j}/\htmlData{sym=T}{T})}" data-fallback="q_i = exp(z_i / T) / Σ_j exp(z_j / T)"></div>
+<div class="symtable" data-syms="qi,zi,zj,T,exp,sumj"></div>
+<p class="inwords"><strong>In words:</strong> “divide every score by the temperature, then apply the usual softmax; a temperature above 1 flattens the probabilities, below 1 sharpens them.”</p>
+<p class="inwords"><strong>With the numbers:</strong> logits (4, 1, 0) at T = 4: q<sub>1</sub> = e<sup>1</sup> / (e<sup>1</sup> + e<sup>0.25</sup> + e<sup>0</sup>) = 2.718 / 5.002 = 0.543.</p>
+
+<h4>Try it: turn down the exposure</h4>
+<div class="play" id="temp-demo">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Teacher is shown:</span>
+    <button type="button" data-img="a" aria-pressed="true">a “2” that looks a bit like a 3</button>
+    <button type="button" data-img="b" aria-pressed="false">a “2” that looks a bit like a 7</button>
+  </div>
+  <div class="sliders ui" style="margin-top:.6rem"><label for="temp-T">temperature T</label><input type="range" id="temp-T" min="0" max="3" step="0.01" value="0"><output id="temp-T-v">1.0</output></div>
+  <div class="digits" id="soft-bars" aria-label="Soft target probabilities for digits 0 to 9"></div>
+  <div class="digit-labels" id="soft-labels"></div>
+  <p class="readout" style="margin:.2rem 0 .8rem">Soft targets from the teacher at temperature T</p>
+  <div class="digits" id="hard-bars" style="height:60px" aria-label="Hard target"></div>
+  <div class="digit-labels"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span></div>
+  <p class="readout" style="margin:.2rem 0 0">The hard target (the label), identical for both images</p>
+  <p class="readout" id="temp-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the upper bars are the teacher's probabilities for the ten digits; the lower bars are the plain label, which only says “2”. The teacher's scores are illustrative, chosen to mimic the paper's example, not taken from a trained model. At T = 1 the teacher is almost certain: 2 gets over 99% and every other bar is invisible, so the soft targets say barely more than the label. Drag T up. Around 4 to 5, the runner-up appears, and switching between the two images reveals the point the paper makes about MNIST: the labels are identical, but one “2” looks like a 3 and the other like a 7. That is exactly the information a student can learn from soft targets and never from labels. Push T to 20 and everything flattens towards 10% each: too hot, and the useful ranking starts to wash out.</p>
+
+<h4>The training objective</h4>
+<p>The student is trained on a weighted mix of two losses: <span class="t" data-t="cross-entropy">cross-entropy</span> with the teacher's soft targets, both softened at the same high temperature T, and cross-entropy with the true labels at T = 1. The paper found the best results with a considerably lower weight on the true-label term. After training, the student runs at T = 1.</p>
+<div class="eq" data-tex="\htmlData{sym=L}{\mathcal{L}} = \htmlData{sym=T2}{T^2}\cdot \htmlData{sym=Hce}{H}\big(\htmlData{sym=pT}{\mathbf{p}^{(T)}},\, \htmlData{sym=qT}{\mathbf{q}^{(T)}}\big) \;+\; \htmlData{sym=lam}{\lambda}\cdot \htmlData{sym=Hce}{H}\big(\htmlData{sym=yhard}{\mathbf{y}},\, \htmlData{sym=q1}{\mathbf{q}^{(1)}}\big)" data-fallback="L = T² · H(p^(T), q^(T)) + λ · H(y, q^(1))"></div>
+<div class="symtable" data-syms="L,T2,Hce,pT,qT,lam,yhard,q1"></div>
+<p class="inwords"><strong>In words:</strong> “match the teacher's softened opinions at temperature T, multiplied by T² to keep the gradients at a sensible size, plus a small amount of matching the true labels at normal temperature.” (The paper describes this weighted average in prose; this is our compact notation for it.)</p>
+<p class="inwords"><strong>With the numbers:</strong> in the speech experiment of §4 the best temperature was T = 2 and the hard-label term had a relative weight of 0.5, so L = 4 · H(p<sup>(2)</sup>, q<sup>(2)</sup>) + 0.5 · H(y, q<sup>(1)</sup>).</p>
+
+<h4>Why multiply by T²?</h4>
+<div class="plot">
+  <div id="grad-chart"></div>
+  <p class="readout" id="grad-readout">Hover or tap to read the gradient size at each temperature.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> computed live for the “2” above, with an untrained student whose logits are all zero. The x-axis is the temperature; the y-axis is the size of the soft-target gradient, the push training gives the student's logits, on a log scale. Without correction (blue) the push shrinks roughly as 1/T², so at T = 20 it is hundreds of times weaker than at T = 1 and the true-label term would drown it out. Multiplied by T² (green), it stays in the same range at every temperature, so you can change T while experimenting without re-balancing the two losses. That is the paper's stated reason for the T² factor.</p>
+<h4>Why it matters today</h4>
+<p>“Soft targets at a raised temperature plus a small hard-label term, scaled by T²” is still the textbook recipe, exactly as written here.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Matching logits is a special case of distillation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>An earlier method (Caruana and colleagues) had the student copy the teacher's raw scores directly, by minimizing the squared difference between logits. This section shows that copying raw scores is what distillation turns into when the temperature is very high. At moderate temperatures, distillation mostly ignores the teacher's very negative scores, which can be noise, since nothing in the teacher's training pinned them down.</p>
+<h4>Tiny example</h4>
+<p>Three classes, T = 10, student logits z = (1, 0, −1) and teacher logits v = (2, 0, −2), both averaging zero. The exact gradient for the first logit is (q<sub>1</sub> − p<sub>1</sub>)/T = −0.00346. The high-temperature approximation gives (z<sub>1</sub> − v<sub>1</sub>) / (N T²) = (1 − 2)/(3 × 100) = −0.00333, within 4%.</p>
+<div class="eq" data-tex="\frac{\htmlData{sym=partial}{\partial} \htmlData{sym=C}{C}}{\htmlData{sym=partial}{\partial} \htmlData{sym=zi}{z_i}} = \frac{1}{\htmlData{sym=T}{T}}\left(\htmlData{sym=qi}{q_i} - \htmlData{sym=pi}{p_i}\right) \;\approx\; \frac{1}{\htmlData{sym=N}{N}\htmlData{sym=T2}{T^2}}\left(\htmlData{sym=zi}{z_i} - \htmlData{sym=vi}{v_i}\right)" data-fallback="∂C/∂z_i = (1/T)(q_i − p_i) ≈ (1 / (N T²)) (z_i − v_i)"></div>
+<div class="symtable" data-syms="partial,C,pi,vi,N"></div>
+<p class="inwords"><strong>In words:</strong> “the push on each student logit is the gap between the student's and the teacher's softened probabilities, divided by T; when T is large compared with the logits, and the logits average zero, that is just the gap between the logits themselves, divided by N T², which is what minimizing squared logit differences does.”</p>
+<p class="inwords"><strong>With the numbers:</strong> q = softmax((0.1, 0, −0.1)), p = softmax((0.2, 0, −0.2)); (q<sub>1</sub> − p<sub>1</sub>)/10 = −0.00346 ≈ (1 − 2)/300 = −0.00333.</p>
+<p>The paper's MNIST results suggest that when the student is much too small to absorb everything, intermediate temperatures work best, a hint that ignoring the teacher's large negative logits helps.</p>
+<h4>Why it matters today</h4>
+<p>“Match the logits” and “match the softened probabilities” are both still used for distilling language models; this section explains how they relate.</p>
+</section>
+
+<section id="s3">
+<h2>3 Preliminary experiments on MNIST <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S3">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A test of whether a student can inherit what a teacher learned from experiences the student never had. The teacher trained on images jiggled by up to two pixels; the student never sees a jiggled image, yet inherits the robustness through the soft targets.</p>
+<div class="tablewrap"><table>
+  <caption>Selected results from §3 of Hinton, Vinyals and Dean (2015): test errors out of 10,000 MNIST digits</caption>
+  <thead><tr><th>Model</th><th class="num">Test errors</th></tr></thead>
+  <tbody>
+    <tr><td>Big teacher: 2 × 1,200 units, dropout, weight constraints, jittered images</td><td class="num">67</td></tr>
+    <tr><td>Small net: 2 × 800 units, no regularization, trained on labels</td><td class="num">146</td></tr>
+    <tr class="hl"><td>Same small net trained to match the teacher's soft targets at T = 20</td><td class="num">74</td></tr>
+  </tbody>
+</table></div>
+<div class="plot"><div id="mnist-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> fewer errors is better. The same small network goes from 146 errors (labels alone) to 74 (soft targets), nearly matching the big teacher's 67, with no dropout and no jittered images of its own. The numbers are from §3 of the paper.</p>
+<h4>The mythical digit</h4>
+<p>Next, every 3 was removed from the student's training data. The student made 206 test errors, 133 of them on the 1,010 threes. Most of those mistakes came from its learned bias for the class 3 being too low. After raising that bias by 3.5, it made 109 errors, only 14 on threes: it got <strong>98.6% of the 3s right without ever having seen one</strong>. Everything it knew about 3s came from the soft targets on other digits (“this 5 looks a bit like a 3”). Trained on only the 7s and 8s, and with those two biases lowered by 7.6, its error across all ten digits was 13.2%.</p>
+<p>Temperature mattered with a tiny student: with 300 or more units per layer, any T above 8 worked about equally; with only 30 units per layer, T between 2.5 and 4 was clearly best.</p>
+<h4>Why it matters today</h4>
+<p>The mythical-digit result is the most vivid demonstration that soft targets carry information about the whole data distribution, not just the labelled answer.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experiments on speech recognition <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A real product test. The acoustic model of a speech recognizer listens to about a quarter-second of audio and guesses which of 14,000 sound states is being spoken. Ten copies trained from different random starts, averaged, beat any one of them; the question is whether one model the size of a single copy can capture most of the ten's advantage.</p>
+<h4>Tiny example</h4>
+<p>The baseline gets 58.9% of frames right, the 10-model ensemble 61.1%, and the distilled single model 60.8%. The ensemble's gain is 61.1 − 58.9 = 2.2 points; the distilled model recovers 60.8 − 58.9 = 1.9 of them, 1.9 / 2.2 = 86%, which is the paper's “more than 80%”. On the metric users care about, word error rate, both the ensemble and the distilled model reach 10.7% against the baseline's 10.9%.</p>
+<div class="tablewrap"><table>
+  <caption>Table 1 of Hinton, Vinyals and Dean (2015), reproduced in summary with attribution</caption>
+  <thead><tr><th>System</th><th class="num">Test frame accuracy</th><th class="num">Word error rate</th></tr></thead>
+  <tbody>
+    <tr><td>Baseline (8 hidden layers × 2,560 units, about 85 million parameters)</td><td class="num">58.9%</td><td class="num">10.9%</td></tr>
+    <tr><td>Ensemble of 10 such models</td><td class="num">61.1%</td><td class="num">10.7%</td></tr>
+    <tr class="hl"><td>Distilled single model, same size as the baseline</td><td class="num">60.8%</td><td class="num">10.7%</td></tr>
+  </tbody>
+</table></div>
+<p>Training data: about 2,000 hours of spoken English, roughly 700 million training examples. Temperatures of 1, 2, 5 and 10 were tried; 2 was best.</p>
+<h4>Why it matters today</h4>
+<p>Ensembles are the most reliable way to squeeze out extra accuracy and the least deployable. This result turned “train an ensemble, ship a single model” into a standard recipe.</p>
+</section>
+
+<section id="s5">
+<h2>5 Training ensembles of specialists on very big datasets <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S5">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A hospital does not train every doctor in everything. A general practitioner sees everyone and refers you to a specialist when your case falls in a confusing corner: the specialist knows 300 kinds of mushroom apart but lumps everything else into “not my area”. The paper builds exactly that: one generalist model, plus many small specialists, each focused on a cluster of classes the generalist tends to confuse.</p>
+<h4>Tiny example</h4>
+<p>JFT, an internal Google dataset: 100 million labelled images in 15,000 classes. The generalist had taken about six months to train. Each of 61 specialists handled 300 classes plus one “dustbin” class for everything else, started from the generalist's weights, and trained in a few days, all in parallel. Specialist training sets were half examples from the specialist's own classes and half random others, so afterwards the dustbin's score is raised by the log of how much the specialist's classes were oversampled, correcting the bias.</p>
+<figure class="ix" id="fig-spec">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 330" role="img" aria-label="A generalist model with specialist models">
+    <defs><marker id="arrK" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M160,300 V270" marker-end="url(#arrK)"/>
+    <path class="wire" d="M160,238 V214" marker-end="url(#arrK)"/>
+    <path class="wire" d="M160,184 V166 H64 V148 M160,166 V148 M160,166 H256 V148" marker-end="url(#arrK)"/>
+    <path class="wire" d="M64,118 V100 H148 M256,118 V100 H172 M160,118 V110" marker-end="url(#arrK)"/>
+    <path class="wire" d="M160,80 V52" marker-end="url(#arrK)"/>
+    <g class="blk plain" data-block="image" tabindex="0" role="button" aria-label="Input image"><rect x="115" y="300" width="90" height="24" rx="6"/><text x="160" y="316" text-anchor="middle">image x</text></g>
+    <g class="blk ff" data-block="generalist" tabindex="0" role="button" aria-label="Generalist model"><rect x="80" y="238" width="160" height="32" rx="7"/><text x="160" y="258" text-anchor="middle">generalist (15,000 classes)</text></g>
+    <g class="blk norm" data-block="topk" tabindex="0" role="button" aria-label="Most probable class"><rect x="90" y="184" width="140" height="30" rx="7"/><text x="160" y="203" text-anchor="middle">its top class k</text></g>
+    <g class="blk attn" data-block="spec_a" tabindex="0" role="button" aria-label="Specialist A"><rect x="14" y="118" width="100" height="30" rx="7"/><text x="64" y="137" text-anchor="middle">specialist A</text></g>
+    <g class="blk attn" data-block="spec_b" tabindex="0" role="button" aria-label="Specialist B"><rect x="120" y="118" width="80" height="30" rx="7"/><text x="160" y="137" text-anchor="middle">spec. B</text></g>
+    <g class="blk plain" data-block="spec_off" tabindex="0" role="button" aria-label="Specialists not covering class k"><rect x="206" y="118" width="100" height="30" rx="7" stroke-dasharray="4 3"/><text x="256" y="137" text-anchor="middle">others: idle</text></g>
+    <g class="blk soft" data-block="combine" tabindex="0" role="button" aria-label="Combine by minimizing KL divergences"><rect x="70" y="80" width="180" height="30" rx="7"/><text x="160" y="99" text-anchor="middle">combine: min Σ KL</text></g>
+    <g class="blk plain" data-block="final" tabindex="0" role="button" aria-label="Final prediction"><rect x="100" y="28" width="120" height="24" rx="6"/><text x="160" y="44" text-anchor="middle">final prediction q</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with the image at the bottom.</p></div>
+  </div>
+  <figcaption>Inference with one generalist and many specialists (§5.4 of Hinton, Vinyals and Dean, 2015), drawn from scratch.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read upwards. The generalist looks at the image first and names its most likely class k. Only the specialists whose class cluster contains k wake up (orange); the rest stay idle, which is what keeps this cheap. The final prediction is the probability distribution q that disagrees least, in total, with the generalist and every active specialist, measured by <span class="t" data-t="kl divergence">KL divergence</span>. The paper finds q by gradient descent separately for each image.</p>
+<div class="eq" data-tex="\htmlData{sym=KL}{KL}(\htmlData{sym=pg}{\mathbf{p}^{g}}, \htmlData{sym=q}{\mathbf{q}}) + \htmlData{sym=sumA}{\sum_{m\in A_k}} \htmlData{sym=KL}{KL}(\htmlData{sym=pm}{\mathbf{p}^{m}}, \htmlData{sym=q}{\mathbf{q}})" data-fallback="KL(p^g, q) + Σ_{m ∈ A_k} KL(p^m, q)"></div>
+<div class="symtable" data-syms="KL,pg,pm,q,sumA"></div>
+<p class="inwords"><strong>In words:</strong> “find the single distribution over all classes that is, in total, closest to the generalist's opinion and to every active specialist's opinion.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if the generalist says “bridge” and specialist A covers bridges, viaducts and chimneys, then A_k = {A}, and q balances the generalist's 15,000-class view with A's fine distinctions within its 300 classes.</p>
+<div class="tablewrap"><table>
+  <caption>Selected results from Table 3 of Hinton, Vinyals and Dean (2015): top-1 accuracy on the JFT development set</caption>
+  <thead><tr><th>System</th><th class="num">Conditional accuracy</th><th class="num">Test accuracy</th></tr></thead>
+  <tbody>
+    <tr><td>Baseline generalist</td><td class="num">43.1%</td><td class="num">25.0%</td></tr>
+    <tr class="hl"><td>+ 61 specialists</td><td class="num">45.9%</td><td class="num">26.1%</td></tr>
+  </tbody>
+</table></div>
+<p>Test accuracy rose from 25.0% to 26.1%, a 4.4% relative improvement (1.1 / 25.0). Accuracy gains grew with the number of specialists covering the correct class, which is encouraging because specialists are trivially parallel to train. The paper notes that it had not yet shown the specialists could be distilled back into one model.</p>
+<h4>Why it matters today</h4>
+<p>Routing inputs to specialists is the idea behind modern <span class="t" data-t="mixture of experts">mixture-of-experts</span> models, although those learn the routing jointly (§7 explains the difference).</p>
+</section>
+
+<section id="s6">
+<h2>6 Soft targets as regularizers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S6">original</a></span></h2>
+<blockquote class="quote">“This shows that soft targets are a very effective way of communicating the regularities discovered by a model trained on all of the data to another model.”<cite>Hinton, Vinyals and Dean (2015), §6</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A student with only 3% of the textbook but a tutor who has read all of it can still learn most of the subject: the tutor's graded, nuanced feedback carries far more than 3% of the information.</p>
+<h4>Tiny example</h4>
+<p>The 85-million-parameter speech model trained on only 3% of the data (about 20 million examples) with ordinary labels badly <span class="t" data-t="overfitting">overfits</span>: training frame accuracy 67.3%, test accuracy only 44.5%, and that was with <span class="t" data-t="early stopping">early stopping</span>. The same model on the same 3%, trained with soft targets from a model that saw all the data, reaches 57.0% test accuracy, within 2 points of the 58.9% achieved with the full data, and it simply converged, with no early stopping needed.</p>
+<div class="plot"><div id="reg-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one training setup: training frame accuracy (grey) and test frame accuracy (blue). With 3% of the data and hard labels, the grey bar is high but the blue one collapses: memorising, not learning. With soft targets on the same 3%, the gap nearly closes and test accuracy almost matches the full-data baseline. Numbers from Table 5 of the paper.</p>
+<p>The paper suggests the same fix for specialists: train them with soft targets from the generalist for the classes outside their specialty, so they keep their general knowledge while specializing.</p>
+<h4>Why it matters today</h4>
+<p>This is the other half of distillation's value: not only a smaller model, but far less labelled data needed, because the teacher's soft outputs are a much richer signal than labels.</p>
+</section>
+
+<section id="s7">
+<h2>7 Relationship to mixtures of experts <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S7">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A mixture of experts learns, at the same time, what each expert is good at and which expert to send each case to. That is powerful but hard to parallelize: every expert's workload keeps shifting as the router learns. The specialist scheme decides the assignment once, up front, from what the generalist confuses, and then trains every specialist completely independently.</p>
+<h4>Tiny example</h4>
+<p>With 61 specialists and 61 machines, the specialists train in the time of one, because no specialist needs anything from another. A jointly trained mixture must keep all experts and the router in sync throughout.</p>
+<h4>Why it matters today</h4>
+<p>Modern language models took the other branch: mixture-of-experts layers with a learned router, trained jointly at enormous scale, made practical by specialized infrastructure. The trade-off this section names, joint learning versus easy parallelism, is still the right way to think about it. See the <a data-lesson="primer/ml/transformer.html">transformer lesson</a>.</p>
+</section>
+
+<section id="s8">
+<h2>8 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S8">original</a></span></h2>
+<p>Distillation transfers an ensemble's or a big regularized model's knowledge into a small model; on MNIST it works even when whole classes are missing from the transfer set; on speech, nearly all of an ensemble's gain fits into one model of the original size; and specialists can improve a very large model that could not feasibly be ensembled. The open question it leaves, distilling specialists back into a single model, is the ancestor of much later work.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2015</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where to learn more</th></tr></thead>
+  <tbody>
+    <tr><td>Distill an ensemble into a same-size model</td><td>Distill a large model into a much smaller one (for example DistilBERT: about 40% smaller and 60% faster, keeping about 97% of BERT's language-understanding performance)</td><td>Serving cost scales with model size; distillation is often the largest single cost saving</td><td><a data-lesson="primer/agents/cost.html">cost lesson</a></td></tr>
+    <tr><td>Match softened class probabilities</td><td>For language models: match the teacher's next-token distributions, or fine-tune on text the teacher generated</td><td>Generated text is a convenient transfer set when only the teacher's outputs are available</td><td><a data-lesson="primer/ml/training_stages.html">training stages lesson</a></td></tr>
+    <tr><td>Specialists with a fixed assignment</td><td>Mixture-of-experts layers with learned routing</td><td>Specialized infrastructure made joint training practical at scale</td><td><a data-lesson="primer/ml/transformer.html">transformer lesson</a></td></tr>
+    <tr><td>Temperature on the softmax</td><td>Temperature is the same knob used for sampling from language models</td><td>One formula, two jobs: soften targets for training, or control randomness in generation</td><td><a data-lesson="primer/ml/inference.html">inference lesson</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Geoffrey Hinton, Oriol Vinyals and Jeff Dean, <em>Distilling the Knowledge in a Neural Network</em>, NIPS 2014 Deep Learning Workshop. <a href="https://arxiv.org/abs/1503.02531">arXiv:1503.02531</a>. Quotations are brief and attributed; results are summarized in our own words, with selected numbers attributed. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    qi: { tex: "q_i", name: "Probability of class i", meaning: "What the model outputs for class i after the temperature-softmax. For the student it is written q; for the teacher's soft targets the paper uses p.", shape: "between 0 and 1", example: "0.543 at T = 4" },
+    zi: { tex: "z_i", name: "Logit for class i", meaning: "The raw score for class i before softmax (for the student, in §2.1).", shape: "any number", example: "4" },
+    zj: { tex: "z_j", name: "Logit for class j", meaning: "j walks over every class to form the total.", shape: "any number", example: "4, 1, 0" },
+    T: { tex: "T", name: "Temperature", meaning: "Divides every logit before softmax. T = 1 is normal; higher T flattens the probabilities and reveals small ones.", shape: "a positive number", example: "4 (tiny example), 20 (MNIST), 2 (speech)" },
+    exp: { tex: "\\exp", name: "Exponential", meaning: "e raised to a power: always positive, and it stretches gaps between numbers.", shape: "an operation", example: "exp(1) = 2.718" },
+    sumj: { tex: "\\sum_j", name: "Sum over classes", meaning: "Add up over every class, so the probabilities total 1.", shape: "an operation", example: "2.718 + 1.284 + 1 = 5.002" },
+    L: { tex: "\\mathcal{L}", name: "Student's training loss", meaning: "The number the student is trained to make small: a weighted sum of the soft-target and hard-target losses.", shape: "one number", example: "4·H(p⁽²⁾, q⁽²⁾) + 0.5·H(y, q⁽¹⁾)" },
+    T2: { tex: "T^2", name: "Temperature squared", meaning: "Soft-target gradients shrink like 1/T², so multiplying by T² keeps their size steady when T changes.", shape: "a positive number", example: "4 for T = 2" },
+    Hce: { tex: "H", name: "Cross-entropy", meaning: "H(a, b) = −Σ a_i log b_i: how poorly distribution b predicts distribution a. Lowest when b matches a.", shape: "one number ≥ 0", example: "−log 0.9 = 0.105 for a one-hot a" },
+    pT: { tex: "\\mathbf{p}^{(T)}", name: "Teacher's soft targets", meaning: "The teacher's probabilities at temperature T.", shape: "one probability per class", example: "(…, 0.566 for “2”, 0.126 for “3”, …) at T = 4" },
+    qT: { tex: "\\mathbf{q}^{(T)}", name: "Student's softened output", meaning: "The student's probabilities at the same temperature T.", shape: "one probability per class", example: "starts uniform for an untrained student" },
+    lam: { tex: "\\lambda", name: "Hard-label weight", meaning: "How much the true labels count relative to the soft targets. The paper found a considerably lower weight worked best.", shape: "a small positive number", example: "0.5 (relative) in the speech experiment" },
+    yhard: { tex: "\\mathbf{y}", name: "True label", meaning: "The one-hot correct answer: 1 for the right class, 0 elsewhere.", shape: "one per class", example: "1 for “2”" },
+    q1: { tex: "\\mathbf{q}^{(1)}", name: "Student's normal output", meaning: "The student's probabilities at T = 1, the temperature it will use after training.", shape: "one per class", example: "the student's deployed prediction" },
+    partial: { tex: "\\partial", name: "Partial derivative", meaning: "How much the loss changes when only this one logit is nudged.", shape: "an operation", example: "−0.00346 for z₁" },
+    C: { tex: "C", name: "Soft-target cross-entropy", meaning: "The distillation loss for one transfer example.", shape: "one number", example: "H(p⁽ᵀ⁾, q⁽ᵀ⁾)" },
+    pi: { tex: "p_i", name: "Teacher's soft probability", meaning: "The teacher's probability for class i at temperature T.", shape: "0 to 1", example: "softmax((0.2, 0, −0.2))₁" },
+    vi: { tex: "v_i", name: "Teacher's logit", meaning: "The teacher's raw score for class i.", shape: "any number", example: "2" },
+    N: { tex: "N", name: "Number of classes", meaning: "How many classes the softmax covers.", shape: "a whole number", example: "3" },
+    KL: { tex: "KL", name: "KL divergence", meaning: "How different two probability distributions are; zero only if they are identical.", shape: "one number ≥ 0", example: "0 when q matches p exactly" },
+    pg: { tex: "\\mathbf{p}^{g}", name: "Generalist's distribution", meaning: "The generalist model's probabilities over all 15,000 classes.", shape: "15,000 probabilities", example: "“bridge” most likely" },
+    pm: { tex: "\\mathbf{p}^{m}", name: "Specialist m's distribution", meaning: "Specialist m's probabilities over its 300 classes plus one dustbin class.", shape: "301 probabilities", example: "suspension bridge vs viaduct" },
+    q: { tex: "\\mathbf{q}", name: "Combined prediction", meaning: "The full distribution chosen to be as close as possible to the generalist and all active specialists.", shape: "15,000 probabilities", example: "found by gradient descent per image" },
+    sumA: { tex: "\\sum_{m \\in A_k}", name: "Sum over active specialists", meaning: "Add up over every specialist m whose class cluster includes the generalist's top class k.", shape: "an operation", example: "often just one or two specialists" },
+  },
+
+  blocks: {
+    image: { title: "Image x", body: "<p>One test image from JFT: 100 million images in 15,000 classes.</p>", shape: "one image" },
+    generalist: { title: "Generalist", body: "<p>One large convolutional network trained on everything; it took about six months. It always runs, handles classes no specialist covers, and decides which specialists to wake.</p>", shape: "15,000 probabilities" },
+    topk: { title: "Top class k", body: "<p>The generalist's single most likely class (the paper uses n = 1).</p>", shape: "one class" },
+    spec_a: { title: "Specialist A (active)", body: "<p>Its 300-class cluster includes k. It was initialized from the generalist and fine-tuned on data half from its own classes and half random, in a few days.</p>", shape: "300 classes + dustbin" },
+    spec_b: { title: "Specialist B (active)", body: "<p>Clusters can overlap, so several specialists may cover the same class. The more specialists covered the correct class, the larger the accuracy gain.</p>", shape: "300 classes + dustbin" },
+    spec_off: { title: "Idle specialists", body: "<p>Specialists whose cluster does not include k are not run at all, which keeps inference cheap.</p>", shape: "not computed" },
+    combine: { title: "Combine: minimize the summed KL", body: "<p>Choose q to disagree as little as possible, in total, with the generalist and every active specialist. For a specialist, q's probabilities for all its non-special classes are summed to compare with its dustbin class.</p>", shape: "15,000 probabilities" },
+    final: { title: "Final prediction q", body: "<p>With 61 specialists, top-1 test accuracy rose from 25.0% to 26.1%.</p>", shape: "15,000 probabilities" },
+  },
+
+  onReady(P) {
+    tempDemo();
+    gradChart(P);
+    bars("mnist-bars", [["big teacher", 67], ["small net, labels only", 146], ["small net, soft targets", 74]], 160, " errors", "Test errors on MNIST (axis 0 to 160)");
+    pairBars();
+  },
+};
+
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const softmaxT = (z, T) => { const m = Math.max(...z); const e = z.map((v) => Math.exp((v - m) / T)); const s = e.reduce((a, b) => a + b, 0); return e.map((v) => v / s); };
+/* Illustrative teacher logits for digits 0..9 (not from a trained model). */
+const TEACHER = {
+  a: [1.0, 0.5, 12.0, 6.0, -1.0, 0.0, 1.5, 4.0, 2.0, -0.5],
+  b: [1.0, 0.5, 12.0, 4.0, -1.0, 0.0, 1.5, 6.0, 2.0, -0.5],
+};
+
+function tempDemo() {
+  let img = "a";
+  const slider = document.getElementById("temp-T");
+  const T = () => 10 ** (+slider.value * Math.log10(20) / 3);
+  const soft = document.getElementById("soft-bars"), hard = document.getElementById("hard-bars"), labels = document.getElementById("soft-labels"), out = document.getElementById("temp-readout");
+  hard.innerHTML = Array.from({ length: 10 }, (_, i) => `<div class="col"><div class="bar hard" style="height:${i === 2 ? 100 : 0}%"></div></div>`).join("");
+  function draw() {
+    const t = T();
+    document.getElementById("temp-T-v").textContent = t.toFixed(1);
+    const p = softmaxT(TEACHER[img], t);
+    soft.innerHTML = p.map((v) => `<div class="col"><div class="bar" style="height:${(v * 100).toFixed(1)}%"></div></div>`).join("");
+    labels.innerHTML = p.map((v, i) => `<span>${i}<br><span class="pct">${v < 0.001 ? "<0.1" : (v * 100).toFixed(1)}%</span></span>`).join("");
+    const H = -p.reduce((a, v) => a + (v > 0 ? v * Math.log2(v) : 0), 0);
+    const order = p.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
+    out.innerHTML = `T = ${t.toFixed(1)}: “2” gets <strong>${(p[2] * 100).toFixed(1)}%</strong>, runner-up is “${order[1][1]}” at <strong>${(order[1][0] * 100).toFixed(2)}%</strong>. Entropy ${H.toFixed(2)} bits (0 = certain, 3.32 = all ten equally likely).`;
+  }
+  slider.addEventListener("input", draw);
+  document.querySelectorAll("#temp-demo [data-img]").forEach((b) => b.addEventListener("click", () => {
+    img = b.dataset.img;
+    document.querySelectorAll("#temp-demo [data-img]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    draw();
+  }));
+  draw();
+}
+
+function gradChart(P) {
+  const v = TEACHER.a, z = new Array(10).fill(0);
+  const pts = [], ptsScaled = [];
+  for (let e = 0; e <= 1.302; e += 0.02) {
+    const t = 10 ** e;
+    const q = softmaxT(z, t), p = softmaxT(v, t);
+    const g = Math.sqrt(q.reduce((a, qi, i) => a + ((qi - p[i]) / t) ** 2, 0));
+    pts.push([t, Math.log10(g)]);
+    ptsScaled.push([t, Math.log10(g * t * t)]);
+  }
+  P.lineChart(document.getElementById("grad-chart"), {
+    series: [
+      { name: "soft-target gradient", points: pts, color: css("--ff-stroke") },
+      { name: "× T²", points: ptsScaled, color: css("--soft-stroke") },
+    ],
+    xLabel: "temperature T", yLabel: "log₁₀ gradient size", yMin: -4, yMax: 1,
+    xFmt: (x) => x.toFixed(1), yFmt: (y) => `10^${y.toFixed(2)}`,
+    readout: document.getElementById("grad-readout"), ariaLabel: "Soft-target gradient size against temperature",
+  });
+}
+
+function bars(id, rows, max, unit, legend) {
+  document.getElementById(id).innerHTML = `<div class="legend" style="margin:0 0 .4rem">${legend}</div>` +
+    rows.map(([name, val]) => `<div class="share-row" style="grid-template-columns:11rem minmax(0,1fr) 5rem"><span>${name}</span><div><div class="share-bar" style="width:${(val / max) * 100}%"></div></div><span>${val}${unit}</span></div>`).join("");
+}
+
+function pairBars() {
+  const rows = [["all data, labels", 63.4, 58.9], ["3% data, labels", 67.3, 44.5], ["3% data, soft targets", 65.4, 57.0]];
+  document.getElementById("reg-bars").innerHTML = `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>training frame accuracy</span><span><i style="background:var(--accent)"></i>test frame accuracy</span> (axis 0 to 80%)</div>` +
+    rows.map(([name, tr, te]) => `<div class="share-row" style="grid-template-columns:11rem minmax(0,1fr) 5rem"><span>${name}</span><div><div class="share-bar" style="width:${(tr / 80) * 100}%;background:var(--wire)"></div><div class="share-bar" style="width:${(te / 80) * 100}%;margin-top:3px"></div></div><span>${tr} / ${te}%</span></div>`).join("");
+}
+</script>
+</body>
+</html>

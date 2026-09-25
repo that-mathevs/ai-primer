@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matryoshka Representation Learning, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Kusupati et al. (2022), Matryoshka Representation Learning: embeddings you can truncate.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="matryoshka">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Matryoshka Representation Learning</a></li>
+      <li><a href="#s4">4 Applications</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Where it was tried</a></li>
+          <li><a href="#s4-2">4.2 Classification</a></li>
+          <li><a href="#s4-3">4.3 Retrieval</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Further analysis</a></li>
+      <li><a href="#s6">6 Discussion</a></li>
+      <li><a href="#today">What changed since</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Matryoshka Representation Learning, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Kusupati, Bhatt, Rege, Wallingford, Sinha, Ramanujan, Howard-Snyder, Chen, Kakade, Jain and Farhadi (2022), <em>Matryoshka Representation Learning</em>: how to train one embedding that still works when you cut it short.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2205.13147">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2205.13147">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2205.13147">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its results appear here as selected numbers written for this page, with attribution, and its figures are redrawn from scratch. The live experiment in §3 runs on synthetic data in your browser. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same.</li>
+  <li>The truncation experiment in §3 and the retrieval-cost calculator in §4.3 are live.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/ml/embeddings/compression.html">dimensions and compression lesson</a> reproduces a Matryoshka-style truncation experiment in NumPy.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147">original</a></span></h2>
+<blockquote class="quote">“This leads us to ask: can we design a flexible representation that can adapt to multiple downstream tasks with varying computational resources?”<cite>Kusupati et al. (2022), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A set of Russian nesting dolls: open the big doll and a smaller, complete doll is inside, and a smaller one inside that. A Matryoshka <span class="t" data-t="embedding">embedding</span> is a list of numbers whose first 8 numbers are already a usable (coarse) embedding, the first 16 a better one, and so on up to the full length. You pick how much to keep, per task, without retraining or re-encoding anything.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Each prefix of the embedding is at least as accurate as a separate model trained at that small size.</li>
+  <li>For ImageNet classification, the same accuracy with an embedding up to <strong>14×</strong> smaller.</li>
+  <li>For large-scale retrieval, up to <strong>14×</strong> faster in wall-clock time at the same accuracy.</li>
+  <li>Up to 2% better accuracy on rare classes, and as robust as ordinary embeddings.</li>
+  <li>No extra cost at inference, and it works for images, text and image-text models.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Many production text-embedding models are trained this way, so you can store shorter vectors for cheaper search. When a provider lets you choose the embedding size, this is usually the technique behind it.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Computing an embedding is paid once per item. <em>Using</em> it is paid every time you search or classify, and that cost grows with the number of dimensions × the number of items. At web scale the using dominates. Yet ordinary training spreads information across all dimensions, so you can't just drop some: every number carries a bit of everything.</p>
+<h4>Tiny example</h4>
+<p>Store 10 million embeddings of 2,048 numbers at 4 bytes each: 10,000,000 × 2,048 × 4 = <strong>81.9 GB</strong>. Keep only the first 256 numbers and it is <strong>10.2 GB</strong>, 8× less, with every search 8× cheaper too. The question is whether those 256 numbers are any good. Normally they aren't. Matryoshka training makes them good.</p>
+<h4>Why it matters</h4>
+<p>The usual alternatives each cost something: train several models of different sizes (and store every item several times), compress afterwards (and lose accuracy), or pick features on the fly (expensive). Matryoshka training gets all sizes from one model and one stored vector. The storage arithmetic is worked through in the <a data-lesson="primer/ml/embeddings/compression.html">compression lesson</a>.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S2">original</a></span></h2>
+<p>The paper sits between three lines of work. Representation learning produces embeddings (supervised, <span class="t" data-t="contrastive loss">contrastive</span> or masked-language training); Matryoshka training adds to any of them. Efficient search uses <span class="t" data-t="approximate nearest neighbor">approximate nearest-neighbour</span> indexes such as <span class="t" data-t="hnsw">HNSW</span>, which cut the dependence on the number of items but not on the dimension; Matryoshka embeddings cut the dimension and combine with those indexes. And earlier “nested dropout” learned ordered representations by optimizing every length; this paper optimizes only about log₂(d) lengths, which is what makes it practical at scale.</p>
+</section>
+
+<section id="s3">
+<h2>3 Matryoshka Representation Learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S3">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A teacher marks one essay several times: once reading only the first paragraph, once the first two, and so on, and the student is graded on every reading. The student quickly learns to put the most important point first. Matryoshka training grades the embedding at several lengths at once, so the network learns to pack the most useful information into the first numbers.</p>
+
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 250" role="img" aria-label="A 2048-number embedding with nested prefixes of 8, 16, 32 up to 2048 numbers">
+    <g id="dolls"></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a doll (a prefix length) to see what it costs and what it is good for.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper (the nested representation), redrawn. Based on Kusupati et al. (2022), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the long bar at the bottom is one 2,048-number embedding. Each shorter bar above it marks a prefix: the first 8 numbers, the first 16, 32, and so on. Every one of them is a complete embedding on its own, and each larger one contains the smaller ones, like nesting dolls. Each is twice the length of the one below it, so there are only 9 of them for 2,048 numbers. The lengths are drawn on a doubling (log) scale; the 8-number doll is really 256 times shorter than the full one.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\min_{\{\htmlData{sym=Wm}{\mathbf{W}^{(m)}}\},\,\htmlData{sym=thetaF}{\theta_F}} \; \htmlData{sym=avgN}{\frac{1}{N}\sum_{i}} \; \htmlData{sym=sumM}{\sum_{m \in \mathcal{M}}} \htmlData{sym=cm}{c_m} \cdot \htmlData{sym=CE}{\mathcal{L}}\Big(\htmlData{sym=Wm}{\mathbf{W}^{(m)}} \cdot \htmlData{sym=prefix}{F(x_i;\theta_F)_{1:m}} \; ; \; \htmlData{sym=yi}{y_i}\Big)" data-fallback="min over W^(m) and θ_F of (1/N) Σ_i Σ_{m in M} c_m · L( W^(m) · F(x_i; θ_F)_{1:m} ; y_i )"></div>
+<div class="symtable" data-syms="thetaF,prefix,sumM,Wm,cm,CE,yi,avgN"></div>
+<p class="inwords"><strong>In words:</strong> “take the first m numbers of each embedding, for every m in the chosen set; give each prefix its own small classifier; add up the classification losses of all prefixes; and train the network and all the classifiers to make that total small.”</p>
+<p class="inwords"><strong>With the numbers:</strong> say for one image the <span class="t" data-t="cross-entropy">cross-entropy</span> losses are 1.2 using the first 8 numbers, 0.8 using 16, and so on down to 0.5 using all 2,048. With every c<sub>m</sub> = 1 the training loss is the sum of all nine; the gradient from the 8-number term pushes the most important information into the first 8 numbers, because that is the only place it can help.</p>
+<p>With a ResNet-50 on ImageNet, d = 2,048 and the set of sizes is ℳ = {8, 16, 32, …, 1024, 2048}: 9 sizes, halving each time. The paper sets every c<sub>m</sub> to 1.</p>
+<h4>A cheaper variant: MRL-E</h4>
+<p>Instead of 9 separate classifiers, share one weight matrix and let each size use its first m columns. That roughly halves the classifier memory, which matters when there are millions of classes. The paper calls this MRL-E; it is within about 1% of full MRL from 16 dimensions up.</p>
+
+<h4>Try it: truncate an embedding, live</h4>
+<div class="plot" id="trunc-plot">
+  <div class="controls">
+    <label for="trunc-m">keep the first <strong id="trunc-mv">8</strong> of 64 numbers</label><input type="range" id="trunc-m" min="0" max="5" step="1" value="2">
+  </div>
+  <div id="trunc-chart"></div>
+  <div class="legend"><span><i style="background:var(--accent)"></i>front-loaded (Matryoshka-like)</span><span><i style="background:var(--active)"></i>spread out (ordinary training)</span></div>
+  <p class="readout" id="trunc-readout">Computing…</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> this is a real experiment computed in your browser on synthetic data: 600 “documents” of 64 numbers, and for each a noisy “query” copy. The task is to find each query's own document by cosine similarity using only the first m numbers (the y-axis is recall@1: how often the top result is the right one). The blue curve uses embeddings whose information is packed into the first numbers, the way Matryoshka training arranges it. The red curve holds exactly the same information, rotated so it is spread evenly over all 64 numbers, the way ordinary training leaves it. Both reach 100% with all 64 numbers. Cut them short and the front-loaded one keeps working far longer: that gap is what Matryoshka training buys. The slider reads both curves off at one size and reports what that size would save in storage for 10 million vectors; hover the chart to read any point.</p>
+<h4>Why it matters</h4>
+<p>The trick costs almost nothing: a few extra small classifiers during training, nothing at inference. You get one model and one stored vector serving every budget.</p>
+</section>
+
+<section id="s4">
+<h2>4 Applications <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S4">original</a></span></h2>
+<section id="s4-1">
+<h3>4.1 Where it was tried <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S4.SS1">original</a></span></h3>
+<p>Supervised image models (ResNet-50 on ImageNet, a Vision Transformer on 300 million images), a contrastive image-text model (ALIGN, similar to <a href="clip.html">CLIP</a>) and a masked language model (BERT). For 768-number models the sizes were {12, 24, 48, 96, 192, 384, 768}. The same training settings as the ordinary baselines were reused, with no special tuning.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Classification <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S4.SS2">original</a></span></h3>
+<h4>What they found</h4>
+<ul>
+  <li>At every size, the Matryoshka prefix was <strong>at least as accurate</strong> as a separate ResNet-50 trained at that size alone, and up to 2% better at the smallest sizes when judged by nearest-neighbour lookup.</li>
+  <li>Sizes that were never explicitly trained, between the powers of two, still worked well: the information spreads smoothly.</li>
+  <li>Compressing an ordinary embedding afterwards (with <span class="t" data-tip-title="SVD" data-tip="Singular value decomposition: a standard way to find the most important directions in a set of vectors, used here to compress embeddings after training.">SVD</span>), or keeping random features, lost much more accuracy as size shrank.</li>
+</ul>
+<h4>Adaptive classification</h4>
+<p><strong>Everyday picture:</strong> a doctor's triage. Easy cases are decided at a glance; only unclear cases get the full examination. The classifier looks at the first 8 numbers; if it is confident enough, it stops. Otherwise it looks at 16, then 32, and so on, with the confidence thresholds learned on held-out data.</p>
+<p class="inwords"><strong>With the numbers:</strong> on ImageNet this cascade reached 76.30% accuracy, the same as an ordinary 512-number model, while using on average only about 37 numbers per image: about <strong>14×</strong> smaller, and just 0.8 points below the full 2,048-number model.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Retrieval <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Finding a book in a huge library: first skim the spine colours to pull 200 likely candidates off the shelves (cheap, rough), then read those 200 blurbs carefully (expensive, precise). Adaptive retrieval does exactly this with one embedding: shortlist with its first few numbers, rerank the shortlist with all of them.</p>
+<p>Across all sizes, Matryoshka embeddings retrieved up to 3% better than ordinary embeddings of the same size on ImageNet, measured by mAP@10 (<span class="t" data-tip-title="mAP@10" data-tip="Mean average precision over the top 10 results: rewards putting correct matches in the top 10, and higher up within it. Averaged over all queries.">mean average precision in the top 10</span>).</p>
+
+<h4>The cost model</h4>
+<div class="eq" data-tex="\htmlData{sym=cost}{\text{cost}} \approx \htmlData{sym=Ndb}{N} \cdot \htmlData{sym=Ds}{D_s} + \htmlData{sym=K}{K} \cdot \htmlData{sym=Dr}{D_r} \quad \text{versus} \quad \htmlData{sym=Ndb}{N} \cdot \htmlData{sym=dfull}{d}" data-fallback="cost ≈ N · D_s + K · D_r  versus  N · d"></div>
+<div class="symtable" data-syms="Ndb,Ds,K,Dr,dfull,cost"></div>
+<p class="inwords"><strong>In words:</strong> “compare the query with every item using only D<sub>s</sub> numbers, then compare it with the K shortlisted items using D<sub>r</sub> numbers, instead of comparing it with every item using all d numbers.”</p>
+<p class="inwords"><strong>With the numbers:</strong> ImageNet's database has about 1.3 million images. Exhaustive search with 2,048 numbers costs 1.3M × 2,048 ≈ 2.66 × 10⁹ multiply-adds per query, matching the paper's 2.6 GFLOPs. Adaptive retrieval with D<sub>s</sub> = 16, K = 200 and D<sub>r</sub> = 2,048 costs 1.3M × 16 + 200 × 2,048 ≈ 2.12 × 10⁷: about <strong>126×</strong> less. The paper reports ~128× in theory, and a measured <strong>14×</strong> in wall-clock time using HNSW, at the same accuracy.</p>
+<div class="play" id="ar-demo">
+  <div class="sliders" id="ar-sliders"></div>
+  <div class="shares" id="ar-bars"></div>
+  <p class="readout" id="ar-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the two bars compare multiply-adds per query, on a log scale: exhaustive search at full size, and the two-stage shortlist-then-rerank search. The defaults are the paper's ImageNet-1K setting. Grow the database to ImageNet-4K's 4.2 million images and the paper needed D<sub>s</sub> = 64 to keep accuracy, which the calculator puts at about 32× cheaper (the paper: ~32× in theory, ~6× measured). The rerank term K × D<sub>r</sub> is tiny, so almost all the cost is the first pass: the shorter the shortlisting prefix, the bigger the saving.</p>
+<h4>Funnel retrieval</h4>
+<p>Choosing D<sub>s</sub> and D<sub>r</sub> is fiddly, so the paper also proposes a funnel: halve the shortlist and double the length at each step, for example shortlists 200 → 100 → 50 → 25 → 10 with lengths 16 → 32 → 64 → 128 → 256 → 2,048. It was as accurate as full-size search at about 128× lower theoretical cost.</p>
+<h4>Why it matters today</h4>
+<p>This is the pattern behind “search with short vectors, rescore with long ones” in modern vector databases. Combine it with <a data-lesson="primer/ml/embeddings/ann.html">ANN indexes</a> and <a data-lesson="primer/ml/embeddings/compression.html">quantization</a> and the savings multiply.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Further analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S5">original</a></span></h2>
+<ul>
+  <li><strong>Robustness:</strong> at least as robust as ordinary embeddings on shifted versions of ImageNet, 0.6 points better on the hard ImageNet-A set, and up to 3% better mAP@10 when queries come from a shifted set.</li>
+  <li><strong>Rare classes:</strong> up to 2% more accurate on new, rarely seen classes, without losing accuracy elsewhere. Rare classes seem to need the higher dimensions most.</li>
+  <li><strong>Disagreement between sizes:</strong> some images are classified <em>better</em> at small sizes. With perfect routing of each image to its best size, accuracy could rise by up to 4.6%.</li>
+  <li><strong>Coarse before fine:</strong> small prefixes lose fine-grained accuracy fast but keep broad categories (“a dog”) well: the nesting mirrors a hierarchy from general to specific.</li>
+  <li><strong>Ablations:</strong> existing models can be given Matryoshka structure with cheap partial fine-tuning; the halving spacing beats evenly spaced sizes; and retrieval gains level off beyond a certain shortlist size.</li>
+</ul>
+</section>
+
+<section id="s6">
+<h2>6 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S6">original</a></span></h2>
+<p>The authors conclude that one Matryoshka embedding matches fixed-size models at every size, giving about 14× smaller classifiers on average and 128× cheaper (14× faster) retrieval at the same accuracy. Future directions they list: learning the loss weights c<sub>m</sub>, using different losses at different sizes (for example, favouring recall at 8 numbers and robustness at 2,048), and learning search structures on top of the nested embedding.</p>
+</section>
+
+<section id="today">
+<h2>What changed since</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>Image models and BERT</td><td>Many text-embedding models trained with Matryoshka losses, with selectable output sizes</td><td><a data-lesson="primer/ml/embeddings/compression.html">compression</a></td></tr>
+    <tr><td>Shortlist with a short prefix, rerank with the full vector</td><td>Standard two-stage vector search, often with quantized vectors in the first stage</td><td><a data-lesson="primer/ml/embeddings/ann.html">ANN</a></td></tr>
+    <tr><td>Fixed thresholds for adaptive classification</td><td>The same cascade idea in routing requests to cheap or expensive models</td><td><a data-lesson="primer/agents/cost.html">cost</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Aditya Kusupati, Gantavya Bhatt, Aniket Rege, Matthew Wallingford, Aditya Sinha, Vivek Ramanujan, William Howard-Snyder, Kaifeng Chen, Sham Kakade, Prateek Jain and Ali Farhadi, <em>Matryoshka Representation Learning</em>, NeurIPS 2022. <a href="https://arxiv.org/abs/2205.13147">arXiv:2205.13147</a>. Quotations are brief and attributed; results are summarized in words and numbers written for this page, and figures are redrawn. All explanations, diagrams and interactive elements are original to this primer; the truncation experiment uses synthetic data.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    thetaF: { tex: "\\theta_F", name: "The network's weights", meaning: "Everything in the model that turns an input into its embedding.", shape: "millions of numbers", example: "a ResNet-50's weights" },
+    prefix: { tex: "F(x_i;\\theta_F)_{1:m}", name: "The first m numbers of the embedding", meaning: "Run input x_i through the network F to get its d-number embedding, then keep only positions 1 to m.", shape: "m numbers", example: "the first 8 of 2,048" },
+    sumM: { tex: "\\sum_{m\\in\\mathcal{M}}", name: "Sum over the chosen sizes", meaning: "Add up the loss at every prefix length in the set ℳ.", shape: "|ℳ| terms", example: "ℳ = {8, 16, …, 2048}: 9 sizes" },
+    Wm: { tex: "\\mathbf{W}^{(m)}", name: "Classifier for size m", meaning: "A small linear layer that makes a prediction from just the first m numbers. One per size (or shared, in MRL-E).", shape: "L × m (1000 × m for ImageNet)", example: "1000 × 8 for the smallest" },
+    cm: { tex: "c_m", name: "Weight of size m", meaning: "How much the loss at size m counts. The paper uses 1 for every size.", shape: "a number ≥ 0", example: "1" },
+    CE: { tex: "\\mathcal{L}", name: "Classification loss", meaning: "Softmax cross-entropy: minus the log of the probability given to the right class.", shape: "one number ≥ 0", example: "1.2 at 8 numbers, 0.5 at 2,048" },
+    yi: { tex: "y_i", name: "The correct label", meaning: "The true class of input i.", shape: "one of L classes", example: "“golden retriever”" },
+    avgN: { tex: "\\frac{1}{N}\\sum_i", name: "Average over the training set", meaning: "Average the per-example total over all N training examples.", shape: "one number", example: "" },
+    Ndb: { tex: "N", name: "Database size", meaning: "How many items are searched.", shape: "a whole number", example: "1.3 million (ImageNet-1K)" },
+    Ds: { tex: "D_s", name: "Shortlisting length", meaning: "How many leading numbers are used for the cheap first pass over every item.", shape: "8 to 2048", example: "16" },
+    K: { tex: "K", name: "Shortlist size", meaning: "How many candidates survive the first pass.", shape: "a whole number", example: "200" },
+    Dr: { tex: "D_r", name: "Reranking length", meaning: "How many numbers are used to rescore the shortlist.", shape: "up to d", example: "2,048" },
+    dfull: { tex: "d", name: "Full embedding length", meaning: "The whole vector.", shape: "a whole number", example: "2,048" },
+    cost: { tex: "\\text{cost}", name: "Multiply-adds per query", meaning: "One multiply-add per number per compared item, the dominant cost of exact search.", shape: "a count", example: "2.12 × 10⁷ adaptive vs 2.66 × 10⁹ exhaustive" },
+  },
+  blocks: {},
+  onReady(P) {
+    truncDemo(P);
+    arDemo();
+  },
+};
+
+/* ---- Figure 1: nesting dolls, built during parsing so papers.js wires them ---- */
+(function dolls() {
+  const NS = "http://www.w3.org/2000/svg";
+  const g = document.getElementById("dolls");
+  const sizes = [8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+  const x0 = 20, W = 480;
+  const X = (m) => x0 + (Math.log2(m) - 2) / (Math.log2(2048) - 2) * W; // log scale: 4 -> x0, 2048 -> x0 + W
+  const bar = document.createElementNS(NS, "rect");
+  bar.setAttribute("x", x0); bar.setAttribute("y", 206); bar.setAttribute("width", W); bar.setAttribute("height", 18); bar.setAttribute("rx", 4);
+  bar.setAttribute("fill", "var(--accent-soft)"); bar.setAttribute("stroke", "var(--wire)");
+  g.appendChild(bar);
+  const lbl = document.createElementNS(NS, "text");
+  lbl.setAttribute("x", x0); lbl.setAttribute("y", 242); lbl.setAttribute("class", "lbl");
+  lbl.textContent = "one embedding: 2,048 numbers (length drawn on a doubling scale)";
+  g.appendChild(lbl);
+  const uses = {
+    8: "A very coarse sketch. Good for broad categories and for the first cheap pass of a search.",
+    16: "The paper's shortlisting length for ImageNet-1K adaptive retrieval.",
+    32: "Still tiny: about 37 numbers on average was enough for adaptive classification to match a 512-number model.",
+    64: "The shortlisting length the paper needed for the harder ImageNet-4K.",
+    128: "A common “small” embedding size.",
+    256: "The last step of the paper's funnel before the full vector.",
+    512: "The size an ordinary model needed to reach 76.3% on ImageNet, which the Matryoshka cascade matched with far fewer numbers on average.",
+    1024: "Near-full quality.",
+    2048: "The full embedding, used for the final, precise rerank.",
+  };
+  sizes.forEach((m, k) => {
+    const doll = document.createElementNS(NS, "g");
+    doll.setAttribute("class", "blk " + (m === 2048 ? "soft" : "ff"));
+    doll.setAttribute("data-block", `m${m}`);
+    doll.setAttribute("aria-label", `first ${m} numbers`);
+    const y = 186 - k * 20;
+    const r = document.createElementNS(NS, "rect");
+    r.setAttribute("x", x0); r.setAttribute("y", y); r.setAttribute("width", Math.max(6, X(m) - x0)); r.setAttribute("height", 14); r.setAttribute("rx", 4);
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", X(m) + 6); t.setAttribute("y", y + 11); t.textContent = m.toLocaleString();
+    doll.append(r, t);
+    g.appendChild(doll);
+    const gb = (10e6 * m * 4) / 1e9;
+    window.PAPER.blocks[`m${m}`] = {
+      title: `The first ${m.toLocaleString()} numbers`,
+      body: `<p>${uses[m]}</p><p>Storage for 10 million vectors at 4 bytes per number: <strong>${gb < 1 ? gb.toFixed(2) : gb.toFixed(1)} GB</strong>. Each comparison costs ${m.toLocaleString()} multiply-adds.</p>`,
+      shape: `${m} of 2,048 numbers (${((m / 2048) * 100).toFixed(m < 64 ? 2 : 1)}%)`,
+      lesson: "primer/ml/embeddings/compression.html",
+    };
+  });
+})();
+
+/* small deterministic PRNG so the experiment is identical for every reader */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gaussian(rand) { const u = Math.max(rand(), 1e-12), v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
+/* ---- live truncation experiment on synthetic data ---- */
+function truncDemo(P) {
+  const N = 600, d = 64, ms = [2, 4, 8, 16, 32, 64];
+  const rand = mulberry32(42);
+  const sd = Array.from({ length: d }, (_, j) => Math.pow(0.9, j)); // information packed into the first numbers
+  const meanSd = sd.reduce((a, b) => a + b, 0) / d;
+  const docs = Array.from({ length: N }, () => sd.map((s) => gaussian(rand) * s));
+  // A random rotation (Gram-Schmidt on a Gaussian matrix) spreads the same information over all 64 numbers.
+  const Q = [];
+  for (let i = 0; i < d; i++) {
+    let v = Array.from({ length: d }, () => gaussian(rand));
+    for (const q of Q) { const p = v.reduce((s, x, k) => s + x * q[k], 0); v = v.map((x, k) => x - p * q[k]); }
+    const n = Math.hypot(...v); Q.push(v.map((x) => x / n));
+  }
+  const rot = (v) => Q.map((q) => q.reduce((s, x, k) => s + x * v[k], 0));
+  const docsR = docs.map(rot);
+  const noise = () => Array.from({ length: d }, () => gaussian(rand) * 0.8 * meanSd);
+  const qs = docs.map((v) => { const e = noise(); return v.map((x, k) => x + e[k]); });
+  const qsR = docsR.map((v) => { const e = noise(); return v.map((x, k) => x + e[k]); });
+  function recall(D, Qs, m) {
+    const norm = (v) => { let s = 0; for (let k = 0; k < m; k++) s += v[k] * v[k]; return Math.sqrt(s) || 1; };
+    const dn = D.map(norm);
+    let hit = 0;
+    for (let i = 0; i < N; i++) {
+      const q = Qs[i], qn = norm(q);
+      let best = -Infinity, arg = -1;
+      for (let j = 0; j < N; j++) {
+        const x = D[j]; let s = 0;
+        for (let k = 0; k < m; k++) s += q[k] * x[k];
+        s /= qn * dn[j];
+        if (s > best) { best = s; arg = j; }
+      }
+      if (arg === i) hit++;
+    }
+    return hit / N;
+  }
+  // x is log2(m), so the doubling sizes 2, 4, …, 64 sit evenly spaced at x = 1 … 6
+  const front = ms.map((m) => [Math.log2(m), recall(docs, qs, m)]);
+  const spread = ms.map((m) => [Math.log2(m), recall(docsR, qsR, m)]);
+  P.lineChart(document.getElementById("trunc-chart"), {
+    series: [{ name: "front-loaded (Matryoshka-like)", points: front }, { name: "spread out (ordinary)", points: spread }],
+    xLabel: "numbers kept, m (doubling scale)", yLabel: "recall@1", yMin: 0, yMax: 1,
+    xFmt: (v) => String(Math.round(Math.pow(2, v))), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("trunc-readout"), ariaLabel: "Recall at 1 against number of dimensions kept, for front-loaded and spread-out embeddings",
+  });
+  const s = document.getElementById("trunc-m"), mv = document.getElementById("trunc-mv"), out = document.getElementById("trunc-readout");
+  const show = () => {
+    const k = +s.value, m = ms[k];
+    mv.textContent = m;
+    out.innerHTML = `Keeping <strong>${m}</strong> of 64 numbers (${((m / 64) * 100).toFixed(0)}%): recall@1 <strong>${front[k][1].toFixed(3)}</strong> front-loaded vs <strong>${spread[k][1].toFixed(3)}</strong> spread out. At this fraction, 10 million 2,048-number vectors would take ${(81.92 * m / 64).toFixed(1)} GB instead of 81.9 GB.`;
+  };
+  s.addEventListener("input", show);
+  show();
+}
+
+/* ---- adaptive retrieval cost calculator ---- */
+function arDemo() {
+  const st = { N: 1.3e6, Ds: 16, K: 200, Dr: 2048 };
+  const choices = { N: [1e5, 1e6, 1.3e6, 4.2e6, 1e7, 1e8], Ds: [8, 16, 32, 64, 128, 256], K: [50, 100, 200, 500, 1000], Dr: [256, 512, 1024, 2048] };
+  const labels = { N: "database size N", Ds: "shortlist length D_s", K: "shortlist size K", Dr: "rerank length D_r" };
+  const fmt = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v));
+  const box = document.getElementById("ar-sliders"), bars = document.getElementById("ar-bars"), out = document.getElementById("ar-readout");
+  Object.keys(choices).forEach((key) => {
+    const id = "ar-" + key;
+    const l = document.createElement("label"); l.htmlFor = id; l.textContent = labels[key];
+    const r = document.createElement("input"); Object.assign(r, { type: "range", id, min: 0, max: choices[key].length - 1, step: 1, value: choices[key].indexOf(st[key]) });
+    const o = document.createElement("output"); o.textContent = fmt(st[key]);
+    r.addEventListener("input", () => { st[key] = choices[key][+r.value]; o.textContent = fmt(st[key]); draw(); });
+    box.append(l, r, o);
+  });
+  function draw() {
+    const full = st.N * 2048, ar = st.N * st.Ds + st.K * st.Dr;
+    const top = Math.log10(Math.max(full, ar)) * 1.03;
+    const row = (label, v, c) => `<div class="share-row" style="grid-template-columns:11rem minmax(0,1fr) 6rem"><span>${label}</span><div><div class="share-bar" style="width:${Math.max(2, (Math.log10(v) / top) * 100).toFixed(1)}%;background:${c}"></div></div><span>${v.toExponential(2)}</span></div>`;
+    bars.innerHTML = row("exhaustive, 2,048 numbers", full, "var(--wire)") + row("shortlist + rerank", ar, "var(--accent)");
+    out.innerHTML = `Multiply-adds per query: ${fmt(st.N)} × 2,048 = ${full.toExponential(2)} exhaustive, versus ${fmt(st.N)} × ${st.Ds} + ${st.K} × ${st.Dr} = ${ar.toExponential(2)}. Two-stage search is <strong>${(full / ar).toFixed(0)}× cheaper</strong> (log scale).`;
+  }
+  draw();
+}
+</script>
+</body>
+</html>

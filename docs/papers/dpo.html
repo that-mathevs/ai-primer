@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Direct Preference Optimization, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Rafailov et al. (2023), Direct Preference Optimization: Your Language Model is Secretly a Reward Model.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="dpo">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Preliminaries: the RLHF pipeline</a></li>
+      <li><a href="#s4">4 Direct Preference Optimization</a>
+        <ol>
+          <li><a href="#s4-opt">The optimal policy</a></li>
+          <li><a href="#s4-flip">Flipping it around</a></li>
+          <li><a href="#s4-loss">The DPO loss</a></li>
+          <li><a href="#s4-grad">What the update does</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Theoretical analysis</a></li>
+      <li><a href="#s6">6 Experiments</a></li>
+      <li><a href="#s7">7 Discussion</a></li>
+      <li><a href="#today">What changed since</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Direct Preference Optimization, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Rafailov, Sharma, Mitchell, Ermon, Manning and Finn (2023), <em>Direct Preference Optimization: Your Language Model is Secretly a Reward Model</em>: the paper that replaced a reinforcement learning loop with one line of loss function.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2305.18290">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2305.18290">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2305.18290">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is published under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, so its two small tables are reproduced with attribution; its figures are redrawn from scratch. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same. Hover the <em>β</em> in the DPO loss.</li>
+  <li>The sliders in §4 compute the real DPO loss live. Drag them until the formula feels obvious.</li>
+</ul>
+<p>Every idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. This paper builds on the pipeline introduced by <a href="instructgpt.html">InstructGPT</a>; reading that companion first helps. The <a class="lesson" data-lesson="primer/ml/training_stages.html">training stages lesson</a> computes the DPO loss in NumPy.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290">original</a></span></h2>
+<blockquote class="quote">“In this paper we introduce a new parameterization of the reward model in RLHF that enables extraction of the corresponding optimal policy in closed form, allowing us to solve the standard RLHF problem with only a simple classification loss.”<cite>Rafailov et al. (2023), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The standard way to teach a chat model manners, <span class="t" data-t="rlhf">RLHF</span>, is like training a dog through an interpreter. First you train a judge (a <span class="t" data-t="reward model">reward model</span>) to score answers the way people would. Then the model practises answering, the judge scores each attempt, and a reinforcement learning algorithm slowly improves the model. It works, but it is slow, fiddly and unstable. DPO says: skip the judge. Show the model pairs of answers where people preferred one, and adjust it directly so it favours the preferred one, using an ordinary classification-style loss.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>DPO optimizes <em>the same objective</em> as RLHF, exactly, without a separate reward model and without sampling from the model during training.</li>
+  <li>It is stable and needs almost no hyperparameter tuning.</li>
+  <li>It matched or beat PPO-based RLHF on controlling sentiment, summarization and single-turn dialogue, with models of up to 6 billion parameters.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>DPO and its many variants became a standard way to do <span class="t" data-t="preference tuning">preference tuning</span>, especially for open models, because it is far simpler to run than a reinforcement learning loop.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="pretraining">pretrained</span> model has read everything: brilliant code and buggy code, facts and common misconceptions. The paper's example: we want the model to <em>know</em> a misconception that half of people believe, but not to <em>assert</em> it half of the time. Preference tuning selects the behaviour we want from everything the model can do.</p>
+<h4>Why not just use RLHF?</h4>
+<p>RLHF trains several models (the policy, a reward model, a value model) and samples fresh text from the policy inside the training loop. That is expensive and famously finicky. DPO's key observation is mathematical: the RLHF objective can be rewritten so that the language model itself <em>is</em> the reward model, and then a simple loss on preference pairs solves it.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S2">original</a></span></h2>
+<p>Instruction tuning (training on instructions paired with good answers, called <span class="t" data-t="sft">SFT</span>) makes models follow instructions. But comparing two answers is easier for people than writing a perfect one, so later work trained on human <em>preferences</em>, first fitting a reward model and then optimizing it with reinforcement learning algorithms such as PPO. Related threads studied learning from preferences in bandit and reinforcement learning settings. DPO's contribution is a single-stage method that learns a policy straight from offline preference pairs.</p>
+</section>
+
+<section id="s3">
+<h2>3 Preliminaries: the RLHF pipeline <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S3">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>RLHF has three phases. <strong>SFT:</strong> teach the format by example. <strong>Reward modelling:</strong> show people two answers to the same prompt, record which they preferred, and train a judge to predict that choice. <strong>RL fine-tuning:</strong> let the model write answers, score them with the judge, and push the model towards high scores without drifting too far from where it started.</p>
+
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 300" role="img" aria-label="RLHF compared with DPO">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="10" y="22" class="lbl">RLHF</text>
+    <text x="10" y="192" class="lbl">DPO</text>
+    <path class="wire" d="M130,70 H162" marker-end="url(#arr)"/>
+    <path class="wire" d="M282,70 H314" marker-end="url(#arr)"/>
+    <path class="wire" d="M434,70 H466" marker-end="url(#arr)"/>
+    <path class="wire" d="M374,100 V130 H240 V100" marker-end="url(#arr)"/>
+    <path class="wire" d="M130,240 H300" marker-end="url(#arr)"/>
+    <path class="wire" d="M420,240 H466" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="prefs"><rect x="10" y="44" width="120" height="52" rx="8"/><text x="70" y="66" text-anchor="middle">Preference</text><text x="70" y="82" text-anchor="middle">pairs</text></g>
+    <g class="blk attn" data-block="rm"><rect x="162" y="44" width="120" height="52" rx="8"/><text x="222" y="66" text-anchor="middle">Reward model</text><text x="222" y="82" text-anchor="middle" class="lbl">max likelihood</text></g>
+    <g class="blk ff" data-block="rl"><rect x="314" y="44" width="120" height="52" rx="8"/><text x="374" y="66" text-anchor="middle">RL (PPO)</text><text x="374" y="82" text-anchor="middle" class="lbl">sample + score</text></g>
+    <g class="blk soft" data-block="lm1"><rect x="466" y="44" width="84" height="52" rx="8"/><text x="508" y="74" text-anchor="middle">Final LM</text></g>
+    <text x="307" y="148" class="lbl" text-anchor="middle">samples fed back to be scored, every step</text>
+    <g class="blk emb" data-block="prefs"><rect x="10" y="214" width="120" height="52" rx="8"/><text x="70" y="236" text-anchor="middle">Preference</text><text x="70" y="252" text-anchor="middle">pairs</text></g>
+    <g class="blk lin" data-block="dpo"><rect x="300" y="214" width="120" height="52" rx="8"/><text x="360" y="236" text-anchor="middle">DPO loss</text><text x="360" y="252" text-anchor="middle" class="lbl">max likelihood</text></g>
+    <g class="blk soft" data-block="lm2"><rect x="466" y="214" width="84" height="52" rx="8"/><text x="508" y="244" text-anchor="middle">Final LM</text></g>
+    <g class="blk plain" data-block="ref"><rect x="170" y="268" width="100" height="26" rx="6"/><text x="220" y="285" text-anchor="middle">frozen π_ref</text></g>
+    <path class="wire" d="M270,281 H330 V268" marker-end="url(#arr)"/>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. Compare the two rows.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn and expanded. Based on Rafailov et al. (2023), Figure 1 (CC BY 4.0).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> both rows start from the same data: prompts with a preferred and a rejected answer. The top row (RLHF) trains a reward model first, then runs a reinforcement learning loop in which the model writes new answers that the reward model scores, over and over (the feedback arrow). The bottom row (DPO) goes straight from preference pairs to the final model with one loss, using a frozen copy of the starting model (π_ref) as a reference point. Same destination, one box and one loop fewer.</p>
+
+<h4>The reward model: Bradley-Terry</h4>
+<p>How do you turn “people preferred A over B” into numbers? The <span class="t" data-t="bradley-terry model">Bradley-Terry model</span> says: give every answer a hidden score, and the chance that A beats B depends only on the <em>difference</em> of their scores, passed through a <span class="t" data-t="sigmoid">sigmoid</span>. It is how chess ratings work: a 200-point gap means a predictable win rate, whatever the absolute ratings.</p>
+<div class="eq" data-tex="\htmlData{sym=pstar}{p^*}(\htmlData{sym=y1}{y_1} \htmlData{sym=succ}{\succ} \htmlData{sym=y2}{y_2} \mid \htmlData{sym=x}{x}) = \frac{\exp\big(\htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y1}{y_1})\big)}{\exp\big(\htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y1}{y_1})\big) + \exp\big(\htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y2}{y_2})\big)} = \htmlData{sym=sigma}{\sigma}\big(\htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y1}{y_1}) - \htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y2}{y_2})\big)" data-fallback="p*(y1 ≻ y2 | x) = exp(r*(x,y1)) / (exp(r*(x,y1)) + exp(r*(x,y2))) = σ(r*(x,y1) − r*(x,y2))"></div>
+<div class="symtable" data-syms="pstar,y1,succ,y2,x,rstar,sigma"></div>
+<p class="inwords"><strong>In words:</strong> “the chance people prefer answer 1 to answer 2 is the sigmoid of how much higher answer 1's hidden score is.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if answer 1 scores 1.5 and answer 2 scores 0.5, the gap is 1.0 and σ(1.0) = 1 / (1 + e<sup>−1</sup>) = <strong>0.731</strong>: people pick answer 1 about 73% of the time.</p>
+<div class="plot" id="bt-plot">
+  <div class="controls"><label for="bt-gap">score gap r₁ − r₂ = <strong id="bt-gap-v">1.0</strong></label><input type="range" id="bt-gap" min="-5" max="5" step="0.1" value="1"></div>
+  <div id="bt-chart"></div>
+  <p class="readout" id="bt-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is how much higher answer 1 scores than answer 2; the y-axis is the chance people prefer it. At a gap of 0 it is a coin flip (0.5). A gap of +2 gives about 88%, and the curve flattens towards 1 but never reaches it. Only the gap matters: adding 100 to both scores changes nothing. Remember that; it is the fact DPO's derivation relies on.</p>
+
+<p>Training the reward model is then ordinary <span class="t" data-t="binary cross-entropy">binary classification</span> on “which one won”:</p>
+<div class="eq" data-tex="\htmlData{sym=LR}{\mathcal{L}_R}(\htmlData{sym=rphi}{r_\phi}, \htmlData{sym=D}{\mathcal{D}}) = -\htmlData{sym=E}{\mathbb{E}}_{(\htmlData{sym=x}{x},\htmlData{sym=yw}{y_w},\htmlData{sym=yl}{y_l})\sim \htmlData{sym=D}{\mathcal{D}}}\Big[\htmlData{sym=log}{\log}\,\htmlData{sym=sigma}{\sigma}\big(\htmlData{sym=rphi}{r_\phi}(\htmlData{sym=x}{x},\htmlData{sym=yw}{y_w}) - \htmlData{sym=rphi}{r_\phi}(\htmlData{sym=x}{x},\htmlData{sym=yl}{y_l})\big)\Big]" data-fallback="L_R = −E[ log σ(r_φ(x, y_w) − r_φ(x, y_l)) ]"></div>
+<div class="symtable" data-syms="LR,rphi,D,E,yw,yl,log"></div>
+<p class="inwords"><strong>In words:</strong> “on average over the labelled pairs, make the winner's score beat the loser's by enough that the sigmoid of the gap is close to 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> winner scored 1.5 and loser 0.5, so the loss for that pair is −ln σ(1.0) = −ln 0.731 = <strong>0.313</strong>. Widen the gap to 3 and the loss falls to −ln 0.953 = 0.049.</p>
+
+<h4>The RL objective</h4>
+<p>With a reward model in hand, RLHF maximizes reward while staying close to the starting model. The closeness penalty is the <span class="t" data-t="kl divergence">KL divergence</span>: a measure of how different two probability distributions are. Without it, the model would find nonsense that happens to fool the reward model.</p>
+<div class="eq" data-tex="\max_{\htmlData{sym=pitheta}{\pi_\theta}} \; \htmlData{sym=E}{\mathbb{E}}\big[\htmlData{sym=rphi}{r_\phi}(\htmlData{sym=x}{x},\htmlData{sym=y}{y})\big] - \htmlData{sym=beta}{\beta}\,\htmlData{sym=KL}{\mathbb{D}_{\mathrm{KL}}}\big[\htmlData{sym=pitheta}{\pi_\theta}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x}) \,\|\, \htmlData{sym=piref}{\pi_{\text{ref}}}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})\big]" data-fallback="max over π_θ of E[r_φ(x, y)] − β · KL[π_θ(y|x) ‖ π_ref(y|x)]"></div>
+<div class="symtable" data-syms="pitheta,y,beta,KL,piref"></div>
+<p class="inwords"><strong>In words:</strong> “find the model that earns the most reward on average, minus a penalty, scaled by β, for how far its answers drift from the reference model's.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if a candidate model earns average reward 2.0 but has drifted by KL = 5 (in nats, the natural-log unit), then with β = 0.1 its score is 2.0 − 0.1 × 5 = 1.5. A model earning 1.8 with KL = 1 scores 1.7 and wins: less reward, much less drift.</p>
+<h4>Why it matters</h4>
+<p>Optimizing this needs reinforcement learning because generated text is discrete: you can't take a gradient through “sample a word”. That, and the instability of PPO, is the pain DPO removes. See the <a href="instructgpt.html">InstructGPT companion</a> for the pipeline in practice.</p>
+</section>
+
+<section id="s4">
+<h2>4 Direct Preference Optimization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S4">original</a></span></h2>
+<p>This section is the heart of the paper: three short algebraic moves that turn the RL problem into a classification loss.</p>
+
+<section id="s4-opt">
+<h3>Step 1: the best possible model has a formula</h3>
+<h4>Everyday picture</h4>
+<p>Imagine the reference model as a shop's current stock levels, and the reward as how much customers like each product. The best new stock under “don't change too much” is simple: take the current stock and boost each product in proportion to e<sup>(how liked)/β</sup>, then rescale so the shelves add up to 100%. That rescaling constant is Z.</p>
+<div class="eq" data-tex="\htmlData{sym=pir}{\pi_r}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x}) = \frac{1}{\htmlData{sym=Z}{Z(x)}}\,\htmlData{sym=piref}{\pi_{\text{ref}}}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})\,\exp\!\Big(\tfrac{1}{\htmlData{sym=beta}{\beta}}\,\htmlData{sym=r}{r}(\htmlData{sym=x}{x},\htmlData{sym=y}{y})\Big)" data-fallback="π_r(y|x) = (1 / Z(x)) · π_ref(y|x) · exp(r(x,y) / β)"></div>
+<div class="symtable" data-syms="pir,Z,r"></div>
+<p class="inwords"><strong>In words:</strong> “the optimal model is the reference model reweighted by e to the reward over β, then normalized so the probabilities add to 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> two possible answers, each with reference probability 0.5; rewards 1 and 0; β = 1. Unnormalized weights: 0.5 × e<sup>1</sup> = 1.359 and 0.5 × e<sup>0</sup> = 0.5, so Z = 1.859. The optimal model gives the first answer 1.359 / 1.859 = <strong>0.731</strong> and the second <strong>0.269</strong>. With β = 0.1 instead, the first answer's weight becomes 0.5 × e<sup>10</sup>, and the optimal model picks it almost always: small β means “chase reward”, large β means “stay close to the reference”.</p>
+<p>The catch: Z(x) sums over <em>every possible answer</em> to the prompt, which is astronomically many. You can't compute it, so you can't use this formula directly.</p>
+</section>
+
+<section id="s4-flip">
+<h3>Step 2: flip it around</h3>
+<h4>Everyday picture</h4>
+<p>If you can't compute the best stock from the customer ratings, run it backwards: look at any stock level and infer what ratings would have made it the best. Taking logarithms of the formula above and rearranging gives the reward in terms of the model.</p>
+<div class="eq" data-tex="\htmlData{sym=r}{r}(\htmlData{sym=x}{x},\htmlData{sym=y}{y}) = \htmlData{sym=beta}{\beta}\,\htmlData{sym=log}{\log}\frac{\htmlData{sym=pir}{\pi_r}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})}{\htmlData{sym=piref}{\pi_{\text{ref}}}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})} + \htmlData{sym=beta}{\beta}\,\htmlData{sym=log}{\log}\,\htmlData{sym=Z}{Z(x)}" data-fallback="r(x,y) = β log(π_r(y|x) / π_ref(y|x)) + β log Z(x)"></div>
+<p class="inwords"><strong>In words:</strong> “a reward is β times how much more likely the model makes an answer than the reference did (on a log scale), plus a term that depends only on the prompt.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the first answer, 1 × ln(0.731 / 0.5) + 1 × ln 1.859 = 0.380 + 0.620 = <strong>1.000</strong>, the reward we started with. For the second, ln(0.269 / 0.5) + 0.620 = −0.620 + 0.620 = <strong>0</strong>. The formula recovers both rewards exactly.</p>
+<h4>The trick: Z cancels</h4>
+<p>Recall from Bradley-Terry that only the <em>difference</em> of two rewards matters. Both answers to the same prompt share the same β log Z(x), so in the difference it cancels. The uncomputable term vanishes. That is the whole paper in one sentence.</p>
+</section>
+
+<section id="s4-loss">
+<h3>Step 3: the DPO loss <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S4">original</a></span></h3>
+<p>Plug the flipped reward into the reward-model loss from §3. What remains is a loss on the language model itself:</p>
+<div class="eq" data-tex="\htmlData{sym=LDPO}{\mathcal{L}_{\text{DPO}}}(\htmlData{sym=pitheta}{\pi_\theta};\htmlData{sym=piref}{\pi_{\text{ref}}}) = -\htmlData{sym=E}{\mathbb{E}}_{(\htmlData{sym=x}{x},\htmlData{sym=yw}{y_w},\htmlData{sym=yl}{y_l})\sim\htmlData{sym=D}{\mathcal{D}}}\left[\htmlData{sym=log}{\log}\,\htmlData{sym=sigma}{\sigma}\!\left(\htmlData{sym=beta}{\beta}\,\htmlData{sym=log}{\log}\frac{\htmlData{sym=pitheta}{\pi_\theta}(\htmlData{sym=yw}{y_w}\mid \htmlData{sym=x}{x})}{\htmlData{sym=piref}{\pi_{\text{ref}}}(\htmlData{sym=yw}{y_w}\mid \htmlData{sym=x}{x})} - \htmlData{sym=beta}{\beta}\,\htmlData{sym=log}{\log}\frac{\htmlData{sym=pitheta}{\pi_\theta}(\htmlData{sym=yl}{y_l}\mid \htmlData{sym=x}{x})}{\htmlData{sym=piref}{\pi_{\text{ref}}}(\htmlData{sym=yl}{y_l}\mid \htmlData{sym=x}{x})}\right)\right]" data-fallback="L_DPO = −E[ log σ( β log(π_θ(y_w|x)/π_ref(y_w|x)) − β log(π_θ(y_l|x)/π_ref(y_l|x)) ) ]"></div>
+<div class="symtable" data-syms="LDPO"></div>
+<p class="inwords"><strong>In words:</strong> “for each labelled pair, measure how much more the model now likes the winner than the reference did, subtract the same for the loser, scale by β, and push that margin up through the same log-sigmoid loss a reward model would use.”</p>
+<p class="inwords"><strong>With the numbers:</strong> β = 0.1. The model gives the winner a <span class="t" data-t="log-probability">log-probability</span> of −12.0 where the reference gave −14.0 (a gain of +2.0), and the loser −15.0 where the reference gave −13.0 (a loss of 2.0). The <span class="t" data-t="implicit reward">implicit rewards</span> are 0.1 × 2.0 = 0.2 and 0.1 × (−2.0) = −0.2, so the margin is 0.4. σ(0.4) = 0.599 and the loss is −ln 0.599 = <strong>0.513</strong>.</p>
+
+<h4>Try it: the DPO loss, live</h4>
+<div class="play" id="dpo-demo">
+  <div class="sliders" id="dpo-sliders"></div>
+  <div class="shares" id="dpo-out"></div>
+  <p class="readout" id="dpo-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the first two sliders say how much the model being trained has raised (positive) or lowered (negative) the log-probability of the preferred and rejected answers, compared with the frozen reference. The bars show the two implicit rewards, then the loss and the size of the push the next update will get. Raise the preferred answer and lower the rejected one: the loss falls towards 0 and the push fades, because this pair is “learned”. Flip them, so the model prefers the loser: the loss climbs and the push grows. Now change β: it sets how much a given change in log-probability counts, so a larger β reaches a low loss with a smaller departure from the reference.</p>
+<div class="plot" id="loss-plot">
+  <div id="loss-chart"></div>
+  <div class="legend"><span><i style="background:var(--accent)"></i>β = 0.1</span><span><i style="background:var(--active)"></i>β = 0.5</span><span><i style="background:var(--soft-stroke)"></i>β = 1.0</span></div>
+  <p class="readout" id="loss-readout">Hover the curves. The x-axis is the log-ratio margin: (winner's gain) − (loser's gain), before scaling by β.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each curve is the DPO loss for one β, plotted against the unscaled margin. Right of zero, the model already prefers the winner more than the reference did, and the loss decays towards 0; left of zero it rises almost in a straight line. Larger β makes the curve steeper, so the same margin counts for more. At a margin of 4 with β = 0.1 the loss is still 0.513, the worked example above. The same margin gives 0.127 with β = 0.5 and 0.018 with β = 1.</p>
+</section>
+
+<section id="s4-grad">
+<h3>What does the update actually do?</h3>
+<blockquote class="quote">“Intuitively, the gradient of the loss function ℒ<sub>DPO</sub> increases the likelihood of the preferred completions y<sub>w</sub> and decreases the likelihood of dispreferred completions y<sub>l</sub>.”<cite>Rafailov et al. (2023), §4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A good tutor spends time on the questions you get wrong, not on the ones you have mastered. The DPO <span class="t" data-t="gradient">gradient</span> has a built-in weight that does exactly this: pairs the model currently ranks the wrong way get a big push, and pairs it already ranks correctly get a small one.</p>
+<div class="eq" data-tex="\nabla_{\htmlData{sym=theta}{\theta}}\htmlData{sym=LDPO}{\mathcal{L}_{\text{DPO}}} = -\htmlData{sym=beta}{\beta}\,\htmlData{sym=E}{\mathbb{E}}\Big[\htmlData{sym=wgt}{\sigma\big(\hat r_\theta(x,y_l) - \hat r_\theta(x,y_w)\big)}\,\big[\htmlData{sym=gradw}{\nabla_\theta \log \pi(y_w\mid x)} - \htmlData{sym=gradl}{\nabla_\theta \log \pi(y_l\mid x)}\big]\Big]" data-fallback="∇L_DPO = −β E[ σ(r̂(x,y_l) − r̂(x,y_w)) · (∇ log π(y_w|x) − ∇ log π(y_l|x)) ]"></div>
+<div class="symtable" data-syms="theta,wgt,gradw,gradl,rhat"></div>
+<p class="inwords"><strong>In words:</strong> “move the weights to make the winner more likely and the loser less likely, weighted by how badly the model's implicit rewards currently rank this pair.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the worked example the implicit rewards were 0.2 (winner) and −0.2 (loser), so the weight is σ(−0.2 − 0.2) = σ(−0.4) = <strong>0.401</strong>. Had the model ranked them the wrong way round (−0.2 and 0.2), the weight would be σ(0.4) = 0.599: a bigger push for the mistake.</p>
+<p>The paper notes that dropping this weight, so every pair is pushed equally, makes the model degenerate. The weight is not decoration.</p>
+<h4>The recipe</h4>
+<ol>
+  <li>Take prompts, have the reference model produce two answers each, and have people mark which is better. Or reuse an existing preference dataset.</li>
+  <li>Freeze a copy of the starting model as π<sub>ref</sub> (usually the SFT model).</li>
+  <li>Minimize ℒ<sub>DPO</sub> with ordinary gradient descent. In the paper: β = 0.1 by default (0.5 for summarization), batch 64, learning rate 10<sup>−6</sup> with a 150-step warmup.</li>
+</ol>
+<h4>Why it matters</h4>
+<p>Everything in the recipe is supervised learning. No sampling during training, no reward model to keep in memory, no value network, no reinforcement learning tricks. Compute and memory drop, and so does the number of things that can go wrong.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Theoretical analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S5">original</a></span></h2>
+<h3>5.1 Your language model is secretly a reward model <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S5.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If two scoring systems always differ by the same amount on every answer to a given question (say, one adds 10 points to everything), they rank answers identically and lead to the same best model. The paper calls such rewards <em>equivalent</em>. It then proves that <em>every</em> class of equivalent rewards contains one that can be written as β log(π / π<sub>ref</sub>) for some model π. So restricting ourselves to rewards of that form loses nothing.</p>
+<div class="eq" data-tex="\htmlData{sym=r}{r}(\htmlData{sym=x}{x},\htmlData{sym=y}{y}) = \htmlData{sym=beta}{\beta}\,\htmlData{sym=log}{\log}\frac{\htmlData{sym=pi}{\pi}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})}{\htmlData{sym=piref}{\pi_{\text{ref}}}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})}" data-fallback="r(x,y) = β log(π(y|x) / π_ref(y|x))"></div>
+<div class="symtable" data-syms="pi"></div>
+<p class="inwords"><strong>In words:</strong> “any reward worth learning can be expressed as how much a model favours an answer relative to the reference, scaled by β.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the two-answer example, this form gives rewards 0.380 and −0.620 rather than 1 and 0. They differ from the originals by the same −0.620, so they rank the answers the same way and lead to the same optimal model.</p>
+<h4>Why it matters</h4>
+<p>This is the justification for the paper's subtitle: a language model trained with DPO carries a reward model inside it, readable as β log(π / π<sub>ref</sub>). Practitioners use exactly that quantity to inspect what a DPO model has learned.</p>
+
+<h3>5.2 Why actor-critic RL is unstable <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S5.SS2">original</a></span></h3>
+<p>Viewed through the same lens, PPO-style RLHF implicitly has to estimate the normalizing term (the β log Z piece) from samples, usually with a learned value function or a rough baseline. Estimating it badly gives high-variance gradients and unstable training. DPO's reparameterization makes that term cancel exactly, so no baseline is needed.</p>
+</section>
+
+<section id="s6">
+<h2>6 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S6">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Three tasks, rising in realism. <strong>Sentiment:</strong> continue movie-review openings so they come out positive, where a sentiment classifier provides the true reward, so the reward-versus-drift trade-off can be measured exactly. <strong>Summarization:</strong> summarize Reddit posts (TL;DR). <strong>Dialogue:</strong> answer single-turn requests from the Anthropic Helpful and Harmless dataset of 170,000 dialogues.</p>
+<h4>6.1 The reward versus drift frontier</h4>
+<p>On sentiment, across 22 runs with different settings, DPO reached the highest reward at every level of KL drift. It beat PPO even when PPO was given the true reward instead of a learned one. Both optimize the same objective; DPO simply optimizes it better.</p>
+<h4>6.2 Real preference data</h4>
+<ul>
+  <li><strong>Summarization:</strong> judged by GPT-4 against human-written reference summaries, DPO won about 61% of the time at sampling temperature 0, against about 57% for PPO at its best temperature. DPO also held up better at higher temperatures.</li>
+  <li><strong>Head to head with humans judging:</strong> DPO summaries at temperature 0.25 were preferred 58% of the time over PPO's best.</li>
+  <li><strong>Dialogue:</strong> DPO was the only computationally efficient method that improved on the dataset's own preferred answers, matching an expensive best-of-128 sampling baseline.</li>
+</ul>
+<h4>6.3 A new input distribution</h4>
+<div class="tablewrap"><table>
+  <caption>Table 1 of Rafailov et al. (2023), reproduced under CC BY 4.0: GPT-4 win rate against reference summaries on CNN/DailyMail news articles (trained on Reddit posts)</caption>
+  <thead><tr><th>Method</th><th class="num">Temperature 0</th><th class="num">Temperature 0.25</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>DPO</td><td class="num">0.36</td><td class="num">0.31</td></tr>
+    <tr><td>PPO</td><td class="num">0.26</td><td class="num">0.23</td></tr>
+  </tbody>
+</table></div>
+<p>Trained on Reddit and tested on news, DPO kept its lead: early evidence that it generalizes at least as well as PPO.</p>
+<h4>6.4 Can GPT-4 stand in for human judges?</h4>
+<div class="tablewrap"><table>
+  <caption>Table 2 of Rafailov et al. (2023), reproduced under CC BY 4.0: each method's summaries compared against PPO at temperature 0</caption>
+  <thead><tr><th></th><th class="num">DPO</th><th class="num">SFT</th><th class="num">PPO-1</th></tr></thead>
+  <tbody>
+    <tr><td>Number of respondents</td><td class="num">272</td><td class="num">122</td><td class="num">199</td></tr>
+    <tr><td>GPT-4 (simple prompt) win %</td><td class="num">47</td><td class="num">27</td><td class="num">13</td></tr>
+    <tr><td>GPT-4 (concise prompt) win %</td><td class="num">54</td><td class="num">32</td><td class="num">12</td></tr>
+    <tr><td>Human win %</td><td class="num">58</td><td class="num">43</td><td class="num">17</td></tr>
+    <tr><td>GPT-4 (simple) agrees with humans %</td><td class="num">70</td><td class="num">77</td><td class="num">86</td></tr>
+    <tr><td>GPT-4 (concise) agrees with humans %</td><td class="num">67</td><td class="num">79</td><td class="num">85</td></tr>
+    <tr class="hl"><td>Humans agree with each other %</td><td class="num">65</td><td class="num">-</td><td class="num">87</td></tr>
+  </tbody>
+</table></div>
+<p>GPT-4 agreed with humans about as often as humans agreed with each other. It also preferred longer, repetitive summaries until its prompt asked for conciseness, a reminder that <span class="t" data-t="llm-as-judge">LLM judges</span> need to be checked against people. See the <a href="llm-as-judge.html">LLM-as-a-judge companion</a> and the <a data-lesson="primer/agents/evals.html">evaluation lesson</a>.</p>
+</section>
+
+<section id="s7">
+<h2>7 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S7">original</a></span></h2>
+<blockquote class="quote">“With virtually no tuning of hyperparameters, DPO performs similarly or better than existing RLHF algorithms, including those based on PPO; DPO thus meaningfully reduces the barrier to training more language models from human preferences.”<cite>Rafailov et al. (2023), §7</cite></blockquote>
+<p>The authors list open questions: how DPO generalizes compared with an explicit reward model; whether a DPO model can usefully label its own new data; how “reward over-optimization” (getting worse by optimizing too hard) shows up here; scaling beyond 6 billion parameters; and how much GPT-4 judgements depend on the prompt.</p>
+</section>
+
+<section id="today">
+<h2>What changed since</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>DPO on models up to 6B</td><td>DPO and variants applied to much larger open models</td><td><a data-lesson="primer/ml/training_stages.html">training stages</a></td></tr>
+    <tr><td>Human-labelled pairs</td><td>Pairs labelled by other models, guided by written principles, checked by people</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+    <tr><td>One β for everything</td><td>Many variants that change the loss shape or drop the reference model; the core idea is the same</td><td><a data-lesson="primer/ml/losses.html">losses</a></td></tr>
+    <tr><td>Offline pairs from the reference model</td><td>Often mixed with fresh pairs sampled from the model being trained</td><td><a data-lesson="primer/ml/training_stages.html">training stages</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning and Chelsea Finn, <em>Direct Preference Optimization: Your Language Model is Secretly a Reward Model</em>, NeurIPS 2023. <a href="https://arxiv.org/abs/2305.18290">arXiv:2305.18290</a>, licensed CC BY 4.0. Quotations are brief and attributed; the two tables are reproduced under that licence with attribution, and figures are redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    pstar: { tex: "p^*", name: "True preference probability", meaning: "How often people would actually prefer one answer over the other.", shape: "between 0 and 1", example: "0.731" },
+    y1: { tex: "y_1", name: "Answer 1", meaning: "One of the two responses being compared.", shape: "a token sequence", example: "the answer scoring 1.5" },
+    y2: { tex: "y_2", name: "Answer 2", meaning: "The other response.", shape: "a token sequence", example: "the answer scoring 0.5" },
+    succ: { tex: "\\succ", name: "“is preferred to”", meaning: "y₁ ≻ y₂ reads “y₁ is preferred to y₂”.", shape: "a relation", example: "" },
+    x: { tex: "x", name: "The prompt", meaning: "The question or instruction both answers respond to.", shape: "a token sequence", example: "“Summarize this post”" },
+    rstar: { tex: "r^*", name: "The true (hidden) reward", meaning: "The score people implicitly assign an answer. We never see it; we only see which answer won.", shape: "any real number", example: "1.5 and 0.5" },
+    sigma: { tex: "\\sigma", name: "Sigmoid", meaning: "Squashes any number into 0 to 1: σ(z) = 1 / (1 + e^−z). σ(0) = 0.5.", shape: "between 0 and 1", example: "σ(1.0) = 0.731" },
+    LR: { tex: "\\mathcal{L}_R", name: "Reward-model loss", meaning: "How badly the reward model predicts the human choices; training makes it small.", shape: "one number ≥ 0", example: "0.313 for one pair" },
+    rphi: { tex: "r_\\phi", name: "The learned reward model", meaning: "A network with weights φ that outputs one score for a (prompt, answer) pair. Usually the SFT model with a scoring head.", shape: "any real number", example: "1.5 for the winner" },
+    D: { tex: "\\mathcal{D}", name: "Preference dataset", meaning: "Many triples: a prompt x, the preferred answer y_w and the rejected answer y_l.", shape: "N triples", example: "170k dialogues in Anthropic HH" },
+    E: { tex: "\\mathbb{E}", name: "Average (expectation)", meaning: "“The average of what follows over the data.” In practice, the mean over a batch.", shape: "one number", example: "" },
+    yw: { tex: "y_w", name: "The preferred answer (winner)", meaning: "The response people chose.", shape: "a token sequence", example: "log-prob −12.0 under the model" },
+    yl: { tex: "y_l", name: "The rejected answer (loser)", meaning: "The response people did not choose.", shape: "a token sequence", example: "log-prob −15.0 under the model" },
+    log: { tex: "\\log", name: "Natural logarithm", meaning: "log of a ratio above 1 is positive, below 1 negative. log σ(z) is near 0 when σ(z) is near 1.", shape: "one number", example: "ln 0.731 = −0.313" },
+    pitheta: { tex: "\\pi_\\theta", name: "The model being trained (the policy)", meaning: "The language model whose weights θ we are adjusting. π(y | x) is the probability it assigns to the whole answer y.", shape: "a probability distribution over answers", example: "log π(y_w | x) = −12.0" },
+    y: { tex: "y", name: "An answer", meaning: "Any response the model might produce.", shape: "a token sequence", example: "" },
+    beta: { tex: "\\beta", name: "Beta: the leash length", meaning: "How strongly to hold the model near the reference. Large β: stay close. Small β: chase reward. In the DPO loss it scales the log-probability ratios.", shape: "a positive number", example: "0.1 (0.5 for summarization)" },
+    KL: { tex: "\\mathbb{D}_{\\mathrm{KL}}", name: "KL divergence", meaning: "How different two probability distributions are; 0 when identical. Measured in nats when using natural logs.", shape: "a number ≥ 0", example: "5 nats in the toy" },
+    piref: { tex: "\\pi_{\\text{ref}}", name: "Reference model", meaning: "A frozen copy of the starting model (usually the SFT model). Drift is measured against it.", shape: "a probability distribution over answers", example: "log π_ref(y_w | x) = −14.0" },
+    pir: { tex: "\\pi_r", name: "The optimal model for reward r", meaning: "The best possible model under the leash, given reward r.", shape: "a probability distribution", example: "0.731 and 0.269" },
+    Z: { tex: "Z(x)", name: "Partition function", meaning: "The rescaling constant that makes the probabilities add to 1. It sums over every possible answer, so it can't be computed, but it cancels in DPO.", shape: "one positive number per prompt", example: "1.859 in the two-answer toy" },
+    r: { tex: "r", name: "A reward function", meaning: "Any way of scoring answers.", shape: "any real number", example: "1 and 0 in the toy" },
+    LDPO: { tex: "\\mathcal{L}_{\\text{DPO}}", name: "The DPO loss", meaning: "Binary cross-entropy on “which answer won”, where the score of each answer is β times its log-probability gain over the reference.", shape: "one number ≥ 0", example: "0.513 in the worked example" },
+    theta: { tex: "\\theta", name: "The model's weights", meaning: "All the numbers being trained.", shape: "billions of numbers", example: "" },
+    wgt: { tex: "\\sigma(\\hat r(x,y_l) - \\hat r(x,y_w))", name: "The mistake weight", meaning: "Large when the model's implicit reward ranks the loser above the winner; small when the pair is already right.", shape: "between 0 and 1", example: "σ(−0.4) = 0.401" },
+    gradw: { tex: "\\nabla_\\theta \\log \\pi(y_w\\mid x)", name: "Direction that raises the winner", meaning: "How to change the weights to make the preferred answer more likely.", shape: "same shape as θ", example: "" },
+    gradl: { tex: "\\nabla_\\theta \\log \\pi(y_l\\mid x)", name: "Direction that raises the loser", meaning: "Subtracted, so the update makes the rejected answer less likely.", shape: "same shape as θ", example: "" },
+    rhat: { tex: "\\hat r_\\theta(x,y)", name: "Implicit reward", meaning: "β log(π_θ(y|x) / π_ref(y|x)): the reward the model is implicitly assigning.", shape: "any real number", example: "0.2 for the winner, −0.2 for the loser" },
+    pi: { tex: "\\pi", name: "Some model", meaning: "Any language model; the theorem says a suitable one always exists.", shape: "a probability distribution", example: "" },
+  },
+
+  blocks: {
+    prefs: { title: "Preference pairs", body: "<p>Prompts, each with two answers and a human label saying which is better. Both methods start here, and both only need these offline pairs.</p>", shape: "(x, y_w, y_l) triples" },
+    rm: { title: "Reward model (RLHF only)", body: "<p>A separate network trained with the Bradley-Terry loss to predict which answer people prefer. It must stay in memory during the RL phase to score every sample.</p>", shape: "outputs one score per answer", lesson: "primer/ml/training_stages.html" },
+    rl: { title: "Reinforcement learning with PPO (RLHF only)", body: "<p>The model writes fresh answers, the reward model scores them, and PPO nudges the model towards higher scores minus a KL penalty. It needs sampling in the loop and usually a value network too. This is the expensive, unstable part.</p>", shape: "loop: sample → score → update" },
+    lm1: { title: "Final model (RLHF)", body: "<p>The tuned policy after PPO.</p>" },
+    dpo: { title: "DPO loss", body: "<p>One supervised loss on the preference pairs: raise the winner's log-probability relative to the reference, lower the loser's, weighted by how wrong the current ranking is. No sampling, no reward model.</p>", shape: "binary cross-entropy on log-ratio margins", lesson: "primer/ml/training_stages.html" },
+    lm2: { title: "Final model (DPO)", body: "<p>Optimizes the same KL-constrained objective as RLHF. Its implicit reward β log(π/π_ref) can be read off directly.</p>" },
+    ref: { title: "Frozen reference model", body: "<p>A copy of the starting (SFT) model, never updated. DPO only needs its log-probabilities for the two answers in each pair, which can even be computed once in advance.</p>" },
+  },
+
+  onReady(P) {
+    btChart(P);
+    dpoDemo();
+    lossChart(P);
+  },
+};
+
+const sig = (z) => 1 / (1 + Math.exp(-z));
+
+/* ---- Bradley-Terry curve ---- */
+function btChart(P) {
+  const pts = [];
+  for (let z = -5; z <= 5.0001; z += 0.1) pts.push([+z.toFixed(2), sig(z)]);
+  P.lineChart(document.getElementById("bt-chart"), {
+    series: [{ name: "P(answer 1 preferred)", points: pts }],
+    xLabel: "score gap r₁ − r₂", yLabel: "probability", yMin: 0, yMax: 1,
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("bt-readout"), ariaLabel: "Bradley-Terry preference probability against score gap",
+  });
+  const s = document.getElementById("bt-gap"), v = document.getElementById("bt-gap-v"), out = document.getElementById("bt-readout");
+  const show = () => { const z = +s.value; v.textContent = z.toFixed(1); out.innerHTML = `σ(${z.toFixed(1)}) = <strong>${sig(z).toFixed(3)}</strong>: answer 1 is preferred ${(sig(z) * 100).toFixed(1)}% of the time. Reward-model loss if answer 1 won: −ln ${sig(z).toFixed(3)} = <strong>${(-Math.log(sig(z))).toFixed(3)}</strong>.`; };
+  s.addEventListener("input", show);
+  show();
+}
+
+/* ---- DPO loss calculator ---- */
+function dpoDemo() {
+  const st = { gw: 2.0, gl: -2.0, beta: 0.1 };
+  const sliders = document.getElementById("dpo-sliders");
+  const out = document.getElementById("dpo-out"), read = document.getElementById("dpo-readout");
+  const add = (label, key, min, max, step, fmt) => {
+    const id = "dpo-" + key;
+    const l = document.createElement("label"); l.htmlFor = id; l.textContent = label;
+    const r = document.createElement("input"); Object.assign(r, { type: "range", id, min, max, step, value: st[key] });
+    const o = document.createElement("output"); o.textContent = fmt(st[key]);
+    r.addEventListener("input", () => { st[key] = +r.value; o.textContent = fmt(st[key]); draw(); });
+    sliders.append(l, r, o);
+  };
+  add("preferred: log π − log π_ref", "gw", -6, 6, 0.1, (x) => (x > 0 ? "+" : "") + x.toFixed(1));
+  add("rejected: log π − log π_ref", "gl", -6, 6, 0.1, (x) => (x > 0 ? "+" : "") + x.toFixed(1));
+  add("β", "beta", 0.05, 2, 0.05, (x) => x.toFixed(2));
+  function bar(label, value, max, color, text) {
+    const w = Math.min(100, (Math.abs(value) / max) * 100);
+    return `<div class="share-row" style="grid-template-columns:10rem minmax(0,1fr) 6rem"><span>${label}</span><div><div class="share-bar" style="width:${w.toFixed(1)}%;background:${color}"></div></div><span>${text}</span></div>`;
+  }
+  function draw() {
+    const rw = st.beta * st.gw, rl = st.beta * st.gl, m = rw - rl;
+    const loss = -Math.log(sig(m)), weight = sig(-m);
+    out.innerHTML =
+      bar("implicit reward, winner", rw, 6, rw >= 0 ? "var(--soft-stroke)" : "var(--active)", rw.toFixed(2)) +
+      bar("implicit reward, loser", rl, 6, rl >= 0 ? "var(--soft-stroke)" : "var(--active)", rl.toFixed(2)) +
+      bar("loss −ln σ(margin)", loss, 6, "var(--accent)", loss.toFixed(3)) +
+      bar("update weight σ(−margin)", weight, 1, "var(--attn-stroke)", weight.toFixed(3));
+    read.innerHTML = `margin = ${rw.toFixed(2)} − (${rl.toFixed(2)}) = <strong>${m.toFixed(2)}</strong>; σ(margin) = ${sig(m).toFixed(3)}; loss = <strong>${loss.toFixed(3)}</strong>. ${m > 0 ? "The model already favours the winner (relative to the reference), so the push is modest." : m < 0 ? "The model favours the loser: expect a strong corrective push." : "No preference yet: loss is ln 2 = 0.693."}`;
+  }
+  draw();
+}
+
+/* ---- loss vs margin for several betas ---- */
+function lossChart(P) {
+  const series = [0.1, 0.5, 1.0].map((b) => {
+    const pts = [];
+    for (let d = -10; d <= 10.0001; d += 0.25) pts.push([+d.toFixed(2), -Math.log(sig(b * d))]);
+    return { name: `β = ${b}`, points: pts };
+  });
+  P.lineChart(document.getElementById("loss-chart"), {
+    series, xLabel: "unscaled log-ratio margin", yLabel: "DPO loss", yMin: 0,
+    xFmt: (v) => v.toFixed(0), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("loss-readout"), ariaLabel: "DPO loss against margin for three values of beta",
+  });
+}
+</script>
+</body>
+</html>

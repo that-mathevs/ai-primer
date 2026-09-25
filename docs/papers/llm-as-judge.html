@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Judging LLM-as-a-Judge, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Zheng et al. (2023), which measured when a strong model can stand in for human judges, and how it goes wrong.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="llm-as-judge">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 MT-Bench and Chatbot Arena</a></li>
+      <li><a href="#s3">3 LLM as a judge</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Three kinds of judge</a></li>
+          <li><a href="#s3-3">3.3 Biases and limits</a></li>
+          <li><a href="#s3-try">Try it: position bias</a></li>
+          <li><a href="#s3-4">3.4 Fixes</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Agreement with humans</a></li>
+      <li><a href="#s5">5 Two kinds of benchmark</a></li>
+      <li><a href="#s6">6–7 Discussion and conclusion</a></li>
+      <li><a href="#today">Using it today</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Judging LLM-as-a-Judge, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Zheng, Chiang, Sheng, Zhuang, Wu, Zhuang, Lin, Li, Li, Xing, Zhang, Gonzalez and Stoica (2023), <em>Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena</em>, NeurIPS 2023 Datasets and Benchmarks Track.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2306.05685">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2306.05685">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2306.05685">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its tables are not reproduced; key numbers appear in this page's own tables and are attributed. The diagrams and demos are original. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover, tab to, or tap it, and so does every symbol in every equation.</li>
+  <li>Two demos: a <a href="#s3-try">position-bias simulator</a> (judge twice with the answers swapped) and an <a href="#s4">agreement calculator</a> (how much of an agreement rate is real).</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. A calibrated judge in code is in the <a class="lesson" data-lesson="primer/agents/evals.html">evaluation lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Our results reveal that strong LLM judges like GPT-4 can match both controlled and crowdsourced human preferences well, achieving over 80% agreement, the same level of agreement between humans.”<cite>Zheng et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2306.05685">Read the original</a></cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A cooking competition needs judges. Human judges are the gold standard but slow and expensive. Could an experienced chef grade thousands of dishes instead? Only if we first check how often the chef agrees with the human panel, and what quirks the chef has, such as always preferring the first plate tasted or the biggest portion. This paper does that check for <span class="t" data-t="llm-as-judge">LLM judges</span>.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>A strong model (GPT-4) agrees with expert humans over 80% of the time on which of two chatbot answers is better: about as often as two humans agree with each other.</li>
+  <li>LLM judges have measurable biases: position (favouring the first or second answer), verbosity (favouring longer answers), possibly favouring their own answers, and trouble grading maths and reasoning.</li>
+  <li>Simple fixes help: swap the answer order and require a consistent verdict, show a reference answer, or ask the judge to solve the problem first.</li>
+  <li>Two public benchmarks: MT-Bench (80 two-turn questions) and Chatbot Arena (crowd-sourced head-to-head votes).</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Automated grading of open-ended output is now routine in building AI systems. This paper supplies the vocabulary (pairwise, single-answer, reference-guided; position and verbosity bias) and, more importantly, the habit: <strong>check the judge against humans before trusting it</strong>.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A multiple-choice exam can tell whether a student knows facts. It cannot tell whether they write a helpful, well-organised reply to a messy, open-ended request. Chatbots trained to be helpful were clearly preferred by people over their base models, yet standard benchmarks such as MMLU barely told them apart.</p>
+<h4>Tiny example</h4>
+<p>In the paper's own comparison, LLaMA-13B (a base model) and Vicuna-13B (the same model fine-tuned on conversations) score similarly on knowledge benchmarks, but on an open-ended follow-up request people strongly prefer Vicuna. The benchmark measured what the model knows; people care about how it helps.</p>
+</section>
+
+<section id="s2">
+<h2>2 MT-Bench and Chatbot Arena <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S2">original</a></span></h2>
+<div class="tablewrap"><table>
+  <thead><tr><th></th><th>MT-Bench</th><th>Chatbot Arena</th></tr></thead>
+  <tbody>
+    <tr><td>What</td><td>80 hand-written questions, each with a follow-up (2 turns)</td><td>A website where people chat with two anonymous models at once and vote for the better reply</td></tr>
+    <tr><td>Coverage</td><td>8 categories × 10: writing, roleplay, extraction, reasoning, maths, coding, STEM knowledge, humanities knowledge</td><td>Whatever real users ask</td></tr>
+    <tr><td>Judges in the paper</td><td>58 expert labellers (mostly graduate students) and LLM judges</td><td>About 30K crowd votes in a month; a 3K sample was compared with LLM judges</td></tr>
+    <tr><td>Strength</td><td>Controlled and repeatable</td><td>Real use, at scale</td></tr>
+  </tbody>
+</table></div>
+<p>An example of the two-turn style (written for this page): “Write a two-sentence product description for a travel mug” followed by “Now rewrite it for a ten-year-old, still in two sentences”. The second turn tests whether the model follows a new constraint while keeping the earlier content.</p>
+</section>
+
+<section id="s3">
+<h2>3 LLM as a judge <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S3">original</a></span></h2>
+<p>Hover or tap the parts of the diagram to compare the three set-ups.</p>
+<figure class="ix wide" id="fig-types">
+  <div class="ixgrid">
+  <svg viewBox="0 0 620 230" role="img" aria-label="Three judge set-ups: pairwise comparison, single-answer grading, reference-guided grading">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="100" y="18" text-anchor="middle" class="lbl">pairwise</text>
+    <text x="310" y="18" text-anchor="middle" class="lbl">single answer</text>
+    <text x="520" y="18" text-anchor="middle" class="lbl">reference-guided</text>
+    <g class="blk plain" data-block="q"><rect x="20" y="30" width="160" height="30" rx="6"/><text x="100" y="50" text-anchor="middle">question</text></g>
+    <g class="blk emb" data-block="ansA"><rect x="20" y="72" width="74" height="34" rx="6"/><text x="57" y="94" text-anchor="middle">answer A</text></g>
+    <g class="blk emb" data-block="ansB"><rect x="106" y="72" width="74" height="34" rx="6"/><text x="143" y="94" text-anchor="middle">answer B</text></g>
+    <path class="wire" d="M100,110 V132" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="judge_pair" tabindex="0" role="button" aria-label="Pairwise judge"><rect x="40" y="134" width="120" height="36" rx="7"/><text x="100" y="157" text-anchor="middle">judge</text></g>
+    <path class="wire" d="M100,172 V192" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="out_pair"><rect x="30" y="194" width="140" height="28" rx="6"/><text x="100" y="213" text-anchor="middle">A / B / tie</text></g>
+    <g class="blk plain" data-block="q"><rect x="230" y="30" width="160" height="30" rx="6"/><text x="310" y="50" text-anchor="middle">question</text></g>
+    <g class="blk emb" data-block="ansOne"><rect x="273" y="72" width="74" height="34" rx="6"/><text x="310" y="94" text-anchor="middle">answer</text></g>
+    <path class="wire" d="M310,110 V132" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="judge_single" tabindex="0" role="button" aria-label="Single-answer judge"><rect x="250" y="134" width="120" height="36" rx="7"/><text x="310" y="157" text-anchor="middle">judge</text></g>
+    <path class="wire" d="M310,172 V192" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="out_single"><rect x="240" y="194" width="140" height="28" rx="6"/><text x="310" y="213" text-anchor="middle">score 1 to 10</text></g>
+    <g class="blk plain" data-block="q"><rect x="440" y="30" width="160" height="30" rx="6"/><text x="520" y="50" text-anchor="middle">question</text></g>
+    <g class="blk ff" data-block="ref"><rect x="440" y="72" width="74" height="34" rx="6"/><text x="477" y="94" text-anchor="middle">reference</text></g>
+    <g class="blk emb" data-block="ansOne"><rect x="526" y="72" width="74" height="34" rx="6"/><text x="563" y="94" text-anchor="middle">answer(s)</text></g>
+    <path class="wire" d="M520,110 V132" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="judge_ref" tabindex="0" role="button" aria-label="Reference-guided judge"><rect x="460" y="134" width="120" height="36" rx="7"/><text x="520" y="157" text-anchor="middle">judge</text></g>
+    <path class="wire" d="M520,172 V192" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="out_ref"><rect x="450" y="194" width="140" height="28" rx="6"/><text x="520" y="213" text-anchor="middle">verdict or score</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a <strong>judge</strong> box to compare the set-ups.</p></div>
+  </div>
+  <figcaption>The three LLM-as-a-judge set-ups described in §3.1 of Zheng et al. (2023), drawn for this page.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each column is one set-up, read top to bottom. All three show the judge the question. Pairwise shows two answers and asks which is better. Single-answer shows one and asks for a score. Reference-guided adds a correct solution, which matters for maths and reasoning where the judge might not know the answer itself. The biases in §3.3 attach to particular columns: position bias only exists when there are two answers side by side.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Three kinds of judge <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A wine taster can compare two glasses side by side, score each glass alone, or taste against a known reference bottle. Side by side notices subtle differences but needs many comparisons; scoring alone is quick but drifts from day to day.</p>
+<h4>The cost of comparing everyone with everyone</h4>
+<div class="eq" data-tex="\htmlData{sym=pairs}{\text{pairs}} = \htmlData{sym=binom}{\binom{m}{2}} = \frac{\htmlData{sym=m}{m}(\htmlData{sym=m}{m}-1)}{2}" data-fallback="pairs = C(m, 2) = m(m − 1)/2"></div>
+<div class="symtable" data-syms="m,binom,pairs"></div>
+<p class="inwords"><strong>In words:</strong> “every model must be compared with every other; each of m models meets m − 1 others, and each pairing is counted twice that way, so halve it.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's 6 models need 6 × 5 / 2 = 15 pairings per question; 20 models would need 190. Single-answer grading needs just one judgement per model per question.</p>
+<p>The trade-off, as the paper puts it: pairwise comparison scales poorly as models are added, while single-answer grading can miss subtle differences and its absolute scores shift more when the judge model changes.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Biases and limits <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S3.SS3">original</a></span></h3>
+<blockquote class="quote">“Position bias is when an LLM exhibits a propensity to favor certain positions over others.”<cite>Zheng et al. (2023), §3.3</cite></blockquote>
+<h4>Position bias</h4>
+<p><strong>Everyday picture:</strong> a talent show where the first act always seems to win. <strong>The test:</strong> for each first-turn MT-Bench question, two similar answers were generated, then each judge compared them twice, once in each order. A consistent judge picks the same answer both times.</p>
+<div class="tablewrap"><table>
+  <caption>Selected numbers from Zheng et al. (2023), Table 2 (default prompt). Summarised with attribution.</caption>
+  <thead><tr><th>Judge</th><th class="num">Consistent when swapped</th><th class="num">Favoured whichever came first</th><th class="num">Favoured whichever came second</th></tr></thead>
+  <tbody>
+    <tr><td>Claude-v1</td><td class="num">23.8%</td><td class="num">75.0%</td><td class="num">0.0%</td></tr>
+    <tr><td>GPT-3.5</td><td class="num">46.2%</td><td class="num">50.0%</td><td class="num">1.2%</td></tr>
+    <tr class="hl"><td>GPT-4</td><td class="num">65.0%</td><td class="num">30.0%</td><td class="num">5.0%</td></tr>
+  </tbody>
+</table></div>
+<p>The answers here were deliberately very similar, so this is a hard test; the paper notes position bias is milder when answers differ more. Renaming the assistants showed that Claude-v1 was also partly biased towards the <em>name</em> “Assistant A”.</p>
+<h4>Verbosity bias</h4>
+<p><strong>Everyday picture:</strong> an essay marker who rewards length. <strong>The test (a “repetitive list” attack):</strong> take 23 answers that contain a numbered list, have a model rephrase the list, and prepend the rephrased copy, so the answer is twice as long with no new information. The attack succeeds if the judge prefers the padded version.</p>
+<div class="plot"><div id="verb-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is how often a judge fell for the padding (numbers from Zheng et al., 2023, Table 3). Two of the three judges preferred the padded, repetitive answer about nine times in ten. GPT-4 resisted most of the time, but not always. All three correctly called two <em>identical</em> answers a tie, so the problem is specifically being impressed by length.</p>
+<h4>Self-enhancement bias</h4>
+<p>Do judges favour their own answers? Compared with humans, GPT-4 gave itself about a 10% higher win rate and Claude-v1 gave itself about 25% more, but GPT-3.5 did not favour itself, and judges also favoured some other models. With limited data the paper does not conclude that the bias is real, only that it may be.</p>
+<h4>Grading maths and reasoning</h4>
+<p>A judge can be misled by the answers it is grading, even on problems it can solve on its own. On 10 maths questions (each judged in both orders, so 20 judgements), GPT-4 called an incorrect answer correct 14 times with the default prompt.</p>
+</section>
+
+<section id="s3-try">
+<h3>Try it: position bias, and the swap fix</h3>
+<p>A simulated judge compares 1,000 answer pairs twice, once in each order. Each pair has a true quality difference; the judge tends to prefer the better answer (sensitivity) but also leans towards whichever it sees first (bias). The model and its numbers are <strong>illustrative</strong>, not fitted to the paper's data.</p>
+<div class="plot" id="bias-plot">
+  <div class="controls">
+    <label for="b-bias">Lean towards first position β = <strong id="b-biasv">1.0</strong></label><input type="range" id="b-bias" min="0" max="3" step="0.1" value="1.0">
+    <label for="b-sens">Sensitivity to real quality k = <strong id="b-sensv">4</strong></label><input type="range" id="b-sens" min="0.5" max="12" step="0.5" value="4">
+  </div>
+  <div class="shares" id="b-out"></div>
+  <p class="readout" id="b-readout"></p>
+</div>
+<div class="eq" data-tex="\htmlData{sym=pfirst}{P(\text{judge picks the first answer})} = \htmlData{sym=sigma}{\sigma}\big(\htmlData{sym=k}{k}\cdot\htmlData{sym=delta}{\delta} + \htmlData{sym=beta}{\beta}\big)" data-fallback="P(judge picks the first answer) = σ(k · δ + β)"></div>
+<div class="symtable" data-syms="delta,k,beta,sigma,pfirst"></div>
+<p class="inwords"><strong>In words:</strong> “the judge's chance of picking the first answer rises with how much better the first answer really is, plus a constant nudge towards whatever is shown first.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with k = 4 and β = 1, two equally good answers (δ = 0) give σ(1) = 0.73: the first-shown answer wins 73% of the time for no reason. If the first answer is clearly worse (δ = −0.5), σ(−2 + 1) = σ(−1) = 0.27.</p>
+<p class="reading"><strong>Reading it:</strong> the bars show three rates over the 1,000 simulated pairs. <em>Consistent</em> is how often the judge picks the same underlying answer in both orders, the paper's consistency measure. <em>Single-order errors</em> is how often a one-shot judgement picks the truly worse answer. <em>Swap-rule errors</em> applies the paper's conservative fix: declare a winner only if both orders agree, otherwise call it a tie, and count only wrong winners as errors. Push β up: consistency falls, single-order errors rise, and the swap rule converts most of them into ties. That is its whole purpose.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Fixes <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S3.SS4">original</a></span></h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Fix</th><th>How</th><th>Effect reported in the paper</th></tr></thead>
+  <tbody>
+    <tr><td>Swap positions</td><td>Judge twice with the order swapped; win only if both agree, otherwise tie</td><td>Removes the effect of position bias from verdicts (used in all later experiments)</td></tr>
+    <tr><td>Few-shot judge</td><td>Show 3 example judgements (A better, B better, tie)</td><td>GPT-4 consistency 65.0% → 77.5%, but the prompt costs about 4 times as much</td></tr>
+    <tr><td>Chain-of-thought judge</td><td>Ask the judge to solve the problem itself before grading</td><td>Maths grading failures 14/20 → 6/20</td></tr>
+    <tr><td>Reference-guided judge</td><td>Solve first, then show that solution as a reference when grading</td><td>Maths grading failures 14/20 → 3/20 (70% → 15%)</td></tr>
+    <tr><td>Fine-tuned judge</td><td>Train a smaller model (Vicuna-13B) on Arena votes</td><td>Promising preliminary results (Appendix F)</td></tr>
+  </tbody>
+</table></div>
+<h4>Multi-turn questions</h4>
+<p>Splitting a two-turn conversation into two separate prompts confused the judge about which earlier answer the follow-up referred to. Showing each full conversation in one prompt, and asking the judge to focus on the second turn, fixed it.</p>
+<h4>Why it matters today</h4>
+<p>These fixes are now standard practice: randomise or swap answer order, grade against references where they exist, prefer code-based checks for anything checkable, and keep rubrics specific. See the <a data-lesson="primer/agents/evals.html">evaluation lesson</a>.</p>
+</section>
+
+<section id="s4">
+<h2>4 Agreement with humans <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>If two human judges agree 81% of the time, a machine judge that agrees with humans 85% of the time is doing as well as a human could. The comparison that matters is not “is the judge always right?” but “does it agree with people as often as people agree with each other?”</p>
+<h4>How agreement is defined</h4>
+<p>Agreement is the probability that a randomly chosen judge of one type and a randomly chosen judge of the other type give the same verdict on a randomly chosen question. It is reported two ways: <strong>S1</strong> counts ties (and position-inconsistent verdicts as ties), so random guessing among A, B and tie would agree 33% of the time; <strong>S2</strong> keeps only non-tie votes, so random guessing would agree 50%.</p>
+<div class="tablewrap"><table>
+  <caption>Selected numbers from Zheng et al. (2023), Table 5, MT-Bench first turn. Summarised with attribution.</caption>
+  <thead><tr><th>Pair of judges</th><th class="num">S1 (with ties; random = 33%)</th><th class="num">S2 (no ties; random = 50%)</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>GPT-4 (pairwise) vs humans</td><td class="num">66%</td><td class="num">85%</td></tr>
+    <tr><td>GPT-4 (single-answer) vs humans</td><td class="num">60%</td><td class="num">85%</td></tr>
+    <tr><td>Human vs human</td><td class="num">63%</td><td class="num">81%</td></tr>
+  </tbody>
+</table></div>
+<p>Two more findings: when an expert disagreed with GPT-4 and was shown GPT-4's reasoning, they judged it reasonable 75% of the time and changed their own vote 34% of the time. And agreement rose with how different the two models were, from about 70% for close pairs to nearly 100% for very unequal ones.</p>
+<h4>How much of an agreement rate is real? Cohen's kappa</h4>
+<p>Raw agreement flatters: two judges who both say “A” most of the time will agree often by chance alone. <span class="t" data-t="cohen's kappa">Cohen's kappa</span> subtracts the agreement expected by chance.</p>
+<div class="eq" data-tex="\htmlData{sym=kappa}{\kappa} = \frac{\htmlData{sym=po}{p_o} - \htmlData{sym=pe}{p_e}}{1 - \htmlData{sym=pe}{p_e}}, \qquad \htmlData{sym=pe}{p_e} = \htmlData{sym=pjA}{p_{J,A}}\,\htmlData{sym=phA}{p_{H,A}} + \htmlData{sym=pjB}{p_{J,B}}\,\htmlData{sym=phB}{p_{H,B}}" data-fallback="κ = (p_o − p_e) / (1 − p_e),  p_e = p_J,A · p_H,A + p_J,B · p_H,B"></div>
+<div class="symtable" data-syms="po,pe,pjA,phA,pjB,phB,kappa"></div>
+<p class="inwords"><strong>In words:</strong> “take the observed agreement, subtract what two judges with the same habits would agree on by luck, and rescale so 1 means perfect agreement and 0 means no better than luck.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 100 non-tie votes: both say A 40 times, both say B 35 times, judge A while human B 10 times, judge B while human A 15 times. Observed p<sub>o</sub> = 75/100 = 0.75. The judge says A 50% of the time and the human 55%, so p<sub>e</sub> = 0.50 × 0.55 + 0.50 × 0.45 = 0.50. κ = (0.75 − 0.50)/(1 − 0.50) = <strong>0.50</strong>: halfway between luck and perfect.</p>
+<div class="play" id="kappa">
+  <div class="sliders" id="k-inputs"></div>
+  <div class="shares" id="k-out"></div>
+  <p class="readout" id="k-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the four sliders fill a 2 × 2 table of how often the judge and the human chose A or B. The bars compare raw agreement with kappa. Try making both judges say “A” almost always (raise “both A”, lower everything else except a few disagreements): raw agreement stays high while kappa drops, because most of that agreement is what anyone with the same habit would produce. Kappa is the number to report when you validate a judge; the <a data-lesson="primer/ml/metrics.html">metrics lesson</a> builds it from scratch.</p>
+</section>
+
+<section id="s5">
+<h2>5 Two kinds of benchmark <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S5">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A driving test has a written part (knowledge) and a road part (practice). Passing one does not guarantee the other.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows from Zheng et al. (2023), Table 9. MMLU measures knowledge (5-shot, %); MT-Bench is GPT-4's score out of 10. Summarised with attribution.</caption>
+  <thead><tr><th>Model</th><th>Fine-tuning data</th><th class="num">MMLU</th><th class="num">MT-Bench</th></tr></thead>
+  <tbody>
+    <tr><td>LLaMA-7B (base)</td><td>none</td><td class="num">35.2</td><td class="num">2.74</td></tr>
+    <tr class="hl"><td>Vicuna-7B (selected)</td><td>4.8M tokens (about 3K conversations)</td><td class="num">37.3</td><td class="num">5.95</td></tr>
+    <tr><td>Vicuna-7B (all)</td><td>370M tokens</td><td class="num">47.1</td><td class="num">6.00</td></tr>
+    <tr><td>GPT-4</td><td>unknown</td><td class="num">86.4</td><td class="num">8.99</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> compare the first two rows. A small set of good conversations more than doubled the MT-Bench score (2.74 → 5.95) while barely moving MMLU (35.2 → 37.3). Style and helpfulness can be taught cheaply; knowledge cannot. The paper's recommendation is to report both kinds of benchmark.</p>
+</section>
+
+<section id="s6">
+<h2>6–7 Discussion and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S6">original</a></span></h2>
+<p>The authors note what they did not cover: the study measures <em>helpfulness</em> and largely ignores <em>safety</em>, honesty and harmlessness, and it folds accuracy, relevance and creativity into one score. They see the same method extending to those dimensions with different prompts. Their conclusion: with its biases addressed, a strong LLM judge is a scalable, explainable approximation of human preference, agreeing with experts at human-to-human levels.</p>
+</section>
+
+<section id="today">
+<h2>Using it today</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Practice</th><th>Why</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Grade with code wherever you can (exact match, schema checks, database state, tests)</td><td>Cheap, deterministic and bias-free; save the LLM judge for truly open-ended output</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+    <tr><td>Validate the judge on a human-labelled sample; report agreement and kappa</td><td>A judge you have not checked is an opinion, not a measurement</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+    <tr><td>Swap or randomise answer order; call inconsistent verdicts ties</td><td>Position bias</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+    <tr><td>Use a specific rubric and, where possible, a reference answer</td><td>Maths and reasoning grading failures; verbosity bias</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+    <tr><td>Re-check agreement whenever the judge model or prompt changes</td><td>Absolute scores drift between judges</td><td><a data-lesson="primer/agents/deployment.html">deployment</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric P. Xing, Hao Zhang, Joseph E. Gonzalez and Ion Stoica, <em>Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena</em>, NeurIPS 2023 Datasets and Benchmarks Track. <a href="https://arxiv.org/abs/2306.05685">arXiv:2306.05685</a>. Quotations are brief and attributed; selected numbers are summarised with attribution. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    m: { tex: "m", name: "Number of models", meaning: "How many chatbots are being compared.", shape: "a whole number", example: "6" },
+    binom: { tex: "\\binom{m}{2}", name: "“m choose 2”", meaning: "The number of different pairs you can pick from m things.", shape: "a whole number", example: "6 choose 2 = 15" },
+    pairs: { tex: "\\text{pairs}", name: "Pairings per question", meaning: "How many head-to-head comparisons pairwise judging needs for every question.", shape: "", example: "15 for 6 models, 190 for 20" },
+    delta: { tex: "\\delta", name: "True quality difference", meaning: "How much better the first-shown answer really is than the second (negative if it is worse). In the simulation it is drawn at random for each pair.", shape: "−1 to 1", example: "0 for two equally good answers" },
+    k: { tex: "k", name: "Sensitivity", meaning: "How strongly the simulated judge responds to real quality differences.", shape: "positive", example: "4" },
+    beta: { tex: "\\beta", name: "Position bias", meaning: "A constant nudge towards whichever answer is shown first. 0 means no bias.", shape: "0 or more", example: "1" },
+    sigma: { tex: "\\sigma", name: "Sigmoid", meaning: "Squashes any number into a probability between 0 and 1: σ(x) = 1 / (1 + e^−x).", shape: "0 to 1", example: "σ(1) = 0.73, σ(0) = 0.5" },
+    pfirst: { tex: "P(\\text{first})", name: "Chance of picking the first answer", meaning: "The simulated judge's probability of choosing whichever answer it saw first.", shape: "0 to 1", example: "0.73 for equal answers at β = 1" },
+    po: { tex: "p_o", name: "Observed agreement", meaning: "The share of items on which the two judges gave the same verdict.", shape: "0 to 1", example: "0.75" },
+    pe: { tex: "p_e", name: "Agreement expected by chance", meaning: "How often two judges with the same overall habits would agree if they chose independently.", shape: "0 to 1", example: "0.50" },
+    pjA: { tex: "p_{J,A}", name: "Judge says A", meaning: "The share of items where the LLM judge chose A.", shape: "0 to 1", example: "0.50" },
+    phA: { tex: "p_{H,A}", name: "Human says A", meaning: "The share of items where the human chose A.", shape: "0 to 1", example: "0.55" },
+    pjB: { tex: "p_{J,B}", name: "Judge says B", meaning: "1 − p_J,A when there are no ties.", shape: "0 to 1", example: "0.50" },
+    phB: { tex: "p_{H,B}", name: "Human says B", meaning: "1 − p_H,A when there are no ties.", shape: "0 to 1", example: "0.45" },
+    kappa: { tex: "\\kappa", name: "Cohen's kappa", meaning: "Agreement beyond chance, rescaled: 1 is perfect, 0 is no better than luck, negative is worse than luck.", shape: "−1 to 1", example: "0.50" },
+  },
+  blocks: {
+    q: { title: "The question", body: "<p>Shown to the judge in every set-up. For multi-turn questions, the full conversation is shown.</p>" },
+    ansA: { title: "Answer A", body: "<p>Shown first. Position bias means the judge may favour it (or the second) regardless of quality.</p>" },
+    ansB: { title: "Answer B", body: "<p>Shown second. Swapping A and B and judging again reveals position bias.</p>" },
+    ansOne: { title: "The answer being graded", body: "<p>A single answer, or several in the reference-guided pairwise variant.</p>" },
+    ref: { title: "Reference answer", body: "<p>A correct solution (in the paper, the judge's own separately generated solution). It stops the judge being talked into accepting a wrong answer.</p>" },
+    judge_pair: { title: "Pairwise comparison", body: "<p>“Which answer is better, or is it a tie?” Sensitive to subtle differences, but needs m(m − 1)/2 comparisons per question and suffers position bias.</p>", lesson: "primer/agents/evals.html" },
+    judge_single: { title: "Single-answer grading", body: "<p>“Score this answer from 1 to 10.” Scales linearly and matched human preferences almost as well as pairwise in the paper, but can miss small differences, and scores drift if the judge model changes.</p>", lesson: "primer/agents/evals.html" },
+    judge_ref: { title: "Reference-guided grading", body: "<p>Either set-up, plus a reference solution. Cut maths grading failures from 14 of 20 to 3 of 20 in the paper.</p>", lesson: "primer/agents/evals.html" },
+    out_pair: { title: "Verdict", body: "<p>A, B or tie. With the swap rule, a win counts only if both orders agree.</p>" },
+    out_single: { title: "Score", body: "<p>A number, typically 1 to 10. MT-Bench reports the average over 160 turn-level scores (80 questions × 2 turns).</p>" },
+    out_ref: { title: "Verdict or score", body: "<p>As in the other set-ups, but anchored to the reference.</p>" },
+  },
+  onReady() { verbBars(); biasSim(); kappaCalc(); },
+};
+
+function verbBars() {
+  const rows = [["Claude-v1", 91.3], ["GPT-3.5", 91.3], ["GPT-4", 8.7]];
+  document.getElementById("verb-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Share of 23 padded answers the judge preferred (Zheng et al., 2023, Table 3)</div>` +
+    rows.map(([m, s]) => `<div class="share-row" style="grid-template-columns:7rem minmax(0,1fr) 3.5rem"><span>${m}</span><div><div class="share-bar" style="width:${s}%;${m === "GPT-4" ? "" : "background:var(--wire)"}"></div></div><span>${s}%</span></div>`).join("");
+}
+
+/* ---- position-bias simulation (illustrative model, seeded so results are repeatable) ---- */
+function biasSim() {
+  const bias = document.getElementById("b-bias"), sens = document.getElementById("b-sens");
+  const sig = (x) => 1 / (1 + Math.exp(-x));
+  function draw() {
+    const b = +bias.value, k = +sens.value;
+    document.getElementById("b-biasv").textContent = b.toFixed(1);
+    document.getElementById("b-sensv").textContent = k;
+    let seed = 12345;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    const N = 1000;
+    let consistent = 0, singleErr = 0, swapErr = 0, swapTies = 0, inconsistent = 0;
+    for (let n = 0; n < N; n++) {
+      const d = rnd() * 2 - 1; // quality(A) - quality(B)
+      const pickA1 = rnd() < sig(k * d + b);          // A shown first
+      const pickA2 = !(rnd() < sig(k * -d + b));      // B shown first: picking "first" means picking B
+      if (pickA1 === pickA2) consistent++; else inconsistent++;
+      const better = d >= 0;
+      if (pickA1 !== better) singleErr++;
+      if (pickA1 === pickA2) { if (pickA1 !== better) swapErr++; } else swapTies++;
+    }
+    const bar = (name, v, hl) => `<div class="share-row" style="grid-template-columns:10rem minmax(0,1fr) 4rem"><span>${name}</span><div><div class="share-bar" style="width:${(v * 100).toFixed(1)}%;${hl ? "" : "background:var(--wire)"}"></div></div><span>${(v * 100).toFixed(1)}%</span></div>`;
+    document.getElementById("b-out").innerHTML =
+      bar("consistent when swapped", consistent / N, true) + bar("single-order errors", singleErr / N) + bar("swap-rule errors", swapErr / N, true);
+    document.getElementById("b-readout").innerHTML =
+      `Of ${N} pairs: ${consistent} consistent, ${inconsistent} inconsistent (each order picked whatever came first or second). The swap rule turned the inconsistent ones into ${swapTies} ties and left ${swapErr} wrong winners, against ${singleErr} wrong verdicts from judging once. For comparison, GPT-4 was consistent 65.0% of the time in the paper's hard test.`;
+  }
+  bias.addEventListener("input", draw);
+  sens.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- Cohen's kappa calculator ---- */
+function kappaCalc() {
+  const v = { aa: 40, bb: 35, ab: 10, ba: 15 };
+  const box = document.getElementById("k-inputs");
+  [["aa", "both say A"], ["bb", "both say B"], ["ab", "judge A, human B"], ["ba", "judge B, human A"]].forEach(([key, label]) => {
+    const id = "k-" + key;
+    const l = document.createElement("label"); l.htmlFor = id; l.textContent = label;
+    const r = document.createElement("input"); Object.assign(r, { type: "range", id, min: 0, max: 100, step: 1, value: v[key] });
+    const o = document.createElement("output"); o.textContent = v[key];
+    r.addEventListener("input", () => { v[key] = +r.value; o.textContent = v[key]; draw(); });
+    box.append(l, r, o);
+  });
+  function draw() {
+    const n = v.aa + v.bb + v.ab + v.ba || 1;
+    const po = (v.aa + v.bb) / n;
+    const jA = (v.aa + v.ab) / n, hA = (v.aa + v.ba) / n;
+    const pe = jA * hA + (1 - jA) * (1 - hA);
+    const kappa = pe < 1 ? (po - pe) / (1 - pe) : 0;
+    const bar = (name, x) => `<div class="share-row"><span>${name}</span><div><div class="share-bar" style="width:${Math.max(0, x * 100).toFixed(1)}%"></div></div><span>${x.toFixed(3)}</span></div>`;
+    document.getElementById("k-out").innerHTML = bar("raw agreement p_o", po) + bar("chance agreement p_e", pe) + bar("Cohen's kappa κ", kappa);
+    document.getElementById("k-readout").innerHTML =
+      `n = ${n} · judge says A ${(jA * 100).toFixed(0)}%, human ${(hA * 100).toFixed(0)}% · κ = (${po.toFixed(3)} − ${pe.toFixed(3)}) / (1 − ${pe.toFixed(3)}) = <strong>${kappa.toFixed(3)}</strong>`;
+  }
+  draw();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subword Units (BPE), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Sennrich, Haddow and Birch (2015), the paper that brought byte pair encoding to neural language models.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .bpe-words { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 0.7rem 0; }
+  .bpe-word { display: inline-flex; align-items: center; gap: 2px; font-family: ui-monospace, monospace; font-size: 0.92rem; }
+  .bpe-word .sym { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 0.1rem 0.35rem; }
+  .bpe-word .sym.new { background: var(--accent-soft); border-color: var(--accent); }
+  .bpe-word .freq { color: var(--muted); font-size: 0.75rem; margin-left: 0.3rem; }
+  .bpe-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+  @media (max-width: 700px) { .bpe-cols { grid-template-columns: minmax(0, 1fr); } }
+  .bpe-cols table { font-family: ui-monospace, monospace; font-size: 0.82rem; }
+  .bpe-cols tr.win td { background: var(--accent-soft); font-weight: 700; }
+  #bpe-text { width: 100%; min-height: 3.2rem; font: 0.9rem ui-monospace, monospace; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 0.4rem; }
+  #seg-input { font: 0.95rem ui-monospace, monospace; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 0.3rem 0.5rem; }
+</style>
+</head>
+<body data-paper="bpe-subwords">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Neural machine translation</a></li>
+      <li><a href="#s3">3 Subword translation</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Related work</a></li>
+          <li><a href="#s3-2">3.2 Byte pair encoding</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Evaluation</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Subword statistics</a></li>
+          <li><a href="#s4-2">4.2 Translation experiments</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Analysis</a></li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#today">What changed since 2015</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Neural Machine Translation of Rare Words with Subword Units, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Rico Sennrich, Barry Haddow and Alexandra Birch (2015, ACL 2016), the paper that brought byte pair encoding to neural networks. Descendants of its tokenizer read and write every word a modern language model handles.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1508.07909">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1508.07909">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1508.07909">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The arXiv version of this paper is released under the <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 licence</a>, so selected tables and examples are reproduced here with attribution. Figures are redrawn from scratch. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap; so does every symbol in every equation.</li>
+  <li>The BPE machine in §3.2 is live: step through the merges on the paper's own example, or type your own text and watch a vocabulary grow from letters.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>math</strong>, <strong>why it matters today</strong>. The <a data-lesson="primer/ml/tokenization.html">tokenization lesson</a> builds BPE from scratch in Python and shows its quirks.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909">original</a></span></h2>
+<blockquote class="quote">“Neural machine translation (NMT) models typically operate with a fixed vocabulary, but translation is an open-vocabulary problem.”<cite>Sennrich, Haddow and Birch (2015), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A neural translator in 2015 had a fixed word list, around 30,000 to 50,000 entries. Any word not on the list became a blank, “UNK” (unknown). But language is endless: new names, new compounds, rare inflections. The paper's fix: instead of whole words, use a fixed kit of word <em>pieces</em>, like a Lego set. Common words are single bricks; rare words are built from several. Then no word is ever unknown.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Rare and unknown words can be translated by breaking them into <span class="t" data-tip-title="Subword unit" data-tip="A piece of a word: a single letter, a common chunk like 'ing' or 'un', or a whole frequent word. A fixed set of such pieces can spell any word.">subword units</span>, with no separate dictionary for unknown words.</li>
+  <li><span class="t" data-t="byte pair encoding">Byte pair encoding</span>, an old compression trick, makes a good way to choose the pieces.</li>
+  <li>Better translation of rare words, and gains of up to 1.1 and 1.3 <span class="t" data-t="bleu">BLEU</span> over a dictionary-based baseline for English→German and English→Russian.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>GPT, Claude, Llama and most other language models split text with a descendant of this algorithm (usually byte-level BPE). Why models are priced per token, why they struggle to count letters, and why some languages cost more than others all trace back to here.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>German glues words together: <em>Abwasserbehandlungsanlage</em> is “sewage water treatment plant” as a single word. A word-level model has either seen that exact word or it hasn't. A human translator splits it into parts they know, Abwasser | behandlungs | anlage, and translates the parts. The paper wants the network to do the same.</p>
+<h4>Tiny example</h4>
+<p>Before this paper, the standard patch was a <em>back-off dictionary</em>: when the model outputs UNK, look up the aligned source word in a bilingual dictionary, or copy it across. That works for “Obama” into German, but not for “Obama” into Russian, which needs a different alphabet (Обама), and not for compounds that have no one-to-one counterpart.</p>
+<h4>Two contributions</h4>
+<ol>
+  <li>Open-vocabulary translation works by encoding rare words as sequences of subword units, and it is simpler and better than large vocabularies plus back-off dictionaries.</li>
+  <li>Byte pair encoding, a compression algorithm from 1994, adapted to choose those units.</li>
+</ol>
+<h4>Why it matters today</h4>
+<p>“Never have an unknown token” became a hard requirement for language models; modern tokenizers go further, down to raw bytes, so even emoji and binary junk have a spelling.</p>
+</section>
+
+<section id="s2">
+<h2>2 Neural machine translation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>The translator used is the attention-based <span class="t" data-t="encoder-decoder">encoder-decoder</span> of 2015: a recurrent <span class="t" data-t="encoder">encoder</span> reads the source sentence in both directions, and a recurrent <span class="t" data-t="decoder">decoder</span> writes the translation one piece at a time, using <span class="t" data-t="attention">attention</span> to look back at the most relevant source pieces at each step. The paper stresses that its method is not tied to this architecture: it only changes what the pieces are.</p>
+<h4>Tiny example</h4>
+<p>With subwords, attention can focus on part of a word: when writing <em>Gesundheits</em>, it can attend to the English piece “health”, and when writing <em>forschungs</em>, to “research”. A word-level model can only attend to whole words.</p>
+<h4>Setup, for reference</h4>
+<p>Hidden layers of 1,000 units, embeddings of 620, the Adadelta optimizer with mini-batches of 80, about 7 days of training per model, and <span class="t" data-t="beam search">beam search</span> with a beam of 12.</p>
+<h4>Why it matters today</h4>
+<p>Two years later the Transformer replaced the recurrent parts, and it adopted subword units from the start: the <a href="attention-is-all-you-need.html">Transformer paper</a> used byte pair encoding for English→German.</p>
+</section>
+
+<section id="s3">
+<h2>3 Subword translation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S3">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A good human translator can handle a word they have never seen if they know its parts. The paper names three kinds of word where that works: <strong>names</strong> (copy or transliterate them), <strong>cognates and loanwords</strong> (translate with regular letter changes), and <strong>morphologically complex words</strong> (translate each part).</p>
+<div class="tablewrap"><table>
+  <caption>Examples from §3 of Sennrich, Haddow and Birch (2015), CC BY 4.0</caption>
+  <thead><tr><th>Kind</th><th>English</th><th>Other languages</th></tr></thead>
+  <tbody>
+    <tr><td>Name</td><td>Barack Obama</td><td>Барак Обама (Russian), バラク・オバマ (Japanese)</td></tr>
+    <tr><td>Cognate / loanword</td><td>claustrophobia</td><td>Klaustrophobie (German), Клаустрофобия (Russian)</td></tr>
+    <tr><td>Compound</td><td>solar system</td><td>Sonnen + system (German), Nap + rendszer (Hungarian)</td></tr>
+  </tbody>
+</table></div>
+<h4>Tiny example: what rare words really are</h4>
+<p>The authors examined 100 rare German words from their training data (words outside the 50,000 most frequent). 56 were compounds, 21 names, 6 loanwords, 5 transparent affixations (like <em>süßlich</em> = süß + lich, “sweetish”), 1 number and 1 computer-language identifier. So the great majority could, in principle, be translated piece by piece.</p>
+<div class="plot"><div id="rare-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar counts how many of the 100 sampled rare German words fell into each category. Compounds dominate: over half of all rare words were glued-together combinations of words the model may well know. Together with names, that is 77 of the 100, all candidates for piece-by-piece translation. Numbers from §3 of the paper.</p>
+<h4>Why it matters today</h4>
+<p>The same argument applies with more force to code (identifiers like <code>parseHttpResponseHeader</code>) and to morphologically rich languages; subword tokenizers let one model handle all of them.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>There is a trade-off between two costs. A big vocabulary of whole words makes sentences short (few tokens) but the model huge, and rare words starve for training data. A tiny vocabulary of characters makes the model small but sentences very long, so every step of reasoning must span many more positions. The authors want a middle point: a compact vocabulary that still keeps text short.</p>
+<h4>Tiny example</h4>
+<p>“unbelievable” as whole words: 1 token, from a vocabulary of millions. As characters: 12 tokens, from a vocabulary of about 100. As subwords: perhaps “un” + “believ” + “able”, 3 tokens, from a vocabulary of tens of thousands.</p>
+<h4>Why it matters today</h4>
+<p>Choosing the vocabulary size is still exactly this trade-off, now weighed against GPU memory for the embedding table and the cost of long sequences in attention, which grows with the square of length.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Byte pair encoding (BPE) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“We iteratively count all symbol pairs and replace each occurrence of the most frequent pair (‘A’, ‘B’) with a new symbol ‘AB’.”<cite>Sennrich, Haddow and Birch (2015), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Start with a box of single letters. Look through all your text and find the two pieces that sit side by side most often, perhaps “e” followed by “s”. Glue them into one new piece, “es”, and add it to the box. Repeat: maybe “es” + “t” is now the most common pair, giving “est”. After a few thousand repeats, common words are single pieces, frequent chunks (“ing”, “tion”) are pieces, and rare words are spelled from several. The number of repeats is the only setting.</p>
+<h4>Tiny example: the paper's own toy dictionary</h4>
+<p>Four words with their counts: low (5), lower (2), newest (6), widest (3). Each word is split into characters plus an end-of-word marker <code>&lt;/w&gt;</code>, which lets you glue words back together after translation. Count the pair (e, s): it appears once in “newest” (6 occurrences) and once in “widest” (3 occurrences), so 6 + 3 = 9. Nothing beats 9, so the first merge is e + s → es. The next is es + t → est (also 9), then est + &lt;/w&gt; (9), then l + o (5 + 2 = 7), then lo + w (7). Step through it below.</p>
+
+<div class="play" id="bpe">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Corpus:</span>
+    <button type="button" data-preset="paper" aria-pressed="true">the paper's Algorithm 1</button>
+    <button type="button" data-preset="fig1" aria-pressed="false">the paper's Figure 1</button>
+    <button type="button" data-preset="low" aria-pressed="false">low lower lowest</button>
+    <button type="button" data-preset="custom" aria-pressed="false">your own text</button>
+  </div>
+  <textarea id="bpe-text" aria-label="Your own training text" hidden>the lower the lowest the newest the widest new low</textarea>
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem;margin-top:.5rem">
+    <button type="button" id="bpe-step">Next merge</button>
+    <button type="button" id="bpe-run">Merge 10 times</button>
+    <button type="button" id="bpe-reset">Reset</button>
+  </div>
+  <div class="bpe-words" id="bpe-words" aria-live="polite"></div>
+  <div class="bpe-cols">
+    <div><p class="readout" style="margin:0">Most frequent adjacent pairs right now</p><div class="tablewrap"><table id="bpe-pairs"></table></div></div>
+    <div><p class="readout" style="margin:0">Merges learned so far, in order</p><div class="tablewrap"><table id="bpe-merges"></table></div></div>
+  </div>
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem;margin-top:.6rem">
+    <label for="seg-input">Segment a new word with the merges so far:</label>
+    <input type="text" id="seg-input" value="lowest" size="16" spellcheck="false">
+  </div>
+  <p class="readout" id="seg-out"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the top row shows every word in the corpus, split into its current pieces, with its count; newly glued pieces are highlighted. The left table counts every pair of neighbouring pieces, weighted by word counts; the highlighted row is the winner, which the next merge will glue. The right table is the growing list of learned merges, the tokenizer itself. Press <strong>Next merge</strong> repeatedly on the paper's Algorithm 1 corpus and you get the same ten merges as the paper's printed code: es, est, est&lt;/w&gt;, lo, low, ne, new, newest&lt;/w&gt;, low&lt;/w&gt;, wi. Then try the segmenter: after those merges, “lowest”, a word the corpus never contained, comes out as <strong>low + est&lt;/w&gt;</strong>, and “lower” as <strong>low + e + r + &lt;/w&gt;</strong>: no word is ever unknown, because in the worst case it falls back to letters. On the Figure 1 corpus every pair ties at first, so the order of merges is decided by tie-breaking; the paper's figure shows one valid order and this demo may pick another.</p>
+
+<div class="tablewrap"><table>
+  <caption>Figure 1 of Sennrich, Haddow and Birch (2015), reproduced as a table (CC BY 4.0): merges learned from {low, lowest, newer, wider}</caption>
+  <thead><tr><th>Merge</th><th>Result</th></tr></thead>
+  <tbody>
+    <tr><td>r + ·</td><td>r·</td></tr>
+    <tr><td>l + o</td><td>lo</td></tr>
+    <tr><td>lo + w</td><td>low</td></tr>
+    <tr><td>e + r·</td><td>er·</td></tr>
+  </tbody>
+</table></div>
+<p>(The paper's figure writes the end-of-word marker as “·” and its code as “&lt;/w&gt;”; they are the same thing.) With those four merges, the unseen word “lower” is segmented as <strong>low er·</strong>.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=best}{(A, B)} = \htmlData{sym=argmax}{\arg\max_{(a,b)}} \htmlData{sym=sumw}{\sum_{w}} \htmlData{sym=fw}{f(w)}\cdot \htmlData{sym=nab}{n_{ab}(w)} \qquad \htmlData{sym=V}{|V|} = \htmlData{sym=Vc}{|V_{\text{chars}}|} + \htmlData{sym=M}{M}" data-fallback="(A, B) = argmax over pairs (a, b) of Σ_w f(w) · n_ab(w),   |V| = |V_chars| + M"></div>
+<div class="symtable" data-syms="best,argmax,sumw,fw,nab,V,Vc,M"></div>
+<p class="inwords"><strong>In words:</strong> “the next merge is the neighbouring pair that occurs most often, counting each word as many times as it appears; the final vocabulary is the starting characters plus one new symbol per merge.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for (e, s): f(newest) · 1 + f(widest) · 1 = 6 + 3 = 9, the maximum, so (A, B) = (e, s). The paper's German BPE used M = 59,500 merges; with the few hundred starting characters, that gives the roughly 60,000-symbol vocabulary of Table 1.</p>
+<p>Two practical details from the paper: pairs are never counted across word boundaries, so the algorithm can run on a word-frequency list instead of raw text; and applying the merges to new text simply replays them in the order they were learned. The paper also compares learning separate merges for each language with <strong>joint BPE</strong>, one set learned on both languages together (with Russian transliterated into Latin letters for learning), which keeps names segmented consistently on both sides.</p>
+<h4>Why it matters today</h4>
+<p>This loop, count pairs, merge the top one, repeat, is essentially how the tokenizers of GPT-style models are trained today, just on bytes instead of characters and over far more text. See the <a data-lesson="primer/ml/tokenization.html">tokenization lesson</a>, which reproduces the “low lower lowest” merges exactly.</p>
+</section>
+
+<section id="s4">
+<h2>4 Evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Two questions: do subwords translate rare words better, and which way of splitting is best for vocabulary size, text length and quality? The test bed is WMT 2015: English→German (4.2 million sentence pairs, about 100 million tokens) and English→Russian (2.6 million pairs, about 50 million tokens).</p>
+<h4>How quality is measured</h4>
+<p><span class="t" data-t="bleu">BLEU</span> counts overlapping word sequences with a reference translation; <span class="t" data-tip-title="chrF3" data-tip="A character n-gram F-score with β = 3, which weights recall three times as much as precision. It rewards getting parts of words right, useful for languages with long compounds.">chrF3</span> does the same with character sequences, weighting recall more. Because the paper's claim is about rare words, it also reports <span class="t" data-t="f1">F1</span> on single words, separately for all words, rare words and words never seen in training (OOV).</p>
+<div class="eq" data-tex="\htmlData{sym=F1}{F_1} = \frac{2\,\htmlData{sym=P}{P}\,\htmlData{sym=R}{R}}{\htmlData{sym=P}{P} + \htmlData{sym=R}{R}} \qquad \htmlData{sym=Fb}{F_\beta} = \frac{(1+\htmlData{sym=beta}{\beta}^2)\,\htmlData{sym=P}{P}\,\htmlData{sym=R}{R}}{\htmlData{sym=beta}{\beta}^2 \htmlData{sym=P}{P} + \htmlData{sym=R}{R}}" data-fallback="F1 = 2PR / (P + R),   F_β = (1 + β²) PR / (β² P + R)"></div>
+<div class="symtable" data-syms="P,R,F1,Fb,beta"></div>
+<p class="inwords"><strong>In words:</strong> “F1 is the harmonic mean of precision and recall, high only when both are; F-beta tilts that balance: β = 3 (chrF3) treats recall as three times as important as precision, which is why β² = 9 appears in the formula.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the joint-BPE system's English→German OOV words had precision 38.6% and recall 29.8%, so F1 = 2 × 0.386 × 0.298 / (0.386 + 0.298) = 0.336, the 33.6% in Table 2.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Subword statistics <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Every way of splitting text trades vocabulary size (how many different pieces) against text length (how many pieces in total). The ideal sits in a corner: few types, short text, and zero unknown pieces on new text.</p>
+<figure class="ix" id="fig-tab1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 260" role="img" aria-label="Vocabulary size against text length for different segmentations">
+    <line x1="50" y1="220" x2="330" y2="220" stroke="var(--wire)"/><line x1="50" y1="10" x2="50" y2="220" stroke="var(--wire)"/>
+    <text x="190" y="252" text-anchor="middle" class="lbl">text length (million tokens, German side)</text>
+    <text x="14" y="115" text-anchor="middle" class="lbl" transform="rotate(-90 14 115)">vocabulary (types, log)</text>
+    <g id="tab1-axes"></g>
+    <g id="tab1-points"></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a point to see the segmentation it represents.</p></div>
+  </div>
+  <figcaption>Table 1 of Sennrich, Haddow and Birch (2015) plotted (CC BY 4.0): the German training corpus under different segmentations.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each point is one way of splitting the same 100-million-word German corpus. Left is shorter text, down is a smaller vocabulary; points coloured red still leave unknown tokens on the test set. Whole words (top left) keep text short but need 1.75 million types and still hit 1,079 unknowns. Characters (bottom right) need only 3,000 types and have no unknowns, but make the text 5.5× longer. Classic linguistic splitters (compound splitting, Morfessor, hyphenation) barely shrink the vocabulary and all leave unknowns. BPE sits near the ideal corner: 63,000 types, text only 12% longer than words, and zero unknown tokens.</p>
+<div class="tablewrap"><table>
+  <caption>Table 1 of Sennrich, Haddow and Birch (2015), reproduced (CC BY 4.0). #UNK is the number of unknown tokens on newstest2013</caption>
+  <thead><tr><th>Segmentation</th><th class="num"># tokens</th><th class="num"># types</th><th class="num"># UNK</th></tr></thead>
+  <tbody>
+    <tr><td>none (whole words)</td><td class="num">100 m</td><td class="num">1,750,000</td><td class="num">1,079</td></tr>
+    <tr><td>characters</td><td class="num">550 m</td><td class="num">3,000</td><td class="num">0</td></tr>
+    <tr><td>character bigrams</td><td class="num">306 m</td><td class="num">20,000</td><td class="num">34</td></tr>
+    <tr><td>character trigrams</td><td class="num">214 m</td><td class="num">120,000</td><td class="num">59</td></tr>
+    <tr><td>compound splitting</td><td class="num">102 m</td><td class="num">1,100,000</td><td class="num">643</td></tr>
+    <tr><td>Morfessor</td><td class="num">109 m</td><td class="num">544,000</td><td class="num">237</td></tr>
+    <tr><td>hyphenation</td><td class="num">186 m</td><td class="num">404,000</td><td class="num">230</td></tr>
+    <tr class="hl"><td>BPE</td><td class="num">112 m</td><td class="num">63,000</td><td class="num">0</td></tr>
+    <tr><td>BPE (joint)</td><td class="num">111 m</td><td class="num">82,000</td><td class="num">32</td></tr>
+    <tr><td>character bigrams, 50,000-word shortlist</td><td class="num">129 m</td><td class="num">69,000</td><td class="num">34</td></tr>
+  </tbody>
+</table></div>
+<h4>Why it matters today</h4>
+<p>The same trade-off is why a token is about ¾ of an English word today, and why text in languages the tokenizer saw less of splits into more tokens and so costs more.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Translation experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The contest: word-level models with a huge vocabulary, with and without a back-off dictionary (WUnk, WDict), against subword models with no dictionary at all (character bigrams C2-50k; BPE-60k; joint BPE-J90k).</p>
+<h4>Tiny example</h4>
+<p>For English→German rare words (not in the top 50,000), unigram F1 rises from 36.8% (word model with dictionary) to 41.8% (joint BPE). For English→Russian, where names must be transliterated, OOV-word F1 rises from 6.6% to 18.3%: the dictionary can copy “Mirzayeva” but not turn it into Cyrillic.</p>
+<div class="tablewrap"><table>
+  <caption>Selected columns of Tables 2 and 3 of Sennrich, Haddow and Birch (2015), reproduced (CC BY 4.0). BLEU of an 8-model ensemble on newstest2015; unigram F1 (%) for rare and unseen (OOV) words</caption>
+  <thead><tr><th>System</th><th class="num">EN→DE BLEU</th><th class="num">EN→DE rare F1</th><th class="num">EN→DE OOV F1</th><th class="num">EN→RU BLEU</th><th class="num">EN→RU rare F1</th><th class="num">EN→RU OOV F1</th></tr></thead>
+  <tbody>
+    <tr><td>WUnk (words, UNK)</td><td class="num">22.8</td><td class="num">20.4</td><td class="num">0.0</td><td class="num">22.4</td><td class="num">25.2</td><td class="num">0.0</td></tr>
+    <tr><td>WDict (words + dictionary)</td><td class="num">24.2</td><td class="num">36.8</td><td class="num">36.8</td><td class="num">22.8</td><td class="num">26.5</td><td class="num">6.6</td></tr>
+    <tr><td>C2-50k (char bigrams)</td><td class="num">25.3</td><td class="num">40.5</td><td class="num">30.9</td><td class="num">24.1</td><td class="num">27.8</td><td class="num">17.4</td></tr>
+    <tr><td>BPE-60k</td><td class="num">24.5</td><td class="num">40.9</td><td class="num">29.3</td><td class="num">23.6</td><td class="num">29.7</td><td class="num">15.6</td></tr>
+    <tr class="hl"><td>BPE-J90k (joint)</td><td class="num">24.7</td><td class="num">41.8</td><td class="num">33.6</td><td class="num">24.1</td><td class="num">29.7</td><td class="num">18.3</td></tr>
+  </tbody>
+</table></div>
+<div class="plot"><div id="f1-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each group compares the word-level system with a dictionary (grey) against joint BPE (blue) on single-word F1 for one kind of word. For all words the two are nearly tied, because frequent words are single tokens either way. The gap opens for rare words, and for English→Russian unseen words it nearly triples, because transliterating names needs subword pieces. English→German OOV is the one place the dictionary wins: most unseen German words are names that can simply be copied. Numbers from Tables 2 and 3 of the paper.</p>
+<p>Rare and unseen words make up only 9 to 11% of the test sets, so the headline BLEU gains are modest: the subword ensembles beat the dictionary baseline by 0.3 to 1.3 BLEU. The authors argue that BLEU underestimates the benefit, because rare words (names, key terms) tend to carry a sentence's central information.</p>
+<h4>Why it matters today</h4>
+<p>“Better on the long tail, same on the head” is the typical signature of a tokenization improvement, and why average metrics can hide it.</p>
+</section>
+
+<section id="s5">
+<h2>5 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S5">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Two checks. First, sort target words by how often they appeared in training and plot accuracy for each band: word-level models collapse on rare words, subword models degrade gracefully. Second, look at actual translations.</p>
+<div class="tablewrap"><table>
+  <caption>Table 4 of Sennrich, Haddow and Birch (2015), reproduced (CC BY 4.0). “|” marks subword boundaries</caption>
+  <thead><tr><th>System</th><th>“health research institutes” →</th></tr></thead>
+  <tbody>
+    <tr><td>reference</td><td>Gesundheitsforschungsinstitute</td></tr>
+    <tr><td>WDict</td><td>Forschungsinstitute (drops “health”)</td></tr>
+    <tr><td>C2-50k</td><td>Fo|rs|ch|un|gs|in|st|it|ut|io|ne|n</td></tr>
+    <tr><td>BPE-60k</td><td>Gesundheits|forsch|ungsinstitu|ten</td></tr>
+    <tr class="hl"><td>BPE-J90k</td><td>Gesundheits|forsch|ungsin|stitute</td></tr>
+  </tbody>
+</table></div>
+<h4>Tiny example</h4>
+<p>The subword models build a correct German compound from pieces, even though the pieces do not follow linguistic boundaries: “forsch | ungsin | stitute” is not how a linguist would split it, yet the translation comes out right. For Russian, joint BPE segments the name Mirzayeva consistently on both sides (Mir | za | yeva → Мир | за | ева), while separate BPE vocabularies occasionally learned spurious letter mappings from inconsistent splits.</p>
+<h4>Why it matters today</h4>
+<p>Tokens are not morphemes, and models cope anyway. That is both why BPE works in practice and why models behave oddly on tasks that depend on individual letters: they never see the letters directly.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S6">original</a></span></h2>
+<blockquote class="quote">“The main contribution of this paper is that we show that neural machine translation systems are capable of open-vocabulary translation by representing rare and unseen words as a sequence of subword units.”<cite>Sennrich, Haddow and Birch (2015), §6</cite></blockquote>
+<p>The authors note that their choice of vocabulary size was “somewhat arbitrary”, and that shrinking the vocabulary and representing more words as subwords can actually improve performance. The code was released as <a href="https://github.com/rsennrich/subword-nmt">subword-nmt</a>.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2015</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where to learn more</th></tr></thead>
+  <tbody>
+    <tr><td>BPE over characters</td><td><span class="t" data-t="byte-level bpe">Byte-level BPE</span> over the raw bytes of UTF-8 text</td><td>Any string, including emoji and code, can be encoded with no unknown symbol at all</td><td><a data-lesson="primer/ml/tokenization.html">tokenization lesson</a></td></tr>
+    <tr><td>Text pre-split into words; merges never cross word boundaries</td><td>A regular-expression pre-tokenizer (spaces, digits, punctuation), or none at all with SentencePiece</td><td>Language-independent, and handles languages written without spaces</td><td><a href="https://arxiv.org/abs/1808.06226">SentencePiece paper</a></td></tr>
+    <tr><td>Greedy merges by frequency</td><td>Also: the Unigram model, which prunes a large vocabulary by likelihood (Kudo, 2018)</td><td>Gives several possible segmentations, which can be sampled as a regularizer</td><td><a href="https://arxiv.org/abs/1804.10959">subword regularization paper</a></td></tr>
+    <tr><td>Vocabularies of 60,000 to 90,000</td><td>32,000 to about 200,000 tokens, shared across many languages</td><td>Bigger vocabularies shorten text, which saves attention compute and API cost</td><td><a data-lesson="primer/ml/tokenization.html">tokenization lesson</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Rico Sennrich, Barry Haddow and Alexandra Birch, <em>Neural Machine Translation of Rare Words with Subword Units</em>, ACL 2016. <a href="https://arxiv.org/abs/1508.07909">arXiv:1508.07909</a>, released under CC BY 4.0. Quotations are brief and attributed; tables and examples are reproduced under that licence with attribution; figures are redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    best: { tex: "(A, B)", name: "The winning pair", meaning: "The two neighbouring symbols that will be glued into the new symbol AB.", shape: "a pair of symbols", example: "(e, s)" },
+    argmax: { tex: "\\arg\\max_{(a,b)}", name: "Argmax over pairs", meaning: "“The pair (a, b) that makes the following count largest”: the winner itself, not the count.", shape: "an operation", example: "picks (e, s), whose count is 9" },
+    sumw: { tex: "\\sum_{w}", name: "Sum over words", meaning: "Add up over every distinct word in the training vocabulary.", shape: "an operation", example: "low, lower, newest, widest" },
+    fw: { tex: "f(w)", name: "Word frequency", meaning: "How many times word w appears in the training text.", shape: "a whole number", example: "f(newest) = 6" },
+    nab: { tex: "n_{ab}(w)", name: "Pair count inside a word", meaning: "How many times symbol a is immediately followed by symbol b in the current segmentation of w.", shape: "a whole number", example: "n_es(newest) = 1" },
+    V: { tex: "|V|", name: "Vocabulary size", meaning: "How many different symbols the final tokenizer has.", shape: "a whole number", example: "about 63,000 for the German BPE" },
+    Vc: { tex: "|V_{\\text{chars}}|", name: "Starting characters", meaning: "The number of distinct characters (plus the end-of-word marker) you start from.", shape: "a whole number", example: "a few hundred for German" },
+    M: { tex: "M", name: "Number of merges", meaning: "How many merge operations are learned: the algorithm's only setting.", shape: "a whole number", example: "59,500 (BPE), 89,500 (joint BPE)" },
+    P: { tex: "P", name: "Precision", meaning: "Of the words the system produced, the fraction that also appear in the reference (clipped so repeats can't be over-counted).", shape: "0 to 1", example: "0.386" },
+    R: { tex: "R", name: "Recall", meaning: "Of the words in the reference, the fraction the system produced.", shape: "0 to 1", example: "0.298" },
+    F1: { tex: "F_1", name: "F1 score", meaning: "The harmonic mean of precision and recall: high only when both are high.", shape: "0 to 1", example: "0.336" },
+    Fb: { tex: "F_\\beta", name: "F-beta score", meaning: "A version of F1 that treats recall as β times as important as precision (β² appears in the formula).", shape: "0 to 1", example: "chrF3 uses β = 3" },
+    beta: { tex: "\\beta", name: "Beta", meaning: "How much more recall counts than precision.", shape: "a positive number", example: "3" },
+  },
+
+  blocks: {},
+
+  onReady(P) {
+    rareBars();
+    bpeMachine();
+    f1Bars();
+  },
+};
+
+/* ---- the 100 rare German words, by kind (§3) ---- */
+function rareBars() {
+  const rows = [["compounds", 56], ["names", 21], ["loanwords", 6], ["affixation", 5], ["number", 1], ["code identifier", 1]];
+  document.getElementById("rare-bars").innerHTML = `<div class="legend" style="margin:0 0 .4rem">100 rare German training words by kind (axis 0 to 60)</div>` +
+    rows.map(([k, v]) => `<div class="share-row" style="grid-template-columns:8rem minmax(0,1fr) 2.5rem"><span>${k}</span><div><div class="share-bar" style="width:${(v / 60) * 100}%"></div></div><span>${v}</span></div>`).join("");
+}
+
+/* ---- the BPE machine: learn merges step by step, then segment new words ---- */
+function bpeMachine() {
+  const EOW = "</w>";
+  const presets = {
+    paper: { low: 5, lower: 2, newest: 6, widest: 3 },
+    fig1: { low: 1, lowest: 1, newer: 1, wider: 1 },
+    low: { low: 1, lower: 1, lowest: 1 },
+  };
+  let preset = "paper", vocab, merges, lastMerged = null;
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  function fromCounts(counts) { return Object.entries(counts).map(([w, f]) => ({ syms: [...w, EOW], f })); }
+  function fromText(text) {
+    const counts = new Map();
+    for (const w of text.toLowerCase().split(/\s+/).filter(Boolean)) counts.set(w, (counts.get(w) || 0) + 1);
+    return fromCounts(Object.fromEntries(counts));
+  }
+  function reset() {
+    vocab = preset === "custom" ? fromText(document.getElementById("bpe-text").value) : fromCounts(presets[preset]);
+    merges = []; lastMerged = null; render();
+  }
+  function pairCounts() {
+    // Map keeps insertion order, and ties go to the first pair encountered, as in the paper's Python.
+    const m = new Map();
+    for (const { syms, f } of vocab) for (let i = 0; i + 1 < syms.length; i++) { const k = syms[i] + "\u0000" + syms[i + 1]; m.set(k, (m.get(k) || 0) + f); }
+    return m;
+  }
+  function best(m) { let top = null, n = -1; for (const [k, v] of m) if (v > n) { top = k; n = v; } return top && [top.split("\u0000"), n]; }
+  function step() {
+    const b = best(pairCounts());
+    if (!b) return false;
+    const [[a, c], n] = b, joined = a + c;
+    for (const w of vocab) {
+      const out = [];
+      for (let i = 0; i < w.syms.length; i++) {
+        if (i + 1 < w.syms.length && w.syms[i] === a && w.syms[i + 1] === c) { out.push(joined); i++; } else out.push(w.syms[i]);
+      }
+      w.syms = out;
+    }
+    merges.push([a, c, n]); lastMerged = joined;
+    return true;
+  }
+  function segment(word) {
+    let syms = [...word.toLowerCase(), EOW];
+    const rank = new Map(merges.map(([a, c], i) => [a + "\u0000" + c, i]));
+    for (;;) {
+      let bi = -1, br = Infinity;
+      for (let i = 0; i + 1 < syms.length; i++) { const r = rank.get(syms[i] + "\u0000" + syms[i + 1]); if (r !== undefined && r < br) { br = r; bi = i; } }
+      if (bi < 0) return syms;
+      const a = syms[bi], c = syms[bi + 1], out = [];
+      for (let i = 0; i < syms.length; i++) { if (i + 1 < syms.length && syms[i] === a && syms[i + 1] === c) { out.push(a + c); i++; } else out.push(syms[i]); }
+      syms = out;
+    }
+  }
+  function render() {
+    document.getElementById("bpe-words").innerHTML = vocab.map(({ syms, f }) =>
+      `<span class="bpe-word">${syms.map((s) => `<span class="sym${s === lastMerged ? " new" : ""}">${esc(s)}</span>`).join("")}<span class="freq">×${f}</span></span>`).join("");
+    const pc = [...pairCounts()].sort((x, y) => y[1] - x[1]).slice(0, 6);
+    const winner = best(pairCounts());
+    document.getElementById("bpe-pairs").innerHTML = "<thead><tr><th>pair</th><th class=\"num\">count</th></tr></thead><tbody>" +
+      (pc.length ? pc.map(([k, v]) => { const [a, c] = k.split("\u0000"); const win = winner && winner[0][0] === a && winner[0][1] === c; return `<tr class="${win ? "win" : ""}"><td>${esc(a)} + ${esc(c)}</td><td class="num">${v}</td></tr>`; }).join("") : "<tr><td colspan=2>no pairs left: every word is one symbol</td></tr>") + "</tbody>";
+    document.getElementById("bpe-merges").innerHTML = "<thead><tr><th>#</th><th>merge</th><th class=\"num\">count</th></tr></thead><tbody>" +
+      (merges.length ? merges.map(([a, c, n], i) => `<tr><td>${i + 1}</td><td>${esc(a)} + ${esc(c)} → ${esc(a + c)}</td><td class="num">${n}</td></tr>`).join("") : "<tr><td colspan=3>none yet: press Next merge</td></tr>") + "</tbody>";
+    const w = document.getElementById("seg-input").value.trim();
+    const seg = w ? segment(w) : [];
+    document.getElementById("seg-out").innerHTML = w
+      ? `“${esc(w)}” → ${seg.map((s) => `<span class="bpe-word"><span class="sym">${esc(s)}</span></span>`).join(" ")} · <strong>${seg.length}</strong> symbols using ${merges.length} merges`
+      : "Type a word to segment it.";
+  }
+  document.getElementById("bpe-step").addEventListener("click", () => { step(); render(); });
+  document.getElementById("bpe-run").addEventListener("click", () => { for (let i = 0; i < 10 && step(); i++); render(); });
+  document.getElementById("bpe-reset").addEventListener("click", reset);
+  document.getElementById("seg-input").addEventListener("input", render);
+  document.getElementById("bpe-text").addEventListener("input", () => { if (preset === "custom") reset(); });
+  document.querySelectorAll("#bpe [data-preset]").forEach((b) => b.addEventListener("click", () => {
+    preset = b.dataset.preset;
+    document.querySelectorAll("#bpe [data-preset]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    document.getElementById("bpe-text").hidden = preset !== "custom";
+    reset();
+  }));
+  reset();
+}
+
+/* ---- Table 1 as an interactive scatter: text length against vocabulary size.
+   Built before papers.js boots (like the flagship's mask grid), so its parts and notes get wired. ---- */
+(function table1Plot() {
+  const rows = [
+    ["none", "whole words", 100, 1750000, 1079],
+    ["chars", "characters", 550, 3000, 0],
+    ["bi", "character bigrams", 306, 20000, 34],
+    ["tri", "character trigrams", 214, 120000, 59],
+    ["compound", "compound splitting", 102, 1100000, 643],
+    ["morf", "Morfessor", 109, 544000, 237],
+    ["hyph", "hyphenation", 186, 404000, 230],
+    ["bpe", "BPE", 112, 63000, 0],
+    ["bpej", "BPE (joint)", 111, 82000, 32],
+    ["bi50", "char bigrams + 50k shortlist", 129, 69000, 34],
+  ];
+  const NS = "http://www.w3.org/2000/svg";
+  const X = (t) => 50 + ((t - 80) / (560 - 80)) * 280;
+  const Y = (v) => 220 - ((Math.log10(v) - 3) / (6.4 - 3)) * 205;
+  const axes = document.getElementById("tab1-axes");
+  [100, 200, 300, 400, 500].forEach((t) => { const tx = document.createElementNS(NS, "text"); Object.entries({ x: X(t), y: 236, "text-anchor": "middle", class: "lbl" }).forEach(([k, v]) => tx.setAttribute(k, v)); tx.textContent = t; axes.appendChild(tx); });
+  [[1e3, "1k"], [1e4, "10k"], [1e5, "100k"], [1e6, "1M"]].forEach(([v, s]) => { const tx = document.createElementNS(NS, "text"); Object.entries({ x: 44, y: Y(v) + 4, "text-anchor": "end", class: "lbl" }).forEach(([k, val]) => tx.setAttribute(k, val)); tx.textContent = s; axes.appendChild(tx); });
+  const g = document.getElementById("tab1-points");
+  for (const [key, name, tok, types, unk] of rows) {
+    const b = document.createElementNS(NS, "g");
+    b.setAttribute("class", "blk " + (unk === 0 ? "soft" : "attn"));
+    b.setAttribute("data-block", "t1_" + key);
+    b.setAttribute("aria-label", name);
+    b.setAttribute("role", "button");
+    const c = document.createElementNS(NS, "rect");
+    Object.entries({ x: X(tok) - 6, y: Y(types) - 6, width: 12, height: 12, rx: 6 }).forEach(([k, v]) => c.setAttribute(k, v));
+    if (unk > 0) c.setAttribute("style", "fill:var(--emb);stroke:var(--emb-stroke)");
+    b.appendChild(c);
+    g.appendChild(b);
+    window.PAPER.blocks["t1_" + key] = {
+      title: name,
+      body: `<p><strong>${tok} million</strong> tokens, <strong>${types.toLocaleString()}</strong> distinct types, <strong>${unk}</strong> unknown tokens on the test set.</p>` +
+        (key === "bpe" ? "<p>The sweet spot: close to word-level length, a compact vocabulary, and nothing unknown.</p>" : key === "chars" ? "<p>Fully open-vocabulary but 5.5× longer text, which makes every sentence much harder to process.</p>" : key === "none" ? "<p>Short text but an enormous vocabulary, and still 1,079 unknown words.</p>" : ""),
+      shape: unk === 0 ? "open vocabulary" : "still has unknowns",
+    };
+  }
+})();
+
+/* ---- unigram F1 by word kind: dictionary baseline against joint BPE (Tables 2 and 3) ---- */
+function f1Bars() {
+  const groups = [["EN→DE all words", 58.1, 58.5], ["EN→DE rare", 36.8, 41.8], ["EN→DE unseen (OOV)", 36.8, 33.6], ["EN→RU all words", 54.8, 55.8], ["EN→RU rare", 26.5, 29.7], ["EN→RU unseen (OOV)", 6.6, 18.3]];
+  document.getElementById("f1-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>WDict (words + dictionary)</span><span><i style="background:var(--accent)"></i>BPE-J90k (joint BPE)</span> · unigram F1 %, axis 0 to 60</div>` +
+    groups.map(([k, a, b]) => `<div class="share-row" style="grid-template-columns:10rem minmax(0,1fr) 6rem"><span>${k}</span><div><div class="share-bar" style="width:${(a / 60) * 100}%;background:var(--wire)"></div><div class="share-bar" style="width:${(b / 60) * 100}%;margin-top:3px"></div></div><span>${a} → ${b}</span></div>`).join("");
+}
+</script>
+</body>
+</html>

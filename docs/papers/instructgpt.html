@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InstructGPT, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Ouyang et al. (2022), Training language models to follow instructions with human feedback.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="instructgpt">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Methods</a>
+        <ol>
+          <li><a href="#s3-1">3.1 The three steps</a></li>
+          <li><a href="#s3-2">3.2–3.3 Prompts and tasks</a></li>
+          <li><a href="#s3-4">3.4 The labelers</a></li>
+          <li><a href="#s3-5">3.5 Models: SFT, RM, PPO</a></li>
+          <li><a href="#s3-6">3.6 What “aligned” means</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Results</a>
+        <ol>
+          <li><a href="#s4-1">4.1 On real user prompts</a></li>
+          <li><a href="#s4-2">4.2 On public benchmarks</a></li>
+          <li><a href="#s4-3">4.3 Qualitative results</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Discussion</a></li>
+      <li><a href="#today">What changed since</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>InstructGPT, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Ouyang, Wu, Jiang, Almeida, Wainwright and colleagues (2022), <em>Training language models to follow instructions with human feedback</em>: the recipe that turned a text-continuing model into an assistant that does what you ask.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2203.02155">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2203.02155">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2203.02155">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its results appear here as selected numbers in tables and charts written for this page, with attribution, and its figures are redrawn from scratch. The example prompts are this page's own. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same.</li>
+  <li>The three-step diagram in §3.1 is live: tap a step to see what the data looks like at that point.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/ml/training_stages.html">training stages lesson</a> builds SFT loss masking and a reward-model loss in NumPy. The follow-up that removed the reinforcement learning step is the <a href="dpo.html">DPO companion</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155">original</a></span></h2>
+<blockquote class="quote">“Making language models bigger does not inherently make them better at following a user’s intent.”<cite>Ouyang et al. (2022), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="base model">base model</span> like <span class="t" data-tip-title="GPT-3" data-tip="OpenAI's 2020 language model with 175 billion parameters, trained only to predict the next token of web text.">GPT-3</span> learned by predicting the next word on web pages, so it is a brilliant mimic, not a helpful assistant. Ask it “Write a poem about the sea” and it might continue with a list of other writing prompts, because that is what such a line is often followed by online. This paper teaches the model what people actually want by showing it examples, and then asking people to grade its attempts.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>People preferred the answers of a <strong>1.3-billion-parameter</strong> InstructGPT model over those of the <strong>175-billion-parameter</strong> GPT-3: over 100 times smaller, yet more useful.</li>
+  <li>InstructGPT is more truthful and somewhat less toxic than GPT-3, with small losses on public benchmarks that a tweak to training largely fixes.</li>
+  <li>The method: <span class="t" data-t="sft">supervised fine-tuning</span> on human demonstrations, then <span class="t" data-t="rlhf">reinforcement learning from human feedback</span>.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>This three-step recipe (demonstrate, compare, reinforce) is the template behind the chat assistants that followed. Even where the final step has changed, the idea of shaping a model with human preferences comes from here.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>The authors call the next-word objective <em>misaligned</em>: “predict what comes next on a web page” is a different job from “follow the user's instructions helpfully and safely”. They borrow a three-word target from earlier work: a model should be <strong>helpful</strong> (solve the user's task), <strong>honest</strong> (not make things up) and <strong>harmless</strong> (not cause harm).</p>
+<h4>The main findings, in one list</h4>
+<ul>
+  <li>Labelers preferred 175B InstructGPT to 175B GPT-3 <strong>85 ± 3%</strong> of the time, and to GPT-3 given a carefully written <span class="t" data-tip-title="Few-shot prompt" data-tip="A prompt that includes a few worked examples of the task before the real question, so the model can infer what is wanted from the pattern.">few-shot prompt</span> <strong>71 ± 4%</strong> of the time.</li>
+  <li>On the <span class="t" data-tip-title="TruthfulQA" data-tip="A benchmark of questions that some people answer falsely because of common misconceptions. It checks whether a model repeats the misconception or tells the truth.">TruthfulQA</span> benchmark, InstructGPT gave truthful and informative answers about <strong>twice</strong> as often as GPT-3.</li>
+  <li>On tasks where the answer should only use the input (such as summarizing), it made things up <strong>21%</strong> of the time against GPT-3's <strong>41%</strong>.</li>
+  <li>When asked to be respectful, it produced about <strong>25% fewer</strong> <span class="t" data-tip-title="Toxic output" data-tip="Rude, disrespectful or hateful text. Measured here with an automatic toxicity scorer and with human ratings.">toxic</span> outputs. It did not reduce measured bias.</li>
+  <li>Scores on some public benchmarks dropped (an <span class="t" data-tip-title="Alignment tax" data-tip="Capability given up in exchange for alignment: a drop in some skill caused by training the model to be helpful, honest and harmless.">“alignment tax”</span>), which mixing in pretraining data largely repaired.</li>
+  <li>It generalized to labelers who wrote no training data, and to instructions it rarely saw, such as code questions and other languages.</li>
+  <li>It still makes simple mistakes.</li>
+</ul>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S2">original</a></span></h2>
+<p>Learning from human preferences had already worked for robots in simulation, then for text summarization and story continuation. Other groups trained models on large collections of public NLP tasks phrased as instructions (FLAN and T0). The paper also draws on work measuring the harms of language models. Its new step was applying human-feedback training to a broad range of real user instructions on a very large model.</p>
+</section>
+
+<section id="s3">
+<h2>3 Methods <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S3">original</a></span></h2>
+<section id="s3-1">
+<h3>3.1 The three steps <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Training a new employee: first you <strong>show</strong> them how good work looks (demonstrations). Then you <strong>grade</strong> several of their attempts against each other, and a supervisor learns your taste from those grades (a reward model). Finally the employee practises on their own while the supervisor gives feedback, and they keep improving (reinforcement learning).</p>
+
+<figure class="ix wide" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 330" role="img" aria-label="The three steps of InstructGPT training: SFT, reward model, PPO">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="step1"><rect x="6" y="6" width="176" height="316" rx="12"/></g>
+    <g class="blk frame" data-block="step2"><rect x="192" y="6" width="176" height="316" rx="12"/></g>
+    <g class="blk frame" data-block="step3"><rect x="378" y="6" width="176" height="316" rx="12"/></g>
+    <text x="94" y="28" text-anchor="middle">Step 1: demonstrate</text>
+    <text x="280" y="28" text-anchor="middle">Step 2: compare</text>
+    <text x="466" y="28" text-anchor="middle">Step 3: reinforce</text>
+    <path class="wire" d="M94,78 V96" marker-end="url(#arr)"/>
+    <path class="wire" d="M94,140 V158" marker-end="url(#arr)"/>
+    <path class="wire" d="M94,202 V220" marker-end="url(#arr)"/>
+    <path class="wire" d="M280,78 V96" marker-end="url(#arr)"/>
+    <path class="wire" d="M280,140 V158" marker-end="url(#arr)"/>
+    <path class="wire" d="M280,202 V220" marker-end="url(#arr)"/>
+    <path class="wire" d="M466,78 V96" marker-end="url(#arr)"/>
+    <path class="wire" d="M466,140 V158" marker-end="url(#arr)"/>
+    <path class="wire" d="M466,202 V220" marker-end="url(#arr)"/>
+    <path class="wire" d="M182,242 H192 M170,242 H200" />
+    <path class="wire" d="M150,262 V300 H402 V262" marker-end="url(#arr)"/>
+    <path class="wire" d="M340,242 H412" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="p1"><rect x="24" y="44" width="140" height="34" rx="7"/><text x="94" y="65" text-anchor="middle">A prompt is sampled</text></g>
+    <g class="blk emb" data-block="demo"><rect x="24" y="96" width="140" height="44" rx="7"/><text x="94" y="115" text-anchor="middle">A labeler writes</text><text x="94" y="131" text-anchor="middle">the ideal answer</text></g>
+    <g class="blk lin" data-block="sftdata"><rect x="24" y="158" width="140" height="44" rx="7"/><text x="94" y="177" text-anchor="middle">~13k prompts with</text><text x="94" y="193" text-anchor="middle">demonstrations</text></g>
+    <g class="blk ff" data-block="sft"><rect x="24" y="220" width="140" height="42" rx="7"/><text x="94" y="238" text-anchor="middle">SFT model</text><text x="94" y="253" text-anchor="middle" class="lbl">fine-tuned GPT-3</text></g>
+    <g class="blk plain" data-block="p2"><rect x="210" y="44" width="140" height="34" rx="7"/><text x="280" y="65" text-anchor="middle">Prompt, K answers</text></g>
+    <g class="blk emb" data-block="rank"><rect x="210" y="96" width="140" height="44" rx="7"/><text x="280" y="115" text-anchor="middle">A labeler ranks</text><text x="280" y="131" text-anchor="middle">them best to worst</text></g>
+    <g class="blk lin" data-block="rmdata"><rect x="210" y="158" width="140" height="44" rx="7"/><text x="280" y="177" text-anchor="middle">~33k prompts with</text><text x="280" y="193" text-anchor="middle">rankings</text></g>
+    <g class="blk attn" data-block="rm"><rect x="210" y="220" width="130" height="42" rx="7"/><text x="275" y="238" text-anchor="middle">Reward model</text><text x="275" y="253" text-anchor="middle" class="lbl">6B, one score</text></g>
+    <g class="blk plain" data-block="p3"><rect x="396" y="44" width="140" height="34" rx="7"/><text x="466" y="65" text-anchor="middle">A new prompt</text></g>
+    <g class="blk ff" data-block="policy"><rect x="396" y="96" width="140" height="44" rx="7"/><text x="466" y="115" text-anchor="middle">The policy writes</text><text x="466" y="131" text-anchor="middle">an answer</text></g>
+    <g class="blk attn" data-block="score"><rect x="396" y="158" width="140" height="44" rx="7"/><text x="466" y="177" text-anchor="middle">The reward model</text><text x="466" y="193" text-anchor="middle">scores it</text></g>
+    <g class="blk soft" data-block="ppo"><rect x="412" y="220" width="124" height="42" rx="7"/><text x="474" y="238" text-anchor="middle">PPO update</text><text x="474" y="253" text-anchor="middle" class="lbl">~31k prompts</text></g>
+    <text x="276" y="316" class="lbl" text-anchor="middle">the SFT model is the starting point for steps 2 and 3</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap any box, top to bottom in each column. Tap a column's dashed frame for the big picture of that step.</p></div>
+  </div>
+  <figcaption>Figure 2 of the paper, redrawn with this page's own example data. Based on Ouyang et al. (2022), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read each column top to bottom, then left to right. In step 1, people write model answers for sampled prompts, and GPT-3 is <span class="t" data-t="fine-tuning">fine-tuned</span> to imitate them. In step 2, the step-1 model writes several answers per prompt, people rank them, and a separate reward model learns to predict their rankings. In step 3, the model writes answers to new prompts, the reward model scores each one, and the <span class="t" data-tip-title="PPO (Proximal Policy Optimization)" data-tip="A reinforcement learning algorithm that improves a policy in small, clipped steps so that one bad update can't wreck it. Widely used for RLHF.">PPO algorithm</span> nudges the model towards higher scores. The long arrow along the bottom shows the SFT model feeding the later steps. The paper notes steps 2 and 3 can be repeated: collect rankings of the improved model's answers, retrain the reward model, update again.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2–3.3 Prompts and tasks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To learn what users want, train on what users ask. Most prompts came from people using an early version of the model through OpenAI's web interface (who had been told their data might be used for training), filtered for personal information and capped at 200 per user. Labelers also wrote prompts to get started.</p>
+<div class="tablewrap"><table>
+  <caption>Dataset sizes and top use cases, as reported by Ouyang et al. (2022), §3.2 and Table 1</caption>
+  <thead><tr><th>Dataset</th><th class="num">Training prompts</th><th>Used for</th></tr></thead>
+  <tbody>
+    <tr><td>SFT</td><td class="num">~13,000</td><td>demonstrations, step 1</td></tr>
+    <tr><td>Reward model</td><td class="num">~33,000</td><td>rankings, step 2</td></tr>
+    <tr><td>PPO</td><td class="num">~31,000</td><td>prompts only (no labels), step 3</td></tr>
+  </tbody>
+</table></div>
+<p>By use case, the prompts were mostly open-ended: generation 45.6%, open question answering 12.4%, brainstorming 11.2%, chat 8.4%, rewriting 6.6%, summarization 4.2%, and smaller shares of classification, closed question answering and extraction. Over 96% were in English. Labelers were asked to infer what the person who wrote each prompt wanted, including implicit wishes such as truthfulness.</p>
+<h4>Why it matters</h4>
+<p>Only about 18% of real prompts were the classification and question-answering tasks that public benchmarks mostly measure. That mismatch explains a result in §4.1.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 The labelers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S3.SS4">original</a></span></h3>
+<p>About 40 contractors, chosen by a screening test for sensitivity to different groups' preferences and skill at spotting harmful outputs. During training, labelers were told to prioritize helpfulness; in final evaluations, truthfulness and harmlessness. Agreement was high for such open-ended work: training labelers agreed with each other 72.6 ± 1.5% of the time, and held-out labelers 77.3 ± 1.3%.</p>
+<h4>Why it matters</h4>
+<p>“Aligned to human preferences” here means aligned to <em>these</em> people, following <em>these</em> instructions. The paper is candid about this in §5.2.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Models: SFT, reward model and PPO <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S3.SS5">original</a></span></h3>
+<h4>Step 1: supervised fine-tuning</h4>
+<p>GPT-3 trained on the labelers' demonstrations for 16 <span class="t" data-t="epoch">epochs</span>. An interesting detail: validation loss started <span class="t" data-t="overfitting">overfitting</span> after 1 epoch, yet more epochs still improved the reward model's score and human ratings. A training metric and the real goal can disagree.</p>
+
+<h4>Step 2: the reward model</h4>
+<p><strong>Everyday picture:</strong> a wine judge who can't describe the perfect wine but reliably says which of two glasses is better. The <span class="t" data-t="reward model">reward model</span> takes a prompt and an answer and returns a single number; it only has to get the <em>ordering</em> right.</p>
+<p><strong>Tiny example:</strong> a labeler ranks K = 4 answers: D best, then C, then A, then B worst. That ranking contains every pair: D over C, D over A, D over B, C over A, C over B, A over B. That is 6 comparisons, which is “4 choose 2”. Ranking 9 answers gives 36.</p>
+<div class="play" id="rank-demo">
+  <div class="sliders"><label for="k-slider">answers ranked, K</label><input type="range" id="k-slider" min="4" max="9" step="1" value="4"><output id="k-v">4</output></div>
+  <div id="k-pairs" class="sentence" aria-live="polite"></div>
+  <p class="readout" id="k-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each chip is one comparison the reward model learns from, written “winner ≻ loser”. The answers are lettered in ranked order, best first. Slide K from 4 to 9: the comparisons grow as K × (K − 1) / 2, from 6 to 36, from a single ranking task. That is why ranking is an efficient use of a labeler's time. The readout scores all the pairs with illustrative reward-model scores (each answer's score falls by 0.5 per rank) and averages the loss exactly as the equation below does.</p>
+<div class="eq" data-tex="\htmlData{sym=lossth}{\operatorname{loss}(\theta)} = -\htmlData{sym=kc2}{\frac{1}{\binom{K}{2}}}\,\htmlData{sym=E}{E}_{(\htmlData{sym=x}{x},\htmlData{sym=yw}{y_w},\htmlData{sym=yl}{y_l})\sim \htmlData{sym=D}{D}}\Big[\htmlData{sym=log}{\log}\big(\htmlData{sym=sigma}{\sigma}\big(\htmlData{sym=rth}{r_\theta}(\htmlData{sym=x}{x},\htmlData{sym=yw}{y_w}) - \htmlData{sym=rth}{r_\theta}(\htmlData{sym=x}{x},\htmlData{sym=yl}{y_l})\big)\big)\Big]" data-fallback="loss(θ) = −(1 / C(K,2)) E[ log σ(r_θ(x, y_w) − r_θ(x, y_l)) ]"></div>
+<div class="symtable" data-syms="lossth,kc2,E,x,yw,yl,D,log,sigma,rth"></div>
+<p class="inwords"><strong>In words:</strong> “for every pair from a ranking, the winner's score should beat the loser's; penalize by minus the log of the <span class="t" data-t="sigmoid">sigmoid</span> of the gap, and average over all the pairs.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if the reward model scores the winner 1.5 and the loser 0.5, the pair's loss is −ln σ(1.0) = −ln 0.731 = <strong>0.313</strong>. A ranking of 4 answers contributes 6 such terms, each weighted by 1/6.</p>
+<p>Two practical details. The paper feeds all C(K, 2) comparisons from one ranking together as a single batch element, because treating them as independent examples made the reward model overfit after one pass. And it used a 6-billion-parameter reward model, since a 175B one trained unstably.</p>
+
+<h4>Step 3: reinforcement learning with PPO</h4>
+<p><strong>Everyday picture:</strong> the model practises, the judge scores, and the model is nudged towards higher scores. But a clever student can learn to please a judge without actually getting better (for example by padding answers with phrases the judge likes). So there is a leash: a penalty, measured with the <span class="t" data-t="kl divergence">KL divergence</span>, for drifting too far from the SFT model. The paper also mixes in ordinary next-word training on the original pretraining text, so the model doesn't forget general skills; this variant is called PPO-ptx, and it is what “InstructGPT” refers to.</p>
+<div class="eq" data-tex="\htmlData{sym=obj}{\operatorname{objective}(\phi)} = \htmlData{sym=E}{E}_{(\htmlData{sym=x}{x},\htmlData{sym=y}{y})\sim \htmlData{sym=Drl}{D_{\pi_\phi^{\mathrm{RL}}}}}\Big[\htmlData{sym=rth}{r_\theta}(\htmlData{sym=x}{x},\htmlData{sym=y}{y}) - \htmlData{sym=beta}{\beta}\,\htmlData{sym=log}{\log}\big(\htmlData{sym=piRL}{\pi_\phi^{\mathrm{RL}}}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x}) / \htmlData{sym=piSFT}{\pi^{\mathrm{SFT}}}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})\big)\Big] + \htmlData{sym=gamma}{\gamma}\,\htmlData{sym=E}{E}_{\htmlData{sym=x}{x}\sim \htmlData{sym=Dpre}{D_{\text{pretrain}}}}\big[\htmlData{sym=log}{\log}\,\htmlData{sym=piRL}{\pi_\phi^{\mathrm{RL}}}(\htmlData{sym=x}{x})\big]" data-fallback="objective(φ) = E[ r_θ(x,y) − β log(π_RL(y|x) / π_SFT(y|x)) ] + γ E_pretrain[ log π_RL(x) ]"></div>
+<div class="symtable" data-syms="obj,Drl,y,beta,piRL,piSFT,gamma,Dpre"></div>
+<p class="inwords"><strong>In words:</strong> “for answers the model writes, earn the reward model's score minus a penalty for how much more likely the model now makes that answer than the SFT model did; separately, keep the model good at predicting ordinary pretraining text, weighted by γ.”</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative values, not the paper's settings): an answer scores 2.0 from the reward model; the RL model gives it a <span class="t" data-t="log-probability">log-probability</span> 3.0 higher than the SFT model did; with β = 0.1 that answer contributes 2.0 − 0.1 × 3.0 = <strong>1.7</strong>. Setting γ = 0 gives the plain “PPO” model; γ &gt; 0 gives PPO-ptx.</p>
+<p>The paper found mixing in pretraining data worked better than simply tightening the leash (raising β), which cost reward without fully fixing the regressions.</p>
+<h4>Why it matters</h4>
+<p>This objective, reward minus a KL leash, is the same one <a href="dpo.html">DPO</a> later solved without reinforcement learning. The <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> shows both.</p>
+</section>
+
+<section id="s3-6">
+<h3>3.6 What “aligned” means here <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S3.SS6">original</a></span></h3>
+<p><span class="t" data-t="eval">Evaluation</span> of helpfulness was by labeler preference: how often one model's answer beat a baseline's (the 175B SFT model, a mid-pack reference). Honesty is hard to measure directly, since you can't see what a model “believes”, so the paper measured truthfulness: made-up information on tasks that should only use the input (<span class="t" data-t="hallucination">hallucination</span>), and the TruthfulQA benchmark. Harm was approximated by specific questions, such as “inappropriate for a customer assistant?” or “denigrates a protected class?”, plus toxicity and bias benchmarks.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S4">original</a></span></h2>
+<section id="s4-1">
+<h3>4.1 On real user prompts <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A taste test: labelers see two answers to the same prompt and pick the better one. A <span class="t" data-tip-title="Win rate" data-tip="The share of head-to-head comparisons one model wins. 50% means the two are indistinguishable.">win rate</span> is how often a model's answer is picked.</p>
+<div class="plot"><div id="win-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is how often 175B InstructGPT's answers were preferred in a head-to-head comparison against the named opponent, as reported in the paper's text, with its <span class="t" data-tip-title="95% confidence range" data-tip="The range the true value very likely lies in, given the limited number of comparisons. The paper reports it as ± after each percentage.">95% confidence range</span>. The dashed line at 50% would mean “no better than the opponent”. Every bar clears it by a wide margin: against raw GPT-3 people picked InstructGPT 85% of the time, and even against GPT-3 helped by a careful few-shot prompt, 71%. The FLAN and T0 models were GPT-3 fine-tuned on large collections of public NLP tasks; they lost too.</p>
+<ul>
+  <li><strong>Size isn't everything:</strong> outputs of the 1.3B InstructGPT were preferred to those of the 175B GPT-3.</li>
+  <li><strong>More dependable:</strong> InstructGPT followed explicit constraints (“answer in 2 paragraphs or fewer”) more often, attempted the right task more often, and was more often appropriate for a customer assistant.</li>
+  <li><strong>Not just pleasing its own trainers:</strong> held-out labelers who wrote no training data preferred it at about the same rate. Reward models trained on 4 groups of labelers predicted a fifth group's choices with 69.6 ± 0.9% accuracy, against 72.4 ± 0.4% on their own groups.</li>
+  <li><strong>Why public task collections lost:</strong> they are mostly classification and question answering, about 18% of what users ask, while open-ended generation and brainstorming are about 57%.</li>
+</ul>
+</section>
+
+<section id="s4-2">
+<h3>4.2 On public benchmarks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S4.SS2">original</a></span></h3>
+<div class="tablewrap"><table>
+  <caption>Selected findings, as reported by Ouyang et al. (2022), §1 and §4.2</caption>
+  <thead><tr><th>Question</th><th>Finding</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>Truthfulness (TruthfulQA)</td><td>Truthful and informative about twice as often as GPT-3</td></tr>
+    <tr class="hl"><td>Making things up (closed-domain API tasks)</td><td>21% of the time, against 41% for GPT-3</td></tr>
+    <tr><td>Toxicity (RealToxicityPrompts), when asked to be respectful</td><td>About 25% fewer toxic outputs than GPT-3</td></tr>
+    <tr><td>Toxicity, with no instruction</td><td>About the same as GPT-3</td></tr>
+    <tr><td>Toxicity, when explicitly asked to be toxic</td><td>Much more toxic than GPT-3: it follows instructions, including bad ones</td></tr>
+    <tr><td>Bias (Winogender, CrowS-Pairs)</td><td>No improvement over GPT-3</td></tr>
+    <tr><td>Standard NLP benchmarks</td><td>PPO lost ground on SQuAD, DROP, HellaSwag and translation; PPO-ptx recovered most of it</td></tr>
+  </tbody>
+</table></div>
+<h4>The alignment tax</h4>
+<p><strong>Everyday picture:</strong> training an employee to be polite shouldn't make them worse at arithmetic. An “alignment tax” is exactly that kind of loss: capability given up for alignment. The authors argue it matters beyond this paper, because a high tax would tempt people to use unaligned but more capable models. Mixing pretraining updates into PPO (the γ term in §3.5) paid most of it back.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Qualitative results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S4.SS3">original</a></span></h3>
+<p>InstructGPT could answer questions about code and follow instructions in other languages, though it often replied in English, even though both were rare in its training data. It generalized the idea of “following instructions”. It also made telling mistakes:</p>
+<ul>
+  <li>It accepted <strong>false premises</strong>, happily explaining why something untrue is true.</li>
+  <li>It <strong>hedged</strong> too much, listing possibilities when the answer was clear. The authors suspect labelers rewarded epistemic humility, and the reward model picked that up.</li>
+  <li>It struggled with <strong>several constraints at once</strong>, such as “list 10 movies from the 1930s set in France”.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>Each of these failure modes traces back to the training signal. A reward model learns what labelers rewarded, including their quirks. That lesson carries straight into how <a data-lesson="primer/agents/evals.html">evaluations</a> are designed today.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S5">original</a></span></h2>
+<h4>Cheap, compared with pretraining</h4>
+<p>The whole alignment process was a small fraction of GPT-3's training compute.</p>
+<div class="plot"><div id="compute-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> the bars compare training compute in <span class="t" data-tip-title="Petaflop/s-day" data-tip="A unit of total computation: a machine doing 10^15 floating-point operations every second, running for a whole day. About 8.6 × 10^19 operations.">petaflop/s-days</span> (one petaflop per second sustained for a day), on a log scale, as reported in the paper. Fine-tuning the 175B SFT model took 4.9 and the PPO-ptx stage 60, against 3,640 for pretraining GPT-3: roughly 60 times less compute for the RL stage, for a gain labelers valued more than a 100× increase in model size.</p>
+<h4>Who are we aligning to?</h4>
+<blockquote class="quote">“This procedure aligns the behavior of GPT-3 to the stated preferences of a specific group of people (mostly our labelers and researchers), rather than any broader notion of ‘human values’; we discuss this further in Section 5.2.”<cite>Ouyang et al. (2022), §1</cite></blockquote>
+<p>The model is shaped by the labelers (mostly English-speaking, in the United States or Southeast Asia), by the researchers who wrote their instructions, and by the customers whose prompts were used. Labelers disagreed with each other about 27% of the time. The authors call for broader participation and for ways to condition models on the values of different groups.</p>
+<h4>Limitations and open questions</h4>
+<p>The models are neither fully aligned nor fully safe: they can still produce toxic or biased text, make things up, and follow harmful instructions. Open questions include adversarial data collection to find worst-case behaviour, combining preferences with other signals, and deciding what the model should do when a user's request conflicts with avoiding harm.</p>
+</section>
+
+<section id="today">
+<h2>What changed since</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Lesson or companion</th></tr></thead>
+  <tbody>
+    <tr><td>PPO against a separate reward model</td><td>Often replaced or complemented by direct methods such as DPO</td><td><a href="dpo.html">DPO companion</a></td></tr>
+    <tr><td>Preferences from ~40 human labelers</td><td>Human labels supplemented by AI feedback guided by written principles</td><td><a data-lesson="primer/ml/training_stages.html">training stages</a></td></tr>
+    <tr><td>~13k demonstrations</td><td>Same insight at larger scale: a modest amount of high-quality data goes a long way</td><td><a data-lesson="primer/ml/training_stages.html">training stages</a></td></tr>
+    <tr><td>Human win rates as the main metric</td><td>Human ratings plus model judges calibrated against them</td><td><a href="llm-as-judge.html">LLM-as-a-judge companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright and colleagues, <em>Training language models to follow instructions with human feedback</em>, NeurIPS 2022. <a href="https://arxiv.org/abs/2203.02155">arXiv:2203.02155</a>. Quotations are brief and attributed; results are summarized in tables and charts written for this page, and figures are redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    lossth: { tex: "\\operatorname{loss}(\\theta)", name: "Reward-model loss", meaning: "How badly the reward model with weights θ predicts the labelers' rankings. Training makes it small.", shape: "one number ≥ 0", example: "0.313 for one pair" },
+    kc2: { tex: "\\frac{1}{\\binom{K}{2}}", name: "One over K choose 2", meaning: "“K choose 2” is how many pairs a ranking of K answers contains: K × (K − 1) / 2. Dividing by it averages over those pairs.", shape: "one number", example: "K = 4 gives 6 pairs, so 1/6" },
+    E: { tex: "E", name: "Average (expectation)", meaning: "“The average of what follows over the data.”", shape: "one number", example: "" },
+    x: { tex: "x", name: "The prompt", meaning: "The user's instruction.", shape: "a token sequence", example: "“Explain why the sky is blue to a six-year-old.”" },
+    yw: { tex: "y_w", name: "The preferred answer", meaning: "The better-ranked answer of the pair.", shape: "a token sequence", example: "scored 1.5" },
+    yl: { tex: "y_l", name: "The less preferred answer", meaning: "The worse-ranked answer of the pair.", shape: "a token sequence", example: "scored 0.5" },
+    D: { tex: "D", name: "Comparison dataset", meaning: "All the pairs extracted from labelers' rankings.", shape: "~33k prompts' worth of rankings", example: "" },
+    log: { tex: "\\log", name: "Natural logarithm", meaning: "log of a number near 1 is near 0; log of a small number is very negative.", shape: "one number", example: "ln 0.731 = −0.313" },
+    sigma: { tex: "\\sigma", name: "Sigmoid", meaning: "Squashes any number into 0 to 1: σ(z) = 1 / (1 + e^−z). The probability the winner really is better, given the score gap.", shape: "between 0 and 1", example: "σ(1.0) = 0.731" },
+    rth: { tex: "r_\\theta", name: "The reward model", meaning: "A 6B network (the SFT model with its word-prediction layer swapped for a single-number output) that scores a prompt and answer.", shape: "one number", example: "1.5 for the winner" },
+    obj: { tex: "\\operatorname{objective}(\\phi)", name: "RL objective", meaning: "What PPO maximizes by adjusting the policy's weights φ.", shape: "one number", example: "1.7 for the illustrative answer" },
+    Drl: { tex: "D_{\\pi_\\phi^{\\mathrm{RL}}}", name: "Prompts and the policy's own answers", meaning: "Prompts from the PPO dataset, each answered by the current RL model.", shape: "~31k prompts", example: "" },
+    y: { tex: "y", name: "An answer", meaning: "A response written by the RL model.", shape: "a token sequence", example: "" },
+    beta: { tex: "\\beta", name: "KL penalty strength", meaning: "How hard the leash pulls the RL model back towards the SFT model.", shape: "a positive number", example: "0.1 (illustrative)" },
+    piRL: { tex: "\\pi_\\phi^{\\mathrm{RL}}", name: "The RL policy", meaning: "The model being trained in step 3, with weights φ. π(y | x) is the probability it gives answer y.", shape: "a probability distribution", example: "" },
+    piSFT: { tex: "\\pi^{\\mathrm{SFT}}", name: "The SFT model", meaning: "The frozen step-1 model the RL policy started from.", shape: "a probability distribution", example: "" },
+    gamma: { tex: "\\gamma", name: "Pretraining-mix strength", meaning: "How much ordinary next-word training on pretraining text is mixed in. γ = 0 is plain PPO; γ > 0 is PPO-ptx (InstructGPT).", shape: "a number ≥ 0", example: "0 for “PPO”" },
+    Dpre: { tex: "D_{\\text{pretrain}}", name: "Pretraining text", meaning: "Samples of the web-scale text GPT-3 originally learned from.", shape: "text", example: "" },
+  },
+
+  blocks: {
+    step1: { title: "Step 1: demonstrate", body: "<p>Collect examples of ideal behaviour and fine-tune GPT-3 to imitate them. This teaches the <em>format</em> of being an assistant: answer the question, follow the requested style.</p>", lesson: "primer/ml/training_stages.html" },
+    step2: { title: "Step 2: compare", body: "<p>Comparing answers is easier than writing perfect ones. Labelers rank several model answers, and a reward model learns to predict which they would prefer.</p>", lesson: "primer/ml/training_stages.html" },
+    step3: { title: "Step 3: reinforce", body: "<p>The model improves by trial and feedback: write, get scored, adjust. A KL leash and a pretraining mix keep it from drifting or forgetting.</p>" },
+    p1: { title: "A prompt is sampled", body: "<p>Example: <em>“Explain why the sky is blue to a six-year-old.”</em> Prompts come from real users of an early model, or were written by labelers to get started.</p>", shape: "one instruction" },
+    demo: { title: "A labeler writes the ideal answer", body: "<p>Example: <em>“Sunlight is made of all the colours. When it hits the air, the blue light bounces around the most, so blue comes at your eyes from every part of the sky.”</em></p>", shape: "prompt + demonstration" },
+    sftdata: { title: "The SFT dataset", body: "<p>About 13,000 training prompts with demonstrations, from the API and from labelers.</p>", shape: "~13k (prompt, answer) pairs" },
+    sft: { title: "The SFT model", body: "<p>GPT-3 fine-tuned on the demonstrations for 16 epochs, with the loss counted only on the answer. It already follows instructions much better than GPT-3.</p>", shape: "1.3B, 6B or 175B parameters", lesson: "primer/ml/training_stages.html" },
+    p2: { title: "A prompt with K answers", body: "<p>The SFT model writes between 4 and 9 answers to one prompt. Example: four explanations of why the sky is blue, labelled A to D.</p>", shape: "K = 4 to 9 answers" },
+    rank: { title: "A labeler ranks them", body: "<p>Example: D ≻ C ≻ A ≻ B (D best). One ranking of 4 yields 6 pairwise comparisons.</p>", shape: "one ordering → K(K − 1)/2 pairs" },
+    rmdata: { title: "The comparison dataset", body: "<p>About 33,000 training prompts with rankings.</p>", shape: "~33k rankings" },
+    rm: { title: "The reward model", body: "<p>A 6B network: the SFT model with its final word-prediction layer replaced by a single-number output. Trained so the preferred answer of every pair scores higher. Afterwards, its scores are shifted so labeler demonstrations average 0.</p>", shape: "(prompt, answer) → one number", lesson: "primer/ml/training_stages.html" },
+    p3: { title: "A new prompt", body: "<p>Taken from the PPO dataset of about 31,000 prompts, which have no human labels at all.</p>", shape: "one instruction" },
+    policy: { title: "The policy writes an answer", body: "<p>The RL model (initialized from the SFT model) generates a response, token by token.</p>", shape: "one answer" },
+    score: { title: "The reward model scores it", body: "<p>Example: 2.0. A penalty proportional to how far the answer's probability has drifted from the SFT model's is subtracted.</p>", shape: "one number" },
+    ppo: { title: "PPO update", body: "<p>Proximal Policy Optimization adjusts the weights to make high-scoring answers more likely, in small, clipped steps so training stays stable. PPO-ptx also mixes in pretraining text.</p>", shape: "updated policy weights" },
+  },
+
+  onReady() {
+    rankDemo();
+    winBars();
+    computeBars();
+  },
+};
+
+const sig = (z) => 1 / (1 + Math.exp(-z));
+
+/* ---- ranking -> pairwise comparisons ---- */
+function rankDemo() {
+  const s = document.getElementById("k-slider"), v = document.getElementById("k-v");
+  const box = document.getElementById("k-pairs"), out = document.getElementById("k-readout");
+  const letters = "ABCDEFGHI";
+  function draw() {
+    const K = +s.value; v.textContent = K;
+    const pairs = [];
+    for (let i = 0; i < K; i++) for (let j = i + 1; j < K; j++) pairs.push([i, j]);
+    box.innerHTML = pairs.map(([i, j]) => `<span class="chip">${letters[i]} ≻ ${letters[j]}</span>`).join("");
+    // illustrative scores: best answer 2.0, dropping 0.5 per rank
+    const score = (i) => 2.0 - 0.5 * i;
+    const losses = pairs.map(([i, j]) => -Math.log(sig(score(i) - score(j))));
+    const mean = losses.reduce((a, b) => a + b, 0) / losses.length;
+    out.innerHTML = `${K} answers → <strong>${pairs.length}</strong> comparisons (K × (K − 1) / 2 = ${K} × ${K - 1} / 2). With illustrative scores ${Array.from({ length: K }, (_, i) => `${letters[i]} ${score(i).toFixed(1)}`).join(", ")}, the average pair loss is <strong>${mean.toFixed(3)}</strong>.`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- head-to-head win rates reported in the text ---- */
+function winBars() {
+  const rows = [["vs GPT-3", 85, 3], ["vs few-shot GPT-3", 71, 4], ["vs GPT-3 fine-tuned on FLAN", 78, 4], ["vs GPT-3 fine-tuned on T0", 79, 4]];
+  document.getElementById("win-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">175B InstructGPT preferred, % of comparisons (Ouyang et al., 2022). Axis 0 to 100; dashed line at 50%.</div>` +
+    rows.map(([l, p, e]) => `<div class="share-row" style="grid-template-columns:12rem minmax(0,1fr) 5rem"><span>${l}</span><div style="position:relative"><div class="share-bar" style="width:${p}%"></div><div style="position:absolute;top:-3px;bottom:-3px;left:50%;border-left:2px dashed var(--active)"></div><div style="position:absolute;top:5px;height:4px;left:${p - e}%;width:${2 * e}%;background:var(--fg);opacity:.5"></div></div><span>${p} ± ${e}%</span></div>`).join("");
+}
+
+/* ---- training compute ---- */
+function computeBars() {
+  const rows = [["175B SFT", 4.9, "var(--ff-stroke)"], ["175B PPO-ptx", 60, "var(--soft-stroke)"], ["GPT-3 pretraining", 3640, "var(--wire)"]];
+  const top = Math.log10(3640) + 0.3;
+  document.getElementById("compute-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Training compute, petaflop/s-days, log scale (Ouyang et al., 2022, §5.1)</div>` +
+    rows.map(([l, v, c]) => `<div class="share-row" style="grid-template-columns:10rem minmax(0,1fr) 5rem"><span>${l}</span><div><div class="share-bar" style="width:${Math.max(3, ((Math.log10(v) + 0.3) / top) * 100).toFixed(1)}%;background:${c}"></div></div><span>${v.toLocaleString()}</span></div>`).join("");
+}
+</script>
+</body>
+</html>

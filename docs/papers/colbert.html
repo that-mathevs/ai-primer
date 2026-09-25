@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ColBERT, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Khattab and Zaharia (2020), ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .mono { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .toggle button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .row2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.5rem 1rem; align-items: end; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .row2 input { width: 100%; }
+  table.ms { width: auto; border-collapse: separate; border-spacing: 3px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.8rem; }
+  table.ms th { color: var(--muted); font-weight: 600; padding: 0.2rem 0.35rem; text-align: center; vertical-align: bottom; }
+  table.ms th.rowh { text-align: right; }
+  table.ms td.c { width: 3.3rem; height: 2.1rem; text-align: center; border-radius: 6px; font-variant-numeric: tabular-nums; border: 2px solid transparent; }
+  table.ms td.c.max { border-color: var(--active); font-weight: 700; }
+  table.ms tr.hov th.rowh { color: var(--active); }
+  table.ms td.rs { font-family: ui-monospace, monospace; padding-left: 0.5rem; text-align: left; white-space: nowrap; }
+  table.ms tr { cursor: pointer; }
+  .timecols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8rem; margin-top: 0.6rem; }
+  .timecard { border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; background: var(--bg); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .timecard b { font-size: 1.25rem; display: block; }
+  svg .pt circle { fill: var(--wire); stroke: var(--card); stroke-width: 1.5; }
+  svg .pt.cb circle { fill: var(--active); }
+  svg .pt.bert circle { fill: var(--attn-stroke); }
+  svg .pt.on circle, svg .pt:hover circle, svg .pt:focus circle { stroke: var(--active); stroke-width: 3; }
+  svg .gridl { stroke: var(--border); }
+  figure.ix.stack .ixgrid { grid-template-columns: minmax(0, 1fr); }
+  figure.ix.stack .panel { min-height: 5.5rem; }
+</style>
+</head>
+<body data-paper="colbert">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction: four ways to match</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 ColBERT</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Architecture</a></li>
+          <li><a href="#s3-2">3.2 Query and document encoders</a></li>
+          <li><a href="#s3-3">3.3 Late interaction (MaxSim)</a></li>
+          <li><a href="#s3-4">3.4 Offline indexing</a></li>
+          <li><a href="#s3-5">3.5 Re-ranking</a></li>
+          <li><a href="#s3-6">3.6 End-to-end retrieval</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Evaluation</a></li>
+      <li><a href="#s4-5">4.5 Index size</a></li>
+      <li><a href="#s5">5 Conclusions</a></li>
+      <li><a href="#today">What changed since 2020</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>ColBERT, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Omar Khattab and Matei Zaharia (2020), <em>ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT</em>: keep one vector per word instead of one per passage, and get most of a cross-encoder's precision at a fraction of its cost.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2004.12832">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2004.12832">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2004.12832">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is distributed on arXiv under its standard non-exclusive licence, so no tables or figures are copied: diagrams are redrawn from scratch, and results appear as selected numbers in our own tables and charts, each attributed. Token vectors marked <em>illustrative</em> are hand-made for teaching. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it or tap it; so does every symbol in every equation. Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong>, a <strong>diagram or demo</strong>, <strong>the math</strong>, and <strong>why it still matters</strong>. The heart of the paper is one line of arithmetic, MaxSim, and <a href="#s3-3">the MaxSim demo</a> lets you watch it score real (hand-made) token vectors. The <a data-lesson="primer/ml/embeddings/retrieval.html">retrieval lesson</a> implements it in NumPy.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832">original</a></span></h2>
+<blockquote class="quote">“ColBERT introduces a late interaction architecture that independently encodes the query and the document using BERT and then employs a cheap yet powerful interaction step that models their fine-grained similarity.”<cite>Khattab and Zaharia (2020), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="bi-encoder">bi-encoder</span> judges a job applicant from a one-line summary: fast, but crude. A <span class="t" data-t="cross-encoder">cross-encoder</span> interviews every applicant about every question: precise, but you can only interview a few. ColBERT keeps a note card for every sentence of every CV, written in advance. When a question comes in, each part of the question looks for its best-matching card in each CV, and the matches are added up. The CVs are prepared once; only the quick card comparison happens per question.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Effectiveness competitive with BERT-based rankers, and better than every non-BERT model tested.</li>
+  <li>Over 170 times faster and about 14,000 times fewer <span class="t" data-t="flops">FLOPs</span> per query than BERT re-ranking.</li>
+  <li>Because document vectors are precomputed and the scoring is pruning-friendly, it can also search a whole collection directly with a vector index, not only re-rank a shortlist.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>“Multi-vector” retrieval, keeping several vectors per document and matching them token by token, grew out of this paper and its successors, and sits between single-vector search and cross-encoder reranking in modern retrieval stacks.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction: four ways to match a query and a document <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>In 2019, BERT-based rankers raised search quality sharply on the MS MARCO benchmark, but at 100 to 1,000 times the cost of earlier models; the paper cites evidence that adding even 100 ms to response times measurably hurts users. The question the paper asks: can we keep BERT's understanding while paying far less per query?</p>
+<figure class="ix wide stack" id="fig-paradigms">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 250" role="img" aria-label="Four query-document matching paradigms">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <!-- (a) representation-focused -->
+    <g class="blk emb" data-block="pa"><rect x="8" y="14" width="126" height="222" rx="10" fill-opacity="0.25"/></g>
+    <text x="71" y="32" text-anchor="middle">(a) representation</text>
+    <rect x="20" y="190" width="40" height="30" rx="5" fill="var(--ff)" stroke="var(--ff-stroke)"/><text x="40" y="209" text-anchor="middle">query</text>
+    <rect x="82" y="190" width="40" height="30" rx="5" fill="var(--attn)" stroke="var(--attn-stroke)"/><text x="102" y="209" text-anchor="middle">doc</text>
+    <circle cx="40" cy="140" r="9" fill="var(--ff-stroke)"/><circle cx="102" cy="140" r="9" fill="var(--attn-stroke)"/>
+    <path class="wire" d="M40,190 V151"/><path class="wire" d="M102,190 V151"/>
+    <path class="wire" d="M40,131 L68,80"/><path class="wire" d="M102,131 L74,80"/>
+    <rect x="46" y="54" width="50" height="24" rx="5" fill="var(--soft)" stroke="var(--soft-stroke)"/><text x="71" y="71" text-anchor="middle">score</text>
+    <!-- (b) interaction-focused -->
+    <g class="blk emb" data-block="pb"><rect x="146" y="14" width="126" height="222" rx="10" fill-opacity="0.25"/></g>
+    <text x="209" y="32" text-anchor="middle">(b) interaction</text>
+    <rect x="158" y="190" width="40" height="30" rx="5" fill="var(--ff)" stroke="var(--ff-stroke)"/><rect x="220" y="190" width="40" height="30" rx="5" fill="var(--attn)" stroke="var(--attn-stroke)"/>
+    <g>
+      <rect x="170" y="110" width="78" height="54" rx="4" fill="none" stroke="var(--wire)"/>
+      <path d="M170,128 H248 M170,146 H248 M196,110 V164 M222,110 V164" stroke="var(--border)"/>
+    </g>
+    <path class="wire" d="M178,190 V165"/><path class="wire" d="M240,190 V165"/>
+    <rect x="175" y="66" width="68" height="24" rx="5" fill="var(--lin)" stroke="var(--lin-stroke)"/><text x="209" y="83" text-anchor="middle">deep net</text>
+    <path class="wire" d="M209,110 V91"/>
+    <rect x="184" y="36" width="50" height="22" rx="5" fill="var(--soft)" stroke="var(--soft-stroke)"/><text x="209" y="52" text-anchor="middle">score</text>
+    <!-- (c) all-to-all -->
+    <g class="blk emb" data-block="pc"><rect x="284" y="14" width="126" height="222" rx="10" fill-opacity="0.25"/></g>
+    <text x="347" y="32" text-anchor="middle">(c) all-to-all</text>
+    <rect x="296" y="190" width="102" height="30" rx="5" fill="var(--card)" stroke="var(--wire)"/><text x="347" y="209" text-anchor="middle">[query ; doc]</text>
+    <rect x="300" y="96" width="94" height="68" rx="8" fill="var(--attn)" stroke="var(--attn-stroke)"/><text x="347" y="134" text-anchor="middle">BERT</text>
+    <path class="wire" d="M347,190 V165"/>
+    <rect x="322" y="54" width="50" height="24" rx="5" fill="var(--soft)" stroke="var(--soft-stroke)"/><text x="347" y="71" text-anchor="middle">score</text>
+    <path class="wire" d="M347,96 V79"/>
+    <!-- (d) late interaction -->
+    <g class="blk emb" data-block="pd"><rect x="422" y="14" width="130" height="222" rx="10" fill-opacity="0.25"/></g>
+    <text x="487" y="32" text-anchor="middle">(d) late interaction</text>
+    <rect x="432" y="190" width="44" height="30" rx="5" fill="var(--ff)" stroke="var(--ff-stroke)"/><text x="454" y="209" text-anchor="middle">query</text>
+    <rect x="498" y="190" width="44" height="30" rx="5" fill="var(--attn)" stroke="var(--attn-stroke)"/><text x="520" y="209" text-anchor="middle">doc</text>
+    <circle cx="444" cy="150" r="5" fill="var(--ff-stroke)"/><circle cx="456" cy="150" r="5" fill="var(--ff-stroke)"/><circle cx="468" cy="150" r="5" fill="var(--ff-stroke)"/>
+    <circle cx="506" cy="150" r="5" fill="var(--attn-stroke)"/><circle cx="518" cy="150" r="5" fill="var(--attn-stroke)"/><circle cx="530" cy="150" r="5" fill="var(--attn-stroke)"/><circle cx="542" cy="150" r="5" fill="var(--attn-stroke)"/>
+    <path class="wire" d="M454,190 V157"/><path class="wire" d="M520,190 V157"/>
+    <rect x="452" y="96" width="72" height="24" rx="5" fill="var(--norm)" stroke="var(--norm-stroke)"/><text x="488" y="113" text-anchor="middle">MaxSim, Σ</text>
+    <path class="wire" d="M456,145 L480,121"/><path class="wire" d="M518,145 L496,121"/>
+    <rect x="463" y="54" width="50" height="24" rx="5" fill="var(--soft)" stroke="var(--soft-stroke)"/><text x="488" y="71" text-anchor="middle">score</text>
+    <path class="wire" d="M488,96 V79"/>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap one of the four panels.</p></div>
+  </div>
+  <figcaption>Figure 2 of the paper, redrawn: four ways a ranking model can compare a query with a document. Based on Khattab and Zaharia (2020), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each panel is one family of ranking models, read from the bottom (query and document text) to the top (a relevance score). In (a), each side is squeezed into one vector and the vectors are compared: documents can be encoded in advance, but all detail is lost in the squeeze. In (b), every query word is compared with every document word in a grid that a neural network reads. In (c), BERT reads query and document glued together, so every word attends to every other: the most accurate, and nothing can be precomputed. In (d), ColBERT's choice, each side keeps one vector <em>per token</em>, encoded separately (so documents are precomputed), and the only interaction is a cheap step at the very end: for each query vector, find its best match among the document's vectors, then add up those best matches.</p>
+
+<h4>The trade-off in one picture</h4>
+<figure class="ix wide stack" id="fig-tradeoff">
+  <div class="ixgrid">
+  <svg id="tradeoff-svg" viewBox="0 0 560 300" role="img" aria-label="MRR@10 against query latency, log scale, for several rankers"></svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a point.</p></div>
+  </div>
+  <figcaption>The idea of Figure 1 of the paper, redrawn from selected numbers in its Tables 1 and 2 (MS MARCO development set). Re-rankers show re-ranking latency on one V100 GPU; the end-to-end point shows full retrieval latency.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the time to answer a query, on a log scale (each gridline is ten times slower); the y-axis is <span class="t" data-t="mrr">MRR@10</span>, the ranking quality. Up and to the left is good. The grey models are fast but weak; the orange BERT rankers are strong but sit at 10 to 33 <em>seconds</em>. ColBERT (red) is about as strong as BERT-base at about 61 ms of re-ranking, and its end-to-end version, which searches the whole collection instead of re-ranking BM25's list, is stronger still at under half a second.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S2">original</a></span></h2>
+<ul>
+  <li><strong>Neural matching models</strong> (KNRM, Duet, ConvKNRM): interaction grids read by small networks. Cheap, but well below BERT.</li>
+  <li><strong>BERT rankers</strong> (Nogueira and Cho): feed the query and document together through BERT and score the [CLS] output. The state of the art, at great cost.</li>
+  <li><strong>Moving work offline</strong>: doc2query and docTTTTTquery add predicted questions to each document before building a <span class="t" data-t="bm25">BM25</span> index; DeepCT uses BERT to re-weight BM25's term frequencies. Fast, but well below BERT's precision.</li>
+  <li><strong>Representation models</strong> such as SNRM compress each document into one (sparse) vector; the paper's ablation tests a single dense BERT vector too and finds it clearly worse than late interaction.</li>
+</ul>
+</section>
+
+<section id="s3">
+<h2>3 ColBERT <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S3">original</a></span></h2>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Architecture <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two BERT readers (in fact one model, told which role it plays) turn the query and the document into bags of <em>contextual</em> token vectors: “bank” in the query “river bank erosion” gets a river-ish vector. Then each query vector goes shopping in the document's bag for its single best match.</p>
+<figure class="ix" id="fig-arch">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 380" role="img" aria-label="ColBERT architecture: query encoder, document encoder, MaxSim and sum">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk plain" data-block="qtext"><rect x="10" y="340" width="120" height="28" rx="6"/><text x="70" y="358" text-anchor="middle">[Q] query + [mask]s</text></g>
+    <g class="blk plain" data-block="dtext"><rect x="170" y="340" width="120" height="28" rx="6"/><text x="230" y="358" text-anchor="middle">[D] document</text></g>
+    <path class="wire" d="M70,340 V310" marker-end="url(#arr2)"/><path class="wire" d="M230,340 V310" marker-end="url(#arr2)"/>
+    <g class="blk attn" data-block="bertq"><rect x="10" y="266" width="120" height="42" rx="7"/><text x="70" y="292" text-anchor="middle">BERT</text></g>
+    <g class="blk attn" data-block="bertd"><rect x="170" y="266" width="120" height="42" rx="7"/><text x="230" y="292" text-anchor="middle">BERT</text></g>
+    <path class="wire" d="M70,266 V240" marker-end="url(#arr2)"/><path class="wire" d="M230,266 V240" marker-end="url(#arr2)"/>
+    <g class="blk lin" data-block="linear"><rect x="10" y="208" width="120" height="30" rx="6"/><text x="70" y="227" text-anchor="middle">linear → m = 128</text></g>
+    <g class="blk lin" data-block="linear"><rect x="170" y="208" width="120" height="30" rx="6"/><text x="230" y="227" text-anchor="middle">linear → m = 128</text></g>
+    <path class="wire" d="M70,208 V182" marker-end="url(#arr2)"/><path class="wire" d="M230,208 V182" marker-end="url(#arr2)"/>
+    <g class="blk norm" data-block="normq"><rect x="10" y="150" width="120" height="30" rx="6"/><text x="70" y="169" text-anchor="middle">normalize</text></g>
+    <g class="blk norm" data-block="normd"><rect x="170" y="150" width="120" height="30" rx="6"/><text x="230" y="169" text-anchor="middle">normalize, filter</text></g>
+    <path class="wire" d="M70,150 V124" marker-end="url(#arr2)"/><path class="wire" d="M230,150 V124" marker-end="url(#arr2)"/>
+    <g class="blk emb" data-block="Eq"><rect x="20" y="94" width="100" height="28" rx="6"/><text x="70" y="112" text-anchor="middle">E_q: 32 vectors</text></g>
+    <g class="blk emb" data-block="Ed"><rect x="180" y="94" width="100" height="28" rx="6"/><text x="230" y="112" text-anchor="middle">E_d: one per token</text></g>
+    <path class="wire" d="M70,94 L130,70" marker-end="url(#arr2)"/><path class="wire" d="M230,94 L170,70" marker-end="url(#arr2)"/>
+    <g class="blk soft" data-block="maxsim"><rect x="100" y="40" width="100" height="28" rx="6"/><text x="150" y="58" text-anchor="middle">MaxSim, then Σ</text></g>
+    <path class="wire" d="M150,40 V20" marker-end="url(#arr2)"/>
+    <text x="150" y="14" text-anchor="middle" class="lbl">score S(q, d)</text>
+    <rect x="160" y="84" width="130" height="290" rx="10" fill="none" stroke="var(--wire)" stroke-dasharray="5 4"/>
+    <text x="226" y="388" text-anchor="middle" class="lbl" style="font-size:9px">offline, once per document</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. The dashed box runs offline.</p></div>
+  </div>
+  <figcaption>Figure 3 of the paper, redrawn: the ColBERT architecture. Based on Khattab and Zaharia (2020), Figure 3.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> both sides climb the same stack: text with a marker token, BERT, a linear layer that shrinks each 768-number token vector to m = 128, and normalization to length 1. The document side (dashed box) runs once per document, offline, and also drops the vectors of punctuation. The query side runs once per query. They meet only in the MaxSim-and-sum box at the top, which has no learned parameters at all. That is why ColBERT is cheap: all the expensive BERT work is either precomputed or done once per query, never once per (query, document) pair.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Query and document encoders <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>One translator, two hats. A “[Q]” sticker tells BERT it is reading a query; a “[D]” sticker, a document. Queries are short, so they are padded with blank [mask] slots, which BERT fills with guesses about what else the query might mean: a learned, soft form of query expansion the paper calls <span class="t" data-tip-title="Query augmentation" data-tip="Padding every query with [mask] tokens up to a fixed length (32). BERT produces vectors at those positions too, which act as learned extra query terms. The ablation shows it matters.">query augmentation</span>.</p>
+<h4>Tiny example</h4>
+<p>The query “when was the eiffel tower built” becomes <span class="mono">[CLS] [Q] when was the eiffel tower built [mask] [mask] …</span> up to N<sub>q</sub> = 32 tokens. BERT returns 32 vectors of 768 numbers; the linear layer shrinks each to 128; each is scaled to length 1. The result, E<sub>q</sub>, is 32 unit vectors. A 70-token document yields about 70 unit vectors, minus any punctuation.</p>
+<div class="eq" data-tex="\htmlData{sym=Eq}{E_q} := \htmlData{sym=Norm}{\texttt{Normalize}}\big(\htmlData{sym=Lin}{\texttt{CNN}}\big(\htmlData{sym=BERT}{\texttt{BERT}}(\text{“[Q]}\,q_0 q_1 \ldots q_l\,\htmlData{sym=hash}{\#\#\ldots\#}\text{”})\big)\big)" data-fallback="E_q := Normalize(CNN(BERT(“[Q] q0 q1 … ql ##…#”)))"></div>
+<div class="eq" data-tex="\htmlData{sym=Ed}{E_d} := \htmlData{sym=Filter}{\texttt{Filter}}\big(\htmlData{sym=Norm}{\texttt{Normalize}}\big(\htmlData{sym=Lin}{\texttt{CNN}}\big(\htmlData{sym=BERT}{\texttt{BERT}}(\text{“[D]}\,d_0 d_1 \ldots d_n\text{”})\big)\big)\big)" data-fallback="E_d := Filter(Normalize(CNN(BERT(“[D] d0 d1 … dn”))))"></div>
+<div class="symtable" data-syms="Eq,Ed,BERT,Lin,Norm,Filter,hash"></div>
+<p class="inwords"><strong>In words:</strong> “run BERT over the marked text, shrink every output vector with a linear layer, scale each to length 1; for documents, also throw away the punctuation vectors.”</p>
+<p class="inwords"><strong>With the numbers:</strong> query: 32 tokens → 32 × 768 from BERT → 32 × 128 → 32 unit vectors. A document of 70 tokens → at most 70 × 128. Because every vector has length 1, a dot product between two of them is exactly their <span class="t" data-t="cosine similarity">cosine similarity</span>, between −1 and 1.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Late interaction: MaxSim <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S3.SS3">original</a></span></h3>
+<blockquote class="quote">“Intuitively, this interaction mechanism softly searches for each query term t<sub>q</sub> ... against the document’s embeddings, quantifying the strength of the “match” via the largest similarity score between t<sub>q</sub> and a document term t<sub>d</sub>.”<cite>Khattab and Zaharia (2020), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A checklist. For each thing the query asks about (“when?”, “Eiffel”, “tower”, “built”), scan the document for the <em>one</em> place that best answers it and note how good that match is. The document's score is the sum of the notes. A document that answers every part somewhere scores high, even if the parts are scattered.</p>
+<div class="eq" data-tex="\htmlData{sym=Sqd}{S_{q,d}} := \htmlData{sym=sumi}{\sum_{i \in [|E_q|]}}\ \htmlData{sym=maxj}{\max_{j \in [|E_d|]}}\ \htmlData{sym=Eqi}{E_{q_i}} \cdot \htmlData{sym=Edj}{E_{d_j}^{\top}}" data-fallback="S_{q,d} := Σ_i max_j E_{q_i} · E_{d_j}ᵀ"></div>
+<div class="symtable" data-syms="Sqd,sumi,maxj,Eqi,Edj"></div>
+<p class="inwords"><strong>In words:</strong> “for every query vector, find the highest dot product with any document vector, and add those maxima up.”</p>
+<p class="inwords"><strong>With the numbers:</strong> see the demo: for document A, the “built” vector's best match is “completed” and the “when” vector's best match is “1889”, even though neither word appears in the query.</p>
+<div class="play" id="ms-demo">
+  <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem">
+    <button type="button" data-doc="0" aria-pressed="true">Doc A: answers it</button>
+    <button type="button" data-doc="1" aria-pressed="false">Doc B: same keywords, no answer</button>
+    <button type="button" data-doc="2" aria-pressed="false">Doc C: a different tower</button>
+  </div>
+  <div class="tablewrap" id="ms-table"></div>
+  <p class="readout" id="ms-readout">Hover, tab to or tap a query row.</p>
+  <div id="ms-compare" style="margin-top:0.4rem"></div>
+  <p class="readout"><em>Illustrative: 7-number contextual vectors hand-made for teaching (real ColBERT vectors have 128), already normalized to length 1.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> rows are the query's token vectors (including one [mask] slot from query augmentation) and columns are the document's token vectors; each cell is a cosine similarity, darker for higher. The red-bordered cell in each row is that row's maximum: the best match for that query token anywhere in the document. The right-hand column shows the maxima and the total is the MaxSim score. Hover a row to see which document token it chose. Switch documents: doc B shares “eiffel” and “tower” but nothing answers “when” or “built”, so those rows find only weak matches. Doc C answers “when” and “built”, but for a different tower, so “eiffel” scores poorly. The bars below compare all three documents under three scoring rules: MaxSim, the average-similarity variant the paper's ablation tested, and a single mean-pooled vector per side, as a bi-encoder would use.</p>
+<h4>Training</h4>
+<p>ColBERT is trained on triples (query, relevant document, non-relevant document): each document is scored independently and a softmax <span class="t" data-t="cross-entropy">cross-entropy</span> over the two scores pushes the relevant one up, using the <span class="t" data-t="adam">Adam</span> optimizer. BERT is fine-tuned; the linear layer and the [Q] and [D] marker embeddings are trained from scratch. MaxSim itself has no parameters.</p>
+<h4>Why MaxSim, not something fancier?</h4>
+<p>Two reasons: it is very cheap, and it is <em>pruning-friendly</em>. Because each query vector's contribution is a maximum over document vectors, a vector index can find, for each query vector, the document vectors most similar to it across the whole collection, without scoring every document. Averaging instead of taking the maximum would destroy that property, and the ablation shows averaging is also less accurate.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Offline indexing <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S3.SS4">original</a></span></h3>
+<p><strong>Everyday picture:</strong> write every document's note cards in advance, as efficiently as possible. The indexer uses several GPUs, groups documents of similar length together (in groups of B = 100,000, batches of b = 128) so little computation is wasted on <span class="t" data-t="padding">padding</span>, and runs the WordPiece tokenization in parallel on the CPU cores, which turned out to be a real bottleneck. Vectors are saved with 32 or 16 bits per number. The whole 8.8-million-passage MS MARCO collection takes about three hours on one server with four GPUs.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Top-k re-ranking <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S3.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>BM25 hands over its top 1,000 documents. BERT re-ranking must run BERT 1,000 times on (query + document) sequences. ColBERT runs BERT once on the short query, loads the 1,000 documents' stored vectors onto the GPU, and does one batched matrix multiplication, a max and a sum.</p>
+<div class="plot" id="flops-plot">
+  <div id="flops-chart"></div>
+  <p class="readout" id="flops-readout">Hover or tap the chart.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is how many documents are re-ranked (k, log scale) and the y-axis is how many times more FLOPs BERT-base needs than ColBERT to re-rank them (log scale). The three points are the paper's own figures: about 180× at k = 10, 13,900× at k = 1,000 and 23,000× at k = 2,000, joined by straight lines for readability. The gap <em>grows</em> with k because ColBERT pays for BERT once per query, whatever k is, while BERT pays once per document. In ColBERT's case the actual bottleneck was not arithmetic but gathering and copying the stored vectors to the GPU; query encoding and scoring took only 13 of its 61 milliseconds.</p>
+</section>
+
+<section id="s3-6">
+<h3>3.6 End-to-end top-k retrieval <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S3.SS6">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Why rely on BM25's shortlist at all? Put every document token vector from the whole collection into one big <span class="t" data-t="approximate nearest neighbor">nearest-neighbour index</span>. For each of the query's 32 vectors, ask the index for the most similar document vectors anywhere; the documents those vectors came from are the candidates. Then score just those candidates exactly with MaxSim.</p>
+<ol>
+  <li><strong>Filter:</strong> run N<sub>q</sub> vector searches, each returning the top k′ document vectors. Map each back to its document: at most N<sub>q</sub> × k′ candidate documents, K distinct.</li>
+  <li><strong>Refine:</strong> score those K documents exactly with MaxSim, as in re-ranking.</li>
+</ol>
+<p class="inwords"><strong>With the numbers:</strong> N<sub>q</sub> = 32 and k′ = 1,000 give at most 32,000 candidate hits, usually far fewer distinct documents, out of 8.8 million.</p>
+<p>The index is FAISS's <span class="t" data-t="ivf">IVF</span> with <span class="t" data-t="product quantization">product quantization</span> (IVFPQ): the vectors are clustered into P = 2,000 partitions in the experiments, each search probes the p = 10 nearest partitions, and each 128-number vector is compressed to s = 16 one-byte codes. See the <a href="hnsw.html">HNSW companion</a> and the <a data-lesson="primer/ml/embeddings/ann.html">vector index lesson</a> for how these indexes work.</p>
+</section>
+
+<section id="s4">
+<h2>4 Evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S4">original</a></span></h2>
+<h4>The benchmark and the metric</h4>
+<p>MS MARCO: 8.8 million web passages gathered from Bing results for about a million real queries, each query typically labelled with one relevant passage. The official metric is MRR@10: for each query, 1 divided by the rank of the first relevant passage in the top 10 (0 if none), averaged.</p>
+<p><strong>Tiny example:</strong> three queries whose first relevant passage is at rank 1, rank 3, and not in the top 10 score 1, 1/3 and 0, so MRR@10 = (1 + 0.333 + 0) / 3 = 0.444, reported as 44.4.</p>
+<div class="eq" data-tex="\htmlData{sym=MRR}{\text{MRR@10}} = \frac{1}{\htmlData{sym=nQ}{|Q|}}\htmlData{sym=sumQ}{\sum_{q \in Q}} \frac{1}{\htmlData{sym=rankq}{\text{rank}_q}}" data-fallback="MRR@10 = (1/|Q|) Σ_q 1 / rank_q"></div>
+<div class="symtable" data-syms="MRR,nQ,sumQ,rankq"></div>
+<p class="inwords"><strong>In words:</strong> “average, over all queries, one over the position of the first right answer, counting nothing if it is not in the top 10.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1/1 + 1/3 + 0) / 3 = 0.444.</p>
+<p>Implementation: learning rate 3 × 10<sup>−6</sup>, batch size 32, N<sub>q</sub> = 32 query vectors, m = 128 dimensions, 200,000 training iterations for MS MARCO.</p>
+<h4>4.2 Re-ranking and 4.3 end-to-end results</h4>
+<div class="tablewrap"><table>
+  <caption>Selected results on MS MARCO (development set), from Tables 1 and 2 of Khattab and Zaharia (2020)</caption>
+  <thead><tr><th>Model</th><th class="num">MRR@10</th><th class="num">Latency (ms)</th><th class="num">FLOPs per query</th></tr></thead>
+  <tbody>
+    <tr><td>BM25 (official)</td><td class="num">16.7</td><td class="num">n/a</td><td class="num">n/a</td></tr>
+    <tr><td>KNRM (re-rank)</td><td class="num">19.8</td><td class="num">3</td><td class="num">592M</td></tr>
+    <tr><td>fastText + ConvKNRM (re-rank)</td><td class="num">29.0</td><td class="num">28</td><td class="num">78B</td></tr>
+    <tr><td>BERT-base (re-rank)</td><td class="num">34.7</td><td class="num">10,700</td><td class="num">97T</td></tr>
+    <tr><td>BERT-large (re-rank)</td><td class="num">36.5</td><td class="num">32,900</td><td class="num">340T</td></tr>
+    <tr class="hl"><td>ColBERT (re-rank)</td><td class="num">34.9</td><td class="num">61</td><td class="num">7B</td></tr>
+    <tr><td>docTTTTTquery (end-to-end)</td><td class="num">27.7</td><td class="num">87</td><td class="num">n/a</td></tr>
+    <tr class="hl"><td>ColBERT, L2 (end-to-end)</td><td class="num">36.0</td><td class="num">458</td><td class="num">n/a</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the top block re-ranks BM25's top 1,000; the bottom rows search the whole collection. ColBERT re-ranking matches BERT-base's quality (34.9 against 34.7) at 61 ms instead of 10.7 seconds, with 7 billion FLOPs instead of 97 trillion. End-to-end, ColBERT is <em>more</em> accurate than when re-ranking (36.0), because it finds relevant passages BM25 never retrieved: its recall of relevant passages in its top 50 (82.9%) beats official BM25's recall in its top 1,000 (81.4%). On TREC CAR the story repeats: 31.3 MAP against BERT-base's 31.0 and BERT-large's 33.5.</p>
+<h4>4.4 Ablations</h4>
+<p>On a smaller 5-layer version, the paper tests: a single [CLS] vector per side (like a bi-encoder) instead of late interaction, which is considerably worse; average similarity instead of the maximum, which is worse; and no query augmentation, which is noticeably worse. Every piece earns its place. (The paper reports these in a figure, so we describe them without numbers.)</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Index size: the price of many vectors <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S4.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Note cards for every word take much more shelf space than one summary card per document. How much, and how much can you shrink them?</p>
+<div class="play" id="store-demo">
+  <div class="row2">
+    <label>dimensions m = <strong id="st-m-v">128</strong><input type="range" id="st-m" min="16" max="256" step="8" value="128"></label>
+    <label>bytes per number = <strong id="st-b-v">4</strong><input type="range" id="st-b" min="1" max="4" step="1" value="4"></label>
+    <label>vectors per passage = <strong id="st-t-v">68</strong><input type="range" id="st-t" min="10" max="200" step="1" value="68"></label>
+  </div>
+  <div class="timecols" id="st-cards"></div>
+  <p class="readout" id="st-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> our back-of-envelope calculator for 8.8 million passages. The default of about 68 vectors per passage is inferred from the paper's reported 286 GiB for 128 dimensions at 4 bytes (286 GiB ÷ (8.8M × 128 × 4 bytes) ≈ 68). Set m = 24 and 2 bytes: about 27 GiB, the paper's smallest setting, which it reports costs only about 1 point of MRR@10 (33.9 against 34.9). The right-hand card is the same collection with one vector per passage, for comparison: multi-vector storage is roughly “vectors per passage” times larger. Reducing that cost is exactly what the follow-up work tackled.</p>
+</section>
+
+<section id="s5">
+<h2>5 Conclusions <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.12832#S5">original</a></span></h2>
+<p>Encoding queries and documents separately into fine-grained token vectors, and letting them interact only through a cheap, pruning-friendly MaxSim, keeps most of BERT's precision while cutting query cost by orders of magnitude, and makes end-to-end neural retrieval from a large collection practical.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2020</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Later</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Full 128-number vectors, hundreds of GiB</td><td>ColBERTv2 (<a href="https://arxiv.org/abs/2112.01488">arXiv:2112.01488</a>) stores each vector as a centroid id plus a small compressed residual</td><td>Cuts the index size several-fold</td></tr>
+    <tr><td>FAISS IVFPQ candidate generation, then exact MaxSim</td><td>PLAID (<a href="https://arxiv.org/abs/2205.09707">arXiv:2205.09707</a>), an engine that prunes candidates using centroids before full scoring</td><td>Lower latency at scale</td></tr>
+    <tr><td>Trained on MS MARCO triples</td><td>Distillation from cross-encoders and hard-negative mining</td><td>Higher quality</td></tr>
+  </tbody>
+</table></div>
+<p>Where it sits in a modern stack: single-vector bi-encoders (<a href="dpr.html">DPR</a>, <a href="sentence-bert.html">Sentence-BERT</a>) are cheapest and most common; late interaction costs more storage for finer matching; cross-encoder rerankers are the most precise and are applied only to a shortlist. The <a data-lesson="primer/ml/embeddings/retrieval.html">retrieval lesson</a> compares all three.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Omar Khattab and Matei Zaharia, <em>ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT</em>, SIGIR 2020, <a href="https://arxiv.org/abs/2004.12832">arXiv:2004.12832</a>. Quotations are brief and attributed; selected results are restated with attribution; all figures are redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    Eq: { tex: "E_q", name: "Query bag of vectors", meaning: "One unit-length vector per query token, including the [mask] padding slots.", shape: "N_q × m (32 × 128)", example: "5 rows in the demo" },
+    Ed: { tex: "E_d", name: "Document bag of vectors", meaning: "One unit-length vector per document token, punctuation removed. Computed offline.", shape: "(tokens) × m", example: "5 columns in the demo" },
+    BERT: { tex: "\\texttt{BERT}", name: "BERT", meaning: "The pre-trained transformer, shared by both sides; the [Q] or [D] marker tells it which role it is playing.", shape: "tokens × 768", example: "BERT-base, 12 layers" },
+    Lin: { tex: "\\texttt{CNN}", name: "The linear layer", meaning: "The paper's equation writes this as CNN; the text describes it as a linear layer with no activation that shrinks each vector from 768 to m numbers, controlling storage.", shape: "768 → m", example: "768 → 128" },
+    Norm: { tex: "\\texttt{Normalize}", name: "Scale to length 1", meaning: "Divide each vector by its length, so a dot product equals the cosine similarity.", shape: "keeps the shape", example: "‖v‖ = 1" },
+    Filter: { tex: "\\texttt{Filter}", name: "Drop punctuation", meaning: "Remove the vectors of punctuation tokens from documents, to save space.", shape: "fewer vectors", example: "removes “,” and “.”" },
+    hash: { tex: "\\#\\#\\ldots\\#", name: "[mask] padding", meaning: "Query augmentation: the query is padded with [mask] tokens to 32 tokens, and BERT's outputs at those positions act as learned extra query terms.", shape: "up to 32 − query length", example: "26 masks after a 6-token query" },
+    Sqd: { tex: "S_{q,d}", name: "Relevance score", meaning: "The document's score for this query: the sum of each query vector's best match.", shape: "one number (up to N_q)", example: "4.61 for doc A in the demo" },
+    sumi: { tex: "\\sum_{i}", name: "Over query vectors", meaning: "Add one term for each of the |E_q| query vectors.", shape: "N_q terms", example: "5 terms in the demo" },
+    maxj: { tex: "\\max_{j}", name: "Best document vector", meaning: "For one query vector, keep only its highest similarity among all document vectors. This is MaxSim.", shape: "one number", example: "“built” → “completed”" },
+    Eqi: { tex: "E_{q_i}", name: "Query vector i", meaning: "One contextual vector from the query.", shape: "m numbers", example: "the vector for “when”" },
+    Edj: { tex: "E_{d_j}^{\\top}", name: "Document vector j", meaning: "One contextual vector from the document, transposed so the product is a dot product.", shape: "m numbers", example: "the vector for “1889”" },
+    MRR: { tex: "\\text{MRR@10}", name: "Mean reciprocal rank at 10", meaning: "Rewards putting the first relevant result near the top: 1 for rank 1, 0.5 for rank 2, 0.1 for rank 10, 0 beyond.", shape: "0 … 1 (reported × 100)", example: "0.444" },
+    nQ: { tex: "|Q|", name: "Number of queries", meaning: "How many queries are averaged over.", shape: "a whole number", example: "3 (about 7,000 in MS MARCO dev)" },
+    sumQ: { tex: "\\sum_{q\\in Q}", name: "Over all queries", meaning: "Add one term per query.", shape: "|Q| terms", example: "1 + 1/3 + 0" },
+    rankq: { tex: "\\text{rank}_q", name: "Rank of the first relevant result", meaning: "Its position in the ranked list; if it is not in the top 10, the term counts as 0.", shape: "1 … 10", example: "1, 3, and missing" },
+  },
+
+  blocks: {
+    pa: { title: "(a) Representation-focused", body: "<p>Query and document each become one vector; relevance is one similarity score. Documents can be encoded offline, so search is fast, but one vector cannot hold every detail. This is a bi-encoder (DPR, Sentence-BERT).</p>", shape: "1 vector per side" },
+    pb: { title: "(b) Interaction-focused", body: "<p>Build a grid of word-to-word similarities and let a neural network read it (KNRM, Duet). Finer, but the network must run for every query-document pair.</p>", shape: "|q| × |d| grid per pair" },
+    pc: { title: "(c) All-to-all (BERT)", body: "<p>Glue query and document together and let BERT's attention compare everything with everything. The most accurate, and the most expensive: nothing can be precomputed.</p>", shape: "BERT per pair" },
+    pd: { title: "(d) Late interaction (ColBERT)", body: "<p>Keep one vector per token on each side, encoded separately; interact only at the end with MaxSim and a sum. Documents are precomputed, and the interaction is cheap and pruning-friendly.</p>", shape: "N_q × |d| dot products per pair", lesson: "primer/ml/embeddings/retrieval.html" },
+    qtext: { title: "Query input", body: "<p>[CLS], then the [Q] marker, the query's WordPiece tokens, and [mask] tokens up to N<sub>q</sub> = 32 (query augmentation).</p>", shape: "32 tokens" },
+    dtext: { title: "Document input", body: "<p>[CLS], the [D] marker and the document's tokens. No masks for documents.</p>", shape: "document length" },
+    bertq: { title: "BERT on the query", body: "<p>Runs once per query. Short input, so cheap.</p>", shape: "32 × 768", lesson: "primer/ml/transformer.html" },
+    bertd: { title: "BERT on the document", body: "<p>Runs once per document, offline, at indexing time: about three hours for MS MARCO on four GPUs.</p>", shape: "tokens × 768" },
+    linear: { title: "Linear layer", body: "<p>No activation; shrinks each vector to m = 128 numbers. The main lever on storage: the paper tries m = 128, 48 and 24.</p>", shape: "768 → 128" },
+    normq: { title: "Normalize", body: "<p>Each query vector scaled to length 1, so dot products are cosines.</p>", shape: "32 unit vectors" },
+    normd: { title: "Normalize and filter", body: "<p>Each document vector scaled to length 1; punctuation vectors dropped. Saved with 32 or 16 bits per number.</p>", shape: "unit vectors" },
+    Eq: { title: "E_q", body: "<p>The query's bag of 32 contextual unit vectors.</p>", shape: "32 × 128" },
+    Ed: { title: "E_d", body: "<p>The document's bag of contextual unit vectors, stored in the index.</p>", shape: "tokens × 128", lesson: "primer/ml/embeddings/compression.html" },
+    maxsim: { title: "MaxSim, then sum", body: "<p>For each query vector, the maximum dot product with any document vector; the score is the sum over query vectors. No learned parameters. Try the MaxSim demo below.</p>", shape: "one score" },
+  },
+
+  onReady(P) {
+    maxsimDemo();
+    flopsChart(P);
+    storage();
+  },
+};
+
+function barRow(label, frac, right, color, cols) {
+  return `<div class="share-row" style="${cols ? "grid-template-columns:" + cols : ""}"><span>${label}</span><div><div class="share-bar" style="width:${Math.max(0.5, Math.min(100, frac * 100)).toFixed(1)}%;${color ? "background:" + color : ""}"></div></div><span>${right}</span></div>`;
+}
+function toggles(attr, onPick) {
+  const btns = document.querySelectorAll(`[data-${attr}]`);
+  btns.forEach((b) => b.addEventListener("click", () => { btns.forEach((x) => x.setAttribute("aria-pressed", String(x === b))); onPick(b.dataset[attr]); }));
+}
+
+/* ---- trade-off scatter, built before papers.js wires diagrams ---- */
+(function tradeoff() {
+  const pts = [
+    ["KNRM", 3, 19.8, "592M FLOPs", "", "Kernel pooling over a word-similarity grid. Very fast, much weaker."],
+    ["Duet", 22, 24.3, "159B FLOPs", "", "Combines exact-match and embedding signals."],
+    ["fastText + ConvKNRM", 28, 29.0, "78B FLOPs", "", "The strongest non-BERT re-ranker in the table."],
+    ["BERT-base", 10700, 34.7, "97T FLOPs", "bert", "Query and document read together by 12-layer BERT, 1,000 times per query."],
+    ["BERT-large", 32900, 36.5, "340T FLOPs", "bert", "The same with 24 layers: the most accurate re-ranker here, at about 33 seconds per query."],
+    ["ColBERT (re-rank)", 61, 34.9, "7B FLOPs", "cb", "Late interaction over BERT-base, re-ranking BM25's top 1,000. About as accurate as BERT-base, 170× faster."],
+    ["ColBERT (end-to-end)", 458, 36.0, "full-collection search", "cb", "Retrieves directly from all 8.8M passages with FAISS, then re-ranks: more accurate than re-ranking BM25, because it finds passages BM25 missed."],
+  ];
+  const svg = document.getElementById("tradeoff-svg");
+  const NS = "http://www.w3.org/2000/svg";
+  const X = (ms) => 60 + ((Math.log10(ms) - 0) / 5) * 480, Y = (m) => 260 - ((m - 15) / 25) * 240;
+  let s = "";
+  for (let e = 0; e <= 5; e++) s += `<line class="gridl" x1="${X(Math.pow(10, e))}" x2="${X(Math.pow(10, e))}" y1="20" y2="260"/><text x="${X(Math.pow(10, e))}" y="278" text-anchor="middle" class="lbl">${["1 ms", "10 ms", "100 ms", "1 s", "10 s", "100 s"][e]}</text>`;
+  for (let m = 15; m <= 40; m += 5) s += `<line class="gridl" x1="60" x2="540" y1="${Y(m)}" y2="${Y(m)}"/><text x="54" y="${Y(m) + 4}" text-anchor="end" class="lbl">${m}</text>`;
+  s += `<text x="300" y="296" text-anchor="middle" class="lbl">query latency (log scale)</text><text x="14" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 14 140)">MRR@10</text>`;
+  svg.innerHTML = s;
+  pts.forEach(([name, ms, mrr, fl, cls, note], i) => {
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("class", `blk pt ${cls}`);
+    g.setAttribute("data-block", "pt" + i);
+    g.setAttribute("aria-label", name);
+    // label placement per point: [dx, dy, anchor], chosen so labels never overlap
+    const place = { "ColBERT (re-rank)": [0, 22, "middle"], "ColBERT (end-to-end)": [0, -12, "middle"], "BERT-base": [0, 22, "middle"], "BERT-large": [-10, -12, "end"] }[name] || [10, -9, "start"];
+    g.innerHTML = `<circle cx="${X(ms)}" cy="${Y(mrr)}" r="7"/><text x="${X(ms) + place[0]}" y="${Y(mrr) + place[1]}" text-anchor="${place[2]}" class="lbl">${name}</text>`;
+    svg.appendChild(g);
+    window.PAPER.blocks["pt" + i] = { title: name, body: `<p>${note}</p>`, shape: `MRR@10 ${mrr} · ${ms.toLocaleString("en-US")} ms · ${fl}` };
+  });
+})();
+
+/* ---- MaxSim demo (illustrative vectors) ---- */
+function maxsimDemo() {
+  // dims: TIME, EIFFEL, TOWER, BUILD, PARIS, SHOP, LONDON
+  const V = (a) => { const n = Math.hypot(...a); return a.map((x) => x / n); };
+  const q = [
+    ["when", V([1, 0.1, 0, 0.3, 0, 0, 0])],
+    ["eiffel", V([0, 1, 0.2, 0, 0.3, 0, 0])],
+    ["tower", V([0, 0.4, 1, 0, 0, 0, 0])],
+    ["built", V([0.4, 0, 0, 1, 0, 0, 0])],
+    ["[mask]", V([0.3, 0, 0, 0.3, 0.6, 0, 0])],
+  ];
+  const docs = [
+    ["the eiffel tower was completed in 1889 in paris", [["eiffel", V([0.1, 0.9, 0.4, 0, 0.2, 0, 0])], ["tower", V([0, 0.6, 0.9, 0.1, 0.1, 0, 0])], ["completed", V([0.2, 0, 0.1, 0.9, 0.1, 0, 0])], ["1889", V([0.9, 0, 0.1, 0.1, 0.3, 0, 0])], ["paris", V([0, 0.3, 0.1, 0, 0.9, 0, 0])]]],
+    ["eiffel tower souvenirs and tower models sold in shops", [["eiffel", V([0, 1, 0.3, 0, 0, 0.3, 0])], ["tower", V([0, 0.3, 1, 0, 0, 0.3, 0])], ["souvenirs", V([0, 0, 0, 0, 0.2, 1, 0])], ["models", V([0, 0, 0.3, 0, 0, 0.8, 0])], ["shops", V([0, 0, 0, 0, 0, 1, 0])]]],
+    ["the tower of london was built in 1078", [["tower", V([0, 0, 1, 0, 0, 0, 0.5])], ["london", V([0, 0, 0, 0, 0, 0, 1])], ["built", V([0.3, 0, 0, 1, 0, 0, 0])], ["1078", V([1, 0, 0, 0, 0, 0, 0.2])]]],
+  ];
+  const dot = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
+  const mean = (vs) => V(vs[0].map((_, k) => vs.reduce((s, v) => s + v[k], 0)));
+  const scores = (d) => {
+    const M = q.map(([, qv]) => d[1].map(([, dv]) => dot(qv, dv)));
+    const maxsim = M.reduce((s, r) => s + Math.max(...r), 0);
+    const avg = M.reduce((s, r) => s + r.reduce((a, b) => a + b, 0) / r.length, 0);
+    const single = dot(mean(q.map((x) => x[1])), mean(d[1].map((x) => x[1])));
+    return { M, maxsim, avg, single };
+  };
+  let cur = 0, hov = 0;
+  const box = document.getElementById("ms-table"), out = document.getElementById("ms-readout");
+  function draw() {
+    const d = docs[cur], { M, maxsim } = scores(d);
+    let h = `<table class="ms"><thead><tr><th></th>${d[1].map(([w]) => `<th>${w}</th>`).join("")}<th>max</th></tr></thead><tbody>`;
+    M.forEach((r, i) => {
+      const mx = Math.max(...r), jm = r.indexOf(mx);
+      h += `<tr data-row="${i}" tabindex="0" class="${i === hov ? "hov" : ""}"><th class="rowh">${q[i][0]}</th>` +
+        r.map((v, j) => `<td class="c${j === jm ? " max" : ""}" style="background:rgba(var(--heat-hi),${(0.06 + 0.85 * Math.max(0, v)).toFixed(2)});color:${v > 0.6 ? "#fff" : "var(--fg)"}">${v.toFixed(2)}</td>`).join("") +
+        `<td class="rs">${mx.toFixed(2)}</td></tr>`;
+    });
+    h += `<tr><th class="rowh">score</th><td colspan="${d[1].length}"></td><td class="rs"><strong>${maxsim.toFixed(2)}</strong></td></tr></tbody></table>`;
+    box.innerHTML = h;
+    box.querySelectorAll("tr[data-row]").forEach((tr) => {
+      const pick = () => { hov = +tr.dataset.row; box.querySelectorAll("tr[data-row]").forEach((x) => x.classList.toggle("hov", x === tr)); show(); };
+      tr.addEventListener("pointerenter", pick); tr.addEventListener("focus", pick); tr.addEventListener("click", pick);
+    });
+    show();
+    const all = docs.map((dd) => scores(dd));
+    const cols = "9.5rem minmax(0,1fr) 3.4rem";
+    const top = Math.max(...all.map((x) => x.maxsim));
+    document.getElementById("ms-compare").innerHTML =
+      `<div class="legend" style="margin:0 0 0.3rem">MaxSim (sum of best matches)</div>` + all.map((x, k) => barRow(`doc ${"ABC"[k]}`, x.maxsim / top, x.maxsim.toFixed(2), k === cur ? "var(--active)" : "", cols)).join("") +
+      `<div class="legend" style="margin:0.5rem 0 0.3rem">Average similarity instead of max (ablation B)</div>` + all.map((x, k) => barRow(`doc ${"ABC"[k]}`, x.avg / Math.max(...all.map((y) => y.avg)), x.avg.toFixed(2), "var(--wire)", cols)).join("") +
+      `<div class="legend" style="margin:0.5rem 0 0.3rem">One mean-pooled vector per side (single-vector, like a bi-encoder)</div>` + all.map((x, k) => barRow(`doc ${"ABC"[k]}`, x.single, x.single.toFixed(2), "var(--wire)", cols)).join("");
+  }
+  function show() {
+    const d = docs[cur], { M } = scores(d);
+    const r = M[hov], mx = Math.max(...r), jm = r.indexOf(mx);
+    out.innerHTML = `Doc ${"ABC"[cur]}: “${d[0]}”. Query token <strong>${q[hov][0]}</strong> finds its best match in <strong>${d[1][jm][0]}</strong> (cosine ${mx.toFixed(2)}); that is its contribution to the score.`;
+  }
+  toggles("doc", (v) => { cur = +v; draw(); });
+  draw();
+}
+
+/* ---- FLOPs ratio ---- */
+function flopsChart(P) {
+  P.lineChart(document.getElementById("flops-chart"), {
+    series: [{ name: "BERT-base FLOPs ÷ ColBERT FLOPs", points: [[10, 180], [1000, 13900], [2000, 23000]] }],
+    xLabel: "documents re-ranked (k)", yLabel: "× more FLOPs for BERT", logX: true, yMin: 0, yMax: 25000,
+    xFmt: (v) => Math.round(v).toLocaleString("en-US"), yFmt: (v) => `${Math.round(v).toLocaleString("en-US")}×`,
+    readout: document.getElementById("flops-readout"), ariaLabel: "How many times more FLOPs BERT needs than ColBERT, by re-ranking depth",
+  });
+}
+
+/* ---- storage calculator ---- */
+function storage() {
+  const N = 8.8e6, GiB = Math.pow(2, 30);
+  const m = document.getElementById("st-m"), b = document.getElementById("st-b"), t = document.getElementById("st-t");
+  function draw() {
+    const M = +m.value, B = +b.value, T = +t.value;
+    document.getElementById("st-m-v").textContent = M; document.getElementById("st-b-v").textContent = B; document.getElementById("st-t-v").textContent = T;
+    const multi = (N * T * M * B) / GiB, single = (N * M * B) / GiB;
+    document.getElementById("st-cards").innerHTML =
+      `<div class="timecard">ColBERT, one vector per token<b>${multi.toFixed(1)} GiB</b>${T} × ${M} numbers × ${B} bytes per passage</div>` +
+      `<div class="timecard">One vector per passage<b>${single.toFixed(2)} GiB</b>${M} numbers × ${B} bytes per passage</div>`;
+    document.getElementById("st-readout").innerHTML = `8.8M passages. Paper's settings for comparison: 128 dims × 4 bytes → 286 GiB; 128 × 2 → 154 GiB (end-to-end index); 24 × 2 → 27 GiB.`;
+  }
+  [m, b, t].forEach((x) => x.addEventListener("input", draw));
+  draw();
+}
+</script>
+</body>
+</html>

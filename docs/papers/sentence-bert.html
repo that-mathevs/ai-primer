@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentence-BERT, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Reimers and Gurevych (2019), Sentence-BERT: sentence embeddings from siamese BERT networks.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .row2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.5rem 1rem; align-items: end; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .row2 select, .row2 input { width: 100%; }
+  .mono { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .vgrid { border-collapse: collapse; font-family: ui-monospace, monospace; font-size: 0.82rem; }
+  .vgrid td, .vgrid th { padding: 0.2rem 0.45rem; text-align: right; border-bottom: 1px solid var(--border); }
+  .vgrid td.hit { background: var(--accent-soft); font-weight: 700; }
+  .vgrid tr.out td { border-top: 2px solid var(--accent); font-weight: 700; }
+  .toggle button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  svg .drag { cursor: grab; }
+  svg .drag:active { cursor: grabbing; }
+  .timecols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem; margin-top: 0.8rem; }
+  .timecard { border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; background: var(--bg); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .timecard b { font-size: 1.3rem; display: block; }
+  figure.ix.stack .ixgrid { grid-template-columns: minmax(0, 1fr); }
+  figure.ix.stack .panel { min-height: 5.5rem; }
+</style>
+</head>
+<body data-paper="sentence-bert">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction: 65 hours vs 5 seconds</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Model</a>
+        <ol>
+          <li><a href="#s3-pool">Pooling</a></li>
+          <li><a href="#s3-siamese">The siamese network</a></li>
+          <li><a href="#s3-obj">Three training objectives</a></li>
+          <li><a href="#s3-1">3.1 Training details</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Semantic textual similarity</a></li>
+      <li><a href="#s5">5 SentEval</a></li>
+      <li><a href="#s6">6 Ablation study</a></li>
+      <li><a href="#s7">7 Computational efficiency</a></li>
+      <li><a href="#today">What changed since 2019</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Sentence-BERT, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Nils Reimers and Iryna Gurevych (2019), <em>Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks</em>, the paper that turned BERT into a practical engine for semantic search and gave the world the <span class="mono">sentence-transformers</span> library.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1908.10084">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1908.10084">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1908.10084">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is released on arXiv under a Creative Commons Attribution-ShareAlike 4.0 licence; even so, results appear here only as selected numbers in our own tables and charts, each attributed, and every figure is redrawn from scratch. Vectors and scores marked <em>illustrative</em> are hand-made for teaching. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it or tap it; so does every symbol in every equation. Diagrams and demos are live. Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram or demo</strong>, <strong>the math</strong>, and <strong>why it still matters</strong>. The <a data-lesson="primer/ml/embeddings/contrastive.html">contrastive training lesson</a> trains a small bi-encoder from scratch, and the <a data-lesson="primer/ml/embeddings/retrieval.html">retrieval lesson</a> puts one to work next to a cross-encoder.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084">original</a></span></h2>
+<blockquote class="quote">“Finding the most similar pair in a collection of 10,000 sentences requires about 50 million inference computations (~65 hours) with BERT.”<cite>Reimers and Gurevych (2019), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You have 10,000 job applicants and want the two most similar CVs. Method one: sit every possible pair of CVs side by side and read them together, 50 million readings. Method two: write a short summary card for each CV once, 10,000 summaries, then compare the cards. BERT, as used in 2019, could only do method one. Sentence-BERT teaches it method two, without losing much accuracy.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>A small change to <span class="t" data-t="transformer">BERT</span>, a pooling step plus <span class="t" data-tip-title="Siamese network" data-tip="Two copies of the same network, sharing every weight, each reading one input. Because the copies are identical, the two outputs live in the same space and can be compared directly.">siamese</span> fine-tuning, produces sentence <span class="t" data-t="embedding">embeddings</span> you can compare with <span class="t" data-t="cosine similarity">cosine similarity</span>.</li>
+  <li>Finding the most similar pair among 10,000 sentences drops from about 65 hours to about 5 seconds.</li>
+  <li>Better than earlier sentence embedding methods (InferSent, Universal Sentence Encoder) on standard similarity benchmarks.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Almost every semantic search system, RAG pipeline and embedding API follows this recipe: encode each text once into a vector, store the vectors, and compare vectors at query time. This paper is where BERT-quality models first became usable that way.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction: 65 hours versus 5 seconds <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="cross-encoder">cross-encoder</span> is a judge who must hear both sides at once: to score two sentences, BERT reads them together in one pass. That is accurate, because every word of one sentence can attend to every word of the other, but the work grows with the number of <em>pairs</em>. A <span class="t" data-t="bi-encoder">bi-encoder</span> reads each sentence alone and writes down a vector; comparing two vectors is a single <span class="t" data-t="dot product">dot product</span>.</p>
+<h4>Tiny example</h4>
+<p>With 5 sentences there are 5 × 4 / 2 = 10 pairs; with 10,000 sentences there are 10,000 × 9,999 / 2 = 49,995,000 pairs. The number of pairs grows with the square of the collection.</p>
+<div class="eq" data-tex="\htmlData{sym=pairs}{\text{pairs}} = \frac{\htmlData{sym=nsent}{n}\,(\htmlData{sym=nsent}{n} - 1)}{2}" data-fallback="pairs = n (n − 1) / 2"></div>
+<div class="symtable" data-syms="pairs,nsent"></div>
+<p class="inwords"><strong>In words:</strong> “each of the n sentences can be paired with the n − 1 others, and each pair is counted twice that way, so halve it.”</p>
+<p class="inwords"><strong>With the numbers:</strong> n = 10,000 gives 49,995,000 pairs. At the paper's reported 65 hours on a V100 GPU, that is 49,995,000 / 234,000 seconds ≈ 214 pairs per second (our arithmetic from the paper's figures).</p>
+<div class="play" id="cost-demo">
+  <div class="row2">
+    <label>Collection size n = <strong id="cd-n-v"></strong><input type="range" id="cd-n" min="2" max="8" step="0.05" value="4"></label>
+    <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap">
+      <button type="button" data-mode="pairs" aria-pressed="true">Find the most similar pair</button>
+      <button type="button" data-mode="search" aria-pressed="false">Search one query</button>
+    </div>
+  </div>
+  <div class="timecols" id="cd-cards"></div>
+  <p class="readout" id="cd-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the left card is BERT as a cross-encoder, the right card is SBERT as a bi-encoder, both using rates derived from the paper's own numbers (about 214 cross-encoded pairs per second; about 2,000 sentences embedded per second; about 5 billion cosine comparisons per second). Slide n to the right. In <strong>pair</strong> mode the BERT time grows with n² and passes a year of GPU time before n reaches a million, while SBERT's stays in minutes. In <strong>search</strong> mode, with the collection already embedded, SBERT answers a query in a fraction of a second; at the paper's Quora example of 40 million questions BERT needs over 50 hours per query. Adding an approximate index such as <a href="hnsw.html">HNSW</a> brings the search time down to milliseconds.</p>
+<h4>The surprise in the introduction</h4>
+<p>People had tried the obvious shortcut: feed one sentence into plain BERT and average its output vectors, or take the output of its special <span class="mono">[CLS]</span> token. The paper shows this gives <em>bad</em> sentence embeddings for similarity, often worse than averaging old-fashioned <a href="word2vec.html">word vectors</a> (GloVe). BERT was never trained to make its vectors comparable by cosine; SBERT's fine-tuning is what fixes that.</p>
+<h4>Why it matters today</h4>
+<p>The “retrieve with a bi-encoder, rerank the top few with a cross-encoder” pipeline used in nearly every production search system is this trade-off put to work. See the <a data-lesson="primer/ml/embeddings/retrieval.html">retrieval lesson</a>.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Before SBERT there were two camps. One had accurate but slow judges (BERT reading pairs). The other had fast summary-writers that were less accurate: InferSent, a <span class="t" data-t="lstm">BiLSTM</span> trained on natural language inference data, and Google's Universal Sentence Encoder, a transformer trained on several tasks. SBERT's idea is to take the best judge and teach it to write summaries.</p>
+<ul>
+  <li><strong>BERT for pairs</strong>: the two sentences are joined with a <span class="mono">[SEP]</span> token and read together, with a small regression head on top. It set the state of the art on the STS benchmark.</li>
+  <li><strong>Poly-encoders</strong> (Humeau et al.) speed up scoring against precomputed candidates, but their score is not symmetric and they still need O(n²) comparisons for clustering.</li>
+  <li><strong>Starting point</strong>: unlike earlier sentence encoders trained from scratch, SBERT starts from pre-trained BERT and only fine-tunes it, in under 20 minutes.</li>
+</ul>
+</section>
+
+<section id="s3">
+<h2>3 Model <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S3">original</a></span></h2>
+<blockquote class="quote">“SBERT adds a pooling operation to the output of BERT / RoBERTa to derive a fixed sized sentence embedding.”<cite>Reimers and Gurevych (2019), §3</cite></blockquote>
+</section>
+
+<section id="s3-pool">
+<h3>Pooling: many token vectors to one sentence vector</h3>
+<h4>Everyday picture</h4>
+<p>BERT gives you one vector per <span class="t" data-t="token">token</span>, like one opinion per committee member. You need a single vector for the whole sentence, a committee decision. <span class="t" data-t="pooling">Pooling</span> is the voting rule: take the average opinion (MEAN), the strongest opinion on each question (MAX), or just ask the chair (CLS, the special first token).</p>
+<h4>Try it</h4>
+<div class="play" id="pool-demo">
+  <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem">
+    <button type="button" data-pool="MEAN" aria-pressed="true">MEAN (the paper's default)</button>
+    <button type="button" data-pool="MAX" aria-pressed="false">MAX</button>
+    <button type="button" data-pool="CLS" aria-pressed="false">CLS</button>
+  </div>
+  <div class="tablewrap" id="pool-table"></div>
+  <p class="readout"><em>Illustrative token vectors with 4 numbers each; real BERT-base vectors have 768.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each row is one token's output vector from BERT; each column is one of its numbers. The bold row at the bottom is the sentence vector. MEAN averages each column over all tokens; MAX keeps each column's largest value (the highlighted cells show where each came from); CLS simply copies the first row. Switch between them and notice that MAX builds its answer from different tokens in different columns, while CLS ignores every other token entirely. The paper's ablation (section 6) found MEAN best overall.</p>
+<div class="eq" data-tex="\htmlData{sym=uvec}{u} = \frac{1}{\htmlData{sym=Ltok}{L}}\htmlData{sym=sumL}{\sum_{i=1}^{L}} \htmlData{sym=hi}{h_i}" data-fallback="u = (1/L) Σ_{i=1..L} h_i"></div>
+<div class="symtable" data-syms="uvec,Ltok,sumL,hi"></div>
+<p class="inwords"><strong>In words:</strong> “the sentence vector is the average of all the token vectors BERT produced.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the first column of the demo, (0.2 + 0.9 + 0.7 + 0.1 + 0.6) / 5 = 0.50.</p>
+</section>
+
+<section id="s3-siamese">
+<h3>The siamese network</h3>
+<h4>Everyday picture</h4>
+<p>Two identical twins, trained identically, each read one sentence and write a summary card. Because they are the same person in effect (every weight is shared), their cards are written in the same language and can be compared line by line. During training a coach looks at both cards and says how the sentences relate; at test time you just compare cards.</p>
+<figure class="ix wide stack" id="fig-siamese">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 420" role="img" aria-label="SBERT siamese architecture: training with a classifier and inference with cosine similarity">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="150" y="16" text-anchor="middle" class="lbl">Training (NLI classification)</text>
+    <text x="440" y="16" text-anchor="middle" class="lbl">Inference (similarity)</text>
+    <!-- training side -->
+    <g class="blk plain" data-block="sentA"><rect x="20" y="370" width="110" height="28" rx="6"/><text x="75" y="388" text-anchor="middle">Sentence A</text></g>
+    <g class="blk plain" data-block="sentB"><rect x="160" y="370" width="110" height="28" rx="6"/><text x="215" y="388" text-anchor="middle">Sentence B</text></g>
+    <path class="wire" d="M75,370 V345" marker-end="url(#arr)"/><path class="wire" d="M215,370 V345" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="bert"><rect x="20" y="300" width="110" height="44" rx="7"/><text x="75" y="326" text-anchor="middle">BERT</text></g>
+    <g class="blk attn" data-block="bert"><rect x="160" y="300" width="110" height="44" rx="7"/><text x="215" y="326" text-anchor="middle">BERT</text></g>
+    <g class="blk" data-block="tied"><rect x="123" y="310" width="44" height="24" rx="6" fill="var(--card)" stroke="var(--wire)" stroke-dasharray="3 3"/><text x="145" y="326" text-anchor="middle" class="lbl">tied</text></g>
+    <path class="wire" d="M75,300 V275" marker-end="url(#arr)"/><path class="wire" d="M215,300 V275" marker-end="url(#arr)"/>
+    <g class="blk norm" data-block="pool"><rect x="20" y="245" width="110" height="30" rx="6"/><text x="75" y="264" text-anchor="middle">pooling</text></g>
+    <g class="blk norm" data-block="pool"><rect x="160" y="245" width="110" height="30" rx="6"/><text x="215" y="264" text-anchor="middle">pooling</text></g>
+    <path class="wire" d="M75,245 V220" marker-end="url(#arr)"/><path class="wire" d="M215,245 V220" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="uv"><rect x="45" y="192" width="60" height="28" rx="6"/><text x="75" y="210" text-anchor="middle">u</text></g>
+    <g class="blk emb" data-block="uv"><rect x="185" y="192" width="60" height="28" rx="6"/><text x="215" y="210" text-anchor="middle">v</text></g>
+    <path class="wire" d="M75,192 V165 H125" marker-end="url(#arr)"/><path class="wire" d="M215,192 V165 H165" marker-end="url(#arr)"/>
+    <g class="blk lin" data-block="concat"><rect x="85" y="130" width="120" height="30" rx="6"/><text x="145" y="149" text-anchor="middle">(u, v, |u − v|)</text></g>
+    <path class="wire" d="M145,130 V105" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="clf"><rect x="85" y="72" width="120" height="32" rx="6"/><text x="145" y="92" text-anchor="middle">softmax classifier</text></g>
+    <path class="wire" d="M145,72 V50" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="labels"><rect x="45" y="22" width="200" height="26" rx="6"/><text x="145" y="39" text-anchor="middle">entail / neutral / contradict</text></g>
+    <!-- inference side -->
+    <line x1="298" y1="30" x2="298" y2="400" stroke="var(--border)"/>
+    <g class="blk plain" data-block="sentA"><rect x="320" y="370" width="100" height="28" rx="6"/><text x="370" y="388" text-anchor="middle">Sentence A</text></g>
+    <g class="blk plain" data-block="sentB"><rect x="450" y="370" width="100" height="28" rx="6"/><text x="500" y="388" text-anchor="middle">Sentence B</text></g>
+    <path class="wire" d="M370,370 V345" marker-end="url(#arr)"/><path class="wire" d="M500,370 V345" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="bert"><rect x="320" y="300" width="100" height="44" rx="7"/><text x="370" y="326" text-anchor="middle">BERT</text></g>
+    <g class="blk attn" data-block="bert"><rect x="450" y="300" width="100" height="44" rx="7"/><text x="500" y="326" text-anchor="middle">BERT</text></g>
+    <path class="wire" d="M370,300 V275" marker-end="url(#arr)"/><path class="wire" d="M500,300 V275" marker-end="url(#arr)"/>
+    <g class="blk norm" data-block="pool"><rect x="320" y="245" width="100" height="30" rx="6"/><text x="370" y="264" text-anchor="middle">pooling</text></g>
+    <g class="blk norm" data-block="pool"><rect x="450" y="245" width="100" height="30" rx="6"/><text x="500" y="264" text-anchor="middle">pooling</text></g>
+    <path class="wire" d="M370,245 V220" marker-end="url(#arr)"/><path class="wire" d="M500,245 V220" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="uv"><rect x="340" y="192" width="60" height="28" rx="6"/><text x="370" y="210" text-anchor="middle">u</text></g>
+    <g class="blk emb" data-block="uv"><rect x="470" y="192" width="60" height="28" rx="6"/><text x="500" y="210" text-anchor="middle">v</text></g>
+    <path class="wire" d="M370,192 V165 H410" marker-end="url(#arr)"/><path class="wire" d="M500,192 V165 H460" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="cos"><rect x="385" y="130" width="100" height="32" rx="6"/><text x="435" y="150" text-anchor="middle">cosine(u, v)</text></g>
+    <path class="wire" d="M435,130 V105" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="score"><rect x="375" y="72" width="120" height="32" rx="6"/><text x="435" y="92" text-anchor="middle">score −1 … 1</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap any block. Start at the bottom with the two sentences.</p></div>
+  </div>
+  <figcaption>Figures 1 and 2 of the paper, redrawn: SBERT during training with the classification objective (left) and at inference time (right). Based on Reimers and Gurevych (2019), Figures 1 and 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read each side from the bottom up. Each sentence passes through BERT on its own (the two BERT boxes are one network with shared weights, marked “tied”), then through pooling, giving vectors u and v. On the left, during training, u, v and their element-wise difference |u − v| are glued together and fed to a small classifier that must say whether sentence A entails, is neutral towards, or contradicts sentence B; its errors are what tune BERT. On the right, at inference, the classifier is thrown away: you only compute cosine(u, v). The key design point is visible in the shape: nothing ever joins the two sides until the very end, so u can be computed once and stored.</p>
+</section>
+
+<section id="s3-obj">
+<h3>Three training objectives</h3>
+<p>What the network is trained to do depends on the labels you have. The paper uses three set-ups.</p>
+<h4>1. Classification (for NLI data)</h4>
+<p><strong>Everyday picture:</strong> a quiz where each question is two sentences and the answer is one of three labels. To answer well, the summary cards must capture meaning precisely enough that their differences reveal agreement or contradiction.</p>
+<div class="eq" data-tex="\htmlData{sym=ovec}{o} = \htmlData{sym=softmaxs}{\text{softmax}}\big(\htmlData{sym=Wt}{W_t}\,(\htmlData{sym=uvec}{u}, \htmlData{sym=vvec}{v}, \htmlData{sym=absdiff}{|u - v|})\big)" data-fallback="o = softmax(W_t (u, v, |u − v|))"></div>
+<div class="symtable" data-syms="ovec,softmaxs,Wt,vvec,absdiff,ndim,klab"></div>
+<p class="inwords"><strong>In words:</strong> “glue the two sentence vectors and their element-wise distance into one long vector, multiply by a learned matrix to get one score per label, and turn the scores into probabilities.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with 2-number vectors u = (1, 2) and v = (2, 1), |u − v| = (1, 1) and the glued vector is (1, 2, 2, 1, 1, 1), six numbers. For BERT-base, n = 768 and k = 3 labels, so W<sub>t</sub> holds 3 × 768 × 3 = 6,912 learned numbers, tiny next to BERT's 110 million. The loss is <span class="t" data-t="cross-entropy">cross-entropy</span> on the correct label.</p>
+<h4>2. Regression (for similarity scores)</h4>
+<p><strong>Everyday picture:</strong> show the model two sentences and a human's similarity rating, and train it so the cosine of the two cards matches the rating.</p>
+<div class="eq" data-tex="\htmlData{sym=Lmse}{\mathcal{L}} = \big(\htmlData{sym=cosuv}{\cos(u, v)} - \htmlData{sym=ygold}{y}\big)^2" data-fallback="L = (cos(u, v) − y)²"></div>
+<div class="symtable" data-syms="Lmse,cosuv,ygold"></div>
+<p class="inwords"><strong>In words:</strong> “the squared gap between the predicted similarity and the human rating” (<span class="t" data-t="mean squared error">mean squared error</span> when averaged over pairs).</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> cos((1, 2), (2, 1)) = 4 / (√5 × √5) = 0.8. If the rating, rescaled to the same range, is 0.9, the loss is (0.8 − 0.9)² = 0.01.</p>
+<h4>3. Triplet (for anchor, positive, negative)</h4>
+<p><strong>Everyday picture:</strong> a sentence (the anchor), one that should be near it (the positive) and one that should be far (the negative). The rule is not “positive close, negative far” in absolute terms, but “the positive must be closer than the negative by at least a safety margin”.</p>
+<div class="eq" data-tex="\htmlData{sym=Ltrip}{\mathcal{L}} = \htmlData{sym=maxz}{\max}\big(\htmlData{sym=dap}{\|s_a - s_p\|} - \htmlData{sym=dan}{\|s_a - s_n\|} + \htmlData{sym=eps}{\epsilon},\ 0\big)" data-fallback="L = max(‖s_a − s_p‖ − ‖s_a − s_n‖ + ε, 0)"></div>
+<div class="symtable" data-syms="Ltrip,dap,dan,eps,maxz"></div>
+<p class="inwords"><strong>In words:</strong> “if the positive is not at least ε closer to the anchor than the negative, pay the shortfall; otherwise pay nothing.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with ε = 1 (the paper's value), d(a, p) = 0.5 and d(a, n) = 1.2 give 0.5 − 1.2 + 1 = 0.3 of loss. Move the negative out to 1.6 and the loss is max(−0.1, 0) = 0: nothing left to learn from this triplet.</p>
+<div class="play" id="trip-demo">
+  <svg id="trip-svg" viewBox="0 0 440 300" role="img" aria-label="Drag the positive and negative sentences around the anchor"></svg>
+  <p class="readout" id="trip-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the blue dot is the anchor sentence, the green dot the positive and the red dot the negative; drag the green and red dots. The inner dashed circle has radius d(a, p), the anchor-to-positive distance. The outer circle is that radius plus the margin ε = 1: the negative must sit outside it for the loss to be zero. While the red dot is inside the outer ring, the readout shows the loss and the two forces training would apply: pull the positive in, push the negative out. Once it is outside, the triplet teaches nothing, which is why later systems deliberately <em>mine</em> hard triplets whose negatives sit inside the ring.</p>
+<h4>Why it matters today</h4>
+<p>All three objectives are still in use; today's embedding models are mostly trained with a fourth, the in-batch softmax loss popularised for retrieval by <a href="dpr.html">DPR</a>, where every other example in the batch is a negative. The <a data-lesson="primer/ml/losses.html">losses lesson</a> covers the family.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Training details <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S3.SS1">original</a></span></h3>
+<ul>
+  <li><strong>Data:</strong> SNLI (570,000 sentence pairs) plus MultiNLI (430,000 pairs), each labelled contradiction, entailment or neutral.</li>
+  <li><strong>Objective:</strong> the 3-way softmax classifier, for one <span class="t" data-t="epoch">epoch</span>.</li>
+  <li><strong>Settings:</strong> <span class="t" data-t="batch">batch</span> size 16, the <span class="t" data-t="adam">Adam</span> optimizer with <span class="t" data-t="learning rate">learning rate</span> 2 × 10<sup>−5</sup>, linear <span class="t" data-t="warmup">warm-up</span> over the first 10% of training, MEAN pooling.</li>
+</ul>
+<p><strong>Everyday picture:</strong> this is a short refresher course, not a degree. BERT already knows the language from pre-training; one pass over a million labelled pairs teaches it to lay out its knowledge so that cosine similarity means something.</p>
+</section>
+
+<section id="s4">
+<h2>4 Evaluation: semantic textual similarity <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Humans rated thousands of sentence pairs from 0 (unrelated) to 5 (same meaning). A good embedding model should put the pairs in the same <em>order</em> as the humans. We do not care whether its cosine for a “5” pair is 0.9 or 0.7, only that the “5” pairs come out ahead of the “3” pairs.</p>
+<h4>Tiny example: Spearman rank correlation</h4>
+<p>Four pairs with human scores 4.8, 3.9, 2.0 and 0.5 (ranks 1, 2, 3, 4) get cosines 0.91, 0.72, 0.80 and 0.30 (ranks 1, 3, 2, 4). The rank differences are 0, −1, 1 and 0.</p>
+<div class="eq" data-tex="\htmlData{sym=rho}{\rho} = 1 - \frac{6\,\htmlData{sym=sumd2}{\sum d_i^2}}{\htmlData{sym=npairs}{m}\,(\htmlData{sym=npairs}{m}^2 - 1)}" data-fallback="ρ = 1 − 6 Σ d_i² / (m (m² − 1))"></div>
+<div class="symtable" data-syms="rho,sumd2,npairs"></div>
+<p class="inwords"><strong>In words:</strong> “1 minus a penalty that grows with how much the two rankings disagree; 1 means identical order, 0 means no relation, −1 means reversed.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Σd² = 0 + 1 + 1 + 0 = 2, m = 4, so ρ = 1 − 12 / 60 = 0.8. The paper reports ρ × 100, so this would be “80”.</p>
+<h4>4.1 Without any similarity training</h4>
+<div class="play" id="sts-bars"></div>
+<p class="reading"><strong>Reading it:</strong> each bar is a method's average Spearman correlation (× 100) over seven STS datasets, none of which the models were trained on. The grey bars are the obvious shortcuts: plain BERT's [CLS] vector scores 29.2 and averaged BERT token vectors 54.8, both <em>below</em> averaged GloVe word vectors (61.3). The coloured bars are purpose-built sentence encoders; SBERT (74.9 base, 76.6 large) beats InferSent (65.0) and Universal Sentence Encoder (71.2). Selected averages from Table 1 of Reimers and Gurevych (2019).</p>
+<h4>4.2 With similarity training: the cross-encoder still wins</h4>
+<p>Fine-tuned on the STS benchmark's own training data (after NLI), the BERT cross-encoder reaches 88.3 (base) against SBERT's 85.4. Reading both sentences together is genuinely more accurate. The trade is roughly three points of correlation for an enormous speed-up, and it explains the modern two-stage design: a bi-encoder retrieves a shortlist fast, a <span class="t" data-t="reranker">cross-encoder reranks</span> it carefully.</p>
+<h4>4.3 A harder test: argument similarity</h4>
+<p>On the Argument Facet Similarity corpus (arguments about gun control, gay marriage and the death penalty), SBERT nearly matches BERT when trained and tested on the same topics. Trained on two topics and tested on the third, it falls about 7 points behind (50.7 against 57.2 Spearman for the base models). The authors' explanation: BERT can compare two arguments word by word with attention; SBERT must place an argument on an unseen topic in the right spot in vector space on its own, which is harder.</p>
+<h4>4.4 Wikipedia sections</h4>
+<p>Using the triplet objective on about 1.8 million triplets (anchor and positive from the same Wikipedia section, negative from another section of the same article), SBERT reached 80.4% accuracy against 74% for the earlier BiLSTM approach.</p>
+<h4>Why it matters today</h4>
+<p>“Measure the ranking, not the raw score” is the right habit for any similarity system. Cosine values from different models are not comparable (see anisotropy in the <a data-lesson="primer/ml/embeddings/similarity.html">similarity lesson</a>); orderings are.</p>
+</section>
+
+<section id="s5">
+<h2>5 Evaluation: SentEval <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S5">original</a></span></h2>
+<blockquote class="quote">“Cosine-similarity treats all dimensions equally.”<cite>Reimers and Gurevych (2019), §5</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>SentEval freezes the sentence vectors and trains a small <span class="t" data-tip-title="Logistic regression" data-tip="The simplest classifier: a weighted sum of the inputs passed through a sigmoid. Training learns one weight per input, so it can ignore useless inputs and amplify useful ones.">logistic regression</span> classifier on top for tasks such as sentiment. That is a different exam from cosine similarity: a classifier can learn to pay attention to the few dimensions that matter and ignore the rest.</p>
+<h4>Tiny example</h4>
+<p>Two review sentences have vectors (0.1, 5) and (−0.1, 5): the second number is a big “topic: film” signal and the first is a small sentiment signal. Their cosine is (−0.01 + 25) / (5.001 × 5.001) = 0.9992: nearly identical. A classifier with weights (10, 0) gives them scores +1 and −1: perfectly separated. Averaged BERT vectors do reasonably well on SentEval (84.9 average) while failing at cosine similarity for exactly this reason.</p>
+<h4>Result</h4>
+<p>SBERT-NLI-large averages 87.7 over seven transfer tasks, about 2 points ahead of InferSent (85.6) and Universal Sentence Encoder (85.1), with large gains on the sentiment tasks. The authors stress that transfer learning is not SBERT's purpose; fine-tuning all of BERT is better for that.</p>
+</section>
+
+<section id="s6">
+<h2>6 Ablation study <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S6">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Take the recipe apart one ingredient at a time and taste the result. Which pooling rule matters? Which pieces does the training classifier need to see?</p>
+<div class="play" id="abl-demo">
+  <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem">
+    <button type="button" data-abl="concat" aria-pressed="true">What the classifier sees</button>
+    <button type="button" data-abl="pool" aria-pressed="false">Pooling rule</button>
+  </div>
+  <div id="abl-bars"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is a Spearman score (× 100) on the STS benchmark's development set. In <strong>what the classifier sees</strong>, feeding it only (u, v) scores 66.0; adding the element-wise difference |u − v| jumps to 80.8, the best. The difference vector matters most, because it directly tells the classifier how far apart the two sentences are in each dimension, which is what pulls similar sentences together during training. Adding the element-wise product u × v, used by InferSent, slightly hurts here. In <strong>pooling rule</strong>, the choice barely matters for NLI training, but with regression training MAX pooling collapses to 69.9. Values from Table 6 of Reimers and Gurevych (2019); concatenation results use MEAN pooling.</p>
+<p>Note that the concatenation choice only affects training. At inference time only u, v and cosine are used.</p>
+</section>
+
+<section id="s7">
+<h2>7 Computational efficiency <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S7">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="gpu">GPU</span> processes a batch of sentences as one rectangle of numbers, so short sentences are <span class="t" data-t="padding">padded</span> to the length of the longest one in the batch. If a batch mixes a 5-word sentence with a 60-word one, the short one wastes 55 slots. <strong>Smart batching</strong> sorts sentences by length first, so each batch holds similar lengths and little is wasted.</p>
+<div class="play" id="batch-demo">
+  <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem">
+    <button type="button" data-batch="plain" aria-pressed="true">Batches in arrival order</button>
+    <button type="button" data-batch="smart" aria-pressed="false">Smart batching (sorted by length)</button>
+  </div>
+  <svg id="batch-svg" viewBox="0 0 560 260" role="img" aria-label="Sentences in batches of four, with padding shown"></svg>
+  <p class="readout" id="batch-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is one sentence (illustrative lengths), grouped into batches of four (the separated blocks). Solid blue is real tokens; hatched grey is padding, the slots the GPU computes on but throws away. In arrival order, one long sentence forces its whole batch to its length. Sorted, each batch is nearly rectangular. The readout counts computed slots. The paper measured smart batching speeding SBERT up by 89% on CPU and 48% on GPU, reaching about 2,042 sentences per second on a V100 (against 1,876 for InferSent and 1,318 for Universal Sentence Encoder). On CPU, the simpler InferSent is about 65% faster.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2019</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Today</th><th>Why</th><th>Where to learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Fine-tune on NLI labels with a softmax classifier</td><td>Contrastive training on huge numbers of (query, passage) pairs with in-batch negatives</td><td>Retrieval data is plentiful and the loss matches the use</td><td><a href="dpr.html">DPR companion</a>, <a data-lesson="primer/ml/embeddings/contrastive.html">contrastive lesson</a></td></tr>
+    <tr><td>BERT-base, 768 dimensions</td><td>Many sizes; some models let you truncate the vector</td><td>Storage and speed trade-offs</td><td><a href="matryoshka.html">Matryoshka companion</a></td></tr>
+    <tr><td>Brute-force cosine over all pairs</td><td>Approximate nearest-neighbour indexes</td><td>Millions to billions of vectors</td><td><a href="hnsw.html">HNSW companion</a></td></tr>
+    <tr><td>One vector per sentence</td><td>Also multi-vector models (one vector per token)</td><td>Finer matching without cross-encoding</td><td><a href="colbert.html">ColBERT companion</a></td></tr>
+  </tbody>
+</table></div>
+<p>What survived intact: the bi-encoder shape, pooling a transformer's token vectors into one embedding, cosine comparison, and the idea of fine-tuning a pre-trained model specifically so that its vectors are comparable.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Nils Reimers and Iryna Gurevych, <em>Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks</em>, EMNLP-IJCNLP 2019, <a href="https://arxiv.org/abs/1908.10084">arXiv:1908.10084</a> (CC BY-SA 4.0). Quotations are brief and attributed; selected results are restated with attribution; all figures are redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    pairs: { tex: "\\text{pairs}", name: "Number of pairs", meaning: "How many distinct two-sentence combinations a collection has. A cross-encoder must run once per pair.", shape: "a whole number", example: "49,995,000 for 10,000 sentences" },
+    nsent: { tex: "n", name: "Collection size", meaning: "How many sentences you want to compare.", shape: "a whole number", example: "10,000" },
+    uvec: { tex: "u", name: "Sentence vector", meaning: "The single fixed-size vector for sentence A, produced by pooling BERT's token vectors.", shape: "n numbers (768 for BERT-base)", example: "(0.50, …) in the pooling demo; (1, 2) in the toy" },
+    vvec: { tex: "v", name: "Second sentence vector", meaning: "The vector for sentence B, from the same network (shared weights).", shape: "768 numbers", example: "(2, 1)" },
+    Ltok: { tex: "L", name: "Number of tokens", meaning: "How many token vectors BERT produced for the sentence.", shape: "a whole number", example: "5 in the demo" },
+    sumL: { tex: "\\sum_{i=1}^{L}", name: "Add over tokens", meaning: "Add up the vectors of every token, one column at a time.", shape: "one vector", example: "0.2 + 0.9 + 0.7 + 0.1 + 0.6 = 2.5" },
+    hi: { tex: "h_i", name: "Token vector", meaning: "BERT's output vector for token i: already contextual, since attention mixed in the other words.", shape: "768 numbers", example: "(0.2, …) for [CLS]" },
+    ovec: { tex: "o", name: "Label probabilities", meaning: "The classifier's probability for each label: entailment, neutral, contradiction.", shape: "k numbers summing to 1", example: "(0.7, 0.2, 0.1)" },
+    softmaxs: { tex: "\\text{softmax}", name: "Softmax", meaning: "Turns the k scores into positive shares that add to 1.", shape: "keeps the shape", example: "(2.0, 0.8, 0.1) → (0.69, 0.21, 0.10)" },
+    Wt: { tex: "W_t", name: "Classifier weights", meaning: "A small learned matrix that maps the glued 3n-number vector to k label scores. Used only in training.", shape: "3n × k (2,304 × 3)", example: "6,912 numbers" },
+    absdiff: { tex: "|u - v|", name: "Element-wise distance", meaning: "Subtract the vectors position by position and drop the minus signs: how far apart the sentences are in each dimension. The ablation shows this is the most important piece.", shape: "n numbers", example: "|(1,2) − (2,1)| = (1, 1)" },
+    ndim: { tex: "n", name: "Embedding size", meaning: "How many numbers each sentence vector has. (The paper reuses n; here it is the width, not the collection size.)", shape: "768 or 1024", example: "768" },
+    klab: { tex: "k", name: "Number of labels", meaning: "How many classes the classifier chooses between.", shape: "a whole number", example: "3 for NLI" },
+    Lmse: { tex: "\\mathcal{L}", name: "Loss", meaning: "The number training makes smaller. Here, the squared error between predicted and true similarity.", shape: "0 or more", example: "0.01" },
+    cosuv: { tex: "\\cos(u, v)", name: "Cosine similarity", meaning: "How closely the two sentence vectors point in the same direction, from −1 to 1.", shape: "−1 … 1", example: "0.8" },
+    ygold: { tex: "y", name: "Human rating", meaning: "The gold similarity score for the pair, rescaled to the cosine's range.", shape: "a number", example: "0.9 (illustrative)" },
+    Ltrip: { tex: "\\mathcal{L}", name: "Triplet loss", meaning: "The shortfall by which the positive fails to beat the negative by the margin, or 0 if it does.", shape: "0 or more", example: "0.3" },
+    maxz: { tex: "\\max(\\cdot, 0)", name: "Never below zero", meaning: "Keep the value if it is positive, otherwise use 0: satisfied triplets contribute nothing.", shape: "0 or more", example: "max(−0.1, 0) = 0" },
+    dap: { tex: "\\|s_a - s_p\\|", name: "Anchor to positive", meaning: "Straight-line (Euclidean) distance between the anchor's and the positive's vectors. Should be small.", shape: "0 or more", example: "0.5" },
+    dan: { tex: "\\|s_a - s_n\\|", name: "Anchor to negative", meaning: "Distance between the anchor's and the negative's vectors. Should be large.", shape: "0 or more", example: "1.2" },
+    eps: { tex: "\\epsilon", name: "Margin", meaning: "How much closer the positive must be than the negative before the loss is satisfied.", shape: "a positive number", example: "1 in the paper" },
+    rho: { tex: "\\rho", name: "Spearman correlation", meaning: "How well two rankings agree: 1 identical, 0 unrelated, −1 reversed. Only the order matters, not the values.", shape: "−1 … 1", example: "0.8" },
+    sumd2: { tex: "\\sum d_i^2", name: "Squared rank differences", meaning: "For each pair, the difference between its human rank and its model rank, squared, then added up.", shape: "0 or more", example: "0 + 1 + 1 + 0 = 2" },
+    npairs: { tex: "m", name: "Number of rated pairs", meaning: "How many sentence pairs are being ranked.", shape: "a whole number", example: "4" },
+  },
+
+  blocks: {
+    sentA: { title: "Sentence A", body: "<p>The first sentence, split into WordPiece tokens with [CLS] at the front.</p>", shape: "L tokens" },
+    sentB: { title: "Sentence B", body: "<p>The second sentence. It never meets sentence A inside BERT: that is the whole point.</p>", shape: "L' tokens" },
+    bert: { title: "BERT (one network, used twice)", body: "<p>A 12-layer transformer (24 for large) that turns each token into a context-aware vector. Both sides use <em>the same weights</em>, so the outputs live in the same space.</p>", shape: "L × 768", lesson: "primer/ml/transformer.html" },
+    tied: { title: "Tied weights", body: "<p>“Siamese” means the two towers are one network. Training either side updates both.</p>", shape: "one set of ~110M parameters" },
+    pool: { title: "Pooling", body: "<p>Turns L token vectors into one sentence vector: MEAN (default), MAX or CLS. Try the pooling demo above.</p>", shape: "L × 768 → 768", lesson: "primer/ml/embeddings/contrastive.html" },
+    uv: { title: "Sentence embeddings u and v", body: "<p>One vector per sentence. At inference, you compute these once per sentence and store them.</p>", shape: "768 each" },
+    concat: { title: "(u, v, |u − v|)", body: "<p>The three vectors glued end to end. The element-wise difference turned out to be the most important part (section 6).</p>", shape: "3 × 768 = 2,304" },
+    clf: { title: "Softmax classifier", body: "<p>One matrix W<sub>t</sub> (2,304 × 3) plus softmax. It exists only to give BERT a training signal; it is discarded afterwards.</p>", shape: "2,304 → 3" },
+    labels: { title: "NLI labels", body: "<p>Entailment (B follows from A), neutral, or contradiction. Cross-entropy against the true label drives training.</p>", shape: "3 classes" },
+    cos: { title: "Cosine similarity", body: "<p>The only operation at inference: u · v / (‖u‖ ‖v‖). With stored vectors, 50 million comparisons take about 0.01 seconds.</p>", shape: "one number", lesson: "primer/ml/embeddings/similarity.html" },
+    score: { title: "Similarity score", body: "<p>Rank sentences by this score for search, or group them by it for clustering.</p>", shape: "−1 … 1" },
+  },
+
+  onReady(P) {
+    costDemo();
+    poolDemo();
+    tripletDemo();
+    stsBars();
+    ablation();
+    batching();
+  },
+};
+
+const fmtInt = (x) => Math.round(x).toLocaleString("en-US");
+function human(sec) {
+  if (sec < 1e-3) return `${(sec * 1e6).toFixed(0)} µs`;
+  if (sec < 1) return `${(sec * 1e3).toFixed(sec < 0.01 ? 2 : 0)} ms`;
+  if (sec < 120) return `${sec.toFixed(1)} s`;
+  if (sec < 7200) return `${(sec / 60).toFixed(1)} min`;
+  if (sec < 360000) return `${(sec / 3600).toFixed(1)} hours`;
+  if (sec < 3.15e7 * 2) return `${(sec / 86400).toFixed(0)} days`;
+  return `${(sec / 3.15e7).toLocaleString("en-US", { maximumFractionDigits: 0 })} years`;
+}
+function barRow(label, frac, right, color, cols) {
+  return `<div class="share-row" style="${cols ? "grid-template-columns:" + cols : ""}"><span>${label}</span><div><div class="share-bar" style="width:${Math.max(0.5, Math.min(100, frac * 100)).toFixed(1)}%;${color ? "background:" + color : ""}"></div></div><span>${right}</span></div>`;
+}
+function toggles(attr, onPick) {
+  const btns = document.querySelectorAll(`[data-${attr}]`);
+  btns.forEach((b) => b.addEventListener("click", () => { btns.forEach((x) => x.setAttribute("aria-pressed", String(x === b))); onPick(b.dataset[attr]); }));
+}
+
+/* ---- 65 hours vs 5 seconds ---- */
+function costDemo() {
+  const PAIRS_PER_S = 49995000 / (65 * 3600); // cross-encoder, derived from the paper
+  const EMB_PER_S = 10000 / 5; // SBERT embeddings per second (~5 s for 10k)
+  const COS_PER_S = 49995000 / 0.01; // cosine comparisons per second (~0.01 s for all pairs of 10k)
+  let mode = "pairs";
+  const nS = document.getElementById("cd-n");
+  function draw() {
+    const n = Math.round(Math.pow(10, +nS.value));
+    document.getElementById("cd-n-v").textContent = fmtInt(n);
+    let bert, sbert, detail;
+    if (mode === "pairs") {
+      const pairs = (n * (n - 1)) / 2;
+      bert = pairs / PAIRS_PER_S;
+      sbert = n / EMB_PER_S + pairs / COS_PER_S;
+      detail = `${fmtInt(pairs)} pairs. SBERT: embed ${fmtInt(n)} sentences (${human(n / EMB_PER_S)}) + compare all pairs (${human(pairs / COS_PER_S)}).`;
+    } else {
+      bert = n / PAIRS_PER_S;
+      sbert = 1 / EMB_PER_S + n / COS_PER_S;
+      detail = `One query against ${fmtInt(n)} stored sentences. SBERT: embed the query (${human(1 / EMB_PER_S)}) + ${fmtInt(n)} cosines (${human(n / COS_PER_S)}), after a one-off ${human(n / EMB_PER_S)} to embed the collection.`;
+    }
+    document.getElementById("cd-cards").innerHTML =
+      `<div class="timecard">BERT cross-encoder<b>${human(bert)}</b>reads every pair together</div>` +
+      `<div class="timecard">SBERT bi-encoder<b>${human(sbert)}</b>embeds once, then compares vectors</div>`;
+    document.getElementById("cd-readout").innerHTML = `${detail} Ratio: <strong>${fmtInt(bert / sbert)}×</strong>.`;
+  }
+  nS.addEventListener("input", draw);
+  toggles("mode", (m) => { mode = m; draw(); });
+  draw();
+}
+
+/* ---- pooling ---- */
+function poolDemo() {
+  const toks = ["[CLS]", "a", "cat", "sat", "[SEP]"];
+  const H = [[0.2, -0.4, 0.9, 0.1], [0.9, 0.3, -0.2, 0.0], [0.7, 0.8, 0.1, -0.5], [0.1, 0.6, 0.4, 0.3], [0.6, -0.1, 0.0, 0.2]];
+  let mode = "MEAN";
+  function draw() {
+    const cols = [0, 1, 2, 3];
+    let out, src = cols.map(() => -1);
+    if (mode === "MEAN") out = cols.map((c) => H.reduce((a, r) => a + r[c], 0) / H.length);
+    else if (mode === "MAX") out = cols.map((c) => { let b = 0; H.forEach((r, i) => { if (r[c] > H[b][c]) b = i; }); src[c] = b; return H[b][c]; });
+    else { out = H[0].slice(); src = cols.map(() => 0); }
+    const f = (x) => (x >= 0 ? "+" : "") + x.toFixed(2);
+    document.getElementById("pool-table").innerHTML = `<table class="vgrid"><thead><tr><th>token</th>${cols.map((c) => `<th>dim ${c + 1}</th>`).join("")}</tr></thead><tbody>` +
+      H.map((r, i) => `<tr><td>${toks[i]}</td>${r.map((v, c) => `<td class="${src[c] === i ? "hit" : ""}">${f(v)}</td>`).join("")}</tr>`).join("") +
+      `<tr class="out"><td>${mode} → u</td>${out.map((v) => `<td>${f(v)}</td>`).join("")}</tr></tbody></table>`;
+  }
+  toggles("pool", (m) => { mode = m; draw(); });
+  draw();
+}
+
+/* ---- draggable triplet ---- */
+function tripletDemo() {
+  const svg = document.getElementById("trip-svg");
+  const S = 70, cx = 220, cy = 150; // 1 unit = 70 px
+  const pts = { a: [0, 0], p: [0.3, 0.4], n: [0.72, -0.96] }; // d(a,p) = 0.5, d(a,n) = 1.2, as in the worked example
+  const eps = 1;
+  const NS = "http://www.w3.org/2000/svg";
+  function draw() {
+    const d = (u, v) => Math.hypot(u[0] - v[0], u[1] - v[1]);
+    const dap = d(pts.a, pts.p), dan = d(pts.a, pts.n);
+    const loss = Math.max(dap - dan + eps, 0);
+    const X = (x) => cx + x * S, Y = (y) => cy - y * S;
+    svg.innerHTML =
+      `<circle cx="${X(0)}" cy="${Y(0)}" r="${dap * S}" fill="none" stroke="var(--soft-stroke)" stroke-dasharray="4 3"/>` +
+      `<circle cx="${X(0)}" cy="${Y(0)}" r="${(dap + eps) * S}" fill="${loss > 0 ? "var(--accent-soft)" : "none"}" fill-opacity="0.35" stroke="var(--active)" stroke-dasharray="6 4"/>` +
+      `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(pts.p[0])}" y2="${Y(pts.p[1])}" stroke="var(--soft-stroke)" stroke-width="2"/>` +
+      `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(pts.n[0])}" y2="${Y(pts.n[1])}" stroke="var(--active)" stroke-width="2"/>` +
+      `<g><circle cx="${X(0)}" cy="${Y(0)}" r="9" fill="var(--accent)"/><text x="${X(0) + 12}" y="${Y(0) - 10}">anchor</text></g>` +
+      `<g class="drag" data-pt="p" tabindex="0" aria-label="positive, draggable"><circle cx="${X(pts.p[0])}" cy="${Y(pts.p[1])}" r="11" fill="var(--soft-stroke)"/><text x="${X(pts.p[0]) + 13}" y="${Y(pts.p[1]) + 4}">positive</text></g>` +
+      `<g class="drag" data-pt="n" tabindex="0" aria-label="negative, draggable"><circle cx="${X(pts.n[0])}" cy="${Y(pts.n[1])}" r="11" fill="var(--active)"/><text x="${X(pts.n[0]) + 13}" y="${Y(pts.n[1]) + 4}">negative</text></g>` +
+      `<text x="10" y="290" class="lbl">outer ring = d(a, p) + ε: the negative must be outside it</text>`;
+    document.getElementById("trip-readout").innerHTML = `d(a, p) = ${dap.toFixed(2)}, d(a, n) = ${dan.toFixed(2)}, ε = 1 → loss = max(${dap.toFixed(2)} − ${dan.toFixed(2)} + 1, 0) = <strong>${loss.toFixed(2)}</strong>` +
+      (loss > 0 ? ". Training would pull the positive in and push the negative out." : ". Satisfied: this triplet teaches nothing more.");
+    svg.querySelectorAll(".drag").forEach((g) => {
+      g.addEventListener("pointerdown", (e) => { drag = g.dataset.pt; svg.setPointerCapture(e.pointerId); e.preventDefault(); });
+      g.addEventListener("keydown", (e) => {
+        const k = { ArrowLeft: [-0.1, 0], ArrowRight: [0.1, 0], ArrowUp: [0, 0.1], ArrowDown: [0, -0.1] }[e.key];
+        if (k) { e.preventDefault(); const q = pts[g.dataset.pt]; q[0] += k[0]; q[1] += k[1]; draw(); svg.querySelector(`[data-pt="${g.dataset.pt}"]`).focus(); }
+      });
+    });
+  }
+  let drag = null;
+  svg.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    pts[drag] = [Math.max(-3, Math.min(3, (loc.x - cx) / S)), Math.max(-2, Math.min(2, (cy - loc.y) / S))];
+    draw();
+  });
+  svg.addEventListener("pointerup", () => (drag = null));
+  svg.style.touchAction = "none";
+  draw();
+}
+
+/* ---- Table 1 averages ---- */
+function stsBars() {
+  const rows = [["BERT [CLS] vector", 29.19, 1], ["Avg. BERT embeddings", 54.81, 1], ["Avg. GloVe embeddings", 61.32, 1], ["InferSent (GloVe)", 65.01, 0], ["Universal Sentence Encoder", 71.22, 0], ["SBERT-NLI-base", 74.89, 2], ["SBERT-NLI-large", 76.55, 2]];
+  document.getElementById("sts-bars").innerHTML = `<div class="legend" style="margin:0 0 0.4rem">Average Spearman ρ × 100 over 7 STS datasets (axis 0 to 80)</div>` +
+    rows.map(([m, v, k]) => barRow(m, v / 80, v.toFixed(2), k === 1 ? "var(--wire)" : k === 2 ? "var(--soft-stroke)" : "", "12rem minmax(0,1fr) 3.6rem")).join("");
+}
+
+/* ---- Table 6 ---- */
+function ablation() {
+  const concat = [["(u, v)", 66.04], ["(|u − v|)", 69.78], ["(u × v)", 70.54], ["(u, v, u × v)", 77.44], ["(|u − v|, u × v)", 78.37], ["(u, v, |u − v|, u × v)", 80.44], ["(u, v, |u − v|)", 80.78]];
+  const pool = [["MEAN, NLI", 80.78], ["MAX, NLI", 79.07], ["CLS, NLI", 79.80], ["MEAN, STSb regression", 87.44], ["MAX, STSb regression", 69.92], ["CLS, STSb regression", 86.62]];
+  function draw(which) {
+    const rows = which === "pool" ? pool : concat;
+    const best = Math.max(...rows.map((r) => r[1]));
+    document.getElementById("abl-bars").innerHTML = `<div class="legend" style="margin:0 0 0.4rem">Spearman ρ × 100, STS benchmark development set (axis 50 to 90)</div>` +
+      rows.map(([m, v]) => barRow(m, (v - 50) / 40, v.toFixed(2), v === best ? "var(--soft-stroke)" : "", "12rem minmax(0,1fr) 3.6rem")).join("");
+  }
+  toggles("abl", draw);
+  draw("concat");
+}
+
+/* ---- smart batching ---- */
+function batching() {
+  const lens = [12, 48, 9, 15, 30, 11, 52, 14, 8, 27, 33, 10, 45, 13, 29, 16]; // illustrative token counts
+  const svg = document.getElementById("batch-svg");
+  let smart = false;
+  function draw() {
+    const order = lens.map((l, i) => i);
+    if (smart) order.sort((a, b) => lens[a] - lens[b]);
+    const B = 4, max = Math.max(...lens), W = 500 / max;
+    let s = `<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="var(--wire)" stroke-width="2"/></pattern></defs>`;
+    let real = 0, computed = 0;
+    for (let b = 0; b < order.length / B; b++) {
+      const idx = order.slice(b * B, b * B + B);
+      const bmax = Math.max(...idx.map((i) => lens[i]));
+      idx.forEach((i, j) => {
+        const y = 8 + b * 62 + j * 13;
+        s += `<rect x="40" y="${y}" width="${bmax * W}" height="10" fill="url(#hatch)" opacity="0.6"/><rect x="40" y="${y}" width="${lens[i] * W}" height="10" fill="var(--accent)"/>`;
+        real += lens[i]; computed += bmax;
+      });
+      s += `<text x="4" y="${8 + b * 62 + 30}" class="lbl">batch ${b + 1}</text>`;
+    }
+    svg.innerHTML = s;
+    document.getElementById("batch-readout").innerHTML = `${fmtInt(real)} real tokens, <strong>${fmtInt(computed)} computed slots</strong> (${Math.round((1 - real / computed) * 100)}% wasted on padding).`;
+  }
+  toggles("batch", (m) => { smart = m === "smart"; draw(); });
+  draw();
+}
+</script>
+</body>
+</html>

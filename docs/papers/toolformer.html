@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toolformer, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Schick et al. (2023), in which a language model teaches itself when calling a tool helps.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="toolformer">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Approach</a>
+        <ol>
+          <li><a href="#s2-rep">Writing a tool call as text</a></li>
+          <li><a href="#s2-sample">Sampling candidate calls</a></li>
+          <li><a href="#s2-filter">Filtering: keep only calls that help</a></li>
+          <li><a href="#s2-ft">Fine-tuning and inference</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Tools</a></li>
+      <li><a href="#s4">4 Experiments</a></li>
+      <li><a href="#s5">5 Analysis</a></li>
+      <li><a href="#s7">7–8 Limitations and conclusion</a></li>
+      <li><a href="#today">From Toolformer to today</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Toolformer, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Schick, Dwivedi-Yu, Dessì, Raileanu, Lomeli, Zettlemoyer, Cancedda and Scialom (2023), <em>Toolformer: Language Models Can Teach Themselves to Use Tools</em>.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2302.04761">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2302.04761">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2302.04761">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, so its tables are not reproduced; key numbers appear in this page's own tables and are attributed. Figures are redrawn from scratch, and example texts are paraphrased. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover, tab to, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s2-filter">filter calculator</a> is the heart of the paper: set the probabilities and watch a candidate tool call get kept or thrown away.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. Tool design in code is covered in the <a class="lesson" data-lesson="primer/agents/tools.html">tools lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We introduce Toolformer, a model trained to decide which APIs to call, when to call them, what arguments to pass, and how to best incorporate the results into future token prediction.”<cite>Schick et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2302.04761">Read the original</a></cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A bright student who is bad at long division and does not know today's date. Give them a calculator and a calendar, and they still have to learn <em>when</em> reaching for each one actually helps. Toolformer is a way for a <span class="t" data-t="llm">language model</span> to learn that by itself: try tool calls on ordinary text, and keep only the ones whose answers made the rest of the text easier to predict.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>A model can learn to use a calculator, a question-answering system, a search engine, a translator and a calendar with only a handful of human-written examples per tool.</li>
+  <li>Learning is <strong>self-supervised</strong>: the model's own prediction <span class="t" data-t="loss">loss</span> decides which tool calls were useful.</li>
+  <li>A 6.7-billion-parameter model with tools beat the 175-billion-parameter GPT-3 on several zero-shot benchmarks, without losing its ordinary language-modelling ability.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Today's models are taught <span class="t" data-t="tool calling">tool calling</span> mostly through large, curated training sets, but Toolformer's core test (does the tool's answer actually help?) remains a useful way to think about when an agent should call a tool at all.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Large models are paradoxical: they write essays and code, yet fumble arithmetic, forget what year it is, and invent facts. Much smaller, simpler tools do those jobs perfectly. The obvious fix is to let the model call the tools. Earlier attempts needed lots of human annotation showing when to call what, or worked only for one task decided in advance.</p>
+<h4>The two requirements the paper sets</h4>
+<ol>
+  <li>Learn tool use <strong>without much human annotation</strong>, partly because what a human finds useful may differ from what helps the model.</li>
+  <li>Keep the model <strong>general</strong>: it decides for itself when and how to use which tool, on any text.</li>
+</ol>
+</section>
+
+<section id="s2">
+<h2>2 Approach <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Take a huge pile of ordinary web text. For each passage, let the model suggest a few places where a tool call <em>might</em> help and what it would ask. Actually run those calls. Then keep a call only if seeing its answer made the model better at predicting the words that follow. Finally, fine-tune the model on the passages with the kept calls written in. The model has now seen thousands of examples of useful tool calls, all chosen by its own predictions.</p>
+<p>Hover or tap any block in the redrawn pipeline.</p>
+<figure class="ix wide" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 640 210" role="img" aria-label="Toolformer pipeline: text, sample calls, execute, filter, augmented text, fine-tune">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M82,95 H100" marker-end="url(#arr)"/>
+    <path class="wire" d="M198,95 H216" marker-end="url(#arr)"/>
+    <path class="wire" d="M312,95 H330" marker-end="url(#arr)"/>
+    <path class="wire" d="M436,95 H454" marker-end="url(#arr)"/>
+    <path class="wire" d="M536,95 H554" marker-end="url(#arr)"/>
+    <path class="wire" d="M596,120 V178 H40 V120" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="text" tabindex="0" role="button" aria-label="Plain text x"><rect x="6" y="72" width="76" height="46" rx="6"/><text x="44" y="92" text-anchor="middle">plain text</text><text x="44" y="108" text-anchor="middle" class="lbl">x (CCNet)</text></g>
+    <g class="blk attn" data-block="sample" tabindex="0" role="button" aria-label="Sample API calls"><rect x="100" y="72" width="98" height="46" rx="7"/><text x="149" y="92" text-anchor="middle">1 Sample</text><text x="149" y="108" text-anchor="middle" class="lbl">where + what</text></g>
+    <g class="blk ff" data-block="execute" tabindex="0" role="button" aria-label="Execute API calls"><rect x="216" y="72" width="96" height="46" rx="7"/><text x="264" y="92" text-anchor="middle">2 Execute</text><text x="264" y="108" text-anchor="middle" class="lbl">get results r</text></g>
+    <g class="blk soft" data-block="filter" tabindex="0" role="button" aria-label="Filter API calls"><rect x="330" y="72" width="106" height="46" rx="7"/><text x="383" y="92" text-anchor="middle">3 Filter</text><text x="383" y="108" text-anchor="middle" class="lbl">L⁻ − L⁺ ≥ τ_f ?</text></g>
+    <g class="blk emb" data-block="augmented" tabindex="0" role="button" aria-label="Augmented text x star"><rect x="454" y="72" width="82" height="46" rx="6"/><text x="495" y="92" text-anchor="middle">x* with</text><text x="495" y="108" text-anchor="middle">calls</text></g>
+    <g class="blk lin" data-block="finetune" tabindex="0" role="button" aria-label="Fine-tune the model"><rect x="554" y="72" width="80" height="46" rx="7"/><text x="594" y="92" text-anchor="middle">4 Fine-</text><text x="594" y="108" text-anchor="middle">tune M</text></g>
+    <text x="318" y="198" text-anchor="middle" class="lbl">the same model M suggests the calls, judges them, and is then trained on the survivors</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block, left to right.</p></div>
+  </div>
+  <figcaption>The Toolformer data pipeline, redrawn from the paper's Figure 2. Based on Schick et al. (2023), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> ordinary text enters on the left. Step 1, the model itself proposes candidate positions and calls. Step 2 runs them for real. Step 3 is the judge: each call is scored by how much its result lowers the model's loss on the next few words, and only calls above a threshold survive. Step 4 fine-tunes the same model on text with the surviving calls written in. The dashed loop is the point: no human decided which calls were good, the model's own predictions did.</p>
+</section>
+
+<section id="s2-rep">
+<h3>Writing a tool call as text</h3>
+<h4>Tiny example</h4>
+<p>A tool call is written straight into the text, between special markers. The paper uses the characters “[”, “]” and “-&gt;” so the model's <span class="t" data-t="vocabulary">vocabulary</span> needs no new <span class="t" data-t="token">tokens</span>. An example written for this page:</p>
+<p style="font-family:ui-monospace,monospace">The train covers 180 km in 1.5 hours, an average speed of <mark>[Calculator(180 / 1.5) -&gt; 120.0]</mark> 120 km/h.</p>
+<div class="eq" data-tex="\htmlData{sym=ec}{\text{e}(c)} = \texttt{<API>}\;\htmlData{sym=ac}{a_c}\texttt{(}\htmlData{sym=ic}{i_c}\texttt{)}\;\texttt{</API>} \qquad \htmlData{sym=ecr}{\text{e}(c, r)} = \texttt{<API>}\;\htmlData{sym=ac}{a_c}\texttt{(}\htmlData{sym=ic}{i_c}\texttt{)} \to \htmlData{sym=r}{r}\;\texttt{</API>}" data-fallback="e(c) = <API> a_c(i_c) </API>,  e(c, r) = <API> a_c(i_c) → r </API>"></div>
+<div class="symtable" data-syms="c,ac,ic,r,ec,ecr"></div>
+<p class="inwords"><strong>In words:</strong> “a call is written as the tool's name and its input between markers; the version with a result also includes an arrow followed by what the tool returned.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a<sub>c</sub> = Calculator, i<sub>c</sub> = “180 / 1.5”, r = “120.0”. So e(c) is “[Calculator(180 / 1.5)]” and e(c, r) is “[Calculator(180 / 1.5) -&gt; 120.0]”.</p>
+<h4>Why it matters</h4>
+<p>Writing calls as plain text means any language model can emit them, and any text corpus can be annotated with them. Modern APIs return calls as structured blocks instead, validated against a schema, but the principle is the same; see <a data-lesson="primer/agents/llm.html">talking to a model</a>.</p>
+</section>
+
+<section id="s2-sample">
+<h3>Sampling candidate calls <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S2.SS0.SSS0.Px1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Show the model a few examples of text with helpful calls written in (a short prompt per tool), then give it a new passage and ask, at every position, “how likely would you be to open a tool call right here?” Positions where that probability is high become candidates, and the model writes a few possible calls at each.</p>
+<div class="eq" data-tex="\htmlData{sym=pi}{p_i} = \htmlData{sym=pM}{p_M}\big(\texttt{<API>} \mid \htmlData{sym=Px}{P(\mathbf{x})}, \htmlData{sym=x1i}{x_{1:i-1}}\big), \qquad \htmlData{sym=I}{I} = \{\, i \mid \htmlData{sym=pi}{p_i} > \htmlData{sym=taus}{\tau_s} \,\}" data-fallback="p_i = p_M(<API> | P(x), x_1:i−1),  I = { i | p_i > τ_s }"></div>
+<div class="symtable" data-syms="x,pM,Px,x1i,pi,taus,I"></div>
+<p class="inwords"><strong>In words:</strong> “for every position i, ask the model how likely it is to start a tool call there, given the prompt and the text so far; keep the positions where that is above a threshold (at most the top k), and sample up to m candidate calls at each.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if τ<sub>s</sub> = 0.05 and the model gives 0.31 to opening a call right after “an average speed of” but 0.002 after “The train”, only the first position is kept.</p>
+</section>
+
+<section id="s2-filter">
+<h3>Filtering: keep only calls that help <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S2.SS0.SSS0.Px3">original</a></span></h3>
+<blockquote class="quote">“Intuitively, an API call is helpful to M if providing it with both the input and the output of this call makes it easier for the model to predict future tokens.”<cite>Schick et al. (2023), §2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Cover the rest of a sentence and ask the student to guess the next few words three ways: with no calculator, with the calculator's <em>question</em> but not its answer, and with the calculator's answer. If the answer makes the guesses much better than either alternative, the calculator was worth using at that spot. Comparing against “question but no answer” is the clever part: it rules out calls that help merely by rephrasing the text.</p>
+<h4>Tiny example</h4>
+<p>Score the next three tokens after the call position, weighting nearer tokens more (weights 0.333, 0.267 and 0.2). The model's probability for each correct next token:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Condition</th><th class="num">token 1</th><th class="num">token 2</th><th class="num">token 3</th><th class="num">weighted loss</th></tr></thead>
+  <tbody>
+    <tr><td>no call at all</td><td class="num">0.02</td><td class="num">0.30</td><td class="num">0.50</td><td class="num">1.764</td></tr>
+    <tr><td>call, but no result</td><td class="num">0.03</td><td class="num">0.30</td><td class="num">0.50</td><td class="num">1.629</td></tr>
+    <tr class="hl"><td>call with its result</td><td class="num">0.90</td><td class="num">0.60</td><td class="num">0.55</td><td class="num">0.291</td></tr>
+  </tbody>
+</table></div>
+<p>For example, the first row is 0.333 × (−ln 0.02) + 0.267 × (−ln 0.30) + 0.2 × (−ln 0.50) = 0.333 × 3.912 + 0.267 × 1.204 + 0.2 × 0.693 = 1.304 + 0.321 + 0.139 = 1.764. The best alternative to the full call is the smaller of the first two rows, 1.629. The call with its result improves on that by 1.629 − 0.291 = <strong>1.338</strong>. With a threshold of 1.0, the call is kept.</p>
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=Li}{L_i}(\htmlData{sym=z}{\mathbf{z}}) = -\htmlData{sym=sumj}{\sum_{j=i}^{n}} \htmlData{sym=w}{w_{j-i}} \cdot \htmlData{sym=log}{\log} \htmlData{sym=pM}{p_M}(\htmlData{sym=xj}{x_j} \mid \htmlData{sym=z}{\mathbf{z}}, \htmlData{sym=x1j}{x_{1:j-1}})" data-fallback="L_i(z) = − Σ_{j=i}^{n} w_{j−i} · log p_M(x_j | z, x_1:j−1)"></div>
+<div class="eq" data-tex="\htmlData{sym=Lplus}{L_i^{+}} = \htmlData{sym=Li}{L_i}\big(\htmlData{sym=ecr}{\text{e}(c_i, r_i)}\big), \qquad \htmlData{sym=Lminus}{L_i^{-}} = \htmlData{sym=minf}{\min}\big(\htmlData{sym=Li}{L_i}(\htmlData{sym=eps}{\varepsilon}),\; \htmlData{sym=Li}{L_i}(\htmlData{sym=ec}{\text{e}(c_i, \varepsilon)})\big), \qquad \text{keep if } \htmlData{sym=Lminus}{L_i^{-}} - \htmlData{sym=Lplus}{L_i^{+}} \ge \htmlData{sym=tauf}{\tau_f}" data-fallback="L_i^+ = L_i(e(c_i, r_i)),  L_i^− = min(L_i(ε), L_i(e(c_i, ε))),  keep if L_i^− − L_i^+ ≥ τ_f"></div>
+<div class="eq" data-tex="\htmlData{sym=w}{w_t} = \frac{\htmlData{sym=wt}{\tilde{w}_t}}{\sum_{s} \htmlData{sym=wt}{\tilde{w}_s}}, \qquad \htmlData{sym=wt}{\tilde{w}_t} = \max(0,\; 1 - 0.2\,t)" data-fallback="w_t = w̃_t / Σ_s w̃_s,  w̃_t = max(0, 1 − 0.2 t)"></div>
+<div class="symtable" data-syms="Li,z,sumj,w,wt,log,xj,x1j,eps,Lplus,Lminus,minf,tauf"></div>
+<p class="inwords"><strong>In words:</strong> “measure how surprised the model is by the next few tokens, counting nearer tokens more, in three situations; keep the call only if giving the model the call and its result beats both no call and a result-less call by at least τ<sub>f</sub>.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the raw weights for t = 0, 1, 2, 3, 4 are 1, 0.8, 0.6, 0.4, 0.2 (then 0), summing to 3.0, so the normalised weights are 0.333, 0.267, 0.2, 0.133, 0.067. Only the next five tokens count at all. L⁻ = min(1.764, 1.629) = 1.629, L⁺ = 0.291, difference 1.338 ≥ τ<sub>f</sub> = 1.0: keep.</p>
+
+<h4>Try it: the filter</h4>
+<div class="play" id="flt">
+  <div class="sliders" id="flt-sliders"></div>
+  <div class="shares" id="flt-out"></div>
+  <p class="readout" id="flt-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each slider is the model's probability for one of the next three correct tokens in one condition. The three bars are the weighted losses (shorter is better) and the verdict compares them. Push “call, no result” up until it matches “call with result”: the difference shrinks and the call is thrown away, because the answer added nothing beyond the question. Now raise τ<sub>f</sub>: stricter thresholds keep fewer, more obviously useful calls, which is the trade-off the paper tunes per tool.</p>
+
+<h4>Real candidates, ranked by the filter score</h4>
+<p>Ten candidate calls the paper reports (Table 10, paraphrased here), with their score L⁻ − L⁺ and the authors' own judgement of whether the call was really useful. Slide the threshold.</p>
+<div class="plot" id="cand-plot">
+  <div class="controls"><label for="cand-tau">Threshold τ<sub>f</sub> = <strong id="cand-tauv">1.0</strong></label><input type="range" id="cand-tau" min="-1.5" max="3" step="0.1" value="1.0"></div>
+  <div id="cand-list"></div>
+  <p class="readout" id="cand-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> rows above the line pass the filter. High scores mostly match useful calls (a question-answering lookup for the Nile's length, a calendar date that the next words repeat, a calculator ratio). Negative scores are clearly useless calls. The filter is not perfect in the middle: a search result about a band called “Fast Train” scored 0.92 despite being irrelevant, while a useful translation scored only 0.70. The paper argues a little noise is even healthy: it stops the fine-tuned model from blindly trusting every tool result.</p>
+</section>
+
+<section id="s2-ft">
+<h3>Fine-tuning and inference <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S2.SS0.SSS0.Px4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>After filtering, the kept calls are written into the original passages, and the model is fine-tuned on this annotated text with the ordinary next-token objective. Because the text is otherwise unchanged, the model learns the same language as before plus where calls help. At use time, the model writes normally until it emits the arrow “-&gt;”. Generation then pauses, the real tool runs, its result is pasted in, and generation continues.</p>
+<div class="play" id="inf">
+  <div class="ui" style="display:flex;gap:.5rem;align-items:center"><button type="button" id="inf-next">Next step →</button><button type="button" id="inf-reset">Restart</button><span id="inf-count" class="readout" style="margin:0"></span></div>
+  <p id="inf-text" style="font-family:ui-monospace,monospace;margin:.6rem 0"></p>
+  <p class="readout" id="inf-note"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each step adds what the model writes, in plain text, or what the system inserts, highlighted. The key moment is the arrow: the model does not guess the result, it stops and waits for the real tool. That handshake between model and runtime is exactly how tool calling works today; see the <a data-lesson="primer/agents/agent_loop.html">agent loop lesson</a>.</p>
+<p>Two decoding tweaks mattered in practice. The model opens a call whenever “[” is among its 10 most likely next tokens (not only when it is the single most likely), which makes it far more willing to use tools. And it may make at most one call per input, so it cannot get stuck calling tools forever.</p>
+</section>
+
+<section id="s3">
+<h2>3 Tools <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S3">original</a></span></h2>
+<p>The only requirements for a tool: its input and output can be written as text, and a few examples of its use can be written down. Examples below are written for this page.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Tool</th><th>What powers it in the paper</th><th>Example call → result</th></tr></thead>
+  <tbody>
+    <tr><td>Question answering</td><td>Atlas, a retrieval-augmented model fine-tuned on Natural Questions</td><td>QA(Where is the Eiffel Tower?) → Paris</td></tr>
+    <tr><td>Calculator</td><td>The four basic operations, results rounded to 2 decimals</td><td>Calculator(18 * 4 + 6) → 78</td></tr>
+    <tr><td>Wikipedia search</td><td><span class="t" data-t="bm25">BM25</span> keyword search over a Wikipedia dump, returning short snippets</td><td>WikiSearch(Ada Lovelace) → “Augusta Ada King, Countess of Lovelace, was …”</td></tr>
+    <tr><td>Machine translation</td><td>NLLB (600M parameters), any of 200 languages into English</td><td>MT(sécurité nucléaire) → nuclear safety</td></tr>
+    <tr><td>Calendar</td><td>Returns today's date; takes no input</td><td>Calendar() → Today is Friday, March 3, 2023.</td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S4">original</a></span></h2>
+<h4>Setup</h4>
+<ul>
+  <li><strong>Model:</strong> GPT-J, 6.7 billion parameters. <strong>Text:</strong> a subset of CCNet web text, pre-filtered per tool (for example, only passages with at least three numbers for the calculator).</li>
+  <li><strong>Fine-tuning:</strong> batch size 128, learning rate 1 × 10⁻⁵ with linear <span class="t" data-t="warmup">warmup</span> over the first 10% of training.</li>
+  <li><strong>Evaluation:</strong> zero-shot. Models get an instruction but no worked examples, and must decide for themselves whether to use a tool.</li>
+  <li><strong>Comparisons:</strong> plain GPT-J, GPT-J fine-tuned on the same text without calls, Toolformer with calls disabled, and much larger models: OPT (66B) and GPT-3 (175B).</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>Selected results from Schick et al. (2023), Tables 3, 4, 5 and 7 (one column from each). Summarised with attribution.</caption>
+  <thead><tr><th>Model</th><th class="num">Facts (T-REx)</th><th class="num">Math (ASDiv)</th><th class="num">Questions (WebQS)</th><th class="num">Dates (Dateset)</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-J (6.7B)</td><td class="num">31.9</td><td class="num">7.5</td><td class="num">18.5</td><td class="num">3.9</td></tr>
+    <tr><td>Toolformer, calls disabled</td><td class="num">34.9</td><td class="num">14.8</td><td class="num">18.9</td><td class="num">5.9</td></tr>
+    <tr class="hl"><td>Toolformer (6.7B)</td><td class="num">53.5</td><td class="num">40.4</td><td class="num">26.3</td><td class="num">27.3</td></tr>
+    <tr><td>GPT-3 (175B)</td><td class="num">39.8</td><td class="num">14.0</td><td class="num">29.0</td><td class="num">0.8</td></tr>
+  </tbody>
+</table></div>
+<div class="plot"><div id="res-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each group compares the plain model, Toolformer and GPT-3 on one task (scores are the percentage answered correctly under each benchmark's lenient check). With its tools, the small model beats a model 25 times its size on facts, arithmetic and dates. On open questions, where it relies on a simple keyword search it cannot refine, it still trails GPT-3. The model also chose the right tool almost every time: the question-answering tool on 98.1% of fact questions, the calculator on 97.9% of maths problems, and search on 99.3% of open questions.</p>
+<h4>Two important non-results</h4>
+<ul>
+  <li><strong>No cost to ordinary text.</strong> <span class="t" data-t="perplexity">Perplexity</span> on WikiText was 10.3 with or without the tool-call training (with calls disabled), so learning tools did not damage general language modelling.</li>
+  <li><strong>Size matters.</strong> Applying the method to smaller GPT-2 models showed that useful tool use only emerges at around 775 million parameters; smaller models score the same with and without tools.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>The pattern (a small model plus the right tool beating a large model alone) is the economic argument behind giving agents calculators, search and code execution, and behind <span class="t" data-t="model routing">routing</span> easy work to small models; see the <a data-lesson="primer/agents/cost.html">cost lesson</a>.</p>
+</section>
+
+<section id="s5">
+<h2>5 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S5">original</a></span></h2>
+<h4>How eager should the model be to call?</h4>
+<p>With ordinary greedy decoding (open a call only if “[” is the single most likely token), the model called a tool on 40.3% of fact questions and only 8.5% of open questions. Allowing a call whenever “[” is in the top 10 raised that to 98.1% and 100%. Interestingly, at the strict setting the model was somewhat <em>calibrated</em>: it tended to call tools on exactly the questions it would otherwise get wrong.</p>
+<h4>Why it matters today</h4>
+<p>“When should the agent use a tool?” is still a tuning problem: too eager wastes time and money, too reluctant leaves errors unfixed. Clear tool descriptions and instructions play the role that the top-k trick played here; see the <a data-lesson="primer/agents/tools.html">tools lesson</a>.</p>
+</section>
+
+<section id="s7">
+<h2>7–8 Limitations and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S7">original</a></span></h2>
+<p>The authors list the gaps plainly:</p>
+<ul>
+  <li><strong>No chaining.</strong> Calls were sampled independently, so the training data never shows using one tool's output as another's input (for example, get today's date, then ask a question about it).</li>
+  <li><strong>No interaction.</strong> The model cannot browse through search results or refine a query.</li>
+  <li><strong>Sensitivity to wording.</strong> Whether it calls a tool can depend on small changes in phrasing.</li>
+  <li><strong>Sample inefficiency.</strong> Over a million documents yielded only a few thousand useful calculator calls.</li>
+</ul>
+<p>The first two are exactly what agent loops such as <a href="react.html">ReAct</a> provide: multiple steps, each able to use earlier results.</p>
+</section>
+
+<section id="today">
+<h2>From Toolformer to today</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Calls written as text with bracket markers</td><td>Structured <span class="t" data-t="tool call">tool calls</span> checked against a <span class="t" data-t="json schema">JSON Schema</span></td><td><a data-lesson="primer/agents/tools.html">tools</a></td></tr>
+    <tr><td>One call per input</td><td>Loops with many calls, often several in parallel</td><td><a data-lesson="primer/agents/agent_loop.html">agent loop</a></td></tr>
+    <tr><td>Five fixed tools</td><td>Large, changing tool sets, loaded dynamically or over <span class="t" data-t="mcp">MCP</span></td><td><a data-lesson="primer/agents/mcp.html">MCP</a></td></tr>
+    <tr><td>Self-supervised filter chooses training data</td><td>Curated tool-use training data; evaluation of tool selection and argument accuracy</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda and Thomas Scialom, <em>Toolformer: Language Models Can Teach Themselves to Use Tools</em> (2023). <a href="https://arxiv.org/abs/2302.04761">arXiv:2302.04761</a>. Quotations are brief and attributed; selected numbers are summarised with attribution; examples are paraphrased; the figure is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    c: { tex: "c", name: "An API call", meaning: "A pair: which tool, and what input.", shape: "(a_c, i_c)", example: "(Calculator, “180 / 1.5”)" },
+    ac: { tex: "a_c", name: "Tool name", meaning: "Which API is being called.", shape: "a name", example: "Calculator" },
+    ic: { tex: "i_c", name: "Tool input", meaning: "The argument passed to the tool, as text.", shape: "text", example: "“180 / 1.5”" },
+    r: { tex: "r", name: "Tool result", meaning: "What the tool returned, as text.", shape: "text", example: "“120.0”" },
+    ec: { tex: "\\text{e}(c)", name: "Call written without its result", meaning: "The call as it appears in text, before the tool has answered. In the filter, e(c, ε) means “the call with an empty result”.", shape: "text", example: "[Calculator(180 / 1.5)]" },
+    ecr: { tex: "\\text{e}(c,r)", name: "Call written with its result", meaning: "The call, the arrow, and the result, as they appear in the fine-tuning data.", shape: "text", example: "[Calculator(180 / 1.5) -> 120.0]" },
+    x: { tex: "\\mathbf{x}", name: "A passage of plain text", meaning: "One example from the training corpus, x₁ to x_n.", shape: "n tokens", example: "the train sentence" },
+    pM: { tex: "p_M", name: "The model's probability", meaning: "How likely model M finds a token, given everything before it.", shape: "0 to 1", example: "0.31 for opening a call" },
+    Px: { tex: "P(\\mathbf{x})", name: "The annotation prompt", meaning: "A few hand-written examples of text with useful calls, followed by the passage x. There is one such prompt per tool.", shape: "text", example: "" },
+    x1i: { tex: "x_{1:i-1}", name: "Text before position i", meaning: "The first i − 1 tokens of the passage.", shape: "i − 1 tokens", example: "“… an average speed of”" },
+    pi: { tex: "p_i", name: "Probability of a call at i", meaning: "How likely the model is to open a tool call right at position i.", shape: "0 to 1", example: "0.31" },
+    taus: { tex: "\\tau_s", name: "Sampling threshold", meaning: "Positions below it are ignored. Chosen per tool.", shape: "0 to 1", example: "0.05" },
+    I: { tex: "I", name: "Candidate positions", meaning: "The positions kept for sampling calls (at most k of them).", shape: "a set of positions", example: "{the position after “speed of”}" },
+    Li: { tex: "L_i", name: "Weighted loss from position i", meaning: "How surprised the model is by the tokens from position i onward, with nearer tokens counting more. Lower means the model predicted them better.", shape: "one number", example: "1.764 with no call" },
+    z: { tex: "\\mathbf{z}", name: "What the model is given first", meaning: "A prefix placed before the text: nothing, the call without a result, or the call with its result.", shape: "text", example: "e(c, r)" },
+    sumj: { tex: "\\sum_{j=i}^{n}", name: "Sum over the following tokens", meaning: "Add up over tokens j = i to n (the weights make everything after five tokens count for zero).", shape: "", example: "3 tokens in the tiny example" },
+    w: { tex: "w_t", name: "Weight for a token t places ahead", meaning: "How much that token counts. Nearer tokens count more, so calls are placed right before the text they help.", shape: "0 to 1, summing to 1", example: "0.333, 0.267, 0.2, 0.133, 0.067" },
+    wt: { tex: "\\tilde{w}_t", name: "Raw weight", meaning: "1 for the very next token, falling by 0.2 per token, never below 0.", shape: "0 to 1", example: "1, 0.8, 0.6, 0.4, 0.2" },
+    log: { tex: "\\log", name: "Natural logarithm", meaning: "−log p is small when p is near 1 and large when p is small: the usual cross-entropy penalty.", shape: "", example: "−ln 0.02 = 3.912" },
+    xj: { tex: "x_j", name: "Token j", meaning: "One of the tokens being predicted.", shape: "one token", example: "“120”" },
+    x1j: { tex: "x_{1:j-1}", name: "Tokens before j", meaning: "The text up to just before token j.", shape: "", example: "" },
+    eps: { tex: "\\varepsilon", name: "Empty sequence", meaning: "Nothing at all: used for “no call” and for “call with an empty result”.", shape: "", example: "" },
+    Lplus: { tex: "L_i^{+}", name: "Loss with call and result", meaning: "The weighted loss when the model sees the call and its result first.", shape: "one number", example: "0.291" },
+    Lminus: { tex: "L_i^{-}", name: "Best loss without the result", meaning: "The better (smaller) of: no call at all, and the call with an empty result.", shape: "one number", example: "min(1.764, 1.629) = 1.629" },
+    minf: { tex: "\\min", name: "Minimum", meaning: "The smaller of the two.", shape: "", example: "" },
+    tauf: { tex: "\\tau_f", name: "Filtering threshold", meaning: "How much a call must reduce the loss to be kept. Chosen per tool; the paper reports dataset sizes at 0.5, 1.0 and 2.0.", shape: "a number", example: "1.0" },
+  },
+  blocks: {
+    text: { title: "Plain text x", body: "<p>Ordinary web text (a subset of CCNet), with no tool calls in it. Because the same kind of text the model was pre-trained on is used, it keeps its general abilities.</p>" },
+    sample: { title: "1 Sample calls", body: "<p>With a short prompt of hand-written examples per tool, the model rates every position for “start a call here”, keeps the most likely positions, and writes a few candidate calls at each.</p>" },
+    execute: { title: "2 Execute", body: "<p>Every candidate call is actually run: the calculator computes, the search engine searches, and so on. Each result must be a single piece of text.</p>" },
+    filter: { title: "3 Filter", body: "<p>Keep a call only if the model predicts the next few tokens better with the call and its result than with no call or with a result-less call, by at least τ_f. See the calculator below.</p>" },
+    augmented: { title: "Augmented text x*", body: "<p>The original passage with the surviving calls and results written in place. Apart from the calls, the text is identical to the original.</p>" },
+    finetune: { title: "4 Fine-tune M", body: "<p>Ordinary next-token training on the augmented text. The model learns where calls help from thousands of examples, all selected by its own loss.</p>", lesson: "primer/ml/training_stages.html" },
+  },
+  onReady() { filterDemo(); candidates(); inference(); resBars(); },
+};
+
+/* ---- filter calculator ---- */
+function filterDemo() {
+  const W = [1, 0.8, 0.6, 0.4, 0.2].map((v) => v / 3);
+  const st = { none: [0.02, 0.3, 0.5], noresp: [0.03, 0.3, 0.5], full: [0.9, 0.6, 0.55], tau: 1.0 };
+  const box = document.getElementById("flt-sliders");
+  const add = (label, get, set, min, max, step, fmt) => {
+    const id = "flt-" + label.replace(/\W/g, "");
+    const l = document.createElement("label"); l.htmlFor = id; l.textContent = label;
+    const r = document.createElement("input"); Object.assign(r, { type: "range", id, min, max, step, value: get() });
+    const o = document.createElement("output"); o.textContent = fmt(get());
+    r.addEventListener("input", () => { set(+r.value); o.textContent = fmt(+r.value); draw(); });
+    box.append(l, r, o);
+  };
+  [["none", "no call"], ["noresp", "call, no result"], ["full", "call with result"]].forEach(([k, name]) =>
+    [0, 1, 2].forEach((t) => add(`${name}: p(token ${t + 1})`, () => st[k][t], (v) => (st[k][t] = v), 0.01, 0.99, 0.01, (v) => v.toFixed(2))));
+  add("threshold τ_f", () => st.tau, (v) => (st.tau = v), 0, 3, 0.1, (v) => v.toFixed(1));
+  const L = (p) => p.reduce((s, x, t) => s + W[t] * -Math.log(x), 0);
+  function draw() {
+    const a = L(st.none), b = L(st.noresp), c = L(st.full), lm = Math.min(a, b), d = lm - c, keep = d >= st.tau;
+    const top = Math.max(a, b, c, 1);
+    const bar = (n, v, hl) => `<div class="share-row"><span>${n}</span><div><div class="share-bar" style="width:${(v / top * 100).toFixed(1)}%;${hl ? "" : "background:var(--wire)"}"></div></div><span>${v.toFixed(3)}</span></div>`;
+    document.getElementById("flt-out").innerHTML = bar("loss: no call", a) + bar("loss: call, no result", b) + bar("loss: call + result (L⁺)", c, true);
+    document.getElementById("flt-readout").innerHTML = `L⁻ = min(${a.toFixed(3)}, ${b.toFixed(3)}) = ${lm.toFixed(3)} · L⁻ − L⁺ = <strong>${d.toFixed(3)}</strong> ${keep ? "≥" : "<"} τ_f = ${st.tau.toFixed(1)} → <strong>${keep ? "keep the call" : "discard the call"}</strong>`;
+  }
+  draw();
+}
+
+/* ---- candidate list (scores and usefulness from the paper's Table 10; texts paraphrased) ---- */
+function candidates() {
+  const C = [
+    ["WikiSearch about a war memorial, before a sentence naming who built it", 5.49, true],
+    ["Calendar() before a note saying “open on Friday, March 10”", 2.11, true],
+    ["QA(approximate length of the Nile) right before the length is stated", 2.08, true],
+    ["Calculator(735 / 499) before “1.47 times hotter”", 1.59, true],
+    ["WikiSearch(Fast train success) on an unrelated motivational page", 0.92, false],
+    ["MT(Portuguese page title) before its English description", 0.70, true],
+    ["Calendar() before a mention of an Easter egg hunt", 0.33, true],
+    ["Calculator(85 / 23) where the next number is unrelated", -0.02, false],
+    ["Calendar() before an anecdote with no date in it", -0.41, false],
+    ["QA(a meaningless question built from a sentence fragment)", -1.23, false],
+  ];
+  const tau = document.getElementById("cand-tau");
+  function draw() {
+    const t = +tau.value;
+    document.getElementById("cand-tauv").textContent = t.toFixed(1);
+    let kept = 0, keptUseful = 0;
+    document.getElementById("cand-list").innerHTML = C.map(([txt, s, useful]) => {
+      const k = s >= t; if (k) { kept++; if (useful) keptUseful++; }
+      return `<div class="share-row" style="grid-template-columns:minmax(0,1fr) 4rem 5.5rem;opacity:${k ? 1 : 0.45}"><span>${txt}</span><span class="num">${s.toFixed(2)}</span><span>${k ? "kept" : "dropped"} · ${useful ? "useful" : "not useful"}</span></div>`;
+    }).join("");
+    document.getElementById("cand-readout").innerHTML = `At τ_f = ${t.toFixed(1)}: <strong>${kept}</strong> of ${C.length} candidates kept, of which ${keptUseful} were judged useful by the authors.`;
+  }
+  tau.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- inference step-through (example written for this page) ---- */
+function inference() {
+  const steps = [
+    ["model", "The train covers 180 km in 1.5 hours, an average speed of ", "The model writes ordinary text."],
+    ["model", "[Calculator(180 / 1.5) -&gt;", "“[” was among the 10 most likely next tokens, so a call opens; the model writes the tool name, the input, and the arrow."],
+    ["system", " 120.0]", "At the arrow, decoding pauses. The runtime runs the calculator and inserts the result and the closing bracket. The model never guesses this part."],
+    ["model", " 120 km/h.", "Decoding resumes with the real result in view."],
+  ];
+  let i = 0;
+  const text = document.getElementById("inf-text"), note = document.getElementById("inf-note"), cnt = document.getElementById("inf-count");
+  function render() {
+    text.innerHTML = steps.slice(0, i + 1).map(([who, s]) => (who === "system" ? `<mark>${s}</mark>` : s)).join("");
+    note.textContent = steps[i][2];
+    cnt.textContent = `Step ${i + 1} of ${steps.length}`;
+    document.getElementById("inf-next").disabled = i === steps.length - 1;
+  }
+  document.getElementById("inf-next").addEventListener("click", () => { if (i < steps.length - 1) { i++; render(); } });
+  document.getElementById("inf-reset").addEventListener("click", () => { i = 0; render(); });
+  render();
+}
+
+function resBars() {
+  const groups = [
+    ["Facts (T-REx)", [["GPT-J", 31.9], ["Toolformer", 53.5], ["GPT-3", 39.8]]],
+    ["Math (ASDiv)", [["GPT-J", 7.5], ["Toolformer", 40.4], ["GPT-3", 14.0]]],
+    ["Questions (WebQS)", [["GPT-J", 18.5], ["Toolformer", 26.3], ["GPT-3", 29.0]]],
+    ["Dates (Dateset)", [["GPT-J", 3.9], ["Toolformer", 27.3], ["GPT-3", 0.8]]],
+  ];
+  document.getElementById("res-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Score (%), axis 0 to 60 (Schick et al., 2023, Tables 3, 4, 5 and 7)</div>` +
+    groups.map(([g, rows]) => `<div style="margin:.5rem 0 .2rem;font-weight:600">${g}</div>` +
+      rows.map(([m, s]) => `<div class="share-row" style="grid-template-columns:7rem minmax(0,1fr) 3rem"><span>${m}</span><div><div class="share-bar" style="width:${(s / 60 * 100).toFixed(1)}%;${m === "Toolformer" ? "" : "background:var(--wire)"}"></div></div><span>${s}</span></div>`).join("")).join("");
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoFormer (Rotary Position Embedding), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Su et al. (2021), the paper that introduced rotary position embedding (RoPE), the position scheme used by most modern language models.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="roformer">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Queries and keys that know position</a></li>
+          <li><a href="#s2-2">2.2 Absolute position embedding</a></li>
+          <li><a href="#s2-3">2.3 Relative position embedding</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Proposed approach</a>
+        <ol>
+          <li><a href="#s3-1">3.1 The goal, as an equation</a></li>
+          <li><a href="#s3-2-1">3.2.1 The 2D case: a rotation</a></li>
+          <li><a href="#s3-2-2">3.2.2 General form: many clocks</a></li>
+          <li><a href="#s3-3">3.3 Properties</a></li>
+          <li><a href="#s3-4-2">3.4.2 The fast way to compute it</a></li>
+          <li><a href="#s3-4-3">3.4.3 Long-term decay</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a></li>
+      <li><a href="#s5">4.5.5 Limitations and 5 Conclusions</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>RoFormer: Rotary Position Embedding, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen and Yunfeng Liu (2021), the paper that introduced <span class="t" data-t="rope">RoPE</span>: encoding a word's position by rotating its query and key.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2104.09864">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2104.09864">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2104.09864">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is released under a CC BY-NC-ND 4.0 licence, so nothing here adapts its text, figures or tables: the equations are restated with every symbol decoded, the figure is redrawn from scratch, and the few result numbers quoted appear in new tables with attribution. Read the original alongside: every section heading links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon.</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same. Try the <em>θ</em> in the first rotation equation.</li>
+  <li>The rotation playground in §3.2.1 is the heart of the page: drag the positions and watch the score stay put.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram</strong>, <strong>the math</strong>, then <strong>why it matters today</strong>. If attention itself is new to you, start with the <a href="attention-is-all-you-need.html">Attention Is All You Need companion</a>; the code that builds positions from scratch is in <a class="lesson" data-lesson="primer/ml/positional.html">the positional information lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864">original</a></span></h2>
+<blockquote class="quote">“Specifically, the proposed RoPE encodes the absolute position with a rotation matrix and meanwhile incorporates the explicit relative position dependency in self-attention formulation.”<cite>Su et al. (2021), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Give every word a clock hand. The first word's hand points at 1 o'clock, the second at 2 o'clock, and so on: that is an <em>absolute</em> position. Now ask a different question: how far apart are two words? You don't need to know either time; you only need the angle <em>between</em> the two hands, and that angle is the same whether the words sit at 1 and 3 o'clock or at 7 and 9. RoPE turns this into mathematics: it rotates each word's <span class="t" data-t="query">query</span> and <span class="t" data-t="key">key</span> by an angle set by its position, so the <span class="t" data-t="attention">attention</span> score between two words ends up depending only on how far apart they are.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>A position scheme that <strong>stores absolute positions but produces relative behaviour</strong>: attention scores depend on the gap between words, not on where the pair sits.</li>
+  <li>Three useful properties: it works for <strong>any sequence length</strong> (no learned table with a fixed number of rows), word pairs that are <strong>far apart get a naturally weaker link</strong>, and it is compatible with <span class="t" data-tip-title="Linear attention" data-tip="A family of cheaper attention variants that avoid scoring every pair of words, so cost grows in proportion to the sequence length n instead of n². Many position schemes cannot be combined with them; RoPE can.">linear attention</span>.</li>
+  <li>The resulting model, RoFormer, trains faster than its baselines and does better on long documents.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>RoPE became the default position scheme for large language models: the Llama family, Mistral and many others rotate queries and keys exactly as described here. Understanding this paper explains a line of code that runs in nearly every open model, and why "extending the context window" of a model is mostly a question about rotation speeds.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S1">original</a></span></h2>
+<blockquote class="quote">“The sequential order of words is of great value to natural language understanding.”<cite>Su et al. (2021), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>“Dog bites man” and “man bites dog” use the same three words; only the order changes the news. A <span class="t" data-t="rnn">recurrent network</span> gets order for free, because it reads one word at a time. A Transformer reads all words at once, like tipping a bag of Scrabble tiles onto the table: without extra help, it cannot tell which tile came first. That property has a name, <span class="t" data-t="permutation equivariance">permutation equivariance</span>: shuffle the input words and the outputs simply shuffle the same way.</p>
+<h4>Tiny example</h4>
+<p>Take three word vectors and run plain attention (no positions). Swap the first and last word. Every score is a <span class="t" data-t="dot product">dot product</span> between two words' vectors, and a dot product does not care where the words sit, so the score grid is the same numbers in shuffled rows and columns. The model literally cannot tell the two sentences apart. Position information has to be injected somehow, and this paper is about the best way to do it.</p>
+<h4>Why it matters</h4>
+<p>Every Transformer needs some position scheme. The choice affects quality, how well the model copes with texts longer than it saw in training, and how cheaply the context window can later be stretched. The <a class="lesson" data-lesson="primer/ml/positional.html">positional information lesson</a> demonstrates the “dog bites man” problem in code.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S2">original</a></span></h2>
+
+<section id="s2-1">
+<h3>2.1 Queries and keys that know their position <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Before a word joins the attention step, it prepares three cards: a question (query), a label (key) and a message (value). The only question in this whole debate is: <em>when</em> and <em>how</em> does the word's seat number get written onto those cards?</p>
+<div class="eq" data-tex="\htmlData{sym=qm}{q_m} = \htmlData{sym=fq}{f_q}(\htmlData{sym=xm}{x_m}, \htmlData{sym=m}{m}), \quad \htmlData{sym=kn}{k_n} = \htmlData{sym=fk}{f_k}(\htmlData{sym=xn}{x_n}, \htmlData{sym=n}{n}), \quad \htmlData{sym=vn}{v_n} = \htmlData{sym=fv}{f_v}(\htmlData{sym=xn}{x_n}, \htmlData{sym=n}{n})" data-fallback="q_m = f_q(x_m, m),  k_n = f_k(x_n, n),  v_n = f_v(x_n, n)"></div>
+<div class="symtable" data-syms="qm,fq,xm,m,kn,fk,xn,n,vn,fv"></div>
+<p class="inwords"><strong>In words:</strong> “each word's query, key and value are made from two ingredients: the word itself and the position it sits at.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in “the cat sat”, the query for “sat” is f<sub>q</sub>(vector for “sat”, 3), and the key for “the” is f<sub>k</sub>(vector for “the”, 1). Different position schemes are simply different recipes for f.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Absolute position embedding <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S2.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The classic recipe staples a seat-number badge onto each word before anything else happens: add a position vector p<sub>i</sub> to the word vector x<sub>i</sub>, then make the query, key and value from the sum. The original Transformer's badges were fixed sine and cosine waves; BERT and GPT-2 instead learned one badge per seat, up to a maximum number of seats.</p>
+<div class="eq" data-tex="\htmlData{sym=fany}{f_{t}}(\htmlData{sym=xi}{x_i}, \htmlData{sym=ipos}{i}) = \htmlData{sym=Wt}{W_{t}}\,(\htmlData{sym=xi}{x_i} + \htmlData{sym=pi}{p_i}), \qquad t \in \{q, k, v\}" data-fallback="f_t(x_i, i) = W_t (x_i + p_i),  t ∈ {q, k, v}"></div>
+<div class="symtable" data-syms="fany,xi,ipos,Wt,pi"></div>
+<p class="inwords"><strong>In words:</strong> “add the seat's badge to the word, then project the sum into a query, key or value.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with 2-number toy vectors, word x = (1, 0) at seat 3 with badge p<sub>3</sub> = (0.1, 0.9) becomes (1.1, 0.9) before projection. The same word at seat 4 would carry a different badge, so it enters attention as a slightly different vector.</p>
+<h4>The catch</h4>
+<p>Badges are added <em>before</em> the words meet, so the score between two words mixes up four things: word with word, word with badge, badge with word, and badge with badge. The relative distance is only implicitly buried in there. Learned badges also stop at the last seat the model was trained with: a model with 512 learned badges has nothing to say about seat 600.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Relative position embedding <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Instead of seat numbers, tell each pair of words how far apart they are: “three seats to your left”. Shaw et al. (2018) did this by adding a learned vector for each distance (clipped, so everything beyond some distance shares one vector); Transformer-XL and T5 found other ways to add a distance-dependent term to the score.</p>
+<h4>The catch</h4>
+<p>These schemes bolt an extra term onto the attention computation, which means extra memory, extra code in the attention kernel, and trouble combining with faster attention variants that never compute the full grid of scores. The paper surveys several and asks: can we get purely relative behaviour <em>without</em> changing attention at all?</p>
+<h4>Why it matters</h4>
+<p>This is the design space RoPE lands in: the simplicity of absolute schemes (just transform q and k before attention) with the behaviour of relative ones (scores depend only on distance).</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Proposed approach <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S3">original</a></span></h2>
+
+<section id="s3-1">
+<h3>3.1 The goal, written as an equation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S3.SS1">original</a></span></h3>
+<blockquote class="quote">“In other words, we hope that the inner product encodes position information only in the relative form.”<cite>Su et al. (2021), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Two people shaking hands should feel the same handshake whether they meet on the first floor or the fortieth. The strength of the handshake (the attention score) may depend on who they are and how far apart they stood, never on which floor the meeting happened on.</p>
+<div class="eq" data-tex="\htmlData{sym=inner}{\langle\, \htmlData{sym=fq}{f_q}(\htmlData{sym=xm}{x_m}, \htmlData{sym=m}{m}),\ \htmlData{sym=fk}{f_k}(\htmlData{sym=xn}{x_n}, \htmlData{sym=n}{n}) \,\rangle} = \htmlData{sym=g}{g}(\htmlData{sym=xm}{x_m}, \htmlData{sym=xn}{x_n}, \htmlData{sym=mminusn}{m - n})" data-fallback="⟨ f_q(x_m, m), f_k(x_n, n) ⟩ = g(x_m, x_n, m − n)"></div>
+<div class="symtable" data-syms="inner,g,mminusn"></div>
+<p class="inwords"><strong>In words:</strong> “find recipes for the query and the key such that their dot product depends on the two words and on the gap between their positions, and on nothing else.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the score between a query at seat 2 and a key at seat 1 must equal the score for the same two words at seats 7 and 6, because m − n = 1 in both cases.</p>
+<h4>Why it matters</h4>
+<p>Writing the wish as an equation turns a vague goal into a puzzle with a clean answer. The rest of §3 solves it.</p>
+</section>
+
+<section id="s3-2-1">
+<h3>3.2.1 The 2D case: a rotation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S3.SS2.SSS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Draw the query and key as arrows on a sheet of paper. Rotate the query arrow by an angle proportional to its position, and the key arrow by an angle proportional to its own position. The dot product of two arrows depends only on their lengths and the angle between them. Rotating <em>both</em> arrows by the same extra amount leaves that angle unchanged. So if both words move three seats to the right, both arrows turn by the same extra angle, and the score cannot change.</p>
+<h4>Tiny example</h4>
+<p>Take the simplest arrows, q = (1, 0) and k = (1, 0), and turn one radian per position (θ = 1). A query at position 2 turns by 2 radians and a key at position 1 by 1 radian; the angle between them is 1 radian, so the score is cos(1) = <strong>0.540</strong>. Move the pair to positions 7 and 6: the arrows turn by 7 and 6 radians, the gap is still 1 radian, and the score is still <strong>0.540</strong>. Move the key back to position 1 while the query stays at 3: now the gap is 2 radians and the score drops to cos(2) = <strong>−0.416</strong>.</p>
+
+<div class="play" id="rot-play">
+  <div class="sliders" id="rot-sliders"></div>
+  <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center">
+    <svg id="rot-svg" viewBox="-160 -150 320 300" role="img" aria-label="Rotated query and key arrows" style="flex:1 1 220px;max-width:320px"></svg>
+    <div style="flex:1 1 220px">
+      <p class="readout" id="rot-readout" aria-live="polite"></p>
+      <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem">
+        <button type="button" id="rot-shift">Shift both positions by +1</button>
+        <button type="button" id="rot-reset">Reset</button>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="reading"><strong>Reading it:</strong> the faint arrows are the query and key <em>before</em> rotation; the bold arrows are after. The blue arrow is the query at position <em>m</em>, turned by m·θ; the orange arrow is the key at position <em>n</em>, turned by n·θ. The shaded wedge is the angle between them, and the readout shows the resulting attention score, the dot product. Press “Shift both positions by +1” a few times: both arrows swing round, but the wedge keeps its size and the score does not move. Now drag only <em>m</em>: the wedge changes, and so does the score. That is the whole paper in one picture.</p>
+
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 380" role="img" aria-label="How RoPE turns a word vector into a position-encoded query">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M165,350 V322" marker-end="url(#arr)"/>
+    <path class="wire" d="M165,292 V268" marker-end="url(#arr)"/>
+    <path class="wire" d="M165,238 V226 M165,226 H55 V210 M165,226 H130 V210 M165,226 H200 V210 M165,226 H275 V210" marker-end="url(#arr)"/>
+    <path class="wire" d="M55,180 V150 M130,180 V150 M200,180 V150 M275,180 V150" marker-end="url(#arr)"/>
+    <path class="wire" d="M55,120 V100 H165 M130,120 V100 M200,120 V100 M275,120 V100 H165 V78" marker-end="url(#arr)"/>
+    <path class="wire" d="M165,48 V28" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="word"><rect x="105" y="350" width="120" height="26" rx="6"/><text x="165" y="367" text-anchor="middle">word vector x at m</text></g>
+    <g class="blk lin" data-block="proj"><rect x="95" y="292" width="140" height="30" rx="6"/><text x="165" y="311" text-anchor="middle">W_q (learned)</text></g>
+    <g class="blk emb" data-block="qvec"><rect x="85" y="238" width="160" height="30" rx="6"/><text x="165" y="257" text-anchor="middle">q: d numbers</text></g>
+    <g class="blk plain" data-block="pair"><rect x="25" y="180" width="60" height="30" rx="6"/><text x="55" y="199" text-anchor="middle">(q₁, q₂)</text></g>
+    <g class="blk plain" data-block="pair"><rect x="100" y="180" width="60" height="30" rx="6"/><text x="130" y="199" text-anchor="middle">(q₃, q₄)</text></g>
+    <g class="blk plain" data-block="pairdots"><rect x="170" y="180" width="60" height="30" rx="6"/><text x="200" y="199" text-anchor="middle">…</text></g>
+    <g class="blk plain" data-block="pair"><rect x="245" y="180" width="60" height="30" rx="6"/><text x="275" y="199" text-anchor="middle">last pair</text></g>
+    <g class="blk attn" data-block="rot1"><rect x="20" y="120" width="70" height="30" rx="6"/><text x="55" y="139" text-anchor="middle">turn mθ₁</text></g>
+    <g class="blk attn" data-block="rot2"><rect x="95" y="120" width="70" height="30" rx="6"/><text x="130" y="139" text-anchor="middle">turn mθ₂</text></g>
+    <g class="blk attn" data-block="rotdots"><rect x="170" y="120" width="60" height="30" rx="6"/><text x="200" y="139" text-anchor="middle">…</text></g>
+    <g class="blk attn" data-block="rotlast"><rect x="235" y="120" width="80" height="30" rx="6"/><text x="275" y="139" text-anchor="middle">turn mθ(d/2)</text></g>
+    <g class="blk soft" data-block="qrot"><rect x="75" y="48" width="180" height="30" rx="6"/><text x="165" y="67" text-anchor="middle">position-encoded query</text></g>
+    <g class="blk plain" data-block="toattn"><rect x="105" y="2" width="120" height="26" rx="6"/><text x="165" y="19" text-anchor="middle">into attention</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start at the bottom with the <strong>word vector</strong>.</p></div>
+  </div>
+  <figcaption>How RoPE is applied to a query (keys get exactly the same treatment). Redrawn and simplified from the idea in Su et al. (2021), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read upwards. The word vector is projected into a query exactly as in any Transformer. RoPE then chops the query into neighbouring pairs of numbers and treats each pair as an arrow on a flat plane. Each arrow is turned by an angle: the word's position m times that pair's own speed θ<sub>i</sub>. The turned pairs are glued back together into the position-encoded query. Nothing is added and nothing is learned in the rotation step: position enters purely as an angle.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=fqk}{f_{\{q,k\}}}(\htmlData{sym=xm}{x_m}, \htmlData{sym=m}{m}) = \htmlData{sym=Rm}{\begin{pmatrix} \cos m\theta & -\sin m\theta \\ \sin m\theta & \cos m\theta \end{pmatrix}} \htmlData{sym=Wqk}{W_{\{q,k\}}}\, \htmlData{sym=xm}{x_m}" data-fallback="f_{q,k}(x_m, m) = [[cos mθ, −sin mθ], [sin mθ, cos mθ]] · W_{q,k} · x_m"></div>
+<div class="symtable" data-syms="fqk,Rm,theta,Wqk,xm,m"></div>
+<p class="inwords"><strong>In words:</strong> “make the query (or key) as usual with a learned matrix, then turn the resulting 2D arrow by position times θ.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with θ = 1 and m = 2, the matrix is [[cos 2, −sin 2], [sin 2, cos 2]] = [[−0.416, −0.909], [0.909, −0.416]], which turns q = (1, 0) into (−0.416, 0.909): the same arrow, pointing 2 radians further round.</p>
+<p>Why does this solve §3.1? A rotation by angle a, followed by the transpose of a rotation by angle b, is a single rotation by b − a. So the score becomes</p>
+<div class="eq" data-tex="(\htmlData{sym=Rmfull}{R_{m}} \htmlData{sym=qvec}{q})^{\top} (\htmlData{sym=Rnfull}{R_{n}} \htmlData{sym=kvec}{k}) = \htmlData{sym=qvec}{q}^{\top} \htmlData{sym=Rgap}{R_{n-m}}\, \htmlData{sym=kvec}{k}" data-fallback="(R_m q)ᵀ (R_n k) = qᵀ R_{n−m} k"></div>
+<div class="symtable" data-syms="Rmfull,Rnfull,qvec,kvec,Rgap"></div>
+<p class="inwords"><strong>In words:</strong> “rotating the query by its position and the key by its position is the same as leaving the query alone and rotating the key by the <em>difference</em> of the positions.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for q = (2, 1) and k = (1, 1) with θ = 1, positions (3, 1) and positions (8, 6) both give a score of <strong>−0.339</strong>, because both pairs have n − m = −2.</p>
+<h4>Why it matters today</h4>
+<p>This two-line argument is the reason RoPE needs no extra parameters, no change to the attention kernel, and no table of learned distances. It is also why it composes with <span class="t" data-t="kv cache">KV caching</span>: a key is rotated once, when it is written, and never touched again. See the <a class="lesson" data-lesson="primer/ml/positional.html">positional information lesson</a>, which checks this property numerically.</p>
+</section>
+
+<section id="s3-2-2">
+<h3>3.2.2 General form: a wall of clocks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S3.SS2.SSS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>One rotating arrow has a problem: after a full turn it repeats, so positions 0 and 6.28 look identical at θ = 1. The fix is the same trick the original Transformer used for its position badges, and the same trick a clock uses: have many hands turning at very different speeds. The seconds hand distinguishes nearby moments, the hours hand distinguishes distant ones, and together they are never ambiguous. RoPE splits a query of d numbers into d/2 pairs and gives each pair its own speed.</p>
+<h4>Tiny example</h4>
+<p>With a toy width of d = 8 there are 4 pairs, and the paper's speed rule gives θ = 1, 0.1, 0.01 and 0.001 radians per position. At position 10, the four hands have turned by 10, 1, 0.1 and 0.01 radians: the fast hand has already gone round more than once, while the slowest has barely moved.</p>
+<div class="play" id="clocks">
+  <div class="sliders" id="clock-sliders"></div>
+  <svg id="clock-svg" viewBox="0 0 520 150" role="img" aria-label="Four rotating clock hands, one per pair of dimensions"></svg>
+  <p class="readout" id="clock-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each dial is one pair of numbers in the query (d = 8, so four pairs). The hand shows how far that pair has been turned at the position chosen on the slider. Drag the slider slowly: the left dial spins quickly and repeats every 6.3 positions, so it can only tell <em>nearby</em> positions apart; the right dial barely moves until you reach thousands of positions, so it tracks <em>coarse</em> distance. Reading all four together pins the position down exactly, the same way hours, minutes and seconds together tell the time.</p>
+<div class="eq" data-tex="\htmlData{sym=RdTheta}{R^{d}_{\Theta,m}} = \mathrm{diag}\big(\htmlData{sym=block}{R(m\theta_1)},\ R(m\theta_2),\ \ldots,\ R(m\theta_{d/2})\big), \qquad \htmlData{sym=Theta}{\theta_i} = \htmlData{sym=base}{10000}^{-2(\htmlData{sym=ii}{i}-1)/\htmlData{sym=d}{d}}" data-fallback="R^d_{Θ,m} = diag( R(mθ_1), R(mθ_2), …, R(mθ_{d/2}) ),  θ_i = 10000^(−2(i−1)/d)"></div>
+<div class="symtable" data-syms="RdTheta,block,Theta,base,ii,d"></div>
+<p class="inwords"><strong>In words:</strong> “rotate the first pair by m·θ<sub>1</sub>, the second pair by m·θ<sub>2</sub>, and so on, where the speeds shrink geometrically from 1 radian per position down to about 1/10,000.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for d = 8: θ<sub>1</sub> = 10000<sup>0</sup> = 1, θ<sub>2</sub> = 10000<sup>−2/8</sup> = 0.1, θ<sub>3</sub> = 10000<sup>−4/8</sup> = 0.01, θ<sub>4</sub> = 10000<sup>−6/8</sup> = 0.001.</p>
+<p>The full score then reads <span class="m" data-tex="\htmlData{sym=qmT}{q_m^{\top}} \htmlData{sym=kn2}{k_n} = x_m^{\top} W_q^{\top} \htmlData{sym=RdGap}{R^{d}_{\Theta,\,n-m}} W_k\, x_n" data-fallback="q_mᵀ k_n = x_mᵀ W_qᵀ R^d_{Θ, n−m} W_k x_n"></span>: the two position rotations merge into one rotation by the gap, in every pair at once. The paper also notes that the matrix is almost entirely zeros, so nobody ever builds it (§3.4.2).</p>
+<div class="symtable" data-syms="qmT,kn2,RdGap"></div>
+<h4>Why it matters today</h4>
+<p>The base 10,000 sets the slowest clock, and therefore the longest distance the model can tell apart cleanly. Context-extension tricks such as <span class="t" data-t="position interpolation">position interpolation</span>, <span class="t" data-t="ntk-aware scaling">NTK-aware scaling</span> and <span class="t" data-t="yarn">YaRN</span> all work by adjusting these speeds, which is why RoPE models can be stretched to longer contexts after training.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Properties of RoPE <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Three promises come with the design. <strong>No seat limit:</strong> a rotation angle can be computed for position 50,000 as easily as for position 5, so there is no learned table to run off the end of. <strong>Distance fades:</strong> words far apart naturally interact more weakly (the plot in §3.4.3 shows why). <strong>Plays well with shortcuts:</strong> because position lives inside q and k rather than in an extra score term, it survives inside linear-attention variants that never build the full score grid.</p>
+<p>The paper demonstrates the last point with the Performer, a linear-attention model, in §4.4.</p>
+<h4>Why it matters</h4>
+<p>“No seat limit” is subtle: RoPE can <em>compute</em> any angle, but a model trained only on short texts has never seen the large angles the slow clocks reach at long range. That gap is exactly what later context-extension methods patch up.</p>
+</section>
+
+<section id="s3-4-2">
+<h3>3.4.2 The fast way to compute it <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S3.SS4.SSS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A d × d rotation matrix for d = 4096 would have 16.7 million entries, almost all zero. Nobody multiplies by all those zeros. Rotating an arrow (a, b) by angle φ only needs four multiplications: (a cos φ − b sin φ, b cos φ + a sin φ). Do that for every pair at once and you have RoPE.</p>
+<div class="eq" data-tex="\htmlData{sym=RdTheta}{R^{d}_{\Theta,m}}\, \htmlData{sym=xv}{x} = \htmlData{sym=xv}{x} \htmlData{sym=otimes}{\otimes} \htmlData{sym=cosv}{\cos(m\Theta)} + \htmlData{sym=rotx}{\mathrm{rot}(x)} \htmlData{sym=otimes}{\otimes} \htmlData{sym=sinv}{\sin(m\Theta)}" data-fallback="R^d_{Θ,m} x = x ⊗ cos(mΘ) + rot(x) ⊗ sin(mΘ)"></div>
+<div class="symtable" data-syms="xv,otimes,cosv,rotx,sinv"></div>
+<p class="inwords"><strong>In words:</strong> “multiply every number by the cosine of its pair's angle, then add the pair-swapped, sign-flipped copy multiplied by the sine.”</p>
+<p class="inwords"><strong>With the numbers:</strong> x = (1, 2, 3, 4) at position m = 1 with θ = (1, 0.01). Cosines (0.540, 0.540, 1.000, 1.000), sines (0.841, 0.841, 0.010, 0.010), rot(x) = (−2, 1, −4, 3). Result: (1·0.540 − 2·0.841, 2·0.540 + 1·0.841, 3·1.000 − 4·0.010, 4·1.000 + 3·0.010) = <strong>(−1.143, 1.922, 2.960, 4.030)</strong>. The fast pair has visibly turned; the slow pair has barely moved.</p>
+<h4>Why it matters today</h4>
+<p>This is, almost line for line, the “rotate half” function found in open-source model code. The cost is a few element-wise multiplications per query and key, which is negligible next to the attention itself.</p>
+</section>
+
+<section id="s3-4-3">
+<h3>3.4.3 Long-term decay <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S3.SS4.SSS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Picture many clock hands, all starting together at 12 o'clock. Nudge the time forward a little and they still point roughly the same way: add them up as arrows and you get a long arrow. Nudge it forward a lot and the hands point in every direction; added up, they mostly cancel. The score between two words is built from exactly such a sum of rotated contributions, one per pair, so for words that are far apart the contributions tend to cancel and the possible score shrinks.</p>
+<div class="eq" data-tex="\htmlData{sym=Sj}{S_j} = \htmlData{sym=sumj}{\sum_{i=0}^{j-1}} \htmlData{sym=eiphase}{e^{\mathrm{i}(m-n)\theta_i}}, \qquad \htmlData{sym=bound}{\text{relative bound}}(m-n) = \frac{1}{d/2}\htmlData{sym=sumall}{\sum_{j=1}^{d/2}} \lvert \htmlData{sym=Sj}{S_j} \rvert" data-fallback="S_j = Σ_{i=0}^{j−1} e^{i(m−n)θ_i},  relative bound(m − n) = (1/(d/2)) Σ_{j=1}^{d/2} |S_j|"></div>
+<div class="symtable" data-syms="Sj,sumj,eiphase,bound,sumall"></div>
+<p class="inwords"><strong>In words:</strong> “add up the first j clock hands as arrows and measure the length of the result; average those lengths over all j. The paper proves the attention score's size is capped in proportion to this average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for d = 128 at distance 0 every hand points the same way, so |S<sub>j</sub>| = j and the average of 1, 2, …, 64 is <strong>32.5</strong>. At distance 10 it has fallen to about <strong>18.0</strong>, and at distance 100 to about <strong>10.2</strong>.</p>
+<div class="plot" id="decay-plot">
+  <div class="controls"><span>Computed live from the formula above with d = 128 and base 10,000.</span></div>
+  <div id="decay-chart"></div>
+  <p class="readout" id="decay-readout">Hover or tap the curve to read the bound at any distance.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the distance between two words (m − n) and the y-axis is the paper's upper bound on how large their attention score can be, relative to the size of the vectors. It falls fast over the first few dozen positions and keeps drifting down with wiggles. The model can still attend strongly to a distant word if the learned vectors line up, but the default leans towards nearby words, which matches how language usually works.</p>
+<h4>Why it matters today</h4>
+<p>The decay is a gentle prior, not a hard rule, and later work showed the picture is subtler in trained models. It also explains a practical failure: past the lengths seen in training, the slow clocks enter angles the model never learned, and quality collapses unless the speeds are rescaled.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A new part for an engine is tested by swapping it into several existing engines and running them on the usual tracks. The paper swaps RoPE into a translation Transformer, into BERT, and into the Performer, and tries long Chinese legal documents.</p>
+<div class="tablewrap"><table>
+  <caption>Selected results, restated with attribution (Su et al., 2021, Tables 1, 2 and 5)</caption>
+  <thead><tr><th>Test</th><th>Baseline</th><th class="num">Baseline</th><th class="num">RoFormer</th></tr></thead>
+  <tbody>
+    <tr><td>WMT 2014 English→German translation (<span class="t" data-t="bleu">BLEU</span>, §4.1)</td><td>Transformer-base</td><td class="num">27.3</td><td class="num">27.5</td></tr>
+    <tr><td>GLUE: MRPC (F1, §4.3)</td><td>BERT</td><td class="num">88.9</td><td class="num">89.5</td></tr>
+    <tr><td>GLUE: STS-B (Spearman correlation)</td><td>BERT</td><td class="num">85.8</td><td class="num">87.0</td></tr>
+    <tr><td>GLUE: QQP (F1)</td><td>BERT</td><td class="num">71.2</td><td class="num">86.4</td></tr>
+    <tr><td>GLUE: SST-2 (accuracy)</td><td>BERT</td><td class="num">93.5</td><td class="num">90.7</td></tr>
+    <tr><td>GLUE: QNLI (accuracy)</td><td>BERT</td><td class="num">90.5</td><td class="num">88.0</td></tr>
+    <tr><td>GLUE: MNLI matched / mismatched (accuracy)</td><td>BERT</td><td class="num">84.6 / 83.4</td><td class="num">80.2 / 79.8</td></tr>
+    <tr class="hl"><td>CAIL2019-SCM long legal texts, test accuracy (§4.5)</td><td>WoBERT, 512 tokens</td><td class="num">68.10%</td><td class="num">69.79% (1024 tokens)</td></tr>
+  </tbody>
+</table></div>
+<p>Read the table honestly. On translation the gain is small (0.2 BLEU). On GLUE, RoFormer wins three tasks and loses three, which the paper summarises as a significant win on three of six. The clearest result is the last row: with 1,024-token inputs RoFormer beats the 512-token models by 1.5 to 2 points on long documents, the setting where a position scheme matters most. Pre-training plots (§4.2, §4.4) show RoFormer's loss falling faster than BERT's and the Performer's, but give no final numbers.</p>
+<h4>Why it matters today</h4>
+<p>RoPE did not win on headline benchmark gains. It won on engineering: no parameters, no kernel changes, relative behaviour, and a clean handle for stretching context. Those properties mattered more and more as models and context windows grew.</p>
+</section>
+
+<section id="s5">
+<h2>4.5.5 Limitations and 5 Conclusions <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S4.SS5.SSS5">original</a></span></h2>
+<blockquote class="quote">“Our theoretical analysis indicates that relative position can be naturally formulated using vector production in self-attention, with absolution position information being encoded through a rotation matrix.”<cite>Su et al. (2021), §5</cite></blockquote>
+<p>The authors are candid about two open questions: they cannot fully explain <em>why</em> RoFormer converges faster than baselines, and although they prove the decay property, it is shared by other schemes, so it does not by itself explain the better long-text results.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>What it does to the clocks</th><th>Where to learn more</th></tr></thead>
+  <tbody>
+    <tr><td>Adoption in large language models</td><td>RoPE, usually applied to every layer's queries and keys, became the default in open LLMs such as the Llama family</td><td><a data-lesson="primer/ml/positional.html">positional lesson</a></td></tr>
+    <tr><td><span class="t" data-t="position interpolation">Position interpolation</span></td><td>Slows <em>every</em> clock so long inputs map into the range of angles seen in training</td><td><a data-lesson="primer/ml/positional.html">positional lesson</a></td></tr>
+    <tr><td><span class="t" data-t="ntk-aware scaling">NTK-aware scaling</span> and <span class="t" data-t="yarn">YaRN</span></td><td>Slow the slow clocks more than the fast ones, keeping local word order sharp</td><td><a data-lesson="primer/ml/positional.html">positional lesson</a></td></tr>
+    <tr><td><span class="t" data-t="alibi">ALiBi</span></td><td>An alternative with no clocks at all: subtract a penalty that grows with distance</td><td><a data-lesson="primer/ml/positional.html">positional lesson</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen and Yunfeng Liu, <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em> (2021). <a href="https://arxiv.org/abs/2104.09864">arXiv:2104.09864</a>, released under CC BY-NC-ND 4.0. Quotations are brief and attributed; result numbers are restated in new tables with attribution; the diagram is redrawn from scratch. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    // 2.1
+    qm: { tex: "q_m", name: "Query of the word at position m", meaning: "The vector the word at position m uses to ask what it is looking for.", shape: "d numbers", example: "the query for “sat” in “the cat sat”" },
+    fq: { tex: "f_q", name: "Query recipe", meaning: "Whatever function turns a word and its position into a query. Position schemes differ only in this recipe (and f_k).", shape: "(word vector, position) → d numbers", example: "RoPE: project, then rotate" },
+    xm: { tex: "x_m", name: "Word vector at position m", meaning: "The embedding of the word sitting at position m, before any position information.", shape: "d numbers", example: "the vector for “sat”" },
+    m: { tex: "m", name: "Query position", meaning: "Where the asking word sits, counting from the start of the text.", shape: "0, 1, 2, …", example: "3 for “sat”" },
+    kn: { tex: "k_n", name: "Key of the word at position n", meaning: "The vector the word at position n offers so others can decide whether it is relevant.", shape: "d numbers", example: "the key for “the”" },
+    fk: { tex: "f_k", name: "Key recipe", meaning: "The function that turns a word and its position into a key.", shape: "(word vector, position) → d numbers", example: "RoPE: project, then rotate" },
+    xn: { tex: "x_n", name: "Word vector at position n", meaning: "The embedding of the word at position n.", shape: "d numbers", example: "the vector for “the”" },
+    n: { tex: "n", name: "Key position", meaning: "Where the word being looked at sits.", shape: "0, 1, 2, …", example: "1 for “the”" },
+    vn: { tex: "v_n", name: "Value of the word at position n", meaning: "The information the word hands over when attended to. RoPE leaves values unrotated.", shape: "d numbers", example: "what “the” contributes" },
+    fv: { tex: "f_v", name: "Value recipe", meaning: "The function that makes the value. In RoPE it ignores position entirely.", shape: "word vector → d numbers", example: "just W_v x_n" },
+    // 2.2
+    fany: { tex: "f_t", name: "Query, key or value recipe", meaning: "The same formula is used for all three, each with its own matrix; t names which one.", shape: "d numbers out", example: "t = q gives the query" },
+    xi: { tex: "x_i", name: "Word vector at position i", meaning: "The word's embedding before its seat badge is added.", shape: "d numbers", example: "(1, 0) in the toy" },
+    ipos: { tex: "i", name: "Position", meaning: "The seat number of the word.", shape: "1 … maximum length", example: "3" },
+    Wt: { tex: "W_t", name: "Learned projection", meaning: "A learned matrix that turns the (word + badge) vector into a query, key or value.", shape: "d × d", example: "W_q for queries" },
+    pi: { tex: "p_i", name: "Absolute position badge", meaning: "A vector that stands for seat i: fixed sine and cosine waves in the original Transformer, learned in BERT and GPT-2. It is added to the word vector.", shape: "d numbers", example: "(0.1, 0.9) for seat 3 in the toy" },
+    // 3.1
+    inner: { tex: "\\langle \\cdot, \\cdot \\rangle", name: "Inner product", meaning: "The angle brackets mean dot product: multiply matching entries and add. Here it is the raw attention score between the query and the key.", shape: "one number", example: "(1, 0)·(1, 0) = 1" },
+    g: { tex: "g", name: "The score we want", meaning: "Some function of the two words and of their gap m − n only. RoPE's job is to make the dot product equal to such a g.", shape: "one number", example: "cos(1) = 0.540 for the toy arrows at gap 1" },
+    mminusn: { tex: "m - n", name: "Relative position", meaning: "How far apart the two words are. The whole point: this is the only positional quantity allowed to affect the score.", shape: "any whole number", example: "2 − 1 = 1 and 7 − 6 = 1 give the same score" },
+    // 3.2.1
+    fqk: { tex: "f_{\\{q,k\\}}", name: "RoPE's query and key recipe", meaning: "The same rotation recipe is used for queries and for keys.", shape: "2 numbers in the 2D case", example: "turns q = (1, 0) at m = 2 into (−0.416, 0.909)" },
+    Rm: { tex: "R(m\\theta)", name: "Rotation matrix", meaning: "A 2 × 2 matrix of cosines and sines that turns any 2D arrow by the angle mθ without changing its length.", shape: "2 × 2", example: "at m = 2, θ = 1: [[−0.416, −0.909], [0.909, −0.416]]" },
+    theta: { tex: "\\theta", name: "Rotation speed", meaning: "How many radians the arrow turns per position. A radian is about 57.3 degrees; a full turn is 2π ≈ 6.28 radians.", shape: "a fixed number, not learned", example: "1 radian per position in the toy" },
+    Wqk: { tex: "W_{\\{q,k\\}}", name: "Learned projection", meaning: "The usual learned matrix that turns a word vector into a query (W_q) or key (W_k). RoPE does not change it.", shape: "d × d", example: "any learned matrix" },
+    Rmfull: { tex: "R_m", name: "Rotation by position m", meaning: "Turn by m times θ.", shape: "2 × 2 (d × d in general)", example: "2 radians at m = 2" },
+    Rnfull: { tex: "R_n", name: "Rotation by position n", meaning: "Turn by n times θ.", shape: "2 × 2 (d × d in general)", example: "1 radian at n = 1" },
+    qvec: { tex: "q", name: "Unrotated query", meaning: "The query straight out of W_q, before any position is applied.", shape: "2 numbers here", example: "(2, 1)" },
+    kvec: { tex: "k", name: "Unrotated key", meaning: "The key straight out of W_k.", shape: "2 numbers here", example: "(1, 1)" },
+    Rgap: { tex: "R_{n-m}", name: "Rotation by the gap", meaning: "A single rotation by (n − m)·θ. Because it depends only on the difference of positions, so does the score.", shape: "2 × 2", example: "−2 radians for positions (3, 1) or (8, 6)" },
+    // 3.2.2
+    RdTheta: { tex: "R^{d}_{\\Theta,m}", name: "Full rotary matrix", meaning: "A d × d matrix that is zero except for 2 × 2 rotation blocks down its diagonal, one per pair of numbers.", shape: "d × d, mostly zeros", example: "4 blocks when d = 8" },
+    block: { tex: "R(m\\theta_1)", name: "One pair's rotation", meaning: "The 2 × 2 rotation applied to pair 1, turning it by m·θ₁. Every pair has its own speed.", shape: "2 × 2", example: "10 radians for pair 1 at m = 10" },
+    Theta: { tex: "\\theta_i", name: "Speed of pair i", meaning: "How fast pair i turns per position. Speeds shrink geometrically from 1 down to nearly 1/10,000.", shape: "radians per position", example: "1, 0.1, 0.01, 0.001 when d = 8" },
+    base: { tex: "10000", name: "The base", meaning: "Sets the slowest speed and hence the longest distance the slow clocks can tell apart. Borrowed from the original Transformer's sinusoidal positions. Raising it is one way to extend a model's context.", shape: "a fixed constant", example: "10,000" },
+    ii: { tex: "i", name: "Pair number", meaning: "Which pair of numbers (1 for the first pair, up to d/2).", shape: "1 … d/2", example: "i = 2 has speed 0.1 when d = 8" },
+    d: { tex: "d", name: "Vector width", meaning: "How many numbers each query and key has; must be even so it splits into pairs.", shape: "an even whole number", example: "8 in the toy, 128 per head in many LLMs" },
+    qmT: { tex: "q_m^{\\top}", name: "Rotated query, transposed", meaning: "The position-encoded query written as a row so it can be dotted with the key.", shape: "1 × d", example: "the query for position m" },
+    kn2: { tex: "k_n", name: "Rotated key", meaning: "The position-encoded key at position n.", shape: "d × 1", example: "the key for position n" },
+    RdGap: { tex: "R^{d}_{\\Theta,n-m}", name: "Rotation by the gap, in every pair", meaning: "Each pair i turned by (n − m)·θᵢ. The only place position appears, and it is only the gap.", shape: "d × d", example: "pair 1 turned by −2 radians when n − m = −2" },
+    // 3.4.2
+    xv: { tex: "x", name: "Vector to rotate", meaning: "A query or key before rotation.", shape: "d numbers", example: "(1, 2, 3, 4)" },
+    otimes: { tex: "\\otimes", name: "Element-wise multiply", meaning: "Multiply matching positions of two lists (no adding up afterwards).", shape: "d numbers in, d numbers out", example: "(1, 2) ⊗ (3, 4) = (3, 8)" },
+    cosv: { tex: "\\cos(m\\Theta)", name: "Cosines, each repeated twice", meaning: "The cosine of each pair's angle, written twice so it lines up with both numbers of the pair.", shape: "d numbers", example: "(0.540, 0.540, 1.000, 1.000)" },
+    rotx: { tex: "\\mathrm{rot}(x)", name: "Pair-swapped copy", meaning: "Within each pair (a, b), swap to (−b, a). This is the “rotate half” trick in model code.", shape: "d numbers", example: "(1, 2, 3, 4) → (−2, 1, −4, 3)" },
+    sinv: { tex: "\\sin(m\\Theta)", name: "Sines, each repeated twice", meaning: "The sine of each pair's angle, written twice.", shape: "d numbers", example: "(0.841, 0.841, 0.010, 0.010)" },
+    // 3.4.3
+    Sj: { tex: "S_j", name: "Partial sum of the first j hands", meaning: "Add the first j clock hands as arrows (complex numbers). Its length is large when the hands agree and small when they point in different directions.", shape: "a complex number (an arrow)", example: "|S_j| = j at distance 0" },
+    sumj: { tex: "\\sum_{i=0}^{j-1}", name: "Sum over the first j pairs", meaning: "Add up the rotated hands for pairs 0 to j − 1.", shape: "one arrow", example: "j terms" },
+    eiphase: { tex: "e^{\\mathrm{i}(m-n)\\theta_i}", name: "One clock hand", meaning: "An arrow of length 1 at angle (m − n)·θᵢ. Here the upright i is the imaginary unit (√−1), not the pair number; e^{i·angle} is the standard way to write a unit arrow at that angle.", shape: "an arrow of length 1", example: "at distance 0 every hand is (1, 0)" },
+    bound: { tex: "\\text{relative bound}", name: "The decay bound", meaning: "The paper shows the attention score's size is at most a constant times this average. It shrinks as the distance grows.", shape: "a positive number", example: "32.5 at distance 0, about 10.2 at distance 100 (d = 128)" },
+    sumall: { tex: "\\sum_{j=1}^{d/2}", name: "Sum over all partial sums", meaning: "Add the lengths of S_1 up to S_{d/2}; dividing by d/2 makes it an average.", shape: "one number", example: "64 terms when d = 128" },
+  },
+
+  blocks: {
+    word: { title: "Word vector at position m", body: "<p>The token's embedding, exactly as in any Transformer. Unlike the original Transformer, <strong>nothing is added</strong> to it for position.</p>", shape: "d_model numbers", lesson: "primer/ml/big_picture.html" },
+    proj: { title: "Learned projection W_q", body: "<p>The ordinary query projection. RoPE does not change what the model learns here; it acts after.</p>", shape: "d_model → d per head", lesson: "primer/ml/attention.html" },
+    qvec: { title: "The query", body: "<p>A list of d numbers (per attention head). In most open LLMs d = 128 per head, so there are 64 pairs.</p>", shape: "d numbers" },
+    pair: { title: "A pair of numbers = one 2D arrow", body: "<p>Neighbouring numbers are grouped in twos. Each pair is treated as the x and y of an arrow on a flat plane. (Some implementations pair number i with number i + d/2 instead; the maths is the same.)</p>", shape: "2 numbers" },
+    pairdots: { title: "… more pairs", body: "<p>d/2 pairs in total: 64 when d = 128.</p>", shape: "d/2 pairs" },
+    rot1: { title: "Turn pair 1 by m·θ₁", body: "<p>The fastest clock: θ₁ = 1 radian per position. It repeats every 2π ≈ 6.28 positions, so it resolves nearby positions finely but cannot tell distant ones apart on its own.</p>", shape: "2 numbers in, 2 out, same length" },
+    rot2: { title: "Turn pair 2 by m·θ₂", body: "<p>A slower clock. Each pair's speed is the previous one divided by 10000^(2/d).</p>", shape: "2 numbers in, 2 out" },
+    rotdots: { title: "… one rotation per pair", body: "<p>Every pair turns by its own angle, all at once, all computed from the single number m.</p>", shape: "d/2 rotations" },
+    rotlast: { title: "Turn the last pair by m·θ_{d/2}", body: "<p>The slowest clock: about 1/10,000 radian per position. It takes over 60,000 positions to go round once, so it tracks coarse, long-range distance.</p>", shape: "2 numbers" },
+    qrot: { title: "Position-encoded query", body: "<p>Same length as before (rotations never stretch arrows), but now pointing in directions that encode position m. Keys are rotated the same way by their own position n, and their dot product depends only on m − n.</p>", shape: "d numbers", lesson: "primer/ml/positional.html" },
+    toattn: { title: "Into attention", body: "<p>Queries and keys go into the usual scaled dot-product attention. Values are not rotated. Nothing else in the Transformer changes.</p>", shape: "d numbers", lesson: "primer/ml/attention.html" },
+  },
+
+  onReady(P) {
+    rotationPlayground();
+    clockWall();
+    decayChart(P);
+  },
+};
+
+/* ---- rotation playground: two arrows, their angle and dot product ---- */
+function rotationPlayground() {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("rot-svg");
+  const out = document.getElementById("rot-readout");
+  const box = document.getElementById("rot-sliders");
+  const st = { m: 5, n: 1, theta: 0.45, qx: 2, qy: 1, kx: 1, ky: 1 };
+  const defs = { ...st };
+  const S = 38; // pixels per unit
+  const inputs = {};
+  function slider(key, label, min, max, step) {
+    const id = "rot-" + key;
+    const l = document.createElement("label"); l.htmlFor = id; l.textContent = label;
+    const r = document.createElement("input"); Object.assign(r, { type: "range", id, min, max, step, value: st[key] });
+    const o = document.createElement("output");
+    r.addEventListener("input", () => { st[key] = +r.value; draw(); });
+    inputs[key] = { r, o };
+    box.append(l, r, o);
+  }
+  slider("m", "query position m", 0, 20, 1);
+  slider("n", "key position n", 0, 20, 1);
+  slider("theta", "speed θ (radians per position)", 0.1, 1.5, 0.05);
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  const rot = (x, y, a) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
+  function arrow(x, y, color, width, opacity) {
+    const g = el("g", {});
+    g.appendChild(el("line", { x1: 0, y1: 0, x2: x * S, y2: -y * S, stroke: color, "stroke-width": width, opacity, "stroke-linecap": "round" }));
+    g.appendChild(el("circle", { cx: x * S, cy: -y * S, r: width + 1.5, fill: color, opacity }));
+    return g;
+  }
+  function draw() {
+    for (const k in inputs) { inputs[k].r.value = st[k]; inputs[k].o.textContent = k === "theta" ? st[k].toFixed(2) : st[k]; }
+    svg.textContent = "";
+    svg.appendChild(el("circle", { cx: 0, cy: 0, r: 110, fill: "none", stroke: "var(--border)" }));
+    svg.appendChild(el("line", { x1: -120, y1: 0, x2: 120, y2: 0, stroke: "var(--border)" }));
+    svg.appendChild(el("line", { x1: 0, y1: -120, x2: 0, y2: 120, stroke: "var(--border)" }));
+    const [qx, qy] = rot(st.qx, st.qy, st.m * st.theta);
+    const [kx, ky] = rot(st.kx, st.ky, st.n * st.theta);
+    // wedge between the two rotated arrows
+    const a1 = Math.atan2(qy, qx), a2 = Math.atan2(ky, kx);
+    let diff = a2 - a1; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
+    const R = 34, steps = 24, pts = ["0,0"];
+    for (let s = 0; s <= steps; s++) { const a = a1 + (diff * s) / steps; pts.push(`${(R * Math.cos(a)).toFixed(1)},${(-R * Math.sin(a)).toFixed(1)}`); }
+    svg.appendChild(el("polygon", { points: pts.join(" "), fill: "var(--accent-soft)", stroke: "var(--accent)", "stroke-width": 1 }));
+    svg.appendChild(arrow(st.qx, st.qy, "var(--ff-stroke)", 1.5, 0.3));
+    svg.appendChild(arrow(st.kx, st.ky, "var(--attn-stroke)", 1.5, 0.3));
+    svg.appendChild(arrow(qx, qy, "var(--ff-stroke)", 3, 1));
+    svg.appendChild(arrow(kx, ky, "var(--attn-stroke)", 3, 1));
+    // Labels sit just beyond each arrow tip, pushed outward along the arrow's own direction.
+    const label = (x, y, text) => {
+      const len = Math.hypot(x, y) || 1, ux = x / len, uy = y / len;
+      const t = el("text", { x: (x * S) + ux * 18, y: (-y * S) - uy * 18 + 4, "text-anchor": ux > 0.3 ? "start" : ux < -0.3 ? "end" : "middle" });
+      t.textContent = text; return t;
+    };
+    const lq = label(qx, qy, `q at m=${st.m}`);
+    const lk = label(kx, ky, `k at n=${st.n}`);
+    svg.append(lq, lk);
+    const score = qx * kx + qy * ky;
+    const plain = st.qx * st.kx + st.qy * st.ky;
+    out.innerHTML = `Gap m − n = <strong>${st.m - st.n}</strong> · angle between the arrows = ${Math.abs(diff).toFixed(2)} rad · <strong>score = ${score.toFixed(3)}</strong> (without RoPE it would be ${plain.toFixed(3)} at every position). Query (2, 1) and key (1, 1).`;
+  }
+  document.getElementById("rot-shift").addEventListener("click", () => { st.m = Math.min(20, st.m + 1); st.n = Math.min(20, st.n + 1); draw(); });
+  document.getElementById("rot-reset").addEventListener("click", () => { Object.assign(st, defs); draw(); });
+  draw();
+}
+
+/* ---- wall of clocks: four pairs turning at speeds 1, 0.1, 0.01, 0.001 ---- */
+function clockWall() {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("clock-svg");
+  const out = document.getElementById("clock-readout");
+  const box = document.getElementById("clock-sliders");
+  const speeds = [1, 0.1, 0.01, 0.001];
+  const l = document.createElement("label"); l.htmlFor = "clock-pos"; l.textContent = "position m";
+  const r = document.createElement("input"); Object.assign(r, { type: "range", id: "clock-pos", min: 0, max: 4, step: 0.001, value: 1 });
+  const o = document.createElement("output");
+  box.append(l, r, o);
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  function draw() {
+    const m = Math.round(Math.pow(10, +r.value));
+    o.textContent = m.toLocaleString();
+    svg.textContent = "";
+    speeds.forEach((s, i) => {
+      const cx = 65 + i * 130, cy = 70, R = 48;
+      svg.appendChild(el("circle", { cx, cy, r: R, fill: "var(--card)", stroke: "var(--wire)" }));
+      const a = m * s;
+      svg.appendChild(el("line", { x1: cx, y1: cy, x2: cx + R * 0.85 * Math.cos(a), y2: cy - R * 0.85 * Math.sin(a), stroke: "var(--active)", "stroke-width": 3, "stroke-linecap": "round" }));
+      svg.appendChild(el("circle", { cx, cy, r: 3, fill: "var(--fg)" }));
+      const t = el("text", { x: cx, y: 138, "text-anchor": "middle" }); t.textContent = `pair ${i + 1}: θ = ${s}`;
+      svg.appendChild(t);
+    });
+    out.innerHTML = `At position <strong>${m.toLocaleString()}</strong> the hands have turned ` +
+      speeds.map((s) => `${(m * s).toFixed(m * s < 1 ? 3 : 1)} rad`).join(", ") +
+      ` (full turns completed: ${speeds.map((s) => Math.floor((m * s) / (2 * Math.PI))).join(", ")}).`;
+  }
+  r.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- long-term decay bound, computed from the paper's formula ---- */
+function decayChart(P) {
+  const d = 128, half = d / 2;
+  const theta = Array.from({ length: half }, (_, i) => Math.pow(10000, (-2 * i) / d));
+  const bound = (r) => {
+    let re = 0, im = 0, total = 0;
+    for (let i = 0; i < half; i++) { re += Math.cos(r * theta[i]); im += Math.sin(r * theta[i]); total += Math.hypot(re, im); }
+    return total / half;
+  };
+  const pts = [];
+  for (let r = 0; r <= 250; r++) pts.push([r, bound(r)]);
+  P.lineChart(document.getElementById("decay-chart"), {
+    series: [{ name: "relative upper bound", points: pts }],
+    xLabel: "distance between the two words (m − n)", yLabel: "relative bound",
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(1),
+    readout: document.getElementById("decay-readout"), ariaLabel: "RoPE long-term decay bound against relative distance",
+  });
+}
+</script>
+</body>
+</html>

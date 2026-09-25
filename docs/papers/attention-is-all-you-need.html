@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attention Is All You Need, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Vaswani et al. (2017), the paper that introduced the Transformer.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="attention-is-all-you-need">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background</a></li>
+      <li><a href="#s3">3 Model Architecture</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Encoder and decoder stacks</a></li>
+          <li><a href="#s3-2">3.2 Attention</a></li>
+          <li><a href="#s3-2-1">3.2.1 Scaled dot-product</a></li>
+          <li><a href="#s3-2-2">3.2.2 Multi-head</a></li>
+          <li><a href="#s3-2-3">3.2.3 Three uses of attention</a></li>
+          <li><a href="#s3-3">3.3 Feed-forward networks</a></li>
+          <li><a href="#s3-4">3.4 Embeddings and softmax</a></li>
+          <li><a href="#s3-5">3.5 Positional encoding</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Why self-attention</a></li>
+      <li><a href="#s5">5 Training</a>
+        <ol>
+          <li><a href="#s5-1">5.1–5.2 Data, hardware, schedule</a></li>
+          <li><a href="#s5-3">5.3 Optimizer and warmup</a></li>
+          <li><a href="#s5-4">5.4 Regularization</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Results</a></li>
+      <li><a href="#s7">7 Conclusion</a></li>
+      <li><a href="#today">What changed since 2017</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Attention Is All You Need, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser and Polosukhin (2017), the paper that introduced the Transformer.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1706.03762">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1706.03762">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1706.03762">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations and the paper's tables are reproduced with attribution under the notice printed on the paper itself: <em>“Provided proper attribution is provided, Google hereby grants permission to reproduce the tables and figures in this paper solely for use in journalistic or scholarly works.”</em> The architecture figures here are redrawn from scratch. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same. Hover the <em>Q</em> in the first equation below and see.</li>
+  <li>The diagrams are live: hover or tap any block to see what it does and what shape the data has at that point.</li>
+</ul>
+<p>Each idea is explained in the same order: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>. Code that builds each piece from scratch lives in the linked lessons (for example <a class="lesson" data-lesson="primer/ml/attention.html">the attention lesson</a>).</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.”<cite>Vaswani et al. (2017), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/1706.03762">Read the original</a></cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Before 2017, the best translation systems read a sentence the way you'd read through a keyhole: one word at a time, carrying a running summary in your head. This paper says: lay the whole sentence on the table, and let every word look at every other word directly. That “looking” is <span class="t" data-t="attention">attention</span>, and a model built only from attention (plus some simple per-word processing) is the <span class="t" data-t="transformer">Transformer</span>.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>A <span class="t" data-tip-title="Machine translation" data-tip="Turning a sentence in one language into another. The paper tests the Transformer on English→German and English→French.">translation</span> model with no <span class="t" data-t="rnn">recurrence</span> and no <span class="t" data-t="convolution">convolutions</span>: attention only.</li>
+  <li>Better quality: 28.4 <span class="t" data-t="bleu">BLEU</span> on English→German and 41.8 on English→French, new records at the time.</li>
+  <li>Much cheaper to train, because every word can be processed <span class="t" data-tip-title="Parallelism" data-tip="Doing many calculations at the same time instead of one after another. GPUs have thousands of small cores built exactly for this.">in parallel</span>: the big model trained in 3.5 days on 8 <span class="t" data-tip-title="GPU" data-tip="Graphics processing unit: a chip with thousands of simple cores that do arithmetic in parallel. Neural networks are mostly big matrix multiplications, which GPUs are built for.">GPUs</span>.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Almost every modern language model (GPT, Claude, Llama, Gemini), most image and speech models, and every modern <span class="t" data-t="embedding">embedding</span> model is a descendant of the architecture in this paper. Understanding these 15 pages is understanding the core of modern AI.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S1">original</a></span></h2>
+<blockquote class="quote">“This inherently sequential nature precludes parallelization within training examples, which becomes critical at longer sequence lengths, as memory constraints limit batching across examples.”<cite>Vaswani et al. (2017), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Imagine a relay race where each runner can only start when the previous one hands over the baton. Adding more runners doesn't make the race faster. That is a <span class="t" data-t="rnn">recurrent neural network (RNN)</span>: to process word 50, it must first finish words 1 to 49, because each step needs the <span class="t" data-tip-title="Hidden state" data-tip="The running summary an RNN carries from one word to the next: a fixed-size vector it rewrites after reading each word.">hidden state</span> from the step before. A <span class="t" data-tip-title="GPU" data-tip="Graphics processing unit: a chip with thousands of simple cores that do arithmetic in parallel. Neural networks are mostly big matrix multiplications, which GPUs are built for.">GPU</span>, which is built to do thousands of things at once, sits mostly idle.</p>
+<h4>Tiny example</h4>
+<p>Take “The cat sat down”. An RNN computes four steps in a strict chain: h<sub>1</sub> from “The”; h<sub>2</sub> from h<sub>1</sub> and “cat”; h<sub>3</sub> from h<sub>2</sub> and “sat”; h<sub>4</sub> from h<sub>3</sub> and “down”. Information about “The” reaches “down” only after surviving three hand-offs. The Transformer computes all four words' new representations at once, and “down” can look at “The” in a single step.</p>
+<h4>Why it matters</h4>
+<p>This is the paper's core bet: give up the step-by-step memory, and gain parallelism plus direct connections. The bet paid off so well that training on vastly more data became practical, which is what eventually produced today's large language models. The <a class="lesson" data-lesson="primer/ml/cnn_rnn.html">CNN and RNN lesson</a> builds an RNN from scratch and measures exactly how it forgets.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Others had already tried to escape the relay race. Convolution-based models (ByteNet, ConvS2S) read words in small overlapping windows, like reading a page through a sliding frame a few words wide. Windows run in parallel, but for two far-apart words to “meet”, the frames have to be stacked many layers deep.</p>
+<h4>The key idea the paper borrows</h4>
+<p><span class="t" data-t="self-attention">Self-attention</span> (relating different positions of one sequence to each other) already existed as a helper inside recurrent models. The new move is making it the <em>only</em> mechanism. The paper also flags the price: averaging over many positions blurs detail, which is why it introduces <em>multi-head</em> attention (§3.2.2): several attentions side by side, each free to focus on something different.</p>
+<h4>Why it matters</h4>
+<p>“Any two words are one step apart” is the property that makes Transformers good at long-range relationships, such as which noun a pronoun refers to 30 words later.</p>
+</section>
+
+<section id="s3">
+<h2>3 Model Architecture <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Think of a two-person translation team. The <span class="t" data-t="encoder">encoder</span> reads the whole English sentence and writes rich notes about every word. The <span class="t" data-t="decoder">decoder</span> writes the German sentence one word at a time; before each word, it rereads what it has written so far <em>and</em> consults the encoder's notes. Writing one word at a time, each time feeding the output back in, is what <span class="t" data-tip-title="Auto-regressive" data-tip="Generating one piece at a time, feeding each output back in as input for the next step. Every chat model writes this way, one token after another.">auto-regressive</span> means.</p>
+<p>Hover or tap any block in the redrawn figure to see what it does and the shape of the data flowing through it. The numbers use the paper's base model: <span class="t" data-tip-title="d_model" data-tip="The width of every vector passed between layers: 512 numbers per token in the paper's base model (1024 in the big one).">d<sub>model</sub></span> = 512, <span class="t" data-tip-title="h (heads)" data-tip="How many attention heads run side by side in each attention layer: 8 in the base model, each working on 512 / 8 = 64 numbers.">h</span> = 8 heads, <span class="t" data-tip-title="N (layers)" data-tip="How many times the encoder layer (and the decoder layer) is stacked: 6 in the paper. Modern large models stack 30 to 120.">N</span> = 6 layers, and a 10-token sentence as the example.</p>
+
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 700" role="img" aria-label="The Transformer architecture: encoder on the left, decoder on the right">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker>
+    </defs>
+    <!-- frames (stacks) -->
+    <g class="blk frame" data-block="enc_stack" tabindex="0" role="button" aria-label="Encoder stack, repeated N times"><rect x="48" y="335" width="190" height="210" rx="14"/></g>
+    <g class="blk frame" data-block="dec_stack" tabindex="0" role="button" aria-label="Decoder stack, repeated N times"><rect x="318" y="255" width="194" height="290" rx="14"/></g>
+    <text x="52" y="327" class="lbl">Encoder</text>
+    <text x="322" y="247" class="lbl">Decoder</text>
+    <g class="blk" data-block="nx" tabindex="0" role="button" aria-label="N times"><rect x="8" y="425" width="34" height="26" rx="6" fill="var(--card)" stroke="var(--wire)"/><text x="25" y="442" text-anchor="middle">N×</text></g>
+    <g class="blk" data-block="nx" tabindex="0" role="button" aria-label="N times"><rect x="518" y="385" width="34" height="26" rx="6" fill="var(--card)" stroke="var(--wire)"/><text x="535" y="402" text-anchor="middle">N×</text></g>
+
+    <!-- wires: encoder -->
+    <path class="wire" d="M150,668 V642" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,605 V588" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,564 V547 M150,547 H115 V532 M150,547 V532 M150,547 H185 V532" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,547 H66 V467 H78" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,490 V480" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,455 V437" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,445 H66 V372 H78" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,395 V385" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,360 V312 H292 V446 H372 V437" marker-end="url(#arr)"/>
+    <path class="wire" d="M292,446 H410 V437" marker-end="url(#arr)"/>
+    <!-- wires: decoder -->
+    <path class="wire" d="M410,668 V642" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,605 V588" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,564 V547 M410,547 H375 V532 M410,547 V532 M410,547 H445 V532" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,547 H496 V467 H482" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,490 V480" marker-end="url(#arr)"/>
+    <path class="wire" d="M448,455 V437" marker-end="url(#arr)"/>
+    <path class="wire" d="M448,450 H496 V372 H482" />
+    <path class="wire" d="M496,372 H482" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,395 V385" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,360 V342" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,350 H496 V277 H482" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,300 V290" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,265 V227" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,195 V177" marker-end="url(#arr)"/>
+    <path class="wire" d="M410,145 V122" marker-end="url(#arr)"/>
+
+    <!-- encoder blocks -->
+    <g class="blk plain" data-block="inputs" tabindex="0" role="button" aria-label="Inputs"><rect x="100" y="668" width="100" height="24" rx="6"/><text x="150" y="684" text-anchor="middle">Inputs</text></g>
+    <g class="blk emb" data-block="in_emb" tabindex="0" role="button" aria-label="Input embedding"><rect x="80" y="605" width="140" height="36" rx="7"/><text x="150" y="627" text-anchor="middle">Input Embedding</text></g>
+    <g class="blk pe" data-block="pos_enc" tabindex="0" role="button" aria-label="Positional encoding, added"><circle cx="150" cy="576" r="12"/><text x="150" y="581" text-anchor="middle" style="font-size:15px">+</text><path class="wire" d="M92,576 q6,-10 12,0 t12,0" /><text x="36" y="572" class="lbl" text-anchor="middle">Positional</text><text x="36" y="585" class="lbl" text-anchor="middle">Encoding</text></g>
+    <g class="blk attn" data-block="enc_mha" tabindex="0" role="button" aria-label="Encoder multi-head self-attention"><rect x="80" y="490" width="140" height="42" rx="7"/><text x="150" y="508" text-anchor="middle">Multi-Head</text><text x="150" y="523" text-anchor="middle">Attention</text></g>
+    <g class="blk norm" data-block="add_norm" tabindex="0" role="button" aria-label="Add and norm"><rect x="80" y="455" width="140" height="24" rx="6"/><text x="150" y="471" text-anchor="middle">Add &amp; Norm</text></g>
+    <g class="blk ff" data-block="ffn" tabindex="0" role="button" aria-label="Feed forward"><rect x="80" y="395" width="140" height="42" rx="7"/><text x="150" y="420" text-anchor="middle">Feed Forward</text></g>
+    <g class="blk norm" data-block="add_norm" tabindex="0" role="button" aria-label="Add and norm"><rect x="80" y="360" width="140" height="24" rx="6"/><text x="150" y="376" text-anchor="middle">Add &amp; Norm</text></g>
+
+    <!-- decoder blocks -->
+    <g class="blk plain" data-block="outputs_shifted" tabindex="0" role="button" aria-label="Outputs, shifted right"><rect x="322" y="668" width="176" height="24" rx="6"/><text x="410" y="684" text-anchor="middle">Outputs (shifted right)</text></g>
+    <g class="blk emb" data-block="out_emb" tabindex="0" role="button" aria-label="Output embedding"><rect x="340" y="605" width="140" height="36" rx="7"/><text x="410" y="627" text-anchor="middle">Output Embedding</text></g>
+    <g class="blk pe" data-block="pos_enc" tabindex="0" role="button" aria-label="Positional encoding, added"><circle cx="410" cy="576" r="12"/><text x="410" y="581" text-anchor="middle" style="font-size:15px">+</text><path class="wire" d="M444,576 q6,-10 12,0 t12,0" /><text x="512" y="572" class="lbl" text-anchor="middle">Positional</text><text x="512" y="585" class="lbl" text-anchor="middle">Encoding</text></g>
+    <g class="blk attn" data-block="masked_mha" tabindex="0" role="button" aria-label="Masked multi-head self-attention"><rect x="340" y="490" width="140" height="42" rx="7"/><text x="410" y="508" text-anchor="middle">Masked Multi-Head</text><text x="410" y="523" text-anchor="middle">Attention</text></g>
+    <g class="blk norm" data-block="add_norm" tabindex="0" role="button" aria-label="Add and norm"><rect x="340" y="455" width="140" height="24" rx="6"/><text x="410" y="471" text-anchor="middle">Add &amp; Norm</text></g>
+    <g class="blk attn" data-block="cross_mha" tabindex="0" role="button" aria-label="Encoder-decoder attention"><rect x="340" y="395" width="140" height="42" rx="7"/><text x="410" y="413" text-anchor="middle">Multi-Head</text><text x="410" y="428" text-anchor="middle">Attention</text></g>
+    <g class="blk norm" data-block="add_norm" tabindex="0" role="button" aria-label="Add and norm"><rect x="340" y="360" width="140" height="24" rx="6"/><text x="410" y="376" text-anchor="middle">Add &amp; Norm</text></g>
+    <g class="blk ff" data-block="ffn" tabindex="0" role="button" aria-label="Feed forward"><rect x="340" y="300" width="140" height="42" rx="7"/><text x="410" y="325" text-anchor="middle">Feed Forward</text></g>
+    <g class="blk norm" data-block="add_norm" tabindex="0" role="button" aria-label="Add and norm"><rect x="340" y="265" width="140" height="24" rx="6"/><text x="410" y="281" text-anchor="middle">Add &amp; Norm</text></g>
+    <g class="blk lin" data-block="linear" tabindex="0" role="button" aria-label="Linear output layer"><rect x="350" y="195" width="120" height="30" rx="6"/><text x="410" y="214" text-anchor="middle">Linear</text></g>
+    <g class="blk soft" data-block="softmax_out" tabindex="0" role="button" aria-label="Softmax"><rect x="350" y="145" width="120" height="30" rx="6"/><text x="410" y="164" text-anchor="middle">Softmax</text></g>
+    <g class="blk plain" data-block="out_probs" tabindex="0" role="button" aria-label="Output probabilities"><rect x="325" y="96" width="170" height="24" rx="6"/><text x="410" y="112" text-anchor="middle">Output Probabilities</text></g>
+    <text x="221" y="294" class="lbl" text-anchor="middle">encoder output</text>
+    <text x="221" y="306" class="lbl" text-anchor="middle">(becomes K, V)</text>
+  </svg>
+  <div class="panel" id="fig1-panel" aria-live="polite"><p class="hint">Hover or tap any block in the diagram. Start at the bottom left with <strong>Inputs</strong> and work upwards.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn: the Transformer's encoder (left) and decoder (right). Based on Vaswani et al. (2017), Figure 1, reproduced in redrawn form with attribution.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> data flows from the bottom up. On the left, the input sentence becomes vectors (Input Embedding), gets word-order information added (the ⊕ with the wave), and passes through the encoder block, which is repeated N = 6 times (the dashed box). Each repetition has two steps: attention, where words look at each other, and a feed-forward network, where each word is processed on its own. Each step is followed by Add &amp; Norm. The encoder's final output travels right along the long wire and feeds the decoder's <em>middle</em> attention block. On the right, the decoder does the same climb over the words written so far, with one extra attention step in the middle to consult the encoder. At the top, Linear and Softmax turn the final vector into a probability for every word in the vocabulary. The arrows that bypass a block and rejoin at Add &amp; Norm are the <span class="t" data-t="residual connection">residual connections</span>.</p>
+</section>
+
+<section id="s3-1">
+<h3 id="s3-1h">3.1 Encoder and decoder stacks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Each layer is a draft that the next layer improves. Instead of rewriting the draft from scratch, each layer writes <em>corrections in the margin</em> that get added to the draft: that is the <span class="t" data-t="residual connection">residual connection</span>. Then the page is tidied to a standard size so no number grows out of control: that is <span class="t" data-t="layer normalization">layer normalization</span>.</p>
+<h4>Tiny example</h4>
+<p>Say a word's vector is x = (2, 0) and the attention step proposes the change Sublayer(x) = (1, 1). The residual adds them: (3, 1). Layer norm then rescales that to zero mean and unit spread: the mean is 2 and the standard deviation is 1, so the result is ((3 − 2)/1, (1 − 2)/1) = (1, −1).</p>
+<div class="eq" data-tex="\htmlData{sym=out}{\text{output}} = \htmlData{sym=LayerNorm}{\text{LayerNorm}}\big(\htmlData{sym=x}{x} + \htmlData{sym=Sublayer}{\text{Sublayer}}(\htmlData{sym=x}{x})\big)" data-fallback="output = LayerNorm(x + Sublayer(x))"></div>
+<div class="symtable" data-syms="out,LayerNorm,x,Sublayer"></div>
+<p class="inwords"><strong>In words:</strong> “add the sub-layer's proposed change to the input, then normalize the sum.”</p>
+<p class="inwords"><strong>With the numbers:</strong> LayerNorm((2, 0) + (1, 1)) = LayerNorm((3, 1)) = (1, −1).</p>
+<h4>What the paper specifies</h4>
+<ul>
+  <li><strong>Encoder:</strong> N = 6 identical layers. Each has two sub-layers, multi-head self-attention and a feed-forward network, each wrapped as above.</li>
+  <li><strong>Decoder:</strong> N = 6 identical layers with a third sub-layer in the middle that attends over the encoder's output. Its self-attention is <span class="t" data-t="causal mask">masked</span> so position <em>i</em> can only see positions before it.</li>
+  <li>Every sub-layer and embedding outputs vectors of width d<sub>model</sub> = 512, so the pieces snap together like Lego of one fixed size.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Residual connections are why you can stack 6 layers here and over a hundred in modern models: gradients flow straight down the “add” path. One detail has changed: modern models normalize <em>before</em> each sub-layer (x + Sublayer(LayerNorm(x)), called <span class="t" data-tip-title="Pre-norm" data-tip="Normalizing the input before each sub-layer, x + Sublayer(LayerNorm(x)), instead of after. It keeps very deep stacks stable and is what most modern models use.">pre-norm</span>), which trains more stably when very deep. See the <a class="lesson" data-lesson="primer/ml/transformer.html">transformer lesson</a> and the <a class="lesson" data-lesson="primer/ml/deep_nets.html">deep networks lesson</a>.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors.”<cite>Vaswani et al. (2017), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You walk into a library and type a search (your <span class="t" data-t="query">query</span>). Every book has a catalogue card describing it (its <span class="t" data-t="key">key</span>) and the book itself on the shelf (its <span class="t" data-t="value">value</span>). The librarian compares your search with every card and hands you not one book but a <em>blend</em>: mostly the best match, a little of the next best. In a Transformer, every word is simultaneously a searcher, a catalogue card and a book: this is <span class="t" data-t="self-attention">self-attention</span>.</p>
+<h4>Try it: who does each word listen to?</h4>
+<div class="play" id="playground">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Last word of the sentence:</span>
+    <button type="button" data-ending="tired" aria-pressed="true">…because it was <strong>tired</strong></button>
+    <button type="button" data-ending="wide" aria-pressed="false">…because it was <strong>wide</strong></button>
+  </div>
+  <div class="sentence" id="sentence" aria-label="Sentence tokens: hover, focus or tap one"></div>
+  <p class="readout" id="play-readout">Hover, tab to or tap a word. The bars show how much attention it pays to each word.</p>
+  <p class="readout"><em>These weights are illustrative, chosen by hand to show the kind of pattern trained models learn. They are not taken from a real model.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> pick a word and look at the bars under every word: the longer the bar, the more of that word's meaning flows into the one you picked. Pick <strong>it</strong>. With “tired”, most attention goes to <em>animal</em>, because animals get tired. Switch the ending to “wide” and <em>it</em> now attends mostly to <em>street</em>, because streets are wide. One changed word at the end changes what “it” means, and attention is the mechanism that carries that change. No grammar rule does this; it is learned from data.</p>
+<h4>Why it matters today</h4>
+<p>Attention is the only place in a Transformer where words exchange information. Everything else processes each word on its own. If you understand this section, you understand the part of the model that makes it contextual.</p>
+</section>
+
+<section id="s3-2-1">
+<h3>3.2.1 Scaled dot-product attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3.SS2.SSS1">original</a></span></h3>
+<h4>Tiny example</h4>
+<p>Follow the word “it”. Its query is compared with three keys using a <span class="t" data-t="dot product">dot product</span>, and the results are scaled. Say the scaled scores come out as 2.0 for “animal”, 1.0 for “tired” and 0.5 for “street”. <span class="t" data-t="softmax">Softmax</span> turns them into shares: e<sup>2.0</sup> = 7.39, e<sup>1.0</sup> = 2.72 and e<sup>0.5</sup> = 1.65, which total 11.76. So “animal” gets 7.39 / 11.76 = <strong>0.63</strong>, “tired” gets <strong>0.23</strong> and “street” gets <strong>0.14</strong>. The new vector for “it” is 0.63 × value(animal) + 0.23 × value(tired) + 0.14 × value(street).</p>
+
+<figure class="ix" id="fig2a">
+  <div class="ixgrid">
+  <svg viewBox="0 0 260 390" role="img" aria-label="Scaled dot-product attention, step by step">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M70,352 V317" marker-end="url(#arr2)"/>
+    <path class="wire" d="M130,352 V317" marker-end="url(#arr2)"/>
+    <path class="wire" d="M205,352 V97" marker-end="url(#arr2)"/>
+    <path class="wire" d="M100,290 V267" marker-end="url(#arr2)"/>
+    <path class="wire" d="M100,240 V217" marker-end="url(#arr2)"/>
+    <path class="wire" d="M100,190 V167" marker-end="url(#arr2)"/>
+    <path class="wire" d="M100,140 V97" marker-end="url(#arr2)"/>
+    <path class="wire" d="M150,70 V30" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="q_in"><rect x="50" y="352" width="40" height="26" rx="6"/><text x="70" y="370" text-anchor="middle">Q</text></g>
+    <g class="blk plain" data-block="k_in"><rect x="110" y="352" width="40" height="26" rx="6"/><text x="130" y="370" text-anchor="middle">K</text></g>
+    <g class="blk plain" data-block="v_in"><rect x="185" y="352" width="40" height="26" rx="6"/><text x="205" y="370" text-anchor="middle">V</text></g>
+    <g class="blk lin" data-block="matmul1"><rect x="45" y="290" width="110" height="27" rx="6"/><text x="100" y="308" text-anchor="middle">MatMul</text></g>
+    <g class="blk norm" data-block="scale"><rect x="45" y="240" width="110" height="27" rx="6"/><text x="100" y="258" text-anchor="middle">Scale</text></g>
+    <g class="blk plain" data-block="mask"><rect x="45" y="190" width="110" height="27" rx="6" stroke-dasharray="4 3"/><text x="100" y="208" text-anchor="middle">Mask (optional)</text></g>
+    <g class="blk soft" data-block="sdpa_softmax"><rect x="45" y="140" width="110" height="27" rx="6"/><text x="100" y="158" text-anchor="middle">SoftMax</text></g>
+    <g class="blk lin" data-block="matmul2"><rect x="70" y="70" width="160" height="27" rx="6"/><text x="150" y="88" text-anchor="middle">MatMul</text></g>
+    <g class="blk plain" data-block="sdpa_out"><rect x="95" y="4" width="110" height="26" rx="6"/><text x="150" y="22" text-anchor="middle">Output</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step. Start with <strong>Q</strong> and <strong>K</strong> at the bottom.</p></div>
+  </div>
+  <figcaption>Figure 2 (left) of the paper, redrawn: scaled dot-product attention. Based on Vaswani et al. (2017), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the bottom up. Q and K enter the first MatMul, which produces the grid of scores: every query against every key. Scale divides by √d<sub>k</sub>. The optional Mask blanks out positions a word is not allowed to see. SoftMax turns each row of scores into shares that sum to 1. V has been waiting on the right all along: the second MatMul uses the shares to blend the values. Q and K decide <em>how much</em>; V carries <em>what</em>.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=Attention}{\text{Attention}}(\htmlData{sym=Q}{Q}, \htmlData{sym=K}{K}, \htmlData{sym=V}{V}) = \htmlData{sym=softmax}{\text{softmax}}\!\left(\frac{\htmlData{sym=Q}{Q}\htmlData{sym=KT}{K^\top}}{\htmlData{sym=sqrtdk}{\sqrt{d_k}}}\right)\htmlData{sym=V}{V}" data-fallback="Attention(Q, K, V) = softmax(Q Kᵀ / √d_k) V"></div>
+<div class="symtable" data-syms="Q,K,V,KT,QKT,sqrtdk,softmax,Attention"></div>
+<p class="inwords"><strong>In words:</strong> “score every query against every key, shrink the scores by the square root of the key width, turn each row of scores into shares, and use the shares to blend the values.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the “it” row of QKᵀ/√d<sub>k</sub> is (2.0, 1.0, 0.5); softmax makes it (0.63, 0.23, 0.14); multiplying by V gives 0.63·V(animal) + 0.23·V(tired) + 0.14·V(street).</p>
+
+<h4>Softmax, decoded</h4>
+<p>Softmax is the step that turns any list of scores, including negative ones, into shares that are all positive and add up to exactly 1. Think of it as a vote in which louder voices get disproportionately more say.</p>
+<div class="eq" data-tex="\htmlData{sym=softmax}{\text{softmax}}(\htmlData{sym=z}{z})_{\htmlData{sym=i}{i}} = \frac{\htmlData{sym=e}{e}^{\htmlData{sym=zi}{z_i}}}{\htmlData{sym=sum}{\sum_{j=1}^{n}} \htmlData{sym=e}{e}^{\htmlData{sym=zj}{z_j}}}" data-fallback="softmax(z)_i = e^(z_i) / Σ_j e^(z_j)"></div>
+<div class="symtable" data-syms="z,i,zi,e,sum,zj"></div>
+<p class="inwords"><strong>In words:</strong> “the share for item <em>i</em> is <em>e</em> raised to its score, divided by the sum of <em>e</em> raised to every score.”</p>
+<p class="inwords"><strong>With the numbers:</strong> softmax(2.0, 1.0, 0.5) for “animal” = 7.39 / (7.39 + 2.72 + 1.65) = 7.39 / 11.76 = 0.63.</p>
+<div class="play" id="softmax-demo">
+  <div class="sliders" id="sm-sliders"></div>
+  <div class="shares" id="sm-shares"></div>
+  <p class="readout" id="sm-sum"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> drag a score and watch every bar move, because the shares always add up to 1: one word can only gain attention by taking it from the others. Now drag <strong>temperature</strong>. Softmax is computed on score ÷ temperature, so a low temperature exaggerates the gaps (the winner takes nearly everything) and a high temperature flattens them (everyone gets a similar share). The same knob controls how adventurous a chat model is when it picks its next word; see the <a data-lesson="primer/ml/inference.html">inference lesson</a>.</p>
+
+<h4>Why divide by √d<sub>k</sub>? The paper's footnote, decoded</h4>
+<blockquote class="quote">“We suspect that for large values of d<sub>k</sub>, the dot products grow large in magnitude, pushing the softmax function into regions where it has extremely small gradients.”<cite>Vaswani et al. (2017), §3.2.1</cite></blockquote>
+<p><strong>Everyday picture:</strong> roll one die and the result swings between 1 and 6. Add up a hundred dice and the total swings by dozens. A dot product is a sum of d<sub>k</sub> small products, so the wider the vectors, the wilder the scores. Wild scores make softmax give one word nearly 100%, and then it stops responding to small changes, so the <span class="t" data-t="gradient">gradient</span> that training relies on disappears.</p>
+<div class="eq" data-tex="\htmlData{sym=q}{q}\cdot\htmlData{sym=k}{k} = \htmlData{sym=sumdk}{\sum_{m=1}^{d_k}} \htmlData{sym=q}{q}_m \htmlData{sym=k}{k}_m, \qquad \htmlData{sym=Var}{\operatorname{Var}}(\htmlData{sym=q}{q}\cdot \htmlData{sym=k}{k}) = \htmlData{sym=dk}{d_k}" data-fallback="q·k = Σ_m q_m k_m,  Var(q·k) = d_k"></div>
+<div class="symtable" data-syms="q,k,sumdk,Var,dk"></div>
+<p class="inwords"><strong>In words:</strong> “a dot product adds up d<sub>k</sub> products; if each entry of q and k is random with average 0 and spread 1, the sum's variance is d<sub>k</sub>, so its typical size is √d<sub>k</sub>. Dividing by √d<sub>k</sub> brings the typical size back to 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's d<sub>k</sub> = 64, so raw scores typically swing by √64 = 8. After dividing by 8 they typically swing by about 1, where softmax is smooth.</p>
+<h4>Why it matters today</h4>
+<p>Every attention layer in every modern model still divides by √d<sub>k</sub>. The <a data-lesson="primer/ml/attention.html">attention lesson</a> measures the saturation directly: at d<sub>k</sub> = 512 without scaling, the largest share averages above 0.9 and the gradient collapses.</p>
+</section>
+
+<section id="s3-2-2">
+<h3>3.2.2 Multi-head attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3.SS2.SSS2">original</a></span></h3>
+<blockquote class="quote">“Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions.”<cite>Vaswani et al. (2017), §3.2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Give the same sentence to eight readers, each with a different coloured highlighter. One marks who did what, another marks which pronoun points where, another marks nearby words. Afterwards you staple their notes together. That is <span class="t" data-t="multi-head attention">multi-head attention</span>: eight small attentions side by side, each free to look for something different.</p>
+<h4>Tiny example</h4>
+<p>The base model's vectors have 512 numbers. Instead of one attention over all 512, it runs h = 8 heads over 512 / 8 = <strong>64</strong> numbers each. Each head has its own projection matrices of size 512 × 64. The eight 64-wide outputs are glued back into 8 × 64 = 512 numbers and mixed by one more 512 × 512 matrix. The total work is about the same as one full-width head.</p>
+<figure class="ix" id="fig2b">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 400" role="img" aria-label="Multi-head attention">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M70,368 V338" marker-end="url(#arr3)"/>
+    <path class="wire" d="M150,368 V338" marker-end="url(#arr3)"/>
+    <path class="wire" d="M230,368 V338" marker-end="url(#arr3)"/>
+    <path class="wire" d="M70,300 V262 M150,300 V262 M230,300 V262" marker-end="url(#arr3)"/>
+    <path class="wire" d="M150,190 V160" marker-end="url(#arr3)"/>
+    <path class="wire" d="M150,130 V104" marker-end="url(#arr3)"/>
+    <path class="wire" d="M150,76 V40" marker-end="url(#arr3)"/>
+    <g class="blk plain" data-block="mh_v"><rect x="50" y="368" width="40" height="24" rx="6"/><text x="70" y="385" text-anchor="middle">V</text></g>
+    <g class="blk plain" data-block="mh_k"><rect x="130" y="368" width="40" height="24" rx="6"/><text x="150" y="385" text-anchor="middle">K</text></g>
+    <g class="blk plain" data-block="mh_q"><rect x="210" y="368" width="40" height="24" rx="6"/><text x="230" y="385" text-anchor="middle">Q</text></g>
+    <g class="blk lin" data-block="mh_proj">
+      <rect class="ghost" x="48" y="296" width="60" height="30" rx="6"/><rect x="40" y="304" width="60" height="30" rx="6"/><text x="70" y="323" text-anchor="middle">Linear</text>
+      <rect class="ghost" x="128" y="296" width="60" height="30" rx="6"/><rect x="120" y="304" width="60" height="30" rx="6"/><text x="150" y="323" text-anchor="middle">Linear</text>
+      <rect class="ghost" x="208" y="296" width="60" height="30" rx="6"/><rect x="200" y="304" width="60" height="30" rx="6"/><text x="230" y="323" text-anchor="middle">Linear</text>
+    </g>
+    <g class="blk attn" data-block="mh_heads">
+      <rect class="ghost" x="52" y="182" width="220" height="62" rx="8"/><rect class="ghost" x="46" y="188" width="220" height="62" rx="8"/><rect x="40" y="194" width="220" height="62" rx="8"/>
+      <text x="150" y="220" text-anchor="middle">Scaled Dot-Product</text><text x="150" y="236" text-anchor="middle">Attention</text>
+    </g>
+    <g class="blk" data-block="mh_h"><rect x="266" y="200" width="28" height="24" rx="6" fill="var(--card)" stroke="var(--wire)"/><text x="280" y="216" text-anchor="middle">h</text></g>
+    <g class="blk norm" data-block="mh_concat"><rect x="95" y="130" width="110" height="28" rx="6"/><text x="150" y="149" text-anchor="middle">Concat</text></g>
+    <g class="blk lin" data-block="mh_out"><rect x="95" y="76" width="110" height="28" rx="6"/><text x="150" y="95" text-anchor="middle">Linear</text></g>
+    <g class="blk plain" data-block="mh_result"><rect x="95" y="12" width="110" height="26" rx="6"/><text x="150" y="30" text-anchor="middle">Output</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. The stacked shadows mean “h copies of this, side by side”.</p></div>
+  </div>
+  <figcaption>Figure 2 (right) of the paper, redrawn: multi-head attention with h parallel heads. Based on Vaswani et al. (2017), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the shadows behind a box mean “h copies of this, running side by side”. V, K and Q each pass through their own small Linear projection once per head, which cuts them down to 64 numbers. Each head then runs the whole recipe from the previous figure independently. Concat glues the h results back into one 512-wide vector per word, and the final Linear (W<sup>O</sup>) lets the heads' findings mix.</p>
+<h4>The math</h4>
+<div class="eq" data-tex="\text{MultiHead}(\htmlData{sym=Q}{Q},\htmlData{sym=K}{K},\htmlData{sym=V}{V}) = \htmlData{sym=Concat}{\text{Concat}}(\htmlData{sym=headi}{\text{head}_1}, \ldots, \htmlData{sym=headi}{\text{head}_h})\,\htmlData{sym=WO}{W^O}" data-fallback="MultiHead(Q, K, V) = Concat(head_1, …, head_h) W^O"></div>
+<div class="eq" data-tex="\htmlData{sym=headi}{\text{head}_i} = \htmlData{sym=Attention}{\text{Attention}}(\htmlData{sym=Q}{Q}\htmlData{sym=WQ}{W_i^Q},\; \htmlData{sym=K}{K}\htmlData{sym=WK}{W_i^K},\; \htmlData{sym=V}{V}\htmlData{sym=WV}{W_i^V})" data-fallback="head_i = Attention(Q W_i^Q, K W_i^K, V W_i^V)"></div>
+<div class="symtable" data-syms="headi,WQ,WK,WV,Concat,WO,hsym"></div>
+<p class="inwords"><strong>In words:</strong> “for each head <em>i</em>, project the queries, keys and values down with that head's own matrices and run attention; then glue all the heads' outputs side by side and mix them with one more matrix.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a 10-word sentence gives Q, K, V of shape 10 × 512. Each W<sub>i</sub><sup>Q</sup> is 512 × 64, so each head sees 10 × 64. Eight heads concatenated give 10 × 512, and W<sup>O</sup> (512 × 512) keeps it at 10 × 512. The layer's projection weights total 4 × 512 × 512 = 1,048,576 numbers.</p>
+<h4>Why it matters today</h4>
+<p>Researchers have found heads that specialise: some track the previous word, some copy patterns, some resolve pronouns. Modern models keep many query heads but share keys and values across groups of heads (<span class="t" data-t="grouped-query attention">grouped-query attention</span>), which shrinks the memory needed while generating.</p>
+</section>
+
+<section id="s3-2-3">
+<h3>3.2.3 Three uses of attention in the model <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3.SS2.SSS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The same “look around and blend” tool is used in three places, differing only in who asks and who answers: the reader re-reading their own notes (encoder self-attention), the writer re-reading their own draft without peeking at words not yet written (masked decoder self-attention), and the writer consulting the reader's notes (encoder-decoder attention).</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Where</th><th>Queries come from</th><th>Keys and values come from</th><th>Mask</th></tr></thead>
+  <tbody>
+    <tr><td>Encoder self-attention</td><td>the input sentence</td><td>the same input sentence</td><td>none: every word sees every word</td></tr>
+    <tr><td>Decoder self-attention</td><td>the output written so far</td><td>the same output</td><td><span class="t" data-t="causal mask">causal</span>: no looking ahead</td></tr>
+    <tr><td><span class="t" data-tip-title="Encoder-decoder attention" data-tip="Also called cross-attention. The decoder's words ask the questions (queries); the encoder's final vectors provide the answers (keys and values). This is how the translation stays tied to the source sentence.">Encoder-decoder attention</span></td><td>the decoder</td><td>the encoder's final output</td><td>none</td></tr>
+  </tbody>
+</table></div>
+<h4>Tiny example: the causal mask</h4>
+<figure class="ix" id="figmask">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 250" role="img" aria-label="A 4 by 4 causal mask">
+    <text x="150" y="16" text-anchor="middle" class="lbl">keys (looked at) →</text>
+    <g id="maskgrid"></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a cell: row = the word looking, column = the word looked at.</p></div>
+  </div>
+  <figcaption>The causal mask for the four-word output “Die Katze saß .”. Blue cells are allowed; grey cells are set to −∞ before softmax.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each row is one word looking back at the sentence. Blue means allowed and grey means masked. The allowed cells form a lower triangle: the first word can see only itself, and the last sees everything before it. The masked scores are set to −∞ before softmax, and e<sup>−∞</sup> = 0, so their shares are exactly zero. During training, this is what stops the decoder from cheating by reading the word it is supposed to predict.</p>
+<h4>Why it matters today</h4>
+<p>GPT, Claude and Llama keep only the middle row of that table: they are <em>decoder-only</em> models, a single stack of masked self-attention. Encoder-only models (BERT) keep only the first row and power most <span class="t" data-t="embedding">embedding</span> models. The <a data-lesson="primer/ml/transformer.html">transformer lesson</a> compares the three families.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Position-wise feed-forward networks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Attention is the meeting where everyone listens to everyone. The <span class="t" data-t="feed-forward network">feed-forward network</span> is what happens afterwards: each person goes back to their desk and thinks on their own about what they heard. “Position-wise” means the same desk-work recipe is applied to every word separately.</p>
+<h4>Tiny example (2 numbers wide instead of 512)</h4>
+<p>Take a word vector x = (1, −1). First, multiply by W<sub>1</sub> = [[1, 0, −1], [0, 1, 1]] to widen it to 3 numbers: (1·1 + (−1)·0, 1·0 + (−1)·1, 1·(−1) + (−1)·1) = (1, −1, −2). Next, apply <span class="t" data-t="relu">ReLU</span>, max(0, ·), which keeps positives and zeroes negatives: (1, 0, 0). Finally, multiply by W<sub>2</sub> = [[2, 0], [0, 1], [1, 1]] to come back to 2 numbers: (2, 0). The biases are zero here to keep it short.</p>
+<div class="eq" data-tex="\htmlData{sym=FFN}{\text{FFN}}(\htmlData{sym=xrow}{x}) = \htmlData{sym=relu}{\max(0,\;} \htmlData{sym=xrow}{x}\htmlData{sym=W1}{W_1} + \htmlData{sym=b1}{b_1}\htmlData{sym=relu}{)}\,\htmlData{sym=W2}{W_2} + \htmlData{sym=b2}{b_2}" data-fallback="FFN(x) = max(0, x W1 + b1) W2 + b2"></div>
+<div class="symtable" data-syms="FFN,xrow,W1,b1,relu,W2,b2"></div>
+<p class="inwords"><strong>In words:</strong> “widen the word's vector by a factor of four, zero out the negatives, and narrow it back to its original width.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the base model, x has 512 numbers, W<sub>1</sub> widens to d<sub>ff</sub> = 2048, and W<sub>2</sub> returns to 512. That is 2 × 512 × 2048 + 2048 + 512 = 2,099,712 parameters per layer, about twice the attention layer's projections.</p>
+<h4>Why it matters today</h4>
+<p>Feed-forward layers hold about two-thirds of a Transformer's parameters and are thought to store much of its factual knowledge. Modern models swap ReLU for smoother functions (<span class="t" data-t="gelu">GELU</span>, SwiGLU), and <span class="t" data-t="mixture of experts">mixture-of-experts</span> models replace this one network with many, routing each word to a few.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Embeddings and softmax <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>An <span class="t" data-t="embedding">embedding</span> table is a phone book with one row per <span class="t" data-t="token">token</span> in the <span class="t" data-t="vocabulary">vocabulary</span>. Looking a word up returns its 512 numbers. At the other end, the model has to turn its final 512 numbers back into a choice of word. The paper uses <em>the same phone book</em> backwards: it compares the final vector with every row and asks which row it most resembles.</p>
+<h4>Tiny example</h4>
+<p>If “cat” is token 17, its embedding is simply row 17 of the table, multiplied by √d<sub>model</sub> = √512 ≈ 22.6. The paper scales it up so the word's meaning isn't drowned out by the positional encoding that gets added next. At the output, a final vector h is dotted with every row, giving one score (a <span class="t" data-t="logits">logit</span>) per vocabulary entry. Softmax turns those scores into probabilities for the next word.</p>
+<div class="eq" data-tex="\htmlData{sym=pnext}{p(\text{next token})} = \htmlData{sym=softmax}{\text{softmax}}(\htmlData{sym=hfinal}{h}\,\htmlData{sym=ET}{E^\top})" data-fallback="p(next token) = softmax(h Eᵀ)"></div>
+<div class="symtable" data-syms="hfinal,E,ET,pnext"></div>
+<p class="inwords"><strong>In words:</strong> “score the final vector against every word's embedding, then turn the scores into probabilities.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with a vocabulary of about 37,000 tokens, E is 37,000 × 512 = 18,944,000 numbers. Sharing it between the input, the output and the final linear layer saves two more copies of that.</p>
+<h4>Why it matters today</h4>
+<p>Every language model ends exactly like this: a score per vocabulary token, then softmax, then <span class="t" data-t="temperature">sampling</span>. How text is split into tokens in the first place is covered in the <a data-lesson="primer/ml/tokenization.html">tokenization lesson</a>.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Positional encoding <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3.SS5">original</a></span></h3>
+<blockquote class="quote">“We chose this function because we hypothesized it would allow the model to easily learn to attend by relative positions, since for any fixed offset k, PE<sub>pos+k</sub> can be represented as a linear function of PE<sub>pos</sub>.”<cite>Vaswani et al. (2017), §3.5</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Attention on its own has no sense of order: “dog bites man” and “man bites dog” contain the same words, so they get the same result. The fix is to stamp each word with its position. The paper's stamp is like a wall of clocks whose hands turn at different speeds: a seconds hand, a minutes hand, an hours hand, and on up to hands that barely move. Reading every hand together tells you the exact time, and the gap between two times is always the same set of hand rotations, which makes “three words later” easy to recognise.</p>
+<h4>Tiny example</h4>
+<p>For position 1, the fastest pair of dimensions (i = 0) gets sin(1) = 0.841 and cos(1) = 0.540. The next pair (i = 1) turns slightly slower: sin(1 / 1.0366) = 0.822 and cos = 0.570. At position 10, dimension pair i = 64 divides by exactly 10, so it shows sin(1) = 0.841 again. Every position gets a unique 512-number stamp, and it is <em>added</em> to the word's embedding.</p>
+<div class="eq" data-tex="\htmlData{sym=PE}{PE}_{(\htmlData{sym=pos}{pos},\,2\htmlData{sym=ipe}{i})} = \htmlData{sym=sin}{\sin}\!\left(\frac{\htmlData{sym=pos}{pos}}{\htmlData{sym=wavelen}{10000^{2i/d_{\text{model}}}}}\right) \qquad \htmlData{sym=PE}{PE}_{(\htmlData{sym=pos}{pos},\,2\htmlData{sym=ipe}{i}+1)} = \htmlData{sym=cos}{\cos}\!\left(\frac{\htmlData{sym=pos}{pos}}{\htmlData{sym=wavelen}{10000^{2i/d_{\text{model}}}}}\right)" data-fallback="PE(pos, 2i) = sin(pos / 10000^(2i/d_model)),  PE(pos, 2i+1) = cos(pos / 10000^(2i/d_model))"></div>
+<div class="symtable" data-syms="PE,pos,ipe,wavelen,sin,cos,dmodel"></div>
+<p class="inwords"><strong>In words:</strong> “for position <em>pos</em>, each pair of dimensions gets a sine and a cosine of the position, divided by a number that grows from 1 to 10,000 as you move across the pairs, so early pairs spin fast and late pairs spin slowly.”</p>
+<p class="inwords"><strong>With the numbers:</strong> PE(1, 0) = sin(1/1) = 0.841; PE(1, 1) = cos(1/1) = 0.540; PE(10, 128) = sin(10/10) = 0.841, because pair i = 64 has 10000<sup>128/512</sup> = 10.</p>
+<div class="plot">
+  <div class="controls"><span>Positions 0–99 (rows) × the first 128 dimensions (columns), computed live from the formula with d<sub>model</sub> = 512.</span></div>
+  <canvas id="pe-canvas" aria-label="Heatmap of the sinusoidal positional encoding"></canvas>
+  <p class="readout" id="pe-readout">Hover or tap the heatmap to read a value.</p>
+  <div class="legend"><span><i style="background:#2563eb"></i>−1</span><span><i style="background:#f7f7f7;border:1px solid var(--border)"></i>0</span><span><i style="background:#dc2626"></i>+1</span></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each row is one position's stamp; each column is one dimension. On the left, the fast-spinning dimensions flip between red (+1) and blue (−1) every few rows. Moving right, the stripes stretch out, because those dimensions spin more slowly. Far right, they barely change over 100 positions. Read any row across and you get a barcode unique to that position. Hover to see the exact position, dimension and value.</p>
+<h4>Why it matters today</h4>
+<p>The paper also tried learned position vectors and got nearly identical results (Table 3, row E). Most modern models instead use <span class="t" data-t="rope">RoPE</span>, which rotates queries and keys by an angle set by position, using the same clock-hand idea. See the <a data-lesson="primer/ml/positional.html">positional encoding lesson</a> and the <a href="roformer.html">RoFormer companion</a>.</p>
+</section>
+
+<section id="s4">
+<h2>4 Why self-attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>How many phone calls does it take for news to travel between two people? In a chain of friends (an RNN), it takes as many calls as there are people between them. In a group call (self-attention), it takes one. The paper compares layer types on three questions: how much work per layer, how much must happen in sequence, and how many hops information needs between any two words.</p>
+<div class="tablewrap"><table>
+  <caption>Table 1, reproduced with attribution (Vaswani et al., 2017)</caption>
+  <thead><tr><th>Layer type</th><th>Work per layer</th><th>Sequential steps</th><th>Longest path between two words</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>Self-attention</td><td>O(n²·d)</td><td>O(1)</td><td>O(1)</td></tr>
+    <tr><td>Recurrent</td><td>O(n·d²)</td><td>O(n)</td><td>O(n)</td></tr>
+    <tr><td>Convolutional</td><td>O(k·n·d²)</td><td>O(1)</td><td>O(log<sub>k</sub>(n))</td></tr>
+    <tr><td>Self-attention (restricted to a window of r)</td><td>O(r·n·d)</td><td>O(1)</td><td>O(n/r)</td></tr>
+  </tbody>
+</table></div>
+<p>Here <em>n</em> is the sentence length, <em>d</em> the vector width, <em>k</em> the convolution window and <em>r</em> the attention window. <span class="t" data-t="big-o">O(·)</span> describes how cost grows, ignoring constant factors.</p>
+<h4>Tiny example: when is n² cheaper than d²?</h4>
+<div class="plot" id="cmp-plot">
+  <div class="controls"><label for="cmp-n">Sentence length n = <strong id="cmp-nv"></strong></label><input type="range" id="cmp-n" min="1" max="4" step="0.01" value="1.5"><span>d = 512</span></div>
+  <div id="cmp-bars"></div>
+  <p class="readout" id="cmp-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the two bars compare the work per layer of self-attention (n²·d) and of a recurrent layer (n·d²). Slide n. While sentences are shorter than the vector width (n &lt; d = 512), self-attention is <em>cheaper</em>, and in 2017 most sentences were a few dozen tokens long. Past n = 512 the balance flips. Today's contexts run to hundreds of thousands of tokens, which is why so much modern engineering (<a href="flashattention.html">FlashAttention</a>, sliding windows, the KV cache) goes into taming the n² term.</p>
+<h4>Why it matters today</h4>
+<p>The two columns that won the argument are the last two: O(1) sequential steps means training uses the whole GPU, and an O(1) path means distant words connect directly. The paper's closing aside about attention being more <em>interpretable</em>, since you can inspect what attends to what, started a whole research field.</p>
+</section>
+
+<section id="s5">
+<h2>5 Training <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S5">original</a></span></h2>
+<section id="s5-1">
+<h3>5.1–5.2 Data, hardware and schedule</h3>
+<ul>
+  <li><strong>Data:</strong> the WMT 2014 English→German set (about 4.5 million sentence pairs, split into a shared vocabulary of about 37,000 sub-word tokens with <span class="t" data-t="byte pair encoding">byte-pair encoding</span>) and English→French (36 million sentences, 32,000 word-piece tokens).</li>
+  <li><strong>Batches:</strong> sentences of similar length grouped together, about 25,000 source and 25,000 target tokens per <span class="t" data-t="batch">batch</span>.</li>
+  <li><strong>Hardware:</strong> one machine with 8 NVIDIA P100 <span class="t" data-tip-title="GPU" data-tip="Graphics processing unit: a chip with thousands of simple cores that do arithmetic in parallel. Neural networks are mostly big matrix multiplications, which GPUs are built for.">GPUs</span>. The base model trained for 100,000 steps (about 12 hours, 0.4 s per step); the big model for 300,000 steps (3.5 days, 1.0 s per step).</li>
+</ul>
+<p><strong>Everyday picture:</strong> twelve hours on one machine was remarkable in 2017. Competing systems needed several times more compute for worse results, and that efficiency is the whole case for giving up recurrence.</p>
+</section>
+<section id="s5-3">
+<h3>5.3 Optimizer and the warmup schedule <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S5.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A new driver pulls out of the driveway slowly, speeds up on the open road, then eases off as they near the destination. The <span class="t" data-t="learning rate">learning rate</span> (how big each training step is) follows the same shape. It starts tiny, because the untrained model's gradients point in wild directions. It climbs during <span class="t" data-t="warmup">warmup</span>, then decays so the model can settle into fine detail. The optimizer is <span class="t" data-t="adam">Adam</span> with β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.98 and ε = 10<sup>−9</sup>.</p>
+<div class="eq" data-tex="\htmlData{sym=lrate}{lrate} = \htmlData{sym=dmodel}{d_{\text{model}}}^{-0.5}\cdot \htmlData{sym=min}{\min}\!\left(\htmlData{sym=step}{step\_num}^{-0.5},\; \htmlData{sym=step}{step\_num}\cdot \htmlData{sym=warmup}{warmup\_steps}^{-1.5}\right)" data-fallback="lrate = d_model^-0.5 · min(step_num^-0.5, step_num · warmup_steps^-1.5)"></div>
+<div class="symtable" data-syms="lrate,dmodel,step,warmup,min,pow"></div>
+<p class="inwords"><strong>In words:</strong> “for the first warmup_steps steps, grow the learning rate in a straight line; after that, shrink it in proportion to one over the square root of the step number; scale everything by one over the square root of the model width.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with d<sub>model</sub> = 512 and warmup_steps = 4000, the peak is at step 4000: 512<sup>−0.5</sup> × 4000<sup>−0.5</sup> = 0.0442 × 0.0158 ≈ <strong>7.0 × 10<sup>−4</sup></strong>. By step 100,000 it has decayed to 512<sup>−0.5</sup> × 100000<sup>−0.5</sup> ≈ <strong>1.4 × 10<sup>−4</sup></strong>.</p>
+<div class="plot" id="lr-plot">
+  <div class="controls"><label for="lr-warm">warmup_steps = <strong id="lr-warm-v">4000</strong></label><input type="range" id="lr-warm" min="500" max="16000" step="500" value="4000"></div>
+  <div id="lr-chart"></div>
+  <p class="readout" id="lr-readout">Hover or tap the curve to read the learning rate at any step.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the training step and the y-axis the learning rate. The curve rises in a straight line to a peak exactly at warmup_steps, then falls away along a 1/√step curve. Drag the slider: a longer warmup gives a lower, later peak, and a shorter warmup a higher, earlier one. After the peak, every setting follows the same decay curve, because the warmup term no longer matters.</p>
+<h4>Why it matters today</h4>
+<p>Warmup followed by decay is still standard for training Transformers; today the decay is usually a cosine curve, and the optimizer is usually <span class="t" data-t="adamw">AdamW</span>. The <a data-lesson="primer/ml/optimizers.html">optimizers lesson</a> shows what happens without warmup.</p>
+</section>
+<section id="s5-4">
+<h3>5.4 Regularization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S5.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two tricks keep the model from memorising (<span class="t" data-t="overfitting">overfitting</span>). <span class="t" data-t="dropout">Dropout</span> is like a sports team that trains with random players benched each practice, so nobody can rely on one star. <span class="t" data-tip-title="Label smoothing" data-tip="Training towards 'almost certainly the right answer' (90%) instead of 'certainly the right answer' (100%), with the rest spread over every other token. It stops the model becoming overconfident.">Label smoothing</span> is like a teacher who marks the right answer as “90% right” instead of “100% right”, so students never learn to be absolutely certain.</p>
+<ul>
+  <li><strong>Residual dropout, P<sub>drop</sub> = 0.1:</strong> 10% of each sub-layer's outputs are zeroed at random before the Add &amp; Norm, and the same happens to the sums of embeddings and positional encodings.</li>
+  <li><strong>Label smoothing, ε<sub>ls</sub> = 0.1:</strong> the target for the correct token becomes 0.9 plus a tiny share, and the remaining 0.1 is spread over all tokens.</li>
+</ul>
+<div class="eq" data-tex="\htmlData{sym=ysmooth}{y'_k} = (1 - \htmlData{sym=eps}{\varepsilon_{ls}})\,\htmlData{sym=yk}{y_k} + \frac{\htmlData{sym=eps}{\varepsilon_{ls}}}{\htmlData{sym=Kvocab}{K}}" data-fallback="y'_k = (1 − ε_ls) y_k + ε_ls / K"></div>
+<div class="symtable" data-syms="ysmooth,yk,eps,Kvocab"></div>
+<p class="inwords"><strong>In words:</strong> “take 90% of the true one-hot target and add an equal sliver of the remaining 10% to every token in the vocabulary.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with K = 37,000 and ε<sub>ls</sub> = 0.1, the correct token's target is 0.9 + 0.1 / 37,000 ≈ 0.900003, and every other token's is 0.1 / 37,000 ≈ 0.0000027.</p>
+<p>The paper notes that this hurts <span class="t" data-t="perplexity">perplexity</span>, because the model learns to be less sure, but improves accuracy and <span class="t" data-t="bleu">BLEU</span>. That is a nice example of a training metric and a quality metric disagreeing.</p>
+<h4>Why it matters today</h4>
+<p>Very large modern models trained on enormous datasets often use little or no dropout, since they rarely see the same example twice. Label smoothing survives in classification and translation. See the <a data-lesson="primer/ml/regularization.html">regularization lesson</a>.</p>
+</section>
+</section>
+
+<section id="s6">
+<h2>6 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S6">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p><span class="t" data-t="bleu">BLEU</span> scores a translation by how many of its word sequences also appear in a professional human translation, on a 0–100 scale. A gain of 1–2 points is considered a clear improvement. Output was generated with <span class="t" data-tip-title="Beam search" data-tip="Instead of always taking the single most likely next word, keep the best few partial translations (the beam; 4 in the paper) and extend them all, keeping the overall best at the end.">beam search</span> (beam size 4) and averaged the weights from the last few saved <span class="t" data-tip-title="Checkpoint averaging" data-tip="Averaging the weights saved at the last few checkpoints of training (5 for the base model, 20 for big). The average is often slightly better than any single checkpoint.">checkpoints</span>.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2, reproduced with attribution (Vaswani et al., 2017). BLEU on newstest2014; training cost in FLOPs</caption>
+  <thead><tr><th>Model</th><th class="num">BLEU EN→DE</th><th class="num">BLEU EN→FR</th><th class="num">Training cost EN→DE</th></tr></thead>
+  <tbody>
+    <tr><td>GNMT + RL</td><td class="num">24.6</td><td class="num">39.92</td><td class="num">2.3 · 10<sup>19</sup></td></tr>
+    <tr><td>ConvS2S</td><td class="num">25.16</td><td class="num">40.46</td><td class="num">9.6 · 10<sup>18</sup></td></tr>
+    <tr><td>Transformer (base)</td><td class="num">27.3</td><td class="num">38.1</td><td class="num">3.3 · 10<sup>18</sup></td></tr>
+    <tr class="hl"><td>Transformer (big)</td><td class="num">28.4</td><td class="num">41.8</td><td class="num">2.3 · 10<sup>19</sup></td></tr>
+  </tbody>
+</table></div>
+<div class="plot" id="bleu-plot"><div id="bleu-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one model's English→German BLEU, with its training cost beside it. The base Transformer beats the previous best single models while costing a fraction of the compute (3.3 × 10<sup>18</sup> <span class="t" data-tip-title="FLOPs" data-tip="Floating-point operations: individual additions and multiplications. A standard way to measure how much computation training took, independent of hardware.">FLOPs</span>, against 9.6 × 10<sup>18</sup> for ConvS2S). The big model adds another point. See the paper for the full table, including ensembles.</p>
+<h4>What the ablations show (Table 3)</h4>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 3, reproduced with attribution (Vaswani et al., 2017). EN→DE development set (newstest2013)</caption>
+  <thead><tr><th>Variant</th><th class="num">h</th><th class="num">d<sub>k</sub></th><th class="num">Perplexity</th><th class="num">BLEU</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>Base model</td><td class="num">8</td><td class="num">64</td><td class="num">4.92</td><td class="num">25.8</td></tr>
+    <tr><td>(A) one head</td><td class="num">1</td><td class="num">512</td><td class="num">5.29</td><td class="num">24.9</td></tr>
+    <tr><td>(A) 4 heads</td><td class="num">4</td><td class="num">128</td><td class="num">5.00</td><td class="num">25.5</td></tr>
+    <tr><td>(A) 16 heads</td><td class="num">16</td><td class="num">32</td><td class="num">4.91</td><td class="num">25.8</td></tr>
+    <tr><td>(A) 32 heads</td><td class="num">32</td><td class="num">16</td><td class="num">5.01</td><td class="num">25.4</td></tr>
+    <tr><td>(E) learned positions instead of sinusoids</td><td class="num">8</td><td class="num">64</td><td class="num">4.92</td><td class="num">25.7</td></tr>
+    <tr><td>Big model</td><td class="num">16</td><td class="num">64</td><td class="num">4.33</td><td class="num">26.4</td></tr>
+  </tbody>
+</table></div>
+<p>Rows (A) keep the total width fixed and trade the number of heads against their width. One head is 0.9 BLEU worse than the best setting, and too many narrow heads also hurts: multi-head attention helps, but only up to a point. Row (E) shows that learned positions work about as well as the sine-and-cosine stamps.</p>
+<h4>Why it matters today</h4>
+<p>The pattern here, a simpler architecture that is better <em>and</em> cheaper to train, is why the Transformer spread to every modality within three years.</p>
+</section>
+
+<section id="s7">
+<h2>7 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S7">original</a></span></h2>
+<blockquote class="quote">“In this work, we presented the Transformer, the first sequence transduction model based entirely on attention, replacing the recurrent layers most commonly used in encoder-decoder architectures with multi-headed self-attention.”<cite>Vaswani et al. (2017), §7</cite></blockquote>
+<p>The authors close by planning to apply attention to images, audio and video, to study restricted (local) attention for long inputs, and to make generation less sequential. All three happened: Vision Transformers treat image patches as tokens, long-context research made windowed and memory-efficient attention standard, and speculative decoding attacks the one-token-at-a-time bottleneck.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2017</h2>
+<p>The core, attention plus feed-forward layers wrapped in residual connections, is unchanged. Nearly every detail around it has been tuned:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Choice in the paper</th><th>Common today</th><th>Why</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>Encoder + decoder</td><td>Decoder-only for chat models; encoder-only for embeddings</td><td>One stack of masked self-attention generates text; a bidirectional stack makes the best embeddings</td><td><a data-lesson="primer/ml/transformer.html">transformer</a></td></tr>
+    <tr><td>Post-norm: LayerNorm(x + Sublayer(x))</td><td>Pre-norm, often RMSNorm</td><td>Stable training at depth</td><td><a data-lesson="primer/ml/deep_nets.html">deep nets</a></td></tr>
+    <tr><td>Sinusoidal positions</td><td>RoPE</td><td>Relative positions and easier context extension</td><td><a data-lesson="primer/ml/positional.html">positional</a></td></tr>
+    <tr><td>ReLU feed-forward</td><td>GELU / SwiGLU, sometimes mixture of experts</td><td>Better quality per parameter</td><td><a data-lesson="primer/ml/transformer.html">transformer</a></td></tr>
+    <tr><td>8 heads, each with its own K and V</td><td>Grouped-query attention</td><td>A smaller KV cache, so more users per GPU</td><td><a data-lesson="primer/ml/attention.html">attention</a></td></tr>
+    <tr><td>Plain attention</td><td>FlashAttention kernels</td><td>The same math with far less memory traffic</td><td><a href="flashattention.html">companion</a></td></tr>
+    <tr><td>6 layers, 65M–213M parameters</td><td>30–120 layers, billions of parameters</td><td>Scaling laws: bigger models trained on more data keep improving</td><td><a href="scaling-laws.html">companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser and Illia Polosukhin, <em>Attention Is All You Need</em>, NeurIPS 2017. <a href="https://arxiv.org/abs/1706.03762">arXiv:1706.03762</a>. Quotations are brief and attributed; tables are reproduced and figures redrawn under the paper's permission notice for scholarly use. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // 3.1
+    out: { tex: "\\text{output}", name: "Output of the sub-layer block", meaning: "What gets passed up to the next sub-layer.", shape: "n × d_model (10 × 512)", example: "(1, −1) in the 2-number example" },
+    LayerNorm: { tex: "\\text{LayerNorm}", name: "Layer normalization", meaning: "Rescales each word's vector to average 0 and spread 1 (then applies a learned scale and shift), so numbers stay in a steady range layer after layer.", shape: "keeps the shape", example: "(3, 1) → (1, −1)" },
+    x: { tex: "x", name: "Input to the sub-layer", meaning: "The word vectors arriving from below: the draft that this layer will correct.", shape: "n × d_model (10 × 512)", example: "(2, 0)" },
+    Sublayer: { tex: "\\text{Sublayer}", name: "The sub-layer", meaning: "Either multi-head attention or the feed-forward network. It proposes a change, which is added to x rather than replacing it (the residual connection).", shape: "n × d_model in, n × d_model out", example: "proposes (1, 1)" },
+    // 3.2.1
+    Q: { tex: "Q", name: "Queries", meaning: "Every word's query vector stacked as rows: what each word is looking for. Made by multiplying the word vectors by a learned matrix.", shape: "n × d_k (10 × 64 per head)", example: "the row for “it” asks, roughly, “which noun can be tired?”" },
+    K: { tex: "K", name: "Keys", meaning: "Every word's key vector stacked as rows: what each word offers to others. Compared against queries to decide relevance.", shape: "n × d_k (10 × 64 per head)", example: "the row for “animal” advertises “a noun, alive”" },
+    V: { tex: "V", name: "Values", meaning: "Every word's value vector stacked as rows: the information it actually hands over when attended to.", shape: "n × d_v (10 × 64 per head)", example: "0.63 of V(animal) flows into “it”" },
+    KT: { tex: "K^\\top", name: "K transposed", meaning: "K flipped so its rows become columns. Multiplying Q by it computes every query-key dot product at once.", shape: "d_k × n (64 × 10)", example: "column j is word j's key" },
+    QKT: { tex: "QK^\\top", name: "All the scores", meaning: "A matrix multiply: entry (i, j) is word i's query dotted with word j's key. Every word scored against every word, hence the n² cost.", shape: "n × n (10 × 10)", example: "the “it” row, after scaling: (2.0, 1.0, 0.5) for animal, tired, street" },
+    sqrtdk: { tex: "\\sqrt{d_k}", name: "Square root of the key width", meaning: "Dividing by it keeps the scores' typical size near 1 whatever the width, so softmax stays responsive.", shape: "a single number", example: "√64 = 8" },
+    softmax: { tex: "\\text{softmax}", name: "Softmax", meaning: "Applied to each row: exponentiate every score, then divide by the row's total. The result is positive shares that sum to 1.", shape: "keeps the shape (each row now sums to 1)", example: "(2.0, 1.0, 0.5) → (0.63, 0.23, 0.14)" },
+    Attention: { tex: "\\text{Attention}", name: "Attention", meaning: "The whole operation: score, scale, (mask), softmax, blend. Each output row is a context-aware version of one word.", shape: "n × d_v (10 × 64 per head)", example: "new “it” = 0.63·V(animal) + 0.23·V(tired) + 0.14·V(street)" },
+    z: { tex: "z", name: "The scores going in", meaning: "Any list of numbers, positive or negative.", shape: "a list of n numbers", example: "(2.0, 1.0, 0.5)" },
+    i: { tex: "i", name: "Which item", meaning: "The position whose share we are computing.", shape: "1 … n", example: "i = 1, “animal”" },
+    zi: { tex: "z_i", name: "Score of item i", meaning: "The i-th number in the list.", shape: "one number", example: "z₁ = 2.0" },
+    e: { tex: "e", name: "Euler's number, about 2.718", meaning: "e raised to a power is always positive and grows fast: each +1 in the power multiplies the result by 2.718. That is what makes softmax stretch the gaps between scores.", shape: "a constant", example: "e^2.0 = 7.39, e^1.0 = 2.72, e^0.5 = 1.65" },
+    sum: { tex: "\\sum_{j=1}^{n}", name: "Sum over every item", meaning: "“Add up what follows, for j = 1, 2, …, n.” It makes the bottom of the fraction the total, so the shares add to 1.", shape: "one number", example: "7.39 + 2.72 + 1.65 = 11.76" },
+    zj: { tex: "z_j", name: "Score of item j", meaning: "j is a counter walking over every item in turn.", shape: "one number each", example: "2.0, then 1.0, then 0.5" },
+    q: { tex: "q", name: "One query vector", meaning: "A single word's query: a list of d_k numbers. The footnote assumes each number is random with average 0 and variance 1.", shape: "d_k numbers (64)", example: "(1, 2) in a 2-number toy" },
+    k: { tex: "k", name: "One key vector", meaning: "A single word's key, the same length as the query.", shape: "d_k numbers (64)", example: "(3, 0.5)" },
+    sumdk: { tex: "\\sum_{m=1}^{d_k}", name: "Sum over the positions of the vectors", meaning: "Multiply matching positions of q and k and add all d_k products: that is the dot product.", shape: "one number", example: "1·3 + 2·0.5 = 4" },
+    Var: { tex: "\\operatorname{Var}", name: "Variance", meaning: "How widely a quantity swings around its average: the average squared distance from the mean. Its square root, the standard deviation, is the typical size of a swing.", shape: "one number", example: "Var(q·k) = 64, so scores typically swing by √64 = 8" },
+    dk: { tex: "d_k", name: "Key (and query) width", meaning: "How many numbers each query and key has. In the paper d_k = d_model / h = 512 / 8.", shape: "a whole number", example: "64" },
+    // 3.2.2
+    headi: { tex: "\\text{head}_i", name: "Head i", meaning: "One of the h attentions running side by side, each on its own 64-number projection of the words.", shape: "n × d_v (10 × 64)", example: "head 3 might track which noun a pronoun refers to" },
+    WQ: { tex: "W_i^Q", name: "Head i's query projection", meaning: "A learned matrix that turns 512-number word vectors into head i's 64-number queries.", shape: "d_model × d_k (512 × 64)", example: "32,768 learned numbers" },
+    WK: { tex: "W_i^K", name: "Head i's key projection", meaning: "Learned matrix producing head i's keys.", shape: "d_model × d_k (512 × 64)", example: "32,768 learned numbers" },
+    WV: { tex: "W_i^V", name: "Head i's value projection", meaning: "Learned matrix producing head i's values.", shape: "d_model × d_v (512 × 64)", example: "32,768 learned numbers" },
+    Concat: { tex: "\\text{Concat}", name: "Concatenate", meaning: "Glue the heads' outputs side by side, so each word gets back one long vector.", shape: "h pieces of n × 64 → n × 512", example: "8 × 64 = 512" },
+    WO: { tex: "W^O", name: "Output projection", meaning: "A learned matrix that mixes what the heads found, so information from one head can reach dimensions produced by another.", shape: "h·d_v × d_model (512 × 512)", example: "262,144 learned numbers" },
+    hsym: { tex: "h", name: "Number of heads", meaning: "How many attentions run in parallel.", shape: "a whole number", example: "8 (base), 16 (big)" },
+    // 3.3
+    FFN: { tex: "\\text{FFN}", name: "Feed-forward network", meaning: "A small two-layer network applied to each word on its own: widen, zero the negatives, narrow.", shape: "d_model in, d_model out", example: "(1, −1) → (2, 0) in the toy" },
+    xrow: { tex: "x", name: "One word's vector", meaning: "The input for a single position (the same network is applied to every position separately).", shape: "1 × d_model (1 × 512)", example: "(1, −1)" },
+    W1: { tex: "W_1", name: "Widening weights", meaning: "Learned matrix that expands each word vector to d_ff numbers.", shape: "d_model × d_ff (512 × 2048)", example: "[[1, 0, −1], [0, 1, 1]] in the toy" },
+    b1: { tex: "b_1", name: "First bias", meaning: "Learned numbers added after widening, letting each hidden unit shift its threshold.", shape: "d_ff (2048)", example: "(0, 0, 0) in the toy" },
+    relu: { tex: "\\max(0,\\cdot)", name: "ReLU", meaning: "Keep positive numbers, turn negatives into 0. This bend is what lets stacked layers represent more than straight-line relationships.", shape: "keeps the shape", example: "(1, −1, −2) → (1, 0, 0)" },
+    W2: { tex: "W_2", name: "Narrowing weights", meaning: "Learned matrix that brings the vector back to d_model numbers.", shape: "d_ff × d_model (2048 × 512)", example: "[[2, 0], [0, 1], [1, 1]] in the toy" },
+    b2: { tex: "b_2", name: "Second bias", meaning: "Learned numbers added at the end.", shape: "d_model (512)", example: "(0, 0) in the toy" },
+    // 3.4
+    hfinal: { tex: "h", name: "Final vector", meaning: "The decoder's last output at the current position: everything the model has worked out about what comes next.", shape: "1 × d_model (1 × 512)", example: "one vector per generated word" },
+    E: { tex: "E", name: "Embedding table", meaning: "One learned row of d_model numbers per vocabulary token. Used to look words up on the way in and, in this paper, reused on the way out.", shape: "vocab × d_model (37,000 × 512)", example: "row 17 = “cat”" },
+    ET: { tex: "E^\\top", name: "Embedding table transposed", meaning: "Multiplying h by it dots h with every token's embedding: one score (logit) per token.", shape: "d_model × vocab (512 × 37,000)", example: "37,000 scores" },
+    pnext: { tex: "p(\\text{next token})", name: "Next-token probabilities", meaning: "A probability for every token in the vocabulary, summing to 1. Generation picks from this list.", shape: "vocab (37,000)", example: "p(“Katze”) = 0.71, …" },
+    // 3.5
+    PE: { tex: "PE", name: "Positional encoding", meaning: "A fixed 512-number stamp for each position, added to the word's embedding so the model knows word order.", shape: "positions × d_model", example: "PE(1, 0) = 0.841" },
+    pos: { tex: "pos", name: "Position", meaning: "Where the word sits in the sentence, counting from 0.", shape: "0, 1, 2, …", example: "1" },
+    ipe: { tex: "i", name: "Dimension pair", meaning: "Which (sine, cosine) pair of dimensions: pair i fills dimensions 2i and 2i + 1.", shape: "0 … d_model/2 − 1 (0 … 255)", example: "i = 0 is the fastest-spinning pair" },
+    wavelen: { tex: "10000^{2i/d_{\\text{model}}}", name: "Slow-down factor", meaning: "Grows smoothly from 1 (pair 0) to nearly 10,000 (last pair). Dividing the position by it makes later pairs spin more slowly, like the hands of a clock.", shape: "1 … 10,000", example: "pair 1: 1.0366; pair 64: 10" },
+    sin: { tex: "\\sin", name: "Sine", meaning: "A smooth wave between −1 and +1: the height of a point going round a circle.", shape: "−1 … +1", example: "sin(1) = 0.841" },
+    cos: { tex: "\\cos", name: "Cosine", meaning: "The same wave shifted a quarter turn: the horizontal position of that point on the circle. Pairing sine and cosine pins down the angle exactly.", shape: "−1 … +1", example: "cos(1) = 0.540" },
+    dmodel: { tex: "d_{\\text{model}}", name: "Model width", meaning: "How many numbers represent each word throughout the model.", shape: "a whole number", example: "512 (base), 1024 (big)" },
+    // 5.3
+    lrate: { tex: "lrate", name: "Learning rate", meaning: "How big a step each training update takes.", shape: "a small positive number", example: "7.0 × 10⁻⁴ at its peak" },
+    step: { tex: "step\\_num", name: "Training step", meaning: "How many updates have happened so far.", shape: "1, 2, 3, …", example: "4000 (the peak)" },
+    warmup: { tex: "warmup\\_steps", name: "Warmup length", meaning: "How many steps the learning rate spends ramping up.", shape: "a whole number", example: "4000" },
+    min: { tex: "\\min", name: "Minimum", meaning: "Take the smaller of the two expressions. Early on the ramp is smaller; after warmup the decay is smaller. The switch happens exactly at step = warmup_steps.", shape: "one number", example: "at step 1000 the ramp wins" },
+    pow: { tex: "a^{-0.5}", name: "Negative half power", meaning: "a to the power −0.5 means 1 / √a. So step^−0.5 shrinks as training goes on, and warmup^−1.5 = 1 / (warmup · √warmup).", shape: "one number", example: "512^−0.5 = 1/22.6 = 0.0442" },
+    // 5.4
+    ysmooth: { tex: "y'_k", name: "Smoothed target for token k", meaning: "What the model is trained to predict for token k after smoothing.", shape: "0 … 1", example: "0.900003 for the right token" },
+    yk: { tex: "y_k", name: "Original target", meaning: "1 for the correct next token, 0 for every other token (a one-hot target).", shape: "0 or 1", example: "1 for “Katze”, 0 elsewhere" },
+    eps: { tex: "\\varepsilon_{ls}", name: "Smoothing amount", meaning: "The share of certainty taken away from the right answer and spread evenly over every token.", shape: "0 … 1", example: "0.1" },
+    Kvocab: { tex: "K", name: "Vocabulary size", meaning: "How many different tokens the model can output. (Not the keys: the paper reuses letters.)", shape: "a whole number", example: "about 37,000" },
+  },
+
+  blocks: {
+    // Figure 1
+    inputs: { title: "Inputs", body: "<p>The source sentence, already split into <strong>tokens</strong> (sub-word pieces) and turned into integer ids from a fixed vocabulary.</p>", shape: "n token ids (e.g. 10)", lesson: "primer/ml/tokenization.html" },
+    in_emb: { title: "Input embedding", body: "<p>Looks each token id up in a learned table and returns its row of 512 numbers, multiplied by √512 ≈ 22.6. Words used in similar ways end up with similar rows.</p>", shape: "n × 512", lesson: "primer/ml/big_picture.html" },
+    pos_enc: { title: "Positional encoding (added)", body: "<p>Attention alone ignores word order, so each position's unique sine/cosine stamp is <em>added</em> to the embedding. Same shape in, same shape out. See §3.5 and its heatmap.</p>", shape: "n × 512", lesson: "primer/ml/positional.html" },
+    enc_mha: { title: "Multi-head self-attention (encoder)", body: "<p>Every source word looks at every other source word, including those after it: no mask. Queries, keys and values all come from the same sentence (the three arrows). Eight heads of width 64 run side by side.</p>", shape: "n × 512 in, n × 512 out (scores: 8 × n × n)", lesson: "primer/ml/attention.html" },
+    add_norm: { title: "Add & Norm", body: "<p><strong>Add:</strong> the sub-layer's output is added to its input (the arrow that bypasses the block), so each layer writes corrections rather than replacing the draft. That shortcut is also what lets gradients flow through deep stacks.</p><p><strong>Norm:</strong> layer normalization rescales each word's vector to average 0 and spread 1.</p>", shape: "n × 512", lesson: "primer/ml/deep_nets.html" },
+    ffn: { title: "Feed forward", body: "<p>The same small two-layer network is applied to each word separately: widen 512 → 2048, ReLU, narrow 2048 → 512. Attention mixes information <em>between</em> words; this processes it <em>within</em> each word.</p>", shape: "n × 512 → n × 2048 → n × 512", lesson: "primer/ml/transformer.html" },
+    enc_stack: { title: "The encoder layer (× N = 6)", body: "<p>Everything inside the dashed box is one encoder layer. The paper stacks six identical copies, each with its own weights; the output of one is the input of the next.</p>", shape: "n × 512 throughout", lesson: "primer/ml/transformer.html" },
+    dec_stack: { title: "The decoder layer (× N = 6)", body: "<p>One decoder layer has three sub-layers: masked self-attention over the words written so far, attention over the encoder's output, and a feed-forward network. It is also stacked six times.</p>", shape: "m × 512 (m = words written so far)", lesson: "primer/ml/transformer.html" },
+    nx: { title: "N×", body: "<p>“Repeat this block N times.” N = 6 in the paper. Modern language models repeat their block 30 to 120 times.</p>", shape: "N = 6" },
+    outputs_shifted: { title: "Outputs (shifted right)", body: "<p>The translation so far, shifted one place right behind a start token. To predict word 3, the decoder is fed words 1 and 2. During training the whole correct translation is fed at once, with the mask stopping each position from seeing its own answer (called <em>teacher forcing</em>).</p>", shape: "m token ids", lesson: "primer/ml/big_picture.html" },
+    out_emb: { title: "Output embedding", body: "<p>The same kind of lookup for the target-language tokens. In this paper it shares one table with the input embedding and the final Linear layer (§3.4).</p>", shape: "m × 512" },
+    masked_mha: { title: "Masked multi-head self-attention (decoder)", body: "<p>Each output word looks only at the words before it. Future positions are set to −∞ before softmax, so their weights are exactly 0. Without the mask, training would be trivial: the model could copy the next word.</p>", shape: "m × 512 (scores: 8 × m × m, upper triangle zero)", lesson: "primer/ml/attention.html" },
+    cross_mha: { title: "Encoder-decoder (cross) attention", body: "<p>The decoder's words ask the questions (<strong>queries</strong>, from below); the encoder's final output supplies the <strong>keys and values</strong> (the long wire from the left). This is where the German being written consults the English being translated.</p>", shape: "queries m × 512, keys/values n × 512, scores 8 × m × n", lesson: "primer/ml/attention.html" },
+    linear: { title: "Linear", body: "<p>Scores the final 512-number vector against every token in the vocabulary, producing one number (a <strong>logit</strong>) per token. In the paper this reuses the embedding table.</p>", shape: "m × 512 → m × 37,000", lesson: "primer/ml/big_picture.html" },
+    softmax_out: { title: "Softmax", body: "<p>Turns the 37,000 logits at each position into probabilities that sum to 1. The next word is chosen from these, by beam search in the paper, or by sampling in chat models.</p>", shape: "m × 37,000 (each row sums to 1)", lesson: "primer/ml/inference.html" },
+    out_probs: { title: "Output probabilities", body: "<p>A probability for every possible next token. Pick one, append it to the outputs, and run the decoder again: that loop is auto-regressive generation.</p>", shape: "37,000 probabilities per position", lesson: "primer/ml/inference.html" },
+    // Figure 2 left
+    q_in: { title: "Q: queries", body: "<p>What each word is looking for: one row per word, from multiplying the word vectors by a learned matrix.</p>", shape: "n × 64" },
+    k_in: { title: "K: keys", body: "<p>What each word offers. Compared against the queries in the first MatMul.</p>", shape: "n × 64" },
+    v_in: { title: "V: values", body: "<p>What each word hands over. Note the wire goes straight past every step until the final MatMul: values never affect <em>how much</em> attention is paid, only <em>what</em> is delivered.</p>", shape: "n × 64" },
+    matmul1: { title: "MatMul: Q Kᵀ", body: "<p>Every query dotted with every key: a grid of relevance scores, one per (word, word) pair.</p>", shape: "n × n" },
+    scale: { title: "Scale: ÷ √d<sub>k</sub>", body: "<p>Divides every score by √64 = 8, keeping the scores' typical size near 1 so softmax does not saturate (see the footnote, decoded, in §3.2.1).</p>", shape: "n × n" },
+    mask: { title: "Mask (optional)", body: "<p>In the decoder's self-attention, scores for future positions are set to −∞, so after softmax their weight is exactly 0. The encoder skips this step.</p>", shape: "n × n (upper triangle → −∞)" },
+    sdpa_softmax: { title: "SoftMax", body: "<p>Row by row, turns scores into positive shares summing to 1. Try the slider demo below to feel how it behaves.</p>", shape: "n × n, rows sum to 1" },
+    matmul2: { title: "MatMul: weights × V", body: "<p>Each word's new vector is its row of shares times the value matrix: a weighted blend of every word's value.</p>", shape: "(n × n) · (n × 64) → n × 64" },
+    sdpa_out: { title: "Output", body: "<p>One context-aware vector per word, the same width as the values.</p>", shape: "n × 64" },
+    // Figure 2 right
+    mh_v: { title: "V", body: "<p>The values going in, full width.</p>", shape: "n × 512" },
+    mh_k: { title: "K", body: "<p>The keys going in, full width.</p>", shape: "n × 512" },
+    mh_q: { title: "Q", body: "<p>The queries going in, full width. In self-attention, Q, K and V are all the same word vectors; the projections make them different.</p>", shape: "n × 512" },
+    mh_proj: { title: "Linear projections (h copies each)", body: "<p>Each head has its own three matrices W<sub>i</sub><sup>Q</sup>, W<sub>i</sub><sup>K</sup>, W<sub>i</sub><sup>V</sup> (each 512 × 64), so each head sees the sentence through a different lens.</p>", shape: "n × 512 → n × 64, per head" },
+    mh_heads: { title: "h scaled dot-product attentions", body: "<p>The recipe from the left-hand figure, run h = 8 times in parallel, independently.</p>", shape: "8 heads × (n × 64)", lesson: "primer/ml/attention.html" },
+    mh_h: { title: "h = number of heads", body: "<p>8 in the base model, 16 in the big one. Table 3 shows that 1 head is noticeably worse and 32 narrow heads are worse too.</p>", shape: "h = 8" },
+    mh_concat: { title: "Concat", body: "<p>Glue the 8 outputs of width 64 side by side: back to 512 numbers per word.</p>", shape: "8 × (n × 64) → n × 512" },
+    mh_out: { title: "Linear (W<sup>O</sup>)", body: "<p>A final 512 × 512 matrix that mixes the heads' findings together.</p>", shape: "n × 512 → n × 512" },
+    mh_result: { title: "Output", body: "<p>Same shape as the input, which is why these layers can be stacked.</p>", shape: "n × 512" },
+  },
+
+  onReady(P) {
+    playground();
+    softmaxDemo();
+    peHeatmap(P);
+    lrChart(P);
+    complexity();
+    bleuBars();
+  },
+};
+
+/* ---- causal-mask grid (built before papers.js wires the diagrams) ---- */
+(function maskGrid() {
+  const words = ["Die", "Katze", "saß", "."];
+  const g = document.getElementById("maskgrid");
+  const NS = "http://www.w3.org/2000/svg";
+  const x0 = 90, y0 = 40, s = 46;
+  words.forEach((w, j) => {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", x0 + j * s + s / 2); t.setAttribute("y", y0 - 8); t.setAttribute("text-anchor", "middle"); t.textContent = w;
+    g.appendChild(t);
+  });
+  words.forEach((w, i) => {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", x0 - 10); t.setAttribute("y", y0 + i * s + s / 2 + 4); t.setAttribute("text-anchor", "end"); t.textContent = w;
+    g.appendChild(t);
+    words.forEach((w2, j) => {
+      const ok = j <= i;
+      const key = `m_${i}_${j}`;
+      const cell = document.createElementNS(NS, "g");
+      cell.setAttribute("class", "blk " + (ok ? "ff" : "plain"));
+      cell.setAttribute("data-block", key);
+      cell.setAttribute("aria-label", `${w} looking at ${w2}: ${ok ? "allowed" : "masked"}`);
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", x0 + j * s + 2); r.setAttribute("y", y0 + i * s + 2); r.setAttribute("width", s - 4); r.setAttribute("height", s - 4); r.setAttribute("rx", 5);
+      const t2 = document.createElementNS(NS, "text");
+      t2.setAttribute("x", x0 + j * s + s / 2); t2.setAttribute("y", y0 + i * s + s / 2 + 4); t2.setAttribute("text-anchor", "middle");
+      t2.textContent = ok ? "✓" : "−∞";
+      cell.append(r, t2);
+      g.appendChild(cell);
+      window.PAPER.blocks[key] = {
+        title: `“${w}” looking at “${w2}”: ${ok ? "allowed" : "masked"}`,
+        body: ok
+          ? `<p>“${w2}” is ${j === i ? "the word itself" : "an earlier word"}, already written when “${w}” is being predicted, so “${w}” may use it. Its score goes through softmax normally.</p>`
+          : `<p>“${w2}” comes <em>after</em> “${w}”. When the model is predicting what follows “${words[Math.max(0, i - 1)]}”, “${w2}” does not exist yet, so its score is set to −∞ and its weight becomes e<sup>−∞</sup> / total = 0.</p>`,
+        shape: `row ${i + 1}, column ${j + 1}`,
+      };
+    });
+  });
+})();
+
+/* ---- attention playground (illustrative weights) ---- */
+function playground() {
+  const base = ["The", "animal", "didn't", "cross", "the", "street", "because", "it", "was"];
+  const special = {
+    tired: {
+      it: { animal: 0.52, tired: 0.14, street: 0.1, it: 0.08, was: 0.05 },
+      tired: { animal: 0.34, it: 0.28, was: 0.16, tired: 0.1 },
+      was: { it: 0.35, tired: 0.25, was: 0.15 },
+    },
+    wide: {
+      it: { street: 0.55, wide: 0.13, animal: 0.12, it: 0.08, was: 0.04 },
+      wide: { street: 0.38, it: 0.3, was: 0.14, wide: 0.1 },
+      was: { it: 0.35, wide: 0.25, was: 0.15 },
+    },
+  };
+  const common = {
+    animal: { The: 0.3, animal: 0.45 },
+    "didn't": { animal: 0.35, "didn't": 0.25, cross: 0.2 },
+    cross: { street: 0.3, animal: 0.25, "didn't": 0.2, cross: 0.15 },
+    street: { the: 0.3, cross: 0.28, street: 0.3 },
+    because: { "didn't": 0.25, because: 0.2, cross: 0.15 },
+  };
+  let ending = "tired";
+  let focused = 7;
+  const box = document.getElementById("sentence");
+  const out = document.getElementById("play-readout");
+
+  function weights(words, i) {
+    const w = words[i];
+    const spec = (special[ending][w] || common[w] || { [w]: 0.4 });
+    // Word-level targets, then spread the remainder evenly over everything else, and normalize.
+    const raw = words.map((v, j) => {
+      const key = v in spec ? v : null;
+      const val = key !== null && words.indexOf(v) === j ? spec[key] : 0;
+      return val;
+    });
+    const used = raw.reduce((a, b) => a + b, 0);
+    const rest = words.length - raw.filter((v) => v > 0).length;
+    const filled = raw.map((v) => (v > 0 ? v : Math.max(0, 1 - used) / rest));
+    const tot = filled.reduce((a, b) => a + b, 0);
+    return filled.map((v) => v / tot);
+  }
+
+  function render() {
+    const words = [...base, ending];
+    box.innerHTML = "";
+    words.forEach((w, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tok" + (i === focused ? " focus" : "");
+      b.innerHTML = `${w}<span class="pct"></span><span class="bar"></span>`;
+      const pick = () => { focused = i; show(words); };
+      b.addEventListener("pointerenter", pick);
+      b.addEventListener("focus", pick);
+      b.addEventListener("click", pick);
+      box.appendChild(b);
+    });
+    show(words);
+  }
+
+  function show(words) {
+    const w = weights(words, focused);
+    const max = Math.max(...w);
+    [...box.children].forEach((el, j) => {
+      el.classList.toggle("focus", j === focused);
+      el.querySelector(".bar").style.transform = `scaleX(${w[j] / max})`;
+      el.querySelector(".pct").textContent = `${Math.round(w[j] * 100)}%`;
+    });
+    const top = w.indexOf(max);
+    out.innerHTML = `“<strong>${words[focused]}</strong>” pays the most attention (${Math.round(max * 100)}%) to “<strong>${words[top]}</strong>”. All ${words.length} shares add up to 100%.`;
+  }
+
+  document.querySelectorAll("[data-ending]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      ending = btn.dataset.ending;
+      document.querySelectorAll("[data-ending]").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+      render();
+    })
+  );
+  render();
+}
+
+/* ---- softmax slider demo ---- */
+function softmaxDemo() {
+  const items = [["animal", 2.0], ["tired", 1.0], ["street", 0.5], ["the", -1.0]];
+  let T = 1;
+  const sliders = document.getElementById("sm-sliders");
+  const shares = document.getElementById("sm-shares");
+  const sum = document.getElementById("sm-sum");
+  function row(label, min, max, step, value, onInput, fmt) {
+    const id = "sm-" + label.replace(/\W/g, "");
+    const l = document.createElement("label"); l.htmlFor = id; l.textContent = label;
+    const r = document.createElement("input"); Object.assign(r, { type: "range", id, min, max, step, value });
+    const v = document.createElement("output"); v.textContent = fmt(value);
+    r.addEventListener("input", () => { v.textContent = fmt(+r.value); onInput(+r.value); draw(); });
+    sliders.append(l, r, v);
+  }
+  items.forEach((it) => row(`score: ${it[0]}`, -4, 5, 0.1, it[1], (x) => (it[1] = x), (x) => x.toFixed(1)));
+  row("temperature", 0.1, 3, 0.05, 1, (x) => (T = x), (x) => x.toFixed(2));
+  function draw() {
+    const ex = items.map((it) => Math.exp(it[1] / T));
+    const tot = ex.reduce((a, b) => a + b, 0);
+    shares.innerHTML = items
+      .map((it, i) => {
+        const p = ex[i] / tot;
+        return `<div class="share-row"><span>${it[0]}</span><div><div class="share-bar" style="width:${(p * 100).toFixed(1)}%"></div></div><span>${(p * 100).toFixed(1)}%</span></div>`;
+      })
+      .join("");
+    sum.innerHTML = `e<sup>score/T</sup> values: ${ex.map((v) => v.toFixed(2)).join(", ")} · total ${tot.toFixed(2)} · <strong>sum of shares = ${(ex.reduce((a, b) => a + b / tot, 0)).toFixed(3)}</strong>`;
+  }
+  draw();
+}
+
+/* ---- positional-encoding heatmap ---- */
+function peHeatmap(P) {
+  const d = 512;
+  const pe = (pos, dim) => {
+    const i = Math.floor(dim / 2);
+    const angle = pos / Math.pow(10000, (2 * i) / d);
+    return dim % 2 === 0 ? Math.sin(angle) : Math.cos(angle);
+  };
+  const readout = document.getElementById("pe-readout");
+  P.heatmap(document.getElementById("pe-canvas"), {
+    rows: 100, cols: 128, min: -1, max: 1, value: pe,
+    onHover(r, c, v) {
+      if (r === null) return;
+      const i = Math.floor(c / 2);
+      const div = Math.pow(10000, (2 * i) / d);
+      readout.innerHTML = `position <strong>${r}</strong>, dimension <strong>${c}</strong> (pair i = ${i}, ${c % 2 ? "cosine" : "sine"}): ${c % 2 ? "cos" : "sin"}(${r} / ${div.toFixed(4)}) = <strong>${v.toFixed(3)}</strong> · this pair repeats every ${(2 * Math.PI * div).toFixed(1)} positions`;
+    },
+  });
+}
+
+/* ---- learning-rate schedule ---- */
+function lrChart(P) {
+  const d = 512;
+  const lr = (s, w) => Math.pow(d, -0.5) * Math.min(Math.pow(s, -0.5), s * Math.pow(w, -1.5));
+  const pts = (w) => {
+    const steps = new Set([1, w]);
+    for (let s = 250; s <= 100000; s += 250) steps.add(s);
+    return [...steps].sort((a, b) => a - b).map((s) => [s, lr(s, w)]);
+  };
+  const slider = document.getElementById("lr-warm");
+  const label = document.getElementById("lr-warm-v");
+  const chart = P.lineChart(document.getElementById("lr-chart"), {
+    series: [{ name: "learning rate", points: pts(4000) }],
+    xLabel: "training step", yLabel: "learning rate",
+    xFmt: (v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(Math.round(v))),
+    yFmt: (v) => v.toExponential(1),
+    readout: document.getElementById("lr-readout"),
+    ariaLabel: "Learning rate against training step",
+  });
+  slider.addEventListener("input", () => {
+    label.textContent = slider.value;
+    chart.update([{ name: "learning rate", points: pts(+slider.value) }]);
+  });
+}
+
+/* ---- n² d versus n d² ---- */
+function complexity() {
+  const d = 512;
+  const slider = document.getElementById("cmp-n");
+  const bars = document.getElementById("cmp-bars");
+  const out = document.getElementById("cmp-readout");
+  const nv = document.getElementById("cmp-nv");
+  const fmt = (x) => x.toExponential(1).replace("e+", " × 10^");
+  function draw() {
+    const n = Math.round(Math.pow(10, +slider.value));
+    nv.textContent = n.toLocaleString();
+    const att = n * n * d;
+    const rnn = n * d * d;
+    const top = Math.log10(Math.max(att, rnn, 1e9));
+    const w = (x) => `${Math.max(2, (Math.log10(x) / top) * 100).toFixed(1)}%`;
+    bars.innerHTML =
+      `<div class="share-row" style="grid-template-columns:8rem minmax(0,1fr) 6.5rem"><span>self-attention n²·d</span><div><div class="share-bar" style="width:${w(att)};background:var(--attn-stroke)"></div></div><span>${fmt(att)}</span></div>` +
+      `<div class="share-row" style="grid-template-columns:8rem minmax(0,1fr) 6.5rem"><span>recurrent n·d²</span><div><div class="share-bar" style="width:${w(rnn)};background:var(--ff-stroke)"></div></div><span>${fmt(rnn)}</span></div>`;
+    const ratio = att / rnn;
+    out.innerHTML = ratio < 1
+      ? `At n = ${n.toLocaleString()}, self-attention does <strong>${(1 / ratio).toFixed(1)}× less</strong> work per layer (the ratio is n / d). Bars use a log scale.`
+      : `At n = ${n.toLocaleString()}, self-attention does <strong>${ratio.toFixed(1)}× more</strong> work per layer (the ratio is n / d). Bars use a log scale.`;
+  }
+  slider.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- Table 2 bars ---- */
+function bleuBars() {
+  const rows = [["GNMT + RL", 24.6, "2.3 × 10¹⁹"], ["ConvS2S", 25.16, "9.6 × 10¹⁸"], ["Transformer (base)", 27.3, "3.3 × 10¹⁸"], ["Transformer (big)", 28.4, "2.3 × 10¹⁹"]];
+  document.getElementById("bleu-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">English→German BLEU (axis from 0 to 30) · training cost in FLOPs</div>` +
+    rows
+      .map(([m, b, c]) => `<div class="share-row" style="grid-template-columns:9.5rem minmax(0,1fr) 7rem"><span>${m}</span><div><div class="share-bar" style="width:${((b / 30) * 100).toFixed(1)}%;${m.startsWith("Transformer") ? "" : "background:var(--wire)"}"></div></div><span>${b} · ${c}</span></div>`)
+      .join("");
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lost in the Middle, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Liu et al. (2023), which showed that language models use the start and end of a long context far better than the middle.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="lost-in-the-middle">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Multi-document QA</a>
+        <ol>
+          <li><a href="#s2-1">2.1 The experiment</a></li>
+          <li><a href="#s2-3">2.3 The U-shaped curve</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Key-value retrieval</a></li>
+      <li><a href="#s4">4 Why does it happen?</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Architecture</a></li>
+          <li><a href="#s4-2">4.2 Query-aware layout</a></li>
+          <li><a href="#s4-3">4.3 Instruction tuning</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Is more context better?</a></li>
+      <li><a href="#s6">6–7 Related work and conclusion</a></li>
+      <li><a href="#today">Using it today</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Lost in the Middle, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Liu, Lin, Hewitt, Paranjape, Bevilacqua, Petroni and Liang (2023), <em>Lost in the Middle: How Language Models Use Long Contexts</em>.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2307.03172">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2307.03172">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2307.03172">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its tables are not reproduced as such; the accuracy numbers plotted here come from its Appendix G and Table 1 and are credited where used. The figures are redrawn from those numbers. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover, tab to, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s2-3">position slider</a> uses the paper's measured numbers: move the relevant document through the context and watch accuracy fall and recover.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The code version is the context assembler in the <a class="lesson" data-lesson="primer/agents/context.html">context engineering lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Performance is often highest when relevant information occurs at the beginning or end of the input context, and significantly degrades when models must access relevant information in the middle of long contexts.”<cite>Liu et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2307.03172">Read the original</a></cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Read someone a list of twenty grocery items and ask what they remember. Most people recall the first few and the last few; the middle blurs. Psychologists call this the serial-position effect. This paper found the same shape in large language models: give a model twenty documents, one of which holds the answer, and it finds the answer far more often when that document is first or last than when it is in the middle.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Accuracy follows a <strong>U-shaped curve</strong> in the position of the relevant information: high at the start, lowest in the middle, partly recovered at the end.</li>
+  <li>Models advertised with longer <span class="t" data-t="context window">context windows</span> are not better at using the context they already had.</li>
+  <li>Even the simplest possible retrieval task (look up a random key and return its value) shows the effect for several models.</li>
+  <li>Adding more retrieved documents quickly stops helping, long before the retriever stops finding more answers.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Every <span class="t" data-t="rag">RAG</span> system and long-running agent decides what order to put things in the prompt. This paper is why careful systems put the most relevant material first (or last), keep the number of passages small, and test how accuracy changes with position instead of trusting the advertised context length.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A bigger desk lets you spread out more papers, but it does not mean you read them all equally carefully. Context windows had grown from 2,000 tokens to 100,000, and the question nobody had carefully measured was: does the model actually <em>use</em> everything on the desk?</p>
+<h4>The experimental idea</h4>
+<p>Keep the task fixed and change only two things: <strong>how much</strong> is in the context (10, 20 or 30 documents), and <strong>where</strong> the one useful document sits. If a model used its context robustly, moving the useful document would not matter. It does matter, a lot.</p>
+<h4>Tiny example</h4>
+<p>The same question, the same 20 documents, only the order changes. For GPT-3.5-Turbo, answer accuracy is 75.8% when the useful document comes first and 53.8% when it is 10th. The closed-book score, with no documents at all, is 56.1%. So in the worst position, giving the model the answer <em>hurt</em> compared with giving it nothing.</p>
+</section>
+
+<section id="s2">
+<h2>2 Multi-document question answering <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S2">original</a></span></h2>
+</section>
+
+<section id="s2-1">
+<h3>2.1 The experiment <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Hide one page containing the answer in a stack of pages that look relevant but do not contain it, then ask the question. The distractors are hard on purpose: they were fetched by a real search system as the most relevant-looking passages that nonetheless lack the answer.</p>
+<ul>
+  <li><strong>Questions:</strong> 2,655 real search queries from NaturalQuestions-Open whose answer is a Wikipedia paragraph.</li>
+  <li><strong>Documents:</strong> Wikipedia chunks of at most 100 tokens: one with the answer, and k − 1 distractors retrieved by Contriever that do not contain it, ordered by decreasing relevance.</li>
+  <li><strong>Scoring:</strong> <span class="t" data-t="accuracy">accuracy</span>, meaning whether any correct answer string appears in the output.</li>
+  <li><strong>Decoding:</strong> <span class="t" data-t="greedy decoding">greedy</span>, so the results are repeatable.</li>
+  <li><strong>Models:</strong> MPT-30B-Instruct, LongChat-13B (16K), GPT-3.5-Turbo (4K and 16K) and Claude-1.3 (8K and 100K).</li>
+</ul>
+<figure class="ix wide" id="fig-prompt">
+  <div class="ixgrid">
+  <svg viewBox="0 0 640 170" role="img" aria-label="The shape of the prompt: instruction, documents, question">
+    <g class="blk plain" data-block="instr" tabindex="0" role="button" aria-label="Instruction"><rect x="6" y="60" width="92" height="50" rx="6"/><text x="52" y="82" text-anchor="middle">Instruction</text><text x="52" y="98" text-anchor="middle" class="lbl">“answer using…”</text></g>
+    <g class="blk emb" data-block="distract"><rect x="108" y="60" width="54" height="50" rx="6"/><text x="135" y="89" text-anchor="middle">Doc 1</text></g>
+    <g class="blk emb" data-block="distract"><rect x="168" y="60" width="54" height="50" rx="6"/><text x="195" y="89" text-anchor="middle">Doc 2</text></g>
+    <g class="blk ff" data-block="gold" tabindex="0" role="button" aria-label="The document containing the answer"><rect x="228" y="54" width="62" height="62" rx="6"/><text x="259" y="82" text-anchor="middle">Doc 3</text><text x="259" y="98" text-anchor="middle" class="lbl">has answer</text></g>
+    <g class="blk emb" data-block="distract"><rect x="296" y="60" width="54" height="50" rx="6"/><text x="323" y="89" text-anchor="middle">Doc 4</text></g>
+    <text x="376" y="89" text-anchor="middle">…</text>
+    <g class="blk emb" data-block="distract"><rect x="400" y="60" width="62" height="50" rx="6"/><text x="431" y="89" text-anchor="middle">Doc 20</text></g>
+    <g class="blk attn" data-block="question" tabindex="0" role="button" aria-label="The question"><rect x="472" y="60" width="92" height="50" rx="6"/><text x="518" y="82" text-anchor="middle">Question</text><text x="518" y="98" text-anchor="middle" class="lbl">at the end</text></g>
+    <g class="blk soft" data-block="answer" tabindex="0" role="button" aria-label="The answer"><rect x="574" y="60" width="60" height="50" rx="6"/><text x="604" y="89" text-anchor="middle">Answer</text></g>
+    <text x="320" y="146" text-anchor="middle" class="lbl">read left to right · the model generates after the last block</text>
+    <text x="280" y="40" text-anchor="middle" class="lbl">the experiment moves this one document to position 1 … 20</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. The green document is the one that matters.</p></div>
+  </div>
+  <figcaption>The shape of every multi-document prompt in the experiment. Based on Liu et al. (2023), Figures 2 to 4, redrawn.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the prompt is read left to right: an instruction, then the documents, then the question, and the model writes its answer last. The experiment changes only one thing between runs: which slot the green document occupies. Moving it changes nothing about what the right answer is, so any change in accuracy is caused purely by position.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 The U-shaped curve <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S2.SS3">original</a></span></h3>
+<blockquote class="quote">“These results indicate that current models cannot effectively reason over their entire context window when prompted for downstream tasks.”<cite>Liu et al. (2023), §2.3</cite></blockquote>
+<h4>Try it: move the useful document</h4>
+<div class="plot" id="u-plot">
+  <div class="controls">
+    <label for="u-model">Model</label>
+    <select id="u-model">
+      <option value="gpt">GPT-3.5-Turbo</option>
+      <option value="claude">Claude-1.3</option>
+      <option value="mpt">MPT-30B-Instruct</option>
+      <option value="longchat">LongChat-13B (16K)</option>
+    </select>
+    <label for="u-k">Documents</label>
+    <select id="u-k"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option></select>
+    <label for="u-pos">Useful document at position <strong id="u-posv">1</strong></label><input type="range" id="u-pos" min="1" max="20" step="1" value="1">
+  </div>
+  <div id="u-strip" class="sentence" aria-label="The context, with the useful document highlighted"></div>
+  <div id="u-chart"></div>
+  <p class="readout" id="u-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the strip of boxes is the context, one box per document, with the useful one highlighted. The chart's x-axis is the useful document's position (1 = first) and the y-axis is answer accuracy. The solid line joins the positions the paper actually measured (1, 5, 10, 15 and so on); the flat grey line is the same model's closed-book score, with no documents at all, and the orange vertical line is where the slider has put the useful document. Slide the position: accuracy drops steeply after position 1, bottoms out in the middle, and partly recovers at the end. For GPT-3.5-Turbo with 20 or 30 documents, the middle of the curve falls <em>below</em> the closed-book line. Readouts at unmeasured positions are linearly interpolated and labelled as such.</p>
+<h4>Two numbers that summarise a curve</h4>
+<div class="eq" data-tex="\htmlData{sym=gap}{\Delta} = \htmlData{sym=max}{\max_{p}}\, \htmlData{sym=Ap}{A(p)} - \htmlData{sym=min}{\min_{p}}\, \htmlData{sym=Ap}{A(p)}, \qquad \htmlData{sym=Abar}{\bar{A}} = \htmlData{sym=avgp}{\frac{1}{|P|}\sum_{p \in P}} \htmlData{sym=Ap}{A(p)}" data-fallback="Δ = max_p A(p) − min_p A(p),  Ā = (1/|P|) Σ_{p in P} A(p)"></div>
+<div class="symtable" data-syms="p,Ap,P,max,min,gap,avgp,Abar"></div>
+<p class="inwords"><strong>In words:</strong> “the gap is the best position's accuracy minus the worst position's; the average is what you get if the useful document lands in a random measured position.”</p>
+<p class="inwords"><strong>With the numbers:</strong> GPT-3.5-Turbo, 20 documents, measured at positions (1, 5, 10, 15, 20): (75.8, 57.2, 53.8, 55.4, 63.2). The gap is 75.8 − 53.8 = <strong>22.0 points</strong>. The average is 305.4 / 5 = <strong>61.1%</strong>. Putting the best document first (75.8%) is worth almost 15 points over leaving its position to chance.</p>
+<p>The paper proposes exactly this kind of test as a standard: to claim a model can use a long context, show that its best-case and worst-case positions score about the same.</p>
+<h4>Longer windows do not fix it</h4>
+<p>Where a prompt fits in both a model and its extended-context sibling, their curves nearly coincide: GPT-3.5-Turbo and its 16K version, and Claude-1.3 and its 100K version, score within a few tenths of a point of each other at every position. A bigger window lets more text in; it does not make the model read the middle more carefully.</p>
+<h4>Why it matters today</h4>
+<p>Newer models have improved on these tests, but the lesson is a method rather than a number: measure your own model on your own prompt with the key evidence placed at several positions. The <a data-lesson="primer/agents/context.html">context engineering lesson</a> builds a prompt assembler that puts the highest-priority material at the edges.</p>
+</section>
+
+<section id="s3">
+<h2>3 Key-value retrieval: the simplest possible test <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S3">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>If a model struggles to use a document in the middle, is the problem understanding, or merely <em>finding</em>? To separate the two, the authors built a test with no meaning at all: a long list of random ID pairs, and a request to return the partner of one ID. It is pure lookup, like Ctrl+F.</p>
+<h4>Tiny example</h4>
+<div class="play" id="kv">
+  <div class="ui" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+    <button type="button" id="kv-new">New list</button>
+    <label for="kv-pos">Target pair at position <strong id="kv-posv">4</strong> of 7</label>
+    <input type="range" id="kv-pos" min="1" max="7" step="1" value="4">
+  </div>
+  <pre id="kv-json" style="white-space:pre-wrap;word-break:break-all;font-size:.8rem"></pre>
+  <p class="readout" id="kv-q"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> this is the shape of the real task at toy size. Every key and value is a random 128-bit identifier written as text (a UUID), so there is no meaning to exploit: the model must match the key character for character and copy the value after it. The highlighted pair is the target, and the slider moves it through the list. The paper used 75, 140 or 300 pairs, with 500 examples each.</p>
+<h4>What happened</h4>
+<ul>
+  <li>Claude-1.3 and its 100K version were nearly perfect at every length and position.</li>
+  <li>GPT-3.5-Turbo (both versions) and MPT-30B-Instruct were worst when the target pair was in the middle, especially with 140 or 300 pairs.</li>
+  <li>The worst case across models was 45.6% accuracy, on a task that is only exact copying.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Synthetic lookup tests of this kind, often called “needle in a haystack” tests, now appear in many long-context model reports. They are a floor, not a ceiling: passing a pure-lookup test does not mean a model will <em>reason</em> well over the middle of a long input, which is what §2 measures.</p>
+</section>
+
+<section id="s4">
+<h2>4 Why does it happen? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S4">original</a></span></h2>
+<p>The paper runs three preliminary investigations. None fully explains the effect, but each narrows it down.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Model architecture <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="decoder">decoder-only</span> model reads strictly left to right, so while reading document 3 it cannot know what question is coming. An <span class="t" data-t="encoder-decoder">encoder-decoder</span> model reads the whole input at once, in both directions, before answering, so every document is read in the light of every other document.</p>
+<h4>What they found</h4>
+<p>Encoder-decoder models (Flan-UL2, Flan-T5-XXL) were fairly robust <em>within</em> the input lengths they were trained on: Flan-UL2 varied by only 1.9 points between its best and worst positions with inputs of up to 2,048 tokens. Past their training length, they too developed the U shape.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Query-aware contextualization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If a left-to-right reader cannot know the question while reading the documents, tell them the question first. The authors put the question both before and after the documents.</p>
+<figure class="ix" id="fig-qa">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 200" role="img" aria-label="Two prompt layouts: question at the end only, or before and after the documents">
+    <text x="6" y="22" class="lbl">default layout</text>
+    <g class="blk plain" data-block="lay_instr"><rect x="6" y="30" width="44" height="34" rx="5"/><text x="28" y="52" text-anchor="middle" class="lbl">instr.</text></g>
+    <g class="blk emb" data-block="lay_docs"><rect x="56" y="30" width="170" height="34" rx="5"/><text x="141" y="52" text-anchor="middle">documents</text></g>
+    <g class="blk attn" data-block="lay_q_end"><rect x="232" y="30" width="62" height="34" rx="5"/><text x="263" y="52" text-anchor="middle">question</text></g>
+    <text x="6" y="112" class="lbl">query-aware layout</text>
+    <g class="blk plain" data-block="lay_instr"><rect x="6" y="120" width="44" height="34" rx="5"/><text x="28" y="142" text-anchor="middle" class="lbl">instr.</text></g>
+    <g class="blk attn" data-block="lay_q_start"><rect x="56" y="120" width="62" height="34" rx="5"/><text x="87" y="142" text-anchor="middle">question</text></g>
+    <g class="blk emb" data-block="lay_docs"><rect x="124" y="120" width="102" height="34" rx="5"/><text x="175" y="142" text-anchor="middle">documents</text></g>
+    <g class="blk attn" data-block="lay_q_end"><rect x="232" y="120" width="62" height="34" rx="5"/><text x="263" y="142" text-anchor="middle">question</text></g>
+    <text x="150" y="190" text-anchor="middle" class="lbl">each token can only attend to tokens on its left</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block.</p></div>
+  </div>
+  <figcaption>The two prompt layouts compared in §4.2. Based on Liu et al. (2023), §4.2, redrawn.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> in the top row the question comes last, so while the model's layers process each document, the question is invisible to them (a decoder's <span class="t" data-t="causal mask">causal mask</span> hides everything to the right). In the bottom row a copy of the question comes first, so every document is processed knowing what to look for. The copy at the end is kept so the question is fresh when the answer is written.</p>
+<h4>What they found</h4>
+<ul>
+  <li><strong>Key-value lookup:</strong> near-perfect for every model at every length. GPT-3.5-Turbo (16K) went to 100% with 300 pairs.</li>
+  <li><strong>Question answering:</strong> barely changed. A small gain when the useful document was first, a small loss elsewhere.</li>
+</ul>
+<p>So for pure lookup, knowing the key in advance fixes the problem; for reasoning over documents, it does not.</p>
+<h4>Why it matters today</h4>
+<p>Stating the task before a long block of data, and repeating it after, is cheap and still widely recommended, especially for extraction and lookup tasks. See the <a data-lesson="primer/agents/context.html">context engineering lesson</a>.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Instruction fine-tuning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Instruction-tuning data usually puts the instruction at the very start. Perhaps that trains models to over-weight the beginning? To test it, the authors compared MPT-30B-Instruct with its base model, MPT-30B, before any <span class="t" data-t="sft">instruction tuning</span>.</p>
+<h4>What they found</h4>
+<ul>
+  <li>Both show the U shape, so instruction tuning is not the cause. Tuning actually narrowed the best-to-worst gap, from nearly 10 points to about 4.</li>
+  <li>In Llama-2 models (Appendix E), the 7B model showed only a <em>recency</em> bias (the end is favoured); the U shape appeared only in the 13B and 70B models.</li>
+</ul>
+</section>
+
+<section id="s5">
+<h2>5 Is more context always better? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S5">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Handing a reader twice as many pages makes it more likely the answer is <em>somewhere</em> in the pile, and less likely they find it. The authors ran a realistic RAG setup, retrieving the top k Wikipedia passages for real questions, and tracked two curves as k grew: how often the retriever had fetched an answer (<span class="t" data-t="recall">recall</span>), and how often the model actually answered correctly.</p>
+<h4>What they found</h4>
+<p>The model's accuracy flattened long before the retriever's recall did. Going from 20 to 50 retrieved passages improved accuracy by only about 1.5 points for GPT-3.5-Turbo and about 1 point for Claude-1.3, while making every prompt much longer, slower and more expensive.</p>
+<h4>Why it matters today</h4>
+<p>Two practical fixes follow directly, and the paper names both: <strong>rerank</strong> so the most relevant passages sit at the start, and <strong>truncate</strong> the list so fewer, better passages go in. Both are implemented in the <a data-lesson="primer/agents/rag.html">RAG lesson</a>; the cost side is in the <a data-lesson="primer/agents/cost.html">cost lesson</a>.</p>
+</section>
+
+<section id="s6">
+<h2>6–7 Related work and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2307.03172#S6">original</a></span></h2>
+<p>The authors connect their U-shaped curve to the <strong>serial-position effect</strong> from psychology: in free recall of a list, people best remember the first items (primacy) and the last items (recency). Seeing the same shape in a <span class="t" data-t="transformer">transformer</span> is surprising, since <span class="t" data-t="self-attention">self-attention</span> can in principle look at any position equally easily. The conclusion restates the main finding and offers the position-sweep protocol as a new way to evaluate long-context models.</p>
+</section>
+
+<section id="today">
+<h2>Using it today</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Finding</th><th>What careful systems do</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>The start and end are used best</td><td>Put the highest-ranked passages first; put instructions and the question where they will be seen</td><td><a data-lesson="primer/agents/context.html">context</a></td></tr>
+    <tr><td>More passages quickly stop helping</td><td>Rerank, then send only the top few; measure accuracy against k instead of guessing</td><td><a data-lesson="primer/agents/rag.html">RAG</a></td></tr>
+    <tr><td>Advertised context length is not usable context</td><td>Test your own prompts with the key fact at several positions</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+    <tr><td>Long histories bury early details</td><td>Summarise or drop old turns in long conversations and agent runs, the problem known as <span class="t" data-t="context rot">context rot</span></td><td><a data-lesson="primer/agents/memory.html">memory</a></td></tr>
+  </tbody>
+</table></div>
+<p>Retrieval itself is covered by the <a href="rag.html">RAG companion</a> and the <a href="hyde.html">HyDE companion</a>.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Nelson F. Liu, Kevin Lin, John Hewitt, Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni and Percy Liang, <em>Lost in the Middle: How Language Models Use Long Contexts</em>, accepted to Transactions of the Association for Computational Linguistics (2023). <a href="https://arxiv.org/abs/2307.03172">arXiv:2307.03172</a>. Quotations are brief and attributed; plotted accuracies come from the paper's Appendix G and Table 1 and are credited on the page. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    p: { tex: "p", name: "Position", meaning: "Where the useful document sits among the k documents, counting from 1 at the start.", shape: "1 … k", example: "10 (the middle of 20)" },
+    Ap: { tex: "A(p)", name: "Accuracy at position p", meaning: "The share of questions answered correctly when the useful document is at position p.", shape: "0 to 100%", example: "A(1) = 75.8%, A(10) = 53.8%" },
+    P: { tex: "P", name: "The measured positions", meaning: "The positions the paper actually tested; |P| is how many there are.", shape: "a set of positions", example: "{1, 5, 10, 15, 20}, so |P| = 5" },
+    max: { tex: "\\max_p", name: "Largest over positions", meaning: "The best accuracy across all positions.", shape: "one number", example: "75.8" },
+    min: { tex: "\\min_p", name: "Smallest over positions", meaning: "The worst accuracy across all positions.", shape: "one number", example: "53.8" },
+    gap: { tex: "\\Delta", name: "Best-to-worst gap", meaning: "How much position matters. A model that used its context robustly would have a gap near 0.", shape: "percentage points", example: "22.0" },
+    avgp: { tex: "\\frac{1}{|P|}\\sum_{p\\in P}", name: "Average over the positions", meaning: "Add up the accuracies at every measured position and divide by how many there are.", shape: "", example: "305.4 / 5" },
+    Abar: { tex: "\\bar{A}", name: "Average accuracy", meaning: "What you would expect if the useful document landed in a random measured position.", shape: "0 to 100%", example: "61.1%" },
+  },
+  blocks: {
+    instr: { title: "Instruction", body: "<p>Tells the model to answer the question using the search results provided.</p>", shape: "a sentence or two" },
+    distract: { title: "Distractor documents", body: "<p>Real Wikipedia chunks (up to 100 tokens each), fetched by a search system as highly relevant to the question but checked <em>not</em> to contain the answer. They look useful, which is what makes the task hard.</p>", shape: "k − 1 documents", lesson: "primer/ml/embeddings/retrieval.html" },
+    gold: { title: "The document with the answer", body: "<p>The one Wikipedia paragraph that contains the answer. The whole experiment is moving this box between positions and measuring accuracy.</p>", shape: "1 document" },
+    question: { title: "Question", body: "<p>Placed after the documents in the default layout. A decoder-only model therefore processes every document before it has seen the question.</p>", shape: "one question" },
+    answer: { title: "Answer", body: "<p>Generated with greedy decoding. Scored correct if any accepted answer string appears in it.</p>", shape: "a short text" },
+    lay_instr: { title: "Instruction", body: "<p>The same in both layouts.</p>" },
+    lay_docs: { title: "The documents", body: "<p>In the default layout, the model's layers process these without knowing the question. In the query-aware layout, the question is already to their left, so attention from every document can take it into account.</p>" },
+    lay_q_end: { title: "Question at the end", body: "<p>Keeps the question right before the answer is written. Present in both layouts.</p>" },
+    lay_q_start: { title: "Question at the start", body: "<p>The extra copy that makes the layout “query-aware”. It fixed key-value lookup almost completely, but barely changed question answering.</p>", lesson: "primer/agents/context.html" },
+  },
+  onReady(P) { uCurve(P); kvDemo(); },
+};
+
+/* ---- accuracy by position: Liu et al. (2023), Appendix G (Tables 5-7) and Table 1 ---- */
+const U_DATA = {
+  gpt: { name: "GPT-3.5-Turbo", closed: 56.1,
+    10: [[1, 76.8], [5, 61.2], [10, 62.4]],
+    20: [[1, 75.8], [5, 57.2], [10, 53.8], [15, 55.4], [20, 63.2]],
+    30: [[1, 73.4], [5, 55.1], [10, 50.5], [15, 50.9], [20, 51.8], [25, 54.9], [30, 63.7]], note30: "30 documents only fit the 16K version; closed-book 56.0%" },
+  claude: { name: "Claude-1.3", closed: 48.3,
+    10: [[1, 62.9], [5, 58.3], [10, 59.7]],
+    20: [[1, 59.9], [5, 55.9], [10, 56.8], [15, 57.2], [20, 60.1]],
+    30: [[1, 59.1], [5, 55.1], [10, 54.8], [15, 55.7], [20, 56.4], [25, 56.2], [30, 59.9]] },
+  mpt: { name: "MPT-30B-Instruct", closed: 31.5,
+    10: [[1, 60.2], [5, 56.2], [10, 59.7]],
+    20: [[1, 53.7], [5, 51.8], [10, 52.2], [15, 52.7], [20, 56.3]],
+    30: [[1, 51.6], [5, 51.3], [10, 51.2], [15, 49.0], [20, 49.6], [25, 51.3], [30, 54.1]] },
+  longchat: { name: "LongChat-13B (16K)", closed: 35.0,
+    10: [[1, 72.1], [5, 58.9], [10, 58.5]],
+    20: [[1, 68.6], [5, 57.4], [10, 55.3], [15, 52.5], [20, 55.0]],
+    30: [[1, 66.9], [5, 54.8], [10, 52.5], [15, 52.9], [20, 52.2], [25, 51.3], [30, 55.1]] },
+};
+
+function uCurve(P) {
+  const mSel = document.getElementById("u-model"), kSel = document.getElementById("u-k"), pos = document.getElementById("u-pos");
+  const strip = document.getElementById("u-strip"), out = document.getElementById("u-readout");
+  let chart = null;
+  const interp = (pts, x) => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+      if (x >= x0 && x <= x1) return { y: y0 + (y1 - y0) * (x - x0) / (x1 - x0), measured: x === x0 || x === x1 };
+    }
+    return { y: pts[pts.length - 1][1], measured: true };
+  };
+  function series() {
+    const d = U_DATA[mSel.value], k = +kSel.value;
+    const closed = mSel.value === "gpt" && k === 30 ? 56.0 : d.closed;
+    const at = +pos.value;
+    return [
+      { name: `${d.name}, ${k} documents`, points: d[k] },
+      { name: "closed book (no documents)", points: [[1, closed], [k, closed]], color: "var(--wire)" },
+      // A near-vertical two-point series marks the slider's position on the chart.
+      { name: "slider position", points: [[at, 30], [at + 0.001, 80]], color: "#f59e0b" },
+    ];
+  }
+  function draw() {
+    const d = U_DATA[mSel.value], k = +kSel.value;
+    pos.max = k;
+    if (+pos.value > k) pos.value = k;
+    const p = +pos.value;
+    document.getElementById("u-posv").textContent = p;
+    strip.innerHTML = Array.from({ length: k }, (_, i) =>
+      `<span class="tok${i + 1 === p ? " focus" : ""}" style="min-width:1.6rem;text-align:center">${i + 1}</span>`).join("");
+    const s = series();
+    if (!chart) {
+      chart = P.lineChart(document.getElementById("u-chart"), {
+        series: s, xLabel: "position of the useful document", yLabel: "accuracy (%)",
+        yMin: 30, yMax: 80, xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(1),
+        ariaLabel: "Accuracy against the position of the useful document",
+      });
+    } else chart.update(s);
+    const r = interp(d[k], p);
+    const closed = s[1].points[0][1];
+    out.innerHTML = `${d.name}, ${k} documents, useful document at position <strong>${p}</strong>: accuracy <strong>${r.y.toFixed(1)}%</strong> ` +
+      (r.measured ? "(measured)" : "(interpolated between measured positions)") +
+      ` · closed book ${closed}%` + (r.y < closed ? " · <strong>worse than giving no documents at all</strong>" : "") +
+      (mSel.value === "gpt" && k === 30 ? ` · ${d.note30}` : "");
+  }
+  [mSel, kSel].forEach((e) => e.addEventListener("change", draw));
+  pos.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- toy key-value retrieval ---- */
+function kvDemo() {
+  const pre = document.getElementById("kv-json"), q = document.getElementById("kv-q"), pos = document.getElementById("kv-pos");
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const hex = (n) => Array.from({ length: n }, () => "0123456789abcdef"[Math.floor(rnd() * 16)]).join("");
+  const uuid = () => `${hex(8)}-${hex(4)}-${hex(4)}-${hex(4)}-${hex(12)}`;
+  let pairs = [];
+  const fresh = () => { pairs = Array.from({ length: 7 }, () => [uuid(), uuid()]); };
+  function draw() {
+    const t = +pos.value - 1;
+    document.getElementById("kv-posv").textContent = pos.value;
+    pre.innerHTML = "{\n" + pairs.map(([k, v], i) =>
+      `  "${k}": "${v}"${i < pairs.length - 1 ? "," : ""}`.replace(/^(.*)$/, i === t ? '<mark>$1</mark>' : "$1")).join("\n") + "\n}";
+    q.innerHTML = `Question: what is the value for key <code>"${pairs[t][0]}"</code>? Correct output: <code>"${pairs[t][1]}"</code>.`;
+  }
+  document.getElementById("kv-new").addEventListener("click", () => { fresh(); draw(); });
+  pos.addEventListener("input", draw);
+  fresh(); draw();
+}
+</script>
+</body>
+</html>

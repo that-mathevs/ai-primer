@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HNSW, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Malkov and Yashunin, Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs, with a live, step-by-step HNSW search.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .mono { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .toggle button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .row2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.5rem 1rem; align-items: end; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .row2 input { width: 100%; }
+  .btnrow { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0; }
+  .layers { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0.6rem; }
+  .layer { border: 1px solid var(--border); border-radius: 10px; background: var(--bg); padding: 0.3rem; }
+  .layer h5 { margin: 0.1rem 0.3rem 0.2rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.8rem; color: var(--muted); }
+  .layer svg { width: 100%; height: auto; display: block; cursor: crosshair; touch-action: manipulation; }
+  svg .edge { stroke: var(--border); stroke-width: 0.8; }
+  svg .edge0 { stroke: var(--border); stroke-width: 0.6; }
+  svg .node { fill: var(--wire); }
+  svg .node.up { fill: var(--muted); }
+  svg .path { stroke: var(--active); stroke-width: 2.6; fill: none; }
+  svg .exam { fill: none; stroke: var(--attn-stroke); stroke-width: 1.5; }
+  svg .expd { fill: var(--attn-stroke); }
+  svg .inW { fill: none; stroke: var(--active); stroke-width: 2; }
+  svg .res { fill: var(--active); }
+  svg .truth { fill: none; stroke: var(--soft-stroke); stroke-width: 2.2; }
+  svg .cur { fill: none; stroke: var(--active); stroke-width: 3; }
+  svg .qry { fill: var(--soft-stroke); stroke: var(--card); stroke-width: 1.5; }
+  svg .ent { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-dasharray: 2 2; }
+  .log { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; min-height: 3.2em; }
+  .stats { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .stats b { font-variant-numeric: tabular-nums; }
+  .key { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; }
+  .key i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 0.3rem; }
+  svg .sl-node rect { fill: var(--card); stroke: var(--wire); stroke-width: 1.2; }
+  svg .sl-node.on rect { stroke: var(--active); stroke-width: 2.6; }
+  svg .sl-node.hit rect { fill: var(--soft); stroke: var(--soft-stroke); }
+  svg .sl-link { stroke: var(--wire); stroke-width: 1.2; }
+  svg .sl-link.on { stroke: var(--active); stroke-width: 3; }
+</style>
+</head>
+<body data-paper="hnsw">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work: small worlds</a></li>
+      <li><a href="#s3">3 Motivation: layers and a skip list</a></li>
+      <li><a href="#s3-heur">The neighbour heuristic</a></li>
+      <li><a href="#s4">4 The algorithm</a>
+        <ol>
+          <li><a href="#explorer">Try it: a live HNSW</a></li>
+          <li><a href="#s4-1">4.1 Construction parameters</a></li>
+          <li><a href="#s4-2">4.2 Complexity and memory</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Performance evaluation</a></li>
+      <li><a href="#s6">6 Discussion</a></li>
+      <li><a href="#today">Where HNSW is today</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>HNSW, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Yury Malkov and Dmitry Yashunin, <em>Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs</em> (first posted 2016): the index behind most vector databases. This page builds a real HNSW in your browser and lets you watch it search, one step at a time.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1603.09320">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1603.09320">PDF</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is distributed on arXiv under its standard non-exclusive licence, so no tables or figures are copied: every diagram is redrawn, and results appear as selected numbers in our own tables, each attributed. The interactive index on this page is our own implementation of the paper's algorithms (insertion, layer search and the neighbour-selection heuristic) on a small 2-D point set. Section links point to pages of the PDF.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it or tap it; so does every symbol in every equation. Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong>, a <strong>diagram or demo</strong>, <strong>the math</strong>, and <strong>why it still matters</strong>. If you only have five minutes, jump to <a href="#explorer">the live HNSW</a>, click anywhere, and press <em>Step</em>. The <a data-lesson="primer/ml/embeddings/ann.html">vector index lesson</a> implements the same algorithm in Python and benchmarks it against exact search.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=1">original</a></span></h2>
+<blockquote class="quote">“The maximum layer in which an element is present is selected randomly with an exponentially decaying probability distribution.”<cite>Malkov and Yashunin, Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>To drive to a house in a city you have never visited, you take the motorway to the right region, then main roads to the right district, then side streets to the right door. You never look at most of the city's streets. HNSW builds that road network for a cloud of points: a sparse top layer of long “motorway” links, denser layers of shorter links underneath, and a bottom layer that connects every point to its near neighbours.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>A fully graph-based <span class="t" data-t="approximate nearest neighbor">approximate nearest-neighbour</span> index, with no separate tree or clustering needed to find a starting point.</li>
+  <li>Search cost that grows only <span class="t" data-t="big-o">logarithmically</span> with the number of stored points.</li>
+  <li>A neighbour-selection rule that keeps the graph connected even on highly clustered data.</li>
+  <li>Much faster than the open-source competition of the time at the same <span class="t" data-t="recall">recall</span>.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>When a <span class="t" data-t="rag">RAG</span> system finds the 10 passages closest to your question among millions in a few milliseconds, the index doing the work is very often HNSW. <a href="dpr.html">DPR</a>, for example, used FAISS's HNSW index to answer 995 questions per second over 21 million passages.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>“Find the 10 most similar songs to this one” is a K-nearest-neighbour search. The honest way is to measure the distance to every song in the catalogue: fine for a thousand songs, hopeless for a billion. And in the hundreds of dimensions that embeddings use, the clever exact tricks that work on a 2-D map stop helping: the <span class="t" data-t="curse of dimensionality">curse of dimensionality</span>. So we accept being <em>approximately</em> right: return 10 songs that are nearly always the true 10, very quickly.</p>
+<h4>Tiny example: recall</h4>
+<p>The true 5 nearest neighbours of a query are points {3, 8, 11, 20, 42}. An approximate search returns {3, 8, 11, 20, 57}. Four of the five are right, so recall is 4 / 5 = 0.8.</p>
+<div class="eq" data-tex="\htmlData{sym=recall}{\text{recall}} = \frac{|\htmlData{sym=found}{\text{found}} \cap \htmlData{sym=truek}{\text{true}}|}{\htmlData{sym=K}{K}}" data-fallback="recall = |found ∩ true| / K"></div>
+<div class="symtable" data-syms="recall,found,truek,K"></div>
+<p class="inwords"><strong>In words:</strong> “the share of the true K nearest neighbours that the search actually found.”</p>
+<p class="inwords"><strong>With the numbers:</strong> |{3, 8, 11, 20}| / 5 = 4 / 5 = 0.8.</p>
+<h4>The families of approximate search</h4>
+<ul>
+  <li><strong>Trees</strong> (kd-trees and relatives): split space into boxes. Great in low dimensions, weak in high.</li>
+  <li><strong>Hashing</strong> (<span class="t" data-tip-title="Locality-sensitive hashing" data-tip="Hash functions designed so that nearby points usually land in the same bucket. Search only the query's bucket.">LSH</span>): hash nearby points into the same buckets.</li>
+  <li><strong><span class="t" data-t="product quantization">Product quantization</span></strong>: compress vectors into short codes and compare codes.</li>
+  <li><strong>Proximity graphs</strong>: link each point to its neighbours and walk the links. Best in high dimensions, but plain versions degrade badly on low-dimensional or clustered data. HNSW is a proximity graph that fixes that.</li>
+</ul>
+</section>
+
+<section id="s2">
+<h2>2 Related work: greedy walks and small worlds <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>In the famous 1960s Milgram experiment, people passed a letter towards a stranger only through personal acquaintances, each choosing the friend they thought “closest” to the target. Letters often arrived in a handful of hops. Networks where such local, greedy choices reach any target in few steps are called <span class="t" data-tip-title="Navigable small world" data-tip="A network where greedy routing (always step to the neighbour closest to the target) reaches any target in a number of hops that grows only logarithmically (or polylogarithmically) with the network size.">navigable small worlds</span>.</p>
+<h4>2.1 Greedy search on a proximity graph</h4>
+<p>Start at some node. Look at its neighbours; move to whichever is closest to the query. Repeat until no neighbour is closer. On the ideal graph for this (the <span class="t" data-tip-title="Delaunay graph" data-tip="The graph that connects points whose regions of 'closest territory' touch. Greedy search on it always ends at the true nearest neighbour, but it is impractical to build in high dimensions.">Delaunay graph</span>) greedy search always finds the true nearest neighbour, but that graph cannot be built efficiently in high dimensions, so practical systems approximate it by linking each point to its nearest neighbours (a k-NN graph). Two problems follow: the number of steps grows as a power of the dataset size, and on clustered data the graph can split into islands that the walk cannot cross.</p>
+<h4>Navigable Small World (NSW), the authors' earlier method</h4>
+<p>Insert points one at a time in random order, linking each new point to the M closest points already present. The early points' links were made when the graph was sparse, so they are long; they become the “bridges” that let a greedy walk cross the space quickly. NSW search takes a polylogarithmic number of steps: good, but it still suffered badly on low-dimensional data, sometimes losing to trees by orders of magnitude.</p>
+<h4>2.2 Why the name</h4>
+<p>Kleinberg showed that a grid with extra long-range links, drawn with just the right distribution of lengths, is navigable. That requires knowing the data's layout in advance. NSW builds navigability without that knowledge, just from insertion order. HNSW goes one step further and makes the scales of the links explicit.</p>
+</section>
+
+<section id="s3">
+<h2>3 Motivation: separate the links by length <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=2">original</a></span></h2>
+<blockquote class="quote">“The idea of Hierarchical NSW algorithm is to separate the links according to their length scale into different layers and then search in a multilayer graph.”<cite>Malkov and Yashunin, §3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>In NSW the motorways and side streets are all mixed on one map, so at every junction you must look at many roads. HNSW prints separate maps: a motorway map with only a few towns, a main-road map with more, and a street map with everything. You zoom in map by map, and on each map only a handful of roads leave each place.</p>
+<h4>Tiny example: the one-dimensional version is a skip list</h4>
+<p>The paper points out that HNSW generalises a classic data structure, the <span class="t" data-tip-title="Skip list" data-tip="A sorted linked list with extra 'express lanes' on top: each element is promoted to the next lane with a fixed probability. Search runs along the top lane and drops down when it would overshoot, taking about log(n) steps.">skip list</span>. Numbers are kept sorted in a bottom lane; some are promoted at random to an express lane above, fewer again to a lane above that. To find a number, run along the top lane until the next stop would overshoot, then drop down a lane and continue.</p>
+<div class="play" id="sl-demo">
+  <div class="btnrow ui" id="sl-targets"></div>
+  <svg id="sl-svg" viewBox="0 0 560 170" role="img" aria-label="A skip list with three lanes; the search path is highlighted"></svg>
+  <p class="readout" id="sl-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each row is a lane and each box a stored number; a box appears in the upper lanes only if it was promoted. Pick a target. The red path starts at the top-left and runs right along the express lane while the next box is not past the target, then drops down, and so on until it reaches the target in the bottom lane. The readout counts comparisons: far fewer than walking the bottom lane from the start. HNSW does the same thing with proximity graphs instead of lanes: “not past the target” becomes “closer to the query”.</p>
+<h4>How a point's top layer is chosen</h4>
+<p>Each new point draws a random level l. It appears in layers 0, 1, …, l. Most points get l = 0; a few get 1; very few get 2.</p>
+<div class="eq" data-tex="\htmlData{sym=lev}{l} = \big\lfloor -\htmlData{sym=ln}{\ln}(\htmlData{sym=unif}{\text{unif}(0,1)}) \cdot \htmlData{sym=mL}{m_L} \big\rfloor" data-fallback="l = floor( −ln(unif(0,1)) · m_L )"></div>
+<div class="symtable" data-syms="lev,ln,unif,mL,floor"></div>
+<p class="inwords"><strong>In words:</strong> “draw a random number between 0 and 1, take minus its natural log (a random amount that is usually small but occasionally large), scale it by m<sub>L</sub>, and round down.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with M = 16, m<sub>L</sub> = 1 / ln 16 = 0.361. A draw of 0.5 gives −ln 0.5 × 0.361 = 0.25, rounded down to level 0. A draw of 0.01 gives −ln 0.01 × 0.361 = 4.61 × 0.361 = 1.66, level 1. A point reaches level 2 only if its draw is below e<sup>−2/0.361</sup> = 1/256.</p>
+</section>
+
+<section id="s3-heur">
+<h3>The neighbour-selection heuristic (Figure 2)</h3>
+<h4>Everyday picture</h4>
+<p>If you may keep only three phone numbers, keeping three people from the same office is wasteful: they will all give you the same directions. Keep one from your office and use the other slots for people in <em>other</em> directions. HNSW's heuristic does this: it adds a candidate neighbour only if the candidate is closer to the new point than to any neighbour already chosen.</p>
+<div class="play" id="heur-demo">
+  <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem">
+    <button type="button" data-heur="simple" aria-pressed="false">Simple: M closest</button>
+    <button type="button" data-heur="heuristic" aria-pressed="true">Heuristic (Algorithm 4)</button>
+  </div>
+  <svg id="heur-svg" viewBox="0 0 560 200" role="img" aria-label="Two clusters and a newly inserted point choosing three neighbours"></svg>
+  <p class="readout" id="heur-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grey dots form two separate clusters; the green dot is a new point being inserted on the edge of cluster 1, allowed M = 3 links (red). With <strong>simple</strong> selection it links to its three nearest points, all in cluster 1, so nothing connects the two clusters and a search that starts in cluster 1 can never reach cluster 2. With the <strong>heuristic</strong>, candidates are taken nearest first and a candidate is kept only if it is closer to the new point than to every link already kept. The second-nearest cluster-1 point is rejected (it is closer to the first link), and a point in cluster 2 is accepted: a bridge. The readout lists each candidate's verdict and the two distances that decided it.</p>
+<div class="eq" data-tex="\text{keep } \htmlData{sym=ecand}{e} \iff \htmlData{sym=deq}{d(e, q)} < \htmlData{sym=minR}{\min_{r \in R}}\ \htmlData{sym=der}{d(e, r)}" data-fallback="keep e ⟺ d(e, q) < min over r in R of d(e, r)"></div>
+<div class="symtable" data-syms="ecand,deq,minR,der"></div>
+<p class="inwords"><strong>In words:</strong> “accept a candidate only if it is nearer to the new point than to any neighbour already accepted; stop when M are accepted.”</p>
+<p class="inwords"><strong>With the numbers:</strong> see the readout of the demo, which prints each candidate's two distances.</p>
+<h4>Why it matters</h4>
+<p>Diverse links are what let a greedy walk escape a cluster. The paper found the heuristic always performed at least as well as simple selection, and much better on low-dimensional and clustered data. With enough candidates it recovers the <span class="t" data-tip-title="Relative neighbourhood graph" data-tip="A graph that links two points unless some third point is closer to both of them. It is a subgraph of the Delaunay graph and keeps the data connected.">relative neighbourhood graph</span>, a sparse graph known to stay connected.</p>
+</section>
+
+<section id="s4">
+<h2>4 The algorithm <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Searching and inserting are the same walk. To <strong>search</strong>, enter at the top, walk greedily to the closest point on each layer, drop down, and at the bottom widen the search into a careful local exploration. To <strong>insert</strong>, do exactly that search for the new point, then link it to good neighbours on every layer from its own top level down.</p>
+<figure class="ix" id="fig-algos">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 330" role="img" aria-label="How the five algorithms call each other">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk emb" data-block="alg1"><rect x="10" y="20" width="130" height="44" rx="7"/><text x="75" y="38" text-anchor="middle">Alg. 1 INSERT</text><text x="75" y="54" text-anchor="middle" class="lbl">build the index</text></g>
+    <g class="blk emb" data-block="alg5"><rect x="160" y="20" width="130" height="44" rx="7"/><text x="225" y="38" text-anchor="middle">Alg. 5 K-NN-SEARCH</text><text x="225" y="54" text-anchor="middle" class="lbl">answer a query</text></g>
+    <path class="wire" d="M75,64 L140,130" marker-end="url(#arr)"/>
+    <path class="wire" d="M225,64 L160,130" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="alg2"><rect x="75" y="132" width="150" height="44" rx="7"/><text x="150" y="150" text-anchor="middle">Alg. 2 SEARCH-LAYER</text><text x="150" y="166" text-anchor="middle" class="lbl">best ef points on one layer</text></g>
+    <path class="wire" d="M75,64 V240" marker-end="url(#arr)"/>
+    <g class="blk ff" data-block="alg3"><rect x="10" y="242" width="130" height="44" rx="7"/><text x="75" y="260" text-anchor="middle">Alg. 3 SIMPLE</text><text x="75" y="276" text-anchor="middle" class="lbl">M closest</text></g>
+    <g class="blk ff" data-block="alg4"><rect x="160" y="242" width="130" height="44" rx="7"/><text x="225" y="260" text-anchor="middle">Alg. 4 HEURISTIC</text><text x="225" y="276" text-anchor="middle" class="lbl">diverse neighbours</text></g>
+    <path class="wire" d="M140,264 H158" />
+    <text x="150" y="310" text-anchor="middle" class="lbl">INSERT uses Alg. 3 or Alg. 4 to choose links</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap an algorithm.</p></div>
+  </div>
+  <figcaption>How the paper's five algorithms fit together, drawn for this page. Algorithm numbering follows Malkov and Yashunin, §4.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the two things you do with an index sit on top: building it (INSERT) and querying it (K-NN-SEARCH). Both are built on one workhorse, SEARCH-LAYER, which finds the ef closest points to a target on a single layer, starting from given entry points. INSERT additionally chooses which of those points to link to, with either the simple rule or the heuristic from the previous section. Hover each box for the exact steps.</p>
+<h4>SEARCH-LAYER in one paragraph</h4>
+<p>Keep two lists: <em>candidates</em> still to explore, and the <em>best ef found so far</em>. Repeatedly take the closest unexplored candidate. If it is farther than the worst of the best-ef list, stop: nothing left can improve the answer. Otherwise look at each of its neighbours you have not seen yet; any that beats the worst of the best-ef list (or if that list is not full) joins both lists, and the list is trimmed back to ef. This is a <span class="t" data-t="beam search">beam search</span> whose width is ef: with ef = 1 it is plain greedy walking.</p>
+</section>
+
+<section id="explorer">
+<h3>Try it: a live HNSW, searched one step at a time</h3>
+<p>Below, 160 points on a plane (mostly in five clusters, some scattered) have been inserted into an HNSW with Algorithm 1 and the heuristic (levels are capped at 3 so every layer fits on screen). Each panel is one layer of the same plane. <strong>Click anywhere</strong> on a panel to place a query (the green dot), then press <strong>Step</strong> repeatedly, or <strong>Play</strong>.</p>
+<div class="play" id="hnsw-demo">
+  <div class="row2">
+    <label>M, links per point = <strong id="hx-M-v">5</strong><input type="range" id="hx-M" min="2" max="12" step="1" value="5"></label>
+    <label>efSearch, the beam width = <strong id="hx-ef-v">8</strong><input type="range" id="hx-ef" min="1" max="40" step="1" value="8"></label>
+    <label>efConstruction = <strong id="hx-efc-v">32</strong><input type="range" id="hx-efc" min="4" max="80" step="4" value="32"></label>
+  </div>
+  <div class="btnrow ui">
+    <button type="button" id="hx-step">Step</button>
+    <button type="button" id="hx-play">Play</button>
+    <button type="button" id="hx-end">Run to end</button>
+    <button type="button" id="hx-reset">Restart search</button>
+    <button type="button" id="hx-new">Random query</button>
+  </div>
+  <div class="layers" id="hx-layers"></div>
+  <div class="key"><span><i style="background:var(--soft-stroke)"></i>query</span><span><i style="border:2px dashed var(--fg)"></i>entry point on a layer</span><span><i style="background:var(--active)"></i>current point / path</span><span><i style="border:2px solid var(--attn-stroke)"></i>distance computed</span><span><i style="background:var(--attn-stroke)"></i>explored (layer 0)</span><span><i style="border:2px solid var(--active)"></i>best ef so far</span><span><i style="border:2px solid var(--soft-stroke)"></i>true 5 nearest</span></div>
+  <p class="log" id="hx-log"></p>
+  <div class="stats" id="hx-stats"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> panels run from the top layer (few points, long links) down to layer 0 (every point, short links). The dashed ring marks where the search enters each layer. On the upper layers the red path is a greedy walk: at each point, every neighbour's distance is computed (orange rings) and the search moves to the closest, until no neighbour is closer; then it drops to the same point one layer down. On layer 0 the search widens into the beam search: orange-filled points have been explored, red rings are the current best-ef list. When it finishes, red-filled points are the returned 5 nearest and green rings mark the true 5 nearest from brute force, so you can see the recall directly. The counter compares distance computations with the 160 a brute-force search needs. Try <strong>efSearch = 1</strong>: the bottom layer becomes a plain greedy walk that keeps a single point, so it returns only one result and often stops in the wrong place (efSearch must be at least K = 5 to return 5 results). Raise efSearch and recall recovers at the cost of more distance computations. Lower <strong>M</strong> to 2 and watch the graph thin out and recall fall. On a real index with millions of points the same walk touches only a tiny fraction of them.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Construction parameters <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Four dials. <strong>M</strong>: how many roads leave each junction. <strong>M<sub>max0</sub></strong>: how many roads may leave a junction on the street map (layer 0). <strong>m<sub>L</sub></strong>: how quickly the maps thin out as you go up. <strong>efConstruction</strong>: how carefully each new junction is surveyed before its roads are built. The paper shows that only M really needs choosing.</p>
+<ul>
+  <li><strong>m<sub>L</sub> = 1 / ln(M)</strong>. This matches a skip list that promotes each element with probability 1/M, so each layer holds about 1/M of the one below it, and neighbours rarely overlap between layers.</li>
+  <li><strong>M<sub>max0</sub> = 2M</strong>. Setting it to M hurt performance badly at high recall; going above 2M wasted memory and slowed search.</li>
+  <li><strong>M</strong> from 5 to 48. Smaller M suits low recall or low-dimensional data; larger M suits high recall or high-dimensional data. Memory grows in proportion to M.</li>
+  <li><strong>efConstruction</strong>: large enough that searches during construction reach a recall near 0.95. On 10 million SIFT vectors, efConstruction = 100 built a reasonable index in about 3 minutes on a 40-core server; going higher bought little.</li>
+</ul>
+<h4>Tiny example: how many points per layer</h4>
+<p>From the level formula, the chance a point reaches layer k or higher is e<sup>−k/m<sub>L</sub></sup>. With m<sub>L</sub> = 1/ln M that is exactly M<sup>−k</sup> (our derivation). With M = 16 and a million points: 1,000,000 at layer 0, about 62,500 at layer 1, 3,906 at layer 2, 244 at layer 3, 15 at layer 4 and about 1 at layer 5.</p>
+<div class="eq" data-tex="\htmlData{sym=Pge}{P(l \ge k)} = e^{-k/\htmlData{sym=mL}{m_L}} = \htmlData{sym=Mpar}{M}^{-\htmlData{sym=klayer}{k}}" data-fallback="P(l ≥ k) = e^(−k/m_L) = M^(−k)"></div>
+<div class="symtable" data-syms="Pge,klayer,Mpar"></div>
+<p class="inwords"><strong>In words:</strong> “each layer up keeps about one point in M.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 16<sup>−1</sup> = 6.25% of points reach layer 1, and 16<sup>−2</sup> = 0.39% reach layer 2.</p>
+<div class="play" id="lev-demo">
+  <div class="row2">
+    <label>M = <strong id="lev-M-v">16</strong><input type="range" id="lev-M" min="2" max="64" step="1" value="16"></label>
+    <label>points N = <strong id="lev-N-v">1,000,000</strong><input type="range" id="lev-N" min="3" max="9" step="0.5" value="6"></label>
+  </div>
+  <div id="lev-bars" style="margin-top:0.6rem"></div>
+  <p class="readout" id="lev-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is a layer, with the expected number of points on it (log scale, so each step down the chart is a factor of M). The last column compares the formula's fraction with a simulation of 20,000 random level draws using the paper's formula. Raise N by a factor of M and exactly one more layer appears on top: the number of layers grows like log<sub>M</sub>(N), which is where HNSW's logarithmic search cost comes from. Raise M and the pyramid gets flatter and shorter.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Complexity and memory <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=7">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>On each map you only need a few moves before you are as close as that map allows, however big the city is: roughly, you stop as soon as you reach a junction that also appears on the map above, and those are 1 in M. The number of maps grows only with the logarithm of the city's size. Few moves per map times few maps gives a logarithmic search.</p>
+<div class="eq" data-tex="\htmlData{sym=Ssteps}{S} = \frac{1}{1 - e^{-\htmlData{sym=mL}{m_L}}}" data-fallback="S = 1 / (1 − e^(−m_L))"></div>
+<div class="symtable" data-syms="Ssteps"></div>
+<p class="inwords"><strong>In words:</strong> “the expected number of steps on one layer is bounded by a constant that depends only on m<sub>L</sub>, not on how many points there are” (assuming an ideal Delaunay graph, as the paper's argument does).</p>
+<p class="inwords"><strong>With the numbers:</strong> M = 16 gives m<sub>L</sub> = 0.361, e<sup>−0.361</sup> = 0.697, so S = 1 / 0.303 = 3.3 steps per layer.</p>
+<p>With a constant number of steps per layer and O(log N) layers, search is O(log N). Insertion is a search plus linking, and each point lives on m<sub>L</sub> + 1 layers on average (1.36 for M = 16), so building the index is O(N log N). The paper confirms the scaling empirically for low-dimensional data and notes that for high dimensions the argument is not yet proven.</p>
+<h4>Memory</h4>
+<div class="eq" data-tex="\htmlData{sym=mem}{\text{bytes per point}} = (\htmlData{sym=M0}{M_{\max 0}} + \htmlData{sym=mL}{m_L}\cdot \htmlData{sym=Mmax}{M_{\max}}) \cdot \htmlData{sym=bpl}{\text{bytes\_per\_link}}" data-fallback="bytes per point = (M_max0 + m_L · M_max) · bytes_per_link"></div>
+<div class="symtable" data-syms="mem,M0,Mmax,bpl"></div>
+<p class="inwords"><strong>In words:</strong> “every point stores up to M<sub>max0</sub> links on layer 0, plus on average m<sub>L</sub> upper layers with up to M<sub>max</sub> links each, and each link is one integer.”</p>
+<p class="inwords"><strong>With the numbers:</strong> M = 16, M<sub>max0</sub> = 32, M<sub>max</sub> = 16, 4-byte links: (32 + 0.361 × 16) × 4 = (32 + 5.8) × 4 ≈ 151 bytes per point for the graph, on top of the vector itself (512 bytes for a 128-dimensional float vector). The paper quotes 60 to 450 bytes for M between 6 and 48.</p>
+<div class="plot" id="mem-plot">
+  <div id="mem-chart"></div>
+  <p class="readout" id="mem-readout">Hover or tap the chart.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is M and the y-axis is the bytes of graph links per point, from the formula above with M<sub>max0</sub> = 2M and m<sub>L</sub> = 1/ln M. It is almost a straight line: memory is proportional to M, as the paper says. At M = 6 it is about 61 bytes and at M = 48 about 434, matching the paper's 60 to 450 range. For 100 million points at M = 16, that is about 15 GB of links, before storing the vectors.</p>
+</section>
+
+<section id="s5">
+<h2>5 Performance evaluation <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=8">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A race between search methods, judged on a speed-versus-accuracy chart: for each method, how fast can it answer while still finding, say, 90% of the true neighbours?</p>
+<ul>
+  <li><strong>5.1 Against NSW</strong>: on 10 million random 4-dimensional points, HNSW needs far fewer distance computations for the same recall, especially at high recall, and its cost grows no worse than logarithmically with the dataset size.</li>
+  <li><strong>5.2 Against the open-source field</strong> (FLANN, Annoy, VP-tree, FALCONN and NSW) on the ann-benchmarks testbed with SIFT, GloVe, DEEP, CoPhIR, MNIST and random vectors: HNSW clearly outperforms the rivals on SIFT, GloVe, DEEP and CoPhIR by a large margin, and is slightly faster than Annoy at high recall on the low-dimensional data.</li>
+  <li><strong>5.3 In general (non-vector) spaces</strong>, rerunning tests where NSW had failed, including text with Jensen-Shannon divergence and DNA with edit distance: HNSW comes first even where NSW had lost by orders of magnitude.</li>
+  <li><strong>5.4 Against product quantization</strong> (FAISS) on 200 million SIFT vectors: see the table.</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>Selected settings from Table 3 of Malkov and Yashunin: HNSW vs FAISS product quantization on a 200M SIFT subset</caption>
+  <thead><tr><th>Index</th><th>Settings</th><th class="num">Build time</th><th class="num">Peak memory</th></tr></thead>
+  <tbody>
+    <tr><td>HNSW</td><td>M = 16, efConstruction = 40</td><td class="num">42 minutes</td><td class="num">64 GB</td></tr>
+    <tr><td>HNSW</td><td>M = 16, efConstruction = 500</td><td class="num">5.6 hours</td><td class="num">64 GB</td></tr>
+    <tr><td>FAISS (PQ)</td><td>OPQ32, IMI 2×14, PQ32</td><td class="num">11 hours</td><td class="num">23.5 GB</td></tr>
+    <tr><td>FAISS (PQ)</td><td>OPQ64, IMI 2×14, PQ64</td><td class="num">12 hours</td><td class="num">30 GB</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the classic trade-off. Product quantization compresses each vector into a short code, so FAISS used about a third to a half of the memory. HNSW keeps full vectors plus its graph, so it needs more RAM, but it built its index much faster (42 minutes against 11 hours at the lighter setting) and, per the paper's Figure 15, reached much higher accuracy with a large speed advantage. Today the two are often combined: an HNSW graph over quantized vectors, or HNSW as the coarse step of an IVF-PQ index. The <a data-lesson="primer/ml/embeddings/ann.html">vector index lesson</a> builds IVF, PQ and HNSW side by side.</p>
+</section>
+
+<section id="s6">
+<h2>6 Discussion <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=10">original</a></span></h2>
+<blockquote class="quote">“Robustness of the approach is a strong feature which makes it very attractive for practical applications.”<cite>Malkov and Yashunin, §6</cite></blockquote>
+<h4>Strengths the authors stress</h4>
+<ul>
+  <li><strong>Robust</strong>: best on every dataset tested, including general metric spaces, so you rarely need to pick a different algorithm per problem. Real data can be high-dimensional at large scales and low-dimensional at small scales, and HNSW handles both.</li>
+  <li><strong>Incremental</strong>: points can be inserted at any time, with no rebuild. Deletion and update were listed as future work.</li>
+  <li><strong>One real dial</strong>: M.</li>
+</ul>
+<h4>The weakness they admit</h4>
+<p>Every search starts at the single top-layer entry point, so a straightforward distributed version would have all machines queueing for the few top-layer nodes. Splitting the data across machines works but does not scale throughput well; skip-list techniques for distribution might help.</p>
+</section>
+
+<section id="today">
+<h2>Where HNSW is today</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>In practice today</th><th>Where to learn it</th></tr></thead>
+  <tbody>
+    <tr><td>nmslib implementation, plus a header-only C++ version</td><td>hnswlib, FAISS's HNSW index (the paper notes FAISS added one from 2018), and the HNSW indexes in most vector databases</td><td><a data-lesson="primer/ml/embeddings/ann.html">vector indexes</a></td></tr>
+    <tr><td>efSearch as the query-time dial</td><td>Still the main knob: raise it until recall on your own evaluation set is good enough, then stop</td><td><a data-lesson="primer/ml/embeddings/operations.html">embeddings in production</a></td></tr>
+    <tr><td>Full-precision vectors in RAM</td><td>Often combined with scalar or binary quantization and rescoring to cut memory</td><td><a data-lesson="primer/ml/embeddings/compression.html">compression</a></td></tr>
+    <tr><td>Pure vector search</td><td>Combined with metadata filters and keyword search in hybrid retrieval</td><td><a data-lesson="primer/ml/embeddings/retrieval.html">retrieval</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Yu. A. Malkov and D. A. Yashunin, <em>Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs</em>, <a href="https://arxiv.org/abs/1603.09320">arXiv:1603.09320</a> (later published in IEEE Transactions on Pattern Analysis and Machine Intelligence). Quotations are brief and attributed; selected results are restated with attribution; all figures are redrawn. The interactive index is an independent implementation of the paper's published algorithms. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    recall: { tex: "\\text{recall}", name: "Recall", meaning: "The fraction of the true nearest neighbours that the search returned.", shape: "0 … 1", example: "0.8" },
+    found: { tex: "\\text{found}", name: "Returned set", meaning: "The K points the approximate search returned.", shape: "K points", example: "{3, 8, 11, 20, 57}" },
+    truek: { tex: "\\text{true}", name: "True nearest", meaning: "The K points exact (brute-force) search would return.", shape: "K points", example: "{3, 8, 11, 20, 42}" },
+    K: { tex: "K", name: "How many neighbours", meaning: "The number of nearest neighbours requested.", shape: "a whole number", example: "5" },
+    lev: { tex: "l", name: "The point's top layer", meaning: "The highest layer this point appears on. It also appears on every layer below.", shape: "0, 1, 2, …", example: "1 for a draw of 0.01" },
+    ln: { tex: "\\ln", name: "Natural logarithm", meaning: "The inverse of e^x. Minus the log of a uniform random number is an exponentially distributed random number: usually small, occasionally large.", shape: "a number", example: "−ln 0.01 = 4.61" },
+    unif: { tex: "\\text{unif}(0,1)", name: "Uniform random number", meaning: "A random number drawn evenly between 0 and 1.", shape: "0 … 1", example: "0.5, or 0.01" },
+    mL: { tex: "m_L", name: "Level multiplier", meaning: "Scales how tall the pyramid of layers is. The paper's choice 1/ln(M) makes each layer hold about 1/M of the one below.", shape: "a positive number", example: "1/ln 16 = 0.361" },
+    floor: { tex: "\\lfloor\\,\\cdot\\,\\rfloor", name: "Round down", meaning: "Drop everything after the decimal point.", shape: "a whole number", example: "⌊1.66⌋ = 1" },
+    ecand: { tex: "e", name: "Candidate", meaning: "A point being considered as a neighbour, taken in order of closeness to the new point.", shape: "a point", example: "the nearest cluster-2 point" },
+    deq: { tex: "d(e, q)", name: "Distance to the new point", meaning: "How far the candidate is from the point being inserted.", shape: "0 or more", example: "printed in the demo" },
+    minR: { tex: "\\min_{r\\in R}", name: "Over the already-chosen neighbours", meaning: "R is the set of neighbours accepted so far; take the smallest distance from the candidate to any of them.", shape: "one number", example: "the distance to the first link" },
+    der: { tex: "d(e, r)", name: "Distance to a chosen neighbour", meaning: "If the candidate is closer to an existing neighbour than to the new point, that neighbour already covers its direction, so it is rejected.", shape: "0 or more", example: "printed in the demo" },
+    Pge: { tex: "P(l \\ge k)", name: "Chance of reaching layer k", meaning: "The probability that a point's top layer is k or higher.", shape: "0 … 1", example: "1/16 for k = 1, M = 16" },
+    klayer: { tex: "k", name: "A layer number", meaning: "0 is the bottom layer with every point.", shape: "0, 1, 2, …", example: "2" },
+    Mpar: { tex: "M", name: "Links per point", meaning: "How many neighbours each point links to on each layer above 0 (and up to 2M on layer 0).", shape: "5 to 48", example: "16" },
+    Ssteps: { tex: "S", name: "Steps per layer", meaning: "An upper bound on the expected number of greedy steps before the search can drop a layer. It does not depend on the number of points.", shape: "a number above 1", example: "3.3 for M = 16" },
+    mem: { tex: "\\text{bytes per point}", name: "Graph memory per point", meaning: "The average space the links take for one point, excluding the vector itself.", shape: "bytes", example: "≈ 151 for M = 16" },
+    M0: { tex: "M_{\\max 0}", name: "Layer-0 link limit", meaning: "The most links a point may keep on the bottom layer. The paper recommends 2M.", shape: "a whole number", example: "32" },
+    Mmax: { tex: "M_{\\max}", name: "Upper-layer link limit", meaning: "The most links a point may keep on each layer above 0.", shape: "a whole number", example: "16" },
+    bpl: { tex: "\\text{bytes\\_per\\_link}", name: "Bytes per link", meaning: "A link is just the other point's id; 4 bytes allows about four billion points.", shape: "4", example: "4" },
+  },
+
+  blocks: {
+    alg1: { title: "Algorithm 1: INSERT", body: "<ol><li>Draw the new point's level l with the formula.</li><li>From the entry point, walk greedily (ef = 1) down the layers above l.</li><li>On each layer from min(top, l) down to 0: run SEARCH-LAYER with ef = efConstruction, choose M neighbours (Alg. 3 or 4), link both ways, and if a neighbour now has too many links, prune its list with the same rule.</li><li>If l is above the current top, the new point becomes the entry point.</li></ol>", shape: "cost ≈ one search", lesson: "primer/ml/embeddings/ann.html" },
+    alg2: { title: "Algorithm 2: SEARCH-LAYER", body: "<p>Beam search on one layer. Keep candidates C and the best-ef list W. Pop the closest candidate; stop if it is farther than W's worst; otherwise add unseen neighbours that beat W's worst (or while W is not full) to both, trimming W to ef. Returns W.</p>", shape: "returns ef points" },
+    alg3: { title: "Algorithm 3: SELECT-NEIGHBORS-SIMPLE", body: "<p>Return the M candidates closest to the point. Simple, and fine for uniform high-dimensional data, but on clustered data it can leave clusters disconnected.</p>", shape: "M links" },
+    alg4: { title: "Algorithm 4: SELECT-NEIGHBORS-HEURISTIC", body: "<p>Take candidates nearest first; keep one only if it is closer to the point than to every neighbour already kept. Optional flags extend the candidate list with neighbours' neighbours (for extremely clustered data) or top up with pruned candidates to always return M.</p>", shape: "up to M links" },
+    alg5: { title: "Algorithm 5: K-NN-SEARCH", body: "<p>From the entry point, run SEARCH-LAYER with ef = 1 on every layer from the top down to 1, each time starting from the previous layer's result. On layer 0 run it with ef = efSearch and return the K closest of the resulting list.</p>", shape: "K results", lesson: "primer/ml/embeddings/ann.html" },
+  },
+
+  onReady(P) {
+    skipList();
+    heuristicDemo();
+    explorer();
+    levelDemo();
+    memChart(P);
+  },
+};
+
+/* ---------------- small helpers ---------------- */
+function mulberry32(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const fmtInt = (x) => Math.round(x).toLocaleString("en-US");
+function barRow(label, frac, right, color, cols) {
+  return `<div class="share-row" style="${cols ? "grid-template-columns:" + cols : ""}"><span>${label}</span><div><div class="share-bar" style="width:${Math.max(0.5, Math.min(100, frac * 100)).toFixed(1)}%;${color ? "background:" + color : ""}"></div></div><span>${right}</span></div>`;
+}
+function toggles(attr, onPick) {
+  const btns = document.querySelectorAll(`[data-${attr}]`);
+  btns.forEach((b) => b.addEventListener("click", () => { btns.forEach((x) => x.setAttribute("aria-pressed", String(x === b))); onPick(b.dataset[attr]); }));
+}
+
+/* ---------------- skip list ---------------- */
+function skipList() {
+  const keys = [3, 8, 12, 17, 21, 26, 30, 35, 39, 44, 48, 53];
+  const lvl = { 8: 1, 17: 2, 30: 1, 39: 2, 48: 1 }; // illustrative promotions
+  const svg = document.getElementById("sl-svg");
+  const X = (i) => 70 + i * 40, Y = (l) => 140 - l * 50;
+  const targets = [35, 12, 53, 26];
+  document.getElementById("sl-targets").innerHTML = targets.map((t) => `<button type="button" data-target="${t}">find ${t}</button>`).join("");
+  function search(t) {
+    // start at head (index -1) on top lane
+    const path = [[-1, 2]]; let i = -1, comps = 0;
+    for (let l = 2; l >= 0; l--) {
+      while (true) {
+        let j = i + 1; while (j < keys.length && (lvl[keys[j]] || 0) < l) j++;
+        if (j >= keys.length) break;
+        comps++;
+        if (keys[j] <= t) { i = j; path.push([i, l]); if (keys[j] === t) return { path, comps }; } else break;
+      }
+      if (l > 0) path.push([i, l - 1]);
+    }
+    return { path, comps };
+  }
+  function draw(t) {
+    const { path, comps } = search(t);
+    const onSet = new Set(path.map(([i, l]) => `${i},${l}`));
+    let s = "";
+    for (let l = 0; l <= 2; l++) {
+      s += `<text x="8" y="${Y(l) + 5}" class="lbl">lane ${l}</text>`;
+      const members = [-1, ...keys.map((k, i) => i).filter((i) => (lvl[keys[i]] || 0) >= l)];
+      for (let m = 0; m < members.length - 1; m++) {
+        const a = members[m], b = members[m + 1];
+        const on = onSet.has(`${a},${l}`) && onSet.has(`${b},${l}`);
+        s += `<line class="sl-link${on ? " on" : ""}" x1="${a < 0 ? 58 : X(a) + 14}" y1="${Y(l)}" x2="${X(b) - 14}" y2="${Y(l)}"/>`;
+      }
+      s += `<g class="sl-node${onSet.has(`-1,${l}`) ? " on" : ""}"><rect x="44" y="${Y(l) - 11}" width="14" height="22" rx="3"/></g>`;
+      keys.forEach((k, i) => {
+        if ((lvl[k] || 0) < l) return;
+        const cls = "sl-node" + (onSet.has(`${i},${l}`) ? " on" : "") + (k === t && l === 0 ? " hit" : "");
+        s += `<g class="${cls}"><rect x="${X(i) - 14}" y="${Y(l) - 11}" width="28" height="22" rx="4"/><text x="${X(i)}" y="${Y(l) + 4}" text-anchor="middle">${k}</text></g>`;
+      });
+    }
+    // drops
+    for (let p = 1; p < path.length; p++) if (path[p][0] === path[p - 1][0] && path[p][1] < path[p - 1][1]) { const i = path[p][0]; const x = i < 0 ? 51 : X(i); s += `<line class="sl-link on" x1="${x}" y1="${Y(path[p - 1][1]) + 11}" x2="${x}" y2="${Y(path[p][1]) - 11}"/>`; }
+    svg.innerHTML = s;
+    const linear = keys.indexOf(t) + 1;
+    document.getElementById("sl-readout").innerHTML = `Found <strong>${t}</strong> with <strong>${comps}</strong> comparisons using the lanes, against ${linear} walking the bottom lane from the start.`;
+  }
+  document.querySelectorAll("#sl-targets button").forEach((b) => b.addEventListener("click", () => draw(+b.dataset.target)));
+  draw(35);
+}
+
+/* ---------------- heuristic vs simple ---------------- */
+function heuristicDemo() {
+  const c1 = [[0.36, 0.50], [0.33, 0.58], [0.30, 0.44], [0.24, 0.55], [0.20, 0.45], [0.27, 0.36], [0.40, 0.64], [0.17, 0.60]];
+  const c2 = [[0.62, 0.50], [0.66, 0.58], [0.70, 0.44], [0.75, 0.54], [0.80, 0.46], [0.72, 0.36], [0.78, 0.63], [0.86, 0.55]];
+  const pts = [...c1, ...c2];
+  const q = [0.43, 0.52], M = 3;
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const cand = pts.map((p, i) => ({ i, d: d(p, q) })).sort((a, b) => a.d - b.d);
+  const svg = document.getElementById("heur-svg");
+  const X = (x) => 20 + x * 520, Y = (y) => 36 + (0.68 - y) * 420;
+  function run(mode) {
+    const R = [], log = [];
+    for (const e of cand) {
+      if (R.length >= M) break;
+      if (mode === "simple") { R.push(e); log.push(`#${e.i + 1}: kept (among the ${M} closest)`); continue; }
+      const closest = R.length ? Math.min(...R.map((r) => d(pts[e.i], pts[r.i]))) : Infinity;
+      const ok = e.d < closest;
+      if (ok) R.push(e);
+      log.push(`#${e.i + 1} (cluster ${e.i < 8 ? 1 : 2}): d to new = ${e.d.toFixed(3)}, nearest kept link ${isFinite(closest) ? closest.toFixed(3) : "none yet"} → ${ok ? "<strong>kept</strong>" : "rejected"}`);
+    }
+    let s = `<text x="${X(0.27)}" y="18" text-anchor="middle" class="lbl">cluster 1</text><text x="${X(0.75)}" y="18" text-anchor="middle" class="lbl">cluster 2</text>`;
+    R.forEach((r) => (s += `<line x1="${X(q[0])}" y1="${Y(q[1])}" x2="${X(pts[r.i][0])}" y2="${Y(pts[r.i][1])}" stroke="var(--active)" stroke-width="2.5"/>`));
+    pts.forEach((p, i) => (s += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="6" fill="${R.some((r) => r.i === i) ? "var(--active)" : "var(--wire)"}"/><text x="${X(p[0]) + 8}" y="${Y(p[1]) - 7}" class="lbl">${i + 1}</text>`));
+    s += `<circle cx="${X(q[0])}" cy="${Y(q[1])}" r="8" fill="var(--soft-stroke)"/><text x="${X(q[0]) - 10}" y="${Y(q[1]) + 22}" class="lbl">new point</text>`;
+    svg.innerHTML = s;
+    const cross = R.some((r) => r.i >= 8);
+    document.getElementById("heur-readout").innerHTML = `${log.join("<br>")}<br>Links: ${R.map((r) => "#" + (r.i + 1)).join(", ")}. ${cross ? "One link crosses to cluster 2: the clusters are connected." : "Every link stays in cluster 1: no bridge to cluster 2."}`;
+  }
+  toggles("heur", run);
+  run("heuristic");
+}
+
+/* ---------------- the HNSW explorer ---------------- */
+class HNSW {
+  constructor(pts, M, efC, seed) {
+    this.p = pts; this.M = M; this.M0 = 2 * M; this.mL = 1 / Math.log(M); this.efC = efC;
+    this.rand = mulberry32(seed); this.level = []; this.nb = []; this.ep = -1; this.top = -1;
+    pts.forEach((_, i) => this.insert(i));
+  }
+  d(i, q) { const a = this.p[i]; return Math.hypot(a[0] - q[0], a[1] - q[1]); }
+  searchLayer(q, eps, ef, lc, ctr, events) {
+    const vis = new Set(eps);
+    let C = eps.map((id) => ({ id, d: this.d(id, q) }));
+    if (ctr) ctr.n += eps.length;
+    let W = C.slice().sort((a, b) => a.d - b.d);
+    while (C.length) {
+      C.sort((a, b) => a.d - b.d);
+      const c = C.shift();
+      if (c.d > W[W.length - 1].d) break;
+      const ex = [];
+      for (const e of this.nb[c.id][lc]) {
+        if (vis.has(e)) continue;
+        vis.add(e);
+        const de = this.d(e, q);
+        if (ctr) ctr.n++;
+        const acc = de < W[W.length - 1].d || W.length < ef;
+        ex.push({ id: e, acc });
+        if (acc) { C.push({ id: e, d: de }); W.push({ id: e, d: de }); W.sort((a, b) => a.d - b.d); if (W.length > ef) W.pop(); }
+      }
+      if (events) events.push({ t: "expand", lc, node: c.id, ex, W: W.map((w) => w.id), dc: ctr ? ctr.n : 0 });
+    }
+    return W;
+  }
+  select(qp, cands, M) {
+    const R = [];
+    for (const e of cands) {
+      if (R.length >= M) break;
+      const pe = this.p[e.id];
+      if (R.every((r) => Math.hypot(pe[0] - this.p[r.id][0], pe[1] - this.p[r.id][1]) > e.d)) R.push(e);
+    }
+    return R;
+  }
+  insert(i) {
+    const q = this.p[i];
+    const l = Math.min(3, Math.floor(-Math.log(1 - this.rand()) * this.mL));
+    this.level[i] = l; this.nb[i] = Array.from({ length: l + 1 }, () => []);
+    if (this.ep < 0) { this.ep = i; this.top = l; return; }
+    let ep = [this.ep];
+    for (let lc = this.top; lc > l; lc--) ep = [this.searchLayer(q, ep, 1, lc)[0].id];
+    for (let lc = Math.min(this.top, l); lc >= 0; lc--) {
+      const W = this.searchLayer(q, ep, this.efC, lc);
+      for (const n of this.select(q, W, this.M)) {
+        this.nb[i][lc].push(n.id); this.nb[n.id][lc].push(i);
+        const mx = lc === 0 ? this.M0 : this.M;
+        if (this.nb[n.id][lc].length > mx) {
+          const pn = this.p[n.id];
+          const cand = this.nb[n.id][lc].map((id) => ({ id, d: this.d(id, pn) })).sort((a, b) => a.d - b.d);
+          this.nb[n.id][lc] = this.select(pn, cand, mx).map((x) => x.id);
+        }
+      }
+      ep = W.map((w) => w.id);
+    }
+    if (l > this.top) { this.ep = i; this.top = l; }
+  }
+  search(q, K, ef) {
+    const ctr = { n: 1 }, events = [];
+    let ep = this.ep, d = this.d(ep, q);
+    for (let lc = this.top; lc >= 1; lc--) {
+      events.push({ t: "enter", lc, node: ep, dc: ctr.n });
+      for (;;) {
+        let best = ep, bd = d; const ex = [];
+        for (const e of this.nb[ep][lc]) { const de = this.d(e, q); ctr.n++; ex.push(e); if (de < bd) { bd = de; best = e; } }
+        if (best !== ep) { events.push({ t: "hop", lc, from: ep, to: best, ex, dc: ctr.n }); ep = best; d = bd; }
+        else { events.push({ t: "stay", lc, node: ep, ex, dc: ctr.n }); break; }
+      }
+    }
+    events.push({ t: "enter", lc: 0, node: ep, dc: ctr.n });
+    const W = this.searchLayer(q, [ep], ef, 0, ctr, events);
+    const res = W.slice(0, K).map((w) => w.id);
+    events.push({ t: "done", res, dc: ctr.n });
+    return events;
+  }
+}
+
+function explorer() {
+  const N = 160, K = 5;
+  const r = mulberry32(42);
+  const gauss = () => { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); };
+  const centers = [[0.2, 0.25], [0.78, 0.2], [0.5, 0.55], [0.18, 0.8], [0.82, 0.8]];
+  const clamp = (v) => Math.max(0.02, Math.min(0.98, v));
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    if (r() < 0.8) { const c = centers[i % 5]; pts.push([clamp(c[0] + gauss() * 0.07), clamp(c[1] + gauss() * 0.07)]); }
+    else pts.push([0.03 + r() * 0.94, 0.03 + r() * 0.94]);
+  }
+  const $ = (id) => document.getElementById(id);
+  let idx, q = [0.63, 0.42], events = [], step = 0, timer = null;
+  const truth = () => pts.map((p, i) => ({ i, d: Math.hypot(p[0] - q[0], p[1] - q[1]) })).sort((a, b) => a.d - b.d).slice(0, K).map((o) => o.i);
+  function build() {
+    const M = +$("hx-M").value, efc = +$("hx-efc").value;
+    $("hx-M-v").textContent = M; $("hx-efc-v").textContent = efc;
+    idx = new HNSW(pts, M, efc, 7);
+    const box = $("hx-layers");
+    box.innerHTML = "";
+    for (let lc = idx.top; lc >= 0; lc--) {
+      const n = pts.filter((_, i) => idx.level[i] >= lc).length;
+      box.insertAdjacentHTML("beforeend", `<div class="layer"><h5>Layer ${lc} · ${n} points${lc === idx.top ? " · top" : ""}${lc === 0 ? " · every point" : ""}</h5><svg viewBox="0 0 300 300" data-lc="${lc}" role="img" aria-label="Layer ${lc} of the index; click to place the query"></svg></div>`);
+    }
+    box.querySelectorAll("svg").forEach((svg) => svg.addEventListener("click", (e) => {
+      const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+      const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+      q = [Math.max(0, Math.min(1, (loc.x - 10) / 280)), Math.max(0, Math.min(1, (loc.y - 10) / 280))];
+      runSearch();
+    }));
+    runSearch();
+  }
+  function runSearch() {
+    const ef = +$("hx-ef").value; $("hx-ef-v").textContent = ef;
+    events = idx.search(q, K, ef); step = 0; stop(); render();
+  }
+  const X = (x) => 10 + x * 280;
+  function render() {
+    const upto = events.slice(0, step);
+    const last = upto[upto.length - 1];
+    const tr = truth();
+    const done = last && last.t === "done";
+    $("hx-layers").querySelectorAll("svg").forEach((svg) => {
+      const lc = +svg.dataset.lc;
+      let s = "";
+      const members = pts.map((_, i) => i).filter((i) => idx.level[i] >= lc);
+      members.forEach((i) => idx.nb[i][lc].forEach((j) => { if (j > i || !idx.nb[j][lc].includes(i)) s += `<line class="${lc ? "edge" : "edge0"}" x1="${X(pts[i][0])}" y1="${X(pts[i][1])}" x2="${X(pts[j][0])}" y2="${X(pts[j][1])}"/>`; }));
+      const exam = new Set(), expd = new Set();
+      let W = [], cur = null, entry = null;
+      const path = [];
+      upto.forEach((ev) => {
+        if (ev.lc !== lc && ev.t !== "done") return;
+        if (ev.t === "enter") { entry = ev.node; cur = ev.node; path.push(ev.node); }
+        if (ev.t === "hop") { ev.ex.forEach((e) => exam.add(e)); path.push(ev.to); cur = ev.to; }
+        if (ev.t === "stay") { ev.ex.forEach((e) => exam.add(e)); cur = ev.node; }
+        if (ev.t === "expand") { expd.add(ev.node); ev.ex.forEach((e) => exam.add(e.id)); W = ev.W; cur = ev.node; }
+      });
+      for (let k = 1; k < path.length; k++) s += `<line class="path" x1="${X(pts[path[k - 1]][0])}" y1="${X(pts[path[k - 1]][1])}" x2="${X(pts[path[k]][0])}" y2="${X(pts[path[k]][1])}"/>`;
+      members.forEach((i) => (s += `<circle class="node${lc ? " up" : ""}" cx="${X(pts[i][0])}" cy="${X(pts[i][1])}" r="${lc ? 3.6 : 2.6}"/>`));
+      exam.forEach((i) => (s += `<circle class="exam" cx="${X(pts[i][0])}" cy="${X(pts[i][1])}" r="5"/>`));
+      if (lc === 0) {
+        expd.forEach((i) => (s += `<circle class="expd" cx="${X(pts[i][0])}" cy="${X(pts[i][1])}" r="3.6"/>`));
+        (done ? last.res : W).forEach((i) => (s += `<circle class="${done ? "res" : "inW"}" cx="${X(pts[i][0])}" cy="${X(pts[i][1])}" r="${done ? 4.4 : 6.5}"/>`));
+        if (done) tr.forEach((i) => (s += `<circle class="truth" cx="${X(pts[i][0])}" cy="${X(pts[i][1])}" r="8"/>`));
+      }
+      if (entry !== null) s += `<circle class="ent" cx="${X(pts[entry][0])}" cy="${X(pts[entry][1])}" r="9"/>`;
+      if (cur !== null && !done) s += `<circle class="cur" cx="${X(pts[cur][0])}" cy="${X(pts[cur][1])}" r="7"/>`;
+      s += `<circle class="qry" cx="${X(q[0])}" cy="${X(q[1])}" r="6"/>`;
+      svg.innerHTML = s;
+    });
+    // log + stats
+    let msg = step === 0 ? `Ready. The search will enter at the top layer (${idx.top}) at the single entry point. Press Step.` : "";
+    if (last) {
+      if (last.t === "enter") msg = last.lc === idx.top ? `Enter layer ${last.lc} at the entry point.` : `Drop to layer ${last.lc}, starting from the same point.${last.lc === 0 ? ` Now widen into a beam search with efSearch = ${$("hx-ef").value}.` : ""}`;
+      if (last.t === "hop") msg = `Layer ${last.lc}: computed ${last.ex.length} neighbour distance(s) and moved to the closest, which is nearer the query.`;
+      if (last.t === "stay") msg = `Layer ${last.lc}: none of the ${last.ex.length} neighbour(s) is closer. This is as close as layer ${last.lc} gets.`;
+      if (last.t === "expand") { const acc = last.ex.filter((e) => e.acc).length; msg = `Layer 0: explored the closest unexplored candidate; ${last.ex.length} new neighbour(s), ${acc} good enough to join the best-${$("hx-ef").value} list.`; }
+      if (last.t === "done") { const hit = last.res.filter((i) => tr.includes(i)).length; msg = `Done: the nearest unexplored candidate is farther than everything in the best list, so nothing can improve. Returned the ${K} closest found; ${hit} of the true ${K} nearest are among them.`; }
+    }
+    $("hx-log").innerHTML = msg;
+    const dc = last ? last.dc : 0;
+    const fin = events[events.length - 1];
+    const recall = fin.res.filter((i) => tr.includes(i)).length / K;
+    $("hx-stats").innerHTML = `<span>step <b>${step}</b> / ${events.length}</span><span>distance computations <b>${dc}</b> (brute force: ${N})</span><span>layers <b>${idx.top + 1}</b></span>` + (done ? `<span>recall@${K} <b>${recall.toFixed(1)}</b></span>` : "");
+  }
+  function stop() { if (timer) { clearInterval(timer); timer = null; $("hx-play").textContent = "Play"; } }
+  $("hx-step").addEventListener("click", () => { stop(); if (step < events.length) step++; render(); });
+  $("hx-play").addEventListener("click", () => {
+    if (timer) return stop();
+    if (step >= events.length) step = 0;
+    $("hx-play").textContent = "Pause";
+    timer = setInterval(() => { if (step >= events.length) return stop(); step++; render(); }, 450);
+  });
+  $("hx-end").addEventListener("click", () => { stop(); step = events.length; render(); });
+  $("hx-reset").addEventListener("click", () => { stop(); step = 0; render(); });
+  $("hx-new").addEventListener("click", () => { q = [0.05 + Math.random() * 0.9, 0.05 + Math.random() * 0.9]; runSearch(); });
+  $("hx-M").addEventListener("input", build);
+  $("hx-efc").addEventListener("input", build);
+  $("hx-ef").addEventListener("input", runSearch);
+  build();
+}
+
+/* ---------------- layer pyramid ---------------- */
+function levelDemo() {
+  const mS = document.getElementById("lev-M"), nS = document.getElementById("lev-N");
+  function draw() {
+    const M = +mS.value, N = Math.round(Math.pow(10, +nS.value));
+    document.getElementById("lev-M-v").textContent = M;
+    document.getElementById("lev-N-v").textContent = fmtInt(N);
+    const mL = 1 / Math.log(M);
+    const r = mulberry32(M * 1000 + 3), draws = 20000, counts = [];
+    for (let i = 0; i < draws; i++) { const l = Math.floor(-Math.log(1 - r()) * mL); for (let k = 0; k <= l; k++) counts[k] = (counts[k] || 0) + 1; }
+    const rows = [];
+    for (let k = 0; ; k++) { const e = N * Math.pow(M, -k); if (e < 0.5 && k > 0) break; rows.push([k, e]); }
+    const top = Math.log10(N) || 1;
+    document.getElementById("lev-bars").innerHTML = `<div class="legend" style="margin:0 0 0.3rem">expected points per layer (log scale) · formula fraction vs simulated fraction</div>` +
+      rows.slice().reverse().map(([k, e]) => barRow(`layer ${k}`, Math.max(0.02, Math.log10(Math.max(e, 1)) / top), `${fmtInt(e)} · ${(Math.pow(M, -k) * 100).toPrecision(3)}% / ${(((counts[k] || 0) / draws) * 100).toPrecision(3)}%`, "", "5rem minmax(0,1fr) 13rem")).join("");
+    document.getElementById("lev-readout").innerHTML = `m<sub>L</sub> = 1/ln ${M} = ${mL.toFixed(3)} · about ${rows.length} layers for ${fmtInt(N)} points (log<sub>${M}</sub> N = ${(Math.log(N) / Math.log(M)).toFixed(1)}) · average layers per point m<sub>L</sub> + 1 = ${(mL + 1).toFixed(2)} · steps-per-layer bound S = ${(1 / (1 - Math.exp(-mL))).toFixed(2)}`;
+  }
+  mS.addEventListener("input", draw); nS.addEventListener("input", draw);
+  draw();
+}
+
+/* ---------------- memory per point ---------------- */
+function memChart(P) {
+  const pts = [];
+  for (let M = 2; M <= 64; M++) pts.push([M, (2 * M + M / Math.log(M)) * 4]);
+  P.lineChart(document.getElementById("mem-chart"), {
+    series: [{ name: "bytes of links per point", points: pts }],
+    xLabel: "M (links per point)", yLabel: "bytes per point", yMin: 0,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => String(Math.round(v)),
+    readout: document.getElementById("mem-readout"), ariaLabel: "Graph memory per point against M",
+  });
+}
+</script>
+</body>
+</html>

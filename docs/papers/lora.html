@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoRA and QLoRA, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Hu et al. (2021), LoRA: Low-Rank Adaptation of Large Language Models, and Dettmers et al. (2023), QLoRA.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<style>
+/* page-local: the LoRA trapezoids are paths, so give them the same hover highlight as shared rect blocks */
+svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { stroke: var(--active); stroke-width: 2.6; }
+</style>
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="lora">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">LoRA: Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Problem statement</a></li>
+      <li><a href="#s3">3 Why not adapters or prompts?</a></li>
+      <li><a href="#s4">4 The method</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Low-rank update matrices</a></li>
+          <li><a href="#s4-2">4.2 Applying LoRA to a Transformer</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Experiments</a></li>
+      <li><a href="#s7">7 Understanding the low-rank updates</a>
+        <ol>
+          <li><a href="#s7-1">7.1 Which matrices to adapt</a></li>
+          <li><a href="#s7-2">7.2 How small can r be?</a></li>
+          <li><a href="#s7-3">7.3 How ΔW relates to W</a></li>
+        </ol>
+      </li>
+      <li><a href="#s8">8 Conclusion</a></li>
+      <li><a href="#qlora">QLoRA (2023)</a>
+        <ol>
+          <li><a href="#q-nf4">4-bit NormalFloat</a></li>
+          <li><a href="#q-dq">Double quantization</a></li>
+          <li><a href="#q-paged">Paged optimizers</a></li>
+          <li><a href="#q-eq">QLoRA in one equation</a></li>
+          <li><a href="#q-results">Results</a></li>
+        </ol>
+      </li>
+      <li><a href="#today">What changed since</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>LoRA and QLoRA, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Hu, Shen, Wallis, Allen-Zhu, Li, Wang, Wang and Chen (2021), <em>LoRA: Low-Rank Adaptation of Large Language Models</em>, and its sequel by Dettmers, Pagnoni, Holtzman and Zettlemoyer (2023), <em>QLoRA: Efficient Finetuning of Quantized LLMs</em>. Together they are why you can fine-tune a large model on one GPU.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2106.09685">LoRA on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2106.09685">LoRA PDF</a>
+    <a class="btn" href="https://arxiv.org/abs/2305.14314">QLoRA on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2305.14314">QLoRA PDF</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows both papers section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. LoRA is distributed under arXiv's standard licence, so its results appear here as a few selected numbers in tables written for this page, with attribution. QLoRA is published under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, so selected rows of its tables are reproduced with attribution. Every figure is redrawn from scratch. Read the originals alongside: every section links to them.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon.</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same. Hover the <em>B</em> in the first equation and see.</li>
+  <li>The diagrams and sliders are live. Drag the rank slider in §4.1 and watch the parameter count collapse.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it still matters</strong>. The <a class="lesson" data-lesson="primer/ml/training_stages.html">training stages lesson</a> builds LoRA from scratch in NumPy.</p>
+</section>
+
+<section id="abstract">
+<h2>LoRA: Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685">original</a></span></h2>
+<blockquote class="quote">“We propose Low-Rank Adaptation, or LoRA, which freezes the pre-trained model weights and injects trainable rank decomposition matrices into each layer of the Transformer architecture, greatly reducing the number of trainable parameters for downstream tasks.”<cite>Hu et al. (2021), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You own a 1,000-page textbook and want it to suit a new course. Reprinting the whole book for every course is absurd. Instead you keep the book exactly as it is and add a thin booklet of corrections for each course. Swap the booklet, and the same book serves a different class. <span class="t" data-t="lora">LoRA</span> is that booklet for a neural network: the huge <span class="t" data-t="weight">weights</span> stay frozen, and a tiny set of new numbers carries each task's changes.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Compared with <span class="t" data-t="full fine-tune">full fine-tuning</span> of GPT-3 175B with <span class="t" data-t="adam">Adam</span>, LoRA cuts the number of trainable <span class="t" data-t="parameters">parameters</span> by 10,000× and the GPU memory needed by 3×.</li>
+  <li>Quality is on par with or better than full fine-tuning on RoBERTa, DeBERTa, GPT-2 and GPT-3.</li>
+  <li>No extra delay when the model runs, unlike <span class="t" data-t="adapter">adapter</span> layers, because the booklet can be folded back into the book.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>LoRA is the default way to customize open-weight language models. When someone ships a “LoRA” for a model, they are shipping a few megabytes that turn a general model into a specialist.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S1">original</a></span></h2>
+<blockquote class="quote">“We hypothesize that the change in weights during model adaptation also has a low ‘intrinsic rank’, leading to our proposed Low-Rank Adaptation (LoRA) approach.”<cite>Hu et al. (2021), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Adapting a model that already knows English to write SQL, or to summarize conversations, probably doesn't require rewriting everything it knows. It needs a few focused adjustments. The authors bet that the <em>change</em> to each weight matrix can be described with very few independent “directions” of change. That count of directions is what <span class="t" data-tip-title="Rank" data-tip="How many independent directions a matrix really contains. A 4 × 4 table built by multiplying one column by one row has rank 1: every row is a multiple of the same row.">rank</span> means.</p>
+<h4>Tiny example: a big table from two short lists</h4>
+<p>Take a column of 4 numbers, B = (1, 0, 2, 0), and a row of 4 numbers, A = (0.5, 1, 0, −1). Multiply every entry of B by every entry of A and you get a full 4 × 4 table, 16 numbers from only 8:</p>
+<div class="tablewrap"><table style="max-width:22rem">
+  <caption>B × A: a rank-1 update</caption>
+  <thead><tr><th></th><th class="num">0.5</th><th class="num">1</th><th class="num">0</th><th class="num">−1</th></tr></thead>
+  <tbody>
+    <tr><th>1</th><td class="num">0.5</td><td class="num">1</td><td class="num">0</td><td class="num">−1</td></tr>
+    <tr><th>0</th><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+    <tr><th>2</th><td class="num">1</td><td class="num">2</td><td class="num">0</td><td class="num">−2</td></tr>
+    <tr><th>0</th><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+  </tbody>
+</table></div>
+<p>Every row is a multiple of (0.5, 1, 0, −1), so the table has rank 1. At the scale of a real model, a 4,096 × 4,096 weight matrix has 16.8 million entries, but a rank-1 change to it needs only 4,096 + 4,096 = 8,192 numbers. That ratio, 2,048 to 1, is the whole trick.</p>
+<h4>Four advantages the paper lists</h4>
+<ul>
+  <li><strong>Many tasks, one model:</strong> keep one frozen copy and swap small A and B pairs per task.</li>
+  <li><strong>Cheaper training:</strong> no gradients or <span class="t" data-t="optimizer">optimizer</span> state for the frozen weights, which lowers the hardware needed by up to 3×.</li>
+  <li><strong>No inference latency:</strong> the update can be added into the weights before serving.</li>
+  <li><strong>Composable:</strong> it combines with other methods such as prefix tuning.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>The claim is not only “cheaper”. It is that the useful part of fine-tuning really is low-dimensional, which §7 tests directly.</p>
+</section>
+
+<section id="s2">
+<h2>2 Problem statement <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Fine-tuning means showing the model many examples of a task, such as a question paired with its SQL, and nudging its weights so that the right answer becomes more likely, one <span class="t" data-t="token">token</span> at a time.</p>
+<div class="eq" data-tex="\max_{\htmlData{sym=Phi}{\Phi}} \htmlData{sym=sumZ}{\sum_{(x,y)\in\mathcal{Z}}} \htmlData{sym=sumt}{\sum_{t=1}^{|y|}} \htmlData{sym=log}{\log}\big(\htmlData{sym=PPhi}{P_{\Phi}}(\htmlData{sym=yt}{y_t} \mid \htmlData{sym=x}{x}, \htmlData{sym=ylt}{y_{&lt;t}})\big)" data-fallback="max over Φ of Σ over (x,y) in Z of Σ over t of log P_Φ(y_t | x, y_<t)"></div>
+<div class="symtable" data-syms="Phi,sumZ,sumt,log,PPhi,yt,x,ylt"></div>
+<p class="inwords"><strong>In words:</strong> “adjust all the weights so that, across every training pair, the model gives as much probability as possible to each correct next token of the target, given the prompt and the target tokens so far.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if the target SQL is 3 tokens long and the model gives them probabilities 0.5, 0.8 and 0.9, this pair contributes ln 0.5 + ln 0.8 + ln 0.9 = −0.69 − 0.22 − 0.11 = −1.02. Training pushes that number up towards 0.</p>
+<p>The problem: full fine-tuning learns a change ΔΦ as large as the model itself. For GPT-3 that is about 175 billion numbers <em>per task</em>. LoRA instead describes the change with a much smaller set of numbers Θ; for GPT-3, Θ can be as small as 0.01% of the model.</p>
+<h4>Why it matters</h4>
+<p>Storage and switching cost scale with the size of what you train. Shrink that, and serving hundreds of custom models from one base becomes practical. See the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> for where fine-tuning sits among pretraining, SFT and preference tuning.</p>
+</section>
+
+<section id="s3">
+<h2>3 Why not adapters or prompts? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S3">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Two earlier ways to avoid full fine-tuning each had a catch. <span class="t" data-t="adapter">Adapters</span> insert small extra layers into the network: like adding extra stops on a train line, every journey now takes longer, and at a batch size of 1 the stops dominate. <span class="t" data-tip-title="Prefix tuning" data-tip="Learning a handful of special 'virtual token' vectors that are prepended to every input. The model stays frozen; only those vectors are trained.">Prefix tuning</span> learns special tokens that sit in the prompt: like reserving seats on the train for luggage, it takes up space the passengers (your actual input) could have used, and the paper found it hard to optimize.</p>
+<h4>The latency cost, measured</h4>
+<div class="tablewrap"><table>
+  <caption>Selected numbers from Hu et al. (2021), Table 1: one forward pass of GPT-2 medium, in milliseconds (batch 1, 128 tokens)</caption>
+  <thead><tr><th>Method</th><th class="num">Latency</th><th class="num">Extra</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>Fine-tuned model or LoRA (merged)</td><td class="num">19.8</td><td class="num">none</td></tr>
+    <tr><td>Adapter (Lin et al. design)</td><td class="num">23.9</td><td class="num">+20.7%</td></tr>
+    <tr><td>Adapter (Houlsby et al. design)</td><td class="num">25.8</td><td class="num">+30.3%</td></tr>
+  </tbody>
+</table></div>
+<p>With big batches the overhead shrinks (about 2 to 3% at batch 32), because the GPU is busy anyway. Online serving usually has small batches, where adapters hurt most.</p>
+<h4>Why it matters</h4>
+<p>The goal was an adaptation method with no serving penalty and no loss of usable context. That design constraint is what led to a change that can be merged into the existing weights.</p>
+</section>
+
+<section id="s4">
+<h2>4 The method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S4">original</a></span></h2>
+<section id="s4-1">
+<h3>4.1 Low-rank update matrices <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“During training, W₀ is frozen and does not receive gradient updates, while A and B contain trainable parameters.”<cite>Hu et al. (2021), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A weight matrix is like a big mixing desk: it takes an input signal x and blends it into an output h. LoRA leaves the desk untouched and runs a thin side channel in parallel: squeeze x down to a handful of numbers (A), expand them back up (B), and add the result to the desk's output.</p>
+
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 330" role="img" aria-label="LoRA: a frozen weight matrix with a trainable low-rank side path">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M160,300 V286 M160,286 H75 V262 M160,286 H235 V262" marker-end="url(#arr)"/>
+    <path class="wire" d="M75,112 V62 H148" marker-end="url(#arr)"/>
+    <path class="wire" d="M235,170 V146" marker-end="url(#arr)"/>
+    <path class="wire" d="M235,94 V62 H172" marker-end="url(#arr)"/>
+    <path class="wire" d="M160,48 V26" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="x"><rect x="120" y="300" width="80" height="24" rx="6"/><text x="160" y="316" text-anchor="middle">x (input)</text></g>
+    <g class="blk lin" data-block="w0"><rect x="20" y="112" width="110" height="150" rx="8"/><text x="75" y="178" text-anchor="middle">W₀</text><text x="75" y="196" text-anchor="middle" class="lbl">frozen</text><text x="75" y="210" text-anchor="middle" class="lbl">d × d</text></g>
+    <g class="blk ff" data-block="A"><path class="shape" d="M185,262 L285,262 L255,210 L215,210 Z" fill="var(--ff)" stroke="var(--ff-stroke)"/><text x="235" y="244" text-anchor="middle">A</text><text x="235" y="258" text-anchor="middle" class="lbl">r × d</text></g>
+    <g class="blk plain" data-block="r"><rect x="212" y="170" width="46" height="30" rx="6"/><text x="235" y="190" text-anchor="middle">r</text></g>
+    <g class="blk ff" data-block="B"><path class="shape" d="M215,146 L255,146 L285,94 L185,94 Z" fill="var(--ff)" stroke="var(--ff-stroke)"/><text x="235" y="118" text-anchor="middle">B</text><text x="235" y="132" text-anchor="middle" class="lbl">d × r</text></g>
+    <g class="blk pe" data-block="sum"><circle cx="160" cy="62" r="13"/><text x="160" y="67" text-anchor="middle" style="font-size:16px">+</text></g>
+    <g class="blk plain" data-block="h"><rect x="110" y="2" width="100" height="24" rx="6"/><text x="160" y="18" text-anchor="middle">h (output)</text></g>
+    <text x="292" y="116" class="lbl">starts</text><text x="292" y="129" class="lbl">at zero</text>
+    <text x="292" y="232" class="lbl">starts</text><text x="292" y="245" class="lbl">random</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start at the bottom with <strong>x</strong>.</p></div>
+  </div>
+  <figcaption>Figure 1 of the LoRA paper, redrawn. Based on Hu et al. (2021), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the input x goes two ways. On the left, it passes through the original weight matrix W₀, which is frozen: training never touches it. On the right, it passes through the LoRA side path: A squeezes the d numbers of x down to just r numbers (the narrow waist), and B expands them back to d. The two results meet at the ⊕ and are added. Because B starts at zero, the side path contributes nothing on day one, so training begins from exactly the original model's behaviour. Only the two trapezoids (A and B) learn.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=h}{h} = \htmlData{sym=W0}{W_0}\htmlData{sym=xv}{x} + \htmlData{sym=dW}{\Delta W}\htmlData{sym=xv}{x} = \htmlData{sym=W0}{W_0}\htmlData{sym=xv}{x} + \htmlData{sym=scale}{\tfrac{\alpha}{r}}\,\htmlData{sym=B}{B}\htmlData{sym=A}{A}\htmlData{sym=xv}{x}" data-fallback="h = W₀x + ΔWx = W₀x + (α/r)·BAx"></div>
+<div class="symtable" data-syms="h,W0,xv,dW,B,A,rk,scale"></div>
+<p class="inwords"><strong>In words:</strong> “the layer's output is what the frozen weights would have produced, plus a correction computed by squeezing the input through A and expanding it through B, scaled by α over r.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with d = 4, r = 1, B = (1, 0, 2, 0) and A = (0.5, 1, 0, −1) from §1, and input x = (2, 1, 0, 1): A x = 0.5·2 + 1·1 + 0·0 − 1·1 = 1, a single number. B times that is (1, 0, 2, 0). So the correction adds 1 to the first output and 2 to the third, on top of W₀x (taking α = r, so the scale is 1).</p>
+
+<h4>Try it: how many numbers does LoRA train?</h4>
+<div class="play" id="rank-demo">
+  <div class="sliders">
+    <label for="rk-slider">rank r</label><input type="range" id="rk-slider" min="0" max="8" step="1" value="3"><output id="rk-v">8</output>
+    <label for="d-slider">width d</label><input type="range" id="d-slider" min="0" max="3" step="1" value="2"><output id="d-v">4096</output>
+  </div>
+  <div class="shares" id="rk-bars"></div>
+  <p class="readout" id="rk-readout"></p>
+  <canvas id="rk-canvas" width="360" height="360" style="max-width:300px;margin-top:.6rem" aria-label="A 24 by 24 corner of the update BA drawn as a heatmap"></canvas>
+  <p class="readout" id="rk-canvas-readout">The heatmap is a 24 × 24 corner of the update BA at the chosen rank (random A and B, fixed seed). Hover it.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the two bars compare how many numbers you would train to change one d × d weight matrix: all of them (full fine-tuning) or just A and B (LoRA, 2 × d × r). The bars use a log scale (a bar's length follows how many digits its number has), so the real gap is far bigger than it looks. At d = 4,096 and r = 8 LoRA trains 65,536 numbers instead of 16.8 million: 256× fewer. Now watch the heatmap: at r = 1 every row is a scaled copy of every other, so you see clean stripes. Raise r and the pattern gets richer, because more independent directions are mixed in. Low rank means “structured”, not “small values”.</p>
+
+<h4>Two details that make it work</h4>
+<ul>
+  <li><strong>Initialization:</strong> A starts random (Gaussian) and B starts at zero, so ΔW = BA = 0 at the start.</li>
+  <li><strong>Scaling:</strong> the update is multiplied by α/r. The authors set α to the first r they try and never tune it, so changing r doesn't force re-tuning the <span class="t" data-t="learning rate">learning rate</span>.</li>
+</ul>
+<h4>No extra latency, by construction</h4>
+<p>Before serving, compute W = W₀ + BA once and store it. The network then has exactly the same shape and speed as the original. To switch tasks, subtract BA and add a different B′A′.</p>
+<div class="eq" data-tex="\htmlData{sym=Wm}{W} = \htmlData{sym=W0}{W_0} + \htmlData{sym=B}{B}\htmlData{sym=A}{A}" data-fallback="W = W₀ + BA"></div>
+<div class="symtable" data-syms="Wm"></div>
+<p class="inwords"><strong>In words:</strong> “fold the correction into the weights once, and the model runs exactly as fast as before.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the rank-1 table from §1 (16 entries) is added entry by entry into a 4 × 4 W₀; the merged matrix is still 4 × 4.</p>
+<h4>Why it matters today</h4>
+<p>“Merge the adapter” is a standard deployment step. The flip side, which the paper notes, is that if you merge, you can't mix different tasks' adapters in one batch; serving systems that keep adapters unmerged exist for exactly that. Build it yourself in the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a>.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Applying LoRA to a Transformer <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="transformer">Transformer</span> layer is full of weight matrices: four in <span class="t" data-t="attention">attention</span> (for <span class="t" data-t="query">queries</span>, keys, values and the output) and two in the <span class="t" data-t="feed-forward network">feed-forward network</span>. The paper puts LoRA side paths only on the attention matrices, mostly W<sub>q</sub> and W<sub>v</sub>, and freezes everything else.</p>
+<h4>Tiny example: GPT-3's budget</h4>
+<p>GPT-3 has 96 layers of width 12,288. LoRA with r = 4 on W<sub>q</sub> and W<sub>v</sub> trains 96 layers × 2 matrices × (12,288 + 12,288) × 4 = <strong>18.9 million</strong> numbers. In 16-bit that is about 38 MB, which the paper rounds to 35 MB, against 350 GB for the model.</p>
+<div class="tablewrap"><table>
+  <caption>What the paper reports for GPT-3 175B (Hu et al., 2021, §4.2)</caption>
+  <thead><tr><th>Quantity</th><th class="num">Full fine-tuning</th><th class="num">LoRA</th></tr></thead>
+  <tbody>
+    <tr><td>GPU memory (VRAM) during training</td><td class="num">1.2 TB</td><td class="num">350 GB</td></tr>
+    <tr><td>Checkpoint size per task</td><td class="num">350 GB</td><td class="num">35 MB</td></tr>
+    <tr><td>100 tasks stored</td><td class="num">≈ 35 TB</td><td class="num">≈ 354 GB</td></tr>
+    <tr><td>Training throughput per V100</td><td class="num">32.5 tokens/s</td><td class="num">43.1 tokens/s</td></tr>
+  </tbody>
+</table></div>
+<p>The memory saving comes from not keeping <span class="t" data-t="adam">Adam</span>'s extra per-weight state for frozen weights. The 25% speed-up comes from not computing gradients for them.</p>
+<h4>Why it matters today</h4>
+<p>This table is the business case: one base model in memory, hundreds of customers' adapters on disk, each loaded in milliseconds.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S5">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>The test is simple: does the booklet teach as well as reprinting the book? The paper compares LoRA with full fine-tuning and other cheap methods on language understanding (the GLUE benchmark), text generation (E2E NLG) and three GPT-3 tasks: turning questions into SQL (WikiSQL), judging whether one sentence follows from another (MultiNLI) and summarizing chats (SAMSum).</p>
+<div class="tablewrap"><table>
+  <caption>Selected results written for this page from Hu et al. (2021), Tables 2 to 4. Higher is better</caption>
+  <thead><tr><th>Model and method</th><th class="num">Trainable params</th><th>Score</th></tr></thead>
+  <tbody>
+    <tr><td>RoBERTa-base, full fine-tune</td><td class="num">125M</td><td>GLUE average 86.4</td></tr>
+    <tr class="hl"><td>RoBERTa-base, LoRA</td><td class="num">0.3M</td><td>GLUE average 87.2</td></tr>
+    <tr><td>DeBERTa-XXL, full fine-tune</td><td class="num">1,500M</td><td>GLUE average 91.1</td></tr>
+    <tr class="hl"><td>DeBERTa-XXL, LoRA</td><td class="num">4.7M</td><td>GLUE average 91.3</td></tr>
+    <tr><td>GPT-2 medium, full fine-tune</td><td class="num">354.9M</td><td>E2E BLEU 68.2</td></tr>
+    <tr class="hl"><td>GPT-2 medium, LoRA</td><td class="num">0.35M</td><td>E2E BLEU 70.4</td></tr>
+    <tr><td>GPT-3 175B, full fine-tune</td><td class="num">175,255.8M</td><td>WikiSQL 73.8 · MNLI 89.5</td></tr>
+    <tr class="hl"><td>GPT-3 175B, LoRA</td><td class="num">4.7M</td><td>WikiSQL 73.4 · MNLI 91.7</td></tr>
+    <tr class="hl"><td>GPT-3 175B, LoRA</td><td class="num">37.7M</td><td>WikiSQL 74.0 · MNLI 91.6</td></tr>
+  </tbody>
+</table></div>
+<div class="plot"><div id="params-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each row pair compares full fine-tuning with LoRA on the same model. The bars show trainable parameters on a log scale (a bar's length follows how many digits its number has), so even a modest gap in length means hundreds of times fewer parameters. LoRA trains between a hundred and tens of thousands of times fewer numbers and lands within a point of full fine-tuning, often above it. Scores come from different benchmarks, so compare rows within a pair, not across pairs.</p>
+<p>One more finding: not every cheap method improves with more trainable parameters. Prefix methods got worse past a few dozen to a few hundred special tokens, while LoRA stayed stable.</p>
+<h4>Why it matters</h4>
+<p>“As good as full fine-tuning with a fraction of the parameters” is the result that made LoRA the default. The <a data-lesson="primer/ml/metrics.html">metrics lesson</a> explains BLEU and ROUGE, two of the scores used here.</p>
+</section>
+
+<section id="s7">
+<h2>7 Understanding the low-rank updates <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S7">original</a></span></h2>
+<p>Having shown that LoRA works, the paper asks why. All three studies use GPT-3 175B.</p>
+
+<section id="s7-1">
+<h3>7.1 Which matrices to adapt? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S7.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>With a fixed budget of about 18 million numbers, is it better to make deep changes to one kind of matrix, or shallow changes to several?</p>
+<div class="tablewrap"><table>
+  <caption>Selected numbers from Hu et al. (2021), Table 5: 18M trainable parameters on GPT-3, validation accuracy</caption>
+  <thead><tr><th>Adapted matrices</th><th class="num">Rank r</th><th class="num">WikiSQL</th><th class="num">MultiNLI</th></tr></thead>
+  <tbody>
+    <tr><td>W<sub>q</sub> only</td><td class="num">8</td><td class="num">70.4</td><td class="num">91.0</td></tr>
+    <tr><td>W<sub>k</sub> only</td><td class="num">8</td><td class="num">70.0</td><td class="num">90.8</td></tr>
+    <tr class="hl"><td>W<sub>q</sub> and W<sub>v</sub></td><td class="num">4</td><td class="num">73.7</td><td class="num">91.3</td></tr>
+    <tr class="hl"><td>W<sub>q</sub>, W<sub>k</sub>, W<sub>v</sub>, W<sub>o</sub></td><td class="num">2</td><td class="num">73.7</td><td class="num">91.7</td></tr>
+  </tbody>
+</table></div>
+<p><strong>Finding:</strong> spreading the budget wins. Even rank 2 on all four attention matrices beats rank 8 on one. A small rank captures enough per matrix; coverage matters more.</p>
+</section>
+
+<section id="s7-2">
+<h3>7.2 How small can r be? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S7.SS2">original</a></span></h3>
+<blockquote class="quote">“To our surprise, a rank as small as one suffices for adapting both W<sub>q</sub> and W<sub>v</sub> on these datasets while training W<sub>q</sub> alone needs a larger r.”<cite>Hu et al. (2021), Table 6 caption</cite></blockquote>
+<h4>Tiny example</h4>
+<p>On WikiSQL, adapting W<sub>q</sub> and W<sub>v</sub> scored 73.4 at r = 1, 73.7 at r = 4, 73.8 at r = 8 and 73.5 at r = 64. Going from 1 to 64 directions of change bought essentially nothing.</p>
+<h4>How they checked it: comparing subspaces</h4>
+<p>They trained with r = 8 and r = 64, took the most important directions each learned (via <span class="t" data-tip-title="Singular value decomposition" data-tip="A way to break any matrix into independent directions ranked by importance. The top few directions capture most of what the matrix does.">singular value decomposition</span>), and measured how much the two sets overlap.</p>
+<div class="eq" data-tex="\htmlData{sym=phi}{\phi}(A_{r=8}, A_{r=64}, i, j) = \frac{\htmlData{sym=frob}{\lVert U_{r=8}^{i\top} U_{r=64}^{j} \rVert_F^2}}{\htmlData{sym=minij}{\min(i, j)}} \in [0, 1]" data-fallback="φ = ‖U_{r=8}^{i ᵀ} U_{r=64}^{j}‖_F² / min(i, j), between 0 and 1"></div>
+<div class="symtable" data-syms="phi,frob,minij"></div>
+<p class="inwords"><strong>In words:</strong> “take the top i directions from the rank-8 run and the top j from the rank-64 run, and score how much of the smaller set lies inside the larger one: 1 means completely, 0 means not at all.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the single top direction (i = j = 1), the two runs overlap with similarity above 0.5, while the other directions barely overlap. The important change lives in about one direction; the rest looks like noise.</p>
+<h4>Why it matters</h4>
+<p>This is evidence for the paper's opening hypothesis: the task-specific change really is low rank. The authors caution that a very different task, such as a new language, would likely need a larger r.</p>
+</section>
+
+<section id="s7-3">
+<h3>7.3 How ΔW relates to W <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S7.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Does fine-tuning add brand-new knowledge, or turn up the volume on something the model already had? The paper projects W onto the directions of ΔW and compares sizes, using the <span class="t" data-tip-title="Frobenius norm" data-tip="The size of a whole matrix: square every entry, add them up, take the square root. Like the length of a vector, for a table.">Frobenius norm</span>.</p>
+<p class="inwords"><strong>With the numbers:</strong> in layer 48, ‖W<sub>q</sub>‖ = 61.95, and W<sub>q</sub> projected onto ΔW's top 4 directions has size only 0.32, while ΔW itself has size 6.91. So along those directions the update is about 6.91 / 0.32 ≈ 21.5 times bigger than what W already had.</p>
+<p><strong>Finding:</strong> ΔW amplifies features that are present in W but not emphasized, rather than repeating W's strongest directions. Fine-tuning turns up quiet features that matter for the task.</p>
+</section>
+</section>
+
+<section id="s8">
+<h2>8 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S8">original</a></span></h2>
+<p>The authors conclude that LoRA keeps quality while removing inference latency and cutting the input-length cost of prompt methods, and that it lets you switch tasks quickly on a shared model. Their open questions: combining LoRA with other methods, understanding the mechanism more deeply, choosing which matrices to adapt on a principled basis, and whether W itself is rank-deficient.</p>
+</section>
+
+<section id="qlora">
+<h2>QLoRA (Dettmers et al., 2023) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.14314">original</a></span></h2>
+<blockquote class="quote">“We present QLoRA, an efficient finetuning approach that reduces memory usage enough to finetune a 65B parameter model on a single 48GB GPU while preserving full 16-bit finetuning task performance.”<cite>Dettmers et al. (2023), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>LoRA shrank what you <em>train</em>, but you still had to hold the whole frozen model in GPU memory at 16 bits per number. QLoRA stores the frozen book in shorthand, 4 bits per number, and writes the corrections booklet in full precision. When a page is needed, it is expanded from shorthand on the fly.</p>
+<h4>Try it: how much GPU memory does fine-tuning need?</h4>
+<div class="play" id="mem-demo">
+  <div class="sliders">
+    <label for="mem-slider">model size</label><input type="range" id="mem-slider" min="0" max="3" step="1" value="3"><output id="mem-v">65B</output>
+  </div>
+  <div class="shares" id="mem-bars"></div>
+  <p class="readout" id="mem-readout"></p>
+  <p class="readout"><em>A rough rule of thumb for this page, not the paper's accounting: full 16-bit fine-tuning with Adam holds about 12 bytes per parameter (2 for the weight, 2 for its gradient, 8 for Adam's two running averages); LoRA in 16-bit holds about 2 bytes per frozen weight; QLoRA about 0.52 bytes (4 bits plus the scaling constants). Activations and the small adapters are left out.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is the memory for the model's weights and training state, on a log scale; the dashed marker is a single 48 GB GPU. At 65B parameters the rule of thumb gives 780 GB for full fine-tuning, matching the paper's “more than 780 GB”, and about 34 GB for QLoRA's frozen weights, which leaves room on one 48 GB card for the adapters and activations. Slide down to 7B and even 16-bit LoRA fits on one GPU.</p>
+<p>QLoRA adds three tricks, described next: a 4-bit data type shaped for neural network weights, quantizing the quantization constants, and paging optimizer memory to the CPU.</p>
+</section>
+
+<section id="q-nf4">
+<h3>4-bit NormalFloat (NF4) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.14314#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>With 4 bits you get only 16 possible values. Suppose you must describe everyone's height with just 16 labels. Spacing the labels evenly from shortest to tallest wastes most of them on rare extremes, while crowds of average-height people share a few labels. Better: space the labels so each covers the same <em>number of people</em>. Neural network weights follow a bell curve, so NF4 puts its 16 levels where the weights actually are.</p>
+<h4>Tiny example</h4>
+<p>Take a block of weights (0.02, −0.10, 0.05, 0.31). Divide by the largest magnitude, 0.31, so they fit in [−1, 1]: (0.065, −0.323, 0.161, 1.0). Round each to the nearest NF4 level: 0.080, −0.284, 0.161, 1.0. Store the four level numbers (4 bits each) plus the one scale, 0.31. To use a weight, multiply back: 0.080 × 0.31 = 0.025, close to the original 0.02.</p>
+<div class="eq" data-tex="\htmlData{sym=qi}{q_i} = \tfrac{1}{2}\left(\htmlData{sym=QX}{Q_X}\!\left(\tfrac{\htmlData{sym=ii}{i}}{2^{\htmlData{sym=kbits}{k}}+1}\right) + \htmlData{sym=QX}{Q_X}\!\left(\tfrac{\htmlData{sym=ii}{i}+1}{2^{\htmlData{sym=kbits}{k}}+1}\right)\right)" data-fallback="q_i = ½ (Q_X(i / (2^k + 1)) + Q_X((i + 1) / (2^k + 1)))"></div>
+<div class="symtable" data-syms="qi,QX,ii,kbits"></div>
+<p class="inwords"><strong>In words:</strong> “cut the bell curve into equal-probability slices and put each level halfway between two neighbouring cut points.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with k = 4 there are 2⁴ = 16 levels. After a small fix so that zero is represented exactly, and rescaling into [−1, 1], the paper's NF4 levels run −1, −0.696, −0.525, −0.395, −0.284, −0.185, −0.091, 0, 0.080, 0.161, 0.246, 0.338, 0.441, 0.563, 0.723, 1: dense near zero, sparse at the tails.</p>
+<div class="play" id="nf4-demo">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Show levels of:</span>
+    <button type="button" data-q="nf4" aria-pressed="true">NF4</button>
+    <button type="button" data-q="int4" aria-pressed="false">evenly spaced 4-bit</button>
+  </div>
+  <svg id="nf4-svg" viewBox="0 0 640 200" role="img" aria-label="Histogram of normalized weights with the 16 quantization levels marked"></svg>
+  <p class="readout" id="nf4-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grey bars are 25,600 weights drawn from a bell curve (computed live in your browser with a fixed seed), each block of 64 divided by its largest magnitude, which is how QLoRA normalizes them. The vertical lines are the 16 levels every weight must be rounded to. Toggle between NF4 and evenly spaced levels and read the error: NF4 packs levels where the bars are tall, so the average rounding error is lower and the 16 levels are used more evenly. With so few levels, where you put them matters.</p>
+<div class="tablewrap"><table>
+  <caption>Table 2 of Dettmers et al. (2023), reproduced under CC BY 4.0: mean perplexity of quantized models (lower is better)</caption>
+  <thead><tr><th>4-bit data type</th><th class="num">Mean perplexity</th></tr></thead>
+  <tbody>
+    <tr><td>Int4</td><td class="num">34.34</td></tr>
+    <tr><td>Float4 (E2M1)</td><td class="num">31.07</td></tr>
+    <tr><td>Float4 (E3M0)</td><td class="num">29.48</td></tr>
+    <tr class="hl"><td>NFloat4 + double quantization</td><td class="num">27.41</td></tr>
+  </tbody>
+</table></div>
+<p><span class="t" data-t="perplexity">Perplexity</span> measures how surprised a model is by real text. Same 4 bits, better placement, a less surprised model.</p>
+</section>
+
+<section id="q-dq">
+<h3>Double quantization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.14314#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Every block of 64 weights needs its own scale factor (the 0.31 in the tiny example), stored as a 32-bit number. That overhead adds up, so QLoRA compresses the scale factors too: a note about the notes.</p>
+<div class="eq" data-tex="\htmlData{sym=over1}{\tfrac{32}{64}} = 0.5 \;\longrightarrow\; \htmlData{sym=over2}{\tfrac{8}{64} + \tfrac{32}{64 \cdot 256}} \approx 0.127 \text{ bits per parameter}" data-fallback="32/64 = 0.5 → 8/64 + 32/(64·256) ≈ 0.127 bits per parameter"></div>
+<div class="symtable" data-syms="over1,over2"></div>
+<p class="inwords"><strong>In words:</strong> “one 32-bit scale per 64 weights costs half a bit per weight; storing those scales in 8 bits, with one 32-bit scale per 256 of them, cuts it to about an eighth of a bit.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the saving is 0.5 − 0.127 = 0.373 bits per parameter. For a 65B model that is 65 × 10⁹ × 0.373 / 8 ≈ 3 GB, which the paper also reports.</p>
+</section>
+
+<section id="q-paged">
+<h3>Paged optimizers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.14314#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A long training example can briefly spike memory use and crash the run. Paged optimizers keep the optimizer's state in memory that the GPU driver can move to ordinary CPU RAM when the GPU runs short, and page it back when needed, the way an operating system swaps memory to disk.</p>
+<h4>Why it matters</h4>
+<p>It turns rare out-of-memory crashes into a small slowdown, which is what makes “fine-tune a 65B model on one GPU” reliable rather than lucky.</p>
+</section>
+
+<section id="q-eq">
+<h3>QLoRA in one equation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.14314#S3">original</a></span></h3>
+<div class="eq" data-tex="\htmlData{sym=Yq}{\mathbf{Y}^{\text{BF16}}} = \htmlData{sym=Xq}{\mathbf{X}^{\text{BF16}}}\,\htmlData{sym=dd}{\text{doubleDequant}}(\htmlData{sym=c1}{c_1^{\text{FP32}}}, \htmlData{sym=c2}{c_2^{\text{k-bit}}}, \htmlData{sym=Wnf4}{\mathbf{W}^{\text{NF4}}}) + \htmlData{sym=Xq}{\mathbf{X}^{\text{BF16}}}\,\htmlData{sym=L1}{\mathbf{L}_1^{\text{BF16}}}\,\htmlData{sym=L2}{\mathbf{L}_2^{\text{BF16}}}" data-fallback="Y = X · doubleDequant(c1, c2, W_NF4) + X · L1 · L2"></div>
+<div class="symtable" data-syms="Yq,Xq,dd,c1,c2,Wnf4,L1,L2"></div>
+<p class="inwords"><strong>In words:</strong> “expand the 4-bit frozen weights back to 16-bit on the fly, multiply the input by them, and add the LoRA correction computed in 16-bit.”</p>
+<p class="inwords"><strong>With the numbers:</strong> it is §4.1's equation with W₀ replaced by its decompressed 4-bit copy. In the tiny example, the stored level 0.080 and scale 0.31 are expanded to 0.025 just before the multiply. Gradients flow through that decompressed copy but are only kept for L₁ and L₂.</p>
+</section>
+
+<section id="q-results">
+<h3>Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.14314#S4">original</a></span></h3>
+<h4>What the paper shows</h4>
+<ul>
+  <li><strong>No quality loss from 4 bits:</strong> with NF4 and double quantization, QLoRA matched 16-bit full fine-tuning and 16-bit LoRA on GLUE and Super-NaturalInstructions, and matched 16-bit LoRA on 5-shot MMLU for LLaMA 7B to 65B (mean 53.1 versus 53.0).</li>
+  <li><strong>Adapter coverage beats rank:</strong> putting LoRA on <em>every</em> linear layer of each block was needed to match full fine-tuning; the rank r mattered little.</li>
+  <li><strong>65B on one GPU:</strong> memory for fine-tuning a 65B model drops from more than 780 GB to under 48 GB.</li>
+  <li><strong>Guanaco:</strong> their best model reached 99.3% of ChatGPT's score on the Vicuna benchmark after 24 hours of fine-tuning on a single GPU.</li>
+  <li><strong>Data quality over quantity:</strong> a 9,000-example dataset (OASST1) beat a 450,000-example one (a subsample of FLAN v2) for chatbot quality.</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 4 of Dettmers et al. (2023), reproduced under CC BY 4.0: mean 5-shot MMLU accuracy, LLaMA fine-tuned on Alpaca</caption>
+  <thead><tr><th>Data type</th><th class="num">7B</th><th class="num">13B</th><th class="num">33B</th><th class="num">65B</th></tr></thead>
+  <tbody>
+    <tr><td>BFloat16 (16-bit)</td><td class="num">38.4</td><td class="num">47.2</td><td class="num">57.7</td><td class="num">61.8</td></tr>
+    <tr><td>Float4</td><td class="num">37.2</td><td class="num">47.3</td><td class="num">55.9</td><td class="num">61.3</td></tr>
+    <tr class="hl"><td>NFloat4 + double quantization</td><td class="num">39.0</td><td class="num">47.5</td><td class="num">57.3</td><td class="num">61.8</td></tr>
+  </tbody>
+</table></div>
+<p>The authors also warn that chatbot benchmarks judged by another model are not fully trustworthy, and they publish examples of where their model fails.</p>
+<h4>Why it matters today</h4>
+<p>QLoRA made fine-tuning large open models a single-GPU job, and “bigger model at lower precision beats smaller model at higher precision” became a common rule of thumb. The <a data-lesson="primer/ml/inference.html">inference lesson</a> builds int8 and int4 quantization from scratch.</p>
+</section>
+
+<section id="today">
+<h2>What changed since</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the papers</th><th>Common today</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>LoRA on W<sub>q</sub> and W<sub>v</sub> only</td><td>LoRA on all linear layers (QLoRA's finding)</td><td><a data-lesson="primer/ml/training_stages.html">training stages</a></td></tr>
+    <tr><td>One adapter per deployed model</td><td>Servers that batch many unmerged adapters over one base model</td><td><a data-lesson="primer/ml/inference.html">inference</a></td></tr>
+    <tr><td>16-bit or 4-bit base weights</td><td>4-bit and 8-bit bases are routine for fine-tuning and serving</td><td><a data-lesson="primer/ml/inference.html">inference</a></td></tr>
+    <tr><td>Fine-tune to add behaviour</td><td>Still the rule: fine-tuning shapes behaviour, retrieval supplies knowledge</td><td><a data-lesson="primer/agents/rag.html">RAG</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang and Weizhu Chen, <em>LoRA: Low-Rank Adaptation of Large Language Models</em>, ICLR 2022, <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a>; and Tim Dettmers, Artidoro Pagnoni, Ari Holtzman and Luke Zettlemoyer, <em>QLoRA: Efficient Finetuning of Quantized LLMs</em>, NeurIPS 2023, <a href="https://arxiv.org/abs/2305.14314">arXiv:2305.14314</a> (CC BY 4.0). Quotations are brief and attributed; LoRA's results are summarized in tables written for this page, and QLoRA's selected table rows are reproduced under its licence. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §2
+    Phi: { tex: "\\Phi", name: "All the model's weights", meaning: "Every learned number in the model. Full fine-tuning changes all of them.", shape: "about 175 billion numbers for GPT-3", example: "Φ₀ is the pretrained starting point" },
+    sumZ: { tex: "\\sum_{(x,y)\\in\\mathcal{Z}}", name: "Sum over training pairs", meaning: "Add up over every (prompt, target) pair in the task's dataset Z.", shape: "N pairs", example: "each (question, SQL) pair" },
+    sumt: { tex: "\\sum_{t=1}^{|y|}", name: "Sum over target tokens", meaning: "Add up over every token position t of the target y, from the first to the last (|y| is its length).", shape: "|y| terms", example: "3 terms for a 3-token target" },
+    log: { tex: "\\log", name: "Natural logarithm", meaning: "Turns probabilities into negative numbers that add up nicely: log 1 = 0, and smaller probabilities give more negative logs.", shape: "one number", example: "ln 0.5 = −0.69" },
+    PPhi: { tex: "P_{\\Phi}", name: "The model's probability", meaning: "How likely the model with weights Φ thinks a token is.", shape: "between 0 and 1", example: "0.8 for the second SQL token" },
+    yt: { tex: "y_t", name: "The t-th target token", meaning: "The correct token at position t.", shape: "one token", example: "“SELECT”" },
+    x: { tex: "x", name: "The prompt", meaning: "The input the model is conditioned on.", shape: "a token sequence", example: "“How many users signed up in May?”" },
+    ylt: { tex: "y_{<t}", name: "Target tokens so far", meaning: "Every correct token before position t; the model sees them while predicting y_t.", shape: "t − 1 tokens", example: "the tokens before “COUNT”" },
+    // §4.1
+    h: { tex: "h", name: "The layer's output", meaning: "What this weight matrix produces for input x.", shape: "d numbers", example: "W₀x plus (1, 0, 2, 0) in the toy" },
+    W0: { tex: "W_0", name: "Frozen pretrained weights", meaning: "The original weight matrix. It receives no gradient and never changes during LoRA training.", shape: "d × k (e.g. 4096 × 4096)", example: "16.8 million numbers at d = 4096" },
+    xv: { tex: "x", name: "The layer's input", meaning: "The vector arriving at this weight matrix.", shape: "k numbers", example: "(2, 1, 0, 1) in the toy" },
+    dW: { tex: "\\Delta W", name: "The update", meaning: "The change to W₀ that fine-tuning would learn. LoRA forces it to be low rank by writing it as BA.", shape: "d × k", example: "the rank-1 4 × 4 table in §1" },
+    B: { tex: "B", name: "Expanding matrix", meaning: "Trainable. Turns the r squeezed numbers back into d numbers. Initialized to all zeros, so the update starts at zero.", shape: "d × r (4096 × 8)", example: "(1, 0, 2, 0) as a column" },
+    A: { tex: "A", name: "Squeezing matrix", meaning: "Trainable. Projects the input down to just r numbers. Initialized with random Gaussian values.", shape: "r × k (8 × 4096)", example: "(0.5, 1, 0, −1) as a row" },
+    rk: { tex: "r", name: "Rank", meaning: "How many numbers the side path squeezes through; how many independent directions the update can have. Much smaller than d.", shape: "1 to 64 in the paper", example: "1 in the toy; 4 or 8 for GPT-3" },
+    scale: { tex: "\\tfrac{\\alpha}{r}", name: "Scaling factor", meaning: "α is a constant; dividing by r keeps the update's size steady when you change r, so you don't have to re-tune the learning rate.", shape: "one number", example: "1 when α = r" },
+    Wm: { tex: "W", name: "Merged weights", meaning: "W₀ + BA computed once before serving. Same shape as W₀, so inference speed is unchanged.", shape: "d × k", example: "still 4 × 4 in the toy" },
+    // §7.2
+    phi: { tex: "\\phi", name: "Subspace similarity", meaning: "How much of one set of directions lies inside another: 1 = fully contained, 0 = unrelated.", shape: "between 0 and 1", example: "above 0.5 for the top direction" },
+    frob: { tex: "\\lVert U^{i\\top}U^{j}\\rVert_F^2", name: "Squared overlap", meaning: "Multiply the two sets of direction vectors and measure the total size (squared Frobenius norm) of the result. It counts how much they line up.", shape: "between 0 and min(i, j)", example: "about 0.5 or more for i = j = 1" },
+    minij: { tex: "\\min(i, j)", name: "Normalizer", meaning: "The most the overlap could be; dividing by it puts φ on a 0 to 1 scale.", shape: "a whole number", example: "1 when i = j = 1" },
+    // QLoRA
+    qi: { tex: "q_i", name: "The i-th quantization level", meaning: "One of the 2ᵏ values every weight gets rounded to.", shape: "between −1 and 1 after rescaling", example: "0.080 is one NF4 level" },
+    QX: { tex: "Q_X", name: "Quantile function of the bell curve", meaning: "Answers: below what value does a given fraction of a standard normal distribution lie? Q_X(0.5) = 0.", shape: "a function", example: "Q_X(0.5) = 0; Q_X(0.84) ≈ 1" },
+    ii: { tex: "i", name: "Which level", meaning: "A counter over the slices of the bell curve.", shape: "0 to 2ᵏ − 1", example: "0 … 15 for 4 bits" },
+    kbits: { tex: "k", name: "Bits per weight", meaning: "How many bits each stored weight uses. k bits give 2ᵏ levels.", shape: "a whole number", example: "4, so 16 levels" },
+    over1: { tex: "\\tfrac{32}{64}", name: "Overhead without double quantization", meaning: "One 32-bit scale shared by a block of 64 weights costs 32 / 64 bits per weight.", shape: "bits per parameter", example: "0.5" },
+    over2: { tex: "\\tfrac{8}{64}+\\tfrac{32}{64\\cdot 256}", name: "Overhead with double quantization", meaning: "Scales stored in 8 bits (one per 64 weights), plus one 32-bit scale per 256 of those scales.", shape: "bits per parameter", example: "0.125 + 0.002 = 0.127" },
+    Yq: { tex: "\\mathbf{Y}", name: "Output", meaning: "The layer's output, computed in 16-bit brain float (BF16).", shape: "batch × d", example: "" },
+    Xq: { tex: "\\mathbf{X}", name: "Input", meaning: "The layer's input, in BF16.", shape: "batch × d", example: "" },
+    dd: { tex: "\\text{doubleDequant}", name: "Double dequantization", meaning: "First expand the 8-bit scales using c₁, then use them to expand the 4-bit weights back to BF16.", shape: "returns a d × d BF16 matrix", example: "level 0.080 × scale 0.31 → 0.025" },
+    c1: { tex: "c_1^{\\text{FP32}}", name: "Second-level constants", meaning: "The 32-bit scales used to decompress the first-level scales (one per 256).", shape: "few", example: "" },
+    c2: { tex: "c_2^{\\text{k-bit}}", name: "First-level constants", meaning: "The per-block scales, themselves stored in 8 bits.", shape: "one per 64 weights", example: "0.31 in the tiny example" },
+    Wnf4: { tex: "\\mathbf{W}^{\\text{NF4}}", name: "Frozen weights in NF4", meaning: "The base model's weights stored as 4-bit NormalFloat level numbers.", shape: "d × d, 4 bits each", example: "the level 0.080" },
+    L1: { tex: "\\mathbf{L}_1", name: "LoRA matrix 1", meaning: "The trainable squeeze matrix (A in the LoRA paper's notation, written with the input on the left).", shape: "d × r", example: "" },
+    L2: { tex: "\\mathbf{L}_2", name: "LoRA matrix 2", meaning: "The trainable expand matrix (B in LoRA's notation).", shape: "r × d", example: "" },
+  },
+
+  blocks: {
+    x: { title: "x: the input", body: "<p>The vector arriving at this layer, for example one token's 4,096 numbers. It feeds both paths.</p>", shape: "d numbers" },
+    w0: { title: "W₀: the frozen weights", body: "<p>The pretrained matrix, untouched. It gets no gradient, and the optimizer keeps no state for it, which is where most of the memory saving comes from.</p>", shape: "d × d (4096 × 4096 = 16.8M numbers)" },
+    A: { title: "A: squeeze to r numbers", body: "<p>Trainable. Starts with random Gaussian values. Multiplying x by A turns d numbers into r numbers.</p>", shape: "r × d (8 × 4096 = 32,768 numbers)", lesson: "primer/ml/training_stages.html" },
+    r: { title: "r: the narrow waist", body: "<p>Everything the adapter can change must pass through these r numbers. That bottleneck is what makes the update low rank. Drag the rank slider below the diagram to feel its effect on size.</p>", shape: "r numbers (1 to 64)" },
+    B: { title: "B: expand back to d", body: "<p>Trainable. Starts at <strong>zero</strong>, so the whole side path outputs nothing at first and training begins from the original model.</p>", shape: "d × r (4096 × 8 = 32,768 numbers)", lesson: "primer/ml/training_stages.html" },
+    sum: { title: "Add", body: "<p>The frozen output and the correction are added coordinate by coordinate. Because this is plain addition, BA can later be folded into W₀.</p>", shape: "d numbers" },
+    h: { title: "h: the output", body: "<p>h = W₀x + BAx (times α/r). After merging, a single matrix W = W₀ + BA produces the same h at the original speed.</p>", shape: "d numbers" },
+  },
+
+  onReady(P) {
+    rankDemo(P);
+    paramBars();
+    memDemo();
+    nf4Demo();
+  },
+};
+
+/* small deterministic PRNG so demos look the same for everyone */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gaussian(rand) {
+  const u = Math.max(rand(), 1e-12), v = rand();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+const logBar = (label, value, top, color, note) => {
+  const w = Math.max(2, (Math.log10(Math.max(value, 1)) / top) * 100);
+  return `<div class="share-row" style="grid-template-columns:9rem minmax(0,1fr) 8rem"><span>${label}</span><div><div class="share-bar" style="width:${w.toFixed(1)}%;background:${color}"></div></div><span>${note}</span></div>`;
+};
+
+/* ---- rank slider: parameter count + BA heatmap ---- */
+function rankDemo(P) {
+  const ranks = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+  const widths = [1024, 2048, 4096, 12288];
+  const rs = document.getElementById("rk-slider"), ds = document.getElementById("d-slider");
+  const rv = document.getElementById("rk-v"), dv = document.getElementById("d-v");
+  const bars = document.getElementById("rk-bars"), out = document.getElementById("rk-readout");
+  const canvas = document.getElementById("rk-canvas"), cread = document.getElementById("rk-canvas-readout");
+  const n = 24;
+  function draw() {
+    const r = ranks[+rs.value], d = widths[+ds.value];
+    rv.textContent = r; dv.textContent = d.toLocaleString();
+    const full = d * d, lora = 2 * d * r;
+    const top = Math.log10(full) * 1.02;
+    bars.innerHTML =
+      logBar("full fine-tune d × d", full, top, "var(--wire)", full.toLocaleString()) +
+      logBar("LoRA 2 × d × r", lora, top, "var(--accent)", lora.toLocaleString());
+    out.innerHTML = `LoRA trains <strong>${(full / lora).toFixed(0)}× fewer</strong> numbers for this matrix (${(100 * lora / full).toFixed(3)}% of it). Bars use a log scale.`;
+    // heatmap of a 24x24 corner of BA with rank min(r, 24)
+    const rr = Math.min(r, n);
+    const rand = mulberry32(7);
+    const B = Array.from({ length: n }, () => Array.from({ length: rr }, () => gaussian(rand)));
+    const A = Array.from({ length: rr }, () => Array.from({ length: n }, () => gaussian(rand)));
+    const M = B.map((row) => Array.from({ length: n }, (_, j) => row.reduce((s, b, k) => s + b * A[k][j], 0) / Math.sqrt(rr)));
+    const mx = Math.max(...M.flat().map(Math.abs));
+    canvas.replaceWith(canvas.cloneNode(false));
+    const c2 = document.getElementById("rk-canvas");
+    P.heatmap(c2, {
+      rows: n, cols: n, min: -mx, max: mx, cell: 15, value: (i, j) => M[i][j],
+      onHover(i, j, v) { if (i === null) return; cread.textContent = `row ${i + 1}, column ${j + 1} of BA (rank ${rr}): ${v.toFixed(2)}. Red is positive, blue negative.`; },
+    });
+  }
+  rs.addEventListener("input", draw); ds.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- trainable-parameter bars for the results table ---- */
+function paramBars() {
+  const rows = [["RoBERTa-base FT", 125e6, false], ["RoBERTa-base LoRA", 0.3e6, true], ["DeBERTa-XXL FT", 1500e6, false], ["DeBERTa-XXL LoRA", 4.7e6, true], ["GPT-2 M FT", 354.9e6, false], ["GPT-2 M LoRA", 0.35e6, true], ["GPT-3 FT", 175255.8e6, false], ["GPT-3 LoRA", 4.7e6, true]];
+  const top = Math.log10(175255.8e6) * 1.02;
+  const fmt = (v) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : `${(v / 1e6).toFixed(v < 1e6 ? 2 : 1)}M`);
+  document.getElementById("params-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Trainable parameters, log scale (Hu et al., 2021)</div>` +
+    rows.map(([l, v, lo]) => logBar(l, v, top, lo ? "var(--accent)" : "var(--wire)", fmt(v))).join("");
+}
+
+/* ---- memory rule of thumb ---- */
+function memDemo() {
+  const sizes = [7, 13, 33, 65];
+  const s = document.getElementById("mem-slider"), v = document.getElementById("mem-v");
+  const bars = document.getElementById("mem-bars"), out = document.getElementById("mem-readout");
+  function draw() {
+    const n = sizes[+s.value];
+    v.textContent = `${n}B`;
+    const full = n * 12, lora = n * 2, q = n * (0.5 + 0.127 / 8);
+    const top = Math.log10(1000);
+    const row = (label, gb, color) => {
+      const w = Math.max(2, (Math.log10(Math.max(gb, 1)) / top) * 100);
+      return `<div class="share-row" style="grid-template-columns:10rem minmax(0,1fr) 5rem;position:relative"><span>${label}</span><div style="position:relative"><div class="share-bar" style="width:${w.toFixed(1)}%;background:${color}"></div><div style="position:absolute;top:-3px;bottom:-3px;left:${((Math.log10(48) / top) * 100).toFixed(1)}%;border-left:2px dashed var(--active)" title="one 48 GB GPU"></div></div><span>${gb.toFixed(0)} GB</span></div>`;
+    };
+    bars.innerHTML = row("full fine-tune, 16-bit", full, "var(--wire)") + row("LoRA, 16-bit base", lora, "var(--lin-stroke)") + row("QLoRA, 4-bit base", q, "var(--accent)");
+    out.innerHTML = `${n}B parameters: full fine-tuning ≈ <strong>${full.toFixed(0)} GB</strong>, LoRA ≈ <strong>${lora.toFixed(0)} GB</strong>, QLoRA ≈ <strong>${q.toFixed(1)} GB</strong>. Dashed line: one 48 GB GPU. Log scale.`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- NF4 vs evenly spaced 4-bit, computed live ---- */
+function nf4Demo() {
+  const NF4 = [-1.0, -0.6961928009986877, -0.5250730514526367, -0.39491748809814453, -0.28444138169288635, -0.18477343022823334, -0.09105003625154495, 0.0, 0.07958029955625534, 0.16093020141124725, 0.24611230194568634, 0.33791524171829224, 0.44070982933044434, 0.5626170039176941, 0.7229568362236023, 1.0];
+  const INT4 = Array.from({ length: 16 }, (_, i) => -1 + (2 * i) / 15);
+  const rand = mulberry32(2023);
+  const blocks = 400, bs = 64;
+  const w = Array.from({ length: blocks * bs }, () => gaussian(rand));
+  const norm = [], scale = [];
+  for (let b = 0; b < blocks; b++) {
+    const blk = w.slice(b * bs, (b + 1) * bs);
+    const c = Math.max(...blk.map(Math.abs));
+    blk.forEach((x) => { norm.push(x / c); scale.push(c); });
+  }
+  const nearest = (levels, x) => levels.reduce((best, l, i) => (Math.abs(x - l) < Math.abs(x - levels[best]) ? i : best), 0);
+  const stats = (levels) => {
+    let se = 0; const used = new Array(16).fill(0);
+    norm.forEach((x, i) => { const k = nearest(levels, x); used[k]++; const back = levels[k] * scale[i]; se += (back - w[i]) ** 2; });
+    return { mse: se / w.length, used };
+  };
+  const S = { nf4: stats(NF4), int4: stats(INT4) };
+  const svg = document.getElementById("nf4-svg"), out = document.getElementById("nf4-readout");
+  const NS = "http://www.w3.org/2000/svg";
+  const bins = 60, hist = new Array(bins).fill(0);
+  norm.forEach((x) => hist[Math.min(bins - 1, Math.floor(((x + 1) / 2) * bins))]++);
+  const hmax = Math.max(...hist);
+  const X = (v) => 20 + ((v + 1) / 2) * 600;
+  function draw(which) {
+    svg.textContent = "";
+    hist.forEach((h, i) => {
+      const r = document.createElementNS(NS, "rect");
+      const x0 = X(-1 + (2 * i) / bins);
+      r.setAttribute("x", x0); r.setAttribute("width", 600 / bins - 1);
+      r.setAttribute("y", 170 - (h / hmax) * 150); r.setAttribute("height", (h / hmax) * 150);
+      r.setAttribute("fill", "var(--border)");
+      svg.appendChild(r);
+    });
+    (which === "nf4" ? NF4 : INT4).forEach((l) => {
+      const ln = document.createElementNS(NS, "line");
+      ln.setAttribute("x1", X(l)); ln.setAttribute("x2", X(l)); ln.setAttribute("y1", 14); ln.setAttribute("y2", 172);
+      ln.setAttribute("stroke", which === "nf4" ? "var(--accent)" : "var(--active)"); ln.setAttribute("stroke-width", 2);
+      svg.appendChild(ln);
+    });
+    [-1, -0.5, 0, 0.5, 1].forEach((t) => {
+      const tx = document.createElementNS(NS, "text");
+      tx.setAttribute("x", X(t)); tx.setAttribute("y", 190); tx.setAttribute("text-anchor", "middle"); tx.setAttribute("class", "lbl");
+      tx.textContent = t; svg.appendChild(tx);
+    });
+    const s = S[which], other = S[which === "nf4" ? "int4" : "nf4"];
+    const busiest = Math.max(...s.used) / norm.length, quietest = Math.min(...s.used) / norm.length;
+    out.innerHTML = `<strong>${which === "nf4" ? "NF4" : "Evenly spaced 4-bit"}</strong>: mean squared rounding error <strong>${s.mse.toFixed(5)}</strong> (the other scheme: ${other.mse.toFixed(5)}). Busiest level holds ${(busiest * 100).toFixed(1)}% of weights, quietest ${(quietest * 100).toFixed(1)}%.`;
+  }
+  document.querySelectorAll("[data-q]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-q]").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+      draw(btn.dataset.q);
+    })
+  );
+  draw("nf4");
+}
+</script>
+</body>
+</html>

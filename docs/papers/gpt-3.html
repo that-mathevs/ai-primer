@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPT-3: Language Models are Few-Shot Learners, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Brown et al. (2020), the GPT-3 paper that showed a large enough language model can learn new tasks from a few examples in its prompt.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>/* page-local: show which toggle is selected */ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--fg);font-weight:600}</style>
+</head>
+<body data-paper="gpt-3">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Approach</a>
+        <ol>
+          <li><a href="#s2-0">Zero, one and few shots</a></li>
+          <li><a href="#s2-1">2.1 Model and architectures</a></li>
+          <li><a href="#s2-2">2.2 Training dataset</a></li>
+          <li><a href="#s2-3">2.3 Training process</a></li>
+          <li><a href="#s2-4">2.4 Evaluation</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Results</a>
+        <ol>
+          <li><a href="#s3-1">3.1 LAMBADA and completion</a></li>
+          <li><a href="#s3-2">3.2 Closed-book questions</a></li>
+          <li><a href="#s3-9-1">3.9.1 Arithmetic</a></li>
+          <li><a href="#s3-9-4">3.9.4 News articles</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Benchmark contamination</a></li>
+      <li><a href="#s5">5 Limitations</a></li>
+      <li><a href="#s6">6 Broader impacts and energy</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Language Models are Few-Shot Learners (GPT-3), annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Brown, Mann, Ryder, Subbiah and 27 co-authors at OpenAI (2020), the paper that showed a large enough <span class="t" data-t="llm">language model</span> can pick up a new task from a handful of examples written into its prompt.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2005.14165">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2005.14165">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2005.14165">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper's structure, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its figures are redrawn from scratch and its tables are not reproduced: a few key result numbers are restated in new tables and charts, each attributed to the table it comes from. The paper is 75 pages long; this page covers the sections that shaped the field and links to the original on every heading.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap. So does every symbol in every equation.</li>
+  <li>The <strong>prompt builder</strong> in §2 lets you assemble zero-, one- and few-shot prompts yourself. It is the single most useful idea in the paper, and it is how everyone still talks to language models.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>. The code that walks a prompt through a model end to end is in <a class="lesson" data-lesson="primer/ml/big_picture.html">the big picture lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165">original</a></span></h2>
+<blockquote class="quote">“Here we show that scaling up language models greatly improves task-agnostic, few-shot performance, sometimes even reaching competitiveness with prior state-of-the-art fine-tuning approaches.”<cite>Brown et al. (2020), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Before GPT-3, teaching a model a new job was like hiring a temp and sending them on a week-long training course for every new task: thousands of labelled examples and a round of <span class="t" data-t="fine-tuning">fine-tuning</span>. GPT-3 is more like a very well-read new hire who, shown two or three filled-in forms, can fill in the next one straight away. No retraining, no change to a single weight: just examples in the message you send.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>GPT-3 has 175 billion <span class="t" data-t="parameters">parameters</span>, 10 times more than any earlier non-sparse language model.</li>
+  <li>With no fine-tuning at all, only examples in the prompt, it is strong on translation, question answering and fill-in-the-blank tasks, and sometimes matches fine-tuned systems.</li>
+  <li>It can do some on-the-fly tasks it was never trained for, such as 3-digit arithmetic and unscrambling words.</li>
+  <li>People could barely tell its short news articles from human-written ones.</li>
+  <li>It still fails on some tasks, and training on a web-scale corpus raises real methodological problems.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>This is the paper that turned “prompting” into the main way people use AI. Every time you paste an example into a chat and say “do it like this”, you are doing what this paper named few-shot learning.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S1">original</a></span></h2>
+<blockquote class="quote">“We use the term “in-context learning” to describe the inner loop of this process, which occurs within the forward-pass upon each sequence.”<cite>Brown et al. (2020), Figure 1.1 caption</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>There are two kinds of learning in this paper, running on two very different clocks. The <strong>outer loop</strong> is <span class="t" data-t="pretraining">pre-training</span>: months of reading the internet, slowly adjusting billions of weights. The <strong>inner loop</strong> happens in a fraction of a second, inside a single prompt: the model notices the pattern in the examples you gave (“English word, arrow, French word”) and continues it. Nothing is stored; close the chat and the “learning” is gone. That inner loop is <span class="t" data-tip-title="In-context learning" data-tip="Picking up a task from instructions or examples placed in the prompt, with no change to the model's weights. It lasts only for that one input.">in-context learning</span>.</p>
+<h4>Tiny example</h4>
+<p>Somewhere in its training data the model has seen pages that list word translations, pages of worked sums, and pages of quiz questions followed by answers. So a prompt that <em>looks like</em> the start of such a page is naturally continued in the same style. Show it “cat → chat, dog → chien, cheese →” and the most likely next token is “fromage”, because that is what such a list would say next.</p>
+<h4>Why it matters</h4>
+<p>The introduction's argument is practical: collecting thousands of labelled examples for every task is expensive, fine-tuned models can overfit narrow datasets, and people learn most tasks from a sentence of instruction and a couple of examples. If a model could too, it would be vastly more useful. The bet is that scale makes this possible.</p>
+</section>
+
+<section id="s2">
+<h2>2 Approach <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S2">original</a></span></h2>
+
+<section id="s2-0">
+<h3>Zero, one and few shots</h3>
+<blockquote class="quote">“…the model is given a few demonstrations of the task at inference time as conditioning […], but no weight updates are allowed.”<cite>Brown et al. (2020), §2, defining few-shot</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Imagine asking a colleague to translate a word. <strong>Zero-shot:</strong> you just describe the job (“translate English to French: cheese”). <strong>One-shot:</strong> you describe it and show one worked example. <strong>Few-shot:</strong> you show several. <strong>Fine-tuning</strong> is the old way: send them on a course and permanently change what they know.</p>
+<figure class="ix" id="fig21">
+  <div class="ixgrid">
+  <svg viewBox="0 0 400 330" role="img" aria-label="Fine-tuning compared with zero-, one- and few-shot prompting">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="50" y="16" text-anchor="middle" class="lbl">fine-tuning</text>
+    <text x="150" y="16" text-anchor="middle" class="lbl">zero-shot</text>
+    <text x="250" y="16" text-anchor="middle" class="lbl">one-shot</text>
+    <text x="350" y="16" text-anchor="middle" class="lbl">few-shot</text>
+    <g class="blk plain" data-block="ft_ex"><rect x="8" y="30" width="84" height="26" rx="6"/><text x="50" y="47" text-anchor="middle">example 1</text></g>
+    <g class="blk lin" data-block="ft_grad"><rect x="8" y="64" width="84" height="26" rx="6"/><text x="50" y="81" text-anchor="middle">gradient step</text></g>
+    <g class="blk plain" data-block="ft_ex"><rect x="8" y="98" width="84" height="26" rx="6"/><text x="50" y="115" text-anchor="middle">example 2</text></g>
+    <g class="blk lin" data-block="ft_grad"><rect x="8" y="132" width="84" height="26" rx="6"/><text x="50" y="149" text-anchor="middle">gradient step</text></g>
+    <g class="blk plain" data-block="ft_more"><rect x="8" y="166" width="84" height="26" rx="6"/><text x="50" y="183" text-anchor="middle">… thousands</text></g>
+    <g class="blk emb" data-block="ft_model"><rect x="8" y="215" width="84" height="40" rx="6"/><text x="50" y="233" text-anchor="middle">new weights</text><text x="50" y="247" text-anchor="middle" class="lbl">per task</text></g>
+    <path class="wire" d="M50,192 V213" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="desc"><rect x="108" y="30" width="84" height="26" rx="6"/><text x="150" y="47" text-anchor="middle">instruction</text></g>
+    <g class="blk attn" data-block="desc"><rect x="208" y="30" width="84" height="26" rx="6"/><text x="250" y="47" text-anchor="middle">instruction</text></g>
+    <g class="blk attn" data-block="desc"><rect x="308" y="30" width="84" height="26" rx="6"/><text x="350" y="47" text-anchor="middle">instruction</text></g>
+    <g class="blk ff" data-block="demo"><rect x="208" y="64" width="84" height="26" rx="6"/><text x="250" y="81" text-anchor="middle">1 example</text></g>
+    <g class="blk ff" data-block="demo"><rect x="308" y="64" width="84" height="26" rx="6"/><text x="350" y="81" text-anchor="middle">example 1</text></g>
+    <g class="blk ff" data-block="demo"><rect x="308" y="98" width="84" height="26" rx="6"/><text x="350" y="115" text-anchor="middle">example 2</text></g>
+    <g class="blk ff" data-block="demo_k"><rect x="308" y="132" width="84" height="26" rx="6"/><text x="350" y="149" text-anchor="middle">… K examples</text></g>
+    <g class="blk soft" data-block="prompt"><rect x="108" y="64" width="84" height="26" rx="6"/><text x="150" y="81" text-anchor="middle">cheese =&gt;</text></g>
+    <g class="blk soft" data-block="prompt"><rect x="208" y="98" width="84" height="26" rx="6"/><text x="250" y="115" text-anchor="middle">cheese =&gt;</text></g>
+    <g class="blk soft" data-block="prompt"><rect x="308" y="166" width="84" height="26" rx="6"/><text x="350" y="183" text-anchor="middle">cheese =&gt;</text></g>
+    <path class="wire" d="M150,90 V213" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,124 V213" marker-end="url(#arr)"/>
+    <path class="wire" d="M350,192 V213" marker-end="url(#arr)"/>
+    <g class="blk frame" data-block="frozen"><rect x="104" y="215" width="292" height="40" rx="8"/></g>
+    <text x="250" y="240" text-anchor="middle">one frozen model, weights never change</text>
+    <g class="blk plain" data-block="answer"><rect x="208" y="285" width="84" height="26" rx="6"/><text x="250" y="302" text-anchor="middle">fromage</text></g>
+    <path class="wire" d="M250,255 V283" marker-end="url(#arr)"/>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Compare the left column with the other three.</p></div>
+  </div>
+  <figcaption>Figure 2.1 of the paper, redrawn with new example words: fine-tuning compared with zero-, one- and few-shot prompting. Based on Brown et al. (2020), Figure 2.1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the left column is fine-tuning. Each example triggers a <span class="t" data-t="gradient">gradient</span> step, thousands of them, and the result is a new copy of the model for that one task. The three columns on the right all feed a <em>single frozen model</em> (the dashed box): the only difference between them is how much text is placed in front of the question. Zero-shot has only a description; one-shot adds one worked example; few-shot adds several (the paper uses 10 to 100, as many as fit). The model simply continues the text, and its continuation is the answer.</p>
+
+<h4>Try it: build a prompt</h4>
+<div class="play" id="prompt-play">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Task:</span>
+    <button type="button" data-task="translate" aria-pressed="true">English → French</button>
+    <button type="button" data-task="add" aria-pressed="false">3-digit addition</button>
+    <button type="button" data-task="unscramble" aria-pressed="false">unscramble words</button>
+  </div>
+  <div class="sliders" style="margin-top:.6rem">
+    <label for="k-shots">examples K</label><input type="range" id="k-shots" min="0" max="8" step="1" value="3"><output id="k-shots-v">3</output>
+  </div>
+  <label class="ui" style="font-size:.85rem;display:block;margin:.4rem 0"><input type="checkbox" id="k-desc" checked> include the task description</label>
+  <pre id="prompt-text" style="white-space:pre-wrap;background:var(--code-bg);padding:.7rem;border-radius:8px;font-size:.85rem;margin:.5rem 0"></pre>
+  <p class="readout" id="prompt-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grey box is exactly the text the model would receive. Drag K from 0 up: at K = 0 it is a zero-shot prompt, at 1 one-shot, above that few-shot. The last line always ends where the model must continue, and the expected continuation is shown in the readout. The token count is estimated at about 4 characters per token and compared with GPT-3's 2,048-token <span class="t" data-t="context window">context window</span>, which is what capped K in the paper. The example words and numbers are new ones chosen for this page.</p>
+
+<h4>The math: what the model is doing</h4>
+<p>Underneath, GPT-3 does one thing: it gives a probability for the next <span class="t" data-t="token">token</span> given everything before it. The probability of a whole piece of text is the product of those next-token probabilities.</p>
+<div class="eq" data-tex="\htmlData{sym=Px}{P(x)} = \htmlData{sym=prod}{\prod_{t=1}^{T}} \htmlData{sym=Pnext}{P(x_t \mid x_{<t})}" data-fallback="P(x) = Π_{t=1..T} P(x_t | x_<t)"></div>
+<div class="symtable" data-syms="Px,prod,Pnext,T"></div>
+<p class="inwords"><strong>In words:</strong> “the chance of a whole text is the chance of its first token, times the chance of the second given the first, and so on to the end.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if the model gives “the” 0.1, then “cat” 0.3 given “the”, then “sat” 0.5 given “the cat”, the three-token text has probability 0.1 × 0.3 × 0.5 = <strong>0.015</strong>. A few-shot prompt is simply x<sub>&lt;t</sub>: the demonstrations change which next token looks likely.</p>
+<h4>Why it matters today</h4>
+<p>Prompting is still how most applications steer a model: a system prompt describes the task and a few examples pin down the format. Modern chat models are additionally trained to follow instructions (see <a href="instructgpt.html">InstructGPT</a>), so zero-shot works far better than it did for GPT-3, but few-shot examples remain the most reliable way to show an exact output format.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Model and architectures <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>GPT-3 is not a new design. It is GPT-2 (a <span class="t" data-t="decoder">decoder-only</span> <span class="t" data-t="transformer">Transformer</span>) scaled up, trained in eight sizes from 125 million to 175 billion parameters so the authors could watch how abilities change with size. The one architectural tweak: layers alternate between full attention and a cheaper, locally banded sparse attention.</p>
+<h4>Tiny example: counting the parameters</h4>
+<p>Almost all of a Transformer's weights live in the attention and feed-forward matrices, and a standard block has about 12·d<sub>model</sub><sup>2</sup> of them. Pick a size to check the paper's parameter count against this rule of thumb and to see the training compute.</p>
+<div class="play" id="size-play">
+  <div class="sliders"><label for="size-pick">model size</label><input type="range" id="size-pick" min="0" max="7" step="1" value="7"><output id="size-pick-v"></output></div>
+  <div class="tablewrap"><table><tbody id="size-body"></tbody></table></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each position of the slider is one of the paper's eight models (layer count, width and heads restated from Table 2.1). The first computed row applies the 12 × layers × width² rule; the second adds the embedding table (50,257 tokens × width), and together they land close to the paper's stated size. The last rows estimate training compute with the 6 × parameters × tokens rule, since every model saw 300 billion tokens. For the 175B model this gives 3.15 × 10<sup>23</sup> <span class="t" data-t="flops">FLOPs</span>, matching the paper's own figure of 3.14 × 10<sup>23</sup>.</p>
+<div class="eq" data-tex="\htmlData{sym=N}{N} \approx 12\, \htmlData{sym=nlayer}{n_{\text{layer}}}\, \htmlData{sym=dmodel}{d_{\text{model}}}^{2}, \qquad \htmlData{sym=C}{C} \approx 6\, \htmlData{sym=N}{N}\, \htmlData{sym=D}{D}" data-fallback="N ≈ 12 · n_layer · d_model²,  C ≈ 6 · N · D"></div>
+<div class="symtable" data-syms="N,nlayer,dmodel,C,D"></div>
+<p class="inwords"><strong>In words:</strong> “a Transformer's size is about twelve times the number of layers times the width squared; training costs about six arithmetic operations per parameter for every token of data.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 12 × 96 × 12,288<sup>2</sup> ≈ 174 billion parameters. Then 6 × 175 × 10<sup>9</sup> × 300 × 10<sup>9</sup> = 3.15 × 10<sup>23</sup> operations, about 3,640 petaflop/s-days: a machine doing 10<sup>15</sup> operations per second would need about 10 years.</p>
+<h4>Why it matters today</h4>
+<p>These two rules of thumb (12·L·d² and 6·N·D) are how practitioners estimate model size and training cost on the back of an envelope. The <a class="lesson" data-lesson="primer/ml/transformer.html">transformer lesson</a> counts parameters exactly and checks the rule; the <a href="scaling-laws.html">scaling laws companion</a> asks how to split a compute budget between N and D.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Training dataset <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“This essentially accepts a small amount of overfitting in exchange for higher quality training data.”<cite>Brown et al. (2020), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A reading list for a model. Most of the pages come from a filtered web crawl, but the authors deliberately hand the model the better books more often than their size alone would suggest, like a student who skims the newspaper once but rereads the good textbooks three times.</p>
+<div class="plot" id="mix-plot"><div id="mix-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each row is one source. The bar is its share of what the model actually read during training; the right-hand column shows how big the source is and how many times it was read in full over the 300 billion training tokens. Common Crawl makes up 60% of training but was not even read once in full (0.44 epochs), while Wikipedia, a small 3 billion tokens, was read 3.4 times. Numbers restated from Brown et al. (2020), Table 2.2.</p>
+<h4>Why it matters today</h4>
+<p>Data curation, weighting and deduplication are still among the most important and least visible parts of training a language model. The paper also removed near-duplicate documents so the held-out set stayed honest, a theme that returns in §4.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Training process <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S2.SS3">original</a></span></h3>
+<p>Larger models used larger <span class="t" data-t="batch">batches</span> and smaller <span class="t" data-t="learning rate">learning rates</span>: the 175B model used 3.2 million tokens per batch and a peak learning rate of 0.6 × 10<sup>−4</sup>, against 0.5 million tokens and 6.0 × 10<sup>−4</sup> for the smallest. To fit in memory, each model was split across many <span class="t" data-t="gpu">GPUs</span>, both within each matrix multiply and across layers, on a Microsoft cluster of V100 GPUs.</p>
+<p><strong>Everyday picture:</strong> a huge model takes careful, small steps (low learning rate) but averages each step over far more examples (big batch), like a large ship that turns slowly but steadily. The <a class="lesson" data-lesson="primer/ml/optimizers.html">optimizers lesson</a> shows why step size matters.</p>
+</section>
+
+<section id="s2-4">
+<h3>2.4 Evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S2.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>For a multiple-choice question, you don't ask the model to write an answer; you ask how <em>likely</em> it finds each option as a continuation, and pick the most likely. One trap: a long answer is a product of many probabilities below 1, so it always looks less likely than a short one. The fix is to compare the <em>average</em> per token.</p>
+<div class="eq" data-tex="\htmlData{sym=score}{\text{score}(c)} = \frac{1}{\htmlData{sym=clen}{|c|}} \htmlData{sym=sumt}{\sum_{t=1}^{|c|}} \htmlData{sym=logp}{\log P(c_t \mid \text{context}, c_{<t})}" data-fallback="score(c) = (1/|c|) Σ_t log P(c_t | context, c_<t)"></div>
+<div class="symtable" data-syms="score,clen,sumt,logp"></div>
+<p class="inwords"><strong>In words:</strong> “for each candidate answer, add up the log-probabilities of its tokens and divide by how many tokens it has; pick the candidate with the highest average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> answer A is two tokens with probabilities 0.5 and 0.4: ln 0.5 + ln 0.4 = −0.693 − 0.916 = −1.609, average <strong>−0.805</strong>. Answer B is one token with probability 0.3: ln 0.3 = <strong>−1.204</strong>. By total, B would win (−1.204 &gt; −1.609); by average, A wins (−0.805 &gt; −1.204). Length normalization stops long answers being penalized just for being long.</p>
+<p>The paper uses per-token averaging for most multiple-choice tasks, draws the K demonstrations at random from each task's training set, and uses K between 10 and 100 depending on how many fit in 2,048 tokens.</p>
+<h4>Why it matters today</h4>
+<p>Scoring options by likelihood is still how many benchmarks evaluate base models. The <a class="lesson" data-lesson="primer/ml/losses.html">loss functions lesson</a> explains log-probabilities and why they are summed rather than multiplied.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S3">original</a></span></h2>
+<p>The results span more than two dozen benchmarks. Four stories stand out.</p>
+
+<section id="s3-1">
+<h3>3.1 LAMBADA and completion tasks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S3.SS1.SSS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>LAMBADA is a fill-in-the-last-word test where you must read a whole paragraph to know the word: a test of long-range understanding. Few-shot examples help in a surprising way: they show the model that the answer must be exactly one word, which a plain continuation might not respect.</p>
+<div class="tablewrap"><table>
+  <caption>LAMBADA accuracy, restated from Brown et al. (2020), Table 3.2</caption>
+  <thead><tr><th>Setting</th><th class="num">Accuracy</th></tr></thead>
+  <tbody>
+    <tr><td>Previous best (a 17B-parameter model)</td><td class="num">68.0%</td></tr>
+    <tr><td>GPT-3 zero-shot</td><td class="num">76.2%</td></tr>
+    <tr><td>GPT-3 one-shot</td><td class="num">72.5%</td></tr>
+    <tr class="hl"><td>GPT-3 few-shot</td><td class="num">86.4%</td></tr>
+  </tbody>
+</table></div>
+<p>An 18-point jump over the previous state of the art, from examples in a prompt, with no training on the task.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Closed-book question answering <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>“Open book” systems search documents for the answer first (that is <a href="rag.html">retrieval-augmented generation</a>); “closed book” means answering from memory alone. On TriviaQA, GPT-3 few-shot scored <strong>71.2%</strong> closed-book, above the 68.0% of a fine-tuned open-book RAG system at the time (Table 3.3). On Natural Questions, which asks about more obscure facts, it scored 29.9% against RAG's 44.5%.</p>
+<h4>Why it matters today</h4>
+<p>This split still holds: large models remember popular facts well and obscure or recent facts badly, which is exactly why production systems retrieve documents instead of trusting memory. See the <a class="lesson" data-lesson="primer/agents/rag.html">RAG lesson</a>.</p>
+</section>
+
+<section id="s3-9-1">
+<h3>3.9.1 Arithmetic <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S3.SS9.SSS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Nobody taught GPT-3 to add. The test asks questions in plain English (“Q: What is 23 plus 58? A:”) to see whether a model that only predicts text has picked up arithmetic along the way.</p>
+<div class="plot" id="arith-plot">
+  <div class="controls ui">
+    <span>Setting:</span>
+    <button type="button" data-arith="0" aria-pressed="false">zero-shot</button>
+    <button type="button" data-arith="1" aria-pressed="false">one-shot</button>
+    <button type="button" data-arith="2" aria-pressed="true">few-shot</button>
+  </div>
+  <div id="arith-bars"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is GPT-3 175B's accuracy on one kind of problem, restated from Brown et al. (2020), Table 3.9. Toggle between settings. Two-digit addition is essentially solved few-shot (100%), three-digit addition is right about 80% of the time, and accuracy falls steeply with more digits (about 9% at five digits) and for multiplication (29%). Examples in the prompt help a great deal: two-digit addition goes from 77% zero-shot to 100% few-shot. The pattern looks like partial skill rather than a memorized table, but not like a reliable calculator either.</p>
+<h4>Why it matters today</h4>
+<p>Arithmetic is where the tokenizer quirks from the <a class="lesson" data-lesson="primer/ml/tokenization.html">tokenization lesson</a> bite: numbers split into irregular chunks. Modern systems either train heavily on maths, write out intermediate steps, or simply call a calculator tool.</p>
+</section>
+
+<section id="s3-9-4">
+<h3>3.9.4 News article generation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S3.SS9.SSS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>People were shown short news articles (about 200 words), some real and some written by models of each size, and asked which were machine-written. If they could tell perfectly they would score 100%; pure guessing scores 50%.</p>
+<div class="plot" id="news-plot">
+  <div id="news-chart"></div>
+  <p class="readout" id="news-readout">Hover or tap the chart to read each model's result.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is model size on a log scale, from 125 million to 175 billion parameters; the y-axis is how often people correctly spotted the machine-written article (restated from Brown et al., 2020, Table 3.11). The flat line is chance. As models grow, detection falls towards the line, reaching 52% for GPT-3 175B: barely better than a coin toss. A deliberately bad control model was spotted 86% of the time.</p>
+<h4>Why it matters today</h4>
+<p>This result drove the paper's long discussion of misuse, and it is why detecting machine-written text remains an unsolved problem rather than a solved one.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Measuring and preventing memorization of benchmarks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>If a student has seen the exam paper before the exam, a high score proves little. A model trained on a large slice of the internet may well have read the test questions. That is <span class="t" data-t="benchmark contamination">benchmark contamination</span>.</p>
+<p>The authors tried to remove every overlap with their benchmarks from the training data, but a bug left some in, and the model was too expensive to retrain. So they built “clean” versions of each benchmark, dropping every question that shared a 13-word sequence with the training data, and compared scores. For most benchmarks the score barely moved, though a few were flagged as possibly inflated.</p>
+<h4>Why it matters today</h4>
+<p>Contamination is now a standing concern for every published benchmark score. The <a class="lesson" data-lesson="primer/ml/regularization.html">regularization lesson</a> covers data leakage, its smaller cousin.</p>
+</section>
+
+<section id="s5">
+<h2>5 Limitations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S5">original</a></span></h2>
+<blockquote class="quote">“GPT-3 samples still sometimes repeat themselves semantically at the document level, start to lose coherence over sufficiently long passages, contradict themselves, and occasionally contain non-sequitur sentences or paragraphs.”<cite>Brown et al. (2020), §5</cite></blockquote>
+<p>The authors list further weaknesses: poor “common-sense physics” (the paper's example asks whether cheese put in a fridge will melt), near-chance performance on some comparison tasks, a training objective that weights every token equally whether it matters or not, no grounding in the physical world, poor sample efficiency during pre-training, and uncertainty about whether few-shot learning is genuinely learning a new task or recognizing one seen in training.</p>
+<p><strong>Why it matters today:</strong> several of these limitations directly motivated the next wave of work, especially the one about the objective. Training a model to follow instructions and to prefer helpful answers, rather than just to predict web text, is the subject of the <a href="instructgpt.html">InstructGPT companion</a>.</p>
+</section>
+
+<section id="s6">
+<h2>6 Broader impacts and energy <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S6.SS3">original</a></span></h2>
+<blockquote class="quote">“…even with the full GPT-3 175B, generating 100 pages of content from a trained model can cost on the order of 0.4 kW-hr, or only a few cents in energy costs.”<cite>Brown et al. (2020), §6.3</cite></blockquote>
+<p>The paper devotes a full section to misuse (disinformation, spam, phishing), to bias in how the model writes about gender, race and religion, and to energy. The energy argument is about <em>amortization</em>: training is enormously expensive once (thousands of petaflop/s-days), but each use afterwards is cheap, so the cost should be judged over the model's lifetime. It also points to <span class="t" data-t="distillation">distillation</span> as a way to make smaller, cheaper versions.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>What changed</th><th>Where to learn more</th></tr></thead>
+  <tbody>
+    <tr><td>Next-token prediction only</td><td>Instruction tuning and preference training (<span class="t" data-t="sft">SFT</span>, <span class="t" data-t="rlhf">RLHF</span>) made zero-shot requests work well</td><td><a data-lesson="primer/ml/training_stages.html">training stages lesson</a>, <a href="instructgpt.html">InstructGPT companion</a></td></tr>
+    <tr><td>175B parameters on 300B tokens</td><td>Later work found this model was under-trained for its size: smaller models on far more tokens do better per unit of compute</td><td><a href="scaling-laws.html">scaling laws companion</a></td></tr>
+    <tr><td>2,048-token context</td><td>Context windows grew by hundreds of times, thanks to efficient attention and position schemes</td><td><a href="flashattention.html">FlashAttention</a>, <a href="roformer.html">RoFormer</a></td></tr>
+    <tr><td>Closed-book knowledge</td><td>Retrieval supplies facts the model does not reliably remember</td><td><a data-lesson="primer/agents/rag.html">RAG lesson</a></td></tr>
+    <tr><td>Few-shot examples in the prompt</td><td>Still the standard way to pin down an output format; now usually combined with a system prompt</td><td><a data-lesson="primer/agents/context.html">context engineering lesson</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell and 21 further co-authors, <em>Language Models are Few-Shot Learners</em>, NeurIPS 2020. <a href="https://arxiv.org/abs/2005.14165">arXiv:2005.14165</a>. Quotations are brief and attributed; result numbers are restated in new tables and charts with attribution; the figure is redrawn with new example words. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    Px: { tex: "P(x)", name: "Probability of the whole text", meaning: "How likely the model thinks the entire sequence of tokens is.", shape: "a number from 0 to 1", example: "0.015 for “the cat sat” in the toy" },
+    prod: { tex: "\\prod_{t=1}^{T}", name: "Product over every position", meaning: "Multiply together what follows, once for each position t from 1 to T. (Σ adds; Π multiplies.)", shape: "one number", example: "0.1 × 0.3 × 0.5" },
+    Pnext: { tex: "P(x_t \\mid x_{<t})", name: "Next-token probability", meaning: "The probability the model gives token number t, given all the tokens before it (written x with “&lt;t” beneath, read “x before t”). The vertical bar means “given”. This is the only thing GPT-3 computes.", shape: "a number from 0 to 1", example: "P(“sat” | “the cat”) = 0.5" },
+    T: { tex: "T", name: "Length of the text", meaning: "How many tokens the text has.", shape: "a whole number", example: "3" },
+    N: { tex: "N", name: "Parameters", meaning: "How many learned numbers the model has (excluding the embedding table in the 12·L·d² rule).", shape: "a count", example: "about 174 billion for GPT-3" },
+    nlayer: { tex: "n_{\\text{layer}}", name: "Number of layers", meaning: "How many Transformer blocks are stacked.", shape: "a whole number", example: "96 for GPT-3 175B" },
+    dmodel: { tex: "d_{\\text{model}}", name: "Model width", meaning: "How many numbers represent each token between layers.", shape: "a whole number", example: "12,288 for GPT-3 175B" },
+    C: { tex: "C", name: "Training compute", meaning: "Total arithmetic operations (FLOPs) spent in training. The 6 comes from about 2 operations per parameter per token going forward and about 4 going backward.", shape: "a count of operations", example: "3.15 × 10^23" },
+    D: { tex: "D", name: "Training tokens", meaning: "How many tokens of text the model read during training.", shape: "a count", example: "300 billion for every GPT-3 size" },
+    score: { tex: "\\text{score}(c)", name: "Score of a candidate answer", meaning: "The average log-probability per token of candidate c. Higher (closer to 0) means the model finds it more natural.", shape: "a negative number", example: "−0.805 for answer A" },
+    clen: { tex: "|c|", name: "Length of the candidate", meaning: "How many tokens the candidate answer has. Dividing by it turns a total into an average.", shape: "a whole number", example: "2 for answer A" },
+    sumt: { tex: "\\sum_{t=1}^{|c|}", name: "Sum over the candidate's tokens", meaning: "Add up one log-probability per token of the answer.", shape: "one number", example: "−0.693 + (−0.916)" },
+    logp: { tex: "\\log P(c_t \\mid \\text{context}, c_{<t})", name: "Log-probability of one answer token", meaning: "The natural logarithm of the probability of the answer's t-th token, given the prompt and the answer's earlier tokens. Logs turn a product into a sum and are always ≤ 0 for probabilities.", shape: "a number ≤ 0", example: "ln 0.5 = −0.693" },
+  },
+
+  blocks: {
+    ft_ex: { title: "Training example", body: "<p>A labelled input-output pair for the one task being fine-tuned. Typically thousands to hundreds of thousands are needed.</p>", shape: "one labelled pair", lesson: "primer/ml/training_stages.html" },
+    ft_grad: { title: "Gradient update", body: "<p>After each example (or batch), every weight is nudged to reduce the error. This is what permanently changes the model.</p>", shape: "175 billion weights nudged", lesson: "primer/ml/optimizers.html" },
+    ft_more: { title: "Thousands more examples", body: "<p>The main cost of fine-tuning: a new labelled dataset for every task.</p>" },
+    ft_model: { title: "A new model per task", body: "<p>The output of fine-tuning is a modified copy of the model that is good at this task. GPT-3 was <strong>not</strong> fine-tuned anywhere in the paper.</p>" },
+    desc: { title: "Task description", body: "<p>A plain-language instruction, such as “Translate English to French:”. In zero-shot it is all the model gets.</p>", shape: "a few tokens" },
+    demo: { title: "Demonstration", body: "<p>A worked example written straight into the prompt: “cat =&gt; chat”. It changes nothing in the model; it only changes the text the model continues.</p>", shape: "a few tokens each" },
+    demo_k: { title: "K demonstrations", body: "<p>Few-shot uses as many examples as fit in the 2,048-token context window, typically 10 to 100 in the paper.</p>", shape: "K from 10 to 100" },
+    prompt: { title: "The question", body: "<p>The new case, left unfinished so the model's continuation is the answer.</p>", shape: "ends where the answer should start" },
+    frozen: { title: "One frozen model", body: "<p>The same 175B-parameter model serves all three prompting settings, with identical weights. The only thing that changes is the text in front of the question. This is <strong>in-context learning</strong>.</p>", lesson: "primer/ml/big_picture.html" },
+    answer: { title: "The continuation", body: "<p>Whatever tokens the model generates next. With a good prompt, that continuation is the answer.</p>", lesson: "primer/ml/inference.html" },
+  },
+
+  onReady(P) {
+    promptBuilder();
+    sizeTable();
+    mixBars();
+    arithmetic();
+    newsChart(P);
+  },
+};
+
+/* ---- zero / one / few-shot prompt builder (illustrative examples, new to this page) ---- */
+function promptBuilder() {
+  const tasks = {
+    translate: { desc: "Translate English to French:", ex: [["cat", "chat"], ["dog", "chien"], ["house", "maison"], ["water", "eau"], ["bread", "pain"], ["book", "livre"], ["apple", "pomme"], ["tree", "arbre"]], q: "cheese", a: "fromage", fmt: (a, b) => `${a} => ${b}`, qfmt: (a) => `${a} =>` },
+    add: { desc: "Add the two numbers.", ex: [["123 plus 456", "579"], ["207 plus 318", "525"], ["640 plus 99", "739"], ["815 plus 104", "919"], ["333 plus 222", "555"], ["450 plus 450", "900"], ["712 plus 186", "898"], ["509 plus 290", "799"]], q: "238 plus 571", a: "809", fmt: (a, b) => `Q: What is ${a}? A: ${b}`, qfmt: (a) => `Q: What is ${a}? A:` },
+    unscramble: { desc: "Unscramble the letters into a word.", ex: [["tca", "cat"], ["esuoh", "house"], ["retaw", "water"], ["enalp", "plane"], ["nrdgae", "garden"], ["kobo", "book"], ["tipcure", "picture"], ["mrdae", "dream"]], q: "etpanl", a: "planet", fmt: (a, b) => `${a} = ${b}`, qfmt: (a) => `${a} =` },
+  };
+  let task = "translate";
+  const k = document.getElementById("k-shots"), kv = document.getElementById("k-shots-v"), desc = document.getElementById("k-desc");
+  const box = document.getElementById("prompt-text"), out = document.getElementById("prompt-readout");
+  function draw() {
+    const t = tasks[task], K = +k.value;
+    kv.textContent = K;
+    const lines = [];
+    if (desc.checked) lines.push(t.desc);
+    t.ex.slice(0, K).forEach(([a, b]) => lines.push(t.fmt(a, b)));
+    lines.push(t.qfmt(t.q));
+    const text = lines.join("\n");
+    box.textContent = text;
+    const tokens = Math.ceil(text.length / 4);
+    const kind = K === 0 ? "zero-shot" : K === 1 ? "one-shot" : `few-shot (K = ${K})`;
+    out.innerHTML = `This is a <strong>${kind}</strong> prompt${desc.checked ? "" : " with no task description"}. Expected continuation: “<strong>${t.a}</strong>”. About ${tokens} tokens of GPT-3's 2,048-token context window (${(100 * tokens / 2048).toFixed(1)}%).` +
+      (K === 0 && !desc.checked ? " With neither a description nor an example the model has no idea what task you mean: this is the prompt that fails." : "");
+  }
+  document.querySelectorAll("[data-task]").forEach((b) => b.addEventListener("click", () => {
+    task = b.dataset.task;
+    document.querySelectorAll("[data-task]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    draw();
+  }));
+  k.addEventListener("input", draw); desc.addEventListener("change", draw);
+  draw();
+}
+
+/* ---- the eight model sizes (restated from Table 2.1) with computed parameters and compute ---- */
+function sizeTable() {
+  const models = [
+    ["GPT-3 Small", "125M", 12, 768, 12], ["GPT-3 Medium", "350M", 24, 1024, 16], ["GPT-3 Large", "760M", 24, 1536, 16],
+    ["GPT-3 XL", "1.3B", 24, 2048, 24], ["GPT-3 2.7B", "2.7B", 32, 2560, 32], ["GPT-3 6.7B", "6.7B", 32, 4096, 32],
+    ["GPT-3 13B", "13.0B", 40, 5140, 40], ["GPT-3 175B", "175.0B", 96, 12288, 96],
+  ];
+  const vocab = 50257, tokens = 300e9;
+  const s = document.getElementById("size-pick"), v = document.getElementById("size-pick-v"), body = document.getElementById("size-body");
+  const big = (x) => (x >= 1e9 ? `${(x / 1e9).toFixed(1)} billion` : `${(x / 1e6).toFixed(0)} million`);
+  const sci = (x) => { const e = Math.floor(Math.log10(x)); return `${(x / 10 ** e).toFixed(2)} × 10<sup>${e}</sup>`; };
+  function draw() {
+    const [name, stated, L, d, h] = models[+s.value];
+    v.textContent = name;
+    const core = 12 * L * d * d, emb = vocab * d, total = core + emb;
+    const statedN = parseFloat(stated) * (stated.endsWith("B") ? 1e9 : 1e6);
+    const C = 6 * statedN * tokens;
+    body.innerHTML = [
+      ["Stated in the paper", `${stated} parameters · ${L} layers · width ${d.toLocaleString()} · ${h} heads of ${Math.round(d / h)}`],
+      ["12 × layers × width²", `12 × ${L} × ${d.toLocaleString()}² = ${big(core)}`],
+      ["+ embedding table (50,257 × width)", `+ ${big(emb)} = <strong>${big(total)}</strong>`],
+      ["Training compute 6 × N × 300B tokens", `<strong>${sci(C)}</strong> FLOPs`],
+      ["In petaflop/s-days (÷ 8.64 × 10¹⁹)", `${Math.round(C / 8.64e19).toLocaleString()} PF-days`],
+    ].map(([a, b]) => `<tr><th>${a}</th><td>${b}</td></tr>`).join("");
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- dataset mix (restated from Table 2.2) ---- */
+function mixBars() {
+  const rows = [["Common Crawl (filtered)", 60, "410B tokens", 0.44], ["WebText2", 22, "19B", 2.9], ["Books1", 8, "12B", 1.9], ["Books2", 8, "55B", 0.43], ["Wikipedia", 3, "3B", 3.4]];
+  document.getElementById("mix-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Share of training mix · source size · times read in full during training</div>` +
+    rows.map(([n, w, size, ep]) => `<div class="share-row" style="grid-template-columns:10rem minmax(0,1fr) 9rem"><span>${n}</span><div><div class="share-bar" style="width:${w}%"></div></div><span>${w}% · ${size} · ${ep}×</span></div>`).join("");
+}
+
+/* ---- arithmetic accuracy (restated from Table 3.9) ---- */
+function arithmetic() {
+  const tasks = ["2-digit +", "2-digit −", "3-digit +", "3-digit −", "4-digit +", "4-digit −", "5-digit +", "5-digit −", "2-digit ×", "1-digit composite"];
+  const acc = [
+    [76.9, 58.0, 34.2, 48.3, 4.0, 7.5, 0.7, 0.8, 19.8, 9.8],
+    [99.6, 86.4, 65.5, 78.7, 14.0, 14.0, 3.5, 3.8, 27.4, 14.3],
+    [100.0, 98.9, 80.4, 94.2, 25.5, 26.8, 9.3, 9.9, 29.2, 21.3],
+  ];
+  const names = ["zero-shot", "one-shot", "few-shot"];
+  const el = document.getElementById("arith-bars");
+  function draw(i) {
+    el.innerHTML = `<div class="legend" style="margin:0 0 .4rem">GPT-3 175B, ${names[i]} accuracy (axis 0 to 100%)</div>` +
+      tasks.map((t, j) => `<div class="share-row" style="grid-template-columns:8.5rem minmax(0,1fr) 3.4rem"><span>${t}</span><div><div class="share-bar" style="width:${acc[i][j]}%"></div></div><span>${acc[i][j]}%</span></div>`).join("");
+    document.querySelectorAll("[data-arith]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.arith === i)));
+  }
+  document.querySelectorAll("[data-arith]").forEach((b) => b.addEventListener("click", () => draw(+b.dataset.arith)));
+  draw(2);
+}
+
+/* ---- human detection of machine-written news (restated from Table 3.11) ---- */
+function newsChart(P) {
+  const pts = [[125e6, 76], [350e6, 61], [760e6, 68], [1.3e9, 62], [2.7e9, 62], [6.7e9, 60], [13e9, 55], [175e9, 52]];
+  P.lineChart(document.getElementById("news-chart"), {
+    series: [
+      { name: "people who spotted the machine-written article (%)", points: pts },
+      { name: "chance (%)", points: [[125e6, 50], [175e9, 50]] },
+    ],
+    xLabel: "model size (parameters, log scale)", yLabel: "detection accuracy (%)", logX: true, yMin: 40, yMax: 90,
+    xFmt: (v) => (v >= 1e9 ? `${+(v / 1e9).toPrecision(3)}B` : `${+(v / 1e6).toPrecision(3)}M`), yFmt: (v) => `${Math.round(v)}`,
+    readout: document.getElementById("news-readout"), ariaLabel: "Human detection accuracy against model size",
+  });
+}
+</script>
+</body>
+</html>

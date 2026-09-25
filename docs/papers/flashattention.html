@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlashAttention, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Dao et al. (2022), FlashAttention: exact attention that is faster because it moves less data between GPU memories.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>/* page-local: show which toggle is selected */ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--fg);font-weight:600}</style>
+</head>
+<body data-paper="flashattention">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background</a>
+        <ol>
+          <li><a href="#s2-1">2.1 GPU memory and speed</a></li>
+          <li><a href="#s2-2">2.2 Standard attention</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 The algorithm</a>
+        <ol>
+          <li><a href="#s3-1a">3.1 Softmax in pieces</a></li>
+          <li><a href="#s3-1b">3.1 Tiling, animated</a></li>
+          <li><a href="#s3-1c">3.1 Recomputation and fusion</a></li>
+          <li><a href="#s3-2">3.2 How much traffic is saved</a></li>
+          <li><a href="#s3-3">3.3 Block-sparse</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a></li>
+      <li><a href="#s5">5 Limitations</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>FlashAttention, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra and Christopher Ré (2022), <em>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</em>: the same <span class="t" data-t="attention">attention</span> answer, computed much faster by moving far less data.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2205.14135">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2205.14135">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2205.14135">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its figures are redrawn from scratch and its tables are not reproduced; a few key numbers are restated in new tables with attribution. Every section heading links to the original.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap, and so does every symbol in every equation.</li>
+  <li>The <strong>tiling animation</strong> in §3.1 is the core of the paper: press Play in both modes and watch the traffic counters.</li>
+</ul>
+<p>This page assumes you know what attention computes; if not, start with the <a href="attention-is-all-you-need.html">Attention Is All You Need companion</a> or <a class="lesson" data-lesson="primer/ml/attention.html">the attention lesson</a>. Every idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135">original</a></span></h2>
+<blockquote class="quote">“We argue that a missing principle is making attention algorithms IO-aware […] accounting for reads and writes between levels of GPU memory.”<cite>Dao et al. (2022), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A chef works at a small counter; the ingredients live in a big pantry down a flight of stairs. However fast the chef chops, if every step of the recipe means a trip down and up the stairs, the meal is slow. Standard attention is that chef: it computes quickly, but it writes a huge intermediate table to slow memory and reads it back several times. FlashAttention reorganizes the recipe so each ingredient is carried up once, everything possible is done at the counter, and only the finished dish goes back down.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>An <strong>exact</strong> attention algorithm: the same result as standard attention, not an approximation.</li>
+  <li>Much less memory traffic between the GPU's large, slow memory and its small, fast memory, and a proof that no exact algorithm can do asymptotically better across all fast-memory sizes.</li>
+  <li>Real speedups: 15% faster BERT-large training than the MLPerf 1.1 record, 3× faster GPT-2 training, 2.4× on long-sequence benchmarks.</li>
+  <li>Memory that grows only linearly with sequence length, enabling much longer contexts and the first Transformers to beat chance on the Path-X (16K tokens) and Path-256 (64K tokens) tasks.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>FlashAttention and its successors are now the default way attention runs on GPUs. Much of the jump from 2,048-token to million-token context windows rests on this idea.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Attention's cost grows with the square of the sequence length (see the <span class="t" data-t="big-o">O(n²)</span> discussion in the attention lesson). Many earlier papers tried to reduce the <em>arithmetic</em> with approximations: skip some word pairs, compress others. The authors point out that these tricks often did not make training faster in practice, because arithmetic was not the bottleneck. Moving data was. It is like trying to speed up the chef by teaching faster chopping when the real problem is the stairs.</p>
+<h4>Tiny example</h4>
+<p>Count the reads and writes for a 1,024-token sequence and a head width of 64. The inputs Q, K and V hold 3 × 1,024 × 64 ≈ 197,000 numbers. The score table S holds 1,024 × 1,024 ≈ 1,049,000 numbers: over five times more than all the inputs put together, and standard attention writes it to slow memory and reads it back, then does the same again for the softmax table P. Most of the traffic is intermediate results nobody asked for.</p>
+<h4>Why it matters</h4>
+<p>The lesson generalizes far beyond attention: on modern hardware, the number of memory transfers often predicts speed better than the number of arithmetic operations. The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> uses the same idea to explain why generating text is <span class="t" data-t="memory-bound">memory-bound</span>.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S2">original</a></span></h2>
+
+<section id="s2-1">
+<h3>2.1 GPU memory and speed <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="gpu">GPU</span> has two kinds of memory. <span class="t" data-tip-title="HBM (high-bandwidth memory)" data-tip="The GPU's main memory: large (tens of gigabytes) and fast by ordinary standards, but an order of magnitude slower than on-chip SRAM. Model weights, activations and the KV cache live here.">HBM</span> is the big pantry: tens of gigabytes, but relatively slow to reach. <span class="t" data-tip-title="SRAM (on-chip memory)" data-tip="Tiny, very fast memory built into each of the GPU's processors. On an A100 it is 192 KB per streaming multiprocessor. Computation can only happen on data brought here.">SRAM</span> is the counter: tiny, but right next to the arithmetic units and about ten times faster. Every calculation has to bring its data up to SRAM first.</p>
+<figure class="ix" id="figmem">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 300" role="img" aria-label="GPU memory hierarchy: compute units, on-chip SRAM, and HBM">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk soft" data-block="compute"><rect x="90" y="10" width="140" height="44" rx="8"/><text x="160" y="30" text-anchor="middle">Compute units</text><text x="160" y="45" text-anchor="middle" class="lbl">arithmetic happens here</text></g>
+    <path class="wire" d="M160,56 V88" marker-end="url(#arr)" marker-start="url(#arr)"/>
+    <g class="blk ff" data-block="sram"><rect x="70" y="90" width="180" height="54" rx="8"/><text x="160" y="112" text-anchor="middle">On-chip SRAM</text><text x="160" y="129" text-anchor="middle" class="lbl">192 KB × 108 · about 19 TB/s</text></g>
+    <path class="wire" d="M160,146 V186" marker-end="url(#arr)" marker-start="url(#arr)"/>
+    <text x="172" y="170" class="lbl">the bottleneck</text>
+    <g class="blk attn" data-block="hbm"><rect x="30" y="188" width="260" height="70" rx="8"/><text x="160" y="214" text-anchor="middle">HBM (GPU main memory)</text><text x="160" y="232" text-anchor="middle" class="lbl">40 to 80 GB · 1.5 to 2.0 TB/s</text></g>
+    <text x="160" y="285" text-anchor="middle" class="lbl">smaller and faster towards the top</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a level of memory.</p></div>
+  </div>
+  <figcaption>The memory hierarchy of an NVIDIA A100 GPU, redrawn with the numbers given in Dao et al. (2022), §2.1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the higher a box, the faster and smaller it is. HBM at the bottom holds gigabytes; SRAM in the middle holds only 192 KB per processor (about 20 MB across all 108 of them) but moves data roughly ten times faster. Arithmetic can only use data that has come up to the top. The arrow between SRAM and HBM is labelled the bottleneck because modern GPUs can compute far faster than HBM can feed them, so the question is how many times data crosses that arrow.</p>
+<h4>Two kinds of operation</h4>
+<p>An operation is <span class="t" data-t="compute-bound">compute-bound</span> if its time is spent on arithmetic (a big matrix multiply) and <span class="t" data-t="memory-bound">memory-bound</span> if its time is spent waiting for data (softmax, masking, dropout, layer norm: a few operations per number read). The measure that decides which is <span class="t" data-t="arithmetic intensity">arithmetic intensity</span>, operations per byte moved. The standard fix for memory-bound work is <span class="t" data-tip-title="Kernel fusion" data-tip="Doing several steps inside one GPU program (a kernel), so data is read from HBM once, processed through every step on-chip, and written back once, instead of once per step.">kernel fusion</span>: load once, do several steps, write once.</p>
+<h4>Why it matters today</h4>
+<p>Compute has grown faster than memory bandwidth for years, so this imbalance keeps getting worse. Thinking in terms of data movement is now a core skill for anyone optimizing models.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Standard attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S2.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The textbook recipe in three trips: compute every score and store the whole table downstairs; fetch the table, turn each row into shares with <span class="t" data-t="softmax">softmax</span>, store the new table downstairs; fetch it again with the values and blend. Each trip moves an N × N table.</p>
+<div class="eq" data-tex="\htmlData{sym=S}{S} = \htmlData{sym=Q}{Q}\htmlData{sym=KT}{K^{\top}}, \qquad \htmlData{sym=P}{P} = \htmlData{sym=softmax}{\mathrm{softmax}}(\htmlData{sym=S}{S}), \qquad \htmlData{sym=O}{O} = \htmlData{sym=P}{P}\htmlData{sym=V}{V}" data-fallback="S = Q Kᵀ,  P = softmax(S),  O = P V"></div>
+<div class="symtable" data-syms="Q,KT,V,S,P,O,softmax,N,d"></div>
+<p class="inwords"><strong>In words:</strong> “score every query against every key, turn each row of scores into shares, then use the shares to blend the values.” (The usual 1/√d scaling is folded into Q here, as in the paper.)</p>
+<p class="inwords"><strong>With the numbers:</strong> for GPT-2's N = 1,024 and d = 64, S and P each hold 1,048,576 numbers per head. In 16-bit precision that is 2 MB per head per layer, per sequence; at N = 16,384 it is 512 MB per head. Both tables are written to HBM and read back.</p>
+<h4>Why it matters</h4>
+<p>The math is fine; the problem is where S and P live. Standard implementations need O(N²) memory just to hold them, which is what capped context lengths, and the repeated round trips are what made attention slow.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 FlashAttention: the algorithm <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S3">original</a></span></h2>
+
+<section id="s3-1a">
+<h3>3.1 Softmax in pieces <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The obstacle to working in small tiles is softmax: each share is a score divided by the total of <em>the whole row</em>, and you don't know the total until you have seen every score. The trick is to keep a running tally. Imagine counting votes from several ballot boxes: count one box, note the leader and the tally; when the next box arrives, rescale the old tally if there's a new leader and add the new votes. You never need all the ballots on the table at once.</p>
+<div class="eq" data-tex="\htmlData{sym=mx}{m(x)} = \max_i x_i, \qquad \htmlData{sym=fx}{f(x)} = \big[\, e^{x_1 - m(x)}, \ldots, e^{x_B - m(x)} \,\big], \qquad \htmlData{sym=lx}{\ell(x)} = \sum_i f(x)_i, \qquad \mathrm{softmax}(x) = \frac{\htmlData{sym=fx}{f(x)}}{\htmlData{sym=lx}{\ell(x)}}" data-fallback="m(x) = max_i x_i,  f(x) = [e^(x_1 − m), …, e^(x_B − m)],  ℓ(x) = Σ_i f(x)_i,  softmax(x) = f(x) / ℓ(x)"></div>
+<div class="symtable" data-syms="mx,fx,lx,Bsz"></div>
+<p class="inwords"><strong>In words:</strong> “subtract the block's largest score before exponentiating (so nothing overflows), add up the results, and divide.”</p>
+<p>Now the key step: two blocks' summaries can be merged <em>without</em> revisiting their scores.</p>
+<div class="eq" data-tex="\htmlData{sym=mx}{m(x)} = \max\big(m(x^{(1)}),\, m(x^{(2)})\big), \qquad \htmlData{sym=lx}{\ell(x)} = \htmlData{sym=rescale}{e^{\,m(x^{(1)}) - m(x)}}\, \ell(x^{(1)}) + e^{\,m(x^{(2)}) - m(x)}\, \ell(x^{(2)})" data-fallback="m(x) = max(m(x¹), m(x²)),  ℓ(x) = e^(m(x¹) − m(x)) ℓ(x¹) + e^(m(x²) − m(x)) ℓ(x²)"></div>
+<div class="symtable" data-syms="x1,x2,rescale"></div>
+<p class="inwords"><strong>In words:</strong> “the overall maximum is the bigger of the two block maxima; the overall total is each block's total, shrunk by how far its own maximum sits below the overall maximum, added together.”</p>
+<p class="inwords"><strong>With the numbers:</strong> scores x = (1, 3 | 2, 0), split into two blocks. Block 1: m = 3, f = (e<sup>−2</sup>, e<sup>0</sup>) = (0.135, 1), ℓ = 1.135. Block 2: m = 2, f = (1, 0.135), ℓ = 1.135. Merge: m = 3, ℓ = e<sup>0</sup> × 1.135 + e<sup>−1</sup> × 1.135 = 1.135 + 0.418 = <strong>1.553</strong>. Directly: e<sup>1−3</sup> + e<sup>0</sup> + e<sup>2−3</sup> + e<sup>0−3</sup> = 0.135 + 1 + 0.368 + 0.050 = <strong>1.553</strong>. Same answer, one block at a time.</p>
+<p>The partial <em>outputs</em> are merged the same way: FlashAttention keeps each query row's running output O, its running maximum m and running total ℓ, and rescales O whenever a new block raises the maximum. After the last block, O is exactly softmax(QKᵀ)V.</p>
+<h4>Why it matters</h4>
+<p>This “online softmax” was known before; the paper's contribution is building a whole fast GPU kernel around it. The same stable-softmax trick (subtract the max) appears in the <a class="lesson" data-lesson="primer/ml/attention.html">attention lesson</a>'s softmax function.</p>
+</section>
+
+<section id="s3-1b">
+<h3>3.1 Tiling, animated</h3>
+<blockquote class="quote">“The main idea is that we split the inputs Q, K, V into blocks, load them from slow HBM to fast SRAM, then compute the attention output with respect to those blocks.”<cite>Dao et al. (2022), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Carry one tray of keys and values up to the counter, then bring up the queries a tray at a time and do all the work for that pair of trays before sending anything back. The giant score table never exists anywhere: each tile of it lives briefly on the counter and is thrown away.</p>
+<div class="play" id="tile-play">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Algorithm:</span>
+    <button type="button" data-mode="standard" aria-pressed="false">standard attention</button>
+    <button type="button" data-mode="flash" aria-pressed="true">FlashAttention</button>
+    <span style="margin-left:.6rem">Block size:</span>
+    <button type="button" data-block-size="64" aria-pressed="false">64</button>
+    <button type="button" data-block-size="128" aria-pressed="true">128</button>
+    <button type="button" data-block-size="256" aria-pressed="false">256</button>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start;margin-top:.6rem">
+    <svg id="tile-svg" viewBox="0 0 300 300" role="img" aria-label="The N by N score matrix split into tiles" style="flex:1 1 240px;max-width:320px"></svg>
+    <div style="flex:1 1 240px">
+      <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem">
+        <button type="button" id="tile-step">Step</button>
+        <button type="button" id="tile-play-btn">Play</button>
+        <button type="button" id="tile-reset">Reset</button>
+      </div>
+      <p class="readout" id="tile-phase" aria-live="polite"></p>
+      <div id="tile-bars"></div>
+      <div class="legend" id="tile-legend"></div>
+    </div>
+  </div>
+</div>
+<p class="reading"><strong>Reading it:</strong> the square is the N × N score matrix for N = 1,024 and head width d = 64, cut into tiles of the chosen block size; rows are blocks of queries, columns are blocks of keys and values. In <strong>standard</strong> mode, every tile is written to HBM as S (orange), read back and rewritten as P (purple), then read again to produce the output (green): three full passes over the whole matrix. In <strong>FlashAttention</strong> mode the outer loop walks across the columns (one block of keys and values loaded once), and the inner loop walks down the rows; the red tile is the one being computed in SRAM, and once done it is never stored. The bars count the numbers moved to or from HBM so far, using the accounting of the paper's Algorithms 0 and 1. Bigger blocks mean fewer passes over the queries, so less traffic, but a block must fit in SRAM, which caps how big it can be.</p>
+</section>
+
+<section id="s3-1c">
+<h3>3.1 Recomputation and kernel fusion</h3>
+<h4>Everyday picture</h4>
+<p>Training needs a <span class="t" data-t="backpropagation">backward pass</span>, which normally reuses the stored S and P tables. FlashAttention stores neither. Instead it keeps only the output and the two small running statistics (m and ℓ) per row, and simply <em>recomputes</em> each tile of S and P during the backward pass. That means more arithmetic, but it is cheaper to redo the chopping at the counter than to fetch pre-chopped ingredients from the pantry.</p>
+<p>And because the whole recipe (matrix multiply, mask, softmax, dropout, matrix multiply) happens tile by tile on-chip, it all fits in one GPU program: one <span class="t" data-tip-title="Kernel fusion" data-tip="Doing several steps inside one GPU program (a kernel), so data is read from HBM once, processed through every step on-chip, and written back once.">fused kernel</span> that reads the inputs once and writes the output once.</p>
+<h4>Why it matters</h4>
+<p>This is a clear case of spending more arithmetic to save memory traffic, and winning. In the paper's measurement (next section) FlashAttention does <em>more</em> floating-point operations than standard attention and still runs about 5.7 times faster.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 How much traffic is saved <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>How many stair trips does each recipe need? Standard attention's count grows with the size of the table, N². FlashAttention's count also grows with N², but divided by how much the counter can hold, so a bigger counter means proportionally fewer trips.</p>
+<div class="eq" data-tex="\text{standard: } \htmlData{sym=Theta}{\Theta}(\htmlData{sym=N}{N}\htmlData{sym=d}{d} + \htmlData{sym=N}{N}^2) \qquad \text{FlashAttention: } \htmlData{sym=Theta}{\Theta}\!\left(\frac{\htmlData{sym=N}{N}^2 \htmlData{sym=d}{d}^2}{\htmlData{sym=M}{M}}\right) \quad \text{HBM accesses}" data-fallback="standard: Θ(N d + N²)   FlashAttention: Θ(N² d² / M)   HBM accesses"></div>
+<div class="symtable" data-syms="Theta,M"></div>
+<p class="inwords"><strong>In words:</strong> “standard attention moves the inputs plus the full N × N table; FlashAttention moves the N × N work shrunk by the factor d² / M, which is small because a head's width squared is much smaller than the fast memory.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with d = 64 and M around 100,000 (the paper's “around 100KB”), d<sup>2</sup> / M = 4,096 / 100,000 ≈ 0.04, so FlashAttention needs roughly <strong>25 times</strong> fewer HBM accesses, ignoring constant factors. The paper also proves that no exact attention algorithm can do asymptotically better for every SRAM size.</p>
+<div class="tablewrap"><table>
+  <caption>Measured on GPT-2 medium attention, forward plus backward (N = 1,024, d = 64, 16 heads, batch 64, A100). Restated from Dao et al. (2022), Figure 2</caption>
+  <thead><tr><th></th><th class="num">Standard</th><th class="num">FlashAttention</th></tr></thead>
+  <tbody>
+    <tr><td>Arithmetic (GFLOPs)</td><td class="num">66.6</td><td class="num">75.2</td></tr>
+    <tr class="hl"><td>HBM reads and writes (GB)</td><td class="num">40.3</td><td class="num">4.4</td></tr>
+    <tr class="hl"><td>Runtime (ms)</td><td class="num">41.7</td><td class="num">7.3</td></tr>
+  </tbody>
+</table></div>
+<p>The measured table is the whole argument in three rows: 13% <em>more</em> arithmetic, 9 times less memory traffic, 5.7 times faster. The theory's “25 times” ignores constants; the measured 9 times is what the real kernel achieved.</p>
+<h4>Why it matters today</h4>
+<p>Counting memory traffic, not just arithmetic, is now the standard way to reason about kernel speed. The same accounting explains why the <span class="t" data-t="kv cache">KV cache</span> and weight reads dominate text generation; see the <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a>'s <span class="t" data-t="roofline">roofline</span> discussion.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Block-sparse FlashAttention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S3.SS3">original</a></span></h3>
+<p><strong>Everyday picture:</strong> if you know in advance that some trays don't matter (say, words very far apart), skip those tiles entirely. The paper extends the kernel to take a fixed pattern of tiles to compute and skip. Traffic and runtime shrink in proportion to the fraction skipped. Unlike FlashAttention itself this is an <em>approximation</em>, and it is what reached 64K-token sequences in §4.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Faster is only interesting if the model stays exactly as good. Because FlashAttention is exact, the models reach the same quality; the question is how much sooner, and what the freed-up memory makes possible.</p>
+<div class="tablewrap"><table>
+  <caption>Selected results, restated from Dao et al. (2022), Tables 1, 2 and 4 and §4.2</caption>
+  <thead><tr><th>Experiment</th><th>Before</th><th>With FlashAttention</th></tr></thead>
+  <tbody>
+    <tr><td>BERT-large to target accuracy, 8 × A100</td><td>20.0 min (MLPerf 1.1 record)</td><td>17.4 min (15% faster)</td></tr>
+    <tr><td>GPT-2 small training, 8 × A100</td><td>9.5 days (Hugging Face)</td><td>2.7 days, same perplexity 18.2</td></tr>
+    <tr><td>GPT-2 medium training</td><td>21.0 days (Hugging Face)</td><td>6.9 days, same perplexity 14.3</td></tr>
+    <tr class="hl"><td>GPT-2 small with 4× the context (4K)</td><td>1K context, perplexity 18.2, 4.7 days (Megatron-LM)</td><td>perplexity 17.5, 3.6 days</td></tr>
+    <tr><td>Path-X (16K tokens)</td><td>every earlier Transformer at chance</td><td>61.4% accuracy</td></tr>
+    <tr><td>Path-256 (64K tokens, block-sparse)</td><td>every earlier Transformer at chance</td><td>63.1% accuracy</td></tr>
+  </tbody>
+</table></div>
+<p>The highlighted row shows the second benefit: with memory now growing linearly, GPT-2 could be trained on 4 times longer texts, <em>still</em> faster than the previous 1K-context training, and it got better (lower perplexity) because it could see more context. The memory footprint measured up to 20 times smaller than exact-attention baselines.</p>
+<h4>Why it matters today</h4>
+<p>Longer context turned out to be one of the most valuable capabilities of language models, and this is one of the papers that made it affordable.</p>
+</section>
+
+<section id="s5">
+<h2>5 Limitations and future directions <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S5">original</a></span></h2>
+<p>The authors name three: every new attention variant needs a hand-written low-level CUDA kernel, which is hard and not portable across GPU generations; the IO-aware idea should extend beyond attention to other layers; and a single GPU is the limit of the analysis, while multi-GPU attention adds another level of the memory hierarchy. All three became active research areas.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><a href="https://arxiv.org/abs/2307.08691">FlashAttention-2</a> (Dao, 2023)</td><td>Reorganizes the loops and work split to use the GPU better, roughly doubling speed again</td></tr>
+    <tr><td>Built into frameworks</td><td>PyTorch's <a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html">scaled_dot_product_attention</a> can dispatch to a FlashAttention kernel, so most users get it without asking</td></tr>
+    <tr><td>Long-context models</td><td>Linear memory in sequence length is one of the enablers of context windows of hundreds of thousands of tokens</td></tr>
+    <tr><td>IO-aware thinking elsewhere</td><td>The same data-movement accounting drives work on serving, such as <a href="paged-attention.html">PagedAttention</a>, and on fused kernels generally</td></tr>
+  </tbody>
+</table></div>
+<p>The authors' reference implementation is open source at <a href="https://github.com/Dao-AILab/flash-attention">github.com/Dao-AILab/flash-attention</a>.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra and Christopher Ré, <em>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</em>, NeurIPS 2022. <a href="https://arxiv.org/abs/2205.14135">arXiv:2205.14135</a>. Quotations are brief and attributed; numbers are restated in new tables with attribution; the diagrams and the animation are original. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    Q: { tex: "Q", name: "Queries", meaning: "Every token's query vector stacked as rows (already multiplied by 1/√d).", shape: "N × d", example: "1,024 × 64 for GPT-2" },
+    KT: { tex: "K^{\\top}", name: "Keys, transposed", meaning: "Every token's key, stood upright so that Q Kᵀ computes every query-key dot product at once.", shape: "d × N", example: "64 × 1,024" },
+    V: { tex: "V", name: "Values", meaning: "Every token's value vector: what gets blended.", shape: "N × d", example: "1,024 × 64" },
+    S: { tex: "S", name: "Score matrix", meaning: "Every query scored against every key. This is the giant table standard attention writes to HBM; FlashAttention never stores it whole.", shape: "N × N", example: "1,048,576 numbers when N = 1,024" },
+    P: { tex: "P", name: "Attention weights", meaning: "S after row-wise softmax: each row sums to 1. Also N × N, also written to HBM by standard attention.", shape: "N × N", example: "another 1,048,576 numbers" },
+    O: { tex: "O", name: "Output", meaning: "Each row is a share-weighted blend of the value rows.", shape: "N × d", example: "1,024 × 64" },
+    softmax: { tex: "\\mathrm{softmax}", name: "Softmax, row by row", meaning: "Exponentiate each score and divide by its row's total, so each row becomes positive shares summing to 1. Needs the whole row's total, which is the obstacle to tiling.", shape: "keeps the shape", example: "(1, 3, 2, 0) → (0.087, 0.644, 0.237, 0.032)" },
+    N: { tex: "N", name: "Sequence length", meaning: "How many tokens attend to each other.", shape: "a whole number", example: "1,024 for GPT-2; 16,384 for Path-X" },
+    d: { tex: "d", name: "Head dimension", meaning: "Width of each query, key and value vector in one attention head.", shape: "a whole number", example: "64" },
+    mx: { tex: "m(x)", name: "Block maximum", meaning: "The largest score in the block. Subtracting it before exponentiating keeps e^x from overflowing, and it is one of the two running statistics.", shape: "one number per query row", example: "3 for block (1, 3)" },
+    fx: { tex: "f(x)", name: "Shifted exponentials", meaning: "e raised to each score minus the block maximum. All values are at most 1.", shape: "B numbers", example: "(0.135, 1) for block (1, 3)" },
+    lx: { tex: "\\ell(x)", name: "Running total", meaning: "The sum of the shifted exponentials: the denominator of softmax, measured relative to the current maximum. The second running statistic.", shape: "one number per query row", example: "1.135 per block, 1.553 merged" },
+    Bsz: { tex: "B", name: "Block size", meaning: "How many scores are in one block (one tile's width). Chosen so the tiles fit in SRAM.", shape: "a whole number", example: "2 in the toy; 64 to 256 in practice" },
+    x1: { tex: "x^{(1)}", name: "First block of scores", meaning: "The scores for the first block of keys.", shape: "B numbers", example: "(1, 3)" },
+    x2: { tex: "x^{(2)}", name: "Second block of scores", meaning: "The scores for the next block of keys, seen later.", shape: "B numbers", example: "(2, 0)" },
+    rescale: { tex: "e^{m(x^{(1)}) - m(x)}", name: "Rescaling factor", meaning: "If the overall maximum is higher than a block's own maximum, that block's total was measured against the wrong baseline; multiplying by this factor (at most 1) corrects it.", shape: "a number between 0 and 1", example: "e^(2 − 3) = 0.368 for block 2" },
+    Theta: { tex: "\\Theta(\\cdot)", name: "Order of growth", meaning: "Like big-O, but a tight description: grows exactly this fast, ignoring constant factors.", shape: "a growth rate", example: "Θ(N²): doubling N quadruples the count" },
+    M: { tex: "M", name: "SRAM size", meaning: "How many numbers fit in fast on-chip memory. Bigger M means bigger tiles and fewer passes, so less HBM traffic.", shape: "between d and N·d", example: "around 100,000" },
+  },
+
+  blocks: {
+    compute: { title: "Compute units", body: "<p>The arithmetic engines, including tensor cores for matrix multiplies. On an A100 they can perform hundreds of trillions of operations per second, far more than memory can feed for simple operations like softmax.</p>", lesson: "primer/ml/inference.html" },
+    sram: { title: "On-chip SRAM", body: "<p>192 KB inside each of the A100's 108 streaming multiprocessors (about 20 MB in total), with bandwidth estimated around 19 TB/s. FlashAttention's tiles are sized to fit here.</p>", shape: "~20 MB total, ~19 TB/s" },
+    hbm: { title: "HBM (high-bandwidth memory)", body: "<p>The GPU's main memory: 40 to 80 GB on an A100, at 1.5 to 2.0 TB/s. Large, but about an order of magnitude slower than SRAM. Standard attention stores S and P here; FlashAttention stores only Q, K, V, O and two numbers per row.</p>", shape: "40 to 80 GB, 1.5 to 2.0 TB/s" },
+  },
+
+  onReady() {
+    tiling();
+  },
+};
+
+/* ---- tiling animation with HBM traffic counters (paper's Algorithm 0 and 1 accounting) ---- */
+function tiling() {
+  const NS = "http://www.w3.org/2000/svg";
+  const N = 1024, d = 64;
+  const svg = document.getElementById("tile-svg");
+  const phaseOut = document.getElementById("tile-phase");
+  const bars = document.getElementById("tile-bars");
+  document.getElementById("tile-legend").innerHTML =
+    `<span><i style="background:var(--attn-stroke)"></i>S in HBM</span><span><i style="background:var(--lin-stroke)"></i>P in HBM</span><span><i style="background:var(--soft-stroke)"></i>tile finished</span><span><i style="background:var(--active)"></i>tile in SRAM now</span>`;
+  let mode = "flash", Bk = 128, step = 0, timer = null;
+  const T = () => N / Bk;
+  // Totals from the paper's algorithms, counted in numbers moved to or from HBM.
+  const stdTotal = () => 4 * N * d + 4 * N * N;
+  const flashTotal = () => 2 * N * d + T() * N * (3 * d + 4);
+  const steps = () => (mode === "flash" ? T() * T() : 3 * T() * T());
+  function trafficAt(s) {
+    const t = T();
+    if (mode === "flash") {
+      const perTile = 3 * Bk * d + 4 * Bk;   // load Q_i, O_i, l_i, m_i; write O_i, l_i, m_i
+      const colsStarted = Math.ceil(s / t);  // each new column loads its K_j and V_j once
+      return colsStarted * 2 * Bk * d + s * perTile;
+    }
+    // Standard: pass 1 writes S (plus reading Q, K), pass 2 reads S and writes P, pass 3 reads P (plus V) and writes O.
+    const tiles = t * t, tile = Bk * Bk;
+    const p1 = Math.min(s, tiles), p2 = Math.min(Math.max(s - tiles, 0), tiles), p3 = Math.min(Math.max(s - 2 * tiles, 0), tiles);
+    return p1 * (tile + (2 * N * d) / tiles) + p2 * (2 * tile) + p3 * (tile + (2 * N * d) / tiles);
+  }
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  const fmt = (x) => (x >= 1e6 ? `${(x / 1e6).toFixed(2)} million` : `${Math.round(x).toLocaleString()}`);
+  function draw() {
+    const t = T(), size = 280 / t;
+    svg.textContent = "";
+    for (let i = 0; i < t; i++) for (let j = 0; j < t; j++) {
+      let fill = "var(--card)";
+      if (mode === "flash") {
+        const idx = j * t + i;              // column-major: outer loop over K/V blocks j
+        if (idx < step) fill = "var(--soft)";
+        if (idx === step - 1) fill = "var(--active)";
+      } else {
+        const idx = i * t + j, tiles = t * t;
+        if (step > idx) fill = "var(--attn)";
+        if (step > tiles + idx) fill = "var(--lin)";
+        if (step > 2 * tiles + idx) fill = "var(--soft)";
+      }
+      svg.appendChild(el("rect", { x: 10 + j * size, y: 10 + i * size, width: size - 1.5, height: size - 1.5, rx: 2, fill, stroke: "var(--border)" }));
+    }
+    if (mode === "flash" && step > 0 && step <= t * t) {
+      const j = Math.floor((step - 1) / t);
+      svg.appendChild(el("rect", { x: 10 + j * size - 1, y: 8, width: size + 0.5, height: 283, fill: "none", stroke: "var(--active)", "stroke-width": 2, "stroke-dasharray": "4 3" }));
+    }
+    const used = trafficAt(step), std = stdTotal(), fl = flashTotal(), max = std;
+    const row = (label, v, color) => `<div class="share-row" style="grid-template-columns:7.5rem minmax(0,1fr) 6.5rem"><span>${label}</span><div><div class="share-bar" style="width:${(100 * v / max).toFixed(1)}%;background:${color}"></div></div><span>${fmt(v)}</span></div>`;
+    bars.innerHTML = `<div class="legend" style="margin:.5rem 0 .3rem">Numbers moved to or from HBM (one head, one sequence)</div>` +
+      row("so far", used, "var(--active)") + row("standard total", std, "var(--attn-stroke)") + row("Flash total", fl, "var(--soft-stroke)");
+    const total = steps();
+    let msg;
+    if (mode === "flash") {
+      const j = Math.floor(Math.max(step - 1, 0) / t), i = Math.max(step - 1, 0) % t;
+      msg = step === 0 ? `FlashAttention, blocks of ${Bk}: ${t} × ${t} tiles. Press Step or Play.` :
+        step >= total ? `Done. The full score matrix never existed in HBM: ${(std / fl).toFixed(1)}× less traffic than standard attention at this block size.` :
+        `Outer loop: key/value block ${j + 1} of ${t} is in SRAM. Inner loop: query block ${i + 1} of ${t}. Running max m and total ℓ updated, output rescaled and written.`;
+    } else {
+      const tiles = t * t;
+      msg = step === 0 ? `Standard attention: three passes over all ${tiles} tiles. Press Step or Play.` :
+        step <= tiles ? `Pass 1 of 3: computing S = QKᵀ tile by tile and writing it to HBM.` :
+        step <= 2 * tiles ? `Pass 2 of 3: reading S back, applying softmax, writing P to HBM.` :
+        step < total ? `Pass 3 of 3: reading P back, multiplying by V, writing the output.` : `Done: the full N × N table was written twice and read twice.`;
+    }
+    phaseOut.textContent = msg;
+  }
+  const advance = () => { if (step < steps()) { step++; draw(); } else stop(); };
+  const stop = () => { clearInterval(timer); timer = null; document.getElementById("tile-play-btn").textContent = "Play"; };
+  document.getElementById("tile-step").addEventListener("click", () => { stop(); advance(); });
+  document.getElementById("tile-reset").addEventListener("click", () => { stop(); step = 0; draw(); });
+  document.getElementById("tile-play-btn").addEventListener("click", (e) => {
+    if (timer) { stop(); return; }
+    if (step >= steps()) step = 0;
+    e.target.textContent = "Pause";
+    timer = setInterval(advance, Math.max(40, 2400 / steps()));
+  });
+  document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+    stop(); mode = b.dataset.mode; step = 0;
+    document.querySelectorAll("[data-mode]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    draw();
+  }));
+  document.querySelectorAll("[data-block-size]").forEach((b) => b.addEventListener("click", () => {
+    stop(); Bk = +b.dataset.blockSize; step = 0;
+    document.querySelectorAll("[data-block-size]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    draw();
+  }));
+  draw();
+}
+</script>
+</body>
+</html>

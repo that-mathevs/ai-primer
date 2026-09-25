@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>word2vec, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to the two 2013 word2vec papers by Mikolov et al.: CBOW, skip-gram, negative sampling, subsampling and phrase vectors.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  /* page-local helpers; everything shared lives in assets/papers.css */
+  .row2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem 1rem; align-items: end; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .row2 select, .row2 input { width: 100%; }
+  .pill { display: inline-block; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.8rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); margin: 0.15rem 0.2rem 0.15rem 0; background: var(--bg); }
+  .pill.center { background: var(--attn); border-color: var(--attn-stroke); }
+  .pill.ctx { background: var(--ff); border-color: var(--ff-stroke); }
+  .pill.gone { opacity: 0.35; text-decoration: line-through; }
+  svg .word circle { fill: var(--card); stroke: var(--wire); stroke-width: 1.2; }
+  svg .word.hit circle { fill: var(--active); stroke: var(--active); }
+  svg .word.in circle { fill: var(--accent); stroke: var(--accent); }
+  svg .arrowA { stroke: var(--attn-stroke); stroke-width: 2; fill: none; }
+  svg .arrowC { stroke: var(--active); stroke-width: 2; fill: none; stroke-dasharray: 5 3; }
+  svg .tnode circle { fill: var(--card); stroke: var(--wire); stroke-width: 1.3; }
+  svg .tnode.on circle { stroke: var(--active); stroke-width: 2.6; }
+  svg .tedge { stroke: var(--wire); stroke-width: 1.3; }
+  svg .tedge.on { stroke: var(--active); stroke-width: 3; }
+  svg .leaf rect { fill: var(--soft); stroke: var(--soft-stroke); }
+  svg .leaf.on rect { stroke: var(--active); stroke-width: 2.6; }
+  .mono { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  figure.ix.stack .ixgrid { grid-template-columns: minmax(0, 1fr); }
+  figure.ix.stack .panel { min-height: 5.5rem; }
+</style>
+</head>
+<body data-paper="word2vec">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#p1">Paper 1: Efficient Estimation</a>
+        <ol>
+          <li><a href="#a-abstract">Abstract</a></li>
+          <li><a href="#a1">1 Introduction</a></li>
+          <li><a href="#a2">2 Model architectures and cost</a></li>
+          <li><a href="#a3">3 CBOW and skip-gram</a></li>
+          <li><a href="#a4">4 Results</a></li>
+          <li><a href="#a5">5 Learned relationships</a></li>
+          <li><a href="#a6">6 to 7 Conclusion and follow-up</a></li>
+        </ol>
+      </li>
+      <li><a href="#p2">Paper 2: Distributed Representations</a>
+        <ol>
+          <li><a href="#b1">1 Introduction</a></li>
+          <li><a href="#b2">2 The skip-gram objective</a></li>
+          <li><a href="#b21">2.1 Hierarchical softmax</a></li>
+          <li><a href="#b22">2.2 Negative sampling</a></li>
+          <li><a href="#b23">2.3 Subsampling frequent words</a></li>
+          <li><a href="#b3">3 Empirical results</a></li>
+          <li><a href="#b4">4 Learning phrases</a></li>
+          <li><a href="#b5">5 Additive compositionality</a></li>
+          <li><a href="#b6">6 to 7 Comparison and conclusion</a></li>
+        </ol>
+      </li>
+      <li><a href="#today">What changed since 2013</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>word2vec, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to the two 2013 papers by Tomas Mikolov and colleagues at Google that made word vectors cheap, good and famous: <em>Efficient Estimation of Word Representations in Vector Space</em> and <em>Distributed Representations of Words and Phrases and their Compositionality</em>.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1301.3781">Paper 1 on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1301.3781">Paper 1 PDF</a>
+    <a class="btn" href="https://arxiv.org/abs/1310.4546">Paper 2 on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1310.4546">Paper 2 PDF</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows both papers section by section, quotes only a sentence or two per section (clearly marked and attributed), and explains everything in its own words. Equations are reproduced with every symbol decoded. The papers are distributed on arXiv under its standard non-exclusive licence, so no tables or figures are copied: the diagrams are redrawn from scratch, and results appear as a few key numbers in our own tables and charts, each attributed. Word maps and example numbers marked <em>illustrative</em> are hand-made for teaching, not taken from a trained model. Read the originals alongside: every section links to them.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon. Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it. Every symbol inside an equation does the same. The diagrams and demos are live: hover, tap, drag and pick.</p>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram or demo</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>. The <a data-lesson="primer/ml/embeddings/word2vec.html">word embeddings lesson</a> trains skip-gram with negative sampling from scratch in NumPy, so you can watch the ideas on this page actually run.</p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="p1">
+<h2>Paper 1: Efficient Estimation of Word Representations in Vector Space</h2>
+<p class="byline">Mikolov, Chen, Corrado and Dean (2013). <a href="https://arxiv.org/abs/1301.3781">arXiv:1301.3781</a>. The paper that introduced the two word2vec architectures, CBOW and skip-gram.</p>
+</section>
+
+<section id="a-abstract">
+<h3>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1301.3781">original</a></span></h3>
+<blockquote class="quote">“We observe large improvements in accuracy at much lower computational cost, i.e. it takes less than a day to learn high quality word vectors from a 1.6 billion words data set.”<cite>Mikolov, Chen, Corrado and Dean (2013), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Imagine giving every word a home address on a map, so that words with similar meanings live on the same street. Before 2013, building such a map with a <span class="t" data-t="neuron">neural network</span> took weeks of computing for a few hundred million words. This paper strips the network down to almost nothing and finds that the map gets <em>better</em>, because the simpler model can afford to read ten times more text.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Two new, very cheap architectures for learning word <span class="t" data-t="embedding">embeddings</span>: <strong>CBOW</strong> (guess a word from its neighbours) and <strong>skip-gram</strong> (guess the neighbours from a word).</li>
+  <li>High-quality vectors from 1.6 billion words in under a day.</li>
+  <li>A new test of 8,869 semantic and 10,675 syntactic analogy questions, on which the vectors set new records.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>“Represent a thing as a list of numbers learned from the company it keeps” is the idea underneath every modern <span class="t" data-t="embedding">embedding</span> model, search engine and chat model. word2vec is where most practitioners first saw it work at scale.</p>
+</section>
+
+<section id="a1">
+<h3>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1301.3781#S1">original</a></span></h3>
+<blockquote class="quote">“Many current NLP systems and techniques treat words as atomic units - there is no notion of similarity between words, as these are represented as indices in a vocabulary.”<cite>Mikolov et al. (2013a), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A dictionary index is an <em>atomic</em> representation: “cat” is entry 17 and “dog” is entry 18, and the numbers 17 and 18 say nothing about both being pets. A map is a <em>distributed</em> representation: each word is a point, described by several coordinates at once, and nearby points mean related words.</p>
+<h4>Tiny example</h4>
+<p>With a four-word <span class="t" data-t="vocabulary">vocabulary</span> (car, cat, dog, sky), the atomic way writes “cat” as the <span class="t" data-t="one-hot">one-hot</span> vector (0, 1, 0, 0) and “dog” as (0, 0, 1, 0). Their <span class="t" data-t="dot product">dot product</span> is 0·0 + 1·0 + 0·1 + 0·0 = 0: as unrelated as “cat” and “sky”. Now give each word two learned numbers instead, say cat = (0.8, 0.3), dog = (0.7, 0.4) and sky = (−0.2, 0.9). The <span class="t" data-t="cosine similarity">cosine similarity</span> of cat and dog is (0.56 + 0.12) / (0.854 × 0.806) = 0.99, while cat and sky get (−0.16 + 0.27) / (0.854 × 0.922) = 0.14. The numbers now carry meaning.</p>
+<h4>The famous observation (§1.1)</h4>
+<p>Earlier work by the same group had noticed that differences between word vectors capture relationships: vector(“King”) − vector(“Man”) + vector(“Woman”) lands closest to vector(“Queen”). This paper's goal is to build architectures that preserve such <em>linear regularities</em> and to measure them properly. Try the relationship yourself in the <a href="#a5">word map in section 5</a>.</p>
+<h4>Why it matters today</h4>
+<p>The switch from “words are IDs” to “words are points in space” is the single idea that the rest of the <a data-lesson="primer/ml/embeddings/similarity.html">similarity lesson</a> and every vector database builds on.</p>
+</section>
+
+<section id="a2">
+<h3>2 Model architectures, and where the time goes <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1301.3781#S2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Before comparing cars, agree on how to measure fuel use. The paper's “fuel use” is the number of <span class="t" data-t="parameters">parameters</span> the model has to touch for each training word. Multiply that by how many words you read and how many times you reread them, and you have the total cost.</p>
+<div class="eq" data-tex="\htmlData{sym=Ocost}{O} = \htmlData{sym=Eep}{E} \times \htmlData{sym=Tw}{T} \times \htmlData{sym=Qper}{Q}" data-fallback="O = E × T × Q"></div>
+<div class="symtable" data-syms="Ocost,Eep,Tw,Qper"></div>
+<p class="inwords"><strong>In words:</strong> “total training work is the number of passes over the data, times the number of words, times the work per word.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 3 passes over 1 billion words with Q = 15,000 parameters touched per word gives 3 × 10<sup>9</sup> × 15,000 = 4.5 × 10<sup>13</sup> parameter touches.</p>
+
+<h4>2.1 The feed-forward neural network language model (NNLM)</h4>
+<p>The older model reads the previous N words, looks each one up in a table of D numbers, feeds all N × D numbers into a hidden layer of H <span class="t" data-t="neuron">neurons</span>, and finally scores every one of the V words in the vocabulary. Its cost per word is:</p>
+<div class="eq" data-tex="\htmlData{sym=Qper}{Q} = \htmlData{sym=Nctx}{N}\times \htmlData{sym=Ddim}{D} + \htmlData{sym=Nctx}{N}\times\htmlData{sym=Ddim}{D}\times \htmlData{sym=Hhid}{H} + \htmlData{sym=Hhid}{H}\times\htmlData{sym=Vvoc}{V}" data-fallback="Q = N×D + N×D×H + H×V"></div>
+<div class="symtable" data-syms="Nctx,Ddim,Hhid,Vvoc"></div>
+<p class="inwords"><strong>In words:</strong> “look up N word vectors, push all of them through the hidden layer, then score every word in the vocabulary.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's typical sizes, N = 10, D = 500, H = 500 and V = 1,000,000, give 5,000 + 2,500,000 + 500,000,000. Scoring the whole vocabulary (H × V) is 99.5% of the work.</p>
+<p>The standard escape is a <span class="t" data-tip-title="Hierarchical softmax" data-tip="Instead of scoring all V words, arrange them as leaves of a binary tree and make about log₂(V) left-or-right decisions to reach one word. See paper 2, section 2.1, below.">hierarchical softmax</span>, which replaces the V scores with about log<sub>2</sub>(V) ≈ 20 yes-or-no decisions. The paper uses a <span class="t" data-tip-title="Huffman tree" data-tip="A binary tree built so that frequent items get short paths from the root and rare items long ones, like Morse code giving the letter E a single dot.">Huffman tree</span>, which gives frequent words even shorter paths. Once that is done, the hidden layer (N × D × H) becomes the bottleneck, and that is exactly what word2vec deletes.</p>
+<h4>2.2 The recurrent language model (RNNLM)</h4>
+<p>A <span class="t" data-t="rnn">recurrent network</span> keeps a <span class="t" data-t="hidden state">hidden state</span> of H numbers and updates it word by word, so Q = H × H + H × V, or H × H + H × log<sub>2</sub>(V) with the tree. The H × H matrix, applied at every word, now dominates.</p>
+
+<h4>Try it: where does the work go?</h4>
+<div class="play" id="cost-demo">
+  <div class="sliders" id="cost-sliders"></div>
+  <div class="shares" id="cost-bars"></div>
+  <p class="readout" id="cost-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is one architecture's work per training word, Q, on a log scale, so each extra digit in the number adds the same length to the bar. All models use the hierarchical softmax except the top bar, which shows the NNLM scoring the full vocabulary. Drag the vocabulary size and watch the top bar grow with V while the others barely move, because log<sub>2</sub>(V) grows so slowly. Drag the hidden-layer size: NNLM and RNNLM grow, but CBOW and skip-gram do not move at all, because they have no hidden layer. That gap, a factor of 100 or more, is what lets word2vec read ten times more text in the same time.</p>
+<h4>2.3 Parallel training</h4>
+<p>The models ran on DistBelief, Google's system for training many copies of a model at once, each sending its <span class="t" data-t="gradient">gradient</span> updates to a central parameter server, with the Adagrad optimizer. Typical runs used 50 to 100 replicas.</p>
+<h4>Why it matters today</h4>
+<p>“Count the work per example before you design the model” is still how efficient systems are built. The same arithmetic, applied to attention instead, explains why long contexts are expensive (see the <a data-lesson="primer/ml/attention.html">attention lesson</a>).</p>
+</section>
+
+<section id="a3">
+<h3>3 New log-linear models: CBOW and skip-gram <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1301.3781#S3">original</a></span></h3>
+<blockquote class="quote">“The main observation from the previous section was that most of the complexity is caused by the non-linear hidden layer in the model.”<cite>Mikolov et al. (2013a), §3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Two party games. In <strong>CBOW</strong> (continuous bag of words) you see the words around a gap and guess the missing word: “the cat ___ on the mat”. In <strong>skip-gram</strong> you are shown one word and must guess which words are likely nearby: given “sat”, guess “cat”, “on”, “mat”. Words that play the same games end up with similar vectors, because they have to make the same guesses.</p>
+<h4>Tiny example</h4>
+<p>Take the sentence “the quick brown fox jumps” and the centre word “brown” with a window of 2. CBOW averages the vectors of <em>the, quick, fox, jumps</em> and tries to predict <em>brown</em>: one prediction. Skip-gram makes four predictions from <em>brown</em>: (brown → the), (brown → quick), (brown → fox), (brown → jumps). “Log-linear” means there is no hidden layer at all: the only operations are a table lookup, an average or a copy, and a <span class="t" data-t="softmax">softmax</span> (or its hierarchical version).</p>
+
+<figure class="ix wide stack" id="fig-arch">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 330" role="img" aria-label="CBOW on the left and skip-gram on the right">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="130" y="18" text-anchor="middle" class="lbl">CBOW: context → word</text>
+    <text x="430" y="18" text-anchor="middle" class="lbl">Skip-gram: word → context</text>
+    <!-- CBOW -->
+    <g class="blk emb" data-block="cb_in"><rect x="10" y="40" width="70" height="26" rx="6"/><text x="45" y="57" text-anchor="middle">w(t−2)</text></g>
+    <g class="blk emb" data-block="cb_in"><rect x="10" y="92" width="70" height="26" rx="6"/><text x="45" y="109" text-anchor="middle">w(t−1)</text></g>
+    <g class="blk emb" data-block="cb_in"><rect x="10" y="196" width="70" height="26" rx="6"/><text x="45" y="213" text-anchor="middle">w(t+1)</text></g>
+    <g class="blk emb" data-block="cb_in"><rect x="10" y="248" width="70" height="26" rx="6"/><text x="45" y="265" text-anchor="middle">w(t+2)</text></g>
+    <path class="wire" d="M80,53 L128,148" marker-end="url(#arr)"/>
+    <path class="wire" d="M80,105 L128,152" marker-end="url(#arr)"/>
+    <path class="wire" d="M80,209 L128,164" marker-end="url(#arr)"/>
+    <path class="wire" d="M80,261 L128,170" marker-end="url(#arr)"/>
+    <g class="blk norm" data-block="cb_sum"><rect x="130" y="136" width="70" height="42" rx="7"/><text x="165" y="154" text-anchor="middle">average</text><text x="165" y="169" text-anchor="middle">(sum)</text></g>
+    <path class="wire" d="M200,157 H222" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="cb_out"><rect x="224" y="140" width="52" height="34" rx="7"/><text x="250" y="161" text-anchor="middle">w(t)</text></g>
+    <!-- skip-gram -->
+    <g class="blk emb" data-block="sg_in"><rect x="300" y="140" width="56" height="34" rx="7"/><text x="328" y="161" text-anchor="middle">w(t)</text></g>
+    <path class="wire" d="M356,157 H378" marker-end="url(#arr)"/>
+    <g class="blk norm" data-block="sg_proj"><rect x="380" y="136" width="70" height="42" rx="7"/><text x="415" y="154" text-anchor="middle">look up</text><text x="415" y="169" text-anchor="middle">vector</text></g>
+    <path class="wire" d="M450,150 L478,55" marker-end="url(#arr)"/>
+    <path class="wire" d="M450,154 L478,107" marker-end="url(#arr)"/>
+    <path class="wire" d="M450,162 L478,210" marker-end="url(#arr)"/>
+    <path class="wire" d="M450,166 L478,262" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="sg_out"><rect x="480" y="40" width="70" height="26" rx="6"/><text x="515" y="57" text-anchor="middle">w(t−2)</text></g>
+    <g class="blk soft" data-block="sg_out"><rect x="480" y="92" width="70" height="26" rx="6"/><text x="515" y="109" text-anchor="middle">w(t−1)</text></g>
+    <g class="blk soft" data-block="sg_out"><rect x="480" y="196" width="70" height="26" rx="6"/><text x="515" y="213" text-anchor="middle">w(t+1)</text></g>
+    <g class="blk soft" data-block="sg_out"><rect x="480" y="248" width="70" height="26" rx="6"/><text x="515" y="265" text-anchor="middle">w(t+2)</text></g>
+    <text x="280" y="310" text-anchor="middle" class="lbl">No hidden layer anywhere: that is the whole trick.</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Pink boxes are word lookups; green boxes are predictions.</p></div>
+  </div>
+  <figcaption>Figure 1 of paper 1, redrawn: the CBOW and skip-gram architectures. Based on Mikolov et al. (2013a), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read the left diagram left to right. Four context words are looked up (pink), their vectors are averaged into one (yellow), and that single vector is used to predict the middle word (green). The right diagram is the mirror image: one word is looked up and its vector is used to predict each of the surrounding words separately. Neither side has a hidden layer, so each training step touches only a handful of vectors. Word order inside the window is ignored by CBOW: the averaging throws it away, which is why it is called a <em>bag</em> of words.</p>
+
+<h4>How skip-gram picks its training pairs</h4>
+<p>Nearby words are usually more related than distant ones. Skip-gram handles this with a neat trick: for every centre word it draws a random window size R between 1 and C (the maximum distance, C = 10 in the paper) and uses the R words on each side. A word at distance 1 is always used; a word at distance C is used only when R = C. The paper's cost for skip-gram is:</p>
+<div class="eq" data-tex="\htmlData{sym=Qper}{Q} = \htmlData{sym=Cmax}{C}\times(\htmlData{sym=Ddim}{D} + \htmlData{sym=Ddim}{D}\times \htmlData{sym=log2V}{\log_2 V})" data-fallback="Q = C × (D + D × log2 V)"></div>
+<div class="symtable" data-syms="Cmax,log2V"></div>
+<p class="inwords"><strong>In words:</strong> “for each of up to C context predictions, touch the input vector and walk a path of log₂(V) tree nodes, each with its own D numbers.”</p>
+<p class="inwords"><strong>With the numbers:</strong> C = 10, D = 500, V = 1,000,000: 10 × (500 + 500 × 19.93) ≈ 104,700 parameters per word, against about 2.5 million for the NNLM.</p>
+<div class="play" id="window-demo">
+  <div class="row2">
+    <label>Maximum window C = <strong id="win-c-v">2</strong><input type="range" id="win-c" min="1" max="5" step="1" value="2"></label>
+    <label>Centre word: <strong id="win-w-v"></strong><input type="range" id="win-w" min="0" max="8" step="1" value="4"></label>
+    <label>Sampled R this time: <strong id="win-r-v"></strong><button type="button" id="win-draw">Draw a new R</button></label>
+  </div>
+  <div class="sentence" id="win-sentence" style="margin-top:0.8rem"></div>
+  <p class="readout" id="win-pairs"></p>
+  <div class="shares" id="win-weights"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> the orange word is the centre word and the blue words are the context used this time; greyed words are outside the window drawn for this step. Press “Draw a new R” a few times: the window shrinks and grows at random. The bars underneath show, for each distance, how often a word at that distance is used over many draws: (C − d + 1) / C. With C = 5, the neighbour at distance 1 is used every time and the word at distance 5 only one time in five. The model therefore spends most of its effort on the closest, most informative neighbours without any explicit weighting.</p>
+<h4>Why it matters today</h4>
+<p>Skip-gram is the direct ancestor of <span class="t" data-t="contrastive loss">contrastive</span> training: “pull a word towards the words it appears with, push it away from random words”. The same shape appears in <a href="sentence-bert.html">Sentence-BERT</a>, <a href="dpr.html">DPR</a> and <a href="clip.html">CLIP</a>. The <a data-lesson="primer/ml/embeddings/word2vec.html">word embeddings lesson</a> implements it.</p>
+</section>
+
+<section id="a4">
+<h3>4 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1301.3781#S4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>How do you grade a map of meaning? Ask it riddles: “big is to biggest as small is to what?” If the map is good, walking from “big” to “biggest” and then taking the same step from “small” should land on “smallest”.</p>
+<h4>4.1 The test</h4>
+<p>The authors wrote 8,869 <em>semantic</em> questions (capital cities, currencies, man and woman pairs such as brother and sister) and 10,675 <em>syntactic</em> ones (plurals, past tenses, opposites such as ethical and unethical). A question counts as correct only if the single closest word is exactly the right one: synonyms count as wrong, so 100% is probably impossible.</p>
+<div class="eq" data-tex="\htmlData{sym=Xvec}{X} = \htmlData{sym=vecfn}{\text{vector}}(\text{biggest}) - \htmlData{sym=vecfn}{\text{vector}}(\text{big}) + \htmlData{sym=vecfn}{\text{vector}}(\text{small}), \qquad \text{answer} = \htmlData{sym=argmaxw}{\arg\max_{w}}\ \htmlData{sym=cosXw}{\cos(X, \text{vector}(w))}" data-fallback="X = vector(biggest) − vector(big) + vector(small); answer = the word w whose vector has the highest cosine with X"></div>
+<div class="symtable" data-syms="Xvec,vecfn,argmaxw,cosXw"></div>
+<p class="inwords"><strong>In words:</strong> “take the step from big to biggest, apply it starting from small, and answer with the word whose vector points most nearly the same way as where you land, ignoring the three question words.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the illustrative map in section 5, big = (−2, −4) and bigger = (−1, −2.8), so the step is (1, 1.2). From small = (1, −5) the same step lands on (2, −3.8), which is exactly where “smaller” sits.</p>
+<h4>4.2 More data and more dimensions, together</h4>
+<p>Training CBOW on growing slices of a 6-billion-word Google News corpus (vocabulary limited to the 30,000 most common words for this test) showed <em>diminishing returns</em>: more dimensions help only if there is also more data, and vice versa.</p>
+<div class="plot" id="dims-plot">
+  <div id="dims-chart"></div>
+  <p class="readout" id="dims-readout">Hover or tap the chart to read a value.</p>
+  <div class="legend"><span><i style="background:var(--accent)"></i>600 dimensions</span><span><i style="background:var(--active)"></i>50 dimensions</span></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of training words (24 million to 783 million, log scale) and the y-axis is accuracy on the analogy questions. The 50-dimension line flattens out around 23%: it cannot store more even when given more text. The 600-dimension line keeps climbing, to 50.4%. At the smallest data size the two differ by only 10 points; at the largest by 27. Size the vectors to the data. Selected values from Table 2 of Mikolov et al. (2013a), CBOW, 3 training epochs.</p>
+<h4>4.3 Comparing architectures on the same data</h4>
+<p>All four models were trained on the same 320 million words with 640-dimensional vectors:</p>
+<div class="play" id="arch-bars"></div>
+<p class="reading"><strong>Reading it:</strong> each model has two bars, semantic accuracy (blue) and syntactic accuracy (orange). The recurrent model is good at grammar but poor at meaning (9% semantic). CBOW is the best at syntax (64%). Skip-gram is slightly behind CBOW on syntax but far ahead on meaning (55% semantic against 24%). If you want capital cities and currencies, predict the context from the word. Key numbers from Table 3 of Mikolov et al. (2013a).</p>
+<h4>4.4 Scaled up</h4>
+<p>On the full 6-billion-word corpus with DistBelief, 1000-dimensional skip-gram vectors reached 65.6% overall in 2.5 days on about 125 CPU cores, and CBOW 63.7% in 2 days on about 140 cores, against 50.8% for a 100-dimensional NNLM that needed 14 days on about 180 cores (Table 6). Training on twice the data for one epoch matched or beat three epochs on the same data (Table 5).</p>
+<h4>4.5 Sentence completion</h4>
+<p>On the Microsoft Research Sentence Completion Challenge (1,040 sentences with one missing word and five choices), skip-gram alone scored 48.0%, below older methods, but combined with recurrent language models it set a new record of 58.9%, up from 55.4%.</p>
+<h4>Why it matters today</h4>
+<p>Analogy tests are rarely used now, because modern embeddings are judged on retrieval and classification benchmarks. But the lesson of section 4.2, that model size and data size must grow together, reappeared a decade later as the <a href="scaling-laws.html">scaling laws</a> for language models.</p>
+</section>
+
+<section id="a5">
+<h3>5 Examples of the learned relationships <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1301.3781#S5">original</a></span></h3>
+<blockquote class="quote">“Thus for example, Paris - France + Italy = Rome.”<cite>Mikolov et al. (2013a), §5</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>On a street map, “from the station to the museum” is a direction and a distance. If every city was laid out the same way, you could take that same walk from any station and arrive at its museum. In a good word map, “from country to capital” is such a walk.</p>
+<h4>Try it: vector arithmetic on a word map</h4>
+<div class="play" id="analogy">
+  <div class="row2">
+    <label>A <select id="an-a"></select></label>
+    <label>minus B <select id="an-b"></select></label>
+    <label>plus C <select id="an-c"></select></label>
+  </div>
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin:0.6rem 0" id="an-presets"></div>
+  <svg id="an-svg" viewBox="0 0 560 360" role="img" aria-label="A two-dimensional word map with the analogy arrows drawn"></svg>
+  <p class="readout" id="an-readout"></p>
+  <p class="readout"><em>Illustrative: this 2-D map is hand-made so the arithmetic is visible. Real word2vec vectors have 300 to 1000 dimensions, and the paper measures closeness with cosine; in this flat toy we use straight-line distance.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the solid orange arrow goes from B to A: that is the relationship, for example “from man to king”. The dashed red arrow is the same arrow moved so that it starts at C. Its tip is X = A − B + C, and the red dot is the nearest word to X, with A, B and C themselves excluded as in the paper. Try the presets, then make your own. Relationships that exist in the map (gender, royalty, country to capital, adjective to comparative) work; mixing clusters, such as king − man + Paris, lands in empty space and returns whatever happens to be closest, which is exactly how real embeddings fail too.</p>
+<h4>What the paper reports</h4>
+<p>Table 8 lists relationships the 300-dimensional skip-gram vectors got right, from chemistry (copper to Cu gives zinc to Zn) to company products, and some they got wrong (the step from Einstein to scientist, applied to Messi and Mozart, gives midfielder and violinist). By the exact-match rule the examples would score only about 60%. Averaging the relationship over ten example pairs instead of one improved accuracy by about 10 points absolute. The same arithmetic also solves “which word does not belong?” by finding the word farthest from the average of a list.</p>
+<h4>Why it matters today</h4>
+<p>That meaning becomes <em>geometry</em>, so that directions in the space encode relationships, is what makes embeddings searchable, clusterable and comparable. The <a data-lesson="primer/ml/embeddings/word2vec.html">word embeddings lesson</a> reproduces an analogy from a model trained from scratch.</p>
+</section>
+
+<section id="a6">
+<h3>6 to 7 Conclusion and follow-up <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1301.3781#S6">original</a></span></h3>
+<p>The conclusion: very simple models trained on much more data beat complex models trained on less. The authors expect CBOW and skip-gram to scale to a trillion words. The follow-up note announces the open-source C code (training on billions of words per hour on one machine) and 1.4 million pre-trained vectors for named entities built from more than 100 billion words. That release, more than the paper, is why “word2vec” became a household name in machine learning.</p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="p2">
+<h2>Paper 2: Distributed Representations of Words and Phrases and their Compositionality</h2>
+<p class="byline">Mikolov, Sutskever, Chen, Corrado and Dean (2013), NIPS. <a href="https://arxiv.org/abs/1310.4546">arXiv:1310.4546</a>. The paper that made skip-gram fast and good, with negative sampling, subsampling and phrases.</p>
+</section>
+
+<section id="b1">
+<h3>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S1">original</a></span></h3>
+<blockquote class="quote">“For example, the result of a vector calculation vec(“Madrid”) - vec(“Spain”) + vec(“France”) is closer to vec(“Paris”) than to any other word vector.”<cite>Mikolov et al. (2013b), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Paper 1 built a fast car. Paper 2 tunes the engine: skip the words that tell you nothing (“the”, “a”), replace an expensive exam with a cheap true-or-false quiz, and treat “New York Times” as one word instead of three.</p>
+<h4>The three extensions</h4>
+<ul>
+  <li><strong>Subsampling</strong> frequent words: 2 to 10 times faster, and better vectors for rare words.</li>
+  <li><strong>Negative sampling</strong>: a simplified version of noise contrastive estimation that replaces the (hierarchical) softmax.</li>
+  <li><strong>Phrases</strong>: find multi-word expressions such as “Boston Globe” (a newspaper, not a globe in Boston) and give each its own vector.</li>
+</ul>
+<p>One headline number: an optimised single-machine implementation trains on more than 100 billion words in a day.</p>
+</section>
+
+<section id="b2">
+<h3>2 The skip-gram model <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Each word carries two cards: an <em>input</em> card, used when it is the centre word, and an <em>output</em> card, used when it is being guessed as a neighbour. Training nudges the cards so that a word's input card points the same way as the output cards of the words it really appears next to.</p>
+<h4>The training goal</h4>
+<div class="eq" data-tex="\frac{1}{\htmlData{sym=Tlen}{T}}\htmlData{sym=sumt}{\sum_{t=1}^{T}}\ \htmlData{sym=sumj}{\sum_{-c\le j\le c,\ j\ne 0}} \htmlData{sym=logp}{\log p}(\htmlData{sym=wtj}{w_{t+j}} \mid \htmlData{sym=wt}{w_t})" data-fallback="(1/T) Σ_t Σ_{−c≤j≤c, j≠0} log p(w_{t+j} | w_t)"></div>
+<div class="symtable" data-syms="Tlen,sumt,sumj,wt,wtj,logp"></div>
+<p class="inwords"><strong>In words:</strong> “for every position in the text, add up how confidently the model predicts each word within c places of it, and average over the text; training makes this as large as possible.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at the centre word “brown” in “the quick brown fox jumps” with c = 2, the four terms are log p(the | brown) + log p(quick | brown) + log p(fox | brown) + log p(jumps | brown). If each probability is 0.01, the sum is 4 × ln 0.01 = −18.4, and training pushes it towards 0.</p>
+<h4>The expensive part: the full softmax</h4>
+<div class="eq" data-tex="p(\htmlData{sym=wO}{w_O}\mid \htmlData{sym=wI}{w_I}) = \frac{\exp\!\big(\htmlData{sym=vpO}{v'^{\top}_{w_O}} \htmlData{sym=vI}{v_{w_I}}\big)}{\htmlData{sym=sumW}{\sum_{w=1}^{W}} \exp\!\big(v'^{\top}_{w} \htmlData{sym=vI}{v_{w_I}}\big)}" data-fallback="p(w_O | w_I) = exp(v'_{w_O}ᵀ v_{w_I}) / Σ_{w=1..W} exp(v'_wᵀ v_{w_I})"></div>
+<div class="symtable" data-syms="wI,wO,vI,vpO,sumW"></div>
+<p class="inwords"><strong>In words:</strong> “score the guess by the dot product of the centre word's input vector with the guessed word's output vector, and turn the scores into probabilities with a softmax over the entire vocabulary.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with a toy vocabulary of three words whose output vectors score 2.0, 1.0 and 0.5 against the input vector, p = e<sup>2</sup> / (e<sup>2</sup> + e<sup>1</sup> + e<sup>0.5</sup>) = 7.39 / 11.76 = 0.63. With a real vocabulary, W is 10<sup>5</sup> to 10<sup>7</sup>, so the bottom of that fraction costs up to ten million dot products for every single training pair. The next two sections are two ways around it.</p>
+<figure class="ix" id="fig-pca">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 250" role="img" aria-label="Countries and their capitals, with parallel arrows">
+    <defs><marker id="arrp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="150" y="16" text-anchor="middle" class="lbl">countries (left) → capitals (right)</text>
+    <g id="pca-g"></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a country or its arrow.</p></div>
+  </div>
+  <figcaption>The idea of Figure 2 of paper 2, redrawn with illustrative positions: a 2-D projection of country and capital vectors. Based on Mikolov et al. (2013b), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each country (left) is joined by an arrow to its capital (right). The arrows are nearly parallel and nearly the same length: “capital of” is roughly one direction in the space. The paper's point is that nobody told the model what a capital is. It discovered the relationship purely from which words appear near which. The positions here are illustrative; the paper's own figure is a <span class="t" data-tip-title="PCA projection" data-tip="Principal component analysis: squash many dimensions down to 2 by keeping the two directions along which the points vary most. Good for pictures, but distances in the picture are only approximate.">PCA projection</span> of real 1000-dimensional skip-gram vectors.</p>
+</section>
+
+<section id="b21">
+<h3>2.1 Hierarchical softmax <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Twenty questions. Instead of scoring all million words at once, play a game of yes-or-no: “is it in the left half of the vocabulary?”, then “the left half of that?”, and so on. After about 20 questions you have narrowed a million words down to one. Each question is a coin flip whose bias the model learns.</p>
+<h4>Tiny example</h4>
+<p>Eight words sit at the leaves of a three-level tree. To reach “cat” the path goes left, right, left. If, for the current centre word, the three branch probabilities along that path are 0.6, 0.7 and 0.5, then p(cat) = 0.6 × 0.7 × 0.5 = 0.21, from three sigmoid evaluations instead of eight (or a million) dot products.</p>
+<div class="play" id="tree-demo">
+  <div class="row2"><label>Root: chance of going left = <strong id="tree-root-v">0.60</strong><input type="range" id="tree-root" min="0.05" max="0.95" step="0.05" value="0.6"></label></div>
+  <svg id="tree-svg" viewBox="0 0 560 250" role="img" aria-label="A binary tree over eight words; click a leaf to see its path"></svg>
+  <p class="readout" id="tree-readout"></p>
+  <p class="readout" id="tree-huff"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each inner circle is a learned yes-or-no question; the number beside each branch is the probability of taking it, for one particular centre word (the values are illustrative). Click a leaf: its path lights up and its probability is the product of the numbers along the path. The line below the tree adds up all eight leaf probabilities: it is always exactly 1, whatever you set the root slider to, because every internal question splits its probability between its two children. That is why the tree is a proper probability distribution without ever summing over the whole vocabulary. The second line compares path lengths: a Huffman tree built from word counts puts frequent words near the root.</p>
+<div class="eq" data-tex="p(\htmlData{sym=wleaf}{w}\mid \htmlData{sym=wI}{w_I}) = \htmlData{sym=prodL}{\prod_{j=1}^{L(w)-1}} \htmlData{sym=sigma}{\sigma}\Big(\htmlData{sym=sgn}{[\![ n(w,j{+}1) = \mathrm{ch}(n(w,j)) ]\!]} \cdot \htmlData{sym=vpn}{v'^{\top}_{n(w,j)}} \htmlData{sym=vI}{v_{w_I}}\Big)" data-fallback="p(w | w_I) = Π_{j=1}^{L(w)−1} σ( [[n(w,j+1) = ch(n(w,j))]] · v'_{n(w,j)}ᵀ v_{w_I} )"></div>
+<div class="symtable" data-syms="wleaf,prodL,sigma,sgn,vpn"></div>
+<p class="inwords"><strong>In words:</strong> “walk from the root to the word; at each inner node, compute a sigmoid of that node's vector dotted with the centre word's vector, flipping the sign when the path goes the other way; multiply the results.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the path to “cat”, three factors 0.6 × 0.7 × 0.5 = 0.21. With a million words, a balanced tree needs log₂(10<sup>6</sup>) ≈ 20 factors, and a Huffman tree fewer for common words.</p>
+<h4>Why it matters today</h4>
+<p>Hierarchical softmax is rarely used in modern language models, which can afford the full softmax on <span class="t" data-t="gpu">GPUs</span>. The idea of replacing one huge choice with a short chain of small ones lives on in tree-based indexes and in the coarse-then-fine search of <a href="hnsw.html">HNSW</a>.</p>
+</section>
+
+<section id="b22">
+<h3>2.2 Negative sampling <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“Thus the task is to distinguish the target word w<sub>O</sub> from draws from the noise distribution P<sub>n</sub>(w) using logistic regression, where there are k negative samples for each data sample.”<cite>Mikolov et al. (2013b), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Replace the multiple-choice exam with a million options by a quick true-or-false quiz. Show the model the real pair (sat, cat) and ask “did these appear together?”: the answer should be yes. Then show it a few made-up pairs, (sat, galaxy), (sat, invoice), and it should say no. Five or so fake pairs per real one are enough to teach it the difference.</p>
+<h4>Tiny example</h4>
+<p>Suppose the real pair scores 2.0 (the dot product of the two vectors) and two fake pairs score 1.5 and −0.5. The quiz rewards a high chance of “yes” on the real pair and of “no” on the fakes, using the <span class="t" data-t="sigmoid">sigmoid</span> σ:</p>
+<ul>
+  <li>real pair: log σ(2.0) = log 0.881 = −0.127 (good: already confident);</li>
+  <li>fake pair 1: log σ(−1.5) = log 0.182 = −1.701 (bad: the fake looks real);</li>
+  <li>fake pair 2: log σ(0.5) = log 0.622 = −0.474.</li>
+</ul>
+<p>The total, −2.302, is what training pushes up. Most of the push goes to fake pair 1, the most convincing fake.</p>
+<div class="eq" data-tex="\htmlData{sym=logsig}{\log\sigma}\big(\htmlData{sym=vpO}{v'^{\top}_{w_O}}\htmlData{sym=vI}{v_{w_I}}\big) + \htmlData{sym=sumk}{\sum_{i=1}^{k}} \htmlData{sym=Enoise}{\mathbb{E}_{w_i\sim P_n(w)}}\Big[\htmlData{sym=logsig}{\log\sigma}\big(-\htmlData{sym=vpi}{v'^{\top}_{w_i}}\htmlData{sym=vI}{v_{w_I}}\big)\Big]" data-fallback="log σ(v'_{w_O}ᵀ v_{w_I}) + Σ_{i=1..k} E_{w_i∼P_n(w)} [ log σ(−v'_{w_i}ᵀ v_{w_I}) ]"></div>
+<div class="symtable" data-syms="logsig,sumk,kneg,Enoise,vpi"></div>
+<p class="inwords"><strong>In words:</strong> “make the real pair's score high and each of the k random pairs' scores low, each judged through a sigmoid, and replace every log-probability term in the skip-gram goal with this.”</p>
+<p class="inwords"><strong>With the numbers:</strong> −0.127 + (−1.701) + (−0.474) = −2.302 for the example above. The cost is now k + 1 dot products (3 here) instead of W (a million).</p>
+<div class="play" id="neg-demo">
+  <div class="sliders" id="neg-sliders"></div>
+  <div class="shares" id="neg-terms"></div>
+  <p class="readout" id="neg-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is one term of the objective, drawn as its size (longer means worse, since every term is a negative log). The number on the right of each row is the push that training gives that pair's score: <span class="mono">+(1 − σ(s))</span> upward for the real pair, <span class="mono">−σ(s)</span> downward for each fake. Drag the real score up: its bar shrinks and its push fades, since there is nothing left to learn. Drag a fake's score up: its bar grows and its downward push approaches −1. Training effort flows automatically to the pairs the model currently gets most wrong, the same property that makes <span class="t" data-t="hard negative">hard negatives</span> so valuable in <a href="dpr.html">DPR</a>.</p>
+
+<h4>Which fake words? The noise distribution</h4>
+<p>Fake words are drawn at random, but not uniformly. The paper found that drawing each word with probability proportional to its count raised to the power 3/4 works much better than either plain counts or a uniform draw.</p>
+<div class="eq" data-tex="\htmlData{sym=Pn}{P_n(w)} = \frac{\htmlData{sym=Uw}{U(w)}^{3/4}}{\htmlData{sym=Znorm}{Z}}" data-fallback="P_n(w) = U(w)^(3/4) / Z"></div>
+<div class="symtable" data-syms="Pn,Uw,Znorm"></div>
+<p class="inwords"><strong>In words:</strong> “flatten the word frequencies a little by raising them to the power 0.75, then rescale so they add to 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for four words with frequencies 0.9, 0.08, 0.018 and 0.002, the powers are 0.924, 0.150, 0.049 and 0.0095, which sum to Z = 1.133. The rare word's share rises from 0.2% to 0.83%, about four times more often, while the common word falls from 90% to 81.6%.</p>
+<div class="play" id="noise-demo">
+  <div class="sliders" id="noise-sliders"></div>
+  <div class="shares" id="noise-bars"></div>
+  <p class="readout" id="noise-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> drag the exponent. At 1 the shares are the raw frequencies, so almost every fake word would be “the”. At 0 every word is equally likely, so obscure words would dominate the fakes. At the paper's 0.75, common words are still drawn most often, but rare words get noticeably more practice. The rightmost column shows how many times more (or less) often each word is drawn than its raw frequency.</p>
+<p>The paper also reports that k = 5 to 20 negatives suit small datasets, while 2 to 5 are enough for large ones. Unlike noise contrastive estimation, negative sampling needs only samples from the noise distribution, not its probabilities, and does not try to recover proper probabilities: it only cares about good vectors.</p>
+<h4>Why it matters today</h4>
+<p>This is the template for almost every embedding model since: score a true pair against a handful of false ones. <a href="dpr.html">DPR</a> reuses the other questions' answers in a batch as the false ones (in-batch negatives), and <a href="clip.html">CLIP</a> does the same with images and captions. The <a data-lesson="primer/ml/losses.html">losses lesson</a> and the <a data-lesson="primer/ml/embeddings/contrastive.html">contrastive training lesson</a> build this family of losses.</p>
+</section>
+
+<section id="b23">
+<h3>2.3 Subsampling of frequent words <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If you learn about France by reading which words appear near it, “Paris” teaches you a lot and “the” teaches you nothing, because “the” is next to everything. So randomly skip most occurrences of the most common words: you lose almost no information and save a great deal of time.</p>
+<div class="eq" data-tex="\htmlData{sym=Pdisc}{P(w_i)} = 1 - \sqrt{\frac{\htmlData{sym=tthr}{t}}{\htmlData{sym=fw}{f(w_i)}}}" data-fallback="P(w_i) = 1 − sqrt(t / f(w_i))"></div>
+<div class="symtable" data-syms="Pdisc,tthr,fw"></div>
+<p class="inwords"><strong>In words:</strong> “throw away each occurrence of a word with a probability that grows with how common the word is; words rarer than the threshold t are always kept.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with t = 10<sup>−5</sup>, a word making up 5% of the text (f = 0.05) is discarded with probability 1 − √(0.0002) = 1 − 0.014 = 0.986, so only 1.4% of its occurrences survive. A word with f = 10<sup>−4</sup> is discarded with probability 1 − 0.316 = 0.684. A word with f = 10<sup>−5</sup> or rarer is never discarded.</p>
+<div class="plot" id="sub-plot">
+  <div class="controls"><label for="sub-t">threshold t = <strong id="sub-t-v">1e-5</strong></label><input type="range" id="sub-t" min="-7" max="-3" step="0.25" value="-5"></div>
+  <div id="sub-chart"></div>
+  <p class="readout" id="sub-readout">Hover or tap the curve to read the discard probability.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is a word's frequency on a log scale, from one in ten million to one in ten; the y-axis is the chance each occurrence is thrown away. Left of the threshold t the curve sits at 0: rare words are always kept. Right of it, the curve rises steeply towards 1, so the most common words lose almost all their occurrences. Slide t: a larger threshold moves the knee right, so fewer words get thinned. The paper chose the formula by hand; it keeps the frequency ranking intact while aggressively trimming the top.</p>
+<p>The effect in the paper's experiments: training 2 to 10 times faster, and <em>more</em> accurate vectors for rare words, because they now make up a larger share of the training pairs.</p>
+</section>
+
+<section id="b3">
+<h3>3 Empirical results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A bake-off: the same one billion words of news, the same 300-dimensional skip-gram, and four ways of handling the output: hierarchical softmax, noise contrastive estimation, and negative sampling with 5 or 15 fakes. Then the same again with subsampling switched on.</p>
+<div class="play" id="neg-results"></div>
+<p class="reading"><strong>Reading it:</strong> each row is one training method; the bar is its total accuracy on the analogy test, and the right column shows the training time in minutes. Negative sampling with 15 negatives is the most accurate (61%) and hierarchical softmax the least (47%). Switching on subsampling (the lower block) keeps accuracy about the same or better while cutting training time: NEG-5 drops from 38 to 14 minutes. Key numbers from Table 1 of Mikolov et al. (2013b); vocabulary of 692,000 words (words seen fewer than 5 times were dropped).</p>
+</section>
+
+<section id="b4">
+<h3>4 Learning phrases <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>“Air Canada” is an airline, not air plus Canada. Some word pairs are really single names. The trick is to spot pairs that appear together far more often than their individual popularity would predict, and glue them into one token before training.</p>
+<div class="eq" data-tex="\htmlData{sym=score}{\text{score}}(\htmlData{sym=wi}{w_i}, \htmlData{sym=wj}{w_j}) = \frac{\htmlData{sym=cij}{\text{count}(w_i w_j)} - \htmlData{sym=delta}{\delta}}{\htmlData{sym=ci}{\text{count}(w_i)} \times \htmlData{sym=ci}{\text{count}(w_j)}}" data-fallback="score(w_i, w_j) = (count(w_i w_j) − δ) / (count(w_i) × count(w_j))"></div>
+<div class="symtable" data-syms="score,wi,wj,cij,ci,delta"></div>
+<p class="inwords"><strong>In words:</strong> “how often the two words appear side by side, minus a small discount, divided by how often each appears at all.”</p>
+<p class="inwords"><strong>With the numbers (illustrative counts):</strong> if “new” appears 2,000 times, “york” 900 times and “new york” 800 times, with δ = 5 the score is (800 − 5) / (2,000 × 900) = 4.4 × 10<sup>−4</sup>. For “this is”, with “this” 50,000 times, “is” 80,000 times and the pair 4,000 times: (4,000 − 5) / (4 × 10<sup>9</sup>) = 1.0 × 10<sup>−6</sup>, over 400 times lower, so “this is” stays two words.</p>
+<div class="play" id="phrase-demo">
+  <div class="plot" style="margin:0;border:0;padding:0"><div class="controls"><label for="ph-thr">threshold = <strong id="ph-thr-v"></strong></label><input type="range" id="ph-thr" min="-7" max="-3" step="0.1" value="-5"></div></div>
+  <div id="ph-table"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each row is a candidate pair with illustrative counts and its score on a log scale. Pairs above the threshold (green) become single tokens such as <span class="mono">new_york</span>; pairs below stay separate. Pairs of rare words that happen to meet once or twice are held back by the discount δ, which is subtracted before dividing. The paper runs 2 to 4 passes with a decreasing threshold, so longer phrases such as “New York Times” can form from pieces glued in earlier passes.</p>
+<h4>4.1 Results</h4>
+<p>A new test of 3,218 phrase analogies, such as Montreal is to Montreal Canadiens as Toronto is to Toronto Maple Leafs. With 300 dimensions, hierarchical softmax plus subsampling did best (47%), a reversal of the word-level result. The best model, trained on about 33 billion words with 1000 dimensions and the whole sentence as context, reached 72%; the same setup on 6 billion words reached 66%. More data, again, was crucial.</p>
+</section>
+
+<section id="b5">
+<h3>5 Additive compositionality <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S5">original</a></span></h3>
+<blockquote class="quote">“The product works here as the AND function: words that are assigned high probabilities by both word vectors will have high probability, and the other words will have low probability.”<cite>Mikolov et al. (2013b), §5</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Ask two friends for restaurant suggestions: one knows good Italian places, the other knows places near your office. The places both would recommend are the answer. Adding two word vectors does the same: “Russian” + “river” lands near words likely in the context of both, such as “Volga River”.</p>
+<h4>Tiny example</h4>
+<p>Why addition acts like AND: a word vector's dot products with output vectors behave like log-probabilities of context words. Adding two vectors adds those logs, which multiplies the probabilities. Say “Russian” gives the context words (Moscow, Volga, Amazon) chances (0.5, 0.4, 0.1) and “river” gives (0.1, 0.45, 0.45). The products are 0.05, 0.18 and 0.045: after rescaling to sum to 1, Volga gets 0.66, far more than either word alone gave it, because only Volga is likely under <em>both</em>.</p>
+<p>Examples from the paper's Table 5 (best skip-gram model): Vietnam + capital → Hanoi, German + airlines → Lufthansa, Russian + river → Volga River.</p>
+<h4>Why it matters today</h4>
+<p>Averaging word vectors to get a sentence vector, the obvious baseline that <a href="sentence-bert.html">Sentence-BERT</a> compares against, rests on this additive property. It works surprisingly well and fails exactly where word order matters: “dog bites man” and “man bites dog” average to the same vector.</p>
+</section>
+
+<section id="b6">
+<h3>6 to 7 Comparison and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1310.4546#S6">original</a></span></h3>
+<p>Against published vectors from earlier neural models, the big skip-gram phrase model (1000 dimensions, about 30 billion words, trained in about a day) gives visibly better nearest neighbours for rare words: for “Redmond” it returns Redmond Wash., Redmond Washington and Microsoft, where older models returned unrelated names. The older models had been trained for up to two months on two to three orders of magnitude less data. The conclusion names the decisions that matter most: the architecture, the vector size, the subsampling rate and the window size.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2013</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In word2vec</th><th>Today</th><th>Why</th><th>Where to learn it</th></tr></thead>
+  <tbody>
+    <tr><td>One vector per word, whatever the context</td><td>Contextual vectors from a <span class="t" data-t="transformer">transformer</span>: “bank” gets different vectors in “river bank” and “bank loan”</td><td>Meaning depends on context</td><td><a data-lesson="primer/ml/embeddings/word2vec.html">word embeddings</a></td></tr>
+    <tr><td>Word vectors, averaged for sentences</td><td>Sentence and passage embeddings trained directly</td><td>Averaging loses word order and weighs every word equally</td><td><a href="sentence-bert.html">Sentence-BERT companion</a></td></tr>
+    <tr><td>Negative sampling from a 3/4-power noise distribution</td><td>In-batch negatives plus mined hard negatives</td><td>Other examples in the batch are free negatives; hard ones teach fine distinctions</td><td><a href="dpr.html">DPR companion</a></td></tr>
+    <tr><td>Whole words and glued phrases</td><td>Subword tokens (BPE, WordPiece)</td><td>No unknown words; rare words share pieces</td><td><a data-lesson="primer/ml/tokenization.html">tokenization</a></td></tr>
+    <tr><td>Cosine nearest neighbour by brute force</td><td>Approximate nearest-neighbour indexes</td><td>Billions of vectors</td><td><a href="hnsw.html">HNSW companion</a></td></tr>
+  </tbody>
+</table></div>
+<p>What survived intact: the distributional idea (meaning from context), dense vectors compared by cosine, and the practice of training on a true pair against sampled false ones.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Tomas Mikolov, Kai Chen, Greg Corrado and Jeffrey Dean, <em>Efficient Estimation of Word Representations in Vector Space</em> (2013), <a href="https://arxiv.org/abs/1301.3781">arXiv:1301.3781</a>, and Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg Corrado and Jeffrey Dean, <em>Distributed Representations of Words and Phrases and their Compositionality</em>, NIPS 2013, <a href="https://arxiv.org/abs/1310.4546">arXiv:1310.4546</a>. Quotations are brief and attributed; selected results are restated with attribution; all figures are redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // cost model
+    Ocost: { tex: "O", name: "Total training cost", meaning: "How many parameter reads and writes the whole training run needs. Used to compare architectures fairly.", shape: "one number", example: "4.5 × 10¹³" },
+    Eep: { tex: "E", name: "Epochs", meaning: "How many times the training text is read from start to finish.", shape: "3 to 50 in the paper", example: "3" },
+    Tw: { tex: "T", name: "Training words", meaning: "How many words of text are read in one pass.", shape: "up to billions", example: "10⁹" },
+    Qper: { tex: "Q", name: "Work per word", meaning: "How many parameters one training example touches. Defined separately for each architecture.", shape: "one number", example: "about 15,000 for CBOW" },
+    Nctx: { tex: "N", name: "Context words", meaning: "How many neighbouring words the model reads to make one prediction.", shape: "a whole number", example: "10" },
+    Ddim: { tex: "D", name: "Vector size", meaning: "How many numbers represent each word.", shape: "50 to 1000", example: "500" },
+    Hhid: { tex: "H", name: "Hidden layer size", meaning: "How many neurons are in the hidden layer (NNLM) or the recurrent state (RNNLM). word2vec has none.", shape: "500 to 1000", example: "500" },
+    Vvoc: { tex: "V", name: "Vocabulary size", meaning: "How many different words the model knows.", shape: "10⁵ to 10⁷", example: "1,000,000" },
+    Cmax: { tex: "C", name: "Maximum window", meaning: "The furthest distance, in words, at which skip-gram looks for context.", shape: "a whole number", example: "10 in the paper" },
+    log2V: { tex: "\\log_2 V", name: "Tree depth", meaning: "How many yes-or-no decisions pick one word out of V with a balanced binary tree: the power of 2 that gives V.", shape: "one number", example: "log₂(1,000,000) ≈ 19.93" },
+    // analogies
+    Xvec: { tex: "X", name: "The landing point", meaning: "Where you end up after applying the step from one word to another, starting from a third word.", shape: "D numbers", example: "(2, −3.8) in the toy map" },
+    vecfn: { tex: "\\text{vector}", name: "Look up a word's vector", meaning: "Returns the learned list of numbers for a word.", shape: "D numbers", example: "vector(big) = (−2, −4) in the toy map" },
+    argmaxw: { tex: "\\arg\\max_w", name: "The word that scores highest", meaning: "Search every word w in the vocabulary (except the three question words) and return the one with the largest score.", shape: "one word", example: "smaller" },
+    cosXw: { tex: "\\cos(X, \\text{vector}(w))", name: "Cosine similarity", meaning: "How closely two vectors point the same way: 1 means the same direction, 0 unrelated, −1 opposite. Lengths are ignored.", shape: "−1 … 1", example: "1.0 for an exact hit" },
+    // objective
+    Tlen: { tex: "T", name: "Text length", meaning: "The number of words in the training text.", shape: "billions", example: "10⁹" },
+    sumt: { tex: "\\sum_{t=1}^{T}", name: "Every position", meaning: "Visit each word of the text in turn as the centre word.", shape: "T terms", example: "t = 3 is “brown”" },
+    sumj: { tex: "\\sum_{-c\\le j\\le c,\\, j\\ne 0}", name: "Every neighbour", meaning: "Visit each offset from −c to +c except 0 (the centre word itself).", shape: "2c terms", example: "j = −2, −1, +1, +2 for c = 2" },
+    wt: { tex: "w_t", name: "Centre word", meaning: "The word at position t.", shape: "a word", example: "brown" },
+    wtj: { tex: "w_{t+j}", name: "Neighbour", meaning: "The word j places away from the centre.", shape: "a word", example: "fox for j = +1" },
+    logp: { tex: "\\log p", name: "Log-probability", meaning: "The natural logarithm of the model's probability for the neighbour. Always 0 or negative; closer to 0 means more confident.", shape: "−∞ … 0", example: "ln 0.01 = −4.6" },
+    wI: { tex: "w_I", name: "Input word", meaning: "The centre word being used to predict.", shape: "a word", example: "sat" },
+    wO: { tex: "w_O", name: "Output word", meaning: "The neighbour being predicted.", shape: "a word", example: "cat" },
+    vI: { tex: "v_{w_I}", name: "Input vector", meaning: "The centre word's input card: its learned vector when it is the one doing the predicting. These are the vectors people keep and use as word embeddings.", shape: "D numbers (300)", example: "vector for “sat”" },
+    vpO: { tex: "v'_{w_O}", name: "Output vector", meaning: "The guessed word's output card: a separate learned vector used only when it is being predicted.", shape: "D numbers (300)", example: "output vector for “cat”" },
+    sumW: { tex: "\\sum_{w=1}^{W}", name: "Sum over the whole vocabulary", meaning: "The expensive part: one dot product and one exponential for every word the model knows, W of them.", shape: "10⁵ to 10⁷ terms", example: "7.39 + 2.72 + 1.65 = 11.76 for a 3-word toy" },
+    // hierarchical softmax
+    wleaf: { tex: "w", name: "Target word", meaning: "The word whose probability we want: one leaf of the tree.", shape: "a word", example: "cat" },
+    prodL: { tex: "\\prod_{j=1}^{L(w)-1}", name: "Multiply along the path", meaning: "L(w) is the number of nodes on the path from the root to the word. Multiply one factor per decision along the way.", shape: "about log₂ W factors", example: "3 factors for 8 words" },
+    sigma: { tex: "\\sigma", name: "Sigmoid", meaning: "σ(x) = 1 / (1 + e^−x): squashes any number into a probability between 0 and 1, with σ(0) = 0.5.", shape: "0 … 1", example: "σ(2) = 0.881" },
+    sgn: { tex: "[\\![\\cdot]\\!]", name: "Which way", meaning: "Equals +1 if the path goes to the node's designated child and −1 otherwise. Flipping the sign turns σ(x) into σ(−x) = 1 − σ(x), the probability of the other branch.", shape: "+1 or −1", example: "+1 for left, −1 for right" },
+    vpn: { tex: "v'_{n(w,j)}", name: "Node vector", meaning: "Each inner node of the tree has its own learned vector, which decides its left-or-right question for any input word.", shape: "D numbers", example: "the root's vector" },
+    // negative sampling
+    logsig: { tex: "\\log\\sigma", name: "Log of the sigmoid", meaning: "Near 0 when the argument is large and positive (a confident “yes”), very negative when the argument is very negative.", shape: "−∞ … 0", example: "log σ(2.0) = −0.127" },
+    sumk: { tex: "\\sum_{i=1}^{k}", name: "Over the fake pairs", meaning: "Add one term for each of the k negative samples.", shape: "k terms", example: "k = 2 in the example" },
+    kneg: { tex: "k", name: "Negatives per real pair", meaning: "How many fake words are drawn for each real (centre, neighbour) pair.", shape: "2 to 20", example: "5 to 20 for small data, 2 to 5 for large" },
+    Enoise: { tex: "\\mathbb{E}_{w_i\\sim P_n(w)}", name: "Averaged over random fakes", meaning: "The fake word w_i is drawn at random from the noise distribution P_n; in practice one draw per term.", shape: "one number", example: "draws “galaxy”" },
+    vpi: { tex: "v'_{w_i}", name: "Fake word's output vector", meaning: "The output vector of a randomly drawn word. Training pushes its dot product with the input vector down.", shape: "D numbers", example: "score 1.5 → push down" },
+    Pn: { tex: "P_n(w)", name: "Noise distribution", meaning: "The probability of drawing word w as a fake.", shape: "0 … 1, sums to 1", example: "0.0083 for the rare word" },
+    Uw: { tex: "U(w)", name: "Unigram frequency", meaning: "The share of all words in the text that are w.", shape: "0 … 1", example: "0.002" },
+    Znorm: { tex: "Z", name: "Normaliser", meaning: "The sum of U(w)^(3/4) over all words, so the result adds to 1.", shape: "one number", example: "1.133" },
+    // subsampling
+    Pdisc: { tex: "P(w_i)", name: "Discard probability", meaning: "The chance that one occurrence of the word is skipped during training.", shape: "0 … 1", example: "0.986 for f = 0.05" },
+    tthr: { tex: "t", name: "Threshold", meaning: "A chosen frequency: words rarer than this are never discarded.", shape: "around 10⁻⁵", example: "10⁻⁵" },
+    fw: { tex: "f(w_i)", name: "Word frequency", meaning: "The share of the text made up of this word.", shape: "0 … 1", example: "0.05" },
+    // phrases
+    score: { tex: "\\text{score}", name: "Phrase score", meaning: "How much more often two words appear together than their separate popularity suggests. High means “glue them”.", shape: "a small positive number", example: "4.4 × 10⁻⁴ for new york" },
+    wi: { tex: "w_i", name: "First word", meaning: "The left word of the candidate pair.", shape: "a word", example: "new" },
+    wj: { tex: "w_j", name: "Second word", meaning: "The right word of the candidate pair.", shape: "a word", example: "york" },
+    cij: { tex: "\\text{count}(w_i w_j)", name: "Pair count", meaning: "How many times the two words appear side by side, in this order.", shape: "a whole number", example: "800" },
+    ci: { tex: "\\text{count}(w)", name: "Word count", meaning: "How many times a word appears on its own.", shape: "a whole number", example: "2,000 and 900" },
+    delta: { tex: "\\delta", name: "Discount", meaning: "A small number subtracted from the pair count so that pairs of very rare words, which might meet once by chance, do not become phrases.", shape: "a small count", example: "5" },
+  },
+
+  blocks: {
+    cb_in: { title: "Context word lookups", body: "<p>Each surrounding word is looked up in the same table (one row of D numbers per word). The paper's best CBOW used four words before and four after.</p>", shape: "8 × D", lesson: "primer/ml/embeddings/word2vec.html" },
+    cb_sum: { title: "Average (projection)", body: "<p>The context vectors are averaged into one. Order is lost, which is why this is a <em>bag</em> of words. There is no hidden layer and no nonlinearity.</p>", shape: "D" },
+    cb_out: { title: "Predict the middle word", body: "<p>The averaged vector is scored against the vocabulary through a hierarchical softmax (or, in paper 2, negative sampling). Training makes the true middle word likely.</p>", shape: "about log₂V decisions" },
+    sg_in: { title: "The centre word", body: "<p>One word, looked up once. Its vector will be used for every prediction in its window.</p>", shape: "one word id" },
+    sg_proj: { title: "Look up its vector", body: "<p>Its row of the input table, v<sub>w</sub>. After training, these rows are the word vectors people download and use.</p>", shape: "D", lesson: "primer/ml/embeddings/word2vec.html" },
+    sg_out: { title: "Predict each neighbour", body: "<p>A separate prediction for each context word inside the randomly drawn window R. More predictions per word than CBOW, so slower, but each rare word gets more training signal: the reason skip-gram wins on semantic questions.</p>", shape: "2R predictions" },
+  },
+
+  onReady(P) {
+    costDemo();
+    windowDemo();
+    dimsChart(P);
+    archBars();
+    analogy();
+    treeDemo();
+    negDemo();
+    noiseDemo();
+    subChart(P);
+    negResults();
+    phraseDemo();
+  },
+};
+
+/* ---- shared tiny helpers ---- */
+const fmtInt = (x) => Math.round(x).toLocaleString("en-US");
+function slider(container, label, min, max, step, value, fmt, onInput) {
+  const id = "s-" + Math.random().toString(36).slice(2, 8);
+  const l = document.createElement("label"); l.htmlFor = id; l.textContent = label;
+  const r = document.createElement("input"); Object.assign(r, { type: "range", id, min, max, step, value });
+  const o = document.createElement("output"); o.textContent = fmt(+value);
+  r.addEventListener("input", () => { o.textContent = fmt(+r.value); onInput(+r.value); });
+  container.append(l, r, o);
+  return r;
+}
+function barRow(label, frac, right, color, cols) {
+  const style = cols ? `grid-template-columns:${cols}` : "";
+  return `<div class="share-row" style="${style}"><span>${label}</span><div><div class="share-bar" style="width:${Math.max(0.5, Math.min(100, frac * 100)).toFixed(1)}%;${color ? "background:" + color : ""}"></div></div><span>${right}</span></div>`;
+}
+
+/* ---- where does the work go ---- */
+function costDemo() {
+  const st = { V: 6, H: 500, D: 500, N: 10 };
+  const box = document.getElementById("cost-sliders");
+  slider(box, "vocabulary V", 4, 7, 0.1, st.V, (x) => { const v = Math.pow(10, x); return v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : Math.round(v / 1e3) + "k"; }, (x) => { st.V = x; draw(); });
+  slider(box, "hidden size H", 100, 1000, 50, st.H, fmtInt, (x) => { st.H = x; draw(); });
+  slider(box, "vector size D", 50, 1000, 50, st.D, fmtInt, (x) => { st.D = x; draw(); });
+  slider(box, "context N (and C)", 2, 10, 1, st.N, fmtInt, (x) => { st.N = x; draw(); });
+  function draw() {
+    const V = Math.pow(10, st.V), lg = Math.log2(V), { H, D, N } = st;
+    const rows = [
+      ["NNLM, full softmax", N * D + N * D * H + H * V],
+      ["NNLM, hierarchical", N * D + N * D * H + H * lg],
+      ["RNNLM, hierarchical", H * H + H * lg],
+      ["Skip-gram", N * (D + D * lg)],
+      ["CBOW", N * D + D * lg],
+    ];
+    const top = Math.log10(Math.max(...rows.map((r) => r[1])));
+    document.getElementById("cost-bars").innerHTML = rows
+      .map(([n, q], i) => barRow(n, Math.log10(q) / Math.max(top, 1), fmtInt(q), i < 3 ? "var(--wire)" : "", "10rem minmax(0,1fr) 7.5rem"))
+      .join("");
+    const ratio = rows[1][1] / rows[4][1];
+    document.getElementById("cost-readout").innerHTML = `log₂V = ${lg.toFixed(2)}. CBOW touches <strong>${ratio.toFixed(0)}× fewer</strong> parameters per word than the hierarchical NNLM. Bars use a log scale.`;
+  }
+  draw();
+}
+
+/* ---- skip-gram window ---- */
+function windowDemo() {
+  const words = ["the", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"];
+  const cS = document.getElementById("win-c"), wS = document.getElementById("win-w");
+  const cV = document.getElementById("win-c-v"), wV = document.getElementById("win-w-v"), rV = document.getElementById("win-r-v");
+  let R = 2, seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  function draw() {
+    const C = +cS.value, t = +wS.value;
+    R = Math.min(R, C);
+    cV.textContent = C; wV.textContent = words[t]; rV.textContent = R;
+    const box = document.getElementById("win-sentence");
+    box.innerHTML = words.map((w, i) => {
+      const d = Math.abs(i - t);
+      const cls = i === t ? "center" : d <= R ? "ctx" : d <= C ? "gone" : "";
+      return `<span class="pill ${cls}">${w}</span>`;
+    }).join("");
+    const pairs = words.map((w, i) => ({ w, d: Math.abs(i - t), i })).filter((o) => o.d > 0 && o.d <= R).map((o) => `(${words[t]} → ${o.w})`);
+    document.getElementById("win-pairs").innerHTML = `Training pairs this step: <strong>${pairs.join(", ") || "none"}</strong>. That is ${pairs.length} predictions from one centre word.`;
+    let html = `<div class="legend" style="margin:0.3rem 0">How often a word at each distance is used, over many draws of R</div>`;
+    for (let d = 1; d <= C; d++) html += barRow(`distance ${d}`, (C - d + 1) / C, `${Math.round(((C - d + 1) / C) * 100)}%`, "", "6.5rem minmax(0,1fr) 3.4rem");
+    document.getElementById("win-weights").innerHTML = html;
+  }
+  cS.addEventListener("input", () => { R = +cS.value; draw(); });
+  wS.addEventListener("input", draw);
+  document.getElementById("win-draw").addEventListener("click", () => { R = 1 + Math.floor(rnd() * +cS.value); draw(); });
+  draw();
+}
+
+/* ---- Table 2 selected rows ---- */
+function dimsChart(P) {
+  const xs = [24, 49, 98, 196, 391, 783].map((m) => m * 1e6);
+  const d600 = [24.0, 30.1, 36.5, 40.8, 46.6, 50.4];
+  const d50 = [13.4, 15.7, 18.6, 19.1, 22.5, 23.2];
+  P.lineChart(document.getElementById("dims-chart"), {
+    series: [
+      { name: "600 dims", color: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(), points: xs.map((x, i) => [x, d600[i]]) },
+      { name: "50 dims", color: getComputedStyle(document.documentElement).getPropertyValue("--active").trim(), points: xs.map((x, i) => [x, d50[i]]) },
+    ],
+    xLabel: "training words", yLabel: "accuracy (%)", logX: true, yMin: 0, yMax: 55,
+    xFmt: (v) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : `${Math.round(v / 1e6)}M`), yFmt: (v) => v.toFixed(0),
+    readout: document.getElementById("dims-readout"), ariaLabel: "Analogy accuracy against training words for 50 and 600 dimensions",
+  });
+}
+
+/* ---- Table 3 bars ---- */
+function archBars() {
+  const rows = [["RNNLM", 9, 36], ["NNLM", 23, 53], ["CBOW", 24, 64], ["Skip-gram", 55, 59]];
+  document.getElementById("arch-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 0.4rem"><span><i style="background:var(--accent)"></i>semantic accuracy</span><span><i style="background:var(--attn-stroke)"></i>syntactic accuracy</span><span>axis 0 to 70%</span></div>` +
+    rows.map(([m, s, y]) => barRow(m, s / 70, `${s}%`, "var(--accent)", "6rem minmax(0,1fr) 3.4rem") + barRow("", y / 70, `${y}%`, "var(--attn-stroke)", "6rem minmax(0,1fr) 3.4rem")).join("");
+}
+
+/* ---- analogy word map (illustrative 2-D) ---- */
+function analogy() {
+  const W = {
+    man: [-7, 2], woman: [-4, 2], king: [-7, 5], queen: [-4, 5], boy: [-7, 0], girl: [-4, 0],
+    France: [1.5, 2], Paris: [2.5, 4.5], Italy: [4, 2], Rome: [5, 4.5], Germany: [6.5, 2], Berlin: [7.5, 4.5], Japan: [8.5, -1], Tokyo: [9.5, 1.5],
+    big: [-2, -4], bigger: [-1, -2.8], small: [1, -5], smaller: [2, -3.8], cold: [3.5, -5.5], colder: [4.5, -4.3], quick: [-3.5, -6], quicker: [-2.5, -4.8],
+  };
+  const names = Object.keys(W);
+  const selA = document.getElementById("an-a"), selB = document.getElementById("an-b"), selC = document.getElementById("an-c");
+  [selA, selB, selC].forEach((s) => (s.innerHTML = names.map((n) => `<option>${n}</option>`).join("")));
+  const presets = [["king", "man", "woman"], ["Paris", "France", "Italy"], ["Berlin", "Germany", "Japan"], ["bigger", "big", "small"], ["queen", "woman", "boy"], ["king", "man", "Paris"]];
+  document.getElementById("an-presets").innerHTML = presets.map((p, i) => `<button type="button" data-i="${i}">${p[0]} − ${p[1]} + ${p[2]}</button>`).join("");
+  document.querySelectorAll("#an-presets button").forEach((b) => b.addEventListener("click", () => { const p = presets[+b.dataset.i]; selA.value = p[0]; selB.value = p[1]; selC.value = p[2]; draw(); }));
+  const svg = document.getElementById("an-svg");
+  const X = (x) => 25 + ((x + 9) / 20) * 490, Y = (y) => 330 - ((y + 7) / 14) * 310;
+  function draw() {
+    const a = W[selA.value], b = W[selB.value], c = W[selC.value];
+    const x = [a[0] - b[0] + c[0], a[1] - b[1] + c[1]];
+    let best = null, bd = Infinity;
+    for (const n of names) {
+      if ([selA.value, selB.value, selC.value].includes(n)) continue;
+      const d = Math.hypot(W[n][0] - x[0], W[n][1] - x[1]);
+      if (d < bd) { bd = d; best = n; }
+    }
+    let s = `<defs><marker id="an-m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--attn-stroke)"/></marker><marker id="an-m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--active)"/></marker></defs>`;
+    s += `<line x1="${X(-9)}" x2="${X(11)}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--border)"/><line x1="${X(0)}" x2="${X(0)}" y1="${Y(-7)}" y2="${Y(7)}" stroke="var(--border)"/>`;
+    s += `<path class="arrowA" d="M${X(b[0])},${Y(b[1])} L${X(a[0])},${Y(a[1])}" marker-end="url(#an-m1)"/>`;
+    s += `<path class="arrowC" d="M${X(c[0])},${Y(c[1])} L${X(x[0])},${Y(x[1])}" marker-end="url(#an-m2)"/>`;
+    for (const n of names) {
+      const cls = n === best ? "word hit" : [selA.value, selB.value, selC.value].includes(n) ? "word in" : "word";
+      s += `<g class="${cls}"><circle cx="${X(W[n][0])}" cy="${Y(W[n][1])}" r="5"/><text x="${X(W[n][0]) + 7}" y="${Y(W[n][1]) - 6}">${n}</text></g>`;
+    }
+    s += `<g><circle cx="${X(x[0])}" cy="${Y(x[1])}" r="3" fill="var(--active)"/><text x="${X(x[0]) + 6}" y="${Y(x[1]) + 14}" class="lbl">X</text></g>`;
+    svg.innerHTML = s;
+    document.getElementById("an-readout").innerHTML = `${selA.value} (${a}) − ${selB.value} (${b}) + ${selC.value} (${c}) = X (${x.map((v) => +v.toFixed(2)).join(", ")}). Nearest word: <strong>${best}</strong>, at distance ${bd.toFixed(2)}${bd < 0.01 ? " (an exact hit)" : bd > 1.5 ? " (far away: the relationship does not exist in this map)" : ""}.`;
+  }
+  [selA, selB, selC].forEach((s) => s.addEventListener("change", draw));
+  selA.value = "king"; selB.value = "man"; selC.value = "woman";
+  draw();
+}
+
+/* ---- countries and capitals (illustrative), built before papers.js wires diagrams ---- */
+(function buildPca() {
+  const pairs = [["China", "Beijing", 40, 38], ["Russia", "Moscow", 36, 72], ["Japan", "Tokyo", 44, 106], ["Turkey", "Ankara", 38, 140], ["Poland", "Warsaw", 42, 174], ["Italy", "Rome", 40, 208]];
+  const g = document.getElementById("pca-g");
+  const NS = "http://www.w3.org/2000/svg";
+  pairs.forEach(([c, cap, x, y], i) => {
+    const dx = 150 + (i % 2 ? 4 : -4), dy = -6 + (i % 3) * 3;
+    const grp = document.createElementNS(NS, "g");
+    grp.setAttribute("class", "blk plain");
+    grp.setAttribute("data-block", "pca_" + i);
+    grp.innerHTML = `<rect x="${x - 34}" y="${y - 11}" width="68" height="20" rx="5"/><text x="${x}" y="${y + 3}" text-anchor="middle">${c}</text>` +
+      `<path class="wire" d="M${x + 36},${y} L${x + dx - 38},${y + dy}" marker-end="url(#arrp)"/>` +
+      `<rect x="${x + dx - 36}" y="${y + dy - 11}" width="72" height="20" rx="5"/><text x="${x + dx}" y="${y + dy + 3}" text-anchor="middle">${cap}</text>`;
+    g.appendChild(grp);
+    window.PAPER.blocks["pca_" + i] = { title: `${c} → ${cap}`, body: `<p>The arrow is vector(${cap}) − vector(${c}). It is nearly the same as every other country-to-capital arrow, so ${cap} − ${c} + another country lands near that country's capital.</p><p><em>Positions are illustrative.</em></p>`, shape: "one direction ≈ “capital of”" };
+  });
+})();
+
+/* ---- hierarchical softmax tree ---- */
+function treeDemo() {
+  const leaves = ["the", "of", "cat", "sat", "on", "dog", "ran", "mat"];
+  const nodeP = [0.6, 0.3, 0.7, 0.8, 0.5, 0.4, 0.9]; // chance of going LEFT at nodes 0..6 (heap order), illustrative
+  const svg = document.getElementById("tree-svg");
+  const rootS = document.getElementById("tree-root");
+  let chosen = 2;
+  const pos = (k) => { // heap index k (0-based) -> x,y
+    const depth = Math.floor(Math.log2(k + 1)), idx = k + 1 - Math.pow(2, depth);
+    const n = Math.pow(2, depth);
+    return [30 + ((idx + 0.5) / n) * 500, 30 + depth * 62];
+  };
+  function leafProb(li) {
+    let k = 0, p = 1; const path = [];
+    for (let d = 0; d < 3; d++) {
+      const bit = (li >> (2 - d)) & 1; // 0 = left
+      const f = bit ? 1 - nodeP[k] : nodeP[k];
+      path.push([k, bit, f]); p *= f; k = 2 * k + 1 + bit;
+    }
+    return { p, path };
+  }
+  function draw() {
+    nodeP[0] = +rootS.value;
+    document.getElementById("tree-root-v").textContent = nodeP[0].toFixed(2);
+    const { p, path } = leafProb(chosen);
+    const onEdges = new Set(path.map(([k, bit]) => `${k}-${bit}`));
+    let s = "";
+    for (let k = 0; k < 7; k++) {
+      const [x, y] = pos(k);
+      for (let bit = 0; bit < 2; bit++) {
+        const child = 2 * k + 1 + bit;
+        const [cx, cy] = child < 7 ? pos(child) : [30 + ((child - 7 + 0.5) / 8) * 500, 216];
+        const on = onEdges.has(`${k}-${bit}`);
+        s += `<line class="tedge${on ? " on" : ""}" x1="${x}" y1="${y}" x2="${cx}" y2="${cy - (child < 7 ? 0 : 12)}"/>`;
+        const f = bit ? 1 - nodeP[k] : nodeP[k];
+        s += `<text class="lbl" x="${(x + cx) / 2 + (bit ? 8 : -8)}" y="${(y + cy) / 2}" text-anchor="${bit ? "start" : "end"}">${f.toFixed(2)}</text>`;
+      }
+      s += `<g class="tnode${path.some((q) => q[0] === k) ? " on" : ""}"><circle cx="${x}" cy="${y}" r="10"/><text x="${x}" y="${y + 4}" text-anchor="middle" class="lbl">n${k + 1}</text></g>`;
+    }
+    leaves.forEach((w, i) => {
+      const x = 30 + ((i + 0.5) / 8) * 500;
+      s += `<g class="leaf${i === chosen ? " on" : ""}" data-leaf="${i}" tabindex="0" role="button" aria-label="${w}" style="cursor:pointer"><rect x="${x - 26}" y="204" width="52" height="24" rx="6"/><text x="${x}" y="220" text-anchor="middle">${w}</text></g>`;
+    });
+    svg.innerHTML = s;
+    svg.querySelectorAll("[data-leaf]").forEach((el) => {
+      const pick = () => { chosen = +el.dataset.leaf; draw(); };
+      el.addEventListener("click", pick);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+    });
+    const total = leaves.reduce((a, _, i) => a + leafProb(i).p, 0);
+    document.getElementById("tree-readout").innerHTML = `p(${leaves[chosen]}) = ${path.map((q) => q[2].toFixed(2)).join(" × ")} = <strong>${p.toFixed(4)}</strong> · sum over all 8 leaves = <strong>${total.toFixed(4)}</strong>`;
+  }
+  // Huffman code lengths for illustrative counts, computed live
+  const counts = { the: 30, of: 20, on: 15, sat: 10, cat: 10, dog: 8, ran: 4, mat: 3 };
+  let nodes = Object.entries(counts).map(([w, c]) => ({ c, ws: [w] }));
+  const depth = Object.fromEntries(Object.keys(counts).map((w) => [w, 0]));
+  while (nodes.length > 1) {
+    nodes.sort((a, b) => a.c - b.c);
+    const [a, b] = nodes.splice(0, 2);
+    [...a.ws, ...b.ws].forEach((w) => depth[w]++);
+    nodes.push({ c: a.c + b.c, ws: [...a.ws, ...b.ws] });
+  }
+  const tot = Object.values(counts).reduce((x, y) => x + y, 0);
+  const avg = Object.entries(counts).reduce((s, [w, c]) => s + c * depth[w], 0) / tot;
+  document.getElementById("tree-huff").innerHTML = `Huffman path lengths for illustrative counts (per 100 words): ${Object.keys(counts).map((w) => `${w} ${depth[w]}`).join(", ")}. Average <strong>${avg.toFixed(2)}</strong> decisions per word, against 3 for the balanced tree.`;
+  rootS.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- negative sampling terms ---- */
+function negDemo() {
+  const sig = (x) => 1 / (1 + Math.exp(-x));
+  const st = { pos: 2.0, n1: 1.5, n2: -0.5 };
+  const box = document.getElementById("neg-sliders");
+  slider(box, "real pair score", -4, 6, 0.1, st.pos, (x) => x.toFixed(1), (x) => { st.pos = x; draw(); });
+  slider(box, "fake pair 1 score", -4, 6, 0.1, st.n1, (x) => x.toFixed(1), (x) => { st.n1 = x; draw(); });
+  slider(box, "fake pair 2 score", -4, 6, 0.1, st.n2, (x) => x.toFixed(1), (x) => { st.n2 = x; draw(); });
+  function draw() {
+    const rows = [
+      ["real", Math.log(sig(st.pos)), 1 - sig(st.pos)],
+      ["fake 1", Math.log(sig(-st.n1)), -sig(st.n1)],
+      ["fake 2", Math.log(sig(-st.n2)), -sig(st.n2)],
+    ];
+    const cols = "4.5rem minmax(0,1fr) 9.5rem";
+    document.getElementById("neg-terms").innerHTML = rows.map(([n, t, g]) => barRow(n, -t / 6, `${t.toFixed(3)} · push ${g >= 0 ? "+" : ""}${g.toFixed(2)}`, n === "real" ? "var(--soft-stroke)" : "var(--active)", cols)).join("");
+    const total = rows.reduce((a, r) => a + r[1], 0);
+    document.getElementById("neg-readout").innerHTML = `objective = ${rows.map((r) => r[1].toFixed(3)).join(" + ")} = <strong>${total.toFixed(3)}</strong> (training pushes this towards 0). Bars show each term's size on a 0 to 6 scale.`;
+  }
+  draw();
+}
+
+/* ---- noise distribution ---- */
+function noiseDemo() {
+  const f = [["the", 0.9], ["cat", 0.08], ["sat", 0.018], ["zebra", 0.002]];
+  let alpha = 0.75;
+  slider(document.getElementById("noise-sliders"), "exponent", 0, 1, 0.05, alpha, (x) => x.toFixed(2), (x) => { alpha = x; draw(); });
+  function draw() {
+    const pw = f.map(([, u]) => Math.pow(u, alpha));
+    const Z = pw.reduce((a, b) => a + b, 0);
+    document.getElementById("noise-bars").innerHTML = f.map(([w, u], i) => {
+      const p = pw[i] / Z;
+      return barRow(w, p, `${(p * 100).toFixed(2)}% · ${(p / u).toFixed(2)}×`, "", "4.5rem minmax(0,1fr) 8.5rem");
+    }).join("");
+    document.getElementById("noise-readout").innerHTML = `raw frequencies 90%, 8%, 1.8%, 0.2% · Z = ${Z.toFixed(3)} at exponent ${alpha.toFixed(2)}${Math.abs(alpha - 0.75) < 1e-9 ? " (the paper's choice)" : ""}`;
+  }
+  draw();
+}
+
+/* ---- subsampling curve ---- */
+function subChart(P) {
+  const tS = document.getElementById("sub-t"), tV = document.getElementById("sub-t-v");
+  const pts = (t) => { const out = []; for (let e = -7; e <= -1.0001; e += 0.05) { const fq = Math.pow(10, e); out.push([fq, Math.max(0, 1 - Math.sqrt(t / fq))]); } return out; };
+  const chart = P.lineChart(document.getElementById("sub-chart"), {
+    series: [{ name: "discard probability", points: pts(1e-5) }],
+    xLabel: "word frequency f", yLabel: "chance discarded", logX: true, yMin: 0, yMax: 1,
+    xFmt: (v) => `1e${Math.round(Math.log10(v))}`, yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("sub-readout"), ariaLabel: "Discard probability against word frequency",
+  });
+  tS.addEventListener("input", () => { const t = Math.pow(10, +tS.value); tV.textContent = t.toExponential(1); chart.update([{ name: "discard probability", points: pts(t) }]); });
+}
+
+/* ---- Table 1 of paper 2 ---- */
+function negResults() {
+  const rows = [["NEG-5", 59, 38], ["NEG-15", 61, 97], ["HS-Huffman", 47, 41], ["NCE-5", 53, 38]];
+  const sub = [["NEG-5", 60, 14], ["NEG-15", 61, 36], ["HS-Huffman", 55, 21]];
+  const cols = "7rem minmax(0,1fr) 7rem";
+  document.getElementById("neg-results").innerHTML =
+    `<div class="legend" style="margin:0 0 0.4rem">No subsampling · total accuracy (axis 0 to 70%) · training minutes</div>` +
+    rows.map(([m, a, t]) => barRow(m, a / 70, `${a}% · ${t} min`, "var(--wire)", cols)).join("") +
+    `<div class="legend" style="margin:0.8rem 0 0.4rem">With 10⁻⁵ subsampling</div>` +
+    sub.map(([m, a, t]) => barRow(m, a / 70, `${a}% · ${t} min`, "", cols)).join("");
+}
+
+/* ---- phrase scores ---- */
+function phraseDemo() {
+  const delta = 5;
+  const cands = [["new", "york", 2000, 900, 800], ["air", "canada", 1500, 700, 300], ["boston", "globe", 600, 250, 120], ["this", "is", 50000, 80000, 4000], ["of", "the", 120000, 200000, 30000], ["zebra", "fish", 12, 40, 3], ["quasi", "stellar", 3, 4, 3]];
+  const thr = document.getElementById("ph-thr"), thrV = document.getElementById("ph-thr-v");
+  function draw() {
+    const t = Math.pow(10, +thr.value);
+    thrV.textContent = t.toExponential(1);
+    document.getElementById("ph-table").innerHTML = `<div class="tablewrap"><table><thead><tr><th>pair</th><th class="num">count(a)</th><th class="num">count(b)</th><th class="num">count(a b)</th><th class="num">score</th><th>result</th></tr></thead><tbody>` +
+      cands.map(([a, b, ca, cb, cab]) => {
+        const s = (cab - delta) / (ca * cb);
+        const ok = s > t;
+        return `<tr${ok ? ' class="hl"' : ""}><td>${a} ${b}</td><td class="num">${fmtInt(ca)}</td><td class="num">${fmtInt(cb)}</td><td class="num">${fmtInt(cab)}</td><td class="num">${s.toExponential(1)}</td><td>${ok ? `glue: <span class="mono">${a}_${b}</span>` : "keep apart"}</td></tr>`;
+      }).join("") + `</tbody></table></div>`;
+  }
+  thr.addEventListener("input", draw);
+  draw();
+}
+</script>
+</body>
+</html>

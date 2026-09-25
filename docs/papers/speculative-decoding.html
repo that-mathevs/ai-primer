@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speculative Decoding, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Leviathan, Kalman and Matias (2022), Fast Inference from Transformers via Speculative Decoding: a small model drafts, the big model checks, and the output is provably unchanged.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>/* page-local: show which toggle is selected, and colour the draft tokens */
+button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--fg);font-weight:600}
+.chipline{display:flex;flex-wrap:wrap;gap:.35rem;margin:.5rem 0;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.9rem}
+.chipline span{padding:.15rem .5rem;border-radius:6px;border:1px solid var(--border);background:var(--bg)}
+.chipline .ok{background:var(--soft);border-color:var(--soft-stroke)}
+.chipline .no{background:var(--attn);border-color:var(--attn-stroke);text-decoration:line-through}
+.chipline .fix{background:var(--ff);border-color:var(--ff-stroke)}
+.chipline .prefix{opacity:.7}
+</style>
+</head>
+<body data-paper="speculative-decoding">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Speculative decoding</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Overview</a></li>
+          <li><a href="#s2-2">2.2 Standardized sampling</a></li>
+          <li><a href="#s2-3">2.3 Speculative sampling</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Analysis</a>
+        <ol>
+          <li><a href="#s3-1">3.1 and 3.2 Tokens per call, and α</a></li>
+          <li><a href="#s3-3">3.3 to 3.5 Speed, cost and choosing γ</a></li>
+          <li><a href="#s3-6">3.6 Draft models</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a></li>
+      <li><a href="#a1">A.1 Why the output is unchanged</a></li>
+      <li><a href="#s6">6 Discussion</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Speculative decoding, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Yaniv Leviathan, Matan Kalman and Yossi Matias (2022), <em>Fast Inference from Transformers via Speculative Decoding</em>: a small model guesses several tokens ahead, the big model checks them all at once, and the text that comes out is exactly what the big model alone would have produced.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2211.17192">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2211.17192">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2211.17192">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is released under a CC BY 4.0 licence; its tables are reproduced here only as selected rows, with attribution, and its figures are redrawn as interactive demos. Every section heading links to the original.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap, and so does every symbol in every equation.</li>
+  <li>Two demos carry the page: a <strong>draft-and-verify stepper</strong> in §2.3, and a <strong>speed calculator</strong> in §3.3.</li>
+</ul>
+<p>Every idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>. The code for this algorithm, with a test that its output distribution matches the big model's, is in <a class="lesson" data-lesson="primer/ml/inference.html">the inference lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192">original</a></span></h2>
+<blockquote class="quote">“In this work we introduce speculative decoding - an algorithm to sample from autoregressive models faster without any changes to the outputs, by computing several tokens in parallel.”<cite>Leviathan, Kalman and Matias (2022), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A senior author writes a book one word at a time and hates being rushed. A quick junior assistant, who knows the author's style, drafts the next five words. The author reads all five in one glance, keeps the ones they agree with, and fixes the first one they don't. When the draft is good, five words are done in the time the author used to take for one. When it's bad, nothing is lost but the assistant's time. And crucially, the final book reads exactly as if the author had written every word alone.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>A way to speed up generation from any large <span class="t" data-t="autoregressive generation">autoregressive</span> model with <strong>no retraining, no architecture change, and no change to the output distribution</strong>.</li>
+  <li>A new sampling rule, <em>speculative sampling</em>, that makes the “no change” guarantee hold even for random sampling, not only for always picking the most likely token.</li>
+  <li>2× to 3× faster generation from T5-XXL (11 billion parameters) with identical outputs.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p><span class="t" data-t="speculative decoding">Speculative decoding</span> and its many descendants are now a standard part of how large models are served, because they cut response time without any risk to quality.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S1">original</a></span></h2>
+<blockquote class="quote">“We additionally observe that inference from large models is often not bottlenecked on arithmetic operations, but rather on memory bandwidth and communication, so additional computation resources might be available.”<cite>Leviathan, Kalman and Matias (2022), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Generating each token means reading every one of the model's billions of weights from memory. For a single token, the chip spends most of its time fetching weights and very little time doing arithmetic: the arithmetic units sit idle. Checking five tokens at once costs roughly the same fetch as checking one, so the idle arithmetic is effectively free. The paper borrows the name from processors, which have long used <span class="t" data-tip-title="Speculative execution" data-tip="A processor trick: guess what work will be needed next and start it early, in parallel. If the guess was right, time is saved; if wrong, the work is thrown away and nothing is harmed.">speculative execution</span> to start likely work before it is certain to be needed.</p>
+<h4>Tiny example</h4>
+<p>Generating 100 tokens normally takes 100 runs of the big model, one after another, because each token depends on the one before. If the big model could accept 3 drafted tokens per run on average, plus the one it adds itself, 100 tokens would take about 25 runs.</p>
+<h4>Why it matters</h4>
+<p>The one-token-at-a-time loop is the reason chat responses stream out slowly. Earlier speed-ups (<span class="t" data-t="distillation">distillation</span>, <span class="t" data-t="quantization">quantization</span>, sparsity) changed the model and therefore its answers. This one doesn't. The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> explains why decoding is <span class="t" data-t="memory-bound">memory-bound</span>.</p>
+</section>
+
+<section id="s2">
+<h2>2 Speculative decoding <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S2">original</a></span></h2>
+
+<section id="s2-1">
+<h3>2.1 Overview <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S2.SS1">original</a></span></h3>
+<h4>The three steps</h4>
+<figure class="ix" id="figsteps">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 300" role="img" aria-label="Speculative decoding in three steps: draft, verify in parallel, accept and fix">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk plain" data-block="prefix"><rect x="100" y="8" width="120" height="28" rx="6"/><text x="160" y="27" text-anchor="middle">text so far</text></g>
+    <path class="wire" d="M160,36 V58" marker-end="url(#arr)"/>
+    <g class="blk ff" data-block="draft"><rect x="40" y="60" width="240" height="44" rx="8"/><text x="160" y="80" text-anchor="middle">1. Small model drafts γ tokens</text><text x="160" y="96" text-anchor="middle" class="lbl">one at a time, but each is cheap</text></g>
+    <path class="wire" d="M160,104 V126" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="verify"><rect x="40" y="128" width="240" height="44" rx="8"/><text x="160" y="148" text-anchor="middle">2. Big model scores all γ + 1</text><text x="160" y="164" text-anchor="middle" class="lbl">in ONE parallel run</text></g>
+    <path class="wire" d="M160,172 V194" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="accept"><rect x="40" y="196" width="240" height="44" rx="8"/><text x="160" y="216" text-anchor="middle">3. Keep the agreed prefix</text><text x="160" y="232" text-anchor="middle" class="lbl">fix the first disagreement</text></g>
+    <path class="wire" d="M160,240 V262" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="result"><rect x="70" y="264" width="180" height="28" rx="6"/><text x="160" y="283" text-anchor="middle">1 to γ + 1 new tokens</text></g>
+    <path class="wire" d="M282,218 H305 V22 H222" marker-end="url(#arr)"/>
+    <text x="300" y="120" class="lbl" text-anchor="end">repeat</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step.</p></div>
+  </div>
+  <figcaption>One round of speculative decoding, drawn for this page from the description in Leviathan, Kalman and Matias (2022), §2.1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> start at the top with the text generated so far. The small <span class="t" data-t="draft model">draft model</span> proposes γ tokens (γ is a setting, typically 3 to 7). The big target model then evaluates every drafted position at once, in a single parallel pass, the same way it processes a prompt. The accepted drafts are kept, the first rejected one is replaced by a corrected token, and the loop repeats from the new end of the text. Every round produces at least one token, so it can never be slower in big-model runs than ordinary decoding.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Standardized sampling <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S2.SS2">original</a></span></h3>
+<p><strong>Everyday picture:</strong> greedy decoding, <span class="t" data-t="temperature">temperature</span>, <span class="t" data-t="top-k">top-k</span> and <span class="t" data-t="top-p">top-p</span> look like different algorithms, but each is really “adjust the probability list, then draw from it”. Greedy, for example, sets every probability except the largest to zero. So the paper only needs to handle one case, drawing from a probability list, and it works for all of them. Throughout, p is the big model's adjusted list and q is the small model's.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Speculative sampling <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>How can guesses from a sloppier model ever give exactly the big model's randomness? Think of the draft's probabilities as a proposal. Wherever the draft is <em>not</em> over-enthusiastic about a token (q ≤ p), take its guess as is. Where it <em>is</em> over-enthusiastic (q &gt; p), accept its guess only part of the time, just enough to bring that token down to the right rate. The probability freed up by those rejections is then handed to exactly the tokens the draft under-rated.</p>
+<div class="eq" data-tex="\text{keep } \htmlData{sym=x}{x} \sim \htmlData{sym=q}{q} \text{ with probability } \htmlData{sym=acc}{\min\!\left(1, \frac{p(x)}{q(x)}\right)}, \quad \text{otherwise draw from } \htmlData{sym=pprime}{p'(x) = \mathrm{norm}\big(\max(0,\, p(x) - q(x))\big)}" data-fallback="keep x ~ q with probability min(1, p(x)/q(x)); otherwise draw from p'(x) = norm(max(0, p(x) − q(x)))"></div>
+<div class="symtable" data-syms="x,q,p,acc,pprime"></div>
+<p class="inwords"><strong>In words:</strong> “take the draft's token if the big model likes it at least as much; if the big model likes it less, keep it only with probability p over q; when you reject, draw from what's left of the big model's list after subtracting the draft's.”</p>
+<p class="inwords"><strong>With the numbers:</strong> three possible next words, target p = (cat 0.5, dog 0.3, fish 0.2), draft q = (0.6, 0.2, 0.2). If the draft says “cat” (q 0.6 &gt; p 0.5), keep it with probability 0.5 / 0.6 = 0.833. If it says “dog” or “fish”, always keep it. When a “cat” is rejected (probability 0.6 × 0.167 = 0.1), redraw from max(0, p − q) = (0, 0.1, 0), normalized: “dog” for certain. Final chances: cat 0.6 × 0.833 = <strong>0.5</strong>, dog 0.2 + 0.1 = <strong>0.3</strong>, fish <strong>0.2</strong>: exactly p.</p>
+
+<h4>Try it: draft, verify, repeat</h4>
+<div class="play" id="spec-play">
+  <div class="sliders"><label for="spec-g">drafts per round γ</label><input type="range" id="spec-g" min="1" max="8" step="1" value="4"><output id="spec-gv">4</output></div>
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0">
+    <button type="button" id="spec-round">Run one round</button>
+    <button type="button" id="spec-ten">Run 10 rounds</button>
+    <button type="button" id="spec-reset">Reset</button>
+  </div>
+  <div class="chipline" id="spec-last" aria-live="polite"></div>
+  <div class="chipline" id="spec-text"></div>
+  <p class="readout" id="spec-stats"></p>
+  <div class="legend"><span><i style="background:var(--soft-stroke)"></i>draft accepted</span><span><i style="background:var(--attn-stroke)"></i>draft rejected</span><span><i style="background:var(--ff-stroke)"></i>token chosen by the big model</span></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> the two models here are tiny illustrative “bigram” models over an eight-word vocabulary (each next word depends only on the previous word), with the draft model deliberately a bit off. Press “Run one round”: the top line shows that round. Green drafts were accepted by the rule above, a struck-through orange draft was rejected, and the blue token is the one the big model supplied (a correction after a rejection, or a bonus token when every draft was accepted). The line below accumulates the generated text, and the counter compares big-model runs with tokens produced. With these models the draft agrees about 85 to 100% of the time, so each big-model run yields several tokens. Raise γ and watch tokens per run climb, then level off as long drafts start getting rejected part-way.</p>
+
+<div class="play" id="dist-play">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center"><button type="button" id="dist-run">Draw 10,000 samples with the rule</button><span class="readout" style="margin:0">using p = (0.5, 0.3, 0.2) and q = (0.6, 0.2, 0.2)</span></div>
+  <div id="dist-bars"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> this runs the rule from the equation 10,000 times on the worked example. For each word, the first bar is the target model's probability and the second is how often the rule actually produced that word. They match to within the random wobble of 10,000 draws, even though every sample started as a guess from the wrong distribution q. That is the paper's guarantee, made visible.</p>
+<h4>Why it matters today</h4>
+<p>This rule is what separates speculative <em>sampling</em> from simply “accept the draft if the big model's top choice agrees”, which only works for greedy decoding. Because the distribution is exactly preserved, the speed-up is free of any quality trade-off, and serving systems can switch it on without re-running evaluations.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S3">original</a></span></h2>
+
+<section id="s3-1">
+<h3>3.1 and 3.2 Tokens per call, and the acceptance rate α <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>How good is the assistant? Measure how much the two models' probability lists overlap. If they agree perfectly, every draft is kept; if they never overlap, none is. That overlap is the <span class="t" data-t="acceptance rate">acceptance rate</span>.</p>
+<div class="eq" data-tex="\htmlData{sym=beta}{\beta} = \htmlData{sym=sumx}{\sum_{x}} \htmlData{sym=minpq}{\min\big(p(x), q(x)\big)}, \qquad \htmlData{sym=alpha}{\alpha} = \htmlData{sym=E}{\mathbb{E}}(\htmlData{sym=beta}{\beta}), \qquad \htmlData{sym=Etok}{\mathbb{E}(\#\text{tokens})} = \frac{1 - \htmlData{sym=alpha}{\alpha}^{\htmlData{sym=gamma}{\gamma} + 1}}{1 - \htmlData{sym=alpha}{\alpha}}" data-fallback="β = Σ_x min(p(x), q(x)),  α = E(β),  E(#tokens) = (1 − α^(γ+1)) / (1 − α)"></div>
+<div class="symtable" data-syms="beta,sumx,minpq,alpha,E,Etok,gamma"></div>
+<p class="inwords"><strong>In words:</strong> “the chance a draft token survives is the total overlap of the two probability lists; averaged over the text it is α; and a round with γ drafts then produces 1 + α + α² + … + α<sup>γ</sup> tokens on average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the worked example, β = min(0.5, 0.6) + min(0.3, 0.2) + min(0.2, 0.2) = 0.5 + 0.2 + 0.2 = <strong>0.9</strong>. With α = 0.8 and γ = 5: (1 − 0.8<sup>6</sup>) / (1 − 0.8) = (1 − 0.262) / 0.2 = <strong>3.69</strong> tokens per big-model run.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 to 3.5 Speed, extra work, and choosing γ <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The assistant isn't free: drafting γ tokens takes γ small-model runs. And rejected drafts mean the big model did some checking for nothing. So the real questions are: how much faster in wall-clock time, and how much extra arithmetic?</p>
+<div class="eq" data-tex="\text{speed-up} = \frac{1 - \htmlData{sym=alpha}{\alpha}^{\htmlData{sym=gamma}{\gamma}+1}}{(1-\htmlData{sym=alpha}{\alpha})(\htmlData{sym=gamma}{\gamma}\htmlData{sym=c}{c} + 1)}, \qquad \text{extra operations} = \frac{(1-\htmlData{sym=alpha}{\alpha})(\htmlData{sym=gamma}{\gamma}\htmlData{sym=chat}{\hat{c}} + \htmlData{sym=gamma}{\gamma} + 1)}{1 - \htmlData{sym=alpha}{\alpha}^{\htmlData{sym=gamma}{\gamma}+1}}" data-fallback="speed-up = (1 − α^(γ+1)) / ((1 − α)(γc + 1)),  extra operations = (1 − α)(γĉ + γ + 1) / (1 − α^(γ+1))"></div>
+<div class="symtable" data-syms="c,chat"></div>
+<p class="inwords"><strong>In words:</strong> “the speed-up is the tokens per round divided by the cost of a round (one big run plus γ small runs); the extra arithmetic is the work of a round divided by the tokens it yields.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with α = 0.8, γ = 5 and a draft that costs 5% of the big model (c = 0.05): 3.69 / (5 × 0.05 + 1) = 3.69 / 1.25 = <strong>2.95×</strong> faster. With a free draft (c = 0), it is 3.69× faster at the price of 1.63× more arithmetic.</p>
+<div class="plot" id="speed-plot">
+  <div class="sliders">
+    <label for="sp-a">acceptance rate α</label><input type="range" id="sp-a" min="0.1" max="0.95" step="0.01" value="0.8"><output id="sp-av"></output>
+    <label for="sp-c">draft cost c</label><input type="range" id="sp-c" min="0" max="0.3" step="0.01" value="0.05"><output id="sp-cv"></output>
+  </div>
+  <div id="speed-chart"></div>
+  <p class="readout" id="speed-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is γ, the number of drafts per round; the curves show the predicted wall-clock speed-up and the extra arithmetic for the α and c chosen on the sliders. The speed-up curve rises, peaks and then slowly falls: past the peak, extra drafts are usually rejected anyway and just cost small-model time. The readout names the best γ. Try a poor draft (α = 0.4): the best γ is small and the gain modest. Try a great one (α = 0.9, c near 0): long drafts pay off handsomely, but the extra-arithmetic curve keeps climbing, which matters if the hardware has no idle compute to spare.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, reproduced with attribution (Leviathan, Kalman and Matias, 2022, CC BY 4.0), assuming c = ĉ = 0</caption>
+  <thead><tr><th class="num">α</th><th class="num">γ</th><th class="num">Operations</th><th class="num">Speed</th></tr></thead>
+  <tbody>
+    <tr><td class="num">0.6</td><td class="num">2</td><td class="num">1.53×</td><td class="num">1.96×</td></tr>
+    <tr><td class="num">0.7</td><td class="num">3</td><td class="num">1.58×</td><td class="num">2.53×</td></tr>
+    <tr><td class="num">0.8</td><td class="num">5</td><td class="num">1.63×</td><td class="num">3.69×</td></tr>
+    <tr class="hl"><td class="num">0.9</td><td class="num">10</td><td class="num">1.60×</td><td class="num">6.86×</td></tr>
+  </tbody>
+</table></div>
+<p>The formulas above reproduce every row. The paper also notes that <em>memory traffic</em> goes down, not up: the big model's weights and <span class="t" data-t="kv cache">KV cache</span> are read once per round instead of once per token, which is exactly why the trick works on memory-bound hardware.</p>
+</section>
+
+<section id="s3-6">
+<h3>3.6 Draft models <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S3.SS6">original</a></span></h3>
+<p><strong>Everyday picture:</strong> any guesser works, and even a bad one helps a little. The paper's best drafts were existing small models from the same family, about two orders of magnitude smaller than the target. Remarkably, even a simple bigram model (predicting each word from the previous one alone) reached α = 0.2 on English-to-German translation, which with c ≈ 0 still gives a 1.25× speed-up. Draft models could also be trained on purpose, for example by <span class="t" data-t="distillation">distilling</span> the big model.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>The test: a real 11-billion-parameter model (T5-XXL) on translation and summarization, drafts from smaller T5 models, one chip, one request at a time, measured against a well-optimized standard implementation.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2, reproduced with attribution (Leviathan, Kalman and Matias, 2022, CC BY 4.0). Target T5-XXL (11B); temp 0 = greedy, temp 1 = sampling</caption>
+  <thead><tr><th>Task</th><th>Draft model</th><th class="num">Temp</th><th class="num">γ</th><th class="num">α</th><th class="num">Speed</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>English→German</td><td>T5-small (77M)</td><td class="num">0</td><td class="num">7</td><td class="num">0.75</td><td class="num">3.4×</td></tr>
+    <tr><td>English→German</td><td>T5-large (800M)</td><td class="num">0</td><td class="num">7</td><td class="num">0.82</td><td class="num">1.7×</td></tr>
+    <tr><td>English→German</td><td>T5-small (77M)</td><td class="num">1</td><td class="num">7</td><td class="num">0.62</td><td class="num">2.6×</td></tr>
+    <tr><td>Summarization (CNN/DM)</td><td>T5-small (77M)</td><td class="num">0</td><td class="num">5</td><td class="num">0.65</td><td class="num">3.1×</td></tr>
+    <tr><td>Summarization (CNN/DM)</td><td>T5-small (77M)</td><td class="num">1</td><td class="num">5</td><td class="num">0.53</td><td class="num">2.3×</td></tr>
+  </tbody>
+</table></div>
+<p>Two lessons hide in these rows. First, the <em>biggest</em> draft is not the best: T5-large agrees more often (α = 0.82) but is so much slower to run that the smallest draft wins overall (3.4× against 1.7×), exactly the trade-off the speed formula predicts. Second, greedy decoding (temp 0) gets higher α and bigger speed-ups than sampling, because a sharper probability list is easier to guess. Across other model pairs, including 137-billion-parameter LaMDA, the paper measures α between about 0.5 and 0.9 for drafts a couple of orders of magnitude smaller.</p>
+</section>
+
+<section id="a1">
+<h2>A.1 Why the output is unchanged <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#A1.SS1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>There are two ways a token x can come out: the draft proposes it and it is kept, or some draft is rejected and x is drawn from the leftovers. Add the two up and you get p(x) exactly.</p>
+<div class="eq" data-tex="P(\text{output} = \htmlData{sym=x}{x}) = \underbrace{q(x)\min\!\left(1, \tfrac{p(x)}{q(x)}\right)}_{\htmlData{sym=kept}{\min(p(x),\, q(x))}} + \underbrace{(1 - \beta)\, p'(x)}_{\htmlData{sym=left}{p(x) - \min(p(x),\, q(x))}} = \htmlData{sym=p}{p(x)}" data-fallback="P(output = x) = q(x)·min(1, p(x)/q(x)) + (1 − β)·p'(x) = min(p, q) + (p − min(p, q)) = p(x)"></div>
+<div class="symtable" data-syms="kept,left"></div>
+<p class="inwords"><strong>In words:</strong> “the chance of keeping a proposed x is the smaller of the two probabilities; the leftover probability mass, handed out by the correction step, tops each token up to exactly what the big model wanted.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for “dog” in the example: kept directly 0.2 (= min(0.3, 0.2)), plus leftover 0.3 − 0.2 = 0.1 from corrections: 0.2 + 0.1 = <strong>0.3</strong> = p(dog).</p>
+</section>
+
+<section id="s6">
+<h2>6 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S6">original</a></span></h2>
+<blockquote class="quote">“…and most importantly, the output distribution is guaranteed to stay the same.”<cite>Leviathan, Kalman and Matias (2022), §6</cite></blockquote>
+<p>The limitation is stated plainly: the method trades extra arithmetic for lower latency, so it helps only where spare compute exists, which is the common case when generation is memory-bound but not, say, when a server is already running huge batches at full compute. Future directions the authors list: varying γ on the fly, custom-trained drafts, stacking drafts of drafts, and combining with beam search.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>What it adds</th></tr></thead>
+  <tbody>
+    <tr><td>Concurrent work from DeepMind, <a href="https://arxiv.org/abs/2302.01318">Accelerating Large Language Model Decoding with Speculative Sampling</a> (Chen et al., 2023)</td><td>The same accept-reject rule, found independently, with 2 to 2.5× speed-ups on a 70-billion-parameter model</td></tr>
+    <tr><td>Built into serving systems</td><td>Speculative decoding is a standard option in modern inference servers, usually alongside <span class="t" data-t="continuous batching">continuous batching</span> and <a href="paged-attention.html">PagedAttention</a></td></tr>
+    <tr><td>Self-drafting variants</td><td>Later methods have the big model draft its own future tokens with small extra heads or layers, removing the need for a separate draft model</td></tr>
+  </tbody>
+</table></div>
+<p>See the <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a>, which implements the rule and checks empirically that the output distribution matches the target.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Yaniv Leviathan, Matan Kalman and Yossi Matias, <em>Fast Inference from Transformers via Speculative Decoding</em>, ICML 2023. <a href="https://arxiv.org/abs/2211.17192">arXiv:2211.17192</a>, released under CC BY 4.0. Quotations are brief and attributed; selected table rows are reproduced with attribution; diagrams and demos are original. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    x: { tex: "x", name: "A candidate token", meaning: "One possible next token, proposed by the draft model.", shape: "one token", example: "“cat”" },
+    q: { tex: "q", name: "Draft model's probabilities", meaning: "The small, fast model's probability list for the next token (after any temperature or top-k adjustment).", shape: "a probability for every token", example: "(cat 0.6, dog 0.2, fish 0.2)" },
+    p: { tex: "p(x)", name: "Target model's probability", meaning: "The big model's probability for token x: the distribution the output must match.", shape: "a number from 0 to 1", example: "(cat 0.5, dog 0.3, fish 0.2)" },
+    acc: { tex: "\\min(1, p(x)/q(x))", name: "Chance of keeping the draft", meaning: "1 if the big model likes x at least as much as the draft did; otherwise the ratio, which is below 1.", shape: "a number from 0 to 1", example: "0.5 / 0.6 = 0.833 for “cat”" },
+    pprime: { tex: "p'(x)", name: "Correction distribution", meaning: "Where the big model wanted more probability than the draft gave, the difference; zero elsewhere; then rescaled to sum to 1 (that is what norm means).", shape: "a probability list", example: "(0, 1, 0): always “dog”" },
+    beta: { tex: "\\beta", name: "Acceptance chance at one position", meaning: "The probability that the draft's token is kept, for this particular context.", shape: "0 to 1", example: "0.9 in the worked example" },
+    sumx: { tex: "\\sum_{x}", name: "Sum over every token", meaning: "Add up over the whole vocabulary.", shape: "one number", example: "three terms here" },
+    minpq: { tex: "\\min(p(x), q(x))", name: "Overlap at token x", meaning: "The smaller of the two models' probabilities for x: the part of the probability they agree on.", shape: "0 to 1", example: "min(0.3, 0.2) = 0.2 for “dog”" },
+    alpha: { tex: "\\alpha", name: "Acceptance rate", meaning: "The average of β over real text: how often a draft token survives. It measures how well the draft imitates the target.", shape: "0 to 1", example: "0.75 for T5-small drafting for T5-XXL (greedy translation)" },
+    E: { tex: "\\mathbb{E}", name: "Expected value", meaning: "The average you would get over many repetitions.", shape: "an operation", example: "the average β over a text" },
+    Etok: { tex: "\\mathbb{E}(\\#\\text{tokens})", name: "Expected tokens per round", meaning: "How many tokens one big-model run produces on average. Equal to 1 + α + α² + … + α^γ.", shape: "between 1 and γ + 1", example: "3.69 for α = 0.8, γ = 5" },
+    gamma: { tex: "\\gamma", name: "Drafts per round", meaning: "How many tokens the draft model proposes before the big model checks them. Too few wastes the chance; too many wastes draft time on tokens that will be rejected.", shape: "a whole number", example: "5 or 7 in the experiments" },
+    c: { tex: "c", name: "Draft cost ratio", meaning: "Time for one draft-model run divided by time for one big-model run. Below 0.05 in the paper's experiments.", shape: "a small number", example: "0.05" },
+    chat: { tex: "\\hat{c}", name: "Draft arithmetic ratio", meaning: "Arithmetic per token of the draft model divided by that of the big model.", shape: "a small number", example: "0 if the draft's arithmetic is negligible" },
+    kept: { tex: "\\min(p(x), q(x))", name: "Probability of x arriving by acceptance", meaning: "The draft proposes x with probability q(x) and keeps it with probability min(1, p/q); the product simplifies to the smaller of p(x) and q(x).", shape: "0 to 1", example: "0.2 for “dog”" },
+    left: { tex: "p(x) - \\min(p(x), q(x))", name: "Probability of x arriving by correction", meaning: "The rejection step hands out exactly the probability the big model wanted but the draft didn't supply.", shape: "0 to 1", example: "0.3 − 0.2 = 0.1 for “dog”" },
+  },
+
+  blocks: {
+    prefix: { title: "The text so far", body: "<p>Everything generated up to now, plus the prompt. Both models see it.</p>" },
+    draft: { title: "1. Draft", body: "<p>The small model runs γ times in a row, each time appending its own sampled token. This is sequential, but a model 100 times smaller is very fast.</p>", shape: "γ cheap runs", lesson: "primer/ml/inference.html" },
+    verify: { title: "2. Verify in parallel", body: "<p>The big model processes the prefix plus all γ drafts in one run, producing its own probability list at every drafted position (γ + 1 lists). This costs about the same as generating one token, because decoding is limited by reading the weights, not by arithmetic.</p>", shape: "1 big run, γ + 1 probability lists" },
+    accept: { title: "3. Accept and fix", body: "<p>Walk through the drafts in order, applying the acceptance rule. Keep going while drafts are kept. At the first rejection, sample a replacement from the correction distribution and stop. If all γ are kept, the last probability list gives one bonus token for free.</p>" },
+    result: { title: "New tokens", body: "<p>At least 1 (the correction), at most γ + 1 (all drafts plus the bonus). On average (1 − α^(γ+1)) / (1 − α).</p>" },
+  },
+
+  onReady(P) {
+    stepper();
+    distribution();
+    speedCalc(P);
+  },
+};
+
+/* ---- illustrative bigram models: p is the big model, q the deliberately imperfect draft ---- */
+const TARGET = { the: { cat: .45, dog: .45, mat: .1 }, cat: { sat: .6, ran: .4 }, dog: { ran: .6, sat: .4 }, sat: { on: 1 }, ran: { on: .7, ".": .3 }, on: { the: 1 }, mat: { ".": 1 }, ".": { the: 1 } };
+const DRAFT = { the: { cat: .5, dog: .3, mat: .2 }, cat: { sat: .5, ran: .5 }, dog: { ran: .4, sat: .6 }, sat: { on: .9, ".": .1 }, ran: { on: .6, ".": .4 }, on: { the: 1 }, mat: { ".": 1 }, ".": { the: 1 } };
+function sample(dist) { let r = Math.random(), last; for (const [k, v] of Object.entries(dist)) { last = k; if ((r -= v) < 0) return k; } return last; }
+function correction(p, q) {
+  const keys = new Set([...Object.keys(p), ...Object.keys(q)]); const out = {}; let tot = 0;
+  keys.forEach((k) => { const v = Math.max(0, (p[k] || 0) - (q[k] || 0)); if (v > 0) { out[k] = v; tot += v; } });
+  for (const k in out) out[k] /= tot;
+  return out;
+}
+
+/* ---- draft / verify stepper ---- */
+function stepper() {
+  const g = document.getElementById("spec-g"), gv = document.getElementById("spec-gv");
+  const last = document.getElementById("spec-last"), text = document.getElementById("spec-text"), stats = document.getElementById("spec-stats");
+  let words = ["the"], runs = 0;
+  function round() {
+    const gamma = +g.value;
+    const drafts = []; let ctx = words[words.length - 1];
+    for (let i = 0; i < gamma; i++) { const t = sample(DRAFT[ctx]); drafts.push([ctx, t]); ctx = t; }
+    runs += 1; // one parallel run of the big model scores every drafted position
+    const shown = [];
+    let accepted = 0, rejected = false;
+    for (const [c, t] of drafts) {
+      const p = TARGET[c][t] || 0, q = DRAFT[c][t];
+      if (Math.random() < Math.min(1, p / q)) { words.push(t); shown.push(`<span class="ok">${t}</span>`); accepted++; }
+      else { const fix = sample(correction(TARGET[c], DRAFT[c])); words.push(fix); shown.push(`<span class="no">${t}</span>`, `<span class="fix">${fix}</span>`); rejected = true; break; }
+    }
+    if (!rejected) { const bonus = sample(TARGET[words[words.length - 1]]); words.push(bonus); shown.push(`<span class="fix">${bonus}</span>`); }
+    last.innerHTML = `<span class="prefix">this round:</span>` + shown.join("");
+    draw(`${accepted} of ${gamma} drafts accepted, then 1 token from the big model.`);
+  }
+  function draw(msg) {
+    gv.textContent = g.value;
+    const tail = words.slice(-40);
+    text.innerHTML = `<span class="prefix">text:</span>` + tail.map((w) => `<span>${w}</span>`).join("");
+    const produced = words.length - 1;
+    stats.innerHTML = (msg ? msg + " " : "") + (runs ? `So far: <strong>${produced}</strong> tokens from <strong>${runs}</strong> big-model runs, <strong>${(produced / runs).toFixed(2)}</strong> tokens per run (ordinary decoding: 1.00).` : "Press “Run one round”.");
+  }
+  document.getElementById("spec-round").addEventListener("click", round);
+  document.getElementById("spec-ten").addEventListener("click", () => { for (let i = 0; i < 10; i++) round(); });
+  document.getElementById("spec-reset").addEventListener("click", () => { words = ["the"]; runs = 0; last.innerHTML = ""; draw(); });
+  g.addEventListener("input", () => draw());
+  draw();
+}
+
+/* ---- empirical check: the rule reproduces p exactly ---- */
+function distribution() {
+  const p = { cat: .5, dog: .3, fish: .2 }, q = { cat: .6, dog: .2, fish: .2 };
+  const box = document.getElementById("dist-bars");
+  function show(counts, n) {
+    box.innerHTML = `<div class="legend" style="margin:.5rem 0 .3rem">For each word: target probability p (top bar) and how often the rule produced it (bottom bar)</div>` +
+      Object.keys(p).map((k) => {
+        const f = n ? counts[k] / n : 0;
+        return `<div class="share-row" style="grid-template-columns:4.5rem minmax(0,1fr) 5.5rem"><span>${k}: p</span><div><div class="share-bar" style="width:${p[k] * 100}%;background:var(--wire)"></div></div><span>${p[k].toFixed(3)}</span></div>` +
+          `<div class="share-row" style="grid-template-columns:4.5rem minmax(0,1fr) 5.5rem"><span>${k}: rule</span><div><div class="share-bar" style="width:${f * 100}%"></div></div><span>${n ? f.toFixed(3) : "press run"}</span></div>`;
+      }).join("");
+  }
+  document.getElementById("dist-run").addEventListener("click", () => {
+    const counts = { cat: 0, dog: 0, fish: 0 }, n = 10000, fix = correction(p, q);
+    for (let i = 0; i < n; i++) {
+      const x = sample(q);
+      counts[Math.random() < Math.min(1, p[x] / q[x]) ? x : sample(fix)]++;
+    }
+    show(counts, n);
+  });
+  show({}, 0);
+}
+
+/* ---- speed-up and extra work as functions of gamma ---- */
+function speedCalc(P) {
+  const a = document.getElementById("sp-a"), c = document.getElementById("sp-c");
+  const av = document.getElementById("sp-av"), cv = document.getElementById("sp-cv"), out = document.getElementById("speed-readout");
+  const speed = (al, g, cc) => (1 - Math.pow(al, g + 1)) / ((1 - al) * (g * cc + 1));
+  const ops = (al, g) => ((1 - al) * (g + 1)) / (1 - Math.pow(al, g + 1));
+  const series = () => {
+    const al = +a.value, cc = +c.value, s = [], o = [];
+    for (let g = 1; g <= 16; g++) { s.push([g, speed(al, g, cc)]); o.push([g, ops(al, g)]); }
+    return [{ name: "speed-up (×)", points: s }, { name: "extra arithmetic (×, draft cost ignored)", points: o }];
+  };
+  const chart = P.lineChart(document.getElementById("speed-chart"), {
+    series: series(), yMin: 0, xLabel: "drafts per round γ", yLabel: "factor (×)",
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: out, ariaLabel: "Speed-up and extra arithmetic against gamma",
+  });
+  function draw() {
+    const al = +a.value, cc = +c.value;
+    av.textContent = al.toFixed(2); cv.textContent = cc.toFixed(2);
+    chart.update(series());
+    let best = 1; for (let g = 2; g <= 16; g++) if (speed(al, g, cc) > speed(al, best, cc)) best = g;
+    out.innerHTML = `Best γ = <strong>${best}</strong>, giving a <strong>${speed(al, best, cc).toFixed(2)}×</strong> speed-up with ${ops(al, best).toFixed(2)}× the arithmetic. Hover the chart for any γ.`;
+  }
+  a.addEventListener("input", draw); c.addEventListener("input", draw);
+  draw();
+}
+</script>
+</body>
+</html>

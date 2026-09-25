@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReAct, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Yao et al. (2022), the paper that interleaved reasoning and tool use and became the template for agent loops.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="react">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 The idea: thoughts as actions</a></li>
+      <li><a href="#s2-try">Try it: four ways to answer</a></li>
+      <li><a href="#s3">3 Knowledge-intensive reasoning</a>
+        <ol>
+          <li><a href="#s3-1">3.1–3.2 Setup and methods</a></li>
+          <li><a href="#s3-3">3.3 Results</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Decision-making tasks</a></li>
+      <li><a href="#s5">5–6 Related work and conclusion</a></li>
+      <li><a href="#today">From ReAct to today's agents</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>ReAct: reasoning and acting, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Yao, Zhao, Yu, Du, Shafran, Narasimhan and Cao (2022), <em>ReAct: Synergizing Reasoning and Acting in Language Models</em>, published at ICLR 2023.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2210.03629">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2210.03629">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2210.03629">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is released under a <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0</a> licence, so selected tables and one of its prompt examples are reproduced here with attribution to Yao et al. (2022). Figures are redrawn from scratch. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover, tab to, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s2-try">step-through</a> replays one question four ways: answering directly, reasoning only, acting only, and ReAct.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The production version of this loop, with budgets and loop detection, is in the <a class="lesson" data-lesson="primer/agents/agent_loop.html">agent loop lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“In this paper, we explore the use of LLMs to generate both reasoning traces and task-specific actions in an interleaved manner, allowing for greater synergy between the two.”<cite>Yao et al. (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2210.03629">Read the original</a></cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A detective who only thinks, never checking facts, builds elegant theories on false premises. A detective who only runs around gathering evidence, never stopping to think, collects clues without knowing what they mean. A good detective alternates: think about what to check, check it, think about what was found, decide the next step. ReAct asks a <span class="t" data-t="llm">language model</span> to work like the good detective, writing its thinking and its actions in one interleaved transcript.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Interleaving reasoning traces with actions beats doing either alone on interactive tasks, and on fact verification.</li>
+  <li>Reasoning grounded in fetched facts suffers far less from <span class="t" data-t="hallucination">hallucination</span> than reasoning from memory alone.</li>
+  <li>With one or two examples in the prompt, it beat imitation and reinforcement learning systems trained on thousands of examples: +34 points of success rate on ALFWorld and +10 on WebShop.</li>
+  <li>The transcripts are readable, so people can inspect and even correct the agent mid-task.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>The think, act, observe loop in this paper is the skeleton of nearly every <span class="t" data-t="agent">agent</span> built since. Modern APIs formalise the “Action” line as structured <span class="t" data-t="tool calling">tool calls</span>, but the shape of the loop is ReAct's.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S1">original</a></span></h2>
+<blockquote class="quote">“I don’t have salt, so let me use soy sauce and pepper instead.”<cite>Yao et al. (2022), §1, an example of the inner speech that guides human action</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The paper's own example is cooking. Between actions you talk to yourself: to track progress (“everything is cut, now heat the water”), to handle surprises (the salt example above), and to notice when you need information (“how do I make dough? let me look it up”). And you act to support your thinking: open the cookbook, check the fridge.</p>
+<h4>The two traditions it joins</h4>
+<div class="tablewrap"><table>
+  <thead><tr><th></th><th>Reason only (chain of thought)</th><th>Act only</th></tr></thead>
+  <tbody>
+    <tr><td>What it does</td><td>Writes step-by-step reasoning, then answers</td><td>Issues actions (search, click, move) and reads the results</td></tr>
+    <tr><td>Strength</td><td>Plans, decomposes, does arithmetic</td><td>Gets real, current information</td></tr>
+    <tr><td>Weakness</td><td>A “static black box”: facts come from memory and can be invented; errors propagate</td><td>No working memory or plan: loses track, repeats itself, fails to combine what it found</td></tr>
+  </tbody>
+</table></div>
+<p>ReAct combines them: <em>reason to act</em> (plans guide which action to take) and <em>act to reason</em> (observations feed the next thought).</p>
+</section>
+
+<section id="s2">
+<h2>2 The idea: thoughts as actions <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Picture an agent's options as a menu of buttons: “search”, “look up”, “finish”. ReAct adds one more button labelled “think”. Pressing it changes nothing in the outside world and returns no new information. It only writes a note on the agent's own notepad, and that note is visible when choosing the next button.</p>
+<figure class="ix" id="fig-loop">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 300" role="img" aria-label="The ReAct loop: context, thought, action, environment, observation">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M160,70 V96" marker-end="url(#arr)"/>
+    <path class="wire" d="M160,140 V166" marker-end="url(#arr)"/>
+    <path class="wire" d="M234,188 H252" marker-end="url(#arr)"/>
+    <path class="wire" d="M300,210 V262 H216" marker-end="url(#arr)"/>
+    <path class="wire" d="M104,262 H40 V46 H92" marker-end="url(#arr)"/>
+    <path class="wire" d="M216,118 H262 V40 H230" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="context" tabindex="0" role="button" aria-label="Context"><rect x="92" y="26" width="136" height="44" rx="7"/><text x="160" y="46" text-anchor="middle">Context c_t</text><text x="160" y="62" text-anchor="middle" class="lbl">question + history</text></g>
+    <g class="blk attn" data-block="thought" tabindex="0" role="button" aria-label="Thought"><rect x="104" y="96" width="112" height="44" rx="7"/><text x="160" y="116" text-anchor="middle">Thought</text><text x="160" y="132" text-anchor="middle" class="lbl">in language</text></g>
+    <g class="blk lin" data-block="action" tabindex="0" role="button" aria-label="Action"><rect x="86" y="166" width="148" height="44" rx="7"/><text x="160" y="186" text-anchor="middle">Action</text><text x="160" y="202" text-anchor="middle" class="lbl">search / lookup / finish</text></g>
+    <g class="blk ff" data-block="env" tabindex="0" role="button" aria-label="Environment"><rect x="252" y="166" width="100" height="44" rx="7"/><text x="302" y="186" text-anchor="middle">Environment</text><text x="302" y="202" text-anchor="middle" class="lbl">Wikipedia API</text></g>
+    <g class="blk emb" data-block="obs" tabindex="0" role="button" aria-label="Observation"><rect x="104" y="240" width="112" height="44" rx="7"/><text x="160" y="260" text-anchor="middle">Observation</text><text x="160" y="276" text-anchor="middle" class="lbl">tool result</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block, starting with <strong>Context</strong> at the top.</p></div>
+  </div>
+  <figcaption>The ReAct loop, drawn for this page from the method in §2 of Yao et al. (2022). The dashed arrow is a thought going straight back into the context.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> start at the context: the question plus everything written so far. The model writes a thought. The dashed arrow shows the thought going straight back into the context, because it touches nothing outside. Then it writes an action, which <em>does</em> go outside: the environment runs it and returns an observation, which is appended to the context too. Round and round, until the action is “finish”. The only difference from an act-only agent is the thought box; the only difference from chain-of-thought is the environment box.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=ct}{c_t} = (\htmlData{sym=o}{o_1}, \htmlData{sym=a}{a_1}, \ldots, \htmlData{sym=o}{o_{t-1}}, \htmlData{sym=a}{a_{t-1}}, \htmlData{sym=o}{o_t}), \qquad \htmlData{sym=at}{a_t} \sim \htmlData{sym=pi}{\pi}(\htmlData{sym=at}{a_t} \mid \htmlData{sym=ct}{c_t})" data-fallback="c_t = (o_1, a_1, …, o_{t−1}, a_{t−1}, o_t),  a_t ~ π(a_t | c_t)"></div>
+<div class="eq" data-tex="\htmlData{sym=Ahat}{\hat{\mathcal{A}}} = \htmlData{sym=A}{\mathcal{A}} \htmlData{sym=cup}{\cup} \htmlData{sym=L}{\mathcal{L}}, \qquad \htmlData{sym=ahat}{\hat{a}_t} \in \htmlData{sym=L}{\mathcal{L}} \;\Rightarrow\; \htmlData{sym=ct}{c_{t+1}} = (\htmlData{sym=ct}{c_t}, \htmlData{sym=ahat}{\hat{a}_t})" data-fallback="Â = A ∪ L,  â_t ∈ L ⇒ c_{t+1} = (c_t, â_t)"></div>
+<div class="symtable" data-syms="o,a,ct,at,pi,A,L,cup,Ahat,ahat"></div>
+<p class="inwords"><strong>In words:</strong> “the agent chooses each action from everything it has seen and done so far. ReAct enlarges the menu of actions with every possible sentence; choosing a sentence (a thought) gets no reply from the world and simply adds the sentence to the context.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the example below, after one round the context is c = (question, Thought 1, Search[Colorado orogeny], its observation). Thought 2, “It does not mention the eastern sector”, is an element of 𝓛; it produces no observation, only c = (…, Thought 2), and that is what makes Action 2, Lookup[eastern sector], an obvious next move.</p>
+<h4>Why it matters today</h4>
+<p>This framing, a policy choosing from actions given a growing history, is how agent frameworks are built. The history is the message list; the actions are tools; the “thoughts” today are often the model's visible reasoning between tool calls. See <a data-lesson="primer/agents/llm.html">talking to a model</a> for the message format.</p>
+</section>
+
+<section id="s2-try">
+<h3>Try it: four ways to answer</h3>
+<p>The question: <em>What is the elevation range for the area that the eastern sector of the Colorado orogeny extends into?</em> The <strong>ReAct</strong>, <strong>Act</strong> and <strong>Reason-only</strong> traces below are the paper's own few-shot examples (Appendix C, reproduced under CC BY 4.0), the demonstrations the model imitates. The two <strong>failure</strong> traces are <strong>illustrative</strong>, written for this page to show the failure modes the paper reports in §3.3.</p>
+<div class="play" id="trace">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center">
+    <button type="button" data-mode="react" aria-pressed="true">ReAct</button>
+    <button type="button" data-mode="act" aria-pressed="false">Act only</button>
+    <button type="button" data-mode="cot" aria-pressed="false">Reason only</button>
+    <button type="button" data-mode="actfail" aria-pressed="false">Act only: a failure</button>
+    <button type="button" data-mode="cotfail" aria-pressed="false">Reason only: a failure</button>
+  </div>
+  <div class="ui" style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem">
+    <button type="button" id="tr-prev">← Back</button>
+    <button type="button" id="tr-next">Next line →</button>
+    <button type="button" id="tr-all">Show all</button>
+    <span id="tr-count" class="readout" style="margin:0"></span>
+  </div>
+  <div id="tr-body" style="margin-top:.6rem"></div>
+  <p class="readout" id="tr-note"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> step through the ReAct trace first. Thoughts (blue) plan and interpret; actions (orange) touch Wikipedia; observations (green) are what came back. Notice Thought 4: the search for “High Plains” returned a disambiguation page, and the thought is what decides to retry with “High Plains (United States)”. The Act-only example makes the same moves only because a human wrote it; in the illustrative failure, with no thought to interpret the ambiguous result, the agent repeats itself. The Reason-only example is correct because the fact is well known; in its illustrative failure, the model confidently recalls a wrong range and nothing checks it.</p>
+</section>
+
+<section id="s3">
+<h2>3 Knowledge-intensive reasoning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S3">original</a></span></h2>
+</section>
+
+<section id="s3-1">
+<h3>3.1–3.2 Setup and methods <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The agent gets a deliberately clumsy browser: it can open a Wikipedia page by exact title (seeing only its first five sentences), search within the open page like Ctrl+F, or submit an answer. Clumsy on purpose, so success depends on reasoning about what to look up next, as a person would.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Action</th><th>What it returns</th></tr></thead>
+  <tbody>
+    <tr><td><code>search[entity]</code></td><td>The first 5 sentences of that entity's Wikipedia page, or the top-5 similar titles if there is no exact match</td></tr>
+    <tr><td><code>lookup[string]</code></td><td>The next sentence on the current page containing the string</td></tr>
+    <tr><td><code>finish[answer]</code></td><td>Ends the task with that answer</td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li><strong>Tasks:</strong> HotpotQA (questions needing two or more Wikipedia passages) and FEVER (claims to label as supported, refuted, or not enough information). The model sees only the question or claim.</li>
+  <li><strong>Model:</strong> PaLM-540B, frozen, prompted with 6 (HotpotQA) or 3 (FEVER) hand-written example trajectories. Adding more examples did not help.</li>
+  <li><strong>Baselines:</strong> the same examples with parts removed: answers only (Standard), thoughts only (CoT), actions only (Act), plus self-consistency (CoT-SC: sample 21 reasoning chains at temperature 0.7 and take the majority answer).</li>
+</ul>
+<h4>Combining internal and external knowledge</h4>
+<p>ReAct was more factual; chain of thought was better at structuring reasoning. So the paper lets each fall back to the other:</p>
+<ul>
+  <li><strong>ReAct → CoT-SC:</strong> if ReAct has not answered within the step limit (7 steps for HotpotQA, 5 for FEVER), switch to self-consistent chain of thought.</li>
+  <li><strong>CoT-SC → ReAct:</strong> if the reasoning samples do not agree strongly enough, switch to ReAct and go look things up:</li>
+</ul>
+<div class="eq" data-tex="\text{back off to ReAct if}\quad \htmlData{sym=cmaj}{c_{\text{maj}}} < \htmlData{sym=nhalf}{\frac{n}{2}}" data-fallback="back off to ReAct if c_maj < n/2"></div>
+<div class="symtable" data-syms="n,cmaj,nhalf"></div>
+<p class="inwords"><strong>In words:</strong> “if fewer than half of the sampled reasoning chains agree on the most popular answer, the model's own knowledge is shaky, so go and look it up.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with n = 21 samples, n/2 = 10.5. If the most common answer appears 9 times, 9 &lt; 10.5, so switch to ReAct. If it appears 14 times, trust it.</p>
+<h4>Fine-tuning</h4>
+<p>The paper also generated 3,000 successful ReAct trajectories and fine-tuned smaller PaLM models (8B and 62B) on them.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S3.SS3">original</a></span></h3>
+<div class="tablewrap"><table>
+  <caption>Table 1 of Yao et al. (2022), reproduced under CC BY 4.0: PaLM-540B prompting results. HotpotQA exact match; FEVER accuracy.</caption>
+  <thead><tr><th>Prompt method</th><th class="num">HotpotQA (EM)</th><th class="num">FEVER (Acc)</th></tr></thead>
+  <tbody>
+    <tr><td>Standard</td><td class="num">28.7</td><td class="num">57.1</td></tr>
+    <tr><td>CoT</td><td class="num">29.4</td><td class="num">56.3</td></tr>
+    <tr><td>CoT-SC</td><td class="num">33.4</td><td class="num">60.4</td></tr>
+    <tr><td>Act</td><td class="num">25.7</td><td class="num">58.9</td></tr>
+    <tr><td>ReAct</td><td class="num">27.4</td><td class="num">60.9</td></tr>
+    <tr class="hl"><td>CoT-SC → ReAct</td><td class="num">34.2</td><td class="num">64.6</td></tr>
+    <tr class="hl"><td>ReAct → CoT-SC</td><td class="num">35.1</td><td class="num">62.0</td></tr>
+    <tr><td>Supervised state of the art</td><td class="num">67.5</td><td class="num">89.5</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> compare rows in pairs. ReAct beats Act on both tasks, so reasoning helps acting. ReAct beats CoT on FEVER (where tiny factual differences decide the label) but trails it slightly on HotpotQA. The two combined methods at the bottom are best on each task, which is the paper's central message: internal reasoning and external lookup cover each other's weaknesses. All prompting methods remain far below the supervised systems trained specifically for these benchmarks.</p>
+<h4>How each method fails</h4>
+<div class="tablewrap"><table>
+  <caption>Table 2 of Yao et al. (2022), reproduced under CC BY 4.0: success and failure modes in 200 human-labelled HotpotQA trajectories (50 correct and 50 incorrect from each method).</caption>
+  <thead><tr><th>Type</th><th>Definition</th><th class="num">ReAct</th><th class="num">CoT</th></tr></thead>
+  <tbody>
+    <tr><td>Success: true positive</td><td>Correct reasoning trace and facts</td><td class="num">94%</td><td class="num">86%</td></tr>
+    <tr><td>Success: false positive</td><td>Hallucinated reasoning trace or facts</td><td class="num">6%</td><td class="num">14%</td></tr>
+    <tr><td>Failure: reasoning error</td><td>Wrong reasoning trace, including failing to recover from repetitive steps</td><td class="num">47%</td><td class="num">16%</td></tr>
+    <tr><td>Failure: search result error</td><td>Search returned nothing useful</td><td class="num">23%</td><td class="num">–</td></tr>
+    <tr class="hl"><td>Failure: hallucination</td><td>Hallucinated reasoning trace or facts</td><td class="num">0%</td><td class="num">56%</td></tr>
+    <tr><td>Failure: label ambiguity</td><td>Right prediction that did not match the label exactly</td><td class="num">29%</td><td class="num">28%</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the highlighted row is the headline. More than half of chain of thought's failures were invented facts; ReAct had none, because its facts came from observations. ReAct's own weak spots are different: reasoning errors (47%), including a characteristic loop where it repeats earlier thoughts and actions, and bad search results derailing it (23%). Those two are exactly what modern agent loops defend against with loop detection and better retrieval.</p>
+<h4>Fine-tuning flips the ranking</h4>
+<p>With small models and prompting only, ReAct was the <em>worst</em> method: learning to reason and act from a few examples is hard. After fine-tuning on 3,000 trajectories it became the <em>best</em>: fine-tuned PaLM-8B ReAct beat every PaLM-62B prompting method, and fine-tuned 62B beat every 540B prompting method. Fine-tuning on answers teaches a model to memorise facts; fine-tuning on ReAct trajectories teaches it how to go and find them.</p>
+<h4>Why it matters today</h4>
+<p>The failure table is an evaluation template. For any agent, label a sample of runs by failure mode (wrong tool, bad retrieval, loop, invented fact) before trying to fix anything; see the <a data-lesson="primer/agents/evals.html">evaluation lesson</a> and the <a data-lesson="primer/agents/failures.html">failure catalogue</a>.</p>
+</section>
+
+<section id="s4">
+<h2>4 Decision-making tasks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Two text games with long horizons. In <strong>ALFWorld</strong>, a simulated household, the agent receives goals like “examine the paper under the desk lamp” and must move between up to 50 locations, open things and use objects, sometimes over 50 steps. In <strong>WebShop</strong>, a shopping site with 1.18 million real products, it must buy an item matching instructions such as “a nightstand with drawers, nickel finish, under $140”. Here thoughts are <em>sparse</em>: the model decides for itself when a thought is worth writing.</p>
+<div class="tablewrap"><table>
+  <caption>From Tables 3 and 4 of Yao et al. (2022), reproduced under CC BY 4.0: ALFWorld overall success rate (%) and WebShop score and success rate.</caption>
+  <thead><tr><th>ALFWorld method</th><th class="num">Success (%)</th><th>WebShop method</th><th class="num">Score</th><th class="num">Success (%)</th></tr></thead>
+  <tbody>
+    <tr><td>BUTLER (imitation learning, best of 8)</td><td class="num">37</td><td>Imitation learning</td><td class="num">59.9</td><td class="num">29.1</td></tr>
+    <tr><td>Act (best of 6 prompts)</td><td class="num">45</td><td>Imitation + reinforcement learning</td><td class="num">62.4</td><td class="num">28.7</td></tr>
+    <tr><td>ReAct-IM (dense feedback only, best of 6)</td><td class="num">53</td><td>Act</td><td class="num">62.3</td><td class="num">30.1</td></tr>
+    <tr><td>ReAct (average of 6)</td><td class="num">57</td><td>ReAct</td><td class="num">66.6</td><td class="num">40.0</td></tr>
+    <tr class="hl"><td>ReAct (best of 6)</td><td class="num">71</td><td>Human expert</td><td class="num">82.1</td><td class="num">59.6</td></tr>
+  </tbody>
+</table></div>
+<div class="plot"><div id="alf-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is overall ALFWorld success on the 134 unseen games. ReAct's best prompt reaches 71%, against 45% for the best act-only prompt and 37% for BUTLER, which was trained on example trajectories. Even ReAct's <em>worst</em> prompt (48%) beat the best of both. The ReAct-IM bar is an ablation whose thoughts only restate what the environment said (“inner monologue”); it lands in between, which shows the value is in genuine reasoning (decomposing goals, using common sense about where desk lamps usually are), not just in narrating feedback.</p>
+<h4>Why it matters today</h4>
+<p>Without thoughts, the act-only agent loses track of what it has already done and what subgoal comes next. Production agents solve the same problem more explicitly: a written plan, task state kept outside the model, and progress checks. See the <a data-lesson="primer/agents/planning.html">planning lesson</a>.</p>
+</section>
+
+<section id="s5">
+<h2>5–6 Related work and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S5">original</a></span></h2>
+<p>The paper places ReAct next to chain-of-thought reasoning (and its variants such as self-consistency), and next to language models used as policies for web browsing (WebGPT), robots (SayCan) and closed-loop agents (Inner Monologue). Its distinguishing claim is that the reasoning is <em>free-form and sparse</em> and is used to plan, track and adjust, rather than only to restate observations. The conclusion notes the main limitation of prompting: complex tasks need more demonstrations than fit in a prompt, which motivates fine-tuning and, eventually, reinforcement learning on agent trajectories.</p>
+</section>
+
+<section id="today">
+<h2>From ReAct to today's agents</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>“Action: search[…]” parsed from free text</td><td>Structured <span class="t" data-t="tool call">tool calls</span> validated against a <span class="t" data-t="json schema">JSON Schema</span></td><td><a data-lesson="primer/agents/tools.html">tools</a></td></tr>
+    <tr><td>Thoughts written as “Thought:” lines</td><td>Model reasoning between tool calls, sometimes hidden or summarised by the API</td><td><a data-lesson="primer/agents/llm.html">talking to a model</a></td></tr>
+    <tr><td>Fixed step limit (7 or 5)</td><td>Step, token and cost budgets, plus <span class="t" data-t="loop detection">loop detection</span></td><td><a data-lesson="primer/agents/agent_loop.html">agent loop</a></td></tr>
+    <tr><td>Back off between methods</td><td>Routing, escalation and <span class="t" data-t="hand-off">hand-off</span> to a human</td><td><a data-lesson="primer/agents/orchestration.html">orchestration</a></td></tr>
+    <tr><td>One Wikipedia API</td><td>Many tools, often discovered at runtime (for example over <span class="t" data-t="mcp">MCP</span>)</td><td><a data-lesson="primer/agents/mcp.html">MCP</a></td></tr>
+  </tbody>
+</table></div>
+<p>Related companions: <a href="toolformer.html">Toolformer</a> teaches a model <em>when</em> to call tools by itself, and <a href="reflexion.html">Reflexion</a> adds a memory of lessons from failed attempts on top of a ReAct agent.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan and Yuan Cao, <em>ReAct: Synergizing Reasoning and Acting in Language Models</em>, ICLR 2023. <a href="https://arxiv.org/abs/2210.03629">arXiv:2210.03629</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Tables and the example trajectories are reproduced with attribution under that licence; the diagram is original. All explanations and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    o: { tex: "o_t", name: "Observation at step t", meaning: "What the environment returned after the previous action: a page snippet, a lookup result, a game message.", shape: "text", example: "“The Colorado orogeny was an episode of mountain building…”" },
+    a: { tex: "a_t", name: "Action at step t", meaning: "Something the agent does in the world.", shape: "one action", example: "Search[Colorado orogeny]" },
+    ct: { tex: "c_t", name: "Context at step t", meaning: "Everything so far: the task, and every observation, action and (for ReAct) thought. It only ever grows.", shape: "a growing transcript", example: "(question, Thought 1, Action 1, Observation 1)" },
+    at: { tex: "a_t", name: "The next action", meaning: "What the agent chooses now. ∼ means “is sampled from”.", shape: "one action", example: "Lookup[eastern sector]" },
+    pi: { tex: "\\pi", name: "Policy", meaning: "The rule for choosing an action given the context. Here the policy is simply the language model reading the context and writing the next line.", shape: "context → action", example: "PaLM-540B with a few-shot prompt" },
+    A: { tex: "\\mathcal{A}", name: "Action space", meaning: "Every action that affects the world.", shape: "a set", example: "{search[…], lookup[…], finish[…]}" },
+    L: { tex: "\\mathcal{L}", name: "The space of language", meaning: "Every possible sentence. ReAct lets the agent “act” by writing any of them as a thought.", shape: "a (huge) set", example: "“It does not mention the eastern sector.”" },
+    cup: { tex: "\\cup", name: "Union", meaning: "Everything in either set.", shape: "", example: "" },
+    Ahat: { tex: "\\hat{\\mathcal{A}}", name: "Augmented action space", meaning: "The world-actions plus thoughts.", shape: "a set", example: "" },
+    ahat: { tex: "\\hat{a}_t", name: "A thought", meaning: "An action taken from 𝓛. It gets no observation back; it only appends itself to the context.", shape: "one sentence", example: "“I need to instead search High Plains (United States).”" },
+    n: { tex: "n", name: "Number of reasoning samples", meaning: "How many chains of thought are sampled for self-consistency.", shape: "a whole number", example: "21" },
+    cmaj: { tex: "c_{\\text{maj}}", name: "Majority count", meaning: "How many of the n samples gave the most common answer.", shape: "0 to n", example: "9" },
+    nhalf: { tex: "\\frac{n}{2}", name: "Half the samples", meaning: "The threshold: below it, the samples disagree too much to trust.", shape: "a number", example: "10.5" },
+  },
+  blocks: {
+    context: { title: "Context c_t", body: "<p>The prompt: a few example trajectories, the question, and everything written so far in this episode. Each loop iteration appends to it, which is why long agent runs get slow and expensive.</p>", lesson: "primer/agents/context.html" },
+    thought: { title: "Thought", body: "<p>Free text: decompose the goal, interpret an observation, decide what to look up next, handle a surprise, or conclude. It touches nothing outside and returns nothing; it only goes back into the context (the dashed arrow).</p>" },
+    action: { title: "Action", body: "<p>One of a few allowed commands with an argument. In the knowledge tasks: search[entity], lookup[string], finish[answer]. Today these are structured tool calls.</p>", lesson: "primer/agents/tools.html" },
+    env: { title: "Environment", body: "<p>Whatever executes actions: here, a deliberately simple Wikipedia API. The model never executes anything itself.</p>" },
+    obs: { title: "Observation", body: "<p>The environment's reply, appended to the context. Grounding reasoning in observations is why ReAct had no hallucination failures in the paper's error analysis.</p>" },
+  },
+  onReady() { traceDemo(); alfBars(); },
+};
+
+/* ---- the four trajectories ---- */
+function traceDemo() {
+  const PAPER_NOTE = "From Yao et al. (2022), Appendix C, reproduced under CC BY 4.0.";
+  const ILLUS = "Illustrative, written for this page to show a failure mode reported in §3.3; not from the paper.";
+  const T = {
+    react: { note: PAPER_NOTE, lines: [
+      ["T", "Thought 1: I need to search Colorado orogeny, find the area that the eastern sector of the Colorado orogeny extends into, then find the elevation range of the area."],
+      ["A", "Action 1: Search[Colorado orogeny]"],
+      ["O", "Observation 1: The Colorado orogeny was an episode of mountain building (an orogeny) in Colorado and surrounding areas."],
+      ["T", "Thought 2: It does not mention the eastern sector. So I need to look up eastern sector."],
+      ["A", "Action 2: Lookup[eastern sector]"],
+      ["O", "Observation 2: (Result 1 / 1) The eastern sector extends into the High Plains and is called the Central Plains orogeny."],
+      ["T", "Thought 3: The eastern sector of Colorado orogeny extends into the High Plains. So I need to search High Plains and find its elevation range."],
+      ["A", "Action 3: Search[High Plains]"],
+      ["O", "Observation 3: High Plains refers to one of two distinct land regions"],
+      ["T", "Thought 4: I need to instead search High Plains (United States)."],
+      ["A", "Action 4: Search[High Plains (United States)]"],
+      ["O", "Observation 4: The High Plains are a subregion of the Great Plains. From east to west, the High Plains rise in elevation from around 1,800 to 7,000 ft (550 to 2,130 m)."],
+      ["T", "Thought 5: High Plains rise in elevation from around 1,800 to 7,000 ft, so the answer is 1,800 to 7,000 ft."],
+      ["A", "Action 5: Finish[1,800 to 7,000 ft]"],
+    ] },
+    act: { note: PAPER_NOTE, lines: [
+      ["A", "Action 1: Search[Colorado orogeny]"],
+      ["O", "Observation 1: The Colorado orogeny was an episode of mountain building (an orogeny) in Colorado and surrounding areas."],
+      ["A", "Action 2: Lookup[eastern sector]"],
+      ["O", "Observation 2: (Result 1 / 1) The eastern sector extends into the High Plains and is called the Central Plains orogeny."],
+      ["A", "Action 3: Search[High Plains]"],
+      ["O", "Observation 3: High Plains refers to one of two distinct land regions:"],
+      ["A", "Action 4: Search[High Plains (United States)]"],
+      ["O", "Observation 4: The High Plains are a subregion of the Great Plains. From east to west, the High Plains rise in elevation from around 1,800 to 7,000 ft (550 to 2,130 m)."],
+      ["A", "Action 5: Finish[1,800 to 7,000 ft]"],
+    ] },
+    cot: { note: PAPER_NOTE, lines: [
+      ["T", "Thought: Let’s think step by step. The eastern sector of Colorado orogeny extends into the High Plains. High Plains rise in elevation from around 1,800 to 7,000 ft, so the answer is 1,800 to 7,000 ft."],
+      ["A", "Answer: 1,800 to 7,000 ft"],
+    ] },
+    actfail: { note: ILLUS, lines: [
+      ["A", "Action 1: Search[Colorado orogeny]"],
+      ["O", "Observation 1: The Colorado orogeny was an episode of mountain building (an orogeny) in Colorado and surrounding areas."],
+      ["A", "Action 2: Search[High Plains]"],
+      ["O", "Observation 2: High Plains refers to one of two distinct land regions:"],
+      ["A", "Action 3: Search[High Plains]"],
+      ["O", "Observation 3: High Plains refers to one of two distinct land regions:"],
+      ["A", "Action 4: Search[High Plains]"],
+      ["O", "Observation 4: High Plains refers to one of two distinct land regions:"],
+      ["X", "Stopped: step limit reached, no answer. With no thought to notice that the result was a disambiguation page, the agent repeats the same action; a loop detector would have stopped it at the second repeat."],
+    ] },
+    cotfail: { note: ILLUS, lines: [
+      ["T", "Thought: Let’s think step by step. The eastern sector of the Colorado orogeny extends into the Great Plains. The Great Plains rise from about 400 to 6,000 ft, so the answer is 400 to 6,000 ft."],
+      ["A", "Answer: 400 to 6,000 ft"],
+      ["X", "Wrong, and fluent. Every step came from memory, the first premise was wrong (it is the High Plains), and nothing was checked. The paper found invented facts behind 56% of chain-of-thought failures."],
+    ] },
+  };
+  const color = { T: "var(--attn-stroke)", A: "var(--active)", O: "var(--ff-stroke)", X: "#dc2626" };
+  let mode = "react", i = 1;
+  const body = document.getElementById("tr-body"), cnt = document.getElementById("tr-count"), note = document.getElementById("tr-note");
+  function render() {
+    const L = T[mode].lines;
+    body.innerHTML = L.slice(0, i).map(([k, s]) => `<div style="border-left:3px solid ${color[k]};padding:.25rem .6rem;margin:.3rem 0">${s.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>`).join("");
+    cnt.textContent = `Line ${i} of ${L.length}`;
+    note.textContent = T[mode].note;
+    document.getElementById("tr-prev").disabled = i <= 1;
+    document.getElementById("tr-next").disabled = i >= L.length;
+  }
+  document.getElementById("tr-prev").addEventListener("click", () => { if (i > 1) { i--; render(); } });
+  document.getElementById("tr-next").addEventListener("click", () => { if (i < T[mode].lines.length) { i++; render(); } });
+  document.getElementById("tr-all").addEventListener("click", () => { i = T[mode].lines.length; render(); });
+  document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.mode; i = 1;
+    document.querySelectorAll("[data-mode]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    render();
+  }));
+  render();
+}
+
+function alfBars() {
+  const rows = [["BUTLER (best of 8)", 37], ["Act (best of 6)", 45], ["ReAct-IM (best of 6)", 53], ["ReAct (average of 6)", 57], ["ReAct (best of 6)", 71]];
+  document.getElementById("alf-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">ALFWorld overall success rate, axis 0 to 100% (Yao et al., 2022, Table 3, CC BY 4.0)</div>` +
+    rows.map(([m, s]) => `<div class="share-row" style="grid-template-columns:11rem minmax(0,1fr) 3rem"><span>${m}</span><div><div class="share-bar" style="width:${s}%;${m.startsWith("ReAct (") ? "" : "background:var(--wire)"}"></div></div><span>${s}%</span></div>`).join("");
+}
+</script>
+</body>
+</html>

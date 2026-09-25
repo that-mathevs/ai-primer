@@ -1,0 +1,196 @@
+# primer: rules for every agent working here
+
+## What this project is
+
+A public, open-source **primer on how modern AI works, built from scratch in
+Python**, written as a gift to engineers who want to understand the machinery
+rather than call it. Two parts:
+
+- `primer/ml/`: ML foundations. Neural nets, attention, transformers,
+  tokenization, training and inference, losses and metrics, and the
+  centerpiece, `primer/ml/embeddings/`.
+- `primer/agents/`: applied AI. Agent loops, tools, MCP, RAG, memory,
+  planning, evals, guardrails, cost, observability, deployment.
+
+`primer/common/` holds the shared toy corpus and the deterministic
+`ConceptEmbedder`; `primer/agents/llm.py` holds the `LLM` interface with the
+offline `ScriptedLLM` and the real `ClaudeLLM`. The reading order lives in
+`README.md` and each package's `__init__.py`.
+
+## The purpose: demystify everything
+
+**We are destroying the priesthood.** Nothing here may depend on already
+knowing the jargon, the notation or the folklore. Nothing stays a black box. Every mechanism is built in plain code, **drawn**,
+and **explained**, until a reader could rebuild it from memory. When choosing
+between one more paragraph and one more diagram, draw the diagram, then
+explain it. See [Diagrams](#diagrams).
+
+**Start from zero.** Write every concept as a **ladder**, climbed in this order:
+
+1. **Everyday picture**: an analogy or scene a curious non-engineer follows
+   with no jargon. A convolution is a flashlight sweeping a photo, looking
+   for one pattern. An RNN is reading a book while keeping a one-page summary
+   you rewrite after every word.
+2. **Tiny worked example**: real numbers small enough to check by hand (a 5×5
+   image, a 3-word sentence), traced step by step.
+3. **Diagram**, with its `**Reading it:**` walkthrough.
+4. **The math and the code**, now that the reader already knows what the
+   symbols mean.
+5. **Why it matters in practice**: where it shows up, what breaks without it.
+
+Every section of every lesson climbs the full ladder. `primer/ml/attention.py`
+is the gold standard; every module meets it.
+
+**Every formula is decoded.** Directly under each `$$…$$` block comes:
+
+- a **Symbols** table: every symbol, subscript and operator in the formula
+  (`e`, `Σ`, `ᵀ`, `‖x‖`, `log`, `∂`, `i`, `j`, …) with its meaning *in this
+  formula* and its shape or range;
+- an **In words** line that reads the whole formula aloud as a sentence;
+- the formula evaluated on the lesson's tiny worked example, so every symbol
+  gets a real number.
+
+Every math term (softmax, dot product, logarithm, gradient, matrix
+multiply, …) is explained in plain words the first time a lesson uses it,
+with a link to `primer.notation` for the full treatment. Unexplained
+notation is a bug.
+
+## Hard rules
+
+1. **Voice.** Write as a teacher addressing a curious engineer: general,
+   timeless, vendor-neutral where the idea is. The repo is public. It never
+   refers to hiring, job preparation, any company's evaluation process, or
+   the private notes it grew from.
+2. **No em dashes, anywhere**: code, comments, docstrings, markdown, HTML.
+   Use a colon, a comma, parentheses or a new sentence.
+   `tests/test_house_style.py` enforces it.
+3. **Every module is a lesson.** It has a markdown docstring (pdoc renders it)
+   with, in order: `# Title`, `Run: python -m <module>`, the idea in plain
+   English, formulas in `$$…$$`, diagrams and figures (see
+   [Diagrams](#diagrams)), `## In 20 seconds`, `## Self-test questions` (each followed by its answer),
+   and `## Further reading`. It ends with a `demo()` that narrates the lesson
+   through `primer._show` and an `if __name__ == "__main__": demo()`.
+   `primer/ml/attention.py` is the reference lesson; match it.
+4. **Links are real.** Every URL in Further reading points at a primary
+   source you are certain exists: the paper (arXiv), the official docs, the
+   canonical post. Omit a link rather than guess one.
+5. **Behaviour-driven, test-driven.** Work red → green in vertical slices:
+   one scenario, watch it fail, write only the code that passes it, repeat.
+   The suite is the specification; see [Tests are the spec](#tests-are-the-spec).
+6. **From scratch.** Implementations use NumPy and the standard library, so
+   the reader sees every step. `torch`, `sklearn`, `tiktoken` and `anthropic`
+   appear only as optional cross-checks (`pytest.importorskip`) or lazy
+   imports; the whole repo runs offline with `numpy` alone.
+7. **Deterministic and tight.** Seed every random generator. Each test file
+   runs in under 5 seconds. No network in tests or demos.
+8. **Comments explain why.** Explain the reason a line exists, the shape of
+   a tensor, the failure it prevents. Let the code say what it does.
+9. **One source of truth.** Shared vocabulary lives in `primer/common` and
+   `primer/agents/llm.py`; import it rather than redefine it. Change a shared
+   file only when the change serves every caller, and run the full suite
+   after.
+
+## Primary sources come in
+
+Where an idea has a founding paper, the paper comes into the repo. Each
+lesson ends its docstring (before Further reading) with
+`## The papers behind this lesson`: for each paper, the citation, its
+primary-source link, one sentence on what it contributed, and a link to its
+annotated companion `docs/papers/<slug>.html`. Companions are interactive
+HTML walkthroughs with hover guidance on every term and equation symbol,
+built on the shared assets in `docs/papers/assets/`. The slugs live in
+`docs/papers/CATALOG.md`, and how to write a companion is in
+`docs/papers/README.md`. Companions quote briefly and link to the original.
+They never republish a paper's full text.
+
+## Navigable, and always current
+
+A reader can reach anything from anywhere in two clicks, and no map is ever
+stale. Navigation is **generated**, never hand-maintained, from three
+sources of truth:
+
+| To add… | Edit only | Generated from it |
+|---|---|---|
+| a lesson | `primer/curriculum.py` | README reading order and `docs/SELF_TEST.md` (`make readme`), package reading lists, site home page, breadcrumbs, previous/next links |
+| a big question | `BIG_QUESTIONS` in `primer/curriculum.py` | README's big-questions map and `docs/BIG_QUESTIONS.md` (`make readme`), the home page's Big questions |
+| a term | `primer/glossary.py` | the Glossary page, hover definitions on every page (`glossary.js`) |
+| a paper | `docs/papers/CATALOG.md` | papers index, `catalog.js`, companion nav, the home page's paper list |
+
+Text between `<!-- BEGIN … -->` and `<!-- END … -->` markers is generated.
+Edit its source, never the text itself. `tests/test_navigation.py` fails
+when anything drifts: a lesson on disk that isn't in the curriculum, a stale
+README, a link to an unknown paper, a lesson missing a required section.
+Every new term a lesson introduces gets a glossary entry in the same change.
+
+## Diagrams
+
+Every lesson is diagram-first. Two kinds, both rendered in the HTML site:
+
+- **Mermaid diagrams** (```` ```mermaid ```` blocks in the docstring) for
+  every mechanism, data flow, architecture, state machine and pipeline in
+  the lesson: one per mechanism, not one per module.
+- **Data figures** plotted from the lesson's own code: curves, heatmaps,
+  vector spaces, trade-off sweeps. The module defines
+  `figures() -> dict[str, matplotlib.figure.Figure]`, importing matplotlib
+  inside the function so the lesson itself still needs only NumPy. Each
+  figure is embedded in the docstring as
+  `![What it shows](figures/<dotted.module>.<key>.svg)`, where `<key>` is its
+  dict key. `make figures` renders them into `docs/figures/`.
+
+**Every diagram and figure is followed by a paragraph that starts with
+`**Reading it:**`** and walks the reader through it: what the axes or boxes
+are, where to look first, and what the picture proves. A picture without its
+explanation is unfinished.
+
+## Tests are the spec
+
+Test files mirror modules: `tests/test_<module>.py`,
+`tests/test_emb_<module>.py`, `tests/test_agents_<module>.py`.
+
+- **One scenario per test**: given a context, when one action happens,
+  then one observable outcome. Two actions make two tests.
+- **Names read as sentences in the domain's words.** A class per behaviour
+  area, methods phrased as the scenario:
+
+  ```python
+  class TestCausalMasking:
+      def test_given_a_causal_mask_future_tokens_receive_zero_attention(self): ...
+  ```
+
+  Present tense, no "should". Name the behaviour, never the call graph.
+- **Expected values come from an independent source**: the worked example,
+  the paper, a hand calculation written as a literal. An assertion that
+  recomputes the answer the way the code does proves nothing.
+- **Write the reason into the test** with a one-line comment when a rule
+  would otherwise look arbitrary.
+- **Done means the spec reads well.** Run `make spec`; a stranger reading
+  only those lines learns what the module teaches.
+
+## Commands
+
+```bash
+make test     # full suite
+make spec     # the suite printed as a readable specification
+make demos    # run every module's walkthrough
+make readme   # regenerate README's reading order from primer/curriculum.py
+make figures  # render every figures() into docs/figures/*.svg
+make docs     # readme + figures + the HTML site (nav, hover glossary, papers) into docs/html
+make sitecheck  # crawl the built site; fails on any broken internal link
+make links    # check every external URL (needs network; run before publishing)
+python -m primer.ml.attention        # any single lesson
+```
+
+## Definition of done for a module
+
+- It has its entry in `primer/curriculum.py`, and every new term it
+  introduces has an entry in `primer/glossary.py`.
+
+- Its scenarios were written first and watched fail.
+- `make test` passes and `make spec` reads as a clear description.
+- `python -m <module>` runs cleanly and teaches something on its own.
+- Every mechanism has a mermaid diagram, the lesson has data figures, and
+  each one is followed by its `**Reading it:**` explanation.
+- Every section climbs the ladder, and every formula has its Symbols table,
+  In words line and worked numbers.
+- The docstring has every section from rule 3. Its self-test questions reach
+  `docs/SELF_TEST.md` through `make readme`; that file is generated.

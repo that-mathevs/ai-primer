@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layer Normalization, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Ba, Kiros and Hinton (2016), the paper that introduced layer normalization.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .grid-demo { border-collapse: separate; border-spacing: 3px; margin: 0.6rem 0; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .grid-demo td, .grid-demo th { border: none; padding: 0.3rem 0.45rem; text-align: center; border-radius: 6px; }
+  .grid-demo td { background: var(--bg); border: 1px solid var(--border); min-width: 3.2rem; cursor: pointer; }
+  .grid-demo td.grp { background: var(--accent-soft); border-color: var(--accent); }
+  .grid-demo td.me { outline: 2px solid var(--active); }
+  .grid-demo th { color: var(--muted); font-weight: 600; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.75rem; }
+  .grids { display: flex; flex-wrap: wrap; gap: 0 1.5rem; align-items: flex-start; overflow-x: auto; }
+</style>
+</head>
+<body data-paper="layer-norm">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background: batch norm</a></li>
+      <li><a href="#s3">3 Layer normalization</a>
+        <ol><li><a href="#s3-1">3.1 In recurrent networks</a></li></ol>
+      </li>
+      <li><a href="#s4">4 Related work</a></li>
+      <li><a href="#s5">5 Analysis</a>
+        <ol>
+          <li><a href="#s5-1">5.1 Invariances</a></li>
+          <li><a href="#s5-2">5.2 Geometry of learning</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Experiments</a></li>
+      <li><a href="#s7">7 Conclusion</a></li>
+      <li><a href="#today">What changed since 2016</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Layer Normalization, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Jimmy Lei Ba, Jamie Ryan Kiros and Geoffrey E. Hinton (2016), the normalization that sits inside every Transformer block.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1607.06450">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1607.06450">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1607.06450">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. Equations are reproduced with every symbol decoded. Figures are not reproduced; the diagrams and demos here are drawn from scratch, and only selected results are shown, with attribution. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap; so does every symbol in every equation.</li>
+  <li>The batch-versus-layer grid in §3 is the one picture to remember: the two methods compute the same statistics along different directions of the same table.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>math</strong>, <strong>why it matters today</strong>. The <a data-lesson="primer/ml/deep_nets.html">deep networks lesson</a> implements batch norm and layer norm from scratch and shows why Transformers use the latter.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450">original</a></span></h2>
+<blockquote class="quote">“In this paper, we transpose batch normalization into layer normalization by computing the mean and variance used for normalization from all of the summed inputs to the neurons in a layer on a single training case.”<cite>Ba, Kiros and Hinton (2016), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Two ways to grade on a curve. <strong>Batch normalization</strong> grades each question by comparing everyone in the class on that question: to know if your answer is good, it needs the rest of the class present. <strong>Layer normalization</strong> grades each student by comparing their answers to all the questions against their own average: it needs nobody else. That independence is the whole point.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Normalization statistics can come from all the units in one layer, for one example, instead of from one unit across a batch.</li>
+  <li>So it works with any batch size, including 1, and does exactly the same computation during training and at test time.</li>
+  <li>It fits recurrent networks naturally, one normalization per time step, and stabilizes their hidden states.</li>
+  <li>It speeds up training on six tasks, mostly with recurrent networks.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Every Transformer, and so every large language model, normalizes with layer norm or its close cousin <span class="t" data-t="rmsnorm">RMSNorm</span>, typically twice per block. The paper's own experiments are about RNNs; its lasting impact came a year later, when the <a href="attention-is-all-you-need.html">Transformer</a> adopted it.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Deep networks are like a relay of translators, each passing their version to the next. If one translator starts shouting (numbers growing) or whispering (numbers shrinking), everyone after them struggles. Normalization is a volume knob at every hand-off that resets the message to a standard level. Batch normalization already did this and made training much faster, but its knob needs a whole batch of examples to set the level.</p>
+<h4>Tiny example</h4>
+<p>Batch norm estimates a neuron's average from the current batch. With a batch of 256 that estimate is decent; with a batch of 2 it is little more than the average of two random numbers; with a batch of 1 the spread is zero and the formula divides by zero. Recurrent networks make it worse: a sentence of 40 words needs separate statistics for each of 40 time steps, and a test sentence of 60 words has no statistics at all for steps 41 to 60.</p>
+<h4>Why it matters today</h4>
+<p>Language models train on variable-length sequences, sharded across many GPUs, often with small per-device batches. A normalization that never looks across the batch is simply easier to live with.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background: batch normalization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A neuron adds up its weighted inputs into one number, its <em>summed input</em>. Batch norm watches that number across all the examples in the batch, subtracts the batch average, divides by the batch spread, and then lets a learned <em>gain</em> set the spread it actually wants.</p>
+<h4>Tiny example</h4>
+<p>One neuron's summed inputs across a batch of three examples are 1, 5 and 9. The mean is 5 and the <span class="t" data-t="standard deviation">standard deviation</span> is √((16 + 0 + 16) / 3) = 3.266. So the normalized values are (1 − 5)/3.266 = −1.225, then 0, then +1.225. With gain g = 1 they stay as they are.</p>
+<div class="eq" data-tex="\htmlData{sym=ail}{a_i^l} = {\htmlData{sym=wil}{w_i^l}}^{\top}\htmlData{sym=hl}{h^l} \qquad \htmlData{sym=hnext}{h_i^{l+1}} = \htmlData{sym=f}{f}(\htmlData{sym=ail}{a_i^l} + \htmlData{sym=bil}{b_i^l})" data-fallback="a_i^l = w_i^l⊤ h^l,   h_i^(l+1) = f(a_i^l + b_i^l)"></div>
+<div class="eq" data-tex="\htmlData{sym=abar}{\bar a_i^l} = \frac{\htmlData{sym=gi}{g_i^l}}{\htmlData{sym=sigmai}{\sigma_i^l}}\left(\htmlData{sym=ail}{a_i^l} - \htmlData{sym=mui}{\mu_i^l}\right) \qquad \htmlData{sym=mui}{\mu_i^l} = \htmlData{sym=Ex}{\mathbb{E}_{x\sim P(x)}}\!\left[\htmlData{sym=ail}{a_i^l}\right] \qquad \htmlData{sym=sigmai}{\sigma_i^l} = \sqrt{\htmlData{sym=Ex}{\mathbb{E}_{x\sim P(x)}}\!\left[(\htmlData{sym=ail}{a_i^l} - \htmlData{sym=mui}{\mu_i^l})^2\right]}" data-fallback="ā_i = (g_i / σ_i)(a_i − μ_i),  μ_i = E_x[a_i],  σ_i = √(E_x[(a_i − μ_i)²])"></div>
+<div class="symtable" data-syms="ail,wil,hl,hnext,f,bil,abar,gi,mui,sigmai,Ex"></div>
+<p class="inwords"><strong>In words:</strong> “each neuron's summed input is the dot product of its weights with the previous layer's outputs; batch norm subtracts that neuron's average over the data, divides by its spread over the data, and multiplies by a learned gain.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the batch (1, 5, 9): μ = 5, σ = 3.266, so ā = (1/3.266) × (1 − 5) = −1.225 for the first example.</p>
+<p>The expectation E is over <em>all</em> the training data, which would need a pass through the whole dataset after every weight update. So in practice μ and σ are estimated from the current mini-batch. That estimate is what ties batch norm to the batch size.</p>
+<h4>Why it matters today</h4>
+<p>Batch norm is still standard in convolutional image networks (the <a href="resnet.html">ResNet companion</a> uses it after every convolution), where batches are large and every example has the same shape.</p>
+</section>
+
+<section id="s3">
+<h2>3 Layer normalization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S3">original</a></span></h2>
+<blockquote class="quote">“Unlike batch normalization, layer normaliztion does not impose any constraint on the size of a mini-batch and it can be used in the pure online regime with batch size 1.”<cite>Ba, Kiros and Hinton (2016), §3 (spelling as in the original)</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Picture the numbers as a table: one row per example in the batch, one column per neuron in the layer. Batch norm computes its average and spread down each <strong>column</strong> (one neuron, many examples). Layer norm computes them along each <strong>row</strong> (one example, all its neurons). Same arithmetic, different direction.</p>
+<h4>Try it: the same table, two directions</h4>
+<div class="play" id="bnln">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Normalize with:</span>
+    <button type="button" data-mode="ln" aria-pressed="true">layer norm (rows)</button>
+    <button type="button" data-mode="bn" aria-pressed="false">batch norm (columns)</button>
+  </div>
+  <div class="grids">
+    <div><p class="readout" style="margin:.6rem 0 0">Summed inputs a (4 examples × 5 neurons)</p><table class="grid-demo" id="grid-in" aria-label="Input table"></table></div>
+    <div><p class="readout" style="margin:.6rem 0 0">After normalizing</p><table class="grid-demo" id="grid-out" aria-label="Normalized table"></table></div>
+  </div>
+  <p class="readout" id="bnln-readout">Hover, tab to or tap a cell to see which numbers its average and spread come from.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the left table holds the summed inputs for a batch of 4 examples (rows) and a layer of 5 neurons (columns). Pick a cell. In <strong>layer norm</strong> mode, its whole row lights up: the average and spread come only from that one example's own 5 neurons, so every row ends up with mean 0 and spread 1 by itself, and the other examples are irrelevant. Switch to <strong>batch norm</strong> and its column lights up instead: the statistics come from the same neuron across the 4 examples, so a cell's normalized value depends on what else happened to be in the batch. Try example 3: its values (5, 5, 5, 6, 4) are nearly flat, so layer norm stretches its small differences to full size, while batch norm judges them against the other examples.</p>
+<div class="eq" data-tex="\htmlData{sym=mul}{\mu^l} = \frac{1}{\htmlData{sym=H}{H}}\htmlData{sym=sumH}{\sum_{i=1}^{H}} \htmlData{sym=ail}{a_i^l} \qquad \htmlData{sym=sigmal}{\sigma^l} = \sqrt{\frac{1}{\htmlData{sym=H}{H}}\htmlData{sym=sumH}{\sum_{i=1}^{H}}\left(\htmlData{sym=ail}{a_i^l} - \htmlData{sym=mul}{\mu^l}\right)^2}" data-fallback="μ^l = (1/H) Σ_i a_i^l,   σ^l = √((1/H) Σ_i (a_i^l − μ^l)²)"></div>
+<div class="symtable" data-syms="H,sumH,mul,sigmal"></div>
+<p class="inwords"><strong>In words:</strong> “for one example, average the summed inputs of all H neurons in the layer, and measure their spread around that average; every neuron in the layer then shares these two numbers.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for a layer of H = 4 neurons with a = (2, 4, 6, 8): μ = 20 / 4 = 5, σ = √((9 + 1 + 1 + 9) / 4) = √5 = 2.236, so the normalized values are (−1.342, −0.447, 0.447, 1.342).</p>
+<p>As with batch norm, each neuron then gets its own learned <span class="t" data-t="bias">bias</span> b and gain g, applied after normalizing and before the nonlinearity (equation 5 in §5 shows the shared form). And because nothing depends on the batch, training and testing run the identical computation: no running averages to store, no train/test mismatch.</p>
+<h4>Why it matters today</h4>
+<p>In a Transformer, each token's vector is one “row”: layer norm normalizes each token across its d<sub>model</sub> features (for example 512), independently of every other token and every other sentence in the batch. Real implementations also add a tiny ε under the square root so the division is safe.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Layer-normalized recurrent networks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="rnn">recurrent network</span> is a note-taker who reads one word at a time and rewrites a one-page summary (the <span class="t" data-t="hidden state">hidden state</span>) after each word. If the handwriting gets a little bigger with every rewrite, after a hundred words it no longer fits the page; a little smaller, and it fades to nothing. Layer norm resets the summary to a standard size after every word, whatever the sentence length.</p>
+<h4>Tiny example</h4>
+<p>Suppose the summed inputs at every step are 1.2 times those of the step before. After 50 steps they are 1.2<sup>50</sup> ≈ 9,100 times larger. Layer norm divides by the current step's own spread, so the normalized values stay the same size at step 1 and at step 50.</p>
+<figure class="ix" id="fig-rnn">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 330" role="img" aria-label="One time step of a layer-normalized recurrent network">
+    <defs><marker id="arrL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M80,300 V268" marker-end="url(#arrL)"/>
+    <path class="wire" d="M240,300 V268" marker-end="url(#arrL)"/>
+    <path class="wire" d="M80,238 V222 H148" marker-end="url(#arrL)"/>
+    <path class="wire" d="M240,238 V222 H172" marker-end="url(#arrL)"/>
+    <path class="wire" d="M160,208 V186" marker-end="url(#arrL)"/>
+    <path class="wire" d="M160,156 V134" marker-end="url(#arrL)"/>
+    <path class="wire" d="M160,104 V82" marker-end="url(#arrL)"/>
+    <path class="wire" d="M160,52 V36" marker-end="url(#arrL)"/>
+    <path class="wire" d="M200,24 H300 V318 H240" stroke-dasharray="4 3"/>
+    <g class="blk plain" data-block="xt" tabindex="0" role="button" aria-label="Input x_t"><rect x="40" y="300" width="80" height="24" rx="6"/><text x="80" y="316" text-anchor="middle">xₜ</text></g>
+    <g class="blk plain" data-block="hprev" tabindex="0" role="button" aria-label="Previous hidden state"><rect x="200" y="300" width="80" height="24" rx="6"/><text x="240" y="316" text-anchor="middle">hₜ₋₁</text></g>
+    <g class="blk ff" data-block="Wxh" tabindex="0" role="button" aria-label="Input weights"><rect x="40" y="238" width="80" height="30" rx="7"/><text x="80" y="257" text-anchor="middle">W_xh</text></g>
+    <g class="blk ff" data-block="Whh" tabindex="0" role="button" aria-label="Recurrent weights"><rect x="200" y="238" width="80" height="30" rx="7"/><text x="240" y="257" text-anchor="middle">W_hh</text></g>
+    <g class="blk pe" data-block="sum" tabindex="0" role="button" aria-label="Sum giving a_t"><circle cx="160" cy="222" r="13"/><text x="160" y="227" text-anchor="middle">+</text></g>
+    <g class="blk norm" data-block="stats" tabindex="0" role="button" aria-label="Compute mean and spread for this step"><rect x="95" y="156" width="130" height="30" rx="7"/><text x="160" y="175" text-anchor="middle">μₜ, σₜ of aₜ</text></g>
+    <g class="blk norm" data-block="normalize" tabindex="0" role="button" aria-label="Normalize, then gain and bias"><rect x="80" y="104" width="160" height="30" rx="7"/><text x="160" y="123" text-anchor="middle">g ⊙ (aₜ − μₜ)/σₜ + b</text></g>
+    <g class="blk soft" data-block="nonlin" tabindex="0" role="button" aria-label="Nonlinearity"><rect x="110" y="52" width="100" height="30" rx="7"/><text x="160" y="71" text-anchor="middle">f (e.g. tanh)</text></g>
+    <g class="blk plain" data-block="ht" tabindex="0" role="button" aria-label="New hidden state"><rect x="120" y="12" width="80" height="24" rx="6"/><text x="160" y="28" text-anchor="middle">hₜ</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. The dashed line carries hₜ back around to become the next step's hₜ₋₁.</p></div>
+  </div>
+  <figcaption>One time step of a layer-normalized RNN (equation 4 of Ba et al., 2016), drawn from scratch.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the bottom up. The new word x<sub>t</sub> and the previous summary h<sub>t−1</sub> are each multiplied by their own weight matrix and added into the summed inputs a<sub>t</sub>. The yellow boxes are layer norm: compute this step's own mean and spread across all the hidden units, normalize, then apply the learned gain g and bias b. Only then does the nonlinearity produce the new summary h<sub>t</sub>, which the dashed line feeds back in at the next step. The statistics are recomputed at every step from that step alone, while g and b are shared across all steps. That is why any sentence length works.</p>
+<div class="eq" data-tex="\htmlData{sym=ht}{\mathbf{h}^t} = \htmlData{sym=f}{f}\!\left[\frac{\htmlData{sym=gvec}{\mathbf{g}}}{\htmlData{sym=sigmat}{\sigma^t}} \htmlData{sym=odot}{\odot} \left(\htmlData{sym=at}{\mathbf{a}^t} - \htmlData{sym=mut}{\mu^t}\right) + \htmlData{sym=bvec}{\mathbf{b}}\right], \qquad \htmlData{sym=at}{\mathbf{a}^t} = \htmlData{sym=Whh}{W_{hh}}\htmlData{sym=htprev}{\mathbf{h}^{t-1}} + \htmlData{sym=Wxh}{W_{xh}}\htmlData{sym=xt}{\mathbf{x}^t}" data-fallback="h^t = f[(g / σ^t) ⊙ (a^t − μ^t) + b],   a^t = W_hh h^(t−1) + W_xh x^t"></div>
+<div class="symtable" data-syms="ht,at,htprev,xt,Whh,Wxh,mut,sigmat,gvec,bvec,odot"></div>
+<p class="inwords"><strong>In words:</strong> “mix the previous summary and the new input into summed inputs, normalize them using this step's own mean and spread, apply a learned per-unit gain and bias, then the nonlinearity.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if a<sup>t</sup> = (2, 4, 6, 8) then μ<sup>t</sup> = 5 and σ<sup>t</sup> = 2.236; with g = (1, 1, 1, 1) and b = 0 the normalized vector is (−1.342, −0.447, 0.447, 1.342), and tanh of it gives h<sup>t</sup> ≈ (−0.872, −0.420, 0.420, 0.872).</p>
+<p>The paper points out the key stability property: layer norm makes the recurrent layer invariant to rescaling all its summed inputs, so hidden states can no longer grow or shrink step after step, the root of <span class="t" data-t="exploding gradient">exploding</span> and <span class="t" data-t="vanishing gradient">vanishing</span> gradients in RNNs.</p>
+<h4>Why it matters today</h4>
+<p>“Normalize per position, share the gain and bias across positions” is exactly what a Transformer does per token. The step from “per time step” to “per token” is a small one.</p>
+</section>
+
+<section id="s4">
+<h2>4 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S4">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Several ways to keep a network's numbers at a sensible level had appeared by 2016. <strong>Recurrent batch norm</strong> kept separate statistics for every time step and needed careful initialization of its gain (0.1 worked, 1.0 did not). <strong>Weight normalization</strong> divides each neuron's weight vector by its length instead of looking at activations at all. Layer norm is different from both: it is not a re-parameterization of the network but a genuinely different computation, which is why its invariances in §5 differ.</p>
+<h4>Why it matters today</h4>
+<p>The idea space keeps growing (group norm for small-batch vision, RMSNorm for language models), but these three axes, across the batch, across the layer, or on the weights, remain the vocabulary for describing any of them.</p>
+</section>
+
+<section id="s5">
+<h2>5 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S5">original</a></span></h2>
+<section id="s5-1">
+<h3>5.1 Invariance under weights and data transformations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S5.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If a scale reads in kilograms and you switch it to pounds, a comparison of <em>relative</em> weights (“this one is twice that one”) is unaffected. A normalization method is <em>invariant</em> to a change if the network's output does not move when you make it. Invariances matter because they mean the network's behaviour cannot be thrown off by that kind of change during training.</p>
+<h4>Tiny example</h4>
+<p>Take the example a = (2, 4, 6, 8) and multiply the whole input by 3: a becomes (6, 12, 18, 24), μ becomes 15 and σ becomes 6.708, and the normalized values are still (−1.342, −0.447, 0.447, 1.342). Layer norm cannot tell the difference. Batch norm can: it only rescales if every example in the batch is rescaled together.</p>
+<div class="eq" data-tex="\htmlData{sym=hi}{h_i} = \htmlData{sym=f}{f}\!\left(\frac{\htmlData{sym=gi}{g_i}}{\htmlData{sym=sigmai}{\sigma_i}}\left(\htmlData{sym=ail}{a_i} - \htmlData{sym=mui}{\mu_i}\right) + \htmlData{sym=bil}{b_i}\right) \qquad \htmlData{sym=xprime}{\mathbf{x}'} = \htmlData{sym=delta}{\delta}\,\htmlData{sym=xvec}{\mathbf{x}} \;\Rightarrow\; \htmlData{sym=mul}{\mu}' = \htmlData{sym=delta}{\delta}\htmlData{sym=mul}{\mu},\; \htmlData{sym=sigmal}{\sigma}' = \htmlData{sym=delta}{\delta}\htmlData{sym=sigmal}{\sigma},\; \htmlData{sym=hi}{h_i}' = \htmlData{sym=hi}{h_i}" data-fallback="h_i = f((g_i / σ_i)(a_i − μ_i) + b_i);  x' = δx ⇒ μ' = δμ, σ' = δσ, h_i' = h_i"></div>
+<div class="symtable" data-syms="hi,xprime,xvec,delta"></div>
+<p class="inwords"><strong>In words:</strong> “all three methods normalize a neuron's summed input with some mean and spread, then apply a gain and bias; for layer norm, scaling one example's input by δ scales its mean and spread by δ too, so the δ cancels and the output is unchanged.”</p>
+<p class="inwords"><strong>With the numbers:</strong> δ = 3: (6 − 15) / 6.708 = −1.342, the same as (2 − 5) / 2.236.</p>
+<div class="tablewrap"><table>
+  <caption>Which changes leave the model's output unchanged: the paper's Table 1, reproduced in summary with attribution (Ba et al., 2016)</caption>
+  <thead><tr><th></th><th>Rescale the weight matrix</th><th>Re-centre the weight matrix</th><th>Rescale one weight vector</th><th>Rescale the dataset</th><th>Re-centre the dataset</th><th>Rescale one example</th></tr></thead>
+  <tbody>
+    <tr><td>Batch norm</td><td>yes</td><td>no</td><td>yes</td><td>yes</td><td>yes</td><td>no</td></tr>
+    <tr><td>Weight norm</td><td>yes</td><td>no</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
+    <tr class="hl"><td>Layer norm</td><td>yes</td><td>yes</td><td>no</td><td>yes</td><td>no</td><td>yes</td></tr>
+  </tbody>
+</table></div>
+<div class="play" id="inv-demo">
+  <div class="sliders ui" id="inv-sliders"></div>
+  <div class="shares" id="inv-bars"></div>
+  <p class="readout" id="inv-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the bars are the four layer-normalized outputs for the example a = (2, 4, 6, 8). Drag <strong>scale δ</strong>, which multiplies the whole example, and <strong>shift</strong>, which adds the same amount to every summed input (as re-centring the weight matrix does): the bars do not move, because the mean absorbs the shift and the spread absorbs the scale. That is the “yes” in the “rescale one example” and “re-centre the weight matrix” columns. Now drag <strong>scale neuron 1 only</strong>, which rescales a single neuron's weights: the bars change, because one neuron now pulls the shared mean and spread. That is the “no” in the “rescale one weight vector” column.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 Geometry of parameter space during learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S5.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If a normalized neuron's output only depends on the <em>direction</em> of its weight vector, not its length, then a long weight vector is like a long lever: the same push moves the tip a smaller angle. As a weight vector grows during training, the same gradient step turns it less. The paper calls this an implicit reduction of the learning rate, a built-in “settling down” that stabilizes training.</p>
+<h4>Tiny example</h4>
+<p>Direction is what matters, so compare angles. A weight vector (1, 0) nudged by (0, 0.1) turns by atan(0.1 / 1) ≈ 5.7°. Double its length to (2, 0) and the same nudge turns it by atan(0.1 / 2) ≈ 2.9°. The output depends only on the angle, so the doubled weights learn at about half the speed.</p>
+<div class="eq" data-tex="\htmlData{sym=ds2}{ds^2} = \htmlData{sym=DKL}{\mathrm{D}_{\rm KL}}\big[\htmlData{sym=Ptheta}{P(y \mid \mathbf{x};\, \theta)} \,\|\, \htmlData{sym=Pthetad}{P(y \mid \mathbf{x};\, \theta + \delta)}\big] \approx \tfrac{1}{2}\,\htmlData{sym=deltav}{\delta}^{\top} \htmlData{sym=Fisher}{F(\theta)}\, \htmlData{sym=deltav}{\delta}" data-fallback="ds² = D_KL[P(y|x; θ) ‖ P(y|x; θ + δ)] ≈ ½ δᵀ F(θ) δ"></div>
+<div class="symtable" data-syms="ds2,DKL,Ptheta,Pthetad,deltav,Fisher"></div>
+<p class="inwords"><strong>In words:</strong> “measure the size of a small parameter change by how much it changes the model's predictions; for small changes that is approximately a quadratic form in the change, whose matrix, the Fisher information, describes how sensitive predictions are in each direction.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's result is that in normalized models this sensitivity along a weight vector scales with 1/‖w‖: doubling ‖w‖ from 1 to 2 halves the curvature along it, matching the 5.7° versus 2.9° example.</p>
+<p>The same analysis shows that learning the gain g (the neuron's output scale) depends only on the size of the prediction error, not on the scale of the input, so it is robust to inputs of any size.</p>
+<h4>Why it matters today</h4>
+<p>This interplay between weight length and effective learning rate is one reason <span class="t" data-t="weight decay">weight decay</span> still matters in normalized networks: shrinking the weights keeps their effective learning rate from quietly decaying.</p>
+</section>
+</section>
+
+<section id="s6">
+<h2>6 Experimental results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S6">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Six tasks, chosen to be where batch norm is awkward: mostly recurrent networks with variable-length sequences. In every case the gain and bias start at 1 and 0, and the comparison is the same model with and without layer norm.</p>
+<div class="tablewrap"><table>
+  <caption>The experiments, summarized in our own words from §6 (Ba, Kiros and Hinton, 2016)</caption>
+  <thead><tr><th>§</th><th>Task and model</th><th>What layer norm did</th></tr></thead>
+  <tbody>
+    <tr><td>6.1</td><td>Matching images and captions (order embeddings, GRU text encoder, COCO)</td><td>Reached its best validation model in 60% of the baseline's time; caption-retrieval recall@1 rose from 46.6 to 48.5 and image-retrieval recall@1 from 37.8 to 38.9</td></tr>
+    <tr><td>6.2</td><td>Question answering (attentive reader LSTM, CNN news corpus)</td><td>Trained faster and ended better than both the baseline and recurrent batch norm, and did not need the special 0.1 gain initialization recurrent batch norm relies on</td></tr>
+    <tr><td>6.3</td><td>Skip-thought sentence vectors (BookCorpus, 2,400-dimensional encoder)</td><td>Faster training and better downstream scores after 1 million iterations, e.g. movie-review sentiment accuracy 77.3 → 79.5</td></tr>
+    <tr><td>6.4</td><td>Generating MNIST digits (DRAW, 256 LSTM units)</td><td>Converged almost twice as fast; after 200 epochs, 82.09 against 82.36 nats of test negative log-likelihood (lower is better)</td></tr>
+    <tr><td>6.5</td><td>Handwriting generation (3 LSTM layers, sequences of about 700 steps, mini-batches of 8)</td><td>Reached a comparable final likelihood much faster; the long sequences and tiny batches are exactly where stable hidden states matter</td></tr>
+    <tr><td>6.6</td><td>Permutation-invariant MNIST (784-1000-1000-10 feed-forward net)</td><td>Robust to batch size, including a batch of 4, and faster than batch norm applied to all layers</td></tr>
+    <tr><td>6.7</td><td>Convolutional networks (preliminary)</td><td>Faster than no normalization, but batch norm was better</td></tr>
+  </tbody>
+</table></div>
+<h4>Tiny example: why batch norm hates small batches</h4>
+<div class="plot">
+  <div id="noise-chart"></div>
+  <p class="readout" id="noise-readout">Hover or tap to read the noise at each batch size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> this chart is computed from simple statistics, not taken from the paper. If a neuron's summed input varies across examples with spread 1, then batch norm's estimate of its mean from a batch of B examples wobbles by about 1/√B from batch to batch (blue). At B = 256 that is ±0.06, negligible; at B = 4 it is ±0.5, so the same example is normalized differently depending on who shares its batch. Layer norm (orange) does not use the batch at all, so its line is flat at zero. The paper's §6.6 saw this in practice: with a batch of 4, layer norm still trained well.</p>
+<h4>Why it matters today</h4>
+<p>§6.7 is the honest footnote: in convolutional networks, units near the image border behave very differently from those in the centre, so pooling statistics across all of a layer's units fits them poorly. That is why image CNNs kept batch norm, while sequence models, and then Transformers, standardized on layer norm.</p>
+</section>
+
+<section id="s7">
+<h2>7 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S7">original</a></span></h2>
+<blockquote class="quote">“Empirically, we showed that recurrent neural networks benefit the most from the proposed method especially for long sequences and small mini-batches.”<cite>Ba, Kiros and Hinton (2016), §7</cite></blockquote>
+<p>A short paper with a simple idea: compute the same statistics along the other axis of the table. Its authors aimed it at RNNs. The architecture that made it indispensable, the Transformer, arrived a year later.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2016</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where to learn more</th></tr></thead>
+  <tbody>
+    <tr><td>Layer norm inside RNNs</td><td>Layer norm around every Transformer sub-layer</td><td>Each token is normalized on its own, whatever the batch or sequence length</td><td><a href="attention-is-all-you-need.html">Transformer companion</a></td></tr>
+    <tr><td>Normalize after the sum (post-norm, as the original Transformer did)</td><td>Pre-norm: x + Sublayer(LayerNorm(x))</td><td>Leaves a clean residual path, so very deep stacks train stably</td><td><a data-lesson="primer/ml/transformer.html">transformer lesson</a></td></tr>
+    <tr><td>Subtract the mean, divide by the spread</td><td><span class="t" data-t="rmsnorm">RMSNorm</span> (Zhang and Sennrich, 2019): skip the mean, divide by the root-mean-square</td><td>Cheaper, and works about as well; used by many large language models</td><td><a data-lesson="primer/ml/deep_nets.html">deep nets lesson</a></td></tr>
+    <tr><td>Gain and bias per unit</td><td>Often gain only, no bias</td><td>Fewer parameters with no loss in quality at scale</td><td></td></tr>
+  </tbody>
+</table></div>
+<div class="eq" data-tex="\text{RMSNorm}(\htmlData{sym=avec}{\mathbf{a}})_i = \frac{\htmlData{sym=ai}{a_i}}{\sqrt{\frac{1}{\htmlData{sym=H}{H}}\htmlData{sym=sumH}{\sum_{j=1}^{H}} a_j^2}}\;\htmlData{sym=gi}{g_i}" data-fallback="RMSNorm(a)_i = a_i / √((1/H) Σ_j a_j²) · g_i"></div>
+<div class="symtable" data-syms="avec,ai"></div>
+<p class="inwords"><strong>In words:</strong> “divide each summed input by the root-mean-square of the whole layer's summed inputs, then apply the gain; no mean is subtracted.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for a = (2, 4, 6, 8): the mean of squares is (4 + 16 + 36 + 64) / 4 = 30, its root is 5.477, so RMSNorm gives (0.365, 0.730, 1.095, 1.461) with g = 1. Unlike layer norm, the values keep their positive offset.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Jimmy Lei Ba, Jamie Ryan Kiros and Geoffrey E. Hinton, <em>Layer Normalization</em>, 2016. <a href="https://arxiv.org/abs/1607.06450">arXiv:1607.06450</a>. Quotations are brief and attributed; results are summarized in our own words and the small invariance table is reproduced in summary with attribution. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    ail: { tex: "a_i^l", name: "Summed input of neuron i in layer l", meaning: "The neuron's weighted sum of its inputs, before bias and nonlinearity. This is the number that gets normalized.", shape: "one number per neuron, per example", example: "a = (2, 4, 6, 8) for a 4-neuron layer" },
+    wil: { tex: "w_i^l", name: "Neuron i's incoming weights", meaning: "The weight vector that neuron i dots with the previous layer's outputs.", shape: "one vector per neuron", example: "(0.5, −1, 2)" },
+    hl: { tex: "h^l", name: "Previous layer's outputs", meaning: "The vector arriving from the layer below.", shape: "a vector", example: "(1, 0, 2)" },
+    hnext: { tex: "h_i^{l+1}", name: "Neuron i's output", meaning: "What neuron i passes on to the next layer.", shape: "one number per neuron", example: "f(a_i + b_i)" },
+    f: { tex: "f", name: "Nonlinearity", meaning: "An element-wise activation function such as ReLU or tanh.", shape: "keeps the shape", example: "tanh(1.342) = 0.872" },
+    bil: { tex: "b_i", name: "Bias", meaning: "A learned number added after normalizing, letting the neuron shift its output.", shape: "one per neuron", example: "0" },
+    abar: { tex: "\\bar a_i^l", name: "Normalized summed input", meaning: "The summed input after subtracting the mean, dividing by the spread and multiplying by the gain.", shape: "one number per neuron, per example", example: "−1.225" },
+    gi: { tex: "g_i", name: "Gain", meaning: "A learned scale per neuron, applied after normalizing, so the network can choose each neuron's spread.", shape: "one per neuron", example: "1 at initialization" },
+    mui: { tex: "\\mu_i", name: "Batch norm's mean for neuron i", meaning: "The average of neuron i's summed input over the data (in practice, over the mini-batch).", shape: "one per neuron", example: "5 for the batch (1, 5, 9)" },
+    sigmai: { tex: "\\sigma_i", name: "Batch norm's spread for neuron i", meaning: "The standard deviation of neuron i's summed input over the data (or mini-batch).", shape: "one per neuron", example: "3.266" },
+    Ex: { tex: "\\mathbb{E}_{x\\sim P(x)}", name: "Average over the data", meaning: "“Take the average over inputs x drawn from the training data.” Estimated from the current mini-batch in practice.", shape: "an operation", example: "(1 + 5 + 9) / 3 = 5" },
+    H: { tex: "H", name: "Number of hidden units in the layer", meaning: "How many neurons the layer has; layer norm averages over all of them.", shape: "a whole number", example: "4 (512 in a Transformer)" },
+    sumH: { tex: "\\sum_{i=1}^{H}", name: "Sum over the layer's neurons", meaning: "Add up over every neuron i in the layer, for one example.", shape: "an operation", example: "2 + 4 + 6 + 8 = 20" },
+    mul: { tex: "\\mu^l", name: "Layer norm's mean", meaning: "The average summed input across all neurons of the layer, for one example. Shared by every neuron in that layer.", shape: "one per example", example: "5" },
+    sigmal: { tex: "\\sigma^l", name: "Layer norm's spread", meaning: "The standard deviation of the summed inputs across the layer's neurons, for one example.", shape: "one per example", example: "√5 = 2.236" },
+    ht: { tex: "\\mathbf{h}^t", name: "Hidden state at step t", meaning: "The RNN's running summary after reading the t-th item.", shape: "H numbers", example: "(−0.872, −0.420, 0.420, 0.872)" },
+    at: { tex: "\\mathbf{a}^t", name: "Summed inputs at step t", meaning: "The mix of the previous summary and the new input, before normalizing.", shape: "H numbers", example: "(2, 4, 6, 8)" },
+    htprev: { tex: "\\mathbf{h}^{t-1}", name: "Previous hidden state", meaning: "The summary from the step before.", shape: "H numbers", example: "last step's h" },
+    xt: { tex: "\\mathbf{x}^t", name: "Input at step t", meaning: "The new item (for example a word vector) read at this step.", shape: "a vector", example: "the embedding of word t" },
+    Whh: { tex: "W_{hh}", name: "Hidden-to-hidden weights", meaning: "The recurrent weight matrix that carries the old summary forward.", shape: "H × H", example: "shared by every step" },
+    Wxh: { tex: "W_{xh}", name: "Input-to-hidden weights", meaning: "The matrix that brings the new input into the summary.", shape: "H × input size", example: "shared by every step" },
+    mut: { tex: "\\mu^t", name: "This step's mean", meaning: "The average of a^t across the hidden units, recomputed at every time step.", shape: "one number per step", example: "5" },
+    sigmat: { tex: "\\sigma^t", name: "This step's spread", meaning: "The standard deviation of a^t across the hidden units, at this step.", shape: "one number per step", example: "2.236" },
+    gvec: { tex: "\\mathbf{g}", name: "Gains", meaning: "One learned scale per hidden unit, shared across all time steps.", shape: "H numbers", example: "(1, 1, 1, 1)" },
+    bvec: { tex: "\\mathbf{b}", name: "Biases", meaning: "One learned shift per hidden unit, shared across all time steps.", shape: "H numbers", example: "(0, 0, 0, 0)" },
+    odot: { tex: "\\odot", name: "Element-wise product", meaning: "Multiply matching positions of two vectors.", shape: "keeps the shape", example: "(1, 2) ⊙ (3, 4) = (3, 8)" },
+    hi: { tex: "h_i", name: "Normalized neuron's output", meaning: "The general form shared by batch, weight and layer norm: normalize, gain, bias, nonlinearity.", shape: "one number per neuron", example: "f(g·(a − μ)/σ + b)" },
+    xprime: { tex: "\\mathbf{x}'", name: "A rescaled input", meaning: "The same example with every value multiplied by δ.", shape: "same as x", example: "3 × x" },
+    xvec: { tex: "\\mathbf{x}", name: "The input example", meaning: "One training example fed to the layer.", shape: "a vector", example: "the example giving a = (2, 4, 6, 8)" },
+    delta: { tex: "\\delta", name: "A scale factor", meaning: "Any positive number the input is multiplied by.", shape: "a positive number", example: "3" },
+    ds2: { tex: "ds^2", name: "Squared size of a small change", meaning: "How far the model's predictions move when the parameters move a little: a distance measured in predictions, not in parameters.", shape: "one number", example: "tiny for a tiny step" },
+    DKL: { tex: "\\mathrm{D}_{\\rm KL}", name: "KL divergence", meaning: "How different two probability distributions are; zero when they are identical.", shape: "one number ≥ 0", example: "0 when δ = 0" },
+    Ptheta: { tex: "P(y \\mid \\mathbf{x};\\theta)", name: "The model's prediction", meaning: "The probability the model with parameters θ gives to output y for input x.", shape: "a distribution", example: "0.9 on the right class" },
+    Pthetad: { tex: "P(y \\mid \\mathbf{x};\\theta+\\delta)", name: "The prediction after a small change", meaning: "The same model after nudging the parameters by δ.", shape: "a distribution", example: "0.89 on the right class" },
+    deltav: { tex: "\\delta", name: "A small parameter change", meaning: "A tiny step in parameter space (here δ is a vector, unlike in §5.1).", shape: "one number per parameter", example: "(0, 0.1)" },
+    Fisher: { tex: "F(\\theta)", name: "Fisher information matrix", meaning: "Describes how sensitive the predictions are to changes in each parameter direction; it acts as the curvature of prediction-space distance.", shape: "parameters × parameters", example: "halves along w when ‖w‖ doubles, for normalized neurons" },
+    avec: { tex: "\\mathbf{a}", name: "Summed inputs", meaning: "The layer's summed inputs for one example (or one token).", shape: "H numbers", example: "(2, 4, 6, 8)" },
+    ai: { tex: "a_i", name: "One summed input", meaning: "The i-th entry of a.", shape: "one number", example: "2" },
+  },
+
+  blocks: {
+    xt: { title: "Input xₜ", body: "<p>The new item read at this step, for example the vector for the next word.</p>", shape: "input size" },
+    hprev: { title: "Previous summary hₜ₋₁", body: "<p>The hidden state produced at the previous step. The dashed line shows it coming round from the top.</p>", shape: "H numbers" },
+    Wxh: { title: "W_xh", body: "<p>Weights that bring the new input in. The same matrix is reused at every step.</p>", shape: "H × input size" },
+    Whh: { title: "W_hh", body: "<p>Recurrent weights that carry the old summary forward. Repeatedly multiplying by this matrix is what makes plain RNN states grow or shrink.</p>", shape: "H × H" },
+    sum: { title: "Summed inputs aₜ", body: "<p>aₜ = W_hh hₜ₋₁ + W_xh xₜ.</p>", shape: "H numbers" },
+    stats: { title: "This step's μₜ and σₜ", body: "<p>Mean and spread across the H hidden units, computed fresh at every step from this step only. No batch, no stored statistics per step.</p>", shape: "two numbers" },
+    normalize: { title: "Normalize, gain, bias", body: "<p>Subtract μₜ, divide by σₜ, then multiply by the learned gain g and add the learned bias b. g and b are shared across all steps.</p>", shape: "H numbers", lesson: "primer/ml/deep_nets.html" },
+    nonlin: { title: "Nonlinearity f", body: "<p>Usually tanh in RNNs. Because its input now has a steady scale, it stays out of its flat, saturated regions.</p>", shape: "H numbers", lesson: "primer/ml/cnn_rnn.html" },
+    ht: { title: "New summary hₜ", body: "<p>The hidden state after this step, fed back in at the next one.</p>", shape: "H numbers" },
+  },
+
+  onReady(P) {
+    gridDemo();
+    invarianceDemo();
+    noiseChart(P);
+  },
+};
+
+/* ---- batch norm vs layer norm on the same 4 × 5 table ---- */
+function gridDemo() {
+  const X = [[2, 4, 6, 8, 0], [1, 0, 3, 2, 4], [5, 5, 5, 6, 4], [0, 9, 1, 2, 3]];
+  const R = X.length, C = X[0].length;
+  let mode = "ln", sel = [2, 3];
+  const mean = (v) => v.reduce((a, b) => a + b, 0) / v.length;
+  const std = (v) => { const m = mean(v); return Math.sqrt(mean(v.map((x) => (x - m) ** 2))); };
+  const row = (r) => X[r], col = (c) => X.map((x) => x[c]);
+  const norm = (r, c) => { const g = mode === "ln" ? row(r) : col(c); return (X[r][c] - mean(g)) / std(g); };
+  const inT = document.getElementById("grid-in"), outT = document.getElementById("grid-out"), out = document.getElementById("bnln-readout");
+  function head() { return "<tr><th></th>" + Array.from({ length: C }, (_, c) => `<th>n${c + 1}</th>`).join("") + "</tr>"; }
+  function render() {
+    const inGroup = (r, c) => (mode === "ln" ? r === sel[0] : c === sel[1]);
+    const cells = (fn) => head() + X.map((x, r) => `<tr><th>ex ${r + 1}</th>` + x.map((_, c) =>
+      `<td tabindex="0" data-r="${r}" data-c="${c}" class="${inGroup(r, c) ? "grp" : ""} ${r === sel[0] && c === sel[1] ? "me" : ""}">${fn(r, c)}</td>`).join("") + "</tr>").join("");
+    inT.innerHTML = cells((r, c) => X[r][c]);
+    outT.innerHTML = cells((r, c) => norm(r, c).toFixed(2));
+    const [r, c] = sel, g = mode === "ln" ? row(r) : col(c);
+    out.innerHTML = `${mode === "ln" ? `Layer norm: example ${r + 1}'s own ${C} values` : `Batch norm: neuron ${c + 1} across all ${R} examples`} (${g.join(", ")}): mean <strong>${mean(g).toFixed(2)}</strong>, spread <strong>${std(g).toFixed(3)}</strong>, so (${X[r][c]} − ${mean(g).toFixed(2)}) / ${std(g).toFixed(3)} = <strong>${norm(r, c).toFixed(3)}</strong>.`;
+    document.querySelectorAll("#bnln td").forEach((td) => {
+      const pick = () => { sel = [+td.dataset.r, +td.dataset.c]; render(); document.querySelector(`#${td.closest("table").id} td[data-r="${sel[0]}"][data-c="${sel[1]}"]`)?.focus({ preventScroll: true }); };
+      td.addEventListener("pointerenter", () => { sel = [+td.dataset.r, +td.dataset.c]; render(); });
+      td.addEventListener("click", pick);
+      td.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+    });
+  }
+  document.querySelectorAll("#bnln [data-mode]").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.mode;
+    document.querySelectorAll("#bnln [data-mode]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    render();
+  }));
+  render();
+}
+
+/* ---- invariance demo: scale and shift the example, or one neuron ---- */
+function invarianceDemo() {
+  const base = [2, 4, 6, 8];
+  const s = { delta: 1, shift: 0, one: 1 };
+  const box = document.getElementById("inv-sliders"), bars = document.getElementById("inv-bars"), out = document.getElementById("inv-readout");
+  [["delta", "scale δ (whole example)", 0.2, 5, 0.1], ["shift", "shift (every input)", -10, 10, 0.5], ["one", "scale neuron 1 only", 0.2, 5, 0.1]].forEach(([k, label, min, max, step]) => {
+    const id = "inv-" + k;
+    const l = document.createElement("label"); l.htmlFor = id; l.textContent = label;
+    const r = document.createElement("input"); Object.assign(r, { type: "range", id, min, max, step, value: s[k] });
+    const o = document.createElement("output"); o.textContent = s[k].toFixed(1);
+    r.addEventListener("input", () => { s[k] = +r.value; o.textContent = (+r.value).toFixed(1); draw(); });
+    box.append(l, r, o);
+  });
+  function draw() {
+    const a = base.map((v, i) => (v * (i === 0 ? s.one : 1)) * s.delta + s.shift);
+    const m = a.reduce((x, y) => x + y, 0) / a.length;
+    const sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length);
+    const z = a.map((v) => (v - m) / sd);
+    bars.innerHTML = z.map((v, i) => `<div class="share-row" style="grid-template-columns:5.5rem minmax(0,1fr) 3.4rem"><span>neuron ${i + 1}</span><div style="position:relative;height:14px"><div class="share-bar" style="position:absolute;${v >= 0 ? "left:50%" : `right:50%`};width:${(Math.abs(v) / 2) * 50}%"></div><div style="position:absolute;left:50%;top:-2px;bottom:-2px;border-left:1px solid var(--wire)"></div></div><span>${v.toFixed(3)}</span></div>`).join("");
+    out.innerHTML = `Summed inputs a = (${a.map((v) => v.toFixed(1)).join(", ")}) · mean ${m.toFixed(2)} · spread ${sd.toFixed(3)}. The bars show (a − mean) / spread, centred on the line at 0.`;
+  }
+  draw();
+}
+
+/* ---- batch-statistic noise versus batch size ---- */
+function noiseChart(P) {
+  const Bs = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+  P.lineChart(document.getElementById("noise-chart"), {
+    series: [
+      { name: "batch norm: wobble in the estimated mean", points: Bs.map((b) => [b, 1 / Math.sqrt(b)]) },
+      { name: "layer norm: dependence on the batch", points: Bs.map((b) => [b, 0]) },
+    ],
+    logX: true, xLabel: "batch size B", yLabel: "wobble (spread units)", yMin: 0, yMax: 1.05,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("noise-readout"), ariaLabel: "Noise in batch statistics against batch size",
+  });
+}
+</script>
+</body>
+</html>

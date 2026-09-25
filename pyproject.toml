@@ -1,0 +1,28 @@
+[project]
+name = "primer"
+version = "0.1.0"
+description = "A from-scratch, heavily commented primer on how modern AI works: ML foundations, transformers and embeddings, and building production agents and RAG systems."
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Matthew Ernewein" }]
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+# torch is only used to cross-check hand-written backprop against autograd.
+torch = ["torch>=2.0"]
+# The real-LLM adapter in primer/agents/llm.py. Everything runs offline without it.
+claude = ["anthropic>=0.40"]
+# Builds the browsable HTML docs in docs/html (see `make docs`).
+docs = ["pdoc>=14"]
+dev = ["pytest>=7"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["primer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

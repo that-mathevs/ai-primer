@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HyDE (Hypothetical Document Embeddings), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Gao, Ma, Lin and Callan (2022), which searches with a made-up answer instead of the question.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="hyde">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Method</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Dense retrieval, decoded</a></li>
+          <li><a href="#s3-2">3.2 HyDE</a></li>
+          <li><a href="#s3-map">Try it: the embedding map</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a></li>
+      <li><a href="#s5">5 Analysis</a></li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#today">Using it today</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>HyDE: search with a made-up answer, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Gao, Ma, Lin and Callan (2022), <em>Precise Zero-Shot Dense Retrieval without Relevance Labels</em>, the paper that introduced Hypothetical Document Embeddings.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2212.10496">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2212.10496">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2212.10496">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, so its tables are not reproduced; a few key numbers appear in this page's own tables, each attributed. The figure is redrawn from scratch. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover, tab to, or tap it. So does every symbol in every equation.</li>
+  <li>The <a href="#s3-map">embedding map</a> is the heart of the page: drag nothing, just toggle and watch which real document wins.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The code version is <code>hyde()</code> in the <a class="lesson" data-lesson="primer/agents/rag.html">RAG lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“The generated document is not real, can contain factual errors but is like a relevant document.”<cite>Gao et al. (2022), §1. <a href="https://ar5iv.labs.arxiv.org/html/2212.10496">Read the original</a></cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You want a recipe but can only describe the dish badly: “that orange soup with coconut, from somewhere in Asia?” Searching with that question finds other people asking similar questions. Instead, you scribble what you <em>think</em> the recipe looks like (“Thai pumpkin soup: simmer pumpkin with coconut milk, red curry paste and lime…”), and hold that against the cookbook. Your guess may be wrong in details, but it <em>looks like a recipe</em>, so it lands on the right page. HyDE does this with a <span class="t" data-t="llm">language model</span> writing the guess and an <span class="t" data-t="embedding">embedding</span> model doing the matching.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Strong search with <strong>no relevance labels at all</strong>: no example of which document answers which question is needed.</li>
+  <li>It beats the same embedding model used the normal way on every English benchmark tested, and is competitive with retrievers fine-tuned on large labelled datasets.</li>
+  <li>No model is trained. An off-the-shelf instruction-following model and an off-the-shelf embedding model are simply chained.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>“Rewrite the query before searching” is now a standard move in <span class="t" data-t="rag">RAG</span> systems, and HyDE is its most famous form. It is also a clean lesson in how questions and answers live in different neighbourhoods of an embedding space.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A dense retriever is trained by showing it thousands of (question, correct passage) pairs until questions land near their answers. Where do those pairs come from? Mostly one big dataset, MS-MARCO, which restricts commercial use and does not cover your legal contracts or your support tickets. Without such pairs you are doing <strong>zero-shot</strong> retrieval: the system must work on data it has never been tuned for.</p>
+<h4>The paper's move</h4>
+<p>Split search into two jobs that each need no labels:</p>
+<ol>
+  <li><strong>Generate:</strong> an instruction-following model writes a passage that <em>would</em> answer the question (the “hypothetical document”).</li>
+  <li><strong>Match:</strong> an unsupervised embedding model, trained only to put similar <em>documents</em> near each other, finds real documents near the hypothetical one.</li>
+</ol>
+<p>The question is never compared with a document directly. Relevance is handled by the writer; similarity by the embedder.</p>
+<h4>Why it matters today</h4>
+<p>Most organisations start a search project with zero labelled pairs. HyDE is a way to get strong retrieval on day one, before any search logs exist.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S2">original</a></span></h2>
+<p>The paper sits between three lines of work: <strong>dense retrieval</strong> (embed questions and documents, search by <span class="t" data-t="dot product">dot product</span>, as in <a href="dpr.html">DPR</a>), <strong>instruction-following models</strong> that generalise to new tasks from a written instruction (<a href="instructgpt.html">InstructGPT</a>), and <strong>zero-shot retrieval</strong> benchmarks such as BEIR. It also contrasts itself with generative retrieval, which trains a model to output document IDs; HyDE needs no training and uses an ordinary vector index.</p>
+</section>
+
+<section id="s3">
+<h2>3 Method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S3">original</a></span></h2>
+<p>Hover or tap any block in the redrawn figure.</p>
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 640 250" role="img" aria-label="HyDE pipeline: query, instruction model, hypothetical documents, encoder, averaged vector, search over real documents">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M76,125 H96" marker-end="url(#arr)"/>
+    <path class="wire" d="M196,125 H216" marker-end="url(#arr)"/>
+    <path class="wire" d="M316,125 H336" marker-end="url(#arr)"/>
+    <path class="wire" d="M416,125 H436" marker-end="url(#arr)"/>
+    <path class="wire" d="M500,190 V160" marker-end="url(#arr)"/>
+    <path class="wire" d="M540,125 H560" marker-end="url(#arr)"/>
+    <path class="wire" d="M40,140 V228 H376 V160" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="query" tabindex="0" role="button" aria-label="The query"><rect x="6" y="105" width="70" height="40" rx="6"/><text x="41" y="130" text-anchor="middle">query q</text></g>
+    <g class="blk attn" data-block="instructlm" tabindex="0" role="button" aria-label="Instruction-following language model"><rect x="96" y="100" width="100" height="50" rx="7"/><text x="146" y="121" text-anchor="middle">InstructLM</text><text x="146" y="137" text-anchor="middle" class="lbl">g(q, inst)</text></g>
+    <g class="blk emb" data-block="hypo" tabindex="0" role="button" aria-label="Hypothetical documents">
+      <rect class="ghost" x="226" y="92" width="90" height="50" rx="6"/><rect class="ghost" x="221" y="97" width="90" height="50" rx="6"/><rect x="216" y="102" width="90" height="50" rx="6"/>
+      <text x="261" y="123" text-anchor="middle">N fake</text><text x="261" y="139" text-anchor="middle">passages</text></g>
+    <g class="blk ff" data-block="encoder" tabindex="0" role="button" aria-label="Contrastive encoder f"><rect x="336" y="100" width="80" height="50" rx="7"/><text x="376" y="121" text-anchor="middle">Encoder</text><text x="376" y="137" text-anchor="middle" class="lbl">f (Contriever)</text></g>
+    <g class="blk norm" data-block="avg" tabindex="0" role="button" aria-label="Average the vectors"><rect x="436" y="100" width="104" height="50" rx="7"/><text x="488" y="121" text-anchor="middle">average</text><text x="488" y="137" text-anchor="middle" class="lbl">v̂_q</text></g>
+    <g class="blk lin" data-block="corpus" tabindex="0" role="button" aria-label="Real document vectors"><rect x="452" y="190" width="96" height="44" rx="7"/><text x="500" y="209" text-anchor="middle">real docs</text><text x="500" y="224" text-anchor="middle" class="lbl">f(d), precomputed</text></g>
+    <g class="blk soft" data-block="results" tabindex="0" role="button" aria-label="Top real documents"><rect x="560" y="100" width="74" height="50" rx="7"/><text x="597" y="121" text-anchor="middle">top real</text><text x="597" y="137" text-anchor="middle">docs</text></g>
+    <text x="200" y="244" class="lbl">optional: the query itself is encoded too (Equation 8)</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block, starting with <strong>query q</strong> on the left.</p></div>
+  </div>
+  <figcaption>The HyDE pipeline, redrawn from the paper's Figure 1 in simplified form. Based on Gao et al. (2022), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read left to right. The query goes to the instruction-following model with an instruction such as “write a passage to answer the question”, and the model writes N short fake passages. The encoder turns each fake passage into a vector, and the vectors are averaged. That average, not the query's own vector, is compared against the precomputed vectors of the real documents (the box below), and the nearest real documents are returned. The dashed wire is the variant in Equation 8, where the query's own vector joins the average as one more vote.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Dense retrieval, decoded <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Normal dense search needs two translators into one shared map language: one for questions, one for documents. Teaching them to agree on where a question and its answer should land takes labelled examples, which is exactly what we do not have.</p>
+<div class="eq" data-tex="\htmlData{sym=sim}{\text{sim}}(\htmlData{sym=q}{q},\htmlData{sym=d}{d}) = \big\langle \htmlData{sym=encq}{\text{enc}_q}(\htmlData{sym=q}{q}),\, \htmlData{sym=encd}{\text{enc}_d}(\htmlData{sym=d}{d}) \big\rangle = \langle \htmlData{sym=vq}{\mathbf{v}_q}, \htmlData{sym=vd}{\mathbf{v}_d} \rangle" data-fallback="sim(q, d) = ⟨enc_q(q), enc_d(d)⟩ = ⟨v_q, v_d⟩"></div>
+<div class="symtable" data-syms="sim,q,d,encq,encd,vq,vd,angle"></div>
+<p class="inwords"><strong>In words:</strong> “turn the question into a vector with one encoder, the document into a vector with another, and score their similarity by the inner (dot) product.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with v<sub>q</sub> = (0.2, 0.8) and a document at (0.85, 0.35), sim = 0.2 × 0.85 + 0.8 × 0.35 = 0.17 + 0.28 = <strong>0.45</strong>.</p>
+<h4>Why it matters</h4>
+<p>The hard part is making enc<sub>q</sub> and enc<sub>d</sub> agree. HyDE sidesteps it by using only the document encoder: a question becomes a document first.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 HyDE <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“Here, we expect the encoder’s dense bottleneck to serve a lossy compressor, where the extra (hallucinated) details are filtered out from the embedding.”<cite>Gao et al. (2022), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Ask five friends to each write a one-paragraph answer from memory. Each gets some details wrong, and in different ways. Average their paragraphs into one “typical answer” and the idiosyncratic mistakes cancel, leaving the shape of a good answer. The embedding step helps too: squeezing a paragraph into a few hundred numbers keeps its gist (topic, kind of text) and drops specifics such as the exact wrong year.</p>
+<h4>Tiny example (two-dimensional vectors)</h4>
+<p>The model writes N = 2 fake passages, encoded as f(d̂₁) = (0.9, 0.1) and f(d̂₂) = (0.7, 0.5). Their average is ((0.9 + 0.7)/2, (0.1 + 0.5)/2) = <strong>(0.8, 0.3)</strong>. The real relevant passage sits at (0.85, 0.35); a real forum post that merely <em>asks</em> the same question sits at (0.3, 0.9); the original query sits at (0.2, 0.8).</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Search with</th><th class="num">score vs relevant passage</th><th class="num">score vs forum post</th><th>Winner</th></tr></thead>
+  <tbody>
+    <tr><td>the query (0.2, 0.8)</td><td class="num">0.2·0.85 + 0.8·0.35 = 0.45</td><td class="num">0.2·0.3 + 0.8·0.9 = 0.78</td><td>forum post (wrong)</td></tr>
+    <tr class="hl"><td>HyDE average (0.8, 0.3)</td><td class="num">0.8·0.85 + 0.3·0.35 = 0.785</td><td class="num">0.8·0.3 + 0.3·0.9 = 0.51</td><td>relevant passage</td></tr>
+  </tbody>
+</table></div>
+<p>The question looks like other questions; the fake answer looks like real answers.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=f}{f} = \htmlData{sym=encd}{\text{enc}_d} = \htmlData{sym=enccon}{\text{enc}_{\text{con}}}, \qquad \htmlData{sym=g}{g}(\htmlData{sym=q}{q}, \htmlData{sym=inst}{\text{INST}}) = \htmlData{sym=instructlm}{\text{InstructLM}}(\htmlData{sym=q}{q}, \htmlData{sym=inst}{\text{INST}})" data-fallback="f = enc_d = enc_con,  g(q, INST) = InstructLM(q, INST)"></div>
+<div class="eq" data-tex="\htmlData{sym=vhat}{\hat{\mathbf{v}}_{q}} = \htmlData{sym=oneovern}{\frac{1}{N}} \htmlData{sym=sumk}{\sum_{k=1}^{N}} \htmlData{sym=f}{f}(\htmlData{sym=dhat}{\hat{d}_k}) \qquad\text{or, counting the query as one more vote,}\qquad \htmlData{sym=vhat}{\hat{\mathbf{v}}_{q}} = \frac{1}{N+1}\Big[\htmlData{sym=sumk}{\sum_{k=1}^{N}} \htmlData{sym=f}{f}(\htmlData{sym=dhat}{\hat{d}_k}) + \htmlData{sym=f}{f}(\htmlData{sym=q}{q})\Big]" data-fallback="v̂_q = (1/N) Σ_k f(d̂_k)   or   v̂_q = 1/(N+1) [Σ_k f(d̂_k) + f(q)]"></div>
+<div class="symtable" data-syms="f,enccon,g,inst,instructlm,dhat,N,sumk,oneovern,vhat"></div>
+<p class="inwords"><strong>In words:</strong> “ask the instruction model to write N passages answering the question, embed each with the document encoder, and average the vectors (optionally including the question's own vector); search with that average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> N = 2 gives (0.8, 0.3). Counting the query too gives ((0.9 + 0.7 + 0.2)/3, (0.1 + 0.5 + 0.8)/3) = (0.6, 0.467), which still prefers the relevant passage (0.673 against 0.600), though by less.</p>
+<p>The instructions are short and task-specific. For web search the paper uses “Please write a passage to answer the question”; for scientific claims, “Please write a scientific paper passage to support/refute the claim” (Appendix A.1).</p>
+<h4>Why it matters today</h4>
+<p>The averaged vector is the paper's estimate of the <span class="t" data-tip-title="Expected value" data-tip="The average you would get over many tries. The paper writes 𝔼[v_q] = 𝔼[f(g(q, INST))]: the average embedding of the passages the model might write, estimated by sampling N of them.">expected</span> embedding of a good answer. The same “embed several samples and average” trick is used to make embeddings of noisy or short inputs more stable.</p>
+</section>
+
+<section id="s3-map">
+<h3>Try it: the embedding map</h3>
+<p>A two-dimensional stand-in for the real embedding space (which has 768 dimensions). Positions are <strong>illustrative</strong> and chosen so the arithmetic matches the tiny example above; the ranking is computed live.</p>
+<div class="plot" id="map-plot">
+  <div class="controls">
+    <label for="map-n">Fake passages N = <strong id="map-nv">2</strong></label><input type="range" id="map-n" min="0" max="5" step="1" value="2">
+    <label><input type="checkbox" id="map-q"> count the query as a vote (Eq. 8)</label>
+  </div>
+  <div id="map"></div>
+  <p class="readout" id="map-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> grey squares are real documents, blue dots are the fake passages the model wrote, the red diamond is the query, and the star is the vector HyDE actually searches with. The line under the map ranks the real documents by inner product with the star. At N = 0 the star <em>is</em> the query, and the forum post that asks the same question wins. Slide N up and the star moves into the “answers” region, where the relevant passage wins. Tick the checkbox and the query pulls the star back towards the questions: with many fake passages it barely matters; with one it can.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S4">original</a></span></h2>
+<h4>Setup</h4>
+<ul>
+  <li><strong>Writer:</strong> InstructGPT (text-davinci-003), sampled at <span class="t" data-t="temperature">temperature</span> 0.7.</li>
+  <li><strong>Encoder:</strong> Contriever, trained with unsupervised <span class="t" data-t="contrastive loss">contrastive learning</span> (no relevance labels); mContriever for other languages.</li>
+  <li><strong>Benchmarks:</strong> web search (TREC DL19 and DL20), six low-resource BEIR tasks, and four languages from Mr.TyDi.</li>
+  <li><strong>Metric:</strong> mainly <span class="t" data-t="ndcg">nDCG@10</span> (how good the top 10 results are, rewarding relevant results higher up) and recall.</li>
+</ul>
+<h4>Web search</h4>
+<div class="tablewrap"><table>
+  <caption>Selected numbers from Gao et al. (2022), Table 1: nDCG@10 on TREC DL19 and DL20 (higher is better). Summarised with attribution.</caption>
+  <thead><tr><th>System</th><th>Relevance labels used?</th><th class="num">DL19</th><th class="num">DL20</th></tr></thead>
+  <tbody>
+    <tr><td><span class="t" data-t="bm25">BM25</span> (keyword search)</td><td>no</td><td class="num">50.6</td><td class="num">48.0</td></tr>
+    <tr><td>Contriever (the same encoder, used normally)</td><td>no</td><td class="num">44.5</td><td class="num">42.1</td></tr>
+    <tr class="hl"><td>HyDE (InstructGPT + Contriever)</td><td>no</td><td class="num">61.3</td><td class="num">57.9</td></tr>
+    <tr><td>Contriever fine-tuned on MS-MARCO</td><td>yes, hundreds of thousands</td><td class="num">62.1</td><td class="num">63.2</td></tr>
+  </tbody>
+</table></div>
+<div class="plot"><div id="dl-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one system on DL19 and DL20, on an axis from 0 to 70. Unsupervised Contriever used the normal way is <em>worse</em> than keyword search. The same encoder searching with HyDE's fake answers jumps past BM25 and nearly reaches the version fine-tuned on a large labelled dataset, which is effectively an upper bound here.</p>
+<h4>Low-resource and multilingual search</h4>
+<p>On six BEIR tasks, HyDE improved Contriever everywhere. The most dramatic: TREC-COVID nDCG@10 went from 27.3 to <strong>59.3</strong> (BM25: 59.5). In other languages the gains were smaller but real, for example Japanese MRR@100 from 19.5 to 30.7, and the paper notes both the small multilingual encoder and the writer are weaker outside English.</p>
+<h4>Why it matters today</h4>
+<p>Two lessons carry over. Always compare against BM25: a “semantic” retriever can lose to keyword search on a new domain. And measure retrieval on its own with <span class="t" data-t="recall@k">recall@k</span> or nDCG before judging the whole RAG system; see the <a data-lesson="primer/ml/metrics.html">metrics lesson</a>.</p>
+</section>
+
+<section id="s5">
+<h2>5 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S5">original</a></span></h2>
+<h4>A better writer gives better search</h4>
+<div class="plot"><div id="size-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is HyDE's DL19 nDCG@10 with a different instruction-following model writing the fake passages, from 11 billion to 175 billion parameters (numbers from Gao et al., 2022, Table 4). All three beat plain Contriever (44.5, the grey bar), and bigger writers help more. The writer is doing the “relevance” work, so a smarter writer produces fake answers that land closer to real ones.</p>
+<h4>With an already fine-tuned encoder</h4>
+<p>HyDE is meant for when you have no labels, but the paper also tried it on top of the fine-tuned Contriever. With the strongest writer it still helped (DL19: 62.1 → 67.4); with smaller writers it slightly hurt. So the fake answers carry some signal even a supervised retriever misses, but only when they are good.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S6">original</a></span></h2>
+<p>The authors raise a provocative question: if a language model can capture relevance by writing an example answer, is a learned numerical relevance score even necessary? They leave it open, and end with a practical lifecycle. On day one of a new search system, serve queries with HyDE. As search logs accumulate, train a supervised retriever and route more traffic to it, keeping HyDE for rare and emerging queries.</p>
+</section>
+
+<section id="today">
+<h2>Using it today</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Consideration</th><th>What to do</th></tr></thead>
+  <tbody>
+    <tr><td>Cost and latency: one extra model call per search</td><td>Use a small, fast model for the fake passage; cache results for repeated queries</td></tr>
+    <tr><td>The fake answer can encode a misconception and steer search towards it</td><td>Combine HyDE with the plain query (Eq. 8) or with <span class="t" data-t="hybrid search">hybrid search</span>, then rerank with a <span class="t" data-t="cross-encoder">cross-encoder</span></td></tr>
+    <tr><td>Exact identifiers (error codes, part numbers)</td><td>A fake passage may invent a different code. Keep <span class="t" data-t="bm25">BM25</span> in the mix</td></tr>
+    <tr><td>Never show the fake passage to users</td><td>It is a search key, not evidence. Only real retrieved text should be cited</td></tr>
+  </tbody>
+</table></div>
+<p>HyDE is one of several query-rewriting tricks (multi-query, step-back questions, decomposition). All of them are implemented and compared in the <a data-lesson="primer/agents/rag.html">RAG lesson</a>; how the retrieved passages should then be arranged is the subject of the <a href="lost-in-the-middle.html">Lost in the Middle companion</a>.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Luyu Gao, Xueguang Ma, Jimmy Lin and Jamie Callan, <em>Precise Zero-Shot Dense Retrieval without Relevance Labels</em> (2022). <a href="https://arxiv.org/abs/2212.10496">arXiv:2212.10496</a>. Quotations are brief and attributed; selected numbers are summarised with attribution; the figure is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    sim: { tex: "\\text{sim}(q,d)", name: "Similarity score", meaning: "How relevant document d looks for query q. Higher is better; search returns the documents with the highest scores.", shape: "one number", example: "0.45" },
+    q: { tex: "q", name: "The query", meaning: "What the user typed.", shape: "a short text", example: "vector (0.2, 0.8) in the tiny example" },
+    d: { tex: "d", name: "A real document", meaning: "One passage in the collection being searched.", shape: "a text", example: "the relevant passage at (0.85, 0.35)" },
+    encq: { tex: "\\text{enc}_q", name: "Query encoder", meaning: "Turns a query into a vector. In normal dense retrieval it must be trained, with labelled pairs, to agree with the document encoder.", shape: "text → vector", example: "" },
+    encd: { tex: "\\text{enc}_d", name: "Document encoder", meaning: "Turns a document into a vector.", shape: "text → vector (768 numbers for Contriever)", example: "" },
+    vq: { tex: "\\mathbf{v}_q", name: "Query vector", meaning: "The query's position in embedding space.", shape: "a vector", example: "(0.2, 0.8)" },
+    vd: { tex: "\\mathbf{v}_d", name: "Document vector", meaning: "The document's position in embedding space, computed ahead of time.", shape: "a vector", example: "(0.85, 0.35)" },
+    angle: { tex: "\\langle\\cdot,\\cdot\\rangle", name: "Inner product", meaning: "Another way of writing the dot product: multiply matching entries and add them up.", shape: "one number", example: "⟨(0.2, 0.8), (0.85, 0.35)⟩ = 0.45" },
+    f: { tex: "f", name: "The encoder HyDE uses", meaning: "One contrastive document encoder, used for both the fake passages and the real documents, so they share one space. Only document-document similarity is needed, which it learned without labels.", shape: "text → vector", example: "f(d̂₁) = (0.9, 0.1)" },
+    enccon: { tex: "\\text{enc}_{\\text{con}}", name: "Contrastive encoder", meaning: "An encoder trained without labels to put pieces of the same document near each other (Contriever).", shape: "text → vector", example: "" },
+    g: { tex: "g", name: "The writer", meaning: "Shorthand for the instruction-following model: give it the query and an instruction, get back a passage.", shape: "text → text", example: "“Thai pumpkin soup: simmer pumpkin with coconut milk…”" },
+    inst: { tex: "\\text{INST}", name: "Instruction", meaning: "A short task description written once per dataset.", shape: "a sentence", example: "“Please write a passage to answer the question”" },
+    instructlm: { tex: "\\text{InstructLM}", name: "Instruction-following language model", meaning: "A language model tuned to follow written instructions (InstructGPT in the paper).", shape: "", example: "text-davinci-003" },
+    dhat: { tex: "\\hat{d}_k", name: "Fake passage k", meaning: "The k-th hypothetical document the writer produced. The hat means “estimated” or “not real”.", shape: "a text", example: "d̂₁ encoded as (0.9, 0.1)" },
+    N: { tex: "N", name: "Number of fake passages", meaning: "How many hypothetical documents are sampled and averaged.", shape: "a small whole number", example: "2" },
+    sumk: { tex: "\\sum_{k=1}^{N}", name: "Sum over the fake passages", meaning: "Add up the following for k = 1, 2, …, N.", shape: "", example: "(0.9, 0.1) + (0.7, 0.5) = (1.6, 0.6)" },
+    oneovern: { tex: "\\frac{1}{N}", name: "Divide by N", meaning: "Turns the sum into an average.", shape: "", example: "(1.6, 0.6) / 2 = (0.8, 0.3)" },
+    vhat: { tex: "\\hat{\\mathbf{v}}_q", name: "The search vector", meaning: "What HyDE actually searches with: the average embedding of the fake answers (and, in Eq. 8, the query).", shape: "a vector", example: "(0.8, 0.3)" },
+  },
+  blocks: {
+    query: { title: "Query q", body: "<p>The user's question. It is never embedded on its own in the basic method; it only prompts the writer.</p>", shape: "a short text" },
+    instructlm: { title: "Instruction-following model g(q, INST)", body: "<p>Given the query and an instruction like “write a passage to answer the question”, it writes N plausible answers (the paper samples at temperature 0.7 so they differ). They may contain factual errors; they only need to <em>look like</em> answers.</p>", shape: "1 query → N passages", lesson: "primer/agents/llm.html" },
+    hypo: { title: "Hypothetical documents d̂₁ … d̂_N", body: "<p>Fake but plausible passages. Their job is to land in the right neighbourhood of the embedding space, the neighbourhood where real answers live.</p>", shape: "N short texts" },
+    encoder: { title: "Contrastive encoder f", body: "<p>Contriever, trained without any relevance labels to embed similar documents near each other. The same encoder embeds the fake passages and the real documents, so they share one space. Squeezing text into a vector drops fine details, including many of the writer's errors.</p>", shape: "text → 768 numbers", lesson: "primer/ml/embeddings/contrastive.html" },
+    avg: { title: "Average", body: "<p>Averaging the N vectors cancels each fake passage's quirks and keeps what they share. The result v̂_q is the search key.</p>", shape: "N vectors → 1 vector" },
+    corpus: { title: "Real documents f(d)", body: "<p>Every real document embedded once, ahead of time, and stored in a vector index. Nothing about the collection changes with HyDE.</p>", shape: "millions of vectors", lesson: "primer/ml/embeddings/ann.html" },
+    results: { title: "Top real documents", body: "<p>The real documents with the highest inner product against v̂_q. These, never the fake passages, are what gets shown or passed to a RAG generator.</p>", shape: "k documents", lesson: "primer/agents/rag.html" },
+  },
+  onReady() { embedMap(); dlBars(); sizeBars(); },
+};
+
+/* ---- the 2-D embedding map ---- */
+function embedMap() {
+  const NS = "http://www.w3.org/2000/svg";
+  const real = [
+    { name: "Relevant passage", v: [0.85, 0.35] },
+    { name: "Forum post asking the same question", v: [0.3, 0.9] },
+    { name: "Related page, different topic", v: [0.55, 0.65] },
+  ];
+  const fakes = [[0.9, 0.1], [0.7, 0.5], [0.95, 0.3], [0.75, 0.25], [0.8, 0.45]];
+  const q = [0.2, 0.8];
+  const W = 420, H = 320, pad = 36;
+  const X = (x) => pad + x * (W - 2 * pad), Y = (y) => H - pad - y * (H - 2 * pad);
+  const host = document.getElementById("map");
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.style.maxWidth = "560px";
+  svg.style.display = "block";
+  svg.style.margin = "0 auto";
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Two-dimensional embedding map with real documents, fake passages, the query and the HyDE search vector");
+  host.appendChild(svg);
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; svg.appendChild(e); return e; };
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+  const nIn = document.getElementById("map-n"), qIn = document.getElementById("map-q");
+  function draw() {
+    svg.textContent = "";
+    el("line", { x1: X(0), y1: Y(0), x2: X(1), y2: Y(0), class: "wire" });
+    el("line", { x1: X(0), y1: Y(0), x2: X(0), y2: Y(1), class: "wire" });
+    el("text", { x: X(0.02), y: Y(0.97), class: "lbl" }, "“question-like” region");
+    el("text", { x: X(0.30), y: Y(0.04), class: "lbl" }, "“answer-like” region (lower right)");
+    const N = +nIn.value;
+    document.getElementById("map-nv").textContent = N;
+    const used = fakes.slice(0, N);
+    const pts = used.slice();
+    if (qIn.checked || N === 0) pts.push(q);
+    const star = [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+    real.forEach((r) => {
+      el("rect", { x: X(r.v[0]) - 6, y: Y(r.v[1]) - 6, width: 12, height: 12, fill: "var(--wire)" });
+      el("text", { x: X(r.v[0]) + 9, y: Y(r.v[1]) + 4, class: "lbl" }, r.name);
+    });
+    used.forEach((p, i) => {
+      el("line", { x1: X(p[0]), y1: Y(p[1]), x2: X(star[0]), y2: Y(star[1]), stroke: "var(--accent)", "stroke-dasharray": "2 3", "stroke-width": 1 });
+      el("circle", { cx: X(p[0]), cy: Y(p[1]), r: 5, fill: "var(--accent)" });
+      el("text", { x: X(p[0]) + 7, y: Y(p[1]) + 14, class: "lbl" }, `fake ${i + 1}`);
+    });
+    el("path", { d: `M${X(q[0])},${Y(q[1]) - 7} l7,7 l-7,7 l-7,-7 z`, fill: "#dc2626" });
+    el("text", { x: X(q[0]) + 10, y: Y(q[1]) + 16, class: "lbl" }, "query");
+    const sx = X(star[0]), sy = Y(star[1]);
+    const pts5 = Array.from({ length: 10 }, (_, k) => { const r = k % 2 ? 4 : 10, a = -Math.PI / 2 + k * Math.PI / 5; return `${sx + r * Math.cos(a)},${sy + r * Math.sin(a)}`; }).join(" ");
+    el("polygon", { points: pts5, fill: "#f59e0b", stroke: "#92400e" });
+    el("text", { x: sx - 12, y: sy + 4, class: "lbl", "text-anchor": "end" }, `search (${star[0].toFixed(2)}, ${star[1].toFixed(2)})`);
+    const ranked = real.map((r) => ({ ...r, s: dot(star, r.v) })).sort((a, b) => b.s - a.s);
+    document.getElementById("map-readout").innerHTML =
+      `Searching with (${star[0].toFixed(2)}, ${star[1].toFixed(2)}): ` +
+      ranked.map((r, i) => `${i + 1}. ${r.name} <strong>${r.s.toFixed(3)}</strong>`).join(" · ") +
+      (ranked[0].name.startsWith("Relevant") ? " ✓" : " ✗ (the question-like post wins)");
+  }
+  nIn.addEventListener("input", draw);
+  qIn.addEventListener("change", draw);
+  draw();
+}
+
+function bars(host, title, rows, max, hl) {
+  document.getElementById(host).innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">${title}</div>` +
+    rows.map(([m, s]) => `<div class="share-row" style="grid-template-columns:12rem minmax(0,1fr) 3.5rem"><span>${m}</span><div><div class="share-bar" style="width:${(s / max * 100).toFixed(1)}%;${hl(m) ? "" : "background:var(--wire)"}"></div></div><span>${s}</span></div>`).join("");
+}
+function dlBars() {
+  bars("dl-bars", "nDCG@10, axis 0 to 70 (Gao et al., 2022, Table 1)", [
+    ["BM25 · DL19", 50.6], ["BM25 · DL20", 48.0],
+    ["Contriever · DL19", 44.5], ["Contriever · DL20", 42.1],
+    ["HyDE · DL19", 61.3], ["HyDE · DL20", 57.9],
+    ["Contriever fine-tuned · DL19", 62.1], ["Contriever fine-tuned · DL20", 63.2],
+  ], 70, (m) => m.startsWith("HyDE"));
+}
+function sizeBars() {
+  bars("size-bars", "DL19 nDCG@10 by writer model, axis 0 to 70 (Gao et al., 2022, Table 4)", [
+    ["plain Contriever (no writer)", 44.5], ["HyDE + Flan-T5 (11B)", 48.9], ["HyDE + Cohere (52B)", 53.8], ["HyDE + GPT (175B)", 61.3],
+  ], 70, (m) => m.startsWith("HyDE"));
+}
+</script>
+</body>
+</html>

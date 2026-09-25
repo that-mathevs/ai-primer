@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reflexion, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Shinn et al. (2023), in which agents improve across attempts by writing lessons to themselves instead of updating weights.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="reflexion">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 The method</a>
+        <ol>
+          <li><a href="#s3-parts">Actor, Evaluator, Self-Reflection, Memory</a></li>
+          <li><a href="#s3-math">The loop, formally</a></li>
+          <li><a href="#s3-try">Try it: trial, fail, reflect, retry</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 ALFWorld</a></li>
+          <li><a href="#s4-2">4.2 HotpotQA</a></li>
+          <li><a href="#s4-3">4.3 Programming</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5–7 Limitations and conclusion</a></li>
+      <li><a href="#today">Using it today</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Reflexion, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Shinn, Cassano, Berman, Gopinath, Narasimhan and Yao (2023), <em>Reflexion: Language Agents with Verbal Reinforcement Learning</em>.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2303.11366">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2303.11366">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2303.11366">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is released under a <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0</a> licence, so selected tables are reproduced with attribution to Shinn et al. (2023). The diagram is redrawn and the interactive example is written for this page. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover, tab to, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s3-try">step-through</a> runs a tiny Reflexion loop for real: code is tested in your browser, failures produce written lessons, and the lessons steer the next attempt.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. Retry and verification patterns in code are in the <a class="lesson" data-lesson="primer/agents/planning.html">planning lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We propose Reflexion, a novel framework to reinforce language agents not by updating weights, but instead through linguistic feedback.”<cite>Shinn et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2303.11366">Read the original</a></cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A student fails a practice exam. They could simply sit it again and hope. Or they could write themselves a short note (“I lost marks because I never checked units; next time, check units before answering”) and read it before the next attempt. Reflexion gives an <span class="t" data-t="agent">agent</span> that habit. After each failed attempt it writes a lesson in plain language, keeps the last few lessons in memory, and reads them before trying again. Nothing about the model's weights changes.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Agents improve over repeated attempts at the same task by reflecting in words, with no fine-tuning.</li>
+  <li>Feedback can be a simple pass/fail signal, a hand-written rule, or the agent's own evaluation (for example, tests it wrote itself).</li>
+  <li>Gains over strong baselines: +22 points on ALFWorld, +20 on HotpotQA and +11 on HumanEval, reaching 91% pass@1 on HumanEval against GPT-4's 80% at the time.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>“Try, check against something real, write down what went wrong, retry” is how many coding agents work. This paper is also a careful study of when self-critique helps and when it misleads, which is the practical question.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S1">original</a></span></h2>
+<blockquote class="quote">“This self-reflective feedback acts as a ‘semantic’ gradient signal by providing the agent with a concrete direction to improve upon.”<cite>Shinn et al. (2023), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Classic reinforcement learning improves an agent by adjusting millions of weights using a score (a reward), over thousands of attempts. For a huge language model that is slow and expensive, and a bare score says little: “you failed” does not say <em>why</em>. Reflexion turns the score into a sentence that does say why, and keeps it in the prompt.</p>
+<h4>Tiny example</h4>
+<p>A reward of 0 tells an agent only that it failed. The reflection “I searched for the director's name but never checked the release year, so I picked the wrong film; next time, confirm the year first” says <em>which</em> step to change and how. Working out which earlier step deserves the blame for a failure is the <span class="t" data-tip-title="Credit assignment" data-tip="Working out which of many earlier actions deserves the blame (or credit) for how an episode ended. It is one of the central difficulties of reinforcement learning.">credit assignment</span> problem, and the reflection is the model attempting it in language.</p>
+<h4>Advantages and costs, as the paper lists them</h4>
+<ul>
+  <li><strong>For:</strong> no fine-tuning; richer feedback than a number; an explicit, readable memory; concrete hints for the next attempt.</li>
+  <li><strong>Against:</strong> it depends on the model evaluating itself well, and there is no guarantee it converges.</li>
+</ul>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S2">original</a></span></h2>
+<p>The paper contrasts Reflexion with self-refinement methods that polish a single output, with search methods over actions, and, for code, with systems that debug using tests (AlphaCode, CodeT, Self-Debugging, CodeRL). Its distinguishing ingredients are a <strong>persistent memory</strong> of reflections across attempts and the ability to work from a <strong>binary</strong> reward, including in multi-step decision-making tasks. For code specifically, it generates its own tests, so it can report honest pass@1 scores without peeking at the hidden test cases.</p>
+</section>
+
+<section id="s3">
+<h2>3 The method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S3">original</a></span></h2>
+<figure class="ix wide" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 600 280" role="img" aria-label="Reflexion: actor, environment, evaluator, self-reflection, memory">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M168,70 H222" marker-end="url(#arr)"/>
+    <path class="wire" d="M222,90 H168" marker-end="url(#arr)"/>
+    <path class="wire" d="M110,110 V156" marker-end="url(#arr)"/>
+    <path class="wire" d="M170,180 H250" marker-end="url(#arr)"/>
+    <path class="wire" d="M370,180 H420" marker-end="url(#arr)"/>
+    <path class="wire" d="M480,156 V110 H500" marker-end="url(#arr)"/>
+    <path class="wire" d="M520,58 V30 H110 V48" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="actor" tabindex="0" role="button" aria-label="Actor"><rect x="52" y="48" width="116" height="62" rx="8"/><text x="110" y="74" text-anchor="middle">Actor M_a</text><text x="110" y="92" text-anchor="middle" class="lbl">LLM (CoT / ReAct)</text></g>
+    <g class="blk ff" data-block="env" tabindex="0" role="button" aria-label="Environment"><rect x="222" y="48" width="120" height="62" rx="8"/><text x="282" y="74" text-anchor="middle">Environment</text><text x="282" y="92" text-anchor="middle" class="lbl">game / API / compiler</text></g>
+    <g class="blk plain" data-block="traj" tabindex="0" role="button" aria-label="Trajectory"><rect x="50" y="156" width="120" height="48" rx="7"/><text x="110" y="176" text-anchor="middle">Trajectory τ_t</text><text x="110" y="192" text-anchor="middle" class="lbl">short-term memory</text></g>
+    <g class="blk soft" data-block="evaluator" tabindex="0" role="button" aria-label="Evaluator"><rect x="250" y="156" width="120" height="48" rx="7"/><text x="310" y="176" text-anchor="middle">Evaluator M_e</text><text x="310" y="192" text-anchor="middle" class="lbl">reward r_t</text></g>
+    <g class="blk lin" data-block="reflect" tabindex="0" role="button" aria-label="Self-reflection"><rect x="420" y="156" width="120" height="48" rx="7"/><text x="480" y="176" text-anchor="middle">Self-Reflection</text><text x="480" y="192" text-anchor="middle" class="lbl">M_sr → sr_t</text></g>
+    <g class="blk emb" data-block="mem" tabindex="0" role="button" aria-label="Long-term memory"><rect x="460" y="58" width="120" height="52" rx="7"/><text x="520" y="80" text-anchor="middle">Memory mem</text><text x="520" y="98" text-anchor="middle" class="lbl">last Ω reflections</text></g>
+    <text x="300" y="24" text-anchor="middle" class="lbl">next trial: the Actor reads the reflections</text>
+    <text x="195" y="62" text-anchor="middle" class="lbl">action</text><text x="195" y="104" text-anchor="middle" class="lbl">obs.</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block, starting with the <strong>Actor</strong>.</p></div>
+  </div>
+  <figcaption>Reflexion's components, redrawn from the paper's Figure 2(a). Based on Shinn et al. (2023), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> within one attempt (a <em>trial</em>), the Actor and the environment exchange actions and observations, building a trajectory. When the trial ends, the Evaluator scores it. If it failed, the Self-Reflection model reads the trajectory and the score and writes a lesson, which is appended to long-term memory. The long top arrow is the only thing that carries over to the next trial: the Actor starts fresh except that it now reads the recent lessons. Every box except the environment can be the same language model with different instructions.</p>
+</section>
+
+<section id="s3-parts">
+<h3>Actor, Evaluator, Self-Reflection, Memory <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S3.SS0.SSS0.Px1">original</a></span></h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Part</th><th>Everyday picture</th><th>In the paper</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Actor</strong></td><td>The student sitting the exam</td><td>A language model prompted as chain of thought or <a href="react.html">ReAct</a>, which also reads the memory</td></tr>
+    <tr><td><strong>Evaluator</strong></td><td>The marker</td><td>Exact-match grading (HotpotQA), a hand-written rule or a model's yes/no judgement (ALFWorld), or self-written unit tests (code)</td></tr>
+    <tr><td><strong>Self-Reflection</strong></td><td>The student's note after marking</td><td>A language model that turns the trajectory and the score into specific advice</td></tr>
+    <tr><td><strong>Memory</strong></td><td>The notebook of notes</td><td>Short-term: this trial's trajectory. Long-term: the last Ω reflections, usually Ω = 1 to 3, to fit the <span class="t" data-t="context window">context window</span></td></tr>
+  </tbody>
+</table></div>
+<p>The two kinds of memory map directly onto the terms used for agents today: <span class="t" data-t="short-term memory">short-term memory</span> is the working transcript, <span class="t" data-t="long-term memory">long-term memory</span> is distilled experience carried between sessions, here a kind of <span class="t" data-t="episodic memory">episodic memory</span>. See the <a data-lesson="primer/agents/memory.html">memory lesson</a>.</p>
+</section>
+
+<section id="s3-math">
+<h3>The loop, formally <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S3.SS0.SSS0.Px5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>In ordinary learning, what gets updated between attempts is the student's brain (the weights). In Reflexion, the brain stays fixed and what gets updated is the notebook. The paper's framing is that the agent's “policy”, its way of choosing actions, is the model <em>plus</em> its notebook.</p>
+<div class="eq" data-tex="\htmlData{sym=pitheta}{\pi_\theta}(\htmlData{sym=ai}{a_i} \mid \htmlData{sym=si}{s_i}), \qquad \htmlData{sym=theta}{\theta} = \{\htmlData{sym=Ma}{M_a}, \htmlData{sym=mem}{\textit{mem}}\}" data-fallback="π_θ(a_i | s_i),  θ = {M_a, mem}"></div>
+<div class="eq" data-tex="\htmlData{sym=rt}{r_t} = \htmlData{sym=Me}{M_e}(\htmlData{sym=taut}{\tau_t}), \qquad \htmlData{sym=srt}{sr_t} = \htmlData{sym=Msr}{M_{sr}}(\htmlData{sym=taut}{\tau_t}, \htmlData{sym=rt}{r_t}, \htmlData{sym=mem}{\textit{mem}}), \qquad \htmlData{sym=mem}{\textit{mem}} \leftarrow \htmlData{sym=mem}{\textit{mem}} + [\htmlData{sym=srt}{sr_t}] \;\;(\text{keep the last } \htmlData{sym=Omega}{\Omega})" data-fallback="r_t = M_e(τ_t),  sr_t = M_sr(τ_t, r_t, mem),  mem ← mem + [sr_t] (keep the last Ω)"></div>
+<div class="symtable" data-syms="pitheta,ai,si,theta,Ma,mem,taut,Me,rt,Msr,srt,Omega"></div>
+<p class="inwords"><strong>In words:</strong> “in each trial, the actor (a fixed model reading its memory) produces a trajectory; the evaluator scores it; the reflector writes a lesson from the trajectory and score; the lesson is appended to memory, which keeps only the most recent few; repeat until the evaluator says pass or trials run out.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the step-through below with Ω = 2, trial 1 fails (r₁ = 0), producing sr₁; memory = [sr₁]. Trial 2 fails (r₂ = 0), producing sr₂; memory = [sr₁, sr₂]. Trial 3 reads both lessons and passes (r₃ = 1).</p>
+
+<h4>Why reflection beats plain retrying</h4>
+<p>If every attempt were an independent coin flip with success probability p, the chance of at least one success in T attempts would be:</p>
+<div class="eq" data-tex="\htmlData{sym=Psucc}{P(\text{success within } T)} = 1 - (1 - \htmlData{sym=p}{p})^{\htmlData{sym=T}{T}}" data-fallback="P(success within T) = 1 − (1 − p)^T"></div>
+<div class="symtable" data-syms="p,T,Psucc"></div>
+<p class="inwords"><strong>In words:</strong> “the chance of failing every time is (1 − p) multiplied by itself T times; everything else is at least one success.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with p = 0.6: one try 0.6, two tries 1 − 0.4² = 0.84, three tries 1 − 0.4³ = 0.936. But this assumes the failures are random. The paper found that baselines retrying at temperature 0.7 on HotpotQA solved <em>none</em> of their first-trial failures in later trials: the failures were systematic, not bad luck. Reflection is what changes p between trials.</p>
+</section>
+
+<section id="s3-try">
+<h3>Try it: trial, fail, reflect, retry</h3>
+<p>The task: write <code>is_palindrome(s)</code>, true if <code>s</code> reads the same backwards, ignoring case, spaces and punctuation. The code attempts and reflections are <strong>illustrative</strong>, written for this page. The tests really run in your browser against a JavaScript version of each attempt.</p>
+<div class="play" id="rx">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+    <button type="button" data-rxmode="reflexion" aria-pressed="true">With reflection (Ω = 2)</button>
+    <button type="button" data-rxmode="retry" aria-pressed="false">Plain retry, no memory</button>
+    <button type="button" data-rxmode="weak" aria-pressed="false">With reflection, weak self-written tests</button>
+  </div>
+  <div class="ui" style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem">
+    <button type="button" id="rx-next">Run next trial →</button>
+    <button type="button" id="rx-reset">Restart</button>
+    <span id="rx-count" class="readout" style="margin:0"></span>
+  </div>
+  <div id="rx-body"></div>
+  <h5 style="margin:.8rem 0 .3rem">Long-term memory (what the Actor reads)</h5>
+  <div id="rx-mem" class="readout"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each press runs one trial: the Actor proposes code, the Evaluator runs the self-written tests (✓ or ✗ each), and on failure the Self-Reflection step writes a lesson into memory. With reflection, each lesson removes one mistake and trial 3 passes every test. With plain retry, nothing carries over, and the same mistake repeats. With weak tests (only two easy cases), trial 1 <em>passes</em> its own tests and is submitted, but fails the hidden tests: a <strong>false positive</strong>, the failure mode the paper analyses for code in §4.3.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S4">original</a></span></h2>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Sequential decision-making: ALFWorld <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The household text game from the <a href="react.html">ReAct companion</a>: find a spatula in a drawer, chill a tomato in the fridge. The environment only says “done” or nothing, so the agent must judge its own failure. The paper's simple rule: if it repeats the same action with the same result more than 3 times, or takes more than 30 actions, the trial counts as failed and triggers a reflection.</p>
+<h4>What happened</h4>
+<ul>
+  <li><strong>ReAct + Reflexion solved 130 of 134 tasks</strong> using that simple rule, improving over 12 consecutive trials.</li>
+  <li>ReAct alone stopped improving between trials 6 and 7, and stayed stuck with a hallucination rate of 22%.</li>
+  <li>A common baseline failure: the agent believes it is holding an item it never picked up, then acts on that belief for many steps. Reflection lets it spot the early mistake in a long, failed trajectory.</li>
+</ul>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Reasoning: HotpotQA <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S4.SS2">original</a></span></h3>
+<h4>What happened</h4>
+<ul>
+  <li>Evaluation used exact-match grading as a pass/fail signal between trials, with a memory of 3 reflections, on 100 questions.</li>
+  <li>Reflexion improved on both chain-of-thought and ReAct agents across trials; the baselines never solved a question they had failed on the first trial.</li>
+  <li>Even when given the ground-truth supporting text (CoT with ground truth), the agent got 39% of questions wrong; reflection improved its accuracy by 14 points.</li>
+  <li><strong>Ablation:</strong> adding only the previous trajectory as memory helped, but adding a written reflection helped 8 points more. The words matter, not just the replay.</li>
+</ul>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Programming <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>For code, the agent writes its own unit tests (up to 6, filtered to those that are syntactically valid), runs its code against them, and reflects on the failures. It never sees the benchmark's hidden tests, so its score is honest “<span class="t" data-tip-title="pass@1" data-tip="The share of problems solved by the first program submitted for each problem, judged by hidden tests.">pass@1</span>”.</p>
+<div class="tablewrap"><table>
+  <caption>Table 1 of Shinn et al. (2023), reproduced under CC BY 4.0: pass@1 accuracy.</caption>
+  <thead><tr><th>Benchmark + language</th><th>Previous state of the art</th><th class="num">GPT-4 (at the time)</th><th class="num">Reflexion</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>HumanEval (Python)</td><td>65.8 (CodeT + GPT-3.5)</td><td class="num">80.1</td><td class="num">91.0</td></tr>
+    <tr><td>HumanEval (Rust)</td><td>–</td><td class="num">60.0</td><td class="num">68.0</td></tr>
+    <tr><td>MBPP (Python)</td><td>67.7 (CodeT + Codex)</td><td class="num">80.1</td><td class="num">77.1</td></tr>
+    <tr><td>MBPP (Rust)</td><td>–</td><td class="num">70.9</td><td class="num">75.4</td></tr>
+    <tr><td>Leetcode Hard (Python)</td><td>–</td><td class="num">7.5</td><td class="num">15.0</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> Reflexion beats the plain model on every benchmark but one, MBPP Python, where it is slightly <em>worse</em>. The next table explains why.</p>
+<div class="tablewrap"><table>
+  <caption>Table 2 of Shinn et al. (2023), reproduced under CC BY 4.0: overall accuracy and how the self-written tests behaved.</caption>
+  <thead><tr><th>Benchmark</th><th class="num">Base</th><th class="num">Reflexion</th><th class="num">TP</th><th class="num">FN</th><th class="num">FP</th><th class="num">TN</th></tr></thead>
+  <tbody>
+    <tr><td>HumanEval (Python)</td><td class="num">0.80</td><td class="num">0.91</td><td class="num">0.99</td><td class="num">0.40</td><td class="num">0.01</td><td class="num">0.60</td></tr>
+    <tr class="hl"><td>MBPP (Python)</td><td class="num">0.80</td><td class="num">0.77</td><td class="num">0.84</td><td class="num">0.59</td><td class="num">0.16</td><td class="num">0.41</td></tr>
+    <tr><td>HumanEval (Rust)</td><td class="num">0.60</td><td class="num">0.68</td><td class="num">0.87</td><td class="num">0.37</td><td class="num">0.13</td><td class="num">0.63</td></tr>
+    <tr><td>MBPP (Rust)</td><td class="num">0.71</td><td class="num">0.75</td><td class="num">0.84</td><td class="num">0.51</td><td class="num">0.16</td><td class="num">0.49</td></tr>
+  </tbody>
+</table></div>
+<p>TP: the self-written tests pass and the solution is correct. FN: the tests fail although the solution is correct. FP: the tests pass although the solution is wrong. TN: the tests fail and the solution is wrong.</p>
+<p class="reading"><strong>Reading it:</strong> the FP column is the danger. A false positive means the agent's own tests all passed on wrong code, so it stopped early and submitted a bad answer. On HumanEval Python that happened 1% of the time; on MBPP Python, 16%, which is enough to sink its score below the plain model's. False negatives are less harmful: a reflection can decide a test itself is wrong and keep the code. An agent that checks itself is only as good as its checks.</p>
+<h4>Ablation: which part matters?</h4>
+<div class="tablewrap"><table>
+  <caption>Table 3 of Shinn et al. (2023), reproduced under CC BY 4.0: pass@1 on the 50 hardest HumanEval Rust problems.</caption>
+  <thead><tr><th>Approach</th><th>Tests</th><th>Reflection</th><th class="num">Pass@1</th></tr></thead>
+  <tbody>
+    <tr><td>Base model</td><td>no</td><td>no</td><td class="num">0.60</td></tr>
+    <tr><td>Without test generation</td><td>no</td><td>yes</td><td class="num">0.52</td></tr>
+    <tr><td>Without self-reflection</td><td>yes</td><td>no</td><td class="num">0.60</td></tr>
+    <tr class="hl"><td>Reflexion</td><td>yes</td><td>yes</td><td class="num">0.68</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> reflecting without tests is <em>worse</em> than doing nothing (0.52 against 0.60): with no external signal the agent cannot tell whether its code works, keeps editing, and damages good code. Tests without reflection add nothing either: the errors are caught but the fixes do not follow. Only the combination helps. That is the most transferable finding in the paper.</p>
+</section>
+
+<section id="s5">
+<h2>5–7 Limitations, impact and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S5">original</a></span></h2>
+<ul>
+  <li><strong>Local optima.</strong> Optimising through language can still get stuck.</li>
+  <li><strong>Small memory.</strong> A sliding window of 1 to 3 reflections; the authors suggest vector or SQL databases for more.</li>
+  <li><strong>Tests are hard to write</strong> for non-deterministic, side-effecting, hardware-dependent or concurrent code.</li>
+  <li><strong>Safety.</strong> Autonomous agents amplify misuse risks. On the other hand, written reflections make an agent's intentions easier to inspect than the weights of a conventional reinforcement-learning agent.</li>
+  <li><strong>Reproducibility note:</strong> the authors advise running generated code only in isolated environments.</li>
+</ul>
+</section>
+
+<section id="today">
+<h2>Using it today</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Finding</th><th>What careful systems do</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Self-critique without an external signal can make things worse</td><td>Pair <span class="t" data-t="reflection">reflection</span> with <span class="t" data-t="external verification">external verification</span>: tests, schema checks, database queries</td><td><a data-lesson="primer/agents/planning.html">planning</a></td></tr>
+    <tr><td>Self-written tests produce false positives</td><td>Treat agent-written tests as hints; gate releases on human-owned tests and <a data-lesson="primer/agents/evals.html">evals</a></td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+    <tr><td>Blind retries repeat systematic errors</td><td>Carry a short written lesson into the retry, and cap the number of trials</td><td><a data-lesson="primer/agents/agent_loop.html">agent loop</a></td></tr>
+    <tr><td>Memory must stay small</td><td>Keep a few distilled lessons, not whole transcripts</td><td><a data-lesson="primer/agents/memory.html">memory</a></td></tr>
+    <tr><td>Generated code is untrusted</td><td>Run it in a sandbox with no credentials</td><td><a data-lesson="primer/agents/guardrails.html">guardrails</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Noah Shinn, Federico Cassano, Edward Berman, Ashwin Gopinath, Karthik Narasimhan and Shunyu Yao, <em>Reflexion: Language Agents with Verbal Reinforcement Learning</em> (2023). <a href="https://arxiv.org/abs/2303.11366">arXiv:2303.11366</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Tables are reproduced with attribution under that licence; the diagram is redrawn; the example is original. All explanations and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    pitheta: { tex: "\\pi_\\theta", name: "The agent's policy", meaning: "How the agent chooses actions. θ names what it depends on.", shape: "state → action", example: "" },
+    ai: { tex: "a_i", name: "Action at step i", meaning: "What the agent does next.", shape: "one action", example: "“write a new version of is_palindrome”" },
+    si: { tex: "s_i", name: "State at step i", meaning: "What the agent can see: the task, the trajectory so far, and its memory.", shape: "", example: "" },
+    theta: { tex: "\\theta", name: "What the policy depends on", meaning: "In Reflexion: the fixed model M_a together with the memory mem. Only mem changes between trials, so learning happens in the notebook, not the weights.", shape: "", example: "{M_a, [sr₁, sr₂]}" },
+    Ma: { tex: "M_a", name: "Actor model", meaning: "The language model that acts (prompted as chain of thought or ReAct). Its weights never change.", shape: "", example: "GPT-4 in the code experiments" },
+    mem: { tex: "\\textit{mem}", name: "Long-term memory", meaning: "The list of recent reflections, prepended to the Actor's prompt.", shape: "up to Ω sentences", example: "[sr₁, sr₂]" },
+    taut: { tex: "\\tau_t", name: "Trajectory of trial t", meaning: "Everything that happened in one attempt: actions and observations in order.", shape: "a transcript", example: "trial 1's code and its test results" },
+    Me: { tex: "M_e", name: "Evaluator", meaning: "Scores a trajectory: exact match, a hand-written rule, a model's judgement, or unit tests.", shape: "trajectory → score", example: "run 4 self-written tests" },
+    rt: { tex: "r_t", name: "Reward for trial t", meaning: "The score. Often just pass (1) or fail (0).", shape: "a number", example: "0 for trial 1" },
+    Msr: { tex: "M_{sr}", name: "Self-reflection model", meaning: "Reads the trajectory, the score and the memory, and writes a lesson.", shape: "→ text", example: "" },
+    srt: { tex: "sr_t", name: "Reflection from trial t", meaning: "A short, specific lesson in plain language.", shape: "a few sentences", example: "“I compared the raw string; lowercase and strip punctuation first.”" },
+    Omega: { tex: "\\Omega", name: "Memory size", meaning: "How many reflections are kept (the oldest are dropped). Usually 1 to 3 in the paper, to fit the context window.", shape: "a small whole number", example: "2 in the step-through" },
+    p: { tex: "p", name: "Success probability per attempt", meaning: "The chance one attempt succeeds, if attempts were independent.", shape: "0 to 1", example: "0.6" },
+    T: { tex: "T", name: "Number of attempts", meaning: "How many tries are allowed.", shape: "a whole number", example: "3" },
+    Psucc: { tex: "P(\\text{success within }T)", name: "Chance of at least one success", meaning: "One minus the chance that all T independent attempts fail.", shape: "0 to 1", example: "0.936 for p = 0.6, T = 3" },
+  },
+  blocks: {
+    actor: { title: "Actor M_a", body: "<p>A language model that attempts the task, prompted as chain of thought (reason then answer) or ReAct (think, act, observe). At the start of each trial it reads the reflections in memory.</p>", lesson: "primer/agents/agent_loop.html" },
+    env: { title: "Environment", body: "<p>What the actor acts on: a household text game, a Wikipedia API, or a compiler and test runner.</p>" },
+    traj: { title: "Trajectory τ_t (short-term memory)", body: "<p>The full record of the current trial. It is discarded between trials; only the reflection survives.</p>" },
+    evaluator: { title: "Evaluator M_e", body: "<p>Turns a trajectory into a score. The quality of this signal is everything: with self-written tests that pass on wrong code, the agent stops too early (§4.3).</p>", lesson: "primer/agents/evals.html" },
+    reflect: { title: "Self-Reflection M_sr", body: "<p>Reads what happened and the score, and writes specific advice: which step went wrong, and what to do instead. This is the “semantic gradient”.</p>" },
+    mem: { title: "Long-term memory", body: "<p>The last Ω reflections (usually 1 to 3). This is the only thing that carries over between trials.</p>", lesson: "primer/agents/memory.html" },
+  },
+  onReady() { reflexionDemo(); },
+};
+
+/* ---- Reflexion step-through: attempts and reflections are illustrative; tests really run ---- */
+function reflexionDemo() {
+  const attempts = [
+    { code: "def is_palindrome(s):\n    return s == s[::-1]", fn: (s) => s === [...s].reverse().join("") },
+    { code: "def is_palindrome(s):\n    t = s.lower()\n    return t == t[::-1]", fn: (s) => { const t = s.toLowerCase(); return t === [...t].reverse().join(""); } },
+    { code: "def is_palindrome(s):\n    t = [c.lower() for c in s if c.isalnum()]\n    return t == t[::-1]", fn: (s) => { const t = [...s].filter((c) => /[a-z0-9]/i.test(c)).map((c) => c.toLowerCase()); return t.join("") === [...t].reverse().join(""); } },
+  ];
+  const reflections = [
+    "Trial 1 failed on “A man, a plan, a canal: Panama” and “No lemon, no melon”. I compared the raw string, so capitals, spaces and punctuation broke it. Next time: normalise the text before comparing.",
+    "Trial 2 still failed on both long cases. Lowercasing fixed the capitals, but the commas, the colon and the spaces are still being compared. Next time: keep only letters and digits, then lowercase.",
+  ];
+  const strong = [["racecar", true], ["hello", false], ["A man, a plan, a canal: Panama", true], ["No lemon, no melon", true]];
+  const weak = [["racecar", true], ["hello", false]];
+  const hidden = strong;
+  let mode = "reflexion", trial = 0, mem = [], log = [], done = false;
+  const body = document.getElementById("rx-body"), memEl = document.getElementById("rx-mem"), cnt = document.getElementById("rx-count");
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  function run() {
+    if (done) return;
+    const idx = mode === "retry" ? 0 : Math.min(trial, attempts.length - 1);
+    const a = attempts[idx];
+    const tests = mode === "weak" ? weak : strong;
+    const res = tests.map(([s, want]) => [s, want, a.fn(s) === want]);
+    const pass = res.every((r) => r[2]);
+    let entry = `<div style="border:1px solid var(--border);border-radius:.5rem;padding:.5rem .7rem;margin:.6rem 0">` +
+      `<strong>Trial ${trial + 1}</strong>${mem.length ? ` (reading ${mem.length} reflection${mem.length > 1 ? "s" : ""})` : ""}` +
+      `<pre style="margin:.4rem 0;white-space:pre-wrap">${esc(a.code)}</pre>` +
+      `<div>${res.map(([s, want, ok]) => `${ok ? "✓" : "✗"} is_palindrome(“${esc(s)}”) should be ${want}`).join("<br>")}</div>`;
+    if (pass) {
+      const hid = hidden.map(([s, want]) => a.fn(s) === want).every(Boolean);
+      entry += `<p><strong>Evaluator: all ${tests.length} self-written tests pass → submit.</strong> Hidden tests: ${hid ? "<strong>pass ✓</strong> (true positive)" : "<strong>fail ✗</strong>. A false positive: the agent's own tests were too weak to notice the bug."}</p>`;
+      done = true;
+    } else if (mode === "retry") {
+      entry += `<p>Evaluator: fail (r = 0). No reflection, no memory: the next trial starts from scratch and, at the same model and prompt, tends to make the same mistake.</p>`;
+    } else {
+      const sr = reflections[Math.min(trial, reflections.length - 1)];
+      mem.push(sr);
+      if (mem.length > 2) mem.shift();
+      entry += `<p>Evaluator: fail (r = 0). Self-reflection writes: <em>“${esc(sr)}”</em></p>`;
+    }
+    entry += "</div>";
+    log.push(entry);
+    trial++;
+    if (trial >= 4 && !done) { log.push(`<p class="readout">Stopped after ${trial} trials without passing.</p>`); done = true; }
+    render();
+  }
+  function render() {
+    body.innerHTML = log.join("") || `<p class="readout">Press “Run next trial”.</p>`;
+    memEl.innerHTML = mode === "retry" ? "(not used in plain retry)" : mem.length ? mem.map((m, i) => `${i + 1}. ${esc(m)}`).join("<br>") : "(empty)";
+    cnt.textContent = done ? "Finished" : `Next: trial ${trial + 1}`;
+    document.getElementById("rx-next").disabled = done;
+  }
+  function reset() { trial = 0; mem = []; log = []; done = false; render(); }
+  document.getElementById("rx-next").addEventListener("click", run);
+  document.getElementById("rx-reset").addEventListener("click", reset);
+  document.querySelectorAll("[data-rxmode]").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.rxmode;
+    document.querySelectorAll("[data-rxmode]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    reset();
+  }));
+  render();
+}
+</script>
+</body>
+</html>

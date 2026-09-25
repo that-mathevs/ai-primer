@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLIP, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Radford et al. (2021), Learning Transferable Visual Models From Natural Language Supervision (CLIP).">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<style>
+/* page-local: the live similarity matrix */
+.simgrid { display: grid; gap: 3px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.8rem; margin: 0.6rem 0; }
+.simgrid .hd { color: var(--muted); display: flex; align-items: center; justify-content: center; text-align: center; padding: 0.2rem; }
+.simgrid .cell { border-radius: 6px; padding: 0.45rem 0.2rem; text-align: center; cursor: help; border: 2px solid transparent; font-variant-numeric: tabular-nums; }
+.simgrid .cell.diag { border-color: var(--soft-stroke); }
+.simgrid .cell:focus, .simgrid .cell:hover { outline: 2px solid var(--active); }
+.pic { display: inline-block; width: 1.6rem; height: 1.6rem; border-radius: 5px; vertical-align: middle; margin-right: .3rem; }
+</style>
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="clip">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Approach</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Learning from captions</a></li>
+          <li><a href="#s2-2">2.2 A 400-million-pair dataset</a></li>
+          <li><a href="#s2-3">2.3 The contrastive objective</a></li>
+          <li><a href="#s2-4">2.4–2.5 Models and training</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3-1">3.1 Zero-shot transfer</a>
+        <ol>
+          <li><a href="#s3-1-2">Classifying with text</a></li>
+          <li><a href="#s3-1-4">Prompt engineering</a></li>
+          <li><a href="#s3-1-5">How good is it?</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3-2">3.2 Representation learning</a></li>
+      <li><a href="#s3-3">3.3 Robustness to distribution shift</a></li>
+      <li><a href="#s4">4 Comparison to humans</a></li>
+      <li><a href="#s5">5 Data overlap</a></li>
+      <li><a href="#s6">6 Limitations</a></li>
+      <li><a href="#s7">7 Broader impacts</a></li>
+      <li><a href="#s9">9 Conclusion</a></li>
+      <li><a href="#today">What changed since</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>CLIP, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Radford, Kim, Hallacy, Ramesh, Goh, Agarwal, Sastry, Askell, Mishkin, Clark, Krueger and Sutskever (2021), <em>Learning Transferable Visual Models From Natural Language Supervision</em>: the model that put pictures and words in the same space.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2103.00020">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2103.00020">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2103.00020">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its results appear here as selected numbers in tables written for this page, with attribution, and its figures are redrawn from scratch. The demo “images” are coloured stand-ins with hand-made embeddings, labelled as illustrative. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same.</li>
+  <li>The similarity matrix in §2.3 and the classifier in §3.1 compute live. Drag the temperature.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/ml/embeddings/contrastive.html">contrastive training lesson</a> implements CLIP's symmetric loss in NumPy.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020">original</a></span></h2>
+<blockquote class="quote">“We demonstrate that the simple pre-training task of predicting which caption goes with which image is an efficient and scalable way to learn SOTA image representations from scratch on a dataset of 400 million (image, text) pairs collected from the internet.”<cite>Radford et al. (2021), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Traditional image models learn from a fixed list of labels: “this is one of 1,000 categories”. To recognize something new you need new labelled photos. <span class="t" data-t="clip">CLIP</span> learns from the captions people already write next to images on the web, and ends up able to recognize anything you can describe in words. You classify a photo by asking which of several descriptions matches it best.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Matching images to captions, trained on 400 million web pairs, learns strong image <span class="t" data-t="embedding">representations</span> from scratch.</li>
+  <li>With no task-specific training at all (“zero-shot”), it matches the original ResNet-50 on ImageNet, 76.2%, without using any of ImageNet's 1.28 million labelled training images.</li>
+  <li>It transfers to over 30 datasets: text in images, actions in videos, locations, fine-grained categories.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>CLIP-style shared image-text spaces power image search by description, many multimodal assistants' vision encoders, filtering of training data, and text-to-image generators that need to know what a caption “looks like”.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Language models improved dramatically by learning from raw web text instead of hand-labelled datasets. Vision was still trained mostly on crowd-labelled sets like ImageNet. The question: can learning from raw web text do for vision what it did for language?</p>
+<p>Earlier attempts to learn from captions existed, but performed far below labelled training; one reached 11.5% zero-shot on ImageNet. The paper's answer is mostly <em>scale</em> (far more data) plus a more efficient training objective.</p>
+</section>
+
+<section id="s2">
+<h2>2 Approach <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S2">original</a></span></h2>
+<section id="s2-1">
+<h3>2.1 Learning from captions <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S2.SS1">original</a></span></h3>
+<p>Learning from natural language has two advantages over fixed labels. It scales, because nobody has to label anything: the captions already exist. And the model learns to connect images to <em>language</em>, so at test time you can describe any category in words instead of retraining.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 A 400-million-pair dataset <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S2.SS2">original</a></span></h3>
+<p>Existing caption datasets were either small (about 100,000 photos) or noisy (a 100-million-photo set shrank to 15 million after keeping only images with real English descriptions). So the authors built WIT (WebImageText): <strong>400 million</strong> image-text pairs, gathered by searching for pairs whose text contained one of 500,000 queries, with at most 20,000 pairs per query to keep it balanced. Its total word count is similar to the text dataset used to train GPT-2.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 The contrastive objective <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>First they tried to make the model <em>write</em> each image's caption word for word. That is very hard, because the same photo could be captioned a thousand ways. The easier game is matching: shuffle a stack of photos and a stack of captions, and learn to pair them up. That turned out to be far more efficient. Predicting only the bag of words, ignoring order, learned 3× faster than writing the caption, and switching to matching gave another 4×.</p>
+
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 440 360" role="img" aria-label="CLIP contrastive pre-training: an image encoder and a text encoder produce a matrix of similarities">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk ff" data-block="tenc"><rect x="140" y="8" width="240" height="30" rx="7"/><text x="260" y="28" text-anchor="middle">Text encoder</text></g>
+    <g class="blk emb" data-block="ienc"><rect x="8" y="110" width="30" height="240" rx="7"/><text x="23" y="230" text-anchor="middle" transform="rotate(-90 23 230)">Image encoder</text></g>
+    <path class="wire" d="M38,230 H54" marker-end="url(#arr)"/>
+    <path class="wire" d="M260,38 V56" marker-end="url(#arr)"/>
+    <g id="clip-cells"></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a cell of the matrix, or an encoder. The green diagonal holds the true pairs.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper (contrastive pre-training), redrawn with four illustrative pairs. Based on Radford et al. (2021), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> a batch of N image-caption pairs goes in, here N = 4. The image encoder turns each image into a vector I₁ to I₄ (the rows); the text encoder turns each caption into a vector T₁ to T₄ (the columns). Every cell is the similarity of one image with one caption: all N × N combinations. The N cells on the green diagonal are the real pairs; the other N² − N are mismatches. Training pushes diagonal cells up and everything else down. In the real paper N is 32,768, so each image is contrasted with over 32,000 wrong captions at once.</p>
+
+<h4>Tiny example: two pairs</h4>
+<p>Two images and their two captions. After normalizing every vector to length 1, the similarities are: image 1 with caption 1 = 0.9, with caption 2 = 0.1; image 2 with caption 1 = 0.2, with caption 2 = 0.8. Read row 1 as a two-way multiple-choice question: <span class="t" data-t="softmax">softmax</span>(0.9, 0.1) gives the right caption probability e<sup>0.9</sup> / (e<sup>0.9</sup> + e<sup>0.1</sup>) = 2.46 / 3.57 = 0.690, a loss of −ln 0.690 = 0.371. Row 2 gives 0.646 and 0.438. The columns ask the reverse question, “which image matches this caption?”, and give 0.403 each. The average of the two directions is <strong>0.404</strong>.</p>
+
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=logit}{\ell_{ij}} = \htmlData{sym=scale}{e^{t}} \cdot \big(\htmlData{sym=Ii}{I_i} \cdot \htmlData{sym=Tj}{T_j}\big), \qquad \htmlData{sym=L}{\mathcal{L}} = \tfrac{1}{2}\Big(\htmlData{sym=CEimg}{\tfrac{1}{N}\sum_{i} -\log \tfrac{e^{\ell_{ii}}}{\sum_j e^{\ell_{ij}}}} + \htmlData{sym=CEtxt}{\tfrac{1}{N}\sum_{j} -\log \tfrac{e^{\ell_{jj}}}{\sum_i e^{\ell_{ij}}}}\Big)" data-fallback="ℓ_ij = e^t · (I_i · T_j);  L = ½ ( mean over rows of −log softmax_row(ℓ)[i,i] + mean over columns of −log softmax_col(ℓ)[j,j] )"></div>
+<div class="symtable" data-syms="Ii,Tj,scale,logit,N,CEimg,CEtxt,L"></div>
+<p class="inwords"><strong>In words:</strong> “score every image against every caption with a scaled dot product of unit vectors; for each image, the right caption should win a softmax over all captions, and for each caption, the right image should win a softmax over all images; average the two losses.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with the scale at 1, the two-pair example gives image-to-text losses 0.371 and 0.438 (mean 0.404) and text-to-image losses 0.403 and 0.403 (mean 0.403); the total is ½(0.404 + 0.403) = 0.404. At CLIP's starting scale of 1/0.07 ≈ 14.3, the same similarities give a loss below 0.001, because scaling stretches the gap between right and wrong.</p>
+<p>The paper notes this is the same batch trick as the multi-class N-pair loss and <span class="t" data-t="infonce">InfoNCE</span>, earlier used for medical images: the other items in the batch serve as free negatives. See the <a data-lesson="primer/ml/losses.html">losses lesson</a>.</p>
+
+<h4>Try it: the similarity matrix, live</h4>
+<div class="play" id="sim-demo">
+  <div class="sliders">
+    <label for="tau">temperature τ</label><input type="range" id="tau" min="0" max="100" step="1" value="50"><output id="tau-v">0.07</output>
+  </div>
+  <div id="sim-grid" class="simgrid" aria-live="polite"></div>
+  <p class="readout" id="sim-readout"></p>
+  <p class="readout"><em>Illustrative: four coloured squares stand in for photos, and all eight embeddings are hand-made 5-number vectors (animal, dog, cat, vehicle, food). The arithmetic is CLIP's.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> rows are images, columns are captions, and each cell shows the probability that this caption is the right one for this image (a softmax along the row). Darker cells mean higher probability, and the green-bordered diagonal holds the correct pairs. At the default τ = 0.07 each row is nearly certain, even though the dog and cat photos are fairly similar to each other's captions (both are animals). Drag τ towards 1 and the rows go soft: the same cosine similarities now give much less decisive probabilities. CLIP learns τ during training, starting at 0.07 and capped so the scale 1/τ never exceeds 100. Hover a cell for its raw cosine similarity.</p>
+<h4>Why it matters</h4>
+<p>Because the loss only cares about ranking right pairs above wrong ones within a batch, bigger batches mean more, harder competition. That is why CLIP used a batch of 32,768, and why contrastive training is hungry for scale. The <a data-lesson="primer/ml/embeddings/contrastive.html">contrastive lesson</a> shows how adding hard negatives sharpens this further.</p>
+</section>
+
+<section id="s2-4">
+<h3>2.4–2.5 Models and training <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S2.SS4">original</a></span></h3>
+<ul>
+  <li><strong>Image encoders:</strong> five ResNets (modified, with attention pooling at the end) and three <span class="t" data-t="vision transformer">Vision Transformers</span>, which cut the image into patches and treat each patch as a token.</li>
+  <li><strong>Text encoder:</strong> a <span class="t" data-t="transformer">Transformer</span> of 63 million parameters, 12 layers, 512 wide, 8 heads, reading lower-cased <span class="t" data-t="byte pair encoding">byte-pair-encoded</span> text with a 49,152-token vocabulary, capped at 76 tokens. The vector at the end-of-text token becomes the caption's embedding.</li>
+  <li><strong>Simple projections:</strong> each encoder's output is mapped into the shared space by one linear layer and normalized to length 1.</li>
+  <li><strong>Training:</strong> 32 epochs, batch 32,768, Adam with decoupled weight decay (<span class="t" data-t="adamw">AdamW</span>) and cosine learning-rate decay. The largest ResNet took 18 days on 592 V100 GPUs; the largest Vision Transformer 12 days on 256.</li>
+  <li><strong>Learned temperature:</strong> τ is a trained parameter, initialized at 0.07 and clipped so logits are never scaled by more than 100, which the authors found necessary for stability.</li>
+</ul>
+<p>The best model, ViT-L/14 fine-tuned briefly at 336-pixel resolution, is the one reported as “CLIP” in most results.</p>
+</section>
+</section>
+
+<section id="s3-1">
+<h2>3.1 Zero-shot transfer <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S3.SS1">original</a></span></h2>
+<section id="s3-1-2">
+<h3>Classifying with text <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S3.SS1.SSS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To sort photos of pets into breeds, you don't retrain CLIP. You write one caption per breed, “a photo of a beagle”, “a photo of a pug”, and so on, and for each photo ask: which caption fits best? The captions <em>become</em> the classifier.</p>
+<div class="eq" data-tex="\htmlData{sym=pk}{p(y = k \mid \text{image})} = \frac{\exp\!\big(\htmlData{sym=cos}{\cos(I, T_k)} / \htmlData{sym=tau}{\tau}\big)}{\sum_{\htmlData{sym=jj}{j}=1}^{\htmlData{sym=C}{C}} \exp\!\big(\htmlData{sym=cos}{\cos(I, T_j)} / \htmlData{sym=tau}{\tau}\big)}" data-fallback="p(y = k | image) = exp(cos(I, T_k) / τ) / Σ_j exp(cos(I, T_j) / τ)"></div>
+<div class="symtable" data-syms="pk,cos,tau,jj,C"></div>
+<p class="inwords"><strong>In words:</strong> “embed the image and one caption per class; the probability of each class is a softmax over the image's cosine similarity with each caption, sharpened by the temperature.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with two classes, cosines 0.30 (dog) and 0.25 (cat), and τ = 0.01, the logits are 30 and 25, so p(dog) = 1 / (1 + e<sup>−5</sup>) = 0.993. A 0.05 difference in cosine becomes a confident answer.</p>
+<p>The paper points out that this is a linear classifier whose weights are <em>written by the text encoder</em> from the class names. That is why no training examples are needed.</p>
+<div class="play" id="zs-demo">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem" id="zs-pics"></div>
+  <div class="shares" id="zs-bars"></div>
+  <p class="readout" id="zs-readout"></p>
+  <p class="readout"><em>Illustrative: hand-made embeddings, CLIP's arithmetic, τ = 0.07.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> pick a stand-in photo. Each bar is the probability CLIP's zero-shot rule gives to one class, computed from the cosine similarity between the photo's embedding and the embedding of “a photo of a {class}”. Press “add a class” to add “bird”: the probabilities are recomputed over the new set, and nothing is retrained. Notice that the dog photo gives the cat caption, and then the bird caption, a little probability, far more than car or pizza: they share the “animal” direction.</p>
+</section>
+
+<section id="s3-1-3">
+<h3>Against the earlier attempt <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S3.SS1.SSS3">original</a></span></h3>
+<div class="tablewrap"><table>
+  <caption>Zero-shot accuracy, as reported by Radford et al. (2021), Table 1</caption>
+  <thead><tr><th>Model</th><th class="num">aYahoo</th><th class="num">ImageNet</th><th class="num">SUN</th></tr></thead>
+  <tbody>
+    <tr><td>Visual N-Grams (2017)</td><td class="num">72.4</td><td class="num">11.5</td><td class="num">23.0</td></tr>
+    <tr class="hl"><td>CLIP</td><td class="num">98.4</td><td class="num">76.2</td><td class="num">58.5</td></tr>
+  </tbody>
+</table></div>
+<p>76.2% top-1 matches the original fully supervised ResNet-50; CLIP's top-5 accuracy reached 95%. The authors stress this is context, not a controlled comparison: CLIP used about 10× more data and far more compute.</p>
+</section>
+
+<section id="s3-1-4">
+<h3>Prompt engineering and ensembling <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S3.SS1.SSS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A single word is ambiguous. “Crane” could be a bird or a machine; “boxer” a dog or an athlete. And web captions are rarely one word. Wrapping the label in a sentence tells CLIP what kind of thing you mean.</p>
+<ul>
+  <li><strong>“A photo of a {label}.”</strong> alone improved ImageNet accuracy by 1.3%.</li>
+  <li><strong>Task hints</strong> helped more: “a photo of a {label}, a type of pet.” on pet breeds; “a satellite photo of a {label}.” for satellite images; quotes around text for reading digits.</li>
+  <li><strong>Ensembling:</strong> average the text embeddings of 80 different prompts (“a photo of a big {label}”, “a photo of a small {label}”, …) into one per class, which costs nothing extra at prediction time. That added 3.5% on ImageNet.</li>
+</ul>
+<p>Together, almost 5 points on ImageNet, which the paper likens to the gain from 4× more compute, for free.</p>
+<h4>Why it matters today</h4>
+<p>This was an early, clean demonstration that the <em>wording</em> of what you ask a model changes the answer, for vision as much as for language. Averaging prompt embeddings is still a common trick.</p>
+</section>
+
+<section id="s3-1-5">
+<h3>How good is zero-shot? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S3.SS1.SSS5">original</a></span></h3>
+<ul>
+  <li>Against a fully supervised <span class="t" data-tip-title="Linear probe" data-tip="Freeze a model, take its embedding of each image, and train only a simple linear classifier on top. It measures how useful the embeddings are.">linear probe</span> on ResNet-50 features, zero-shot CLIP won on <strong>16 of 27</strong> datasets.</li>
+  <li>It did especially well on everyday objects and scenes, and poorly on specialized or abstract tasks: satellite images, tumour detection, counting objects, traffic signs, distance estimation.</li>
+  <li>Zero-shot CLIP matched a <strong>4-shot</strong> linear probe on its own features: describing a class in words was worth about four labelled examples per class.</li>
+</ul>
+</section>
+</section>
+
+<section id="s3-2">
+<h2>3.2 Representation learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S3.SS2">original</a></span></h2>
+<p>Setting zero-shot aside, how good are CLIP's image embeddings when you do train a linear classifier on them? A linear probe on the best CLIP model beat one on the best ImageNet model at the time (Noisy Student EfficientNet-L2) on <strong>21 of 27</strong> datasets, with the biggest gains on reading text in images, geolocation, scene recognition and actions in video. Small CLIP models were not better than similarly sized ImageNet models; the advantage appears with scale.</p>
+</section>
+
+<section id="s3-3">
+<h2>3.3 Robustness to distribution shift <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S3.SS3">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>A student who memorized one textbook's photos of bananas may fail on a sketch of a banana, or a banana photographed in a kitchen. ImageNet models are like that: accuracy drops sharply on new kinds of images of the same things (sketches, renditions, adversarially chosen photos, differently collected sets). A ResNet-101 makes 5 times as many mistakes on these natural shifts as on ImageNet itself.</p>
+<ul>
+  <li>Zero-shot CLIP closed the gap between ImageNet accuracy and accuracy under shift by <strong>up to 75%</strong>.</li>
+  <li>Training a classifier on CLIP's features specifically for ImageNet raised ImageNet accuracy by 9.2% but gave essentially no gain on the shifted sets: the gain was ImageNet-specific.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>A benchmark score is a measurement on one distribution. Models trained on broad data and evaluated zero-shot tend to hold up better when the world shifts, which is the practical situation.</p>
+</section>
+
+<section id="s4">
+<h2>4 Comparison to humans <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S4">original</a></span></h2>
+<p>Five people classified the 3,669 test images of the Oxford-IIIT Pets dataset into 37 breeds. With no examples they averaged about 54%; shown <em>one</em> example per breed, about 76%, with the gain almost entirely on images they had been unsure about. A second example added little. Humans “know what they don't know” and learn from one example; CLIP's few-shot learning does not use prior knowledge this efficiently. The breeds hardest for CLIP were also hardest for people.</p>
+</section>
+
+<section id="s5">
+<h2>5 Data overlap <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S5">original</a></span></h2>
+<p>With 400 million web images, some test images were probably seen in training (<span class="t" data-t="benchmark contamination">contamination</span>). The authors built a duplicate detector and checked 35 datasets: 9 had no detected overlap, overlap was usually in the single digits of percent, and only a handful of datasets showed a statistically significant accuracy change from it, two of them for the worse. Overall inflation was small.</p>
+</section>
+
+<section id="s6">
+<h2>6 Limitations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S6">original</a></span></h2>
+<blockquote class="quote">“However, CLIP only achieves 88% accuracy on the handwritten digits of MNIST.”<cite>Radford et al. (2021), §6</cite></blockquote>
+<ul>
+  <li><strong>Truly unfamiliar data:</strong> handwritten digits, rare online, trip it up; logistic regression on raw pixels does better.</li>
+  <li><strong>Fine-grained and abstract tasks:</strong> car models, flower species, aircraft variants, counting objects.</li>
+  <li><strong>Only chooses, never describes:</strong> it can pick among the labels you give it, but can't write a caption itself.</li>
+  <li><strong>Compute:</strong> the authors estimate about a 1000× increase in compute would be needed for zero-shot CLIP to reach state-of-the-art overall.</li>
+  <li><strong>Methodology:</strong> development repeatedly used full validation sets, which isn't truly zero-shot.</li>
+</ul>
+</section>
+
+<section id="s7">
+<h2>7 Broader impacts <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S7">original</a></span></h2>
+<p>Because anyone can write new classes, CLIP can be pointed at tasks with serious social consequences, from surveillance to labelling people. The paper's bias probes found that class design and thresholds strongly change what harmful associations appear, and that uncurated web data carries social biases into the model. The authors call for evaluating such models in the context of each specific deployment.</p>
+</section>
+
+<section id="s9">
+<h2>9 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S9">original</a></span></h2>
+<p>The paper's answer to its opening question is yes: the recipe of web-scale, task-agnostic pre-training transfers from language to vision. To be good at matching, CLIP learns many visual tasks along the way, and natural-language prompts unlock them zero-shot, competitively with supervised models at sufficient scale, with plenty of room left.</p>
+</section>
+
+<section id="today">
+<h2>What changed since</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Lesson or companion</th></tr></thead>
+  <tbody>
+    <tr><td>Image-text matching on 400M pairs</td><td>The same objective on billions of pairs, and in text-text embedding models</td><td><a data-lesson="primer/ml/embeddings/contrastive.html">contrastive</a></td></tr>
+    <tr><td>Classify by picking a caption</td><td>Search photos by description; vision encoders inside multimodal chat models</td><td><a data-lesson="primer/ml/embeddings/retrieval.html">retrieval</a></td></tr>
+    <tr><td>Softmax over the whole batch</td><td>Variants that score each pair on its own, making huge batches cheaper</td><td><a data-lesson="primer/ml/losses.html">losses</a></td></tr>
+    <tr><td>One fixed embedding size</td><td>Embeddings that can be truncated to smaller sizes</td><td><a href="matryoshka.html">Matryoshka companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger and Ilya Sutskever, <em>Learning Transferable Visual Models From Natural Language Supervision</em>, ICML 2021. <a href="https://arxiv.org/abs/2103.00020">arXiv:2103.00020</a>. Quotations are brief and attributed; results are summarized in tables written for this page, and figures are redrawn. All explanations, diagrams and interactive elements are original to this primer; demo embeddings are illustrative.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Illustrative embeddings: axes are (animal, dog, cat, vehicle, food). Hand-made, not from CLIP. */
+const ITEMS = [
+  { name: "dog", color: "#b45309", img: [0.8, 0.6, 0.1, 0, 0.05], txt: [0.7, 0.7, 0, 0, 0] },
+  { name: "cat", color: "#6b7280", img: [0.8, 0.1, 0.6, 0, 0.05], txt: [0.7, 0, 0.7, 0, 0] },
+  { name: "car", color: "#2563eb", img: [0, 0, 0, 1, 0.1], txt: [0, 0, 0, 1, 0] },
+  { name: "pizza", color: "#dc2626", img: [0.05, 0, 0, 0.1, 1], txt: [0, 0, 0, 0, 1] },
+];
+const EXTRA = [{ name: "bird", txt: [1, 0, 0, 0, 0] }];
+const unit = (v) => { const n = Math.hypot(...v); return v.map((x) => x / n); };
+const dot = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
+
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    Ii: { tex: "I_i", name: "Image embedding i", meaning: "The i-th image in the batch, encoded and normalized to length 1.", shape: "d numbers (512 to 1024 in CLIP)", example: "image 1 of the two-pair toy" },
+    Tj: { tex: "T_j", name: "Text embedding j", meaning: "The j-th caption in the batch, encoded and normalized to length 1.", shape: "d numbers", example: "caption 2" },
+    scale: { tex: "e^{t}", name: "Learned scale (1 / temperature)", meaning: "Multiplies every similarity. CLIP learns t; the scale starts at 1/0.07 ≈ 14.3 and is capped at 100.", shape: "one positive number", example: "1 in the tiny example; 14.3 at initialization" },
+    logit: { tex: "\\ell_{ij}", name: "Logit for image i and caption j", meaning: "The scaled cosine similarity: one cell of the N × N matrix.", shape: "one number per cell", example: "ℓ₁₁ = 0.9, ℓ₁₂ = 0.1 at scale 1" },
+    N: { tex: "N", name: "Batch size", meaning: "How many image-caption pairs are compared at once.", shape: "a whole number", example: "2 in the toy; 32,768 in CLIP" },
+    CEimg: { tex: "\\tfrac{1}{N}\\sum_i -\\log \\tfrac{e^{\\ell_{ii}}}{\\sum_j e^{\\ell_{ij}}}", name: "Image-to-text loss", meaning: "For each image (row), cross-entropy of picking its own caption among all N captions, averaged over images.", shape: "one number ≥ 0", example: "(0.371 + 0.438) / 2 = 0.404" },
+    CEtxt: { tex: "\\tfrac{1}{N}\\sum_j -\\log \\tfrac{e^{\\ell_{jj}}}{\\sum_i e^{\\ell_{ij}}}", name: "Text-to-image loss", meaning: "For each caption (column), cross-entropy of picking its own image among all N images.", shape: "one number ≥ 0", example: "(0.403 + 0.403) / 2 = 0.403" },
+    L: { tex: "\\mathcal{L}", name: "CLIP's symmetric loss", meaning: "The average of the two directions, so both encoders are trained to find each other.", shape: "one number ≥ 0", example: "0.404" },
+    pk: { tex: "p(y=k\\mid\\text{image})", name: "Probability of class k", meaning: "How likely CLIP thinks the image belongs to class k, among the classes you wrote captions for.", shape: "between 0 and 1", example: "0.993 for dog" },
+    cos: { tex: "\\cos(I, T_k)", name: "Cosine similarity", meaning: "How closely the image vector and the caption vector point the same way: the dot product of two unit vectors.", shape: "between −1 and 1", example: "0.30 (dog), 0.25 (cat)" },
+    tau: { tex: "\\tau", name: "Temperature", meaning: "Dividing by a small τ stretches small differences in similarity into confident probabilities.", shape: "a small positive number", example: "0.01 in the worked example; learned in CLIP" },
+    jj: { tex: "j", name: "Class counter", meaning: "Walks over every class caption.", shape: "1 to C", example: "" },
+    C: { tex: "C", name: "Number of classes", meaning: "How many captions (classes) you offer. Change the list and you change the classifier, with no training.", shape: "a whole number", example: "2 in the worked example; 1,000 for ImageNet" },
+  },
+
+  blocks: {
+    tenc: { title: "Text encoder", body: "<p>A 12-layer Transformer (63M parameters) reads each caption and outputs one vector, taken at the end-of-text token, projected and normalized to length 1.</p>", shape: "caption → d numbers", lesson: "primer/ml/transformer.html" },
+    ienc: { title: "Image encoder", body: "<p>A ResNet or Vision Transformer turns each image into one vector, projected into the same space as the text and normalized to length 1.</p>", shape: "image → d numbers", lesson: "primer/ml/cnn_rnn.html" },
+  },
+
+  onReady() {
+    simDemo();
+    zsDemo();
+  },
+};
+/* Build the matrix cells now, during parsing, so papers.js wires them like any other diagram part. */
+figCells();
+
+/* ---- Figure 1: build the 4 x 4 grid of cells as diagram blocks ---- */
+function figCells() {
+  const NS = "http://www.w3.org/2000/svg";
+  const g = document.getElementById("clip-cells");
+  const x0 = 140, y0 = 110, s = 60;
+  const imgs = ITEMS.map((it) => unit(it.img)), txts = ITEMS.map((it) => unit(it.txt));
+  ITEMS.forEach((it, j) => {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", x0 + j * s + s / 2); t.setAttribute("y", 72); t.setAttribute("text-anchor", "middle"); t.textContent = `T${j + 1}`;
+    const t2 = document.createElementNS(NS, "text");
+    t2.setAttribute("x", x0 + j * s + s / 2); t2.setAttribute("y", 88); t2.setAttribute("text-anchor", "middle"); t2.setAttribute("class", "lbl"); t2.textContent = `“a ${it.name}”`;
+    g.append(t, t2);
+  });
+  ITEMS.forEach((it, i) => {
+    const sw = document.createElementNS(NS, "rect");
+    sw.setAttribute("x", 60); sw.setAttribute("y", y0 + i * s + 14); sw.setAttribute("width", 30); sw.setAttribute("height", 30); sw.setAttribute("rx", 5); sw.setAttribute("fill", it.color);
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", 112); t.setAttribute("y", y0 + i * s + 34); t.setAttribute("text-anchor", "middle"); t.textContent = `I${i + 1}`;
+    g.append(sw, t);
+    ITEMS.forEach((it2, j) => {
+      const c = dot(imgs[i], txts[j]);
+      const key = `c${i}${j}`;
+      const cell = document.createElementNS(NS, "g");
+      cell.setAttribute("class", "blk " + (i === j ? "soft" : "plain"));
+      cell.setAttribute("data-block", key);
+      cell.setAttribute("aria-label", `image ${i + 1} with caption ${j + 1}`);
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", x0 + j * s + 3); r.setAttribute("y", y0 + i * s + 3); r.setAttribute("width", s - 6); r.setAttribute("height", s - 6); r.setAttribute("rx", 6);
+      const tx = document.createElementNS(NS, "text");
+      tx.setAttribute("x", x0 + j * s + s / 2); tx.setAttribute("y", y0 + i * s + s / 2 + 4); tx.setAttribute("text-anchor", "middle");
+      tx.textContent = c.toFixed(2);
+      cell.append(r, tx);
+      g.appendChild(cell);
+      window.PAPER.blocks[key] = {
+        title: `I${i + 1} · T${j + 1}: ${it.name} photo vs “a photo of a ${it2.name}”`,
+        body: i === j
+          ? `<p>A <strong>true pair</strong> (the diagonal). Training pushes this similarity <em>up</em>, relative to the rest of its row and column.</p>`
+          : `<p>A <strong>mismatch</strong>, one of the N² − N = 12 negatives here. Training pushes this similarity <em>down</em>. ${(it.name === "dog" && it2.name === "cat") || (it.name === "cat" && it2.name === "dog") ? "It is high-ish because both are animals: a hard negative." : ""}</p>`,
+        shape: `cosine similarity ${c.toFixed(3)} (illustrative)`,
+      };
+    });
+  });
+}
+
+/* ---- live similarity matrix with temperature ---- */
+function simDemo() {
+  const slider = document.getElementById("tau"), out = document.getElementById("tau-v");
+  const grid = document.getElementById("sim-grid"), read = document.getElementById("sim-readout");
+  const imgs = ITEMS.map((it) => unit(it.img)), txts = ITEMS.map((it) => unit(it.txt));
+  const S = imgs.map((a) => txts.map((b) => dot(a, b)));
+  // the slider runs tau from 1.0 down to 0.01 on a log scale; its midpoint is pinned to CLIP's starting value, 0.07
+  function tauFrom(v) { return v === 50 ? 0.07 : Math.pow(10, -2 * (v / 100)); }
+  function draw() {
+    const tau = tauFrom(+slider.value);
+    out.textContent = tau.toFixed(tau < 0.1 ? 3 : 2);
+    const L = S.map((row) => row.map((c) => c / tau));
+    const rowP = L.map((row) => { const m = Math.max(...row); const e = row.map((v) => Math.exp(v - m)); const t = e.reduce((a, b) => a + b, 0); return e.map((v) => v / t); });
+    const colP = L[0].map((_, j) => { const col = L.map((r) => r[j]); const m = Math.max(...col); const e = col.map((v) => Math.exp(v - m)); const t = e.reduce((a, b) => a + b, 0); return e.map((v) => v / t); });
+    const lossI = rowP.reduce((s, r, i) => s - Math.log(r[i]), 0) / 4;
+    const lossT = colP.reduce((s, c, j) => s - Math.log(c[j]), 0) / 4;
+    grid.style.gridTemplateColumns = "7.5rem repeat(4, minmax(0, 1fr))";
+    let html = `<div class="hd"></div>` + ITEMS.map((it) => `<div class="hd">“a photo of a ${it.name}”</div>`).join("");
+    ITEMS.forEach((it, i) => {
+      html += `<div class="hd" style="justify-content:flex-start"><span class="pic" style="background:${it.color}"></span>${it.name} photo</div>`;
+      rowP[i].forEach((p, j) => {
+        const a = 0.12 + 0.88 * p;
+        html += `<div class="cell ${i === j ? "diag" : ""}" tabindex="0" style="background:rgba(var(--heat-hi), ${a.toFixed(2)});color:${p > 0.55 ? "var(--bg)" : "var(--fg)"}" data-tip-title="${it.name} photo vs “${ITEMS[j].name}”" data-tip="Cosine similarity ${S[i][j].toFixed(3)}. Divided by τ = ${tau.toFixed(3)}: logit ${L[i][j].toFixed(2)}. Row softmax: ${(p * 100).toFixed(1)}%.">${(p * 100).toFixed(1)}%</div>`;
+      });
+    });
+    grid.innerHTML = html;
+    read.innerHTML = `Image-to-text loss <strong>${lossI.toFixed(4)}</strong> · text-to-image loss <strong>${lossT.toFixed(4)}</strong> · CLIP loss (average) <strong>${((lossI + lossT) / 2).toFixed(4)}</strong> at τ = ${tau.toFixed(3)} (scale 1/τ = ${(1 / tau).toFixed(1)}).`;
+  }
+  slider.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- zero-shot classifier ---- */
+function zsDemo() {
+  const pics = document.getElementById("zs-pics"), bars = document.getElementById("zs-bars"), read = document.getElementById("zs-readout");
+  const classes = ITEMS.map((it) => ({ name: it.name, txt: unit(it.txt) }));
+  let pick = 0, extras = 0;
+  const tau = 0.07;
+  pics.innerHTML = `<span>Photo:</span>` + ITEMS.map((it, i) => `<button type="button" data-pic="${i}" aria-pressed="${i === 0}"><span class="pic" style="background:${it.color};width:1rem;height:1rem"></span>${it.name}</button>`).join("") + `<button type="button" id="zs-add">+ add a class</button>`;
+  function draw() {
+    const img = unit(ITEMS[pick].img);
+    const cs = classes.map((c) => dot(img, c.txt));
+    const e = cs.map((c) => Math.exp(c / tau)); const t = e.reduce((a, b) => a + b, 0);
+    const ps = e.map((v) => v / t);
+    bars.innerHTML = classes.map((c, k) => `<div class="share-row" style="grid-template-columns:11rem minmax(0,1fr) 7.5rem"><span>“a photo of a ${c.name}”</span><div><div class="share-bar" style="width:${(ps[k] * 100).toFixed(1)}%"></div></div><span>${(ps[k] * 100).toFixed(1)}% · cos ${cs[k].toFixed(2)}</span></div>`).join("");
+    const best = ps.indexOf(Math.max(...ps));
+    read.innerHTML = `Prediction for the ${ITEMS[pick].name} photo: <strong>${classes[best].name}</strong> (${(ps[best] * 100).toFixed(1)}%) among ${classes.length} classes.`;
+  }
+  pics.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.id === "zs-add") {
+      if (extras < EXTRA.length) { classes.push({ name: EXTRA[extras].name, txt: unit(EXTRA[extras].txt) }); extras++; }
+      if (extras >= EXTRA.length) b.disabled = true;
+    } else {
+      pick = +b.dataset.pic;
+      pics.querySelectorAll("[data-pic]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    }
+    draw();
+  });
+  draw();
+}
+</script>
+</body>
+</html>

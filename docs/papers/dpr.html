@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dense Passage Retrieval, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Karpukhin et al. (2020), Dense Passage Retrieval for Open-Domain Question Answering.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .mono { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .toggle button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  table.simm { width: auto; border-collapse: separate; border-spacing: 3px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.8rem; }
+  table.simm th { font-weight: 600; color: var(--muted); padding: 0.2rem 0.3rem; vertical-align: bottom; text-align: center; }
+  table.simm th.rowh { text-align: right; max-width: 11rem; }
+  table.simm td.cell { width: 3.6rem; height: 2.4rem; text-align: center; border-radius: 6px; cursor: pointer; font-variant-numeric: tabular-nums; border: 2px solid transparent; }
+  table.simm td.cell:focus, table.simm td.cell.on { outline: none; border-color: var(--active); }
+  table.simm td.cell.pos { box-shadow: inset 0 0 0 2px var(--soft-stroke); }
+  table.simm td.cell.hard { box-shadow: inset 0 0 0 2px var(--attn-stroke); }
+  table.simm td.loss { font-family: ui-monospace, monospace; padding-left: 0.5rem; text-align: left; white-space: nowrap; }
+  .timecols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8rem; margin-top: 0.6rem; }
+  .timecard { border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; background: var(--bg); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .timecard b { font-size: 1.25rem; display: block; }
+  figure.ix.stack .ixgrid { grid-template-columns: minmax(0, 1fr); }
+  figure.ix.stack .panel { min-height: 5.5rem; }
+</style>
+</head>
+<body data-paper="dpr">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background: retrieve, then read</a></li>
+      <li><a href="#s3">3 Dense Passage Retriever</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Overview</a></li>
+          <li><a href="#s3-2">3.2 Training</a></li>
+          <li><a href="#s3-ib">In-batch negatives</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experimental setup</a></li>
+      <li><a href="#s5">5 Passage retrieval results</a>
+        <ol>
+          <li><a href="#s5-1">5.1 Main results</a></li>
+          <li><a href="#s5-2">5.2 What mattered in training</a></li>
+          <li><a href="#s5-3">5.3 Where each method wins</a></li>
+          <li><a href="#s5-4">5.4 Run-time efficiency</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 End-to-end question answering</a></li>
+      <li><a href="#s7">7 to 8 Related work and conclusion</a></li>
+      <li><a href="#today">What changed since 2020</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Dense Passage Retrieval, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Karpukhin, Oğuz, Min, Lewis, Wu, Edunov, Chen and Yih (2020), <em>Dense Passage Retrieval for Open-Domain Question Answering</em>: the paper that showed a simply trained pair of BERT encoders beats keyword search for finding answers, and became the default retriever in retrieval-augmented generation.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2004.04906">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2004.04906">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2004.04906">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is distributed on arXiv under its standard non-exclusive licence, so no tables or figures are copied: diagrams are redrawn from scratch, and results appear as selected numbers in our own tables and charts, each attributed. Vectors and scores marked <em>illustrative</em> are hand-made for teaching. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it or tap it; so does every symbol in every equation. Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong>, a <strong>diagram or demo</strong>, <strong>the math</strong>, and <strong>why it still matters</strong>. The <a data-lesson="primer/ml/embeddings/contrastive.html">contrastive training lesson</a> trains a small dual encoder with exactly this loss, and the <a data-lesson="primer/agents/rag.html">RAG lesson</a> uses a retriever like this one inside a full question-answering pipeline.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906">original</a></span></h2>
+<blockquote class="quote">“In this work, we show that retrieval can be practically implemented using dense representations alone, where embeddings are learned from a small number of questions and passages by a simple dual-encoder framework.”<cite>Karpukhin et al. (2020), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>To answer a trivia question from Wikipedia, you first need to find the right page. The classic librarian, <span class="t" data-t="bm25">BM25</span>, matches the words in your question against the words in each passage. DPR is a librarian who has learned what questions <em>mean</em>: it turns every passage into a point in space once, turns your question into a point, and fetches the nearest passages, even when they share no words with your question.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Two <span class="t" data-t="bi-encoder">BERT encoders</span>, one for questions and one for passages, fine-tuned only on question-passage pairs, with no special pre-training.</li>
+  <li>9 to 19 points better than a strong Lucene BM25 system at getting an answer-containing passage into the top 20.</li>
+  <li>New state-of-the-art end-to-end answer accuracy on several open-domain QA benchmarks.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>“Embed the question, find the nearest passages, hand them to a reader” is the retrieval half of every <span class="t" data-t="rag">RAG</span> system. DPR is the paper that made it the default (see the <a href="rag.html">RAG companion</a>).</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Ask “Who is the bad guy in Lord of the Rings?” The passage with the answer says “Sala Baker is best known for portraying the villain Sauron”. It never says “bad guy”. A keyword matcher struggles; a system that knows “bad guy” and “villain” mean the same thing finds it. That example is the paper's own.</p>
+<h4>Tiny example: sparse versus dense</h4>
+<p>A keyword system represents text as a very long, mostly-zero vector, one slot per vocabulary word (a <em>sparse</em> vector). “bad guy” has 1s in the “bad” and “guy” slots; “villain” has a 1 in the “villain” slot; their overlap is 0. A dense system represents each as, say, 768 numbers learned so that similar meanings point the same way: “bad guy” might be (0.8, 0.1, …) and “villain” (0.7, 0.2, …), with a high <span class="t" data-t="dot product">dot product</span>. The paper stresses the two are <em>complementary</em>: dense for meaning, sparse for exact rare names.</p>
+<h4>The claim in numbers</h4>
+<p>On Natural Questions, DPR puts an answer-containing passage in its top 5 for 65.2% of questions, against 42.9% for BM25. End-to-end answer accuracy rises to 41.5% from the 33.3% of ORQA, the earlier dense retriever that needed an expensive extra pre-training task.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background: retrieve, then read <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>An open-book exam with a library of 21 million pages. You cannot read them all per question, so a <strong>retriever</strong> fetches a handful and a <strong>reader</strong> studies those closely to extract the exact answer. If the retriever misses the right page, the best reader in the world cannot help.</p>
+<div class="eq" data-tex="\htmlData{sym=Rret}{R} : (\htmlData{sym=qq}{q}, \htmlData{sym=Ccorp}{\mathcal{C}}) \rightarrow \htmlData{sym=CF}{\mathcal{C}_F}, \qquad |\htmlData{sym=CF}{\mathcal{C}_F}| = \htmlData{sym=kk}{k} \ll |\htmlData{sym=Ccorp}{\mathcal{C}}|" data-fallback="R : (q, C) → C_F, |C_F| = k ≪ |C|"></div>
+<div class="symtable" data-syms="Rret,qq,Ccorp,CF,kk"></div>
+<p class="inwords"><strong>In words:</strong> “a retriever takes a question and the whole collection and returns a small set of k passages, far fewer than the collection holds.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the collection has 21,015,324 passages; k is typically 20 to 100.</p>
+<h4>How a retriever is graded: top-k accuracy</h4>
+<p><span class="t" data-tip-title="Top-k retrieval accuracy" data-tip="The fraction of questions for which at least one of the top k retrieved passages contains the answer. A close cousin of recall@k.">Top-k retrieval accuracy</span> is the share of questions for which at least one of the k retrieved passages contains the answer. <strong>Tiny example:</strong> for 4 questions, if the answer shows up in the top 20 for questions 1, 2 and 4 but not 3, top-20 accuracy is 3/4 = 75%. It is a form of <span class="t" data-t="recall@k">recall@k</span>, and it matters most because the reader can only use what the retriever returns.</p>
+</section>
+
+<section id="s3">
+<h2>3 Dense Passage Retriever <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S3">original</a></span></h2>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Overview <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two translators who share a secret coordinate system. One reads questions and writes down coordinates; the other reads passages and writes down coordinates. They are trained together so that a question lands right next to the passage that answers it.</p>
+<figure class="ix wide stack" id="fig-dual">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 330" role="img" aria-label="The DPR dual encoder: passages encoded and indexed offline, questions encoded at query time">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <rect x="8" y="8" width="260" height="310" rx="12" fill="none" stroke="var(--wire)" stroke-dasharray="5 4"/>
+    <text x="138" y="26" text-anchor="middle" class="lbl">offline, once</text>
+    <text x="420" y="26" text-anchor="middle" class="lbl">at question time</text>
+    <g class="blk plain" data-block="wiki"><rect x="28" y="270" width="220" height="30" rx="6"/><text x="138" y="289" text-anchor="middle">21M Wikipedia passages (100 words)</text></g>
+    <path class="wire" d="M138,270 V246" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="EP"><rect x="58" y="202" width="160" height="42" rx="7"/><text x="138" y="220" text-anchor="middle">passage encoder</text><text x="138" y="236" text-anchor="middle">E_P (BERT)</text></g>
+    <path class="wire" d="M138,202 V178" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="pvecs"><rect x="58" y="146" width="160" height="30" rx="6"/><text x="138" y="165" text-anchor="middle">21M vectors × 768</text></g>
+    <path class="wire" d="M138,146 V120" marker-end="url(#arr)"/>
+    <g class="blk lin" data-block="faiss"><rect x="58" y="80" width="160" height="38" rx="7"/><text x="138" y="97" text-anchor="middle">vector index</text><text x="138" y="111" text-anchor="middle">(FAISS)</text></g>
+    <g class="blk plain" data-block="question"><rect x="330" y="270" width="180" height="30" rx="6"/><text x="420" y="289" text-anchor="middle">question</text></g>
+    <path class="wire" d="M420,270 V246" marker-end="url(#arr)"/>
+    <g class="blk ff" data-block="EQ"><rect x="340" y="202" width="160" height="42" rx="7"/><text x="420" y="220" text-anchor="middle">question encoder</text><text x="420" y="236" text-anchor="middle">E_Q (BERT)</text></g>
+    <path class="wire" d="M420,202 V178" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="qvec"><rect x="370" y="146" width="100" height="30" rx="6"/><text x="420" y="165" text-anchor="middle">v_q (768)</text></g>
+    <path class="wire" d="M420,146 V112 H222" marker-end="url(#arr)"/>
+    <text x="320" y="106" text-anchor="middle" class="lbl">maximum inner product search</text>
+    <path class="wire" d="M138,80 V60 H330" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="topk"><rect x="332" y="44" width="176" height="32" rx="6"/><text x="420" y="64" text-anchor="middle">top k passages → reader</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start with the passages bottom left.</p></div>
+  </div>
+  <figcaption>The DPR retrieval pipeline described in §3.1 of the paper, drawn for this page (the paper has no architecture figure).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the dashed box on the left happens once, before any question arrives: every passage goes through the passage encoder and its vector is stored in an index. On the right, a question goes through a <em>different</em> encoder, and its vector is used to find the stored passage vectors with the highest dot product, which go to the reader. The two sides only meet at the dot product, which is what makes it possible to precompute the left side. A cross-attention model, which reads question and passage together, would be more expressive but could not be precomputed.</p>
+<div class="eq" data-tex="\htmlData{sym=sim}{\text{sim}}(\htmlData{sym=qq}{q}, \htmlData{sym=pp}{p}) = \htmlData{sym=EQ}{E_Q(q)}^{\top} \htmlData{sym=EP}{E_P(p)}" data-fallback="sim(q, p) = E_Q(q)ᵀ E_P(p)"></div>
+<div class="symtable" data-syms="sim,EQ,EP,pp,dvec"></div>
+<p class="inwords"><strong>In words:</strong> “the similarity of a question and a passage is the dot product of their two vectors.”</p>
+<p class="inwords"><strong>With the numbers (illustrative, 4 dimensions):</strong> question (2.0, 0.1, 0.0, 0.2) and passage (1.8, 0.2, 0.1, 0.0) give 3.6 + 0.02 + 0 + 0 = 3.62.</p>
+<p>Each encoder is BERT-base (uncased) and the vector is BERT's output for its [CLS] token, so d = 768. The paper tried cosine and Euclidean distance too: Euclidean performed comparably to the dot product and both beat cosine, so the simpler dot product was kept.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Training <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A matching game. Show the model a question, its correct passage and several wrong passages, and reward it for giving the correct passage the highest score. That is a multiple-choice question where the options are passages, graded with a <span class="t" data-t="softmax">softmax</span> and <span class="t" data-t="cross-entropy">cross-entropy</span>.</p>
+<div class="eq" data-tex="\htmlData{sym=Lnll}{L} = -\htmlData{sym=logn}{\log} \frac{\htmlData{sym=epos}{e^{\,\text{sim}(q_i,\,p_i^+)}}}{\htmlData{sym=epos}{e^{\,\text{sim}(q_i,\,p_i^+)}} + \htmlData{sym=sumneg}{\sum_{j=1}^{n}} \htmlData{sym=eneg}{e^{\,\text{sim}(q_i,\,p_{i,j}^-)}}}" data-fallback="L = −log( e^{sim(q_i, p_i+)} / ( e^{sim(q_i, p_i+)} + Σ_j e^{sim(q_i, p_ij−)} ) )"></div>
+<div class="symtable" data-syms="Lnll,logn,epos,sumneg,eneg,nneg"></div>
+<p class="inwords"><strong>In words:</strong> “turn the scores of the right passage and the n wrong ones into probabilities with a softmax, and pay minus the log of the right passage's probability.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> the right passage scores 3.62 and three wrong ones 0.21, 0.24 and 0.39. Then e<sup>3.62</sup> = 37.34 out of a total 37.34 + 1.23 + 1.27 + 1.48 = 41.32, a share of 0.904 and a loss of −ln 0.904 = <strong>0.10</strong>. Add one hard wrong passage scoring 3.26 (e<sup>3.26</sup> = 26.05): the share falls to 37.34 / 67.37 = 0.554 and the loss jumps to <strong>0.59</strong>. The hard one is where the learning is.</p>
+<h4>Which wrong passages? Three kinds</h4>
+<ul>
+  <li><strong>Random</strong>: any passage from the collection. Easy to reject; teaches little.</li>
+  <li><strong>BM25</strong>: top keyword matches for the question that do <em>not</em> contain the answer. These are <span class="t" data-t="hard negative">hard negatives</span>: same words, wrong answer.</li>
+  <li><strong>Gold</strong>: correct passages of <em>other</em> questions in the training set.</li>
+</ul>
+<p>The best model uses the gold passages of the other questions in the same mini-batch, plus one BM25 negative per question.</p>
+</section>
+
+<section id="s3-ib">
+<h3>In-batch negatives: the free lunch</h3>
+<blockquote class="quote">“In this way, we reuse computation and effectively train on B<sup>2</sup> (q<sub>i</sub>, p<sub>j</sub>) question/passage pairs in each batch.”<cite>Karpukhin et al. (2020), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>At a speed-dating event with B couples, each person is supposed to pick their own partner out of the whole room. You do not need to invite extra strangers to make it hard: everyone else's partner is already a wrong answer. A batch of B questions with their B passages gives every question B − 1 wrong passages at no extra encoding cost.</p>
+<div class="eq" data-tex="\htmlData{sym=Smat}{\mathbf{S}} = \htmlData{sym=Qmat}{\mathbf{Q}}\,\htmlData{sym=PT}{\mathbf{P}^{\top}}" data-fallback="S = Q Pᵀ"></div>
+<div class="symtable" data-syms="Qmat,PT,Smat,Bsz"></div>
+<p class="inwords"><strong>In words:</strong> “stack the batch's question vectors and passage vectors as rows, and one matrix multiplication scores every question against every passage.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's batch size B = 128 gives a 128 × 128 score matrix: 16,384 pairs, of which 128 are correct and 127 wrong passages face each question.</p>
+<div class="play" id="ib-demo">
+  <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem">
+    <button type="button" data-hard="0" aria-pressed="true">In-batch negatives only</button>
+    <button type="button" data-hard="1" aria-pressed="false">Add BM25 hard negatives</button>
+  </div>
+  <div class="tablewrap" id="ib-table"></div>
+  <p class="readout" id="ib-readout">Hover, tab to or tap any cell.</p>
+  <p class="readout"><em>Illustrative: 4-number vectors hand-made for teaching; DPR's real vectors have 768 numbers.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> rows are questions and columns are passages; each cell is the dot-product score, and darker blue means higher. The green-outlined diagonal holds each question's correct passage; every other cell in a row is a free wrong answer. The right-hand column shows each row's loss (the −log of the correct passage's softmax share). With in-batch negatives only, every loss is small: the wrong passages are about other topics, so they are easy to reject. Switch on the BM25 hard negatives (orange outlines): two extra columns that share keywords with questions 1 and 2 but do not answer them. Those rows' losses jump, because the model now has something difficult to learn. As in the paper, the hard negatives are shared as extra columns for every question in the batch.</p>
+<h4>Why it matters today</h4>
+<p>In-batch negatives plus mined hard negatives is still how most text embedding models are trained, and it is the same loss (often called InfoNCE) that <a href="clip.html">CLIP</a> uses for images and captions. The <a data-lesson="primer/ml/embeddings/contrastive.html">contrastive training lesson</a> builds it and measures the effect of hard negatives.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experimental setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S4">original</a></span></h2>
+<h4>4.1 The library</h4>
+<p>The English Wikipedia dump of 20 December 2018, cleaned of tables, infoboxes, lists and disambiguation pages, then cut into disjoint blocks of 100 words: <strong>21,015,324 passages</strong>. Each passage is prefixed with its article title. This is a simple form of <span class="t" data-t="chunking">chunking</span>; the paper found fixed-length passages worked better than natural paragraphs, and overlapping passages did not help.</p>
+<h4>4.2 The questions</h4>
+<p>Five datasets: Natural Questions (real Google search queries), TriviaQA (trivia questions), WebQuestions (Google Suggest questions answered from Freebase), CuratedTREC (TREC QA and web questions) and SQuAD v1.1 (questions written while looking at a paragraph). Where a dataset gives only an answer, the positive passage is the highest-ranked BM25 passage that contains it.</p>
+</section>
+
+<section id="s5">
+<h2>5 Passage retrieval results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S5">original</a></span></h2>
+<p>Training settings: batch size 128 with one extra BM25 negative per question, up to 40 epochs on large datasets and 100 on small ones, <span class="t" data-t="adam">Adam</span> with learning rate 10<sup>−5</sup>, linear schedule with <span class="t" data-t="warmup">warm-up</span>, and <span class="t" data-t="dropout">dropout</span> 0.1. They also try a <span class="t" data-t="hybrid search">hybrid</span>: take the top 2,000 passages from each of BM25 and DPR and rerank the union by a weighted sum.</p>
+<div class="eq" data-tex="\htmlData{sym=hyb}{\text{score}}(\htmlData{sym=qq}{q},\htmlData{sym=pp}{p}) = \htmlData{sym=bm25}{\text{BM25}(q,p)} + \htmlData{sym=lam}{\lambda}\cdot\htmlData{sym=sim}{\text{sim}(q,p)}" data-fallback="score(q, p) = BM25(q, p) + λ · sim(q, p)"></div>
+<div class="symtable" data-syms="hyb,bm25,lam"></div>
+<p class="inwords"><strong>In words:</strong> “add the keyword score to the dense score, with the dense score scaled by a weight chosen on development data.”</p>
+<p class="inwords"><strong>With the numbers (illustrative scores):</strong> with λ = 1.1, a passage with BM25 = 20 and sim = 60 scores 20 + 66 = 86, beating one with BM25 = 30 and sim = 50 (30 + 55 = 85).</p>
+<div class="play" id="hyb-demo">
+  <div class="plot" style="margin:0;border:0;padding:0"><div class="controls"><label for="hyb-l">λ = <strong id="hyb-l-v">1.1</strong></label><input type="range" id="hyb-l" min="0" max="3" step="0.1" value="1.1"></div></div>
+  <div id="hyb-table"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> three candidate passages with illustrative scores. At λ = 0 only BM25 counts, so the keyword-heavy passage wins; as λ grows the dense score takes over and the semantically matching passage rises. The paper's λ = 1.1 was chosen on development data, where the two scales happened to balance. Choosing λ is fiddly because the two scores live on different scales, which is why many systems today merge the two <em>rankings</em> with <span class="t" data-t="reciprocal rank fusion">reciprocal rank fusion</span> instead of adding raw scores (see the <a data-lesson="primer/ml/embeddings/retrieval.html">retrieval lesson</a>).</p>
+</section>
+
+<section id="s5-1">
+<h3>5.1 Main results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S5.SS1">original</a></span></h3>
+<div class="play" id="main-bars"></div>
+<p class="reading"><strong>Reading it:</strong> for each dataset, the grey bar is BM25's top-20 accuracy and the blue bar is DPR's (trained on that dataset alone). DPR wins everywhere except SQuAD, most of all on Natural Questions: 78.4% against 59.1%. The paper notes the gap is especially large at small k, when only a few passages can be returned. The paper gives two reasons for the SQuAD exception: its questions were written while looking at the passage, so they copy its words (which favours BM25), and it covers only about 500 Wikipedia articles, so the training data is narrow. Selected values from Table 2 of Karpukhin et al. (2020).</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 What mattered in training <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S5.SS2">original</a></span></h3>
+<h4>Sample efficiency</h4>
+<p>With only 1,000 training questions, DPR already beats BM25 on Natural Questions; more training data (up to 59,000 questions) keeps improving it. A pre-trained BERT needs surprisingly few labelled pairs to become a good retriever.</p>
+<h4>Negatives and batches</h4>
+<div class="play" id="neg-bars"></div>
+<p class="reading"><strong>Reading it:</strong> each row is one training recipe; the bar is top-5 accuracy on the Natural Questions development set, and the right column adds top-20 and top-100. With 7 negatives per question and no in-batch trick, the kind of negative barely matters. Taking the 7 negatives from the same batch (the “in-batch” rows) helps immediately, and growing the batch so each question sees 127 in-batch negatives helps more. The biggest single jump comes from adding just one BM25 hard negative per question: top-5 accuracy goes from 55.8% to 65.8%. Adding a second BM25 negative did not help further. Selected rows of Table 3 of Karpukhin et al. (2020).</p>
+<h4>Other findings</h4>
+<ul>
+  <li><strong>Similarity and loss:</strong> Euclidean distance performed comparably to the dot product and both beat cosine; a <span class="t" data-tip-title="Triplet loss" data-tip="A loss that compares one positive and one negative directly: the positive must score better than the negative by a margin.">triplet loss</span> gave similar results to the softmax loss.</li>
+  <li><strong>Generalisation:</strong> trained on Natural Questions only and tested directly on WebQuestions and CuratedTREC, DPR loses 3 to 5 points of top-20 accuracy against models trained on those datasets, but still beats BM25 by a wide margin.</li>
+</ul>
+</section>
+
+<section id="s5-3">
+<h3>5.3 Where each method wins <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S5.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The keyword librarian and the meaning librarian fail in opposite ways. Ask for “the body of water between England and Ireland”: the keyword librarian brings a page about British cycling that mentions England and Ireland many times, while the meaning librarian brings the page on the Irish Sea. Ask “who plays Thoros of Myr in Game of Thrones?”: the rare name “Thoros of Myr” is decisive, and the keyword librarian finds it while the meaning librarian drifts to a different actor. Both examples are from the paper's appendix.</p>
+<h4>Why it matters today</h4>
+<p>This is the whole argument for <span class="t" data-t="hybrid search">hybrid search</span> in enterprise systems full of product codes, error numbers and names. The primer's retrieval lesson reproduces both failure modes on a toy corpus, and fixes them with fusion.</p>
+</section>
+
+<section id="s5-4">
+<h3>5.4 Run-time efficiency <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S5.SS4">original</a></span></h3>
+<div class="timecols">
+  <div class="timecard">DPR retrieval, FAISS HNSW index on CPU<b>995 questions / s</b>top 100 passages each</div>
+  <div class="timecard">BM25 (Lucene, Java)<b>23.7 questions / s</b>per CPU thread</div>
+  <div class="timecard">Encode 21M passages<b>8.8 hours</b>on 8 GPUs</div>
+  <div class="timecard">Build the FAISS index<b>8.5 hours</b>on one server (Lucene index: about 30 minutes)</div>
+</div>
+<p class="reading"><strong>Reading it:</strong> the top two cards are query speed; the bottom two are one-off indexing costs. Dense retrieval is fast to <em>query</em> once the index exists, because an approximate nearest-neighbour index (the paper used FAISS's <a href="hnsw.html">HNSW</a> with 512 neighbours per node) touches only a tiny fraction of the 21 million vectors. It is slow to <em>build</em>: every passage must go through BERT, and the graph must be constructed. A keyword index builds in half an hour. Figures from §5.4 of Karpukhin et al. (2020).</p>
+<p><strong>Storage, our arithmetic:</strong> 21,015,324 passages × 768 numbers × 4 bytes = about 64.6 GB of raw vectors before any index overhead, one reason compression (see the <a data-lesson="primer/ml/embeddings/compression.html">compression lesson</a>) matters so much in practice.</p>
+</section>
+
+<section id="s6">
+<h2>6 End-to-end question answering <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S6">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Now the reader: a BERT model that looks at the top k passages, decides which passage is most likely to hold the answer, and highlights the answer span inside it. Unlike the retriever, the reader <em>does</em> read question and passage together (cross-attention), which is affordable because it only sees k passages.</p>
+<div class="eq" data-tex="\htmlData{sym=pstart}{P_{\text{start},i}(s)} = \htmlData{sym=softmax}{\text{softmax}}\big(\htmlData{sym=Pi}{\mathbf{P}_i}\,\htmlData{sym=wstart}{\mathbf{w}_{\text{start}}}\big)_{s}" data-fallback="P_start,i(s) = softmax(P_i w_start)_s"></div>
+<div class="symtable" data-syms="pstart,Pi,wstart,softmax"></div>
+<p class="inwords"><strong>In words:</strong> “score every token of passage i as a possible answer start with one learned vector, and turn the scores into probabilities.” An identical formula with another vector scores the end token, and a third vector applied to each passage's [CLS] token picks the passage.</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> if the tokens of “... the villain Sauron in ...” get start scores (0.1, 0.3, 2.5, 0.2), softmax puts about 77% on “Sauron”, which becomes the answer if the end scores agree.</p>
+<h4>Results</h4>
+<p>On Natural Questions, the DPR-based system reaches 41.5% exact-match accuracy, against 33.3% for ORQA and 32.6% for the same reader on BM25 passages; it beats the concurrently developed REALM (40.4%) without REALM's expensive extra pre-training. Better retrieval turned into better answers on every dataset except SQuAD. Reading k = 50 passages was best on Natural Questions, and k = 10 cost less than one point (40.8%).</p>
+</section>
+
+<section id="s7">
+<h2>7 to 8 Related work and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S8">original</a></span></h2>
+<p>The conclusion is deliberately modest: dense retrieval can outperform, and potentially replace, sparse retrieval for open-domain QA, and more complex frameworks or similarity functions did not add value. The related-work section notes the concurrent <a href="colbert.html">ColBERT</a>, which keeps one vector per token instead of one per passage (its own companion page walks through that alternative), and follow-up work combining DPR with generators, which became <a href="rag.html">retrieval-augmented generation</a>.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2020</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In DPR</th><th>Today</th><th>Why</th><th>Where to learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Two separate BERT-base encoders</td><td>Often one shared encoder, sometimes with “query:” / “passage:” prefixes</td><td>Fewer parameters; prefixes tell one model which side it is encoding</td><td><a data-lesson="primer/ml/embeddings/retrieval.html">retrieval</a></td></tr>
+    <tr><td>Trained per dataset on tens of thousands of pairs</td><td>General-purpose embedding models trained on very large pair collections</td><td>One model that works across domains</td><td><a data-lesson="primer/ml/embeddings/contrastive.html">contrastive training</a></td></tr>
+    <tr><td>Retriever feeds an extractive reader</td><td>Retriever feeds a generative LLM that writes an answer with citations</td><td>Free-form answers</td><td><a href="rag.html">RAG companion</a>, <a data-lesson="primer/agents/rag.html">RAG lesson</a></td></tr>
+    <tr><td>BM25 + λ·sim hybrid</td><td>Rank fusion, plus a cross-encoder reranker on the top results</td><td>No score-scale tuning; better precision at the top</td><td><a data-lesson="primer/ml/embeddings/retrieval.html">retrieval</a></td></tr>
+    <tr><td>Float vectors in an HNSW index</td><td>Quantized or truncated vectors, still mostly HNSW</td><td>Memory cost</td><td><a href="hnsw.html">HNSW companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Vladimir Karpukhin, Barlas Oğuz, Sewon Min, Patrick Lewis, Ledell Wu, Sergey Edunov, Danqi Chen and Wen-tau Yih, <em>Dense Passage Retrieval for Open-Domain Question Answering</em>, EMNLP 2020, <a href="https://arxiv.org/abs/2004.04906">arXiv:2004.04906</a>. Quotations are brief and attributed; selected results are restated with attribution; all figures are drawn for this page. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    Rret: { tex: "R", name: "Retriever", meaning: "A function from a question and a collection to a short list of passages.", shape: "a function", example: "DPR or BM25" },
+    qq: { tex: "q", name: "Question", meaning: "The question being asked.", shape: "text", example: "Who wrote Hamlet?" },
+    Ccorp: { tex: "\\mathcal{C}", name: "Collection", meaning: "Every passage the system can search.", shape: "21,015,324 passages", example: "English Wikipedia, cut into 100-word blocks" },
+    CF: { tex: "\\mathcal{C}_F", name: "Filtered set", meaning: "The k passages the retriever returns for the reader.", shape: "k passages", example: "the top 20" },
+    kk: { tex: "k", name: "How many to return", meaning: "The size of the shortlist.", shape: "20 to 100", example: "20" },
+    sim: { tex: "\\text{sim}", name: "Similarity", meaning: "How well a passage matches a question: the dot product of their vectors. Higher is better.", shape: "one number", example: "3.62 (illustrative)" },
+    EQ: { tex: "E_Q(q)", name: "Question vector", meaning: "The question encoder (a BERT) reads the question and returns its [CLS] output vector.", shape: "d = 768 numbers", example: "(2.0, 0.1, 0.0, 0.2) in the 4-number toy" },
+    EP: { tex: "E_P(p)", name: "Passage vector", meaning: "A separate passage encoder (another BERT) returns the passage's vector. Computed once, offline, for every passage.", shape: "d = 768 numbers", example: "(1.8, 0.2, 0.1, 0.0)" },
+    pp: { tex: "p", name: "Passage", meaning: "A 100-word block of Wikipedia, prefixed with its article title.", shape: "text", example: "Hamlet is a tragedy written by William Shakespeare..." },
+    dvec: { tex: "d", name: "Vector width", meaning: "How many numbers each vector has.", shape: "768", example: "4 in the toy" },
+    Lnll: { tex: "L", name: "Loss", meaning: "Negative log-likelihood of the correct passage: small when the right passage clearly wins.", shape: "0 or more", example: "0.10, or 0.59 with a hard negative" },
+    logn: { tex: "\\log", name: "Natural logarithm", meaning: "−log of a probability grows sharply as the probability falls: −ln 0.9 = 0.11, −ln 0.5 = 0.69.", shape: "a number", example: "−ln 0.904 = 0.10" },
+    epos: { tex: "e^{\\text{sim}(q_i, p_i^+)}", name: "Correct passage, exponentiated", meaning: "e raised to the correct passage's score: always positive, and much larger for higher scores.", shape: "a positive number", example: "e^3.62 = 37.34" },
+    sumneg: { tex: "\\sum_{j=1}^{n}", name: "Over the wrong passages", meaning: "Add up the exponentiated scores of all n wrong passages.", shape: "one number", example: "1.23 + 1.27 + 1.48 = 3.98" },
+    eneg: { tex: "e^{\\text{sim}(q_i, p_{i,j}^-)}", name: "Wrong passage j, exponentiated", meaning: "e raised to a wrong passage's score. A hard negative has a high score, so this term is large and the loss grows.", shape: "a positive number", example: "e^3.26 = 26.05 for the hard negative" },
+    nneg: { tex: "n", name: "Number of wrong passages", meaning: "How many negatives face each question: B − 1 in-batch ones plus any hard negatives.", shape: "a whole number", example: "127 + 128 in the best setting" },
+    Qmat: { tex: "\\mathbf{Q}", name: "Question matrix", meaning: "The batch's question vectors stacked as rows.", shape: "B × d (128 × 768)", example: "4 × 4 in the demo" },
+    PT: { tex: "\\mathbf{P}^{\\top}", name: "Passage matrix, transposed", meaning: "The batch's passage vectors stacked as rows, then flipped so each passage is a column.", shape: "d × B (768 × 128)", example: "4 × 4 in the demo" },
+    Smat: { tex: "\\mathbf{S}", name: "Score matrix", meaning: "Entry (i, j) is question i's score against passage j. The diagonal holds the correct pairs; everything else is a free negative.", shape: "B × B (128 × 128)", example: "the grid in the demo" },
+    Bsz: { tex: "B", name: "Batch size", meaning: "How many question-passage pairs are processed together.", shape: "a whole number", example: "128" },
+    hyb: { tex: "\\text{score}", name: "Hybrid score", meaning: "The combined ranking score for the union of both systems' top 2,000.", shape: "one number", example: "86" },
+    bm25: { tex: "\\text{BM25}(q,p)", name: "Keyword score", meaning: "The classic term-matching score: rewards passages that contain the question's rarer words. Tuned here with b = 0.4 and k1 = 0.9.", shape: "0 or more", example: "20 (illustrative)" },
+    lam: { tex: "\\lambda", name: "Mixing weight", meaning: "How much the dense score counts relative to the keyword score. Chosen on development data.", shape: "a number", example: "1.1 in the paper" },
+    pstart: { tex: "P_{\\text{start},i}(s)", name: "Start probability", meaning: "The reader's probability that the answer starts at token s of passage i.", shape: "one per token, summing to 1", example: "0.77 on “Sauron”" },
+    Pi: { tex: "\\mathbf{P}_i", name: "Passage token vectors", meaning: "The reader's BERT output for every token of passage i (read together with the question).", shape: "L × h (tokens × 768)", example: "one row per token" },
+    wstart: { tex: "\\mathbf{w}_{\\text{start}}", name: "Start vector", meaning: "One learned vector; its dot product with a token's vector is that token's start score.", shape: "h = 768", example: "learned" },
+    softmax: { tex: "\\text{softmax}", name: "Softmax", meaning: "Turns scores into positive shares that sum to 1.", shape: "keeps the shape", example: "(0.1, 0.3, 2.5, 0.2) → (0.07, 0.09, 0.77, 0.08)" },
+  },
+
+  blocks: {
+    wiki: { title: "The collection", body: "<p>English Wikipedia (December 2018), cleaned and cut into disjoint 100-word blocks, each prefixed with its article title: 21,015,324 passages.</p>", shape: "21M passages", lesson: "primer/ml/embeddings/retrieval.html" },
+    EP: { title: "Passage encoder E_P", body: "<p>A BERT-base model; the passage's vector is its output at the [CLS] token. It runs once per passage, offline: 8.8 hours on 8 GPUs for all 21 million.</p>", shape: "text → 768", lesson: "primer/ml/transformer.html" },
+    pvecs: { title: "Passage vectors", body: "<p>One 768-number vector per passage. At 4 bytes per number that is about 64.6 GB for the whole collection.</p>", shape: "21M × 768", lesson: "primer/ml/embeddings/compression.html" },
+    faiss: { title: "Vector index (FAISS)", body: "<p>An approximate nearest-neighbour index over all passage vectors. The paper used FAISS's HNSW graph index on CPU; building it took 8.5 hours.</p>", shape: "graph over 21M vectors", lesson: "primer/ml/embeddings/ann.html" },
+    question: { title: "Question", body: "<p>A factoid question such as “Who first voiced Meg on Family Guy?”.</p>", shape: "text" },
+    EQ: { title: "Question encoder E_Q", body: "<p>A second, separately trained BERT-base. Questions and passages look different, so each side gets its own encoder.</p>", shape: "text → 768", lesson: "primer/ml/transformer.html" },
+    qvec: { title: "Question vector", body: "<p>The only thing computed per question before the search: one BERT pass.</p>", shape: "768" },
+    topk: { title: "Top k passages", body: "<p>The passages with the highest dot products (maximum inner product search). They go to the reader, which extracts the answer span.</p>", shape: "k = 20 to 100", lesson: "primer/agents/rag.html" },
+  },
+
+  onReady(P) {
+    inBatch();
+    hybridDemo();
+    mainBars();
+    negBars();
+  },
+};
+
+function barRow(label, frac, right, color, cols) {
+  return `<div class="share-row" style="${cols ? "grid-template-columns:" + cols : ""}"><span>${label}</span><div><div class="share-bar" style="width:${Math.max(0.5, Math.min(100, frac * 100)).toFixed(1)}%;${color ? "background:" + color : ""}"></div></div><span>${right}</span></div>`;
+}
+function toggles(attr, onPick) {
+  const btns = document.querySelectorAll(`[data-${attr}]`);
+  btns.forEach((b) => b.addEventListener("click", () => { btns.forEach((x) => x.setAttribute("aria-pressed", String(x === b))); onPick(b.dataset[attr]); }));
+}
+
+/* ---- in-batch negative matrix (illustrative vectors) ---- */
+function inBatch() {
+  const Q = [
+    ["Who wrote Hamlet?", [2.0, 0.1, 0.0, 0.2]],
+    ["What is the capital of Kenya?", [0.1, 2.0, 0.2, 0.0]],
+    ["At what temperature does water boil?", [0.0, 0.2, 2.0, 0.3]],
+    ["What is the largest planet?", [0.2, 0.0, 0.4, 2.0]],
+  ];
+  const Pg = [
+    ["Hamlet is a tragedy written by William Shakespeare.", [1.8, 0.2, 0.1, 0.0]],
+    ["Nairobi is the capital and largest city of Kenya.", [0.0, 1.9, 0.1, 0.1]],
+    ["Water boils at 100 °C at sea level.", [0.1, 0.0, 1.8, 0.2]],
+    ["Jupiter is the largest planet in the Solar System.", [0.0, 0.1, 0.3, 1.9]],
+  ];
+  const Hn = [
+    ["BM25 negative for Q1: Hamlet, Prince of Denmark, seeks revenge on his uncle.", [1.6, 0.4, 0.0, 0.1]],
+    ["BM25 negative for Q2: Kenya is a country in East Africa on the Indian Ocean.", [0.0, 1.7, 0.2, 0.1]],
+  ];
+  const dot = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
+  let hard = false, focus = [0, 0];
+  const box = document.getElementById("ib-table"), out = document.getElementById("ib-readout");
+  function draw() {
+    const cols = hard ? [...Pg, ...Hn] : Pg;
+    const rows = Q.map(([, q]) => cols.map(([, p]) => dot(q, p)));
+    const smax = 4;
+    let h = `<table class="simm"><thead><tr><th></th>${cols.map((c, j) => `<th title="${c[0]}">${j < 4 ? "p" + (j + 1) : "hard " + (j - 3)}</th>`).join("")}<th>loss</th></tr></thead><tbody>`;
+    rows.forEach((r, i) => {
+      const ex = r.map(Math.exp), tot = ex.reduce((a, b) => a + b, 0), loss = -Math.log(ex[i] / tot);
+      h += `<tr><th class="rowh">Q${i + 1}</th>` + r.map((s, j) => {
+        const a = Math.max(0, Math.min(1, s / smax));
+        const cls = "cell" + (i === j ? " pos" : "") + (j >= 4 ? " hard" : "") + (focus[0] === i && focus[1] === j ? " on" : "");
+        return `<td class="${cls}" tabindex="0" data-i="${i}" data-j="${j}" style="background:rgba(var(--heat-hi),${(0.08 + 0.85 * a).toFixed(2)});color:${a > 0.55 ? "#fff" : "var(--fg)"}">${s.toFixed(2)}</td>`;
+      }).join("") + `<td class="loss">${loss.toFixed(2)}</td></tr>`;
+    });
+    h += `</tbody></table>`;
+    box.innerHTML = h;
+    box.querySelectorAll("td.cell").forEach((td) => {
+      const pick = () => { focus = [+td.dataset.i, +td.dataset.j]; show(rows, cols); box.querySelectorAll("td.cell").forEach((x) => x.classList.toggle("on", x === td)); };
+      td.addEventListener("pointerenter", pick); td.addEventListener("focus", pick); td.addEventListener("click", pick);
+    });
+    show(rows, cols);
+  }
+  function show(rows, cols) {
+    const [i, j] = focus;
+    const ex = rows[i].map(Math.exp), tot = ex.reduce((a, b) => a + b, 0);
+    const role = i === j ? "the <strong>correct</strong> passage" : j >= 4 ? "a <strong>BM25 hard negative</strong>" : "an <strong>in-batch negative</strong> (another question's answer)";
+    out.innerHTML = `<strong>Q${i + 1}</strong> “${Q[i][0]}” vs “${cols[j][0].replace(/^BM25 negative for Q\d: /, "")}”: ${role}. Score ${rows[i][j].toFixed(2)}, softmax share ${(ex[j] / tot * 100).toFixed(1)}% of the row. Row loss = −ln(${(ex[i] / tot).toFixed(3)}) = <strong>${(-Math.log(ex[i] / tot)).toFixed(3)}</strong>.`;
+  }
+  toggles("hard", (v) => { hard = v === "1"; draw(); });
+  draw();
+}
+
+/* ---- hybrid lambda (illustrative) ---- */
+function hybridDemo() {
+  const cands = [["keyword-heavy passage (mentions every question word, wrong answer)", 30, 40], ["semantic match (paraphrases the question, right answer)", 12, 58], ["partial match", 20, 50]];
+  const s = document.getElementById("hyb-l"), v = document.getElementById("hyb-l-v");
+  function draw() {
+    const lam = +s.value; v.textContent = lam.toFixed(1);
+    const rows = cands.map(([n, b, d]) => [n, b, d, b + lam * d]).sort((a, b) => b[3] - a[3]);
+    document.getElementById("hyb-table").innerHTML = `<div class="tablewrap"><table><thead><tr><th>rank</th><th>passage</th><th class="num">BM25</th><th class="num">sim</th><th class="num">BM25 + λ·sim</th></tr></thead><tbody>` +
+      rows.map((r, k) => `<tr${k === 0 ? ' class="hl"' : ""}><td>${k + 1}</td><td>${r[0]}</td><td class="num">${r[1]}</td><td class="num">${r[2]}</td><td class="num">${r[3].toFixed(1)}</td></tr>`).join("") + `</tbody></table></div>`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- Table 2 top-20, single-dataset training ---- */
+function mainBars() {
+  const rows = [["Natural Questions", 59.1, 78.4], ["TriviaQA", 66.9, 79.4], ["WebQuestions", 55.0, 73.2], ["CuratedTREC", 70.9, 79.8], ["SQuAD", 68.8, 63.2]];
+  const cols = "9rem minmax(0,1fr) 3.6rem";
+  document.getElementById("main-bars").innerHTML = `<div class="legend" style="margin:0 0 0.4rem"><span><i style="background:var(--wire)"></i>BM25</span><span><i style="background:var(--accent)"></i>DPR</span><span>top-20 accuracy, axis 0 to 100%</span></div>` +
+    rows.map(([d, b, p]) => barRow(d, b / 100, `${b.toFixed(1)}%`, "var(--wire)", cols) + barRow("", p / 100, `${p.toFixed(1)}%`, "var(--accent)", cols)).join("");
+}
+
+/* ---- Table 3 selected rows ---- */
+function negBars() {
+  const rows = [["Random, 7 negatives", 47.0, 64.3, 77.8, 0], ["BM25, 7 negatives", 50.0, 63.3, 74.8, 0], ["Gold, 7 in-batch", 51.1, 69.1, 80.8, 1], ["Gold, 127 in-batch", 55.8, 73.0, 83.1, 1], ["127 in-batch + 1 BM25 each", 65.8, 78.0, 84.9, 2]];
+  document.getElementById("neg-bars").innerHTML = `<div class="legend" style="margin:0 0 0.4rem">Top-5 accuracy, Natural Questions dev (axis 0 to 80%) · top-20 / top-100</div>` +
+    rows.map(([m, a, b, c, k]) => barRow(m, a / 80, `${a} · ${b} / ${c}`, k === 0 ? "var(--wire)" : k === 2 ? "var(--attn-stroke)" : "", "minmax(5.5rem,11rem) minmax(2rem,1fr) 7.2rem")).join("");
+}
+</script>
+</body>
+</html>

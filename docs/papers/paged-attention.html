@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PagedAttention (vLLM), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Kwon et al. (2023), Efficient Memory Management for Large Language Model Serving with PagedAttention, the paper behind vLLM.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>/* page-local: pressed toggles and the memory simulator's legend swatches */
+button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--fg);font-weight:600}
+.legend i.sq{width:12px;height:12px;border-radius:2px}
+</style>
+</head>
+<body data-paper="paged-attention">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background: how serving works</a></li>
+      <li><a href="#s3">3 Memory challenges</a></li>
+      <li><a href="#s4">4 Method</a>
+        <ol>
+          <li><a href="#s4-1">4.1 PagedAttention</a></li>
+          <li><a href="#s4-2">4.2 Block tables</a></li>
+          <li><a href="#sim">Try it: the memory simulator</a></li>
+          <li><a href="#s4-4">4.4 Sharing and copy-on-write</a></li>
+          <li><a href="#s4-5">4.5 Scheduling and preemption</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Evaluation</a></li>
+      <li><a href="#s7">7.2 Choosing the block size</a></li>
+      <li><a href="#s8">8 Discussion</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>PagedAttention and vLLM, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang and Ion Stoica (2023), <em>Efficient Memory Management for Large Language Model Serving with PagedAttention</em>: storing the <span class="t" data-t="kv cache">KV cache</span> the way an operating system stores memory, in small pages, so a GPU can serve two to four times as many requests.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2309.06180">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2309.06180">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2309.06180">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is released under a CC BY 4.0 licence; one of its tables is reproduced with attribution, and its figures are redrawn as new interactive diagrams with new example text. Every section heading links to the original.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap, and so does every symbol in every equation.</li>
+  <li>The <strong>memory simulator</strong> after §4.2 runs the same stream of requests through the old way and the paged way. Press Play on both.</li>
+</ul>
+<p>You'll get the most from this page after the <a href="attention-is-all-you-need.html">attention companion</a> and the KV-cache section of <a class="lesson" data-lesson="primer/ml/inference.html">the inference lesson</a>. Every idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180">original</a></span></h2>
+<blockquote class="quote">“…we propose PagedAttention, an attention algorithm inspired by the classical virtual memory and paging techniques in operating systems.”<cite>Kwon et al. (2023), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A restaurant seats walk-in groups without knowing how long they'll stay or how many friends will join. The old policy: give every group a table for twelve, just in case. Most seats sit empty, and the restaurant turns people away while half the chairs are unused. The new policy: seat people at small four-seat tables, anywhere in the room, and add another small table whenever a group grows. The same room serves many more groups.</p>
+<h4>What the paper claims</h4>
+<ul>
+  <li>Existing serving systems waste most of the GPU memory set aside for the KV cache: only 20% to 38% of it holds real data.</li>
+  <li>PagedAttention stores each request's KV cache in small fixed-size blocks that need not sit next to each other, cutting the waste to nearly zero and letting requests <em>share</em> blocks.</li>
+  <li>vLLM, the serving system built on it, delivers 2 to 4 times the throughput of the best existing systems at the same latency.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>vLLM became one of the most widely used open-source engines for serving large language models, and paged KV-cache management is now standard across serving systems. When a hosted model answers you quickly and cheaply, ideas from this paper are very likely involved.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S1">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Serving a model is like running a busy kitchen: the more orders cooked together, the cheaper each one gets, because every order shares the same trip to fetch the model's weights. The limit on how many orders fit at once is not the chefs but the counter space, and on a GPU the counter space is mostly taken by the model's weights and, for every request in flight, its KV cache.</p>
+<h4>Tiny example: how big is one token's KV cache?</h4>
+<p>For every token, every layer stores a key vector and a value vector. The paper's example is OPT-13B.</p>
+<div class="eq" data-tex="\text{bytes per token} = \htmlData{sym=two}{2} \times \htmlData{sym=hidden}{h} \times \htmlData{sym=layers}{L} \times \htmlData{sym=bytes}{b}" data-fallback="bytes per token = 2 × h × L × b"></div>
+<div class="symtable" data-syms="two,hidden,layers,bytes"></div>
+<p class="inwords"><strong>In words:</strong> “one key and one value, each as wide as the model, for every layer, at so many bytes per number.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 2 × 5,120 × 40 × 2 = 819,200 bytes ≈ <strong>800 KB per token</strong>. A single request at the model's maximum length of 2,048 tokens needs 2,048 × 800 KB ≈ <strong>1.6 GB</strong>. On a 40 GB A100, the paper finds about 65% of memory goes to the weights and close to 30% to KV caches, so a few badly packed requests can fill it.</p>
+<h4>Why it matters</h4>
+<p>Throughput is capped by how many requests' KV caches fit on the GPU at once. Wasting that memory directly wastes money. The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> does the same arithmetic for a modern model shape.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background: how serving works <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S2.SS2">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>Every request goes through two phases. In the <span class="t" data-t="prefill">prompt phase</span> the whole prompt is processed at once and its keys and values are written into the KV cache. In the <span class="t" data-t="decode">generation phase</span> one token is produced per step, each adding one more key and value to the cache. Nobody knows in advance how long the answer will be.</p>
+<p>To keep the GPU busy, servers run many requests together. The older way, <span class="t" data-t="static batching">static batching</span>, waits for the whole batch to finish. The better way, <span class="t" data-t="continuous batching">continuous (iteration-level) batching</span>, lets finished requests leave and new ones join at every step. That makes memory the real limit: every joining request needs KV space right away.</p>
+<h4>Why it matters</h4>
+<p>This is the setting the whole paper lives in: many requests, unpredictable lengths, a cache that grows by one token per step per request.</p>
+</section>
+
+<section id="s3">
+<h2>3 Memory challenges <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S3">original</a></span></h2>
+<blockquote class="quote">“…our profiling results in Fig. 2 show that only 20.4% - 38.2% of the KV cache memory is used to store the actual token states in the existing systems.”<cite>Kwon et al. (2023), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Existing systems store each request's KV cache in one unbroken stretch of memory, because the standard attention code expects that. Since the final length is unknown, they reserve room for the maximum length up front. That wastes memory in three ways:</p>
+<ul>
+  <li><strong>Reserved:</strong> space for tokens that will be generated later, held empty for the request's whole lifetime.</li>
+  <li><span class="t" data-tip-title="Internal fragmentation" data-tip="Memory reserved for a request that it never uses, because the request finished well short of its maximum length.">Internal fragmentation</span>: space for tokens that will <em>never</em> be generated, because the answer stopped early.</li>
+  <li><span class="t" data-tip-title="External fragmentation" data-tip="Free memory broken into gaps between reserved chunks, each too small to fit a new request's chunk, so it goes unused even though the total free space would be enough.">External fragmentation</span>: small leftover gaps between reservations, each too small for a new request.</li>
+</ul>
+<h4>Tiny example</h4>
+<p>A request with a 100-token prompt that produces a 200-token answer, under a 2,048-token reservation, uses 300 slots and wastes 1,748: <strong>85%</strong> of its reservation. With 16-token pages allocated on demand, it would use 19 pages (304 slots) and waste 4.</p>
+<h4>Why it matters</h4>
+<p>The paper also points out a second, less obvious loss: techniques that produce several answers from one prompt (parallel sampling, beam search) could share the prompt's KV cache, but contiguous storage makes sharing impossible, so it is duplicated.</p>
+</section>
+
+<section id="s4">
+<h2>4 Method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S4">original</a></span></h2>
+
+<section id="s4-1">
+<h3>4.1 PagedAttention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“…one can think of blocks as pages, tokens as bytes, and requests as processes.”<cite>Kwon et al. (2023), §1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A library does not keep every series of books on one continuous shelf. A series can be spread across shelves all over the building, and a catalogue card lists where each volume is. Reading the series in order just means following the card. PagedAttention splits a request's keys and values into fixed-size <strong>blocks</strong> (each holding, say, 16 tokens), puts each block wherever there is free space, and computes attention block by block, following a list of where the blocks are.</p>
+<div class="eq" data-tex="\htmlData{sym=Aij}{A_{ij}} = \frac{\exp\!\big(\htmlData{sym=qi}{q_i}^{\top} \htmlData{sym=Kj}{K_j} / \sqrt{d}\big)}{\htmlData{sym=sumt}{\sum_{t=1}^{\lceil i/B \rceil}} \exp\!\big(\htmlData{sym=qi}{q_i}^{\top} \htmlData{sym=Kt}{K_t} \mathbf{1} / \sqrt{d}\big)}, \qquad \htmlData{sym=oi}{o_i} = \htmlData{sym=sumj}{\sum_{j=1}^{\lceil i/B \rceil}} \htmlData{sym=Vj}{V_j}\, \htmlData{sym=Aij}{A_{ij}}^{\top}" data-fallback="A_ij = exp(q_iᵀ K_j / √d) / Σ_t exp(q_iᵀ K_t 1 / √d),  o_i = Σ_j V_j A_ijᵀ"></div>
+<div class="symtable" data-syms="Aij,qi,Kj,Kt,sumt,oi,sumj,Vj,Bblk"></div>
+<p class="inwords"><strong>In words:</strong> “exactly ordinary attention, just organized by block: score the query against each block of keys, normalize by the total over all blocks so far, and blend each block of values by its share.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the query for token i = 40 with block size B = 16 needs ⌈40 / 16⌉ = 3 blocks: tokens 1 to 16, 17 to 32 and 33 to 40 (a partly filled block). The kernel fetches those three blocks from wherever they sit in memory; the result is identical to attending over one contiguous array.</p>
+<h4>Why it matters</h4>
+<p>The maths does not change at all, which is why vLLM's outputs match other systems. What changes is the memory layout, which needs a new GPU kernel that can gather keys and values from scattered blocks.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Block tables: logical and physical blocks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>From the request's point of view, its cache is a tidy numbered list of blocks: block 0, block 1, block 2 (its <em>logical</em> blocks). Behind the scenes, each lives in some arbitrary slot in GPU memory (a <em>physical</em> block). A small lookup table per request, the <span class="t" data-tip-title="Block table" data-tip="A small per-request table mapping each logical block (0, 1, 2, …) to the physical block in GPU memory where it actually lives, plus how many slots of it are filled.">block table</span>, translates one into the other, exactly like an operating system's page table.</p>
+<figure class="ix wide" id="figblocks">
+  <div class="ixgrid">
+  <svg viewBox="0 0 560 330" role="img" aria-label="Logical blocks of one request mapped through a block table to scattered physical blocks">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="80" y="18" text-anchor="middle" class="lbl">logical blocks (request A)</text>
+    <g class="blk emb" data-block="lb0"><rect x="10" y="30" width="140" height="42" rx="6"/><text x="80" y="48" text-anchor="middle">block 0</text><text x="80" y="63" text-anchor="middle" class="lbl">Alice was beginning to</text></g>
+    <g class="blk emb" data-block="lb1"><rect x="10" y="84" width="140" height="42" rx="6"/><text x="80" y="102" text-anchor="middle">block 1</text><text x="80" y="117" text-anchor="middle" class="lbl">get very tired of</text></g>
+    <g class="blk emb" data-block="lb2"><rect x="10" y="138" width="140" height="42" rx="6"/><text x="80" y="156" text-anchor="middle">block 2</text><text x="80" y="171" text-anchor="middle" class="lbl">sitting · · ·</text></g>
+    <text x="275" y="18" text-anchor="middle" class="lbl">block table</text>
+    <g class="blk lin" data-block="table"><rect x="200" y="30" width="150" height="150" rx="6"/>
+      <text x="275" y="56" text-anchor="middle">0 → physical 7 (4/4)</text>
+      <text x="275" y="110" text-anchor="middle">1 → physical 1 (4/4)</text>
+      <text x="275" y="164" text-anchor="middle">2 → physical 3 (1/4)</text>
+    </g>
+    <path class="wire" d="M150,51 H198" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,105 H198" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,159 H198" marker-end="url(#arr)"/>
+    <text x="475" y="18" text-anchor="middle" class="lbl">physical blocks (GPU memory)</text>
+    <g class="blk plain" data-block="free"><rect x="400" y="30" width="150" height="26" rx="4"/><text x="475" y="47" text-anchor="middle" class="lbl">0: free</text></g>
+    <g class="blk ff" data-block="pb1"><rect x="400" y="60" width="150" height="26" rx="4"/><text x="475" y="77" text-anchor="middle">1: A, block 1</text></g>
+    <g class="blk attn" data-block="otherreq"><rect x="400" y="90" width="150" height="26" rx="4"/><text x="475" y="107" text-anchor="middle">2: (request B)</text></g>
+    <g class="blk ff" data-block="pb3"><rect x="400" y="120" width="150" height="26" rx="4"/><text x="475" y="137" text-anchor="middle">3: A, block 2</text></g>
+    <g class="blk plain" data-block="free"><rect x="400" y="150" width="150" height="26" rx="4"/><text x="475" y="167" text-anchor="middle" class="lbl">4: free</text></g>
+    <g class="blk attn" data-block="otherreq"><rect x="400" y="180" width="150" height="26" rx="4"/><text x="475" y="197" text-anchor="middle">5: (request B)</text></g>
+    <g class="blk plain" data-block="free"><rect x="400" y="210" width="150" height="26" rx="4"/><text x="475" y="227" text-anchor="middle" class="lbl">6: free</text></g>
+    <g class="blk ff" data-block="pb7"><rect x="400" y="240" width="150" height="26" rx="4"/><text x="475" y="257" text-anchor="middle">7: A, block 0</text></g>
+    <path class="wire" d="M350,51 H370 V253 H398" marker-end="url(#arr)"/>
+    <path class="wire" d="M350,105 H380 V73 H398" marker-end="url(#arr)"/>
+    <path class="wire" d="M350,159 H390 V133 H398" marker-end="url(#arr)"/>
+    <text x="275" y="220" text-anchor="middle" class="lbl">block size B = 4 tokens</text>
+    <text x="275" y="236" text-anchor="middle" class="lbl">new blocks are claimed only</text>
+    <text x="275" y="252" text-anchor="middle" class="lbl">when the last one is full</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block: start with <strong>block 0</strong> on the left.</p></div>
+  </div>
+  <figcaption>Logical-to-physical block mapping, redrawn in the style of Kwon et al. (2023), Figure 6, with new example text (the opening of <em>Alice's Adventures in Wonderland</em>, which is in the public domain).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> on the left, request A's cache as the request sees it: three consecutive blocks of 4 tokens each, the last one only a quarter full. In the middle, its block table: each row maps a logical block to a physical block number and records how many of its 4 slots are filled. On the right, GPU memory: A's blocks live at 7, 1 and 3, out of order and interleaved with request B's blocks and free space. Nothing requires them to be adjacent. The only waste is the 3 empty slots at the end of block 3, and no request can ever waste more than one partly filled block.</p>
+<h4>Why it matters</h4>
+<p>Waste per request is bounded by a single block (fewer than B slots), and because every physical block is the same size, there is no external fragmentation at all: any free block fits any request.</p>
+</section>
+
+<section id="sim">
+<h3>Try it: the memory simulator</h3>
+<div class="play" id="mem-play">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Memory policy:</span>
+    <button type="button" data-policy="contig" aria-pressed="true">contiguous, reserve max length</button>
+    <button type="button" data-policy="paged" aria-pressed="false">paged, blocks of 8</button>
+  </div>
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0">
+    <button type="button" id="mem-step">Step</button>
+    <button type="button" id="mem-play-btn">Play</button>
+    <button type="button" id="mem-reset">Reset</button>
+  </div>
+  <svg id="mem-svg" viewBox="0 0 400 210" role="img" aria-label="GPU KV-cache memory: 256 token slots" style="max-width:560px"></svg>
+  <div class="legend"><span><i class="sq" style="background:var(--ff-stroke)"></i>token stored</span><span><i class="sq" style="background:var(--ff);border:1px solid var(--ff-stroke)"></i>reserved or allocated but empty</span><span><i class="sq" style="background:var(--card);border:1px solid var(--border)"></i>free</span></div>
+  <p class="readout" id="mem-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grid is a tiny GPU's KV-cache memory: 256 token slots. Ten requests (illustrative prompt and answer lengths, the same for both policies) arrive in order and each generates one token per step. Solid squares hold real tokens; pale squares are reserved or allocated but empty. Under the <strong>contiguous</strong> policy every request grabs a 64-slot stretch for its maximum length, so only 4 fit at once and most of each stretch stays pale. Under the <strong>paged</strong> policy each request takes 8-slot blocks only as it grows, scattered anywhere, so more requests run side by side and almost nothing is pale. Compare the utilization and the number of steps needed to finish all ten: with this workload the contiguous policy needs 67 steps at about 41% average utilization, while the paged policy runs all ten requests at once and finishes in 40 steps at about 88%, after pausing one request briefly when memory ran out (§4.5).</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Sharing and copy-on-write <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S4.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two students share one photocopied set of lecture notes until one of them wants to scribble in the margin; only then does that student get their own copy of the page they're changing. The paper applies this to requests that produce several answers from the same prompt: they point at the same physical blocks for the shared part, with a <span class="t" data-tip-title="Reference count" data-tip="A counter on each physical block recording how many sequences currently point at it. A block can be freed when its count reaches zero, and must be copied before writing if its count is above one.">reference count</span> on each block, and a block is copied only when one of them needs to write into it (<span class="t" data-tip-title="Copy-on-write" data-tip="Let several users share one copy of some data, and make a private copy only at the moment one of them needs to change it. Borrowed from operating systems, where forked processes share memory this way.">copy-on-write</span>).</p>
+<div class="play" id="cow-play">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem">
+    <button type="button" data-cow="0" aria-pressed="true">1. prompt stored</button>
+    <button type="button" data-cow="1" aria-pressed="false">2. two samples share it</button>
+    <button type="button" data-cow="2" aria-pressed="false">3. sample A writes: copy</button>
+    <button type="button" data-cow="3" aria-pressed="false">4. both keep generating</button>
+  </div>
+  <svg id="cow-svg" viewBox="0 0 520 190" role="img" aria-label="Copy-on-write for two samples sharing a prompt" style="margin-top:.5rem"></svg>
+  <p class="readout" id="cow-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> step through the four stages. The boxes at the bottom are physical blocks, each showing its reference count (how many samples point at it). In stage 2 both samples point at the same two prompt blocks, so each has a count of 2 and nothing is duplicated. In stage 3 sample A needs to add a token to the shared, partly filled last block: that block is copied first, A's pointer moves to the copy, and the original's count drops to 1. The full first block is never copied. In stage 4 each sample grows into its own new blocks.</p>
+<p>The same machinery handles <strong>beam search</strong>, where candidate answers share long histories and branch often, and <strong>shared prefixes</strong>, where many requests start with the same system prompt or few-shot examples. The paper measures memory savings of 6.1% to 9.8% for parallel sampling and 37.6% to 55.2% for beam search on one dataset (up to 66.3% on another).</p>
+<h4>Why it matters today</h4>
+<p>Shared-prefix caching is the server-side cousin of the <span class="t" data-t="prompt caching">prompt caching</span> that API providers offer: keep the processed form of a common prefix and reuse it across requests.</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Scheduling and preemption <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S4.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If the restaurant fills up because groups keep growing, someone has to wait outside. vLLM serves requests first-come-first-served and, when memory runs out, pauses the most recently arrived request. Its blocks are either <strong>swapped</strong> out to the CPU's memory (like moving a group's coats to the cloakroom) or simply thrown away and <strong>recomputed</strong> from the text when the request resumes, which is cheap because the prompt and the tokens so far can be reprocessed in one parallel pass. Because a request needs <em>all</em> its blocks to continue, a paused request's blocks are evicted all together.</p>
+<p>The paper also covers running one model across several GPUs (§4.6), where every GPU shares the same block tables and holds its slice of each block.</p>
+</section>
+</section>
+
+<section id="s6">
+<h2>6 Evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S6">original</a></span></h2>
+<h4>Everyday picture</h4>
+<p>The test: serve realistic streams of chat and instruction requests and see how many requests per second each system can sustain before response times blow up.</p>
+<div class="tablewrap"><table>
+  <caption>Table 1, reproduced with attribution (Kwon et al., 2023, CC BY 4.0): model sizes and server configurations</caption>
+  <thead><tr><th>Model size</th><th class="num">13B</th><th class="num">66B</th><th class="num">175B</th></tr></thead>
+  <tbody>
+    <tr><td>GPUs</td><td class="num">A100</td><td class="num">4 × A100</td><td class="num">8 × A100-80GB</td></tr>
+    <tr><td>Total GPU memory</td><td class="num">40 GB</td><td class="num">160 GB</td><td class="num">640 GB</td></tr>
+    <tr><td>Parameter size</td><td class="num">26 GB</td><td class="num">132 GB</td><td class="num">346 GB</td></tr>
+    <tr><td>Memory for KV cache</td><td class="num">12 GB</td><td class="num">21 GB</td><td class="num">264 GB</td></tr>
+    <tr class="hl"><td>Max. # KV cache slots</td><td class="num">15.7K</td><td class="num">9.7K</td><td class="num">60.1K</td></tr>
+  </tbody>
+</table></div>
+<p><strong>Check the 13B column yourself:</strong> 12 GB (12 × 2<sup>30</sup> bytes) divided by 800 KB per token is about 15,700 tokens: the whole server can hold only about seven or eight maximum-length requests at a time, which is why wasting that space hurts so much.</p>
+<p>The headline results, restated: on the ShareGPT chat workload vLLM sustains 1.7 to 2.7 times the request rate of the best configuration of Orca (a strong earlier system), 2.7 to 8 times that of Orca's standard configuration, and up to 22 times that of FasterTransformer, at similar latency. For OPT-13B it keeps 2.2 times as many requests in flight as the best Orca configuration. With a shared few-shot prefix, throughput rises to 1.67 times (one example) and 3.58 times (five examples) that of Orca.</p>
+<h4>Why it matters today</h4>
+<p>These gains come from memory management alone, with the model and its outputs unchanged. Cheaper serving is what makes large models affordable to use at scale.</p>
+</section>
+
+<section id="s7">
+<h2>7.2 Choosing the block size <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S7.SS2">original</a></span></h2>
+<blockquote class="quote">“In practice, we find that the block size 16 is large enough to efficiently utilize the GPU and small enough to avoid significant internal fragmentation in most workloads.”<cite>Kwon et al. (2023), §7.2</cite></blockquote>
+<p><strong>Everyday picture:</strong> tables that are too small make the waiters run back and forth; tables that are too big leave empty seats. Small blocks waste less memory but give the GPU kernel less to do per fetch; big blocks are efficient to read but waste more space at the end of each request and are less likely to be shareable. vLLM's default is 16 tokens per block.</p>
+</section>
+
+<section id="s8">
+<h2>8 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S8">original</a></span></h2>
+<p>The authors note when the idea does <em>not</em> apply: paging pays off because LLM serving allocates memory dynamically (unknown output lengths) and is limited by memory capacity. Training, with its fixed tensor shapes, and serving small models that are limited by compute, would gain little and pay the overhead of looking up scattered blocks.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>Why it matters</th></tr></thead>
+  <tbody>
+    <tr><td>vLLM, open source at <a href="https://github.com/vllm-project/vllm">github.com/vllm-project/vllm</a>, became a widely used serving engine</td><td>Paged KV caching is available to anyone serving an open model</td></tr>
+    <tr><td>Automatic prefix caching across requests</td><td>Block-level sharing extends naturally to reusing any repeated prefix, the server-side form of <span class="t" data-t="prompt caching">prompt caching</span></td></tr>
+    <tr><td>Combined with other serving techniques</td><td>Paged memory sits alongside <span class="t" data-t="continuous batching">continuous batching</span>, <a href="speculative-decoding.html">speculative decoding</a>, <span class="t" data-t="quantization">quantization</span> and <a href="flashattention.html">FlashAttention</a>-style kernels in modern servers</td></tr>
+  </tbody>
+</table></div>
+<p>The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> simulates continuous batching and computes KV-cache sizes from scratch.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang and Ion Stoica, <em>Efficient Memory Management for Large Language Model Serving with PagedAttention</em>, SOSP 2023. <a href="https://arxiv.org/abs/2309.06180">arXiv:2309.06180</a>, released under CC BY 4.0. Quotations are brief and attributed; Table 1 is reproduced with attribution; figures are redrawn with new example text. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    two: { tex: "2", name: "Key and value", meaning: "Each token stores two vectors per layer: its key and its value.", shape: "a constant", example: "2" },
+    hidden: { tex: "h", name: "Hidden size", meaning: "The width of the model's vectors (all attention heads together).", shape: "a whole number", example: "5,120 for OPT-13B" },
+    layers: { tex: "L", name: "Number of layers", meaning: "Every layer keeps its own keys and values for every token.", shape: "a whole number", example: "40 for OPT-13B" },
+    bytes: { tex: "b", name: "Bytes per number", meaning: "Storage for one number: 2 bytes in 16-bit precision.", shape: "bytes", example: "2 (FP16)" },
+    Aij: { tex: "A_{ij}", name: "Attention shares on block j", meaning: "The softmax weights that query i gives to the tokens stored in block j.", shape: "B numbers", example: "shares for tokens 17 to 32 when j = 2" },
+    qi: { tex: "q_i", name: "Query of token i", meaning: "The query vector of the token currently being generated.", shape: "d numbers", example: "the query for token 40" },
+    Kj: { tex: "K_j", name: "Keys in block j", meaning: "The B key vectors stored together in one block, wherever that block physically lives.", shape: "d × B", example: "keys of tokens 17 to 32 for B = 16" },
+    Kt: { tex: "K_t \\mathbf{1}", name: "Keys in block t, summed over the block", meaning: "The bold 1 is a column of ones: the denominator adds up the exponentiated scores of every key in every block t.", shape: "one number per block", example: "blocks 1, 2 and 3" },
+    sumt: { tex: "\\sum_{t=1}^{\\lceil i/B \\rceil}", name: "Sum over the blocks so far", meaning: "Visit every block that holds tokens up to position i. The ceiling brackets round up, so a partly filled last block counts.", shape: "one number", example: "⌈40 / 16⌉ = 3 blocks" },
+    oi: { tex: "o_i", name: "Attention output for token i", meaning: "The blend of all earlier values, weighted by the shares. Identical to ordinary attention.", shape: "d numbers", example: "the output for token 40" },
+    sumj: { tex: "\\sum_{j=1}^{\\lceil i/B \\rceil}", name: "Sum over blocks", meaning: "Add each block's weighted values.", shape: "d numbers", example: "3 blocks for token 40" },
+    Vj: { tex: "V_j", name: "Values in block j", meaning: "The B value vectors stored in block j.", shape: "d × B", example: "values of tokens 17 to 32" },
+    Bblk: { tex: "B", name: "Block size", meaning: "How many tokens' keys and values one block holds. vLLM's default is 16.", shape: "a whole number", example: "16 (4 in the figure, 8 in the simulator)" },
+  },
+
+  blocks: {
+    lb0: { title: "Logical block 0", body: "<p>The first 4 tokens of request A, as the request sees them: “Alice was beginning to”. Full (4 of 4 slots).</p>", shape: "4 tokens × (key + value) × every layer" },
+    lb1: { title: "Logical block 1", body: "<p>The next 4 tokens. Logically it follows block 0; physically it can be anywhere.</p>", shape: "4 tokens" },
+    lb2: { title: "Logical block 2", body: "<p>The block currently being filled: 1 of 4 slots used. The next generated token goes into its second slot; only when all 4 are full does the request claim a new physical block.</p>", shape: "1 of 4 slots used" },
+    table: { title: "Block table", body: "<p>One small table per request. Each row: logical block number → physical block number, plus how many slots are filled. The PagedAttention kernel reads this table to find the keys and values it needs.</p>", lesson: "primer/ml/inference.html" },
+    pb1: { title: "Physical block 1", body: "<p>Holds request A's logical block 1. Its position in memory is irrelevant; only the block table knows it belongs to A.</p>" },
+    pb3: { title: "Physical block 3", body: "<p>Holds request A's partly filled logical block 2. Its 3 empty slots are the only memory A wastes.</p>" },
+    pb7: { title: "Physical block 7", body: "<p>Holds request A's logical block 0. The first block of a request can be anywhere, even after later ones.</p>" },
+    otherreq: { title: "Another request's block", body: "<p>Request B's blocks are interleaved with A's. Neither request's layout constrains the other.</p>" },
+    free: { title: "Free block", body: "<p>Unused. Because every block is the same size, any free block can serve any request: there is no external fragmentation.</p>" },
+  },
+
+  onReady() {
+    memorySim();
+    copyOnWrite();
+  },
+};
+
+/* ---- memory simulator: 256 slots, 10 requests, contiguous reservation vs paging ---- */
+function memorySim() {
+  const NS = "http://www.w3.org/2000/svg";
+  const SLOTS = 256, COLS = 32, MAXLEN = 64, BLOCK = 8;
+  // Illustrative workload: [prompt tokens, answer tokens], identical for both policies.
+  const WORK = [[12, 20], [5, 40], [20, 10], [8, 30], [15, 25], [6, 12], [25, 20], [10, 35], [4, 18], [18, 22]];
+  const svg = document.getElementById("mem-svg"), out = document.getElementById("mem-readout");
+  let policy = "contig", S, timer = null;
+
+  function reset() {
+    S = { t: 0, queue: WORK.map((w, i) => ({ id: i, prompt: w[0], answer: w[1], generated: 0, len: 0, slots: [] })), running: [], done: 0, owner: new Array(SLOTS).fill(-1), used: new Array(SLOTS).fill(false), utilSum: 0, utilN: 0, peak: 0, preempt: 0 };
+  }
+  const freeSlots = () => S.owner.reduce((n, o) => n + (o === -1 ? 1 : 0), 0);
+  function claimContig(r) {
+    for (let start = 0; start + MAXLEN <= SLOTS; start += MAXLEN) {
+      let ok = true; for (let k = 0; k < MAXLEN; k++) if (S.owner[start + k] !== -1) { ok = false; break; }
+      if (ok) { r.slots = []; for (let k = 0; k < MAXLEN; k++) { S.owner[start + k] = r.id; r.slots.push(start + k); } return true; }
+    }
+    return false;
+  }
+  // Paged: blocks are handed out from a shuffled free list so a request's blocks end up scattered.
+  const ORDER = [3, 17, 8, 25, 12, 0, 30, 21, 5, 14, 27, 9, 19, 2, 23, 11, 29, 6, 16, 31, 1, 24, 10, 18, 7, 28, 13, 22, 4, 26, 15, 20];
+  function claimBlock(r) {
+    for (const b of ORDER) {
+      if (S.owner[b * BLOCK] === -1) { for (let k = 0; k < BLOCK; k++) { S.owner[b * BLOCK + k] = r.id; r.slots.push(b * BLOCK + k); } return true; }
+    }
+    return false;
+  }
+  function release(r) { r.slots.forEach((s) => { S.owner[s] = -1; S.used[s] = false; }); r.slots = []; }
+  function store(r) { S.used[r.slots[r.len]] = true; r.len++; }
+  function admit() {
+    while (S.queue.length) {
+      const r = S.queue[0];
+      if (policy === "contig") { if (!claimContig(r)) break; }
+      else {
+        // A resumed request recomputes its prompt and the tokens it had already generated.
+        const need = Math.ceil((r.prompt + r.generated + 1) / BLOCK);
+        if (freeSlots() / BLOCK < need) break;
+        for (let k = 0; k < need; k++) claimBlock(r);
+      }
+      S.queue.shift();
+      r.len = 0;
+      // The prompt phase writes every prompt token (and, after a preemption, every token generated so far) at once.
+      for (let k = 0; k < r.prompt + r.generated; k++) store(r);
+      S.running.push(r);
+    }
+  }
+  function step() {
+    if (S.done === WORK.length) return false;
+    S.t++;
+    admit();
+    for (const r of [...S.running]) {
+      if (!S.running.includes(r)) continue; // preempted earlier in this step
+      if (policy === "paged" && r.len === r.slots.length && !claimBlock(r)) {
+        // Out of blocks: preempt the most recently admitted request (all-or-nothing) and recompute it later.
+        const victim = S.running[S.running.length - 1];
+        release(victim); S.running.pop(); victim.len = 0; S.queue.unshift(victim); S.preempt++;
+        if (victim === r) continue;
+        if (!claimBlock(r)) continue;
+      }
+      store(r); r.generated++;
+      if (r.generated >= r.answer) { release(r); S.running.splice(S.running.indexOf(r), 1); S.done++; }
+    }
+    const taken = SLOTS - freeSlots(), stored = S.used.filter(Boolean).length;
+    if (taken) { S.utilSum += stored / taken; S.utilN++; }
+    S.peak = Math.max(S.peak, S.running.length);
+    return true;
+  }
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  function draw() {
+    svg.textContent = "";
+    const size = 400 / COLS;
+    for (let s = 0; s < SLOTS; s++) {
+      const x = (s % COLS) * size, y = Math.floor(s / COLS) * size * 1.6 + 2;
+      const fill = S.used[s] ? "var(--ff-stroke)" : S.owner[s] !== -1 ? "var(--ff)" : "var(--card)";
+      svg.appendChild(el("rect", { x: x + 0.6, y, width: size - 1.2, height: size * 1.4, rx: 1.5, fill, stroke: S.owner[s] !== -1 ? "var(--ff-stroke)" : "var(--border)", "stroke-width": 0.6 }));
+    }
+    for (let row = 1; row < SLOTS / COLS; row++) if (policy === "contig" && row % 2 === 0) svg.appendChild(el("line", { x1: 0, x2: 400, y1: row * size * 1.6, y2: row * size * 1.6, stroke: "var(--wire)", "stroke-dasharray": "3 3" }));
+    const taken = SLOTS - freeSlots(), stored = S.used.filter(Boolean).length;
+    const util = taken ? (100 * stored) / taken : 0;
+    out.innerHTML = `Step <strong>${S.t}</strong> · running <strong>${S.running.length}</strong> · waiting ${S.queue.length} · finished <strong>${S.done}</strong> of ${WORK.length} · ` +
+      `memory held ${taken} slots, of which ${stored} hold real tokens (<strong>${util.toFixed(0)}%</strong> utilization)` +
+      (S.done === WORK.length ? ` · <strong>all done in ${S.t} steps</strong>, average utilization ${(100 * S.utilSum / Math.max(1, S.utilN)).toFixed(0)}%, at most ${S.peak} requests at once${policy === "paged" ? `, ${S.preempt} preemption${S.preempt === 1 ? "" : "s"}` : ""}.` : ".");
+  }
+  const stop = () => { clearInterval(timer); timer = null; document.getElementById("mem-play-btn").textContent = "Play"; };
+  document.getElementById("mem-step").addEventListener("click", () => { stop(); step(); draw(); });
+  document.getElementById("mem-reset").addEventListener("click", () => { stop(); reset(); draw(); });
+  document.getElementById("mem-play-btn").addEventListener("click", (e) => {
+    if (timer) { stop(); return; }
+    if (S.done === WORK.length) reset();
+    e.target.textContent = "Pause";
+    timer = setInterval(() => { if (!step()) stop(); draw(); }, 90);
+  });
+  document.querySelectorAll("[data-policy]").forEach((b) => b.addEventListener("click", () => {
+    stop(); policy = b.dataset.policy;
+    document.querySelectorAll("[data-policy]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    reset(); draw();
+  }));
+  reset(); draw();
+}
+
+/* ---- copy-on-write in four stages ---- */
+function copyOnWrite() {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("cow-svg"), out = document.getElementById("cow-readout");
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
+  // Physical blocks: [label, refcount-by-stage, x]
+  const STAGES = [
+    { seqs: [["prompt", [0, 1]]], blocks: [["P0: Once upon a", 1], ["P1: time", 1]], text: "The prompt “Once upon a time” is stored in two physical blocks (block size 4). The second is only a quarter full." },
+    { seqs: [["sample A", [0, 1]], ["sample B", [0, 1]]], blocks: [["P0: Once upon a", 2], ["P1: time", 2]], text: "Two samples are requested from the same prompt. Both block tables point at the same physical blocks, so each block's reference count is 2 and no memory is duplicated." },
+    { seqs: [["sample A", [0, 2]], ["sample B", [0, 1]]], blocks: [["P0: Once upon a", 2], ["P1: time", 1], ["P2: time there", 1]], text: "Sample A generates “there” and must write into the shared, partly filled block P1. Its count is 2, so vLLM first copies it to P2, points A at the copy, and writes there. P1's count drops to 1. P0 stays shared." },
+    { seqs: [["sample A", [0, 2, 4]], ["sample B", [0, 1]]], blocks: [["P0: Once upon a", 2], ["P1: time lived", 1], ["P2: time there was", 1], ["P3: ", 0], ["P4: a", 1]], text: "Sample B now writes “lived” straight into P1 (it owns it alone, no copy needed). Sample A fills P2 and claims a fresh block P4 when P2 is full. The shared first block was never copied." },
+  ];
+  function draw(i) {
+    const st = STAGES[i];
+    svg.textContent = "";
+    const bx = (k) => 10 + k * 102;
+    st.blocks.forEach(([label, rc], k) => {
+      if (rc === 0) return;
+      svg.appendChild(el("rect", { x: bx(k), y: 120, width: 96, height: 44, rx: 6, fill: rc > 1 ? "var(--soft)" : "var(--ff)", stroke: rc > 1 ? "var(--soft-stroke)" : "var(--ff-stroke)" }));
+      svg.appendChild(el("text", { x: bx(k) + 48, y: 139, "text-anchor": "middle" }, `${label.split(":")[0]} · refs ${rc}`));
+      svg.appendChild(el("text", { x: bx(k) + 48, y: 155, "text-anchor": "middle", class: "lbl" }, label.split(": ")[1] || ""));
+    });
+    st.seqs.forEach(([name, targets], s) => {
+      const sx = 60 + s * 240;
+      svg.appendChild(el("rect", { x: sx, y: 10, width: 150, height: 32, rx: 6, fill: "var(--card)", stroke: "var(--wire)" }));
+      svg.appendChild(el("text", { x: sx + 75, y: 31, "text-anchor": "middle" }, name));
+      targets.forEach((k) => svg.appendChild(el("line", { x1: sx + 75, y1: 42, x2: bx(k) + 48, y2: 118, stroke: s ? "var(--attn-stroke)" : "var(--ff-stroke)", "stroke-width": 1.6 })));
+    });
+    out.textContent = st.text;
+    document.querySelectorAll("[data-cow]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.cow === i)));
+  }
+  document.querySelectorAll("[data-cow]").forEach((b) => b.addEventListener("click", () => draw(+b.dataset.cow)));
+  draw(0);
+}
+</script>
+</body>
+</html>

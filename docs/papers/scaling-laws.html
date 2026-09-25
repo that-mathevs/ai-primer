@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scaling Laws and Chinchilla, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Kaplan et al. (2020), Scaling Laws for Neural Language Models, and Hoffmann et al. (2022), Training Compute-Optimal Large Language Models (Chinchilla).">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="scaling-laws">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#big">The question both papers answer</a></li>
+      <li><a href="#k">Part I: Kaplan et al. (2020)</a>
+        <ol>
+          <li><a href="#k-abs">Abstract</a></li>
+          <li><a href="#k-1-1">1.1 Scale, not shape</a></li>
+          <li><a href="#k-1-2">1.2 Three power laws</a></li>
+          <li><a href="#k-1-3">1.3 and 2.1 Counting N and C</a></li>
+          <li><a href="#k-4">4 Overfitting: L(N, D)</a></li>
+          <li><a href="#k-6">6 Spending a compute budget</a></li>
+        </ol>
+      </li>
+      <li><a href="#h">Part II: Hoffmann et al. (2022)</a>
+        <ol>
+          <li><a href="#h-abs">Abstract</a></li>
+          <li><a href="#h-2">2 Where Kaplan went wrong</a></li>
+          <li><a href="#h-3">3 Three approaches</a></li>
+          <li><a href="#h-3-3">3.3 The fitted loss</a></li>
+          <li><a href="#h-3-4">3.4 The answer: scale both equally</a></li>
+          <li><a href="#h-4">4 Chinchilla against Gopher</a></li>
+          <li><a href="#h-5">5 Discussion</a></li>
+        </ol>
+      </li>
+      <li><a href="#try">Try it: split a budget</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · primer</div>
+  <h1>Scaling laws and Chinchilla, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to two papers read together: Kaplan, McCandlish, Henighan, Brown, Chess, Child, Gray, Radford, Wu and Amodei (2020), <em>Scaling Laws for Neural Language Models</em>, and Hoffmann, Borgeaud, Mensch and 19 co-authors (2022), <em>Training Compute-Optimal Large Language Models</em>, the “Chinchilla” paper that corrected it.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2001.08361">Kaplan et al. on arXiv</a>
+    <a class="btn" href="https://arxiv.org/abs/2203.15556">Hoffmann et al. on arXiv</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2001.08361">Kaplan as HTML</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2203.15556">Hoffmann as HTML</a>
+    <button type="button" id="themeBtn" aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It walks both papers section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. Both papers are distributed under arXiv's standard licence, so no figure is copied: every chart here is computed live in your browser from the fitted equations the papers publish, and the few result numbers quoted appear in new tables with attribution. Every section heading links to the original.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap, and so does every symbol in every equation.</li>
+  <li>The two papers disagree, so read Part I as “the first answer” and Part II as “the corrected answer”. The budget-splitting tool at the end puts their advice side by side.</li>
+</ul>
+<p>Every idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram or chart</strong>, <strong>the math</strong>, <strong>why it matters today</strong>. The training pipeline these laws plan is described in <a class="lesson" data-lesson="primer/ml/training_stages.html">the training stages lesson</a>.</p>
+</section>
+
+<section id="big">
+<h2>The question both papers answer</h2>
+<h4>Everyday picture</h4>
+<p>You have a fixed budget for building a library of knowledge in someone's head. You can hire a bigger brain (more <span class="t" data-t="parameters">parameters</span>, N) or buy more books for it to read (more training <span class="t" data-t="token">tokens</span>, D). A bigger brain costs more per book read, so with a fixed budget, every extra neuron means fewer books. What is the best split?</p>
+<h4>Tiny example</h4>
+<p>Training cost is roughly 6 × N × D operations (six per parameter per token). So a budget of 6 × 10<sup>21</sup> operations buys a 1-billion-parameter model reading 1 trillion tokens, <em>or</em> a 10-billion-parameter model reading 100 billion tokens, <em>or</em> a 100-billion-parameter model reading only 10 billion. Same bill, very different models. Which one ends up smartest?</p>
+<div class="eq" data-tex="\htmlData{sym=C}{C} \approx 6\, \htmlData{sym=N}{N}\, \htmlData{sym=D}{D}" data-fallback="C ≈ 6 N D"></div>
+<div class="symtable" data-syms="C,N,D"></div>
+<p class="inwords"><strong>In words:</strong> “training compute is about six operations for every parameter, for every token read.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 6 × 10<sup>9</sup> × 10<sup>12</sup> = 6 × 10<sup>21</sup>, and 6 × 10<sup>10</sup> × 10<sup>11</sup> is the same 6 × 10<sup>21</sup>.</p>
+<h4>Why it matters</h4>
+<p>Training runs cost millions of dollars and happen once. Getting this split wrong wastes most of the budget, and the two papers gave very different answers: Kaplan's said “mostly spend it on size”, Chinchilla's said “split it evenly”.</p>
+</section>
+
+<!-- =========================== PART I =========================== -->
+<section id="k">
+<h2>Part I: Kaplan et al. (2020), <em>Scaling Laws for Neural Language Models</em></h2>
+
+<section id="k-abs">
+<h3>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2001.08361">original</a></span></h3>
+<blockquote class="quote">“The loss scales as a power-law with model size, dataset size, and the amount of compute used for training, with some trends spanning more than seven orders of magnitude.”<cite>Kaplan et al. (2020), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Children's height follows growth charts: predictable curves, not surprises. This paper found that a language model's <span class="t" data-t="loss">loss</span> (how wrong its next-word guesses are, measured with <span class="t" data-t="cross-entropy">cross-entropy</span>) follows equally predictable curves as you add parameters, data or compute. That makes it possible to forecast how good a giant model will be from a handful of small experiments.</p>
+<h4>Why it matters today</h4>
+<p>This is the paper that made “just scale it up” a plan instead of a hope. It directly shaped how large GPT-3 was made (the <a href="gpt-3.html">GPT-3 companion</a> shares authors with it).</p>
+</section>
+
+<section id="k-1-1">
+<h3>1.1 Scale, not shape <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2001.08361#S1.SS1">original</a></span></h3>
+<blockquote class="quote">“Within reasonable limits, performance depends very weakly on other architectural hyperparameters such as depth vs. width.”<cite>Kaplan et al. (2020), §1.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>For a cake, the amount of flour matters far more than the shape of the tin. The paper finds that for a <span class="t" data-t="transformer">Transformer</span>, how many parameters it has matters far more than how they are arranged: many thin layers or fewer wide ones, many attention heads or few, all land close to the same loss for the same total size.</p>
+<p>Its other headline findings, each explained below: <strong>smooth power laws</strong> in N, D and compute; <strong>overfitting is predictable</strong> from the ratio of model size to data; and <strong>bigger models learn more per example</strong>, reaching the same loss after reading fewer tokens.</p>
+</section>
+
+<section id="k-1-2">
+<h3>1.2 Three power laws <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2001.08361#S1.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A power law is a rule of the form “every time you double X, Y shrinks by the same percentage”. Double the model and the loss drops by about 5%, double it again and it drops another 5%. Each doubling helps a bit less in absolute terms, but it never stops helping, at least over the range they tested.</p>
+<h4>Tiny example</h4>
+<p>With the paper's fitted constants, a 100-million-parameter model (trained to convergence on plenty of data) has a predicted loss of 2.83; 1 billion parameters gives 2.38; 10 billion gives 1.99. Each 10× in size multiplies the loss by about 0.84.</p>
+<div class="eq" data-tex="\htmlData{sym=LN}{L(N)} = \left(\frac{\htmlData{sym=Nc}{N_c}}{\htmlData{sym=N}{N}}\right)^{\htmlData{sym=aN}{\alpha_N}}, \quad \htmlData{sym=LD}{L(D)} = \left(\frac{\htmlData{sym=Dc}{D_c}}{\htmlData{sym=D}{D}}\right)^{\htmlData{sym=aD}{\alpha_D}}, \quad \htmlData{sym=LC}{L(C_{\min})} = \left(\frac{\htmlData{sym=Cc}{C_c}}{\htmlData{sym=Cmin}{C_{\min}}}\right)^{\htmlData{sym=aC}{\alpha_C}}" data-fallback="L(N) = (N_c/N)^α_N,  L(D) = (D_c/D)^α_D,  L(C_min) = (C_c/C_min)^α_C"></div>
+<div class="symtable" data-syms="LN,Nc,aN,LD,Dc,aD,LC,Cc,Cmin,aC"></div>
+<p class="inwords"><strong>In words:</strong> “when only one resource is holding the model back, loss is a fixed constant divided by that resource, raised to a small power.”</p>
+<p class="inwords"><strong>With the numbers:</strong> L(10<sup>9</sup>) = (8.8 × 10<sup>13</sup> / 10<sup>9</sup>)<sup>0.076</sup> = 88,000<sup>0.076</sup> = <strong>2.38</strong> nats. Doubling N multiplies the loss by 2<sup>−0.076</sup> = <strong>0.95</strong>. For data: L(10<sup>10</sup> tokens) = 5,400<sup>0.095</sup> = <strong>2.26</strong>.</p>
+<div class="plot" id="pl-plot">
+  <div class="controls"><label for="pl-n">model size N = <strong id="pl-nv"></strong></label><input type="range" id="pl-n" min="6" max="12" step="0.05" value="9"></div>
+  <div id="pl-chart"></div>
+  <p class="readout" id="pl-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is model size on a log scale, from a million to a trillion parameters; the y-axis is the predicted loss from the L(N) law, computed live from the paper's constants. Drag the slider to move the marker and read the loss. Notice there is no cliff and no plateau anywhere in the range: each tenfold increase buys a similar-looking step down. The authors stress that the curve must flatten eventually, since text is never perfectly predictable, but they saw no sign of it at the scales they tested.</p>
+<h4>Why it matters today</h4>
+<p>The shape of these curves is why labs could justify bigger and bigger training runs: the next model's quality was forecastable. The exact constants depend on the dataset and <span class="t" data-t="tokenizer">tokenizer</span>, but the power-law shape has held up widely.</p>
+</section>
+
+<section id="k-1-3">
+<h3>1.3 and 2.1 Counting N and C <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2001.08361#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To compare models fairly you need a common currency. The paper counts only the parameters doing the real work (excluding the embedding table) and measures compute in <span class="t" data-tip-title="Petaflop/s-day" data-tip="The work done by a computer performing 10^15 operations per second for a full day: 10^15 × 24 × 3600 = 8.64 × 10^19 operations. A convenient unit for training budgets.">petaflop/s-days</span>.</p>
+<div class="eq" data-tex="\htmlData{sym=N}{N} \approx 12\, \htmlData{sym=nlayer}{n_{\text{layer}}}\, \htmlData{sym=dmodel}{d_{\text{model}}}^{2}, \qquad \htmlData{sym=C}{C} \approx 6\, \htmlData{sym=N}{N}\, \htmlData{sym=Bsz}{B}\, \htmlData{sym=Ssteps}{S}" data-fallback="N ≈ 12 n_layer d_model²,  C ≈ 6 N B S"></div>
+<div class="symtable" data-syms="nlayer,dmodel,Bsz,Ssteps"></div>
+<p class="inwords"><strong>In words:</strong> “a standard Transformer block holds about twelve times its width squared in parameters; training compute is six operations per parameter per token, and the tokens are the batch size times the number of steps.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a 24-layer model of width 1,024 has about 12 × 24 × 1,024<sup>2</sup> ≈ 302 million non-embedding parameters. Training it for 100,000 steps at 500,000 tokens per batch (50 billion tokens) costs about 6 × 3.02 × 10<sup>8</sup> × 5 × 10<sup>10</sup> ≈ 9.1 × 10<sup>19</sup> operations, about 1 petaflop/s-day.</p>
+<p>The 12 comes from four d × d attention matrices (query, key, value, output) plus a feed-forward network that widens to 4d and back (8d<sup>2</sup>). The 6 comes from about 2 operations per parameter per token going forward and about 4 going backward. The <a class="lesson" data-lesson="primer/ml/transformer.html">transformer lesson</a> counts both exactly.</p>
+</section>
+
+<section id="k-4">
+<h3>4 Overfitting: L(N, D) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2001.08361#S4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A big brain with too few books starts memorizing the books instead of learning the subject: <span class="t" data-t="overfitting">overfitting</span>. The paper finds a single formula for both limits at once, and a rule for how much more reading a bigger brain needs.</p>
+<div class="eq" data-tex="\htmlData{sym=LND}{L(N, D)} = \left[ \left( \frac{\htmlData{sym=Nc}{N_c}}{\htmlData{sym=N}{N}} \right)^{\htmlData{sym=ratio}{\alpha_N / \alpha_D}} + \frac{\htmlData{sym=Dc}{D_c}}{\htmlData{sym=D}{D}} \right]^{\htmlData{sym=aD}{\alpha_D}}" data-fallback="L(N, D) = [ (N_c/N)^(α_N/α_D) + D_c/D ]^α_D"></div>
+<div class="symtable" data-syms="LND,ratio"></div>
+<p class="inwords"><strong>In words:</strong> “add a term for being too small and a term for having too little data, then apply the same small power to the total; whichever term is larger dominates the loss.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the overfitting penalty depends on N<sup>0.74</sup>/D, so making the model 8 times larger needs 8<sup>0.74</sup> ≈ <strong>4.7</strong> times more data to keep the penalty the same: the paper's “8× the model, about 5× the data”.</p>
+<h4>Why it matters</h4>
+<p>This rule says data needs grow <em>more slowly</em> than model size. That conclusion is exactly what Part II overturns.</p>
+</section>
+
+<section id="k-6">
+<h3>6 Spending a compute budget <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2001.08361#S6.SS1">original</a></span></h3>
+<blockquote class="quote">“Larger models are significantly more sample-efficient, such that optimally compute-efficient training involves training very large models on a relatively modest amount of data and stopping significantly before convergence.”<cite>Kaplan et al. (2020), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Kaplan's advice: when the budget grows, spend almost all of it on a bigger brain, add a little more reading, and don't bother finishing the book; stop training long before the model has squeezed everything out of its data.</p>
+<div class="eq" data-tex="\htmlData{sym=Nopt}{N_{\text{opt}}} \propto \htmlData{sym=Cmin}{C_{\min}}^{\htmlData{sym=k73}{0.73}}, \qquad \htmlData{sym=Bcrit}{B} \propto \htmlData{sym=Cmin}{C_{\min}}^{0.24}, \qquad \htmlData{sym=Smin}{S} \propto \htmlData{sym=Cmin}{C_{\min}}^{0.03}" data-fallback="N_opt ∝ C_min^0.73,  B ∝ C_min^0.24,  S ∝ C_min^0.03"></div>
+<div class="symtable" data-syms="Nopt,prop,k73,Bcrit,Smin"></div>
+<p class="inwords"><strong>In words:</strong> “as compute grows, the best model size grows almost as fast as compute itself; the batch grows a bit; the number of training steps barely grows at all.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 10× more compute means 10<sup>0.73</sup> ≈ <strong>5.4×</strong> bigger model, and since C ≈ 6ND the data only grows by 10 / 5.4 ≈ <strong>1.9×</strong>. The paper's own fitted rule is N<sub>opt</sub> ≈ 1.3 × 10<sup>9</sup> × C<sup>0.73</sup> parameters, with C in petaflop/s-days.</p>
+<p>§6.3 then notices a paradox: extrapolated far enough, this recipe predicts a loss lower than the data-limited law allows, so the laws must break somewhere. The authors guess that point is where Transformers hit their ceiling.</p>
+<h4>Why it matters today</h4>
+<p>This advice explains the models of 2020 and 2021: GPT-3 (175B parameters on 300B tokens), Gopher (280B on 300B), Megatron-Turing NLG (530B on about 300B). All huge, all trained on roughly the same amount of text. Part II shows that was the wrong way round.</p>
+</section>
+</section>
+
+<!-- =========================== PART II =========================== -->
+<section id="h">
+<h2>Part II: Hoffmann et al. (2022), <em>Training Compute-Optimal Large Language Models</em></h2>
+
+<section id="h-abs">
+<h3>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.15556">original</a></span></h3>
+<blockquote class="quote">“We find that current large language models are significantly undertrained, a consequence of the recent focus on scaling language models whilst keeping the amount of training data constant.”<cite>Hoffmann et al. (2022), Abstract</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The field had been building ever bigger brains and giving each the same stack of books. DeepMind trained over 400 models, from 70 million to 16 billion parameters on 5 to 500 billion tokens, and found the stack of books should grow as fast as the brain. To prove it, they trained <strong>Chinchilla</strong>: 4 times smaller than their own Gopher, fed 4 times more data, same compute bill. Chinchilla won almost everywhere.</p>
+</section>
+
+<section id="h-2">
+<h3>2 Where Kaplan went wrong <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.15556#S2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Imagine judging runners by timing everyone at the 5 km mark of a race, even the ones who paced themselves for 10 km. The 10 km runners look slow at 5 km, not because they are slow but because they were pacing for a longer race. Kaplan et al. used one fixed <span class="t" data-t="learning-rate schedule">learning-rate schedule</span> for all runs and read off losses part-way through training, so shorter training looked worse than it really is.</p>
+<p>Hoffmann et al. instead set each run's <span class="t" data-t="cosine decay">cosine decay</span> to finish exactly when that run's data ran out. With every run properly paced, training on more data turned out to be worth much more than Kaplan's fits suggested.</p>
+<h4>Why it matters</h4>
+<p>It is a lesson far beyond this paper: an experimental design choice that looks like a detail (the learning-rate schedule) quietly changed the conclusion that guided billions of dollars of training. The <a class="lesson" data-lesson="primer/ml/optimizers.html">optimizers lesson</a> shows what warmup and cosine decay do.</p>
+</section>
+
+<section id="h-3">
+<h3>3 Three approaches, one answer <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.15556#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To be sure of a surprising answer, measure it three different ways. <strong>Approach 1</strong> trains models of fixed sizes for four different lengths and, for every compute budget, keeps whichever run reached the lowest loss. <strong>Approach 2</strong> fixes nine compute budgets and, for each, trains a range of model sizes (so bigger models read fewer tokens) to find the sweet spot: an “<span class="t" data-tip-title="IsoFLOP profile" data-tip="A curve of final loss against model size, where every point on the curve used the same total training compute (so bigger models read fewer tokens). Its lowest point is the best model size for that budget.">IsoFLOP</span>” profile. <strong>Approach 3</strong> fits one formula to every run and solves it with algebra.</p>
+<div class="plot" id="iso-plot">
+  <div id="iso-chart"></div>
+  <p class="readout" id="iso-readout">Hover or tap to read the predicted loss at each model size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each curve is one fixed compute budget, drawn from the paper's fitted loss formula (§3.3) with D = C / (6N). Moving right along a curve means a bigger model that, to stay on budget, reads fewer tokens. Every curve is a valley: too small a model can't learn enough, too big a model doesn't get to read enough. The bottom of each valley is the compute-optimal size, and as the budget grows (lower curves) the bottom moves right, but only about 3× per 10× of compute. These are predictions from the fit, not the paper's measured runs.</p>
+</section>
+
+<section id="h-3-3">
+<h3>3.3 The fitted loss <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.15556#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Split the model's error into three bills. One is unavoidable: language is partly unpredictable, and even a perfect model pays it. One is the penalty for a small brain. One is the penalty for too little reading. Shrink the second by growing N, shrink the third by growing D.</p>
+<div class="eq" data-tex="\htmlData{sym=Lhat}{\hat{L}(N, D)} = \htmlData{sym=E}{E} + \frac{\htmlData{sym=A}{A}}{\htmlData{sym=N}{N}^{\htmlData{sym=alpha}{\alpha}}} + \frac{\htmlData{sym=B}{B}}{\htmlData{sym=D}{D}^{\htmlData{sym=beta}{\beta}}}" data-fallback="L̂(N, D) = E + A / N^α + B / D^β"></div>
+<div class="symtable" data-syms="Lhat,E,A,alpha,B,beta"></div>
+<p class="inwords"><strong>In words:</strong> “predicted loss is an unbeatable floor, plus a penalty that shrinks as the model grows, plus a penalty that shrinks as the data grows.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for Chinchilla (70 billion parameters, 1.4 trillion tokens): 406.4 / (7 × 10<sup>10</sup>)<sup>0.34</sup> ≈ 0.083 and 410.7 / (1.4 × 10<sup>12</sup>)<sup>0.28</sup> ≈ 0.163, so L̂ ≈ 1.69 + 0.083 + 0.163 = <strong>1.94</strong>. For Gopher (280 billion parameters, 300 billion tokens): 1.69 + 0.052 + 0.251 = <strong>1.99</strong>. Gopher's model penalty is smaller, but its data penalty is much bigger.</p>
+<p>Minimizing this formula under the budget C = 6ND has a closed-form answer:</p>
+<div class="eq" data-tex="\htmlData{sym=Nopt}{N_{\text{opt}}}(C) = \htmlData{sym=G}{G}\left(\frac{\htmlData{sym=C}{C}}{6}\right)^{\htmlData{sym=aexp}{a}}, \quad \htmlData{sym=Dopt}{D_{\text{opt}}}(C) = \htmlData{sym=G}{G}^{-1}\left(\frac{\htmlData{sym=C}{C}}{6}\right)^{\htmlData{sym=bexp}{b}}, \quad \htmlData{sym=aexp}{a} = \frac{\beta}{\alpha+\beta}, \ \htmlData{sym=bexp}{b} = \frac{\alpha}{\alpha+\beta}" data-fallback="N_opt(C) = G (C/6)^a,  D_opt(C) = G⁻¹ (C/6)^b,  a = β/(α+β),  b = α/(α+β)"></div>
+<div class="symtable" data-syms="Dopt,G,aexp,bexp"></div>
+<p class="inwords"><strong>In words:</strong> “the best model size and the best data size are both powers of the budget; the two powers add up to 1, and they are set by how fast each penalty shrinks.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a = 0.28 / 0.62 ≈ <strong>0.45</strong> and b = 0.34 / 0.62 ≈ <strong>0.55</strong>: close to half and half, and close to the 0.46 and 0.54 the paper reports for this approach. Compare Kaplan's 0.73 and 0.27.</p>
+</section>
+
+<section id="h-3-4">
+<h3>3.4 The answer: scale both equally <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.15556#S3.SS4">original</a></span></h3>
+<blockquote class="quote">“…for compute-optimal training, the model size and the number of training tokens should be scaled equally: for every doubling of model size the number of training tokens should also be doubled.”<cite>Hoffmann et al. (2022), Abstract</cite></blockquote>
+<div class="tablewrap"><table>
+  <caption>How N and D should grow with compute, restated from Hoffmann et al. (2022), Table 2</caption>
+  <thead><tr><th>Method</th><th class="num">a, where N<sub>opt</sub> ∝ C<sup>a</sup></th><th class="num">b, where D<sub>opt</sub> ∝ C<sup>b</sup></th></tr></thead>
+  <tbody>
+    <tr><td>Approach 1: best of fixed-size runs</td><td class="num">0.50</td><td class="num">0.50</td></tr>
+    <tr><td>Approach 2: IsoFLOP profiles</td><td class="num">0.49</td><td class="num">0.51</td></tr>
+    <tr><td>Approach 3: fitted loss</td><td class="num">0.46</td><td class="num">0.54</td></tr>
+    <tr class="hl"><td>Kaplan et al. (2020)</td><td class="num">0.73</td><td class="num">0.27</td></tr>
+  </tbody>
+</table></div>
+<div class="tablewrap"><table>
+  <caption>Compute-optimal training tokens for a given size, selected rows restated from Hoffmann et al. (2022), Table 3 (Approach 1)</caption>
+  <thead><tr><th>Parameters</th><th class="num">Training tokens</th><th class="num">Tokens per parameter</th></tr></thead>
+  <tbody>
+    <tr><td>400 million</td><td class="num">8.0 billion</td><td class="num">20</td></tr>
+    <tr><td>1 billion</td><td class="num">20.2 billion</td><td class="num">20</td></tr>
+    <tr><td>10 billion</td><td class="num">205.1 billion</td><td class="num">21</td></tr>
+    <tr><td>67 billion</td><td class="num">1.5 trillion</td><td class="num">22</td></tr>
+    <tr><td>175 billion</td><td class="num">3.7 trillion</td><td class="num">21</td></tr>
+    <tr><td>280 billion</td><td class="num">5.9 trillion</td><td class="num">21</td></tr>
+  </tbody>
+</table></div>
+<p><strong>The famous rule of thumb:</strong> the tokens-per-parameter column hovers around <strong>20</strong>. The paper does not state it as a rule, but it falls straight out of this table, and it is how people usually quote Chinchilla. By that yardstick GPT-3, at 300 billion tokens, should have read about 3.5 trillion.</p>
+</section>
+
+<section id="h-4">
+<h3>4 Chinchilla against Gopher <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.15556#S4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The proof of a prediction is a head-to-head test. Same compute budget, same data source, same architecture family: one model built the old way, one built the new way.</p>
+<div class="tablewrap"><table>
+  <caption>Restated from Hoffmann et al. (2022), Abstract, §4 and Tables 4, 6 and 7</caption>
+  <thead><tr><th></th><th class="num">Gopher</th><th class="num">Chinchilla</th></tr></thead>
+  <tbody>
+    <tr><td>Parameters</td><td class="num">280 billion</td><td class="num">70 billion</td></tr>
+    <tr><td>Training tokens</td><td class="num">300 billion</td><td class="num">1.4 trillion</td></tr>
+    <tr><td>Layers · width</td><td class="num">80 · 16,384</td><td class="num">80 · 8,192</td></tr>
+    <tr><td>Training compute</td><td class="num" colspan="2" style="text-align:center">the same budget (about 5.76 × 10<sup>23</sup> FLOPs)</td></tr>
+    <tr class="hl"><td>MMLU (57 exam subjects, 5-shot)</td><td class="num">60.0%</td><td class="num">67.5%</td></tr>
+    <tr><td>LAMBADA (zero-shot)</td><td class="num">74.5%</td><td class="num">77.4%</td></tr>
+  </tbody>
+</table></div>
+<p>Chinchilla also beat GPT-3 (175B), Jurassic-1 (178B) and Megatron-Turing NLG (530B) on a large range of tasks. (The abstract reports 67.5% on MMLU; the detailed table rounds it to 67.6%.) And because it is 4 times smaller, it is also about 4 times cheaper to run for every question afterwards.</p>
+<h4>Why it matters today</h4>
+<p>Being smaller for the same quality is a double win: the training bill is the same, but every one of the millions of later requests is cheaper, a point developed in the <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a>.</p>
+</section>
+
+<section id="h-5">
+<h3>5 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.15556#S5">original</a></span></h3>
+<blockquote class="quote">“Speculatively, we expect that scaling to larger and larger datasets is only beneficial when the data is high-quality.”<cite>Hoffmann et al. (2022), §5</cite></blockquote>
+<p>The authors flag their limits honestly: only two truly large runs (Chinchilla and Gopher), an assumption that the best-size curve is a straight power law (with hints of curvature at the top that could mean even smaller models are optimal), and all runs using less than one pass over the data. Their conclusion shifts attention to the other half of the budget: if data must grow as fast as models, collecting enough <em>good</em> text becomes the bottleneck.</p>
+</section>
+</section>
+
+<section id="try">
+<h2>Try it: split a compute budget</h2>
+<div class="play" id="alloc-play">
+  <div class="sliders" style="grid-template-columns:auto minmax(0,1fr) 7.5rem"><label for="alloc-c">compute budget</label><input type="range" id="alloc-c" min="19" max="26" step="0.01" value="23.76"><output id="alloc-cv"></output></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Advice</th><th class="num">Parameters N</th><th class="num">Tokens D</th><th class="num">Tokens per parameter</th><th class="num">Predicted loss</th></tr></thead>
+    <tbody id="alloc-body"></tbody>
+  </table></div>
+  <div id="alloc-bars"></div>
+  <p class="readout" id="alloc-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> drag the budget (in <span class="t" data-t="flops">FLOPs</span>, on a log scale). The first row applies Kaplan et al.'s fitted rule, N ≈ 1.3 × 10<sup>9</sup> × C<sup>0.73</sup> with C in petaflop/s-days, and gives the rest of the budget to data. The second applies Chinchilla's roughly 20 tokens per parameter, which with C = 6ND means N = √(C / 120). The last column scores both with Chinchilla's fitted loss formula (§3.3), so it tells you which split that formula prefers. The starting position is Gopher's budget: Kaplan's rule asks for a model of about 800 billion parameters reading only about 120 billion tokens, while Chinchilla's asks for about 69 billion parameters on 1.4 trillion tokens, and the fit predicts a clearly lower loss for the second. Kaplan's rule is applied naively here (its compute and parameter definitions differ slightly), so treat its row as indicative.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>“Chinchilla-optimal” became the standard starting point for planning training runs</td><td>Balanced N and D gives the best model for a fixed training bill</td></tr>
+    <tr><td>Many popular models are now trained well <em>past</em> 20 tokens per parameter</td><td>Chinchilla optimizes the training bill only. If a model will answer billions of questions, a smaller model trained much longer costs more to train but far less to run: see the <a data-lesson="primer/ml/inference.html">inference lesson</a></td></tr>
+    <tr><td>Data quality and deduplication became central research topics</td><td>If D must grow with N, the supply of good text becomes the bottleneck</td></tr>
+    <tr><td>Scaling laws are used for more than size</td><td>Teams fit small-scale curves for architectures, data mixes and hyperparameters, then extrapolate before committing to a big run</td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu and Dario Amodei, <em>Scaling Laws for Neural Language Models</em> (2020), <a href="https://arxiv.org/abs/2001.08361">arXiv:2001.08361</a>; and Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch and 19 further co-authors, <em>Training Compute-Optimal Large Language Models</em> (2022), <a href="https://arxiv.org/abs/2203.15556">arXiv:2203.15556</a>. Quotations are brief and attributed; result numbers are restated with attribution; every chart is computed from the papers' published equations. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="primer.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    C: { tex: "C", name: "Training compute", meaning: "Total arithmetic operations (FLOPs) spent training the model.", shape: "a count of operations", example: "5.76 × 10^23 for Gopher and Chinchilla" },
+    N: { tex: "N", name: "Model size", meaning: "Number of parameters. Kaplan et al. count only non-embedding parameters.", shape: "a count", example: "70 billion for Chinchilla" },
+    D: { tex: "D", name: "Training data", meaning: "Number of tokens the model reads during training.", shape: "a count", example: "1.4 trillion for Chinchilla" },
+    LN: { tex: "L(N)", name: "Loss limited by model size", meaning: "Predicted loss for a model of size N trained to convergence on plenty of data.", shape: "nats per token", example: "2.38 at N = 10^9" },
+    Nc: { tex: "N_c", name: "Size constant", meaning: "A fitted constant that sets the scale of the size law.", shape: "a count", example: "8.8 × 10^13" },
+    aN: { tex: "\\alpha_N", name: "Size exponent", meaning: "How fast loss falls with size: doubling N multiplies the loss by 2^−α.", shape: "a small positive number", example: "0.076, so doubling gives × 0.95" },
+    LD: { tex: "L(D)", name: "Loss limited by data", meaning: "Predicted loss for a large model trained on D tokens with early stopping.", shape: "nats per token", example: "2.26 at D = 10^10" },
+    Dc: { tex: "D_c", name: "Data constant", meaning: "A fitted constant that sets the scale of the data law.", shape: "tokens", example: "5.4 × 10^13" },
+    aD: { tex: "\\alpha_D", name: "Data exponent", meaning: "How fast loss falls with more data.", shape: "a small positive number", example: "0.095" },
+    LC: { tex: "L(C_{\\min})", name: "Loss limited by compute", meaning: "Predicted loss when compute is the only constraint and it is spent in the best possible way.", shape: "nats per token", example: "about 1.88 at 1,000 petaflop/s-days" },
+    Cc: { tex: "C_c", name: "Compute constant", meaning: "A fitted constant that sets the scale of the compute law.", shape: "petaflop/s-days", example: "3.1 × 10^8" },
+    Cmin: { tex: "C_{\\min}", name: "Minimum compute", meaning: "The least compute needed to reach a given loss, in petaflop/s-days (one PF-day is 8.64 × 10^19 operations).", shape: "petaflop/s-days", example: "1,000" },
+    aC: { tex: "\\alpha_C", name: "Compute exponent", meaning: "How fast loss falls with compute.", shape: "a small positive number", example: "0.050" },
+    nlayer: { tex: "n_{\\text{layer}}", name: "Number of layers", meaning: "How many Transformer blocks are stacked.", shape: "a whole number", example: "24" },
+    dmodel: { tex: "d_{\\text{model}}", name: "Model width", meaning: "How many numbers represent each token between layers.", shape: "a whole number", example: "1,024" },
+    Bsz: { tex: "B", name: "Batch size", meaning: "Tokens processed per training step.", shape: "tokens", example: "500,000" },
+    Ssteps: { tex: "S", name: "Training steps", meaning: "How many weight updates are made. B × S is the total tokens read, D.", shape: "a count", example: "100,000" },
+    LND: { tex: "L(N, D)", name: "Loss with both limits", meaning: "Predicted early-stopped loss for a model of size N trained on D tokens.", shape: "nats per token", example: "approaches L(N) as D grows, and L(D) as N grows" },
+    ratio: { tex: "\\alpha_N / \\alpha_D", name: "Ratio of exponents", meaning: "0.076 / 0.095 ≈ 0.8. It sets how much extra data a bigger model needs; the paper's measured overfitting rule uses N^0.74 / D.", shape: "a number", example: "about 0.8" },
+    Nopt: { tex: "N_{\\text{opt}}", name: "Best model size", meaning: "The model size that gives the lowest loss for a given compute budget.", shape: "parameters", example: "about 69 billion at Gopher's budget, by Chinchilla's rule" },
+    prop: { tex: "\\propto", name: "Proportional to", meaning: "“Grows in step with”: multiply the right side by some factor and the left side is multiplied by the same factor, up to a constant.", shape: "a relation", example: "N ∝ C^0.73" },
+    k73: { tex: "0.73", name: "Kaplan's size exponent", meaning: "Each 10× of compute makes the best model 10^0.73 ≈ 5.4× bigger.", shape: "a number", example: "5.4× per 10×" },
+    Bcrit: { tex: "B", name: "Best batch size", meaning: "The batch size that balances speed and efficiency, which grows slowly with compute.", shape: "tokens", example: "× 10^0.24 ≈ 1.7 per 10× compute" },
+    Smin: { tex: "S", name: "Best number of steps", meaning: "Barely grows with compute: extra data is absorbed by bigger batches, not more steps.", shape: "a count", example: "× 10^0.03 ≈ 1.07 per 10× compute" },
+    Lhat: { tex: "\\hat{L}(N, D)", name: "Fitted loss", meaning: "The loss predicted by Chinchilla's formula. The hat means “an estimate”.", shape: "nats per token", example: "1.94 for Chinchilla, 1.99 for Gopher" },
+    E: { tex: "E", name: "Irreducible loss", meaning: "The part of the loss no model can remove, because the next word of real text is partly unpredictable. Fitted value 1.69.", shape: "nats per token", example: "1.69" },
+    A: { tex: "A", name: "Size penalty scale", meaning: "Fitted constant for the too-small-model penalty.", shape: "a number", example: "406.4" },
+    alpha: { tex: "\\alpha", name: "Size exponent (Chinchilla)", meaning: "How fast the size penalty shrinks as N grows.", shape: "a number", example: "0.34" },
+    B: { tex: "B", name: "Data penalty scale", meaning: "Fitted constant for the too-little-data penalty. (Not the batch size from Part I: the papers reuse letters.)", shape: "a number", example: "410.7" },
+    beta: { tex: "\\beta", name: "Data exponent (Chinchilla)", meaning: "How fast the data penalty shrinks as D grows.", shape: "a number", example: "0.28" },
+    Dopt: { tex: "D_{\\text{opt}}", name: "Best number of tokens", meaning: "The amount of data that goes with the best model size for a given budget.", shape: "tokens", example: "about 1.4 trillion at Gopher's budget" },
+    G: { tex: "G", name: "Balance constant", meaning: "(αA / βB)^(1/(α+β)), which works out to about 1.34 for the fitted values. It shifts the split slightly towards parameters or data.", shape: "a number", example: "1.34" },
+    aexp: { tex: "a", name: "How fast N should grow", meaning: "β / (α + β). About 0.45 from the fit: each 10× of compute makes the best model about 2.8× bigger.", shape: "a number between 0 and 1", example: "0.45" },
+    bexp: { tex: "b", name: "How fast D should grow", meaning: "α / (α + β). About 0.55. Note a + b = 1, because C = 6ND.", shape: "a number between 0 and 1", example: "0.55" },
+  },
+  blocks: {},
+  onReady(P) {
+    powerLaw(P);
+    isoflop(P);
+    allocator();
+  },
+};
+
+const fitL = (N, D) => 1.69 + 406.4 / Math.pow(N, 0.34) + 410.7 / Math.pow(D, 0.28);
+const human = (x) => (x >= 1e12 ? `${+(x / 1e12).toPrecision(3)} trillion` : x >= 1e9 ? `${+(x / 1e9).toPrecision(3)} billion` : `${+(x / 1e6).toPrecision(3)} million`);
+const sci = (x) => { const e = Math.floor(Math.log10(x)); return `${(x / 10 ** e).toFixed(2)} × 10<sup>${e}</sup>`; };
+
+/* ---- Kaplan's L(N) with a movable marker ---- */
+function powerLaw(P) {
+  const L = (N) => Math.pow(8.8e13 / N, 0.076);
+  const pts = [];
+  for (let e = 6; e <= 12.0001; e += 0.05) pts.push([Math.pow(10, e), L(Math.pow(10, e))]);
+  const s = document.getElementById("pl-n"), nv = document.getElementById("pl-nv"), out = document.getElementById("pl-readout");
+  const chart = P.lineChart(document.getElementById("pl-chart"), {
+    series: [{ name: "L(N)", points: pts }], logX: true, yMin: 1.5, yMax: 4.2,
+    xLabel: "model size N (parameters, log scale)", yLabel: "predicted loss (nats per token)",
+    xFmt: (v) => (v >= 1e12 ? `${+(v / 1e12).toPrecision(3)}T` : v >= 1e9 ? `${+(v / 1e9).toPrecision(3)}B` : `${+(v / 1e6).toPrecision(3)}M`), yFmt: (v) => v.toFixed(2),
+    readout: out, ariaLabel: "Predicted loss against model size",
+  });
+  function draw() {
+    const N = Math.pow(10, +s.value);
+    nv.textContent = human(N);
+    chart.update([{ name: "L(N)", points: pts }, { name: "your model", points: [[N, 1.5], [N, L(N)]] }]);
+    out.innerHTML = `A ${human(N)}-parameter model: predicted loss <strong>${L(N).toFixed(3)}</strong> nats. Twice as big: ${L(2 * N).toFixed(3)} (× ${(L(2 * N) / L(N)).toFixed(3)}).`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- IsoFLOP valleys from Chinchilla's fitted loss ---- */
+function isoflop(P) {
+  const budgets = [1e19, 1e20, 1e21, 1e22, 1e23];
+  const series = budgets.map((C) => {
+    const pts = [];
+    for (let e = 6.5; e <= 12.0001; e += 0.05) {
+      const N = Math.pow(10, e), D = C / (6 * N);
+      const L = fitL(N, D);
+      if (D >= 1e7 && L <= 4) pts.push([N, L]);
+    }
+    return { name: `C = 1e${Math.round(Math.log10(C))} FLOPs`, points: pts };
+  });
+  P.lineChart(document.getElementById("iso-chart"), {
+    series, logX: true, yMin: 1.9, yMax: 4,
+    xLabel: "model size N (parameters, log scale)", yLabel: "predicted loss (fit)",
+    xFmt: (v) => (v >= 1e12 ? `${+(v / 1e12).toPrecision(3)}T` : v >= 1e9 ? `${+(v / 1e9).toPrecision(3)}B` : `${+(v / 1e6).toPrecision(3)}M`), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("iso-readout"), ariaLabel: "IsoFLOP curves: loss against model size for five compute budgets",
+  });
+}
+
+/* ---- budget splitter: Kaplan's rule against 20 tokens per parameter ---- */
+function allocator() {
+  const s = document.getElementById("alloc-c"), cv = document.getElementById("alloc-cv");
+  const body = document.getElementById("alloc-body"), bars = document.getElementById("alloc-bars"), out = document.getElementById("alloc-readout");
+  function draw() {
+    const C = Math.pow(10, +s.value);
+    cv.innerHTML = sci(C);
+    const Nk = 1.3e9 * Math.pow(C / 8.64e19, 0.73), Dk = C / (6 * Nk);
+    const Nc = Math.sqrt(C / 120), Dc = 20 * Nc;
+    const rows = [["Kaplan et al. (2020)", Nk, Dk], ["Chinchilla, 20 tokens per parameter", Nc, Dc]];
+    body.innerHTML = rows.map(([n, N, D], i) => `<tr${i ? ' class="hl"' : ""}><td>${n}</td><td class="num">${human(N)}</td><td class="num">${human(D)}</td><td class="num">${(D / N).toFixed(D / N < 1 ? 2 : 0)}</td><td class="num">${fitL(N, D).toFixed(3)}</td></tr>`).join("");
+    const maxN = Math.max(Nk, Nc), maxD = Math.max(Dk, Dc);
+    const bar = (label, v, max) => `<div class="share-row" style="grid-template-columns:11rem minmax(0,1fr) 6.5rem"><span>${label}</span><div><div class="share-bar" style="width:${(100 * v / max).toFixed(1)}%"></div></div><span>${human(v)}</span></div>`;
+    bars.innerHTML = `<div class="legend" style="margin:.6rem 0 .3rem">Parameters (bars scaled to the larger of the two)</div>` + bar("Kaplan N", Nk, maxN) + bar("Chinchilla N", Nc, maxN) +
+      `<div class="legend" style="margin:.6rem 0 .3rem">Training tokens</div>` + bar("Kaplan D", Dk, maxD) + bar("Chinchilla D", Dc, maxD);
+    const gap = fitL(Nk, Dk) - fitL(Nc, Dc);
+    out.innerHTML = gap > 0
+      ? `At this budget the fitted formula prefers the Chinchilla split by <strong>${gap.toFixed(3)}</strong> nats of loss.`
+      : `At this small budget the two rules nearly agree (difference ${Math.abs(gap).toFixed(3)} nats).`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+</script>
+</body>
+</html>
