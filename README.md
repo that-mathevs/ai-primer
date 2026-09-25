@@ -1,14 +1,21 @@
 # primer: how modern AI works, built from scratch
 
+## 👉 Read it here: [that-mathevs.github.io/ai-primer](https://that-mathevs.github.io/ai-primer/)
+
+**The website is the best place to read this.** Nothing to install: every
+lesson in order, with its diagrams and figures drawn, the math typeset, a
+plain-English definition when you hover over any term, and a link from each
+explanation to the code that implements it and the tests that specify it.
+The annotated paper companions live there too. Light and dark themes.
+
+This repository is the source. Clone it to run the lessons yourself (see
+[Start here](#start-here)).
+
 Most explanations of AI either stay at the level of analogy or jump straight
 to notation that assumes you already know it. This repository does neither.
 Every idea is **built in plain Python you can read**, **drawn** as a
 diagram, **decoded** symbol by symbol, and **checked** by a test that states
 what it proves. Nothing depends on already knowing the jargon.
-
-**Read it online: https://that-mathevs.github.io/ai-primer/** (every lesson,
-diagram and annotated paper, with links from each explanation to the code
-that implements it and the tests that specify it).
 
 It covers two things:
 
@@ -215,4 +222,7 @@ The project's rules (voice, lesson structure, diagrams, test style) are in
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+Free for any noncommercial use: read it, learn from it, share it, teach
+with it, adapt it. Selling it or using it commercially needs permission.
+The code is under the [PolyForm Noncommercial License 1.0.0](LICENSE) and
+the teaching content under [CC BY-NC-SA 4.0](LICENSE-CONTENT).

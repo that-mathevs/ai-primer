@@ -61,6 +61,8 @@ from `CLAUDE.md` using `<h4>` labels:
 <title>Paper Title, Annotated</title>
 <meta name="description" content="One sentence.">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">   <!-- the site-wide light/dark theme -->
+<script src="../assets/theme.js"></script>          <!-- in <head>, so dark never flashes light -->
 <link rel="stylesheet" href="assets/papers.css">
 <script src="assets/glossary.js"></script>   <!-- shared term definitions -->
 <script src="assets/catalog.js"></script>    <!-- nav, lessons box, prev/next -->
@@ -80,7 +82,7 @@ from `CLAUDE.md` using `<h4>` labels:
   <div class="toolbar ui">
     <a class="btn" href="https://arxiv.org/abs/ID">Paper on arXiv</a>
     <a class="btn" href="https://arxiv.org/pdf/ID">PDF</a>
-    <button type="button" id="themeBtn">Theme: auto</button>
+    <button type="button" id="themeBtn" data-theme-toggle>Theme: auto</button>
   </div>
   <div class="permission"><strong>About this page.</strong> …</div>
 </header>

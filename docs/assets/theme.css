@@ -1,0 +1,116 @@
+/*
+ * theme.css: one light theme and one dark theme for the whole site (home page,
+ * lessons, glossary, papers). Tokens are prefixed --p- because pdoc already
+ * uses names like --accent for its own purposes inside lesson pages.
+ *
+ * Dark mode follows the system until the reader picks one with the theme
+ * button (theme.js), which sets <html data-theme="light|dark">.
+ * The dark palette is a neutral charcoal, never a navy.
+ */
+:root {
+  --p-bg: #fbfaf7; --p-fg: #1f2328; --p-muted: #5b6470;
+  --p-card: #ffffff; --p-card-2: #f3f1ec; --p-border: #e4e1d9;
+  --p-accent: #2458c6; --p-accent-strong: #1b45a0; --p-accent-soft: #e3ebfb;
+  --p-code: #f6f4ef; --p-hover: rgba(0, 0, 0, 0.04); --p-mark: #fff3a3;
+  --p-tip-bg: #1f2328; --p-tip-fg: #f5f5f4; --p-tip-link: #9cc0ff;
+  --p-figure-bg: transparent;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --p-bg: #18181a; --p-fg: #e6e5e3; --p-muted: #a1a1a6;
+    --p-card: #202023; --p-card-2: #28282c; --p-border: #34343a;
+    --p-accent: #8ab4f8; --p-accent-strong: #aecbfa; --p-accent-soft: #2a2d33;
+    --p-code: #1e1e21; --p-hover: rgba(255, 255, 255, 0.06); --p-mark: #4a4220;
+    --p-tip-bg: #ecebe8; --p-tip-fg: #18181a; --p-tip-link: #1b45a0;
+    --p-figure-bg: #f4f3f0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+    --p-bg: #18181a; --p-fg: #e6e5e3; --p-muted: #a1a1a6;
+    --p-card: #202023; --p-card-2: #28282c; --p-border: #34343a;
+    --p-accent: #8ab4f8; --p-accent-strong: #aecbfa; --p-accent-soft: #2a2d33;
+    --p-code: #1e1e21; --p-hover: rgba(255, 255, 255, 0.06); --p-mark: #4a4220;
+    --p-tip-bg: #ecebe8; --p-tip-fg: #18181a; --p-tip-link: #1b45a0;
+    --p-figure-bg: #f4f3f0;
+    color-scheme: dark;
+}
+
+html, body { background: var(--p-bg); color: var(--p-fg); }
+
+/* The switcher button, wherever a page puts it. */
+.theme-toggle {
+  font: inherit; font-size: 0.85em; cursor: pointer; white-space: nowrap;
+  color: var(--p-fg); background: var(--p-card); border: 1px solid var(--p-border);
+  border-radius: 999px; padding: 0.1rem 0.6rem;
+}
+.theme-toggle:hover { border-color: var(--p-accent); }
+
+/* ---- pdoc pages: map pdoc's variables onto the shared tokens. ---- */
+:root { --pdoc-background: var(--p-bg); }
+.pdoc {
+  --text: var(--p-fg); --muted: var(--p-muted);
+  --link: var(--p-accent); --link-hover: var(--p-accent-strong);
+  --code: var(--p-code); --active: var(--p-mark);
+  --accent: var(--p-card-2); --accent2: var(--p-border); --nav-hover: var(--p-hover);
+}
+nav.pdoc input[type="search"] {
+  background: var(--p-card); color: var(--p-fg); border: 1px solid var(--p-border);
+}
+.pdoc .pdoc-button { border-color: var(--p-border); color: var(--p-fg); }
+.pdoc-code { background: var(--p-code) !important; }
+
+/* Figures and mermaid diagrams are drawn for a light page, so in dark mode
+   they sit on a soft light card instead of being inverted. */
+.pdoc img[src*="figures/"], .pdoc .mermaid {
+  background: var(--p-figure-bg); border-radius: 8px;
+}
+:root[data-theme="dark"] .pdoc img[src*="figures/"],
+:root[data-theme="dark"] .pdoc .mermaid { padding: 0.5rem; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pdoc img[src*="figures/"],
+  :root:not([data-theme="light"]) .pdoc .mermaid { padding: 0.5rem; }
+}
+
+/* Syntax colours for dark mode (pdoc ships only light ones). */
+:root[data-theme="dark"] .pdoc {
+  --name: #8ab4f8; --def: #c792ea; --annotation: #7fd1b9;
+}
+:root[data-theme="dark"] .pdoc-code .k, :root[data-theme="dark"] .pdoc-code .kn,
+:root[data-theme="dark"] .pdoc-code .kd, :root[data-theme="dark"] .pdoc-code .kc,
+:root[data-theme="dark"] .pdoc-code .ow { color: #c792ea; }
+:root[data-theme="dark"] .pdoc-code .s, :root[data-theme="dark"] .pdoc-code .s1,
+:root[data-theme="dark"] .pdoc-code .s2, :root[data-theme="dark"] .pdoc-code .sa,
+:root[data-theme="dark"] .pdoc-code .si { color: #c3e88d; }
+:root[data-theme="dark"] .pdoc-code .sd { color: #9aa58a; }
+:root[data-theme="dark"] .pdoc-code .c, :root[data-theme="dark"] .pdoc-code .c1,
+:root[data-theme="dark"] .pdoc-code .ch { color: #7f848e; }
+:root[data-theme="dark"] .pdoc-code .nf, :root[data-theme="dark"] .pdoc-code .fm { color: #82aaff; }
+:root[data-theme="dark"] .pdoc-code .nc { color: #ffcb6b; }
+:root[data-theme="dark"] .pdoc-code .mi, :root[data-theme="dark"] .pdoc-code .mf { color: #f78c6c; }
+:root[data-theme="dark"] .pdoc-code .nb, :root[data-theme="dark"] .pdoc-code .bp,
+:root[data-theme="dark"] .pdoc-code .nd { color: #89ddff; }
+:root[data-theme="dark"] .pdoc-code .o, :root[data-theme="dark"] .pdoc-code .p,
+:root[data-theme="dark"] .pdoc-code .n { color: #d4d4d2; }
+:root[data-theme="dark"] .pdoc-code .hll { background: #3a3620; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pdoc { --name: #8ab4f8; --def: #c792ea; --annotation: #7fd1b9; }
+  :root:not([data-theme="light"]) .pdoc-code .k, :root:not([data-theme="light"]) .pdoc-code .kn,
+  :root:not([data-theme="light"]) .pdoc-code .kd, :root:not([data-theme="light"]) .pdoc-code .kc,
+  :root:not([data-theme="light"]) .pdoc-code .ow { color: #c792ea; }
+  :root:not([data-theme="light"]) .pdoc-code .s, :root:not([data-theme="light"]) .pdoc-code .s1,
+  :root:not([data-theme="light"]) .pdoc-code .s2, :root:not([data-theme="light"]) .pdoc-code .sa,
+  :root:not([data-theme="light"]) .pdoc-code .si { color: #c3e88d; }
+  :root:not([data-theme="light"]) .pdoc-code .sd { color: #9aa58a; }
+  :root:not([data-theme="light"]) .pdoc-code .c, :root:not([data-theme="light"]) .pdoc-code .c1,
+  :root:not([data-theme="light"]) .pdoc-code .ch { color: #7f848e; }
+  :root:not([data-theme="light"]) .pdoc-code .nf, :root:not([data-theme="light"]) .pdoc-code .fm { color: #82aaff; }
+  :root:not([data-theme="light"]) .pdoc-code .nc { color: #ffcb6b; }
+  :root:not([data-theme="light"]) .pdoc-code .mi, :root:not([data-theme="light"]) .pdoc-code .mf { color: #f78c6c; }
+  :root:not([data-theme="light"]) .pdoc-code .nb, :root:not([data-theme="light"]) .pdoc-code .bp,
+  :root:not([data-theme="light"]) .pdoc-code .nd { color: #89ddff; }
+  :root:not([data-theme="light"]) .pdoc-code .o, :root:not([data-theme="light"]) .pdoc-code .p,
+  :root:not([data-theme="light"]) .pdoc-code .n { color: #d4d4d2; }
+  :root:not([data-theme="light"]) .pdoc-code .hll { background: #3a3620; }
+}

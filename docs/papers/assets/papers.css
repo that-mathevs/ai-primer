@@ -2,39 +2,36 @@
  * papers.css: shared styles for the annotated paper companions in docs/papers/.
  * Theme tokens live on :root and are redefined for dark mode (auto via
  * prefers-color-scheme, or forced with <html data-theme="dark|light">).
+ * Page colours (--bg, --fg, ...) come from docs/assets/theme.css, shared with the
+ * whole site; only the diagram colours are defined here.
  * See docs/papers/README.md for the page skeleton and component classes.
  */
 :root {
-  --bg: #fbfaf7; --fg: #1f2328; --muted: #5b6470; --card: #ffffff; --border: #e3e0d8;
-  --accent: #2563eb; --accent-soft: #dbe7ff; --quote-bg: #f3f0e8; --code-bg: #f1efe9;
   --attn: #fde2c4; --attn-stroke: #d97706; --ff: #cfe3fb; --ff-stroke: #2563eb;
   --norm: #fbf1b3; --norm-stroke: #a38a00; --emb: #fbd3dc; --emb-stroke: #db2777;
   --lin: #e4dcfb; --lin-stroke: #7c3aed; --soft: #cdeede; --soft-stroke: #059669;
   --wire: #6b7280; --active: #dc2626;
-  --tip-bg: #111827; --tip-fg: #f9fafb; --tip-link: #93c5fd;
   --heat-lo: 219, 231, 255; --heat-hi: 37, 99, 235;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1115; --fg: #e6e6e6; --muted: #9aa4b2; --card: #161a21; --border: #2a303b;
-    --accent: #7aa7ff; --accent-soft: #1c2a44; --quote-bg: #1a1e26; --code-bg: #1d222b;
     --attn: #4a3417; --attn-stroke: #f59e0b; --ff: #16304f; --ff-stroke: #60a5fa;
     --norm: #3d3712; --norm-stroke: #eab308; --emb: #4a1d2b; --emb-stroke: #f472b6;
     --lin: #2e2450; --lin-stroke: #a78bfa; --soft: #123a2c; --soft-stroke: #34d399;
     --wire: #9ca3af; --active: #f87171;
-    --tip-bg: #f3f4f6; --tip-fg: #111827; --tip-link: #1d4ed8;
     --heat-lo: 28, 42, 68; --heat-hi: 122, 167, 255;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f1115; --fg: #e6e6e6; --muted: #9aa4b2; --card: #161a21; --border: #2a303b;
-  --accent: #7aa7ff; --accent-soft: #1c2a44; --quote-bg: #1a1e26; --code-bg: #1d222b;
   --attn: #4a3417; --attn-stroke: #f59e0b; --ff: #16304f; --ff-stroke: #60a5fa;
   --norm: #3d3712; --norm-stroke: #eab308; --emb: #4a1d2b; --emb-stroke: #f472b6;
   --lin: #2e2450; --lin-stroke: #a78bfa; --soft: #123a2c; --soft-stroke: #34d399;
   --wire: #9ca3af; --active: #f87171;
-  --tip-bg: #f3f4f6; --tip-fg: #111827; --tip-link: #1d4ed8;
   --heat-lo: 28, 42, 68; --heat-hi: 122, 167, 255;
+}
+:root {
+  /* Page colours come from ../../assets/theme.css (loaded first), shared by the whole site. */
+  --bg: var(--p-bg); --fg: var(--p-fg); --muted: var(--p-muted); --card: var(--p-card); --border: var(--p-border); --accent: var(--p-accent); --accent-soft: var(--p-accent-soft); --quote-bg: var(--p-card-2); --code-bg: var(--p-code); --tip-bg: var(--p-tip-bg); --tip-fg: var(--p-tip-fg); --tip-link: var(--p-tip-link);
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 1rem; }

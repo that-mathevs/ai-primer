@@ -256,27 +256,9 @@
 
   // -------------------------------------------------------------------- theme
   function initTheme() {
-    const btn = document.getElementById("themeBtn");
-    const modes = ["auto", "light", "dark"];
-    let mode = "auto";
-    try {
-      mode = localStorage.getItem("papers-theme") || "auto";
-    } catch (_) {}
-    const apply = () => {
-      if (mode === "auto") document.documentElement.removeAttribute("data-theme");
-      else document.documentElement.setAttribute("data-theme", mode);
-      if (btn) btn.textContent = `Theme: ${mode}`;
-      document.dispatchEvent(new CustomEvent("papers:theme"));
-    };
-    apply();
-    if (btn)
-      btn.addEventListener("click", () => {
-        mode = modes[(modes.indexOf(mode) + 1) % modes.length];
-        try {
-          localStorage.setItem("papers-theme", mode);
-        } catch (_) {}
-        apply();
-      });
+    // docs/assets/theme.js owns the switcher and the saved choice; diagrams
+    // drawn on canvas just need to hear about changes so they can redraw.
+    document.addEventListener("primer:theme", () => document.dispatchEvent(new CustomEvent("papers:theme")));
   }
 
   // ---------------------------------------------------------------------- TOC

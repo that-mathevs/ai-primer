@@ -282,7 +282,7 @@ class TestCheckingLinksIntoThisRepository:
         from primer.curriculum import REPO_URL
         from tools.sitecheck import own_repo_problem
 
-        assert own_repo_problem(f"{REPO_URL}/blob/main/LICENSE#L5-L999") == "LICENSE has 21 lines, link asks for L5-L999"
+        assert own_repo_problem(f"{REPO_URL}/blob/main/LICENSE#L5-L999") == "LICENSE has 94 lines, link asks for L5-L999"
 
     def test_given_an_in_code_line_whose_names_did_not_become_links_it_is_reported(self):
         from tools.sitecheck import unlinked_code_names
@@ -299,3 +299,52 @@ class TestPagesThatAreNotLessons:
 
         nav = site_nav("primer/glossary.html")
         assert 'href="../index.html"' in nav and f'href="{REPO_URL}"' in nav
+
+
+def _hex_rgb(value: str) -> tuple[int, int, int]:
+    value = value.lstrip("#")
+    return tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))
+
+
+class TestOneThemeEverywhere:
+    THEME_CSS = ROOT / "docs" / "assets" / "theme.css"
+
+    def test_given_dark_mode_the_page_background_is_a_neutral_grey_not_a_navy(self):
+        dark = re.search(r':root\[data-theme="dark"\]\s*\{(.*?)\}', self.THEME_CSS.read_text(), re.S).group(1)
+        r, g, b = _hex_rgb(re.search(r"--p-bg:\s*(#[0-9a-fA-F]{6})", dark).group(1))
+        # Navy is blue well above red and green; a neutral grey keeps the three channels within a few steps.
+        assert max(r, g, b) - min(r, g, b) <= 6
+
+    def test_given_the_system_prefers_dark_and_no_choice_was_made_the_same_dark_palette_applies(self):
+        css = self.THEME_CSS.read_text()
+        forced = re.search(r':root\[data-theme="dark"\]\s*\{(.*?)\}', css, re.S).group(1)
+        auto = re.search(r':root:not\(\[data-theme="light"\]\)\s*\{(.*?)\}', css, re.S).group(1)
+        assert forced.split() == auto.split()
+
+    def test_given_a_lesson_its_nav_has_the_theme_switcher(self):
+        from tools.docsite import lesson_nav
+
+        assert "data-theme-toggle" in lesson_nav("primer.ml.attention")
+
+    def test_given_a_page_that_is_not_a_lesson_its_bar_has_the_theme_switcher(self):
+        from tools.docsite import site_nav
+
+        assert "data-theme-toggle" in site_nav("primer/glossary.html")
+
+    def test_given_the_home_page_it_uses_the_shared_theme_and_has_the_switcher(self):
+        from tools.docsite import render_home
+
+        home = render_home()
+        assert 'href="assets/theme.css"' in home and 'src="assets/theme.js"' in home and "data-theme-toggle" in home
+
+    def test_given_a_pdoc_page_the_theme_loads_in_its_head_so_it_never_flashes_the_wrong_colours(self):
+        from tools.docsite import add_theme
+
+        page = add_theme("<html><head><title>x</title></head><body></body></html>", "primer/ml/attention.html")
+        head = page.split("</head>")[0]
+        assert 'href="../../assets/theme.css"' in head and 'src="../../assets/theme.js"' in head
+
+    @pytest.mark.parametrize("companion", sorted(p.name for p in (ROOT / "docs" / "papers").glob("*.html")))
+    def test_given_a_paper_companion_it_uses_the_shared_theme(self, companion):
+        head = (ROOT / "docs" / "papers" / companion).read_text().split("</head>")[0]
+        assert 'href="../assets/theme.css"' in head and 'src="../assets/theme.js"' in head

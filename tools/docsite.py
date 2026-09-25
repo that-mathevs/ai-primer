@@ -131,11 +131,10 @@ def annotate_html(page_html: str, terms: dict[str, tuple], page: str) -> str:
 TOOLTIP_ASSETS = """
 <style>
 .gl-term{border-bottom:1px dotted currentColor;cursor:help}
-.gl-term:focus{outline:2px solid #2563eb;outline-offset:2px}
+.gl-term:focus{outline:2px solid var(--p-accent);outline-offset:2px}
 #gl-tip{position:absolute;z-index:1000;max-width:22rem;padding:.6rem .75rem;border-radius:.5rem;
- background:#111827;color:#f9fafb;font:14px/1.45 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);display:none}
-#gl-tip a{color:#93c5fd}
-@media (prefers-color-scheme: dark){#gl-tip{background:#f9fafb;color:#111827}#gl-tip a{color:#1d4ed8}}
+ background:var(--p-tip-bg);color:var(--p-tip-fg);font:14px/1.45 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);display:none}
+#gl-tip a{color:var(--p-tip-link)}
 </style>
 <div id="gl-tip" role="tooltip"></div>
 <script>
@@ -282,12 +281,21 @@ def lesson_nav(module: str) -> str:
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
         f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
-        f'<a href="{REPO_URL}">GitHub</a></span></div>'
+        f'<a href="{REPO_URL}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div>'
         f'<div class="pn-code">Code: <a href="{source_url(source_path(module))}">{source_path(module)}</a> · '
         f'Specified by: <a href="{source_url(tests_for(module))}">{tests_for(module)}</a> · '
         f"Run: <code>python -m {module}</code></div>"
         f'<div class="pn-steps">{link(before, True)}{link(after, False)}</div>'
         "</div>"
+    )
+
+
+def add_theme(page_html: str, page: str) -> str:
+    """Load the shared theme at the end of <head>: after pdoc's styles so it wins,
+    and before the body so a dark choice never flashes light."""
+    root = _rel("assets", page)
+    return page_html.replace(
+        "</head>", f'<link rel="stylesheet" href="{root}/theme.css"><script src="{root}/theme.js"></script>\n</head>', 1
     )
 
 
@@ -302,19 +310,20 @@ def site_nav(page: str) -> str:
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
         f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
-        f'<a href="{REPO_URL}">GitHub</a></span></div></div>'
+        f'<a href="{REPO_URL}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div></div>'
     )
 
 
 NAV_CSS = """
 <style>
-.primer-nav{font:14px/1.5 system-ui,sans-serif;margin:0 0 1.5rem;padding:.6rem .8rem;border:1px solid #e5e7eb;border-radius:.5rem;background:#f9fafb}
-.primer-nav a{text-decoration:none}
-.pn-crumbs{display:flex;flex-wrap:wrap;gap:.25rem .4rem;align-items:baseline;color:#4b5563}
+.primer-nav{font:14px/1.5 system-ui,sans-serif;margin:0 0 1.5rem;padding:.6rem .8rem;border:1px solid var(--p-border);border-radius:.5rem;background:var(--p-card)}
+.primer-nav a{text-decoration:none;color:var(--p-accent)}
+.pn-crumbs{display:flex;flex-wrap:wrap;gap:.25rem .4rem;align-items:baseline;color:var(--p-muted)}
 .pn-links{margin-left:auto}
-.pn-code{color:#4b5563;margin-top:.25rem;font-size:13px}
+.pn-code{color:var(--p-muted);margin-top:.25rem;font-size:13px}
 .pn-code code{font-size:12px}
 .gh-source{float:right;font-size:.75rem;line-height:1.5rem;padding:0 .6rem}
+.primer-nav .theme-toggle{margin-left:.5rem}
 .pn-steps{display:flex;justify-content:space-between;gap:1rem;margin-top:.4rem;font-weight:600}
 .pn-next{text-align:right;margin-left:auto}
 .primer-nav.pn-bottom{margin:2.5rem 0 0}
@@ -365,9 +374,10 @@ def render_home() -> str:
 HOME_TEMPLATE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>primer: how modern AI works</title>
+<link rel="stylesheet" href="assets/theme.css"><script src="assets/theme.js"></script>
 <style>
-:root{--bg:#ffffff;--fg:#111827;--muted:#4b5563;--line:#e5e7eb;--card:#f9fafb;--accent:#2563eb}
-@media (prefers-color-scheme: dark){:root{--bg:#0b1020;--fg:#e5e7eb;--muted:#9ca3af;--line:#1f2937;--card:#111827;--accent:#60a5fa}}
+:root{--bg:var(--p-bg);--fg:var(--p-fg);--muted:var(--p-muted);--line:var(--p-border);--card:var(--p-card);--accent:var(--p-accent)}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,sans-serif}
 main{max-width:980px;margin:0 auto;padding:2rem 16px 4rem}
 a{color:var(--accent)}header h1{font-size:2.2rem;margin:.2rem 0}header p{color:var(--muted);max-width:44rem}
@@ -386,7 +396,7 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 .route{color:var(--muted);font-size:.92rem;margin:.3rem 0}details ol{margin:.3rem 0 .2rem;padding-left:1.3rem}
 </style></head>
 <body><main>
-<header><h1>primer: how modern AI works, built from scratch</h1>
+<header><div class="top"><h1>primer: how modern AI works, built from scratch</h1><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
 <p>{{COUNT}} lessons. Every idea is built in plain Python, drawn, decoded symbol by symbol, and checked by a test.
 Hover over any underlined term for a plain-English definition.</p></header>
 <nav class="jump" aria-label="Jump to">
@@ -405,7 +415,7 @@ specifies it. Clone it and run any lesson offline with only NumPy:</p>
 <pre><code>git clone {{REPO}}
 cd ai-primer &amp;&amp; python -m pip install -e ".[dev]"
 python -m primer.ml.attention</code></pre>
-<p><a href="{{REPO}}">github.com/that-mathevs/ai-primer</a> · <a href="{{REPO}}/blob/main/LICENSE">MIT license</a></p></footer>
+<p><a href="{{REPO}}">github.com/that-mathevs/ai-primer</a> · <a href="{{REPO}}/blob/main/LICENSE">License: free for noncommercial use</a></p></footer>
 </main></body></html>
 """
 
@@ -443,6 +453,7 @@ def _postprocess(path: Path, terms: dict[str, tuple]) -> None:
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + site_nav(page), text, count=1)
     text = link_members_to_github(text, module)
     text = text.replace("</head>", NAV_CSS + "</head>", 1)
+    text = add_theme(text, page)
     text = text.replace("</body>", TOOLTIP_ASSETS + "</body>", 1)
     path.write_text(text, encoding="utf-8")
 
@@ -467,7 +478,7 @@ def build() -> int:
         cwd=ROOT, check=True, env={**os.environ, "PYTHONPATH": str(ROOT)},
     )
 
-    for sub in ("figures", "papers"):
+    for sub in ("assets", "figures", "papers"):
         if (ROOT / "docs" / sub).exists():
             shutil.copytree(ROOT / "docs" / sub, SITE / sub)
     for name, js in (("glossary.js", glossary_js()), ("catalog.js", catalog_js())):
