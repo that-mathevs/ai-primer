@@ -1012,9 +1012,10 @@ class TestEveryPageFitsAPhone:
                    {"page": "b.html", "width": 390, "screen": 390, "wide": []}]
         assert [r["page"] for r in too_wide(results)] == ["a.html"]
 
-    def test_given_the_built_site_forwarding_stubs_are_not_checked(self):
+    def test_given_a_site_its_forwarding_stubs_are_not_checked(self, tmp_path):
         from tools.phonecheck import pages_to_check
 
         # They show nothing: the browser moves straight on to the home page.
-        pages = pages_to_check()
-        assert "primer.html" not in pages and "index.html" in pages
+        (tmp_path / "index.html").write_text("<h1>primer</h1>")
+        (tmp_path / "primer.html").write_text('<meta http-equiv="refresh" content="0; url=index.html">')
+        assert pages_to_check(tmp_path) == ["index.html"]

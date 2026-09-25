@@ -67,11 +67,11 @@ def chrome() -> str | None:
     return str(mac) if mac.exists() else None
 
 
-def pages_to_check() -> list[str]:
+def pages_to_check(site: Path = SITE) -> list[str]:
     """Every page a reader can land on, except the forwarding stubs."""
     return sorted(
-        p.relative_to(SITE).as_posix()
-        for p in SITE.rglob("*.html")
+        p.relative_to(site).as_posix()
+        for p in site.rglob("*.html")
         if p.name != PROBE and 'http-equiv="refresh"' not in p.read_text(errors="ignore")
     )
 

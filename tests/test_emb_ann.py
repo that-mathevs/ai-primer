@@ -137,16 +137,19 @@ class TestHNSW:
         assert len(ids) == 0
 
 
-class TestHNSWSearchPath:
-    @pytest.fixture(scope="class")
-    def trace(self):
-        from primer.ml.embeddings.ann import planar_vectors
+@pytest.fixture(scope="module")
+def trace():
+    """One HNSW index and one search through it, built once for every search-path scenario."""
+    from primer.ml.embeddings.ann import planar_vectors
 
-        vectors, _ = planar_vectors(300, seed=0)
-        index = HNSWIndex(3, M=6, ef_construction=40, ef_search=10)
-        index.add(vectors)
-        query, _ = planar_vectors(1, seed=5)
-        return index, index.search_trace(query[0], k=5)
+    vectors, _ = planar_vectors(300, seed=0)
+    index = HNSWIndex(3, M=6, ef_construction=40, ef_search=10)
+    index.add(vectors)
+    query, _ = planar_vectors(1, seed=5)
+    return index, index.search_trace(query[0], k=5)
+
+
+class TestHNSWSearchPath:
 
     def test_given_a_query_the_search_starts_on_the_top_layer(self, trace):
         index, steps = trace
