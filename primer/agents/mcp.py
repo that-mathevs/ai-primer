@@ -75,7 +75,7 @@ A server can offer three kinds of thing:
 
 | Primitive | Who decides to use it | Example |
 |---|---|---|
-| **Tools** | the model (it asks to call them) | `get_ticket(ticket_id)` |
+| **Tools** | the model (it asks to call them) | `get_ticket(ticket_id)`, served here by `_get_ticket` |
 | **Resources** | the application (reads them into context) | `kb://policies/pto` |
 | **Prompts** | the user (picks a template) | "summarize this ticket" |
 

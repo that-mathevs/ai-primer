@@ -273,6 +273,10 @@ def link_members_to_source(page_html: str, module_name: str, page: str) -> str:
 _PASS_THROUGH = {"script", "style", "title", "head", "pre", "textarea"}
 _DOTTED = re.compile(r"(?<![\w./#-])primer(?:\.\w+)+")
 _CODE_NAME = re.compile(r"[A-Za-z_]\w*(?:\.\w+)*")
+_PROSE_NAME = re.compile(
+    r"(?<![\w.#/$\\-])(?:primer(?:\.\w+)+|[a-z][a-z0-9]*(?:_[a-z0-9]+)+|[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+)(?![\w])"
+)
+AMBIGUOUS = object()  # a name more than one thing could mean: reported, never guessed
 
 
 def _resolve_code_name(name: str, module: str):
@@ -336,39 +340,115 @@ def _code_target(name: str, module: str, page: str, page_html: str) -> str | Non
     return code_link(source, page, first, first + len(lines) - 1)
 
 
+_PACKAGE_NAMES: frozenset[str] | None = None
+
+
+def _package_names() -> frozenset[str]:
+    """Every function, class and method name defined anywhere in the package."""
+    import importlib
+    import inspect
+    import pkgutil
+
+    import primer
+
+    global _PACKAGE_NAMES
+    if _PACKAGE_NAMES is None:
+        names: set[str] = set()
+        for info in pkgutil.walk_packages(primer.__path__, "primer."):
+            mod = importlib.import_module(info.name)
+            for n, o in vars(mod).items():
+                if getattr(o, "__module__", None) == info.name and (inspect.isfunction(o) or inspect.isclass(o)):
+                    names.add(n)
+                    if inspect.isclass(o):
+                        names |= set(vars(o))
+        _PACKAGE_NAMES = frozenset(names)
+    return _PACKAGE_NAMES
+
+
 def _scan_code_mentions(page_html: str, module: str, page: str, fix: bool) -> tuple[str, list[str]]:
     """Find (and with fix=True, link) every unlinked mention of code on a page."""
     found: list[str] = []
 
     def link(text: str, name: str) -> str:
+        # The lesson's own title: resolved on its own page, never ambiguous.
         target = _code_target(name, module, page, page_html)
         if target is None:
             return text
         found.append(name)
         return f'<a href="{target}">{text}</a>' if fix else text
 
-    def in_code(text: str) -> str:
-        from primer.curriculum import _class_homes, _is_committed
+    from primer.curriculum import _class_homes, _is_committed
 
-        bare = text.strip().removesuffix("()")
+    ids = set(re.findall(r'\bid="([^"]+)"', page_html))
+    current_member = [""]  # the member whose documentation is being read
+
+    def _parameters(member: str) -> set[str]:
+        import inspect
+
+        obj = _resolve_code_name(member, module) if member else None
+        try:
+            return set(inspect.signature(obj).parameters) if callable(obj) else set()
+        except (TypeError, ValueError):
+            return set()
+
+    def target_of(name: str) -> str | None:
+        """Where `name` should link, AMBIGUOUS if only the author can say, or None if it names nothing here."""
+        target = _code_target(name, module, page, page_html)
+        if target or _resolve_code_name(name, module) is not None:
+            return target
+        # A class from another module, named without it: link it if there's only one it can be.
+        homes = _class_homes().get(name.split(".")[0], [])
+        if len(homes) == 1:
+            return _code_target(f"{homes[0]}.{name}", module, page, page_html)
+        if homes:
+            return AMBIGUOUS
+        # Inside a function's own documentation, its parameters are just parameters.
+        if "." not in name and name in _parameters(current_member[0]):
+            return None
+        # A field or method named without its class: link it if one class on this page has it.
+        if "." not in name:
+            owners = sorted(i for i in ids if i.count(".") == 1 and i.endswith("." + name) and "-" not in i)
+            if len(owners) == 1:
+                return f"#{owners[0]}"
+            if owners:
+                return AMBIGUOUS
+        return None
+
+    def link_name(text: str, name: str) -> str:
+        target = target_of(name)
+        if target is None:
+            return text
+        found.append(name)
+        if target is AMBIGUOUS or not fix:
+            return text
+        return f'<a href="{target}">{text}</a>'
+
+    def in_code(text: str) -> str:
+        stripped = text.strip()
+        call = re.fullmatch(r"([A-Za-z_][\w.]*)\((.*)\)", stripped, re.S)
+        if call and call.group(2):
+            # A call written with its arguments: the function's name is the link.
+            name = call.group(1)
+            return text.replace(name, link_name(name, name), 1)
+        bare = stripped.removesuffix("()")
         if _CODE_NAME.fullmatch(bare):
-            linked = link(bare, bare)
-            homes = _class_homes().get(bare.split(".")[0], [])
-            if linked == bare and homes and _resolve_code_name(bare, module) is None:
-                if len(homes) == 1:
-                    # A class from another module, named without it: there's only one it can be.
-                    target = _code_target(f"{homes[0]}.{bare}", module, page, page_html)
-                    if target:
-                        found.append(bare)
-                        linked = f'<a href="{target}">{bare}</a>' if fix else bare
-                else:
-                    # Two modules define a class by this name: only the author can say which, so report it.
-                    found.append(bare)
-            return text.replace(bare, linked, 1) if linked != bare else text
+            return text.replace(bare, link_name(bare, bare), 1)
         if re.fullmatch(r"[\w.-]+(?:/[\w.-]+)+/?", bare) and _is_committed(ROOT / bare):
             found.append(bare)
             return text.replace(bare, f'<a href="{code_link(bare, page)}">{bare}</a>', 1) if fix else text
-        return _DOTTED.sub(lambda m: link(m.group(0), m.group(0)), text)
+        return _DOTTED.sub(lambda m: link_name(m.group(0), m.group(0)), text)
+
+    def in_prose(text: str) -> str:
+        # Dotted names, and identifiers no English word looks like: snake_case and CamelCase.
+        def one(m: re.Match) -> str:
+            name = m.group(0)
+            target = target_of(name)
+            if target is None or target is AMBIGUOUS:
+                return name
+            found.append(name)
+            return f'<a href="{target}">{name}</a>' if fix else name
+
+        return _PROSE_NAME.sub(one, text)
 
     # pdoc links a module named on its own page with href="", which only reloads the page.
     def empty(m: re.Match) -> str:
@@ -384,25 +464,43 @@ def _scan_code_mentions(page_html: str, module: str, page: str, fix: bool) -> tu
 
     out: list[str] = []
     stack: list[str] = []
+    signature_flags: list[bool] = []  # parallel to stack: is that element a signature or default value?
+    in_display_math = False
     for piece in re.split(r"(<[^>]+>)", page_html):
         if piece.startswith("<"):
             out.append(piece)
+            # pdoc opens each member's documentation with a tag whose id is the member's name.
+            member = re.match(r'<(?:section|div)\b[^>]*\bid="([A-Za-z_][\w.]*)"', piece)
+            if member:
+                current_member[0] = member.group(1)
             m = re.match(r"<\s*(/?)\s*([a-zA-Z][\w-]*)", piece)
             if not m or piece.startswith("<!") or piece.endswith("/>") or m.group(2).lower() in _VOID:
                 continue
             name = m.group(2).lower()
             if m.group(1):
                 if name in stack:
-                    del stack[len(stack) - 1 - stack[::-1].index(name):]
+                    at = len(stack) - 1 - stack[::-1].index(name)
+                    del stack[at:], signature_flags[at:]
             else:
                 stack.append(name)
+                # Signatures and default values display code: only fully dotted names link there.
+                signature_flags.append(bool(re.search(r'class="[^"]*\b(signature|default_value)\b', piece)))
             continue
         if not piece or "a" in stack or any(t in stack for t in _PASS_THROUGH):
             out.append(piece)
         elif "code" in stack:
             out.append(in_code(piece))
+        elif any(signature_flags):
+            out.append(_DOTTED.sub(lambda m: link_name(m.group(0), m.group(0)), piece))
         else:
-            out.append(_DOTTED.sub(lambda m: link(m.group(0), m.group(0)), piece))
+            # Math is typeset from TeX in the browser; a link inside it would break the formula.
+            chunks = piece.split("$$")
+            for i, chunk in enumerate(chunks):
+                if i:
+                    in_display_math = not in_display_math
+                if not in_display_math:
+                    chunks[i] = "".join(part if j % 2 else in_prose(part) for j, part in enumerate(_INLINE_MATH.split(chunk)))
+            out.append("$$".join(chunks))
     text = "".join(out)
 
     # The title's last part is the lesson's own name, left as plain text by pdoc.

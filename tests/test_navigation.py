@@ -808,3 +808,72 @@ class TestNothingRendersBroken:
 
         home = render_home()
         assert "<em>Attention Is All You Need</em>" in home and "*Attention Is All You Need*" not in home
+
+
+class TestEveryWayOfNamingCodeIsLinked:
+    def test_given_a_call_written_with_its_arguments_the_function_name_links(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = "<p><code>plan_and_execute(planner, goal)</code></p>"
+        linked = link_code_mentions(page, "primer.agents.planning", "primer/agents/planning.html")
+        assert '<code><a href="#plan_and_execute">plan_and_execute</a>(planner, goal)</code>' in linked
+
+    def test_given_a_field_named_without_its_class_it_links_to_the_one_class_on_the_page_that_has_it(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = '<p><code>stop_cause</code></p><div id="AgentResult.stop_cause"></div>'
+        linked = link_code_mentions(page, "primer.agents.agent_loop", "primer/agents/agent_loop.html")
+        assert '<code><a href="#AgentResult.stop_cause">stop_cause</a></code>' in linked
+
+    def test_given_a_field_two_classes_on_the_page_share_the_site_check_reports_it(self, local):
+        from tools.sitecheck import unlinked_code_mentions
+
+        page = '<p><code>name</code></p><div id="Tool.name"></div><div id="Skill.name"></div>'
+        assert unlinked_code_mentions(page, "primer.agents.tools") == ["name"]
+
+    def test_given_a_function_named_in_plain_prose_it_links(self, local):
+        from tools.docsite import link_code_mentions
+
+        linked = link_code_mentions("<p>Compare with info_nce's analytic gradients.</p>", "primer.ml.losses", "primer/ml/losses.html")
+        assert '<a href="#info_nce">info_nce</a>\'s analytic gradients' in linked
+
+    def test_given_a_class_named_in_plain_prose_it_links(self, local):
+        from tools.docsite import link_code_mentions
+
+        linked = link_code_mentions("<p>Run it on an untrained TinyGPT.</p>", "primer.ml.big_picture", "primer/ml/big_picture.html")
+        assert '<a href="transformer.html#TinyGPT">TinyGPT</a>' in linked  # both pages sit in primer/ml/
+
+    def test_given_math_that_happens_to_contain_a_name_it_is_left_alone(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = "<p>$$\\text{info_nce} = -\\log p$$ and $d_k$</p>"
+        assert link_code_mentions(page, "primer.ml.losses", "primer/ml/losses.html") == page
+
+    def test_given_code_that_names_a_function_that_does_not_exist_the_site_check_reports_it(self, local):
+        from tools.sitecheck import nonexistent_code
+
+        # A companion once pointed readers at hyde(); the function is hyde_search.
+        assert nonexistent_code("<p>The code is <code>hyde()</code>; see <code>len(x)</code>.</p>", "primer") == ["hyde()"]
+
+    def test_given_a_functions_own_parameter_in_its_docstring_it_is_not_taken_for_a_field(self, local):
+        from tools.sitecheck import unlinked_code_mentions
+
+        # near_duplicates takes `threshold`; Router and SemanticCache also have a `threshold` field.
+        page = ('<section id="near_duplicates"><div class="docstring"><p>Pairs at least <code>threshold</code> apart.</p></div></section>'
+                '<div id="Router.threshold"></div><div id="SemanticCache.threshold"></div>')
+        assert unlinked_code_mentions(page, "primer.ml.embeddings.clustering") == []
+
+    def test_given_a_signature_or_default_value_only_fully_dotted_names_in_it_link(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = ('<span class="signature">(tool_output: int = 8000) -> primer.agents.cost._Entry</span>'
+                "<span class=\"default_value\">[{'name': 'search_kb'}]</span>")
+        linked = link_code_mentions(page, "primer.agents.cost", "primer/agents/cost.html")
+        assert ">tool_output<" not in linked and "'search_kb'" in linked and ">primer.agents.cost._Entry</a>" in linked
+
+    def test_given_prose_after_a_signature_names_in_it_still_link(self, local):
+        from tools.docsite import link_code_mentions
+
+        page = '<span class="signature">(x)</span><p>Run it on an untrained TinyGPT.</p>'
+        linked = link_code_mentions(page, "primer.ml.big_picture", "primer/ml/big_picture.html")
+        assert '<a href="transformer.html#TinyGPT">TinyGPT</a>' in linked

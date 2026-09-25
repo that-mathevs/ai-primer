@@ -111,7 +111,7 @@ to append as the assistant turn. `content_blocks`, `last_user_text`,
 ## Two implementations of one interface
 
 Every agent lesson is written against one small interface, `LLM`, with one
-method, `complete(system=..., messages=..., tools=...)`. Two classes
+method, `LLM.complete(system=..., messages=..., tools=...)`. Two classes
 implement it:
 
 ```mermaid

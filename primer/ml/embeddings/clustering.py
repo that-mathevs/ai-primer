@@ -733,7 +733,7 @@ class SemanticCache:
     """Reuse a stored answer when a new question means the same thing.
 
     Three guards, each preventing a real failure:
-    * `threshold`: only near-identical meaning counts (calibrate it per model,
+    * `SemanticCache.threshold`: only near-identical meaning counts (calibrate it per model,
       see `primer.ml.embeddings.similarity`).
     * `context`: answers are only reused within the same context key (user,
       tenant, permissions), so one person's answer never reaches another.

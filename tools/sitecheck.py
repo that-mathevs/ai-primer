@@ -178,6 +178,31 @@ def broken_companion_lessons(site: Path = SITE) -> dict[str, set[str]]:
     return broken
 
 
+def nonexistent_code(page_html: str, module: str) -> list[str]:
+    """Calls written as code, like `hyde()`, naming a function that exists nowhere in the package."""
+    import builtins
+
+    from tools.docsite import _package_names, _resolve_code_name
+
+    html = re.sub(r"<(script|style|pre|a)\b.*?</\1>", " ", page_html, flags=re.S | re.I)
+    found = []
+    for code in re.findall(r"<code>([^<]*)</code>", html):
+        call = re.fullmatch(r"\s*([a-z_][\w.]*)\(.*\)\s*", htmllib.unescape(code), re.S)
+        if not call:
+            continue
+        name = call.group(1)
+        root = name.split(".")[0]
+        if "." in name and root != "primer":
+            continue  # another library's function, like np.exp
+        if hasattr(builtins, name) or _resolve_code_name(name, module) is not None:
+            continue
+        last = name.rsplit(".", 1)[-1]
+        # A tool's public name is often served by a private function of the same name (get_ticket, _get_ticket).
+        if last not in _package_names() and f"_{last}" not in _package_names():
+            found.append(code.strip())
+    return found
+
+
 def empty_links(site: Path = SITE) -> dict[str, list[str]]:
     """Links whose address is empty: clicking one just reloads the page."""
     found: dict[str, list[str]] = {}
@@ -286,6 +311,16 @@ def main() -> int:
     for page, refs in sorted(companions.items()):
         print(f"  ✗ papers/{page} -> {', '.join(sorted(refs))}")
 
+    ghosts: dict[str, list[str]] = {}
+    for page in sorted(SITE.rglob("*.html")):
+        name = page.relative_to(SITE).as_posix()
+        module = name.removesuffix(".html").replace("/", ".") if name.startswith("primer/") else "primer"
+        if found := nonexistent_code(page.read_text(errors="ignore"), module):
+            ghosts[name] = found
+    print(f"code that names a function that doesn't exist: {sum(map(len, ghosts.values()))}")
+    for page, names in sorted(ghosts.items()):
+        print(f"  ✗ {page}: {', '.join(names)}")
+
     empties = empty_links()
     print(f"links with an empty address: {sum(map(len, empties.values()))}")
     for page, texts in sorted(empties.items()):
@@ -305,7 +340,8 @@ def main() -> int:
     for page, problems in rendering.items():
         for problem in problems[:5]:
             print(f"  ✗ {page}: {problem[:110]}")
-    return 1 if bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties or counts or rendering else 0
+    return 1 if (bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties
+                 or counts or rendering or ghosts) else 0
 
 
 if __name__ == "__main__":

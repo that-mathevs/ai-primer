@@ -229,6 +229,11 @@ illustrative (non-computed) numbers as illustrative, on the page.
   `papers.js` resolves it for both the built site (`docs/html/papers/`) and
   the source tree ([`docs/papers/`](.)).
 - To another companion: `<a href="roformer.html">RoFormer companion</a>`.
+- To code in a lesson: `<a data-lesson="primer/agents/rag.html#hyde_search"><code>hyde_search</code></a>`.
+  Every function the page names must exist; `make sitecheck` fails on a call
+  to one that doesn't.
+- A function the page invents as an example (not code in this repository):
+  `<code class="example">is_palindrome(s)</code>`, which the check skips.
 - Every external URL must be a primary source you are certain exists.
 
 ## Done means
