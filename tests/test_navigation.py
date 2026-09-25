@@ -715,3 +715,13 @@ class TestTheHomePageKeepsEachPartsIntroduction:
         from tools.docsite import render_home
 
         assert '<code>python -m <a href="primer/ml/attention.html">primer.ml.attention</a></code>' in render_home()
+
+    def test_given_the_home_page_it_says_what_a_test_is_and_shows_a_real_one(self, local):
+        from tools.docsite import render_home
+
+        header = render_home().split("</header>")[0]
+        assert "checked by a test." not in header  # jargon: says nothing to someone who doesn't write tests
+        # The example it quotes must be a real test, and the link must lead to the file that holds it.
+        assert "given a causal mask, future tokens receive zero attention" in header
+        assert "def test_given_a_causal_mask_future_tokens_receive_zero_attention" in (ROOT / "tests/test_attention.py").read_text()
+        assert 'href="../../tests/test_attention.py"' in header

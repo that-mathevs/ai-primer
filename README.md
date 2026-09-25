@@ -14,8 +14,11 @@ This repository is the source. Clone it to run the lessons yourself (see
 Most explanations of AI either stay at the level of analogy or jump straight
 to notation that assumes you already know it. This repository does neither.
 Every idea is **built in plain Python you can read**, **drawn** as a
-diagram, **decoded** symbol by symbol, and **checked** by a test that states
-what it proves. Nothing depends on already knowing the jargon.
+diagram, and **decoded** symbol by symbol. Each lesson also comes with
+**tests**: small programs that run its code and check it does what the lesson
+claims, each named as a plain sentence, such as *given a causal mask, future
+tokens receive zero attention* ([the attention lesson's tests](tests/test_attention.py)).
+Nothing depends on already knowing the jargon.
 
 It covers two things:
 

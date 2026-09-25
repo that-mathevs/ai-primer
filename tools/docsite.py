@@ -661,7 +661,8 @@ def render_home() -> str:
     from primer.curriculum import REPO_URL
 
     repo = repo_url()
-    return HOME_TEMPLATE.replace("{{HOME_REPO}}", REPO_URL).replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
+    return HOME_TEMPLATE.replace("{{EXAMPLE_TESTS}}", code_link("tests/test_attention.py", "index.html")).replace(
+        "{{HOME_REPO}}", REPO_URL).replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
         "{{REPO_LABEL}}", repo.split("://", 1)[-1]).replace("{{LICENSE}}", code_link("LICENSE", "index.html")).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
         "{{COUNT}}", str(len(CURRICULUM))
     )
@@ -693,7 +694,11 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 </style></head>
 <body><main>
 <header><div class="top"><h1>primer: how modern AI works, built from scratch</h1><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
-<p>{{COUNT}} lessons. Every idea is built in plain Python, drawn, decoded symbol by symbol, and checked by a test.
+<p>{{COUNT}} lessons. Every idea is built in plain Python, drawn, and decoded symbol by symbol. Each lesson also
+comes with tests: small programs that run its code and check it does what the lesson claims, each named as a
+plain sentence, such as <em>given a causal mask, future tokens receive zero attention</em>
+(<a href="{{EXAMPLE_TESTS}}">the attention lesson's tests</a>). Read together, a lesson's tests are a precise
+summary of what it teaches.
 Hover over any underlined term for a plain-English definition.</p>
 <p>Every lesson also runs on its own in a terminal as a narrated walkthrough (<code>python -m <a href="primer/ml/attention.html">primer.ml.attention</a></code>),
 and ends with links to the primary sources. The shared toy data and stand-in embedder the lessons use live in
