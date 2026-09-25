@@ -212,9 +212,10 @@ def main() -> int:
         print(f"  ✗ {page} -> {', '.join(sorted(refs))}")
 
     leftovers: dict[str, list[str]] = {}
-    for page in sorted((SITE / "primer").rglob("*.html")):
+    for page in sorted(SITE.rglob("*.html")):
         name = page.relative_to(SITE).as_posix()
-        module = name.removesuffix(".html").replace("/", ".")
+        # Lesson pages resolve names in their own module; the home page and companions in the package.
+        module = name.removesuffix(".html").replace("/", ".") if name.startswith("primer/") else "primer"
         html = page.read_text(errors="ignore")
         if 'http-equiv="refresh"' in html:
             continue

@@ -18,5 +18,5 @@ Every module is runnable: `python -m primer.ml.attention` prints a narrated
 walkthrough. Every module docstring ends with **Further reading** links to
 the primary sources (papers, official docs).
 
-The suggested reading order is in the repository `README.md`.
+The reading order is in `primer.curriculum`, and on the site's home page.
 """

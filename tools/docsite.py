@@ -599,6 +599,33 @@ def forward_page(target: str) -> str:
     )
 
 
+def part_intro(part_key: str) -> str:
+    """A part's introduction for the home page, from its package's docstring (the text above its reading list)."""
+    import importlib
+
+    from primer.curriculum import CURRICULUM
+
+    packages = {l.module.rsplit(".", 1)[0] for l in CURRICULUM if l.part == part_key} - {"primer"}
+    if len(packages) != 1:
+        return ""
+    package = packages.pop()
+    doc = importlib.import_module(package).__doc__ or ""
+    intro = doc.split("## Reading order")[0].strip()
+    intro = re.sub(r"^# .*\n", "", intro).strip()
+
+    def inline(text: str) -> str:
+        text = htmllib.escape(" ".join(text.split()), quote=False)
+        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+
+        def code(m: re.Match) -> str:
+            target = _code_target(m.group(1), package, "index.html", "") if _CODE_NAME.fullmatch(m.group(1)) else None
+            return f'<code><a href="{target}">{m.group(1)}</a></code>' if target else f"<code>{m.group(1)}</code>"
+
+        return re.sub(r"`([^`]+)`", code, text)
+
+    return "".join(f'<p class="blurb">{inline(para)}</p>' for para in re.split(r"\n\s*\n", intro) if para.strip())
+
+
 def render_home() -> str:
     """The site's front page: every part, every lesson, every paper, generated."""
     from primer.curriculum import BIG_QUESTIONS, CURRICULUM, PARTS, lessons_in
@@ -611,7 +638,7 @@ def render_home() -> str:
         )
 
     parts = "".join(
-        f'<section id="{p.key}"><h2>{htmllib.escape(p.title)}</h2><p class="blurb">{htmllib.escape(p.blurb)}</p>'
+        f'<section id="{p.key}"><h2>{htmllib.escape(p.title)}</h2><p class="blurb">{htmllib.escape(p.blurb)}</p>{part_intro(p.key)}'
         f'<ol class="cards">{"".join(card(i, l) for i, l in lessons_in(p.key))}</ol></section>'
         for p in PARTS
     )
@@ -631,8 +658,10 @@ def render_home() -> str:
         + "</span></li>"
         for p in catalog()
     )
+    from primer.curriculum import REPO_URL
+
     repo = repo_url()
-    return HOME_TEMPLATE.replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
+    return HOME_TEMPLATE.replace("{{HOME_REPO}}", REPO_URL).replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
         "{{REPO_LABEL}}", repo.split("://", 1)[-1]).replace("{{LICENSE}}", code_link("LICENSE", "index.html")).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
         "{{COUNT}}", str(len(CURRICULUM))
     )
@@ -644,7 +673,7 @@ HOME_TEMPLATE = """<!doctype html>
 <link rel="stylesheet" href="assets/theme.css"><script src="assets/theme.js"></script>
 <style>
 :root{--bg:var(--p-bg);--fg:var(--p-fg);--muted:var(--p-muted);--line:var(--p-border);--card:var(--p-card);--accent:var(--p-accent)}
-.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
+.repo{font-weight:600}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,sans-serif}
 main{max-width:980px;margin:0 auto;padding:2rem 16px 4rem}
 a{color:var(--accent)}header h1{font-size:2.2rem;margin:.2rem 0}header p{color:var(--muted);max-width:44rem}
@@ -665,7 +694,11 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 <body><main>
 <header><div class="top"><h1>primer: how modern AI works, built from scratch</h1><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
 <p>{{COUNT}} lessons. Every idea is built in plain Python, drawn, decoded symbol by symbol, and checked by a test.
-Hover over any underlined term for a plain-English definition.</p></header>
+Hover over any underlined term for a plain-English definition.</p>
+<p>Every lesson also runs on its own in a terminal as a narrated walkthrough (<code>python -m <a href="primer/ml/attention.html">primer.ml.attention</a></code>),
+and ends with links to the primary sources. The shared toy data and stand-in embedder the lessons use live in
+<a href="primer/common.html"><code>primer.common</code></a>.</p>
+<p class="repo">The code: <a href="{{HOME_REPO}}">{{HOME_REPO}}</a></p></header>
 <nav class="jump" aria-label="Jump to">
 <a href="#lessons">Lessons</a><a href="#big">Big questions</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
 <a href="#papers">Annotated papers</a>

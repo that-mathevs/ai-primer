@@ -680,3 +680,38 @@ class TestNoLinkGoesNowhere:
 
         (tmp_path / "a.html").write_text('<a href="">here</a> <a href="b.html">fine</a>')
         assert empty_links(tmp_path) == {"a.html": ["here"]}
+
+
+class TestTheHomePageKeepsEachPartsIntroduction:
+    # The package pages forward to the home page, so the home page carries what they said.
+
+    def test_given_the_embeddings_part_its_section_explains_what_an_embedding_is(self):
+        from tools.docsite import render_home
+
+        section = render_home().split('id="embeddings"')[1].split("</section>")[0]
+        assert "closeness in space means similarity in meaning" in section
+
+    def test_given_the_agents_part_its_section_says_everything_runs_offline_with_links_to_both_models(self):
+        from tools.docsite import render_home
+
+        section = render_home().split('id="agents"')[1].split("</section>")[0]
+        assert "runs offline" in section
+        assert 'href="primer/agents/llm.html#ScriptedLLM"' in section and 'href="primer/agents/llm.html#ClaudeLLM"' in section
+
+    def test_given_the_home_page_it_says_where_the_shared_code_lives(self):
+        from tools.docsite import render_home
+
+        assert 'href="primer/common.html"' in render_home()
+
+    def test_given_the_home_page_its_header_shows_the_repositorys_address_as_a_link(self):
+        from primer.curriculum import REPO_URL
+        from tools.docsite import render_home
+
+        header = render_home().split("</header>")[0]
+        # Written out in full, so a reader sees exactly where the code lives.
+        assert f'<a href="{REPO_URL}">{REPO_URL}</a>' in header
+
+    def test_given_the_home_page_the_example_run_command_links_to_the_lesson_it_runs(self):
+        from tools.docsite import render_home
+
+        assert '<code>python -m <a href="primer/ml/attention.html">primer.ml.attention</a></code>' in render_home()
