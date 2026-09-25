@@ -122,19 +122,25 @@ def repo_link_problems() -> dict[str, set[str]]:
     return bad
 
 
-def links_through_forwards() -> dict[str, set[str]]:
-    """Links that land on a forwarding package page instead of going straight to the home page."""
+def links_through_forwards(site: Path = SITE) -> dict[str, set[str]]:
+    """Links that land on a forwarding package page instead of going straight to the home page.
+
+    Covers ordinary links and the lesson links companions write as data (data-lesson="...", from the site root).
+    """
     from tools.docsite import package_forwards
 
-    forwarded = {(SITE / f).resolve() for f in package_forwards()}
+    forwarded = {(site / f).resolve() for f in package_forwards()}
     found: dict[str, set[str]] = {}
-    for page in SITE.rglob("*.html"):
+    for page in site.rglob("*.html"):
         if page.resolve() in forwarded:
             continue
         html = re.sub(r"<script\b.*?</script>", "", page.read_text(errors="ignore"), flags=re.S | re.I)
         for ref in re.findall(r'href="([^"#?]+)', html):
             if not EXTERNAL.match(ref) and (page.parent / ref).resolve() in forwarded:
-                found.setdefault(page.relative_to(SITE).as_posix(), set()).add(ref)
+                found.setdefault(page.relative_to(site).as_posix(), set()).add(ref)
+        for ref in re.findall(r'data-lesson="([^"#?]+)', html):
+            if (site / ref).resolve() in forwarded:
+                found.setdefault(page.relative_to(site).as_posix(), set()).add(ref)
     return found
 
 

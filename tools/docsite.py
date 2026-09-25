@@ -841,7 +841,13 @@ def part_intro(part_key: str) -> str:
     intro = doc.split("## Reading order")[0].strip()
     intro = re.sub(r"^# .*\n", "", intro).strip()
 
-    return "".join(f'<p class="blurb">{inline_markdown(para, package)}</p>' for para in re.split(r"\n\s*\n", intro) if para.strip())
+    # The part's one-line blurb is shown just above; don't say it again.
+    from primer.curriculum import PARTS
+
+    blurb = next(p.blurb for p in PARTS if p.key == part_key)
+    paragraphs = [" ".join(para.split()) for para in re.split(r"\n\s*\n", intro) if para.strip()]
+    paragraphs = [para.removeprefix(blurb).strip() for para in paragraphs]
+    return "".join(f'<p class="blurb">{inline_markdown(para, package)}</p>' for para in paragraphs if para)
 
 
 def inline_markdown(text: str, module: str = "primer") -> str:

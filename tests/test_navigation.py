@@ -877,3 +877,24 @@ class TestEveryWayOfNamingCodeIsLinked:
         page = '<span class="signature">(x)</span><p>Run it on an untrained TinyGPT.</p>'
         linked = link_code_mentions(page, "primer.ml.big_picture", "primer/ml/big_picture.html")
         assert '<a href="transformer.html#TinyGPT">TinyGPT</a>' in linked
+
+    def test_given_a_companion_whose_script_links_a_forwarding_page_the_site_check_reports_it(self, tmp_path):
+        from tools.sitecheck import links_through_forwards
+
+        (tmp_path / "papers").mkdir()
+        (tmp_path / "primer.html").write_text('<meta http-equiv="refresh" content="0; url=index.html#lessons">')
+        (tmp_path / "papers" / "p.html").write_text('<a data-lesson="primer.html">The primer</a>')
+        assert links_through_forwards(tmp_path) == {"papers/p.html": {"primer.html"}}
+
+    def test_given_any_part_its_section_never_says_the_same_sentence_twice(self):
+        from primer.curriculum import PARTS
+        from tools.docsite import render_home
+
+        home = render_home()
+        for part in PARTS:
+            section = home.split(f'id="{part.key}"')[1].split("</section>")[0]
+            # The prose after the heading (which has no full stop), with tags turned to spaces so sentences don't glue.
+            prose = section.split("</h2>", 1)[1].split('<ol class="cards">')[0]
+            text = " ".join(re.sub(r"<[^>]+>", " ", prose).split())
+            sentences = [s.strip() for s in re.split(r"(?<=\.)\s+", text) if s.strip()]
+            assert len(sentences) == len(set(sentences)), part.key
