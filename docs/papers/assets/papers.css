@@ -199,3 +199,8 @@ button[aria-pressed="true"] {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* In Python: the formula computed on the worked numbers, as >>> examples a test runs. */
+pre.in-python { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.7rem 0.9rem; overflow-x: auto; font-size: 0.88rem; line-height: 1.45; margin: 0.3rem 0 1rem; }
+pre.in-python code { background: none; padding: 0; }

@@ -49,7 +49,20 @@ they sit under, so the outline never skips a level: `<h4>` under a subsection
 3. **Diagram or interactive figure**, immediately followed by
    `<p class="reading"><strong>Reading it:</strong> …</p>`.
 4. **The math**: each equation, then its Symbols table, an **In words**
-   line and a **With the numbers** line.
+   line, a **With the numbers** line, and an **In Python** block: the same
+   numbers computed in plain Python (standard library only), mirroring the
+   equation symbol by symbol, as `>>>` examples a test runs
+   (`tests/test_math_in_python.py`):
+
+   ```html
+   <p class="inwords"><strong>In Python:</strong></p>
+   <pre class="in-python"><code>&gt;&gt;&gt; m = 0.9 * 0.2 + 0.1 * 1
+   &gt;&gt;&gt; round(m, 2)
+   0.28</code></pre>
+   ```
+
+   Escape `<`, `>` and `&` as `&lt;`, `&gt;`, `&amp;`; the test reads the
+   code the way a browser shows it.
 5. **Why it matters today**: what survived, what changed, and a link to the
    lesson.
 

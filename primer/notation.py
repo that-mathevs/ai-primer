@@ -60,12 +60,38 @@ $$
 **With the numbers:** $\sum_{i=1}^{4} i = 1 + 2 + 3 + 4 = 10$. In code, Σ is a
 `for` loop with a running total (`summation` below).
 
+**In Python:**
+
+```python
+>>> x = [1, 2, 3, 4]
+>>> total = 0
+>>> for x_i in x:        # Σ: visit each x_i, from i = 1 to n ...
+...     total += x_i     # ... and add it to a running total
+>>> total
+10
+>>> sum(x)               # Python's built-in sum is the same loop
+10
+```
+
 **Π (capital pi)** is the same idea with multiplication:
 $\prod_{i=1}^{4} i = 1 \times 2 \times 3 \times 4 = 24$. It shows up whenever
 independent chances combine. For example, ten steps that each succeed 95%
 of the time all succeed with probability $\prod 0.95 = 0.95^{10} \approx 0.60$.
 This single fact explains why long chains of AI agent steps fail so often
 (`primer.agents.planning`).
+
+**In Python:**
+
+```python
+>>> x = [1, 2, 3, 4]
+>>> product = 1
+>>> for x_i in x:        # Π: the same loop, multiplying instead of adding
+...     product *= x_i
+>>> product
+24
+>>> round(0.95 ** 10, 2)  # ten steps that each succeed 95% of the time
+0.6
+```
 
 **In code:** `product` is Π written the same way: a loop with a running product that starts at 1.
 
@@ -92,6 +118,15 @@ $$
 products."
 
 **With the numbers:** $(1, 2) \cdot (3, 0.5) = 1 \cdot 3 + 2 \cdot 0.5 = 4$.
+
+**In Python:**
+
+```python
+>>> a = [1, 2]
+>>> b = [3, 0.5]
+>>> sum(a_i * b_i for a_i, b_i in zip(a, b))   # Σ over i of a_i times b_i
+4.0
+```
 
 Geometrically, the dot product is large when two arrows point the same way,
 zero when they are at right angles, and negative when they point apart.
@@ -137,6 +172,18 @@ $$
 **With the numbers:** $\lVert (3, 4) \rVert = \sqrt{9 + 16} = 5$ and
 $\lVert (1, 2, 2) \rVert = \sqrt{1 + 4 + 4} = 3$.
 
+**In Python:**
+
+```python
+>>> import math
+>>> def length(x):
+...     return math.sqrt(sum(x_i ** 2 for x_i in x))   # √ of Σ x_i²
+>>> length([3, 4])
+5.0
+>>> length([1, 2, 2])
+3.0
+```
+
 Dividing a vector by its length gives a **unit vector** of length 1 that
 points the same way. Embedding systems do this constantly, because then the
 dot product measures only direction (see
@@ -173,6 +220,21 @@ of B at the same pace, multiplying and adding."
 $\begin{pmatrix}1&2\\3&4\end{pmatrix}\begin{pmatrix}5&6\\7&8\end{pmatrix}
 = \begin{pmatrix}1\cdot5+2\cdot7 & 1\cdot6+2\cdot8\\ 3\cdot5+4\cdot7 & 3\cdot6+4\cdot8\end{pmatrix}
 = \begin{pmatrix}19&22\\43&50\end{pmatrix}$.
+
+**In Python:**
+
+```python
+>>> A = [[1, 2], [3, 4]]
+>>> B = [[5, 6], [7, 8]]
+>>> m = len(B)           # A has m columns, B has m rows: they must match
+>>> AB = [[sum(A[i][k] * B[k][j] for k in range(m))     # (AB)_ij = Σ_k A_ik B_kj
+...        for j in range(len(B[0]))]
+...       for i in range(len(A))]
+>>> AB
+[[19, 22], [43, 50]]
+>>> [list(column) for column in zip(*A)]               # the transpose: rows become columns
+[[1, 3], [2, 4]]
+```
 
 ```mermaid
 flowchart LR
@@ -234,6 +296,19 @@ $$
 
 **With the numbers:** softmax(2.0, 1.0, 0.5) = (0.63, 0.23, 0.14).
 
+**In Python:**
+
+```python
+>>> import math
+>>> z = [2.0, 1.0, 0.5]
+>>> exps = [math.exp(z_i) for z_i in z]   # e^(z_i) for each score
+>>> total = sum(exps)                      # Σ_j e^(z_j)
+>>> [round(e / total, 2) for e in exps]    # each share of the total
+[0.63, 0.23, 0.14]
+>>> max(range(len(z)), key=lambda i: z[i]) # argmax: the position of the largest
+0
+```
+
 **argmax** is simpler: it answers "*which position* holds the largest
 value?", not "what is the largest value?". argmax(0.1, 7.0, 3.0) = position
 2 (index 1 in Python). "Greedy decoding" in a language model is picking the
@@ -270,6 +345,22 @@ distance from the mean; the standard deviation is its square root."
 **With the numbers:** for (2, 4, 4, 4, 5, 5, 7, 9): μ = 40 / 8 = 5; the
 squared distances are (9, 1, 1, 1, 0, 0, 4, 16), which sum to 32, so
 σ² = 32 / 8 = 4 and σ = 2.
+
+**In Python:**
+
+```python
+>>> import math
+>>> x = [2, 4, 4, 4, 5, 5, 7, 9]
+>>> n = len(x)
+>>> mu = sum(x) / n                               # μ = (1/n) Σ x_i
+>>> mu
+5.0
+>>> [(x_i - mu) ** 2 for x_i in x]                # the squared distances from μ
+[9.0, 1.0, 1.0, 1.0, 0.0, 0.0, 4.0, 16.0]
+>>> variance = sum((x_i - mu) ** 2 for x_i in x) / n   # σ² = their average
+>>> variance, math.sqrt(variance)                 # σ is its square root
+(4.0, 2.0)
+```
 
 Spread matters constantly in neural networks. If numbers flowing through a
 network spread out layer after layer, training blows up; normalization layers
@@ -315,6 +406,16 @@ the output changes per unit of nudge."
 **With the numbers:** for $f(x) = x^2$ at $x = 3$: (3.00001² − 2.99999²) /
 0.00002 = 6. The slope of $x^2$ at 3 is 6 (the rule is $2x$).
 
+**In Python:**
+
+```python
+>>> def f(x):
+...     return x ** 2
+>>> h = 0.00001
+>>> round((f(3 + h) - f(3 - h)) / (2 * h), 6)   # rise over run across a tiny step
+6.0
+```
+
 With many inputs, nudge each one separately. The slope in each direction is
 a **partial derivative**, written $\frac{\partial f}{\partial x_i}$ (the curly
 ∂ just means "only this input moves, the others stay fixed"). Collect them
@@ -341,6 +442,18 @@ the loss the fastest."
 **With the numbers:** for the bowl $L = x^2 + y^2$ at (1, 2), the gradient is
 (2, 4), pointing uphill away from the bottom at (0, 0). With η = 0.1, the
 step goes to (1 − 0.2, 2 − 0.4) = (0.8, 1.6), closer to the bottom.
+
+**In Python:**
+
+```python
+>>> theta = [1.0, 2.0]                        # (x, y)
+>>> gradient = [2 * theta[0], 2 * theta[1]]   # ∇L for L = x² + y²: each slope is 2 times the value
+>>> gradient
+[2.0, 4.0]
+>>> eta = 0.1
+>>> [t - eta * g for t, g in zip(theta, gradient)]   # θ_new = θ − η ∇L
+[0.8, 1.6]
+```
 
 ![Gradient descent on a bowl](figures/primer.notation.gradient_descent.svg)
 

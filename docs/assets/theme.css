@@ -87,7 +87,9 @@ nav.pdoc input[type="search"] {
 :root[data-theme="dark"] .pdoc-code .c, :root[data-theme="dark"] .pdoc-code .c1,
 :root[data-theme="dark"] .pdoc-code .ch { color: #7f848e; }
 :root[data-theme="dark"] .pdoc-code .nf, :root[data-theme="dark"] .pdoc-code .fm { color: #82aaff; }
-:root[data-theme="dark"] .pdoc-code .nc { color: #ffcb6b; }
+:root[data-theme="dark"] .pdoc-code .nc, :root[data-theme="dark"] .pdoc-code .nn,
+:root[data-theme="dark"] .pdoc-code .ne, :root[data-theme="dark"] .pdoc-code .no { color: #ffcb6b; }
+:root[data-theme="dark"] .pdoc-code .gp, :root[data-theme="dark"] .pdoc-code .go { color: #a1a1a6; }
 :root[data-theme="dark"] .pdoc-code .mi, :root[data-theme="dark"] .pdoc-code .mf { color: #f78c6c; }
 :root[data-theme="dark"] .pdoc-code .nb, :root[data-theme="dark"] .pdoc-code .bp,
 :root[data-theme="dark"] .pdoc-code .nd { color: #89ddff; }
@@ -106,7 +108,9 @@ nav.pdoc input[type="search"] {
   :root:not([data-theme="light"]) .pdoc-code .c, :root:not([data-theme="light"]) .pdoc-code .c1,
   :root:not([data-theme="light"]) .pdoc-code .ch { color: #7f848e; }
   :root:not([data-theme="light"]) .pdoc-code .nf, :root:not([data-theme="light"]) .pdoc-code .fm { color: #82aaff; }
-  :root:not([data-theme="light"]) .pdoc-code .nc { color: #ffcb6b; }
+  :root:not([data-theme="light"]) .pdoc-code .nc, :root:not([data-theme="light"]) .pdoc-code .nn,
+  :root:not([data-theme="light"]) .pdoc-code .ne, :root:not([data-theme="light"]) .pdoc-code .no { color: #ffcb6b; }
+  :root:not([data-theme="light"]) .pdoc-code .gp, :root:not([data-theme="light"]) .pdoc-code .go { color: #a1a1a6; }
   :root:not([data-theme="light"]) .pdoc-code .mi, :root:not([data-theme="light"]) .pdoc-code .mf { color: #f78c6c; }
   :root:not([data-theme="light"]) .pdoc-code .nb, :root:not([data-theme="light"]) .pdoc-code .bp,
   :root:not([data-theme="light"]) .pdoc-code .nd { color: #89ddff; }

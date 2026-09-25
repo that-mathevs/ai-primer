@@ -49,6 +49,24 @@ is the gold standard; every module meets it.
 - an **In words** line that reads the whole formula aloud as a sentence;
 - the formula evaluated on the lesson's tiny worked example, so every symbol
   gets a real number.
+- an **In Python** block: the same worked example computed in plain Python
+  (standard library only), written to mirror the formula symbol by symbol
+  (`sum(...)` for Σ, a loop for Π, variables named after the symbols), as
+  `>>>` examples whose output is exactly the numbers the lesson shows.
+  `tests/test_math_in_python.py` runs every block and fails on a formula
+  without one.
+
+  ````markdown
+  **In Python:**
+
+  ```python
+  >>> import math
+  >>> z = [2.0, 1.0, 0.5]
+  >>> exps = [math.exp(z_i) for z_i in z]   # e^(z_i) for each score
+  >>> [round(e / sum(exps), 2) for e in exps]
+  [0.63, 0.23, 0.14]
+  ```
+  ````
 
 Every math term (softmax, dot product, logarithm, gradient, matrix
 multiply, …) is explained in plain words the first time a lesson uses it,
