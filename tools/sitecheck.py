@@ -18,6 +18,7 @@ Three checks, all offline:
 10. Nothing renders broken: no indented lines collapsed into one paragraph, no raw Markdown,
     no heading that skips a level.
 11. Every page can be reached: some other page links to it.
+12. Every page with diagrams draws each one once, under its own name.
 
 Links built by JavaScript at runtime are checked by the pages themselves.
 """
@@ -229,6 +230,16 @@ def orphan_pages(site: Path = SITE) -> list[str]:
     return sorted(p.relative_to(site.resolve()).as_posix() for p in pages - reached - forwards)
 
 
+def diagram_problems(site: Path = SITE) -> list[str]:
+    """Pages whose diagrams use mermaid's automatic start, which lets diagrams collide and overlap."""
+    found = []
+    for page in sorted(site.rglob("*.html")):
+        html = page.read_text(errors="ignore")
+        if 'class="mermaid"' in html and "startOnLoad: false" not in html:
+            found.append(page.relative_to(site).as_posix())
+    return found
+
+
 def empty_links(site: Path = SITE) -> dict[str, list[str]]:
     """Links whose address is empty: clicking one just reloads the page."""
     found: dict[str, list[str]] = {}
@@ -364,6 +375,11 @@ def main() -> int:
     for page in orphans:
         print(f"  ✗ {page}")
 
+    diagrams = diagram_problems()
+    print(f"pages whose diagrams can collide: {len(diagrams)}")
+    for page in diagrams:
+        print(f"  ✗ {page}")
+
     empties = empty_links()
     print(f"links with an empty address: {sum(map(len, empties.values()))}")
     for page, texts in sorted(empties.items()):
@@ -384,7 +400,7 @@ def main() -> int:
         for problem in problems[:5]:
             print(f"  ✗ {page}: {problem[:110]}")
     return 1 if (bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties
-                 or counts or rendering or ghosts or orphans) else 0
+                 or counts or rendering or ghosts or orphans or diagrams) else 0
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ is the gold standard; every module meets it.
   comment line above the code it explains, and every line that produces a
   number the lesson shows ends in `# → value`.
   [`tests/test_math_in_python.py`](tests/test_math_in_python.py) runs every
-  block and checks every `# →` claim (`tools/inpython.py`), and fails on a
+  block and checks every `# →` claim ([`tools/inpython.py`](tools/inpython.py)), and fails on a
   formula without a block.
 
   ````markdown

@@ -973,3 +973,30 @@ class TestTheHomePageHeader:
         # 38 lessons, numbered 0 to 37: say both, so "Lesson 5 of 37" and "38 lessons" can't look contradictory.
         assert "38 lessons, numbered 0 to 37" in render_home()
         assert "Lesson 5 of 0 to 37" in lesson_nav("primer.ml.attention")
+
+
+class TestDiagramsDrawOnce:
+    # Mermaid names each diagram after the clock; two drawn in the same millisecond share a name and draw on
+    # top of each other. pdoc's script also redraws them whenever the page changes, which mermaid itself does.
+
+    PDOC_SCRIPT = ('<script type="module" defer>\n    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";\n'
+                   '    document.addEventListener("DOMContentLoaded", () => {\n'
+                   '        new MutationObserver(() => mermaid.run()).observe(document.body, {childList: true});\n    })\n</script>')
+
+    def test_given_a_page_with_diagrams_each_is_drawn_once_in_order_under_its_own_name(self):
+        from tools.docsite import draw_diagrams_once
+
+        page = draw_diagrams_once(f"<head>{self.PDOC_SCRIPT}</head>")
+        assert "startOnLoad: false" in page and "diagram-${i + 1}" in page
+
+    def test_given_a_page_with_diagrams_nothing_redraws_them_when_the_page_changes(self):
+        from tools.docsite import draw_diagrams_once
+
+        assert "MutationObserver" not in draw_diagrams_once(f"<head>{self.PDOC_SCRIPT}</head>")
+
+    def test_given_a_built_page_whose_diagrams_start_automatically_the_site_check_reports_it(self, tmp_path):
+        from tools.sitecheck import diagram_problems
+
+        (tmp_path / "a.html").write_text('<div class="mermaid">flowchart LR</div><script>mermaid.run()</script>')
+        (tmp_path / "b.html").write_text('<div class="mermaid">flowchart LR</div><script>mermaid.initialize({ startOnLoad: false })</script>')
+        assert diagram_problems(tmp_path) == ["a.html"]

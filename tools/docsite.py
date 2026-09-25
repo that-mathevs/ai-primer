@@ -737,6 +737,24 @@ offline, and <code>make spec</code> prints this page in a terminal.</p>
 """
 
 
+DIAGRAM_SCRIPT = """<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+// Draw each diagram once, in order, under its own name. Mermaid's automatic start names
+// diagrams after the clock, so two drawn in the same millisecond collide and overlap.
+mermaid.initialize({ startOnLoad: false });
+const diagrams = [...document.querySelectorAll("div.mermaid")];
+for (const [i, el] of diagrams.entries()) {
+  const { svg } = await mermaid.render(`diagram-${i + 1}`, el.textContent);
+  el.innerHTML = svg;
+}
+</script>"""
+
+
+def draw_diagrams_once(page_html: str) -> str:
+    """Swap pdoc's mermaid script (automatic start, redraw on every page change) for one that draws each diagram once."""
+    return re.sub(r'<script type="module" defer>\s*import mermaid.*?</script>', lambda m: DIAGRAM_SCRIPT, page_html, count=1, flags=re.S)
+
+
 def label_sections(page_html: str) -> str:
     """pdoc's section labels ("Arguments:", "Returns:", "Inherited Members") as bold labels.
 
@@ -1014,6 +1032,7 @@ def _postprocess(path: Path, terms: dict[str, tuple], counts: dict[str, int] | N
         text = text.replace("</main>", nav.replace('class="primer-nav"', 'class="primer-nav pn-bottom"') + "</main>", 1)
     else:
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + site_nav(page), text, count=1)
+    text = draw_diagrams_once(text)
     text = label_sections(text)
     text = link_code_mentions(text, module, page)
     text = link_members_to_source(text, module, page)
