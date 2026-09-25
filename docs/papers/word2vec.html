@@ -140,10 +140,11 @@
 <p class="inwords"><strong>In words:</strong> “total training work is the number of passes over the data, times the number of words, times the work per word.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 3 passes over 1 billion words with Q = 15,000 parameters touched per word gives 3 × 10<sup>9</sup> × 15,000 = 4.5 × 10<sup>13</sup> parameter touches.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; E, T, Q = 3, 10**9, 15_000        # passes, words, parameters touched per word
-&gt;&gt;&gt; O = E * T * Q                     # O = E × T × Q
-&gt;&gt;&gt; print(f"{O:.1e}")
-4.5e+13</code></pre>
+<pre class="in-python"><code># passes, words, parameters touched per word
+E, T, Q = 3, 10**9, 15_000
+# O = E × T × Q
+O = E * T * Q
+print(f"{O:.1e}")  # → 4.5e+13</code></pre>
 
 <h4>2.1 The feed-forward neural network language model (NNLM)</h4>
 <p>The older model reads the previous N words, looks each one up in a table of D numbers, feeds all N × D numbers into a hidden layer of H <span class="t" data-t="neuron">neurons</span>, and finally scores every one of the V words in the vocabulary. Its cost per word is:</p>
@@ -152,12 +153,12 @@
 <p class="inwords"><strong>In words:</strong> “look up N word vectors, push all of them through the hidden layer, then score every word in the vocabulary.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the paper's typical sizes, N = 10, D = 500, H = 500 and V = 1,000,000, give 5,000 + 2,500,000 + 500,000,000. Scoring the whole vocabulary (H × V) is 99.5% of the work.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; N, D, H, V = 10, 500, 500, 1_000_000
-&gt;&gt;&gt; N * D, N * D * H, H * V           # look-ups, hidden layer, scoring the vocabulary
-(5000, 2500000, 500000000)
-&gt;&gt;&gt; Q = N * D + N * D * H + H * V
-&gt;&gt;&gt; round(100 * H * V / Q, 1)         # % of the work spent on H × V
-99.5</code></pre>
+<pre class="in-python"><code>N, D, H, V = 10, 500, 500, 1_000_000
+# look-ups, hidden layer, scoring the vocabulary
+N * D, N * D * H, H * V  # → (5000, 2500000, 500000000)
+Q = N * D + N * D * H + H * V
+# % of the work spent on H × V
+round(100 * H * V / Q, 1)  # → 99.5</code></pre>
 <p>The standard escape is a <span class="t" data-tip-title="Hierarchical softmax" data-tip="Instead of scoring all V words, arrange them as leaves of a binary tree and make about log₂(V) left-or-right decisions to reach one word. See paper 2, section 2.1, below.">hierarchical softmax</span>, which replaces the V scores with about log<sub>2</sub>(V) ≈ 20 yes-or-no decisions. The paper uses a <span class="t" data-tip-title="Huffman tree" data-tip="A binary tree built so that frequent items get short paths from the root and rare items long ones, like Morse code giving the letter E a single dot.">Huffman tree</span>, which gives frequent words even shorter paths. Once that is done, the hidden layer (N × D × H) becomes the bottleneck, and that is exactly what word2vec deletes.</p>
 <h4>2.2 The recurrent language model (RNNLM)</h4>
 <p>A <span class="t" data-t="rnn">recurrent network</span> keeps a <span class="t" data-t="hidden state">hidden state</span> of H numbers and updates it word by word, so Q = H × H + H × V, or H × H + H × log<sub>2</sub>(V) with the tree. The H × H matrix, applied at every word, now dominates.</p>
@@ -228,13 +229,13 @@
 <p class="inwords"><strong>In words:</strong> “for each of up to C context predictions, touch the input vector and walk a path of log₂(V) tree nodes, each with its own D numbers.”</p>
 <p class="inwords"><strong>With the numbers:</strong> C = 10, D = 500, V = 1,000,000: 10 × (500 + 500 × 19.93) ≈ 104,700 parameters per word, against about 2.5 million for the NNLM.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; C, D, V = 10, 500, 1_000_000
-&gt;&gt;&gt; round(math.log2(V), 2)            # nodes on a path through the tree
-19.93
-&gt;&gt;&gt; Q = C * (D + D * math.log2(V))    # Q = C × (D + D × log2 V)
-&gt;&gt;&gt; round(Q, -2)
-104700.0</code></pre>
+<pre class="in-python"><code>import math
+C, D, V = 10, 500, 1_000_000
+# nodes on a path through the tree
+round(math.log2(V), 2)  # → 19.93
+# Q = C × (D + D × log2 V)
+Q = C * (D + D * math.log2(V))
+round(Q, -2)  # → 104700.0</code></pre>
 <div class="play" id="window-demo">
   <div class="row2">
     <label>Maximum window C = <strong id="win-c-v">2</strong><input type="range" id="win-c" min="1" max="5" step="1" value="2"></label>
@@ -261,19 +262,19 @@
 <p class="inwords"><strong>In words:</strong> “take the step from big to bigger, apply it starting from small, and answer with the word whose vector points most nearly the same way as where you land, ignoring the three question words.”</p>
 <p class="inwords"><strong>With the numbers:</strong> in the illustrative map in section 5, big = (−2, −4) and bigger = (−1, −2.8), so the step is (1, 1.2). From small = (1, −5) the same step lands on (2, −3.8), which is exactly where “smaller” sits.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; vec = {"big": (-2, -4), "bigger": (-1, -2.8), "small": (1, -5),
-...        "smaller": (2, -3.8), "cold": (3.5, -5.5), "colder": (4.5, -4.3)}
-&gt;&gt;&gt; step = [b - a for a, b in zip(vec["big"], vec["bigger"])]   # bigger − big
-&gt;&gt;&gt; [round(s, 1) for s in step]
-[1, 1.2]
-&gt;&gt;&gt; X = [s + c for s, c in zip(step, vec["small"])]             # ... + small
-&gt;&gt;&gt; [round(x, 1) for x in X]
-[2, -3.8]
-&gt;&gt;&gt; def cos(a, b):
-...     return (a[0] * b[0] + a[1] * b[1]) / (math.hypot(*a) * math.hypot(*b))
-&gt;&gt;&gt; max(["smaller", "cold", "colder"], key=lambda w: cos(X, vec[w]))   # arg max over w
-'smaller'</code></pre>
+<pre class="in-python"><code>import math
+vec = {"big": (-2, -4), "bigger": (-1, -2.8), "small": (1, -5),
+       "smaller": (2, -3.8), "cold": (3.5, -5.5), "colder": (4.5, -4.3)}
+# bigger − big
+step = [b - a for a, b in zip(vec["big"], vec["bigger"])]
+[round(s, 1) for s in step]  # → [1, 1.2]
+# ... + small
+X = [s + c for s, c in zip(step, vec["small"])]
+[round(x, 1) for x in X]  # → [2, -3.8]
+def cos(a, b):
+    return (a[0] * b[0] + a[1] * b[1]) / (math.hypot(*a) * math.hypot(*b))
+# arg max over w
+max(["smaller", "cold", "colder"], key=lambda w: cos(X, vec[w]))  # → 'smaller'</code></pre>
 <h4>4.2 More data and more dimensions, together</h4>
 <p>Training CBOW on growing slices of a 6-billion-word Google News corpus (vocabulary limited to the 30,000 most common words for this test) showed <em>diminishing returns</em>: more dimensions help only if there is also more data, and vice versa.</p>
 <div class="plot" id="dims-plot">
@@ -353,24 +354,25 @@
 <p class="inwords"><strong>In words:</strong> “for every position in the text, add up how confidently the model predicts each word within c places of it, and average over the text; training makes this as large as possible.”</p>
 <p class="inwords"><strong>With the numbers:</strong> at the centre word “brown” in “the quick brown fox jumps” with c = 2, the four terms are log p(the | brown) + log p(quick | brown) + log p(fox | brown) + log p(jumps | brown). If each probability is 0.01, the sum is 4 × ln 0.01 = −18.4, and training pushes it towards 0.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; context = ["the", "quick", "fox", "jumps"]   # within c = 2 of "brown"
-&gt;&gt;&gt; p = {w: 0.01 for w in context}               # p(w_(t+j) | brown)
-&gt;&gt;&gt; round(sum(math.log(p[w]) for w in context), 1)
--18.4</code></pre>
+<pre class="in-python"><code>import math
+# within c = 2 of "brown"
+context = ["the", "quick", "fox", "jumps"]
+# p(w_(t+j) | brown)
+p = {w: 0.01 for w in context}
+round(sum(math.log(p[w]) for w in context), 1)  # → -18.4</code></pre>
 <h4>The expensive part: the full softmax</h4>
 <div class="eq" data-tex="p(\htmlData{sym=wO}{w_O}\mid \htmlData{sym=wI}{w_I}) = \frac{\exp\!\big(\htmlData{sym=vpO}{v'^{\top}_{w_O}} \htmlData{sym=vI}{v_{w_I}}\big)}{\htmlData{sym=sumW}{\sum_{w=1}^{W}} \exp\!\big(v'^{\top}_{w} \htmlData{sym=vI}{v_{w_I}}\big)}" data-fallback="p(w_O | w_I) = exp(v'_{w_O}ᵀ v_{w_I}) / Σ_{w=1..W} exp(v'_wᵀ v_{w_I})"></div>
 <div class="symtable" data-syms="wI,wO,vI,vpO,sumW"></div>
 <p class="inwords"><strong>In words:</strong> “score the guess by the dot product of the centre word's input vector with the guessed word's output vector, and turn the scores into probabilities with a softmax over the entire vocabulary.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with a toy vocabulary of three words whose output vectors score 2.0, 1.0 and 0.5 against the input vector, p = e<sup>2</sup> / (e<sup>2</sup> + e<sup>1</sup> + e<sup>0.5</sup>) = 7.39 / 11.76 = 0.63. With a real vocabulary, W is 10<sup>5</sup> to 10<sup>7</sup>, so the bottom of that fraction costs up to ten million dot products for every single training pair. The next two sections are two ways around it.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; scores = [2.0, 1.0, 0.5]           # v'_wᵀ v_(w_I) for each of the W = 3 words
-&gt;&gt;&gt; exps = [math.exp(s) for s in scores]
-&gt;&gt;&gt; round(exps[0], 2), round(sum(exps), 2)
-(7.39, 11.76)
-&gt;&gt;&gt; round(exps[0] / sum(exps), 2)      # p(w_O | w_I) for the first word
-0.63</code></pre>
+<pre class="in-python"><code>import math
+# v'_wᵀ v_(w_I) for each of the W = 3 words
+scores = [2.0, 1.0, 0.5]
+exps = [math.exp(s) for s in scores]
+round(exps[0], 2), round(sum(exps), 2)  # → (7.39, 11.76)
+# p(w_O | w_I) for the first word
+round(exps[0] / sum(exps), 2)  # → 0.63</code></pre>
 <figure class="ix" id="fig-pca">
   <div class="ixgrid">
   <svg viewBox="0 0 300 250" role="img" aria-label="Countries and their capitals, with parallel arrows">
@@ -403,12 +405,13 @@
 <p class="inwords"><strong>In words:</strong> “walk from the root to the word; at each inner node, compute a sigmoid of that node's vector dotted with the centre word's vector, flipping the sign when the path goes the other way; multiply the results.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for the path to “cat”, three factors 0.6 × 0.7 × 0.5 = 0.21. With a million words, a balanced tree needs log₂(10<sup>6</sup>) ≈ 20 factors, and a Huffman tree fewer for common words.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; factors = [0.6, 0.7, 0.5]         # σ(± v'ᵀ v_(w_I)) at each node on the path to "cat"
-&gt;&gt;&gt; round(math.prod(factors), 2)      # Π over the path
-0.21
-&gt;&gt;&gt; round(math.log2(10**6))           # factors on a balanced tree over a million words
-20</code></pre>
+<pre class="in-python"><code>import math
+# σ(± v'ᵀ v_(w_I)) at each node on the path to "cat"
+factors = [0.6, 0.7, 0.5]
+# Π over the path
+round(math.prod(factors), 2)  # → 0.21
+# factors on a balanced tree over a million words
+round(math.log2(10**6))  # → 20</code></pre>
 <h4>Why it matters today</h4>
 <p>Hierarchical softmax is rarely used in modern language models, which can afford the full softmax on <span class="t" data-t="gpu">GPUs</span>. The idea of replacing one huge choice with a short chain of small ones lives on in tree-based indexes and in the coarse-then-fine search of <a href="hnsw.html">HNSW</a>.</p>
 </section>
@@ -431,15 +434,15 @@
 <p class="inwords"><strong>In words:</strong> “make the real pair's score high and each of the k random pairs' scores low, each judged through a sigmoid, and replace every log-probability term in the skip-gram goal with this.”</p>
 <p class="inwords"><strong>With the numbers:</strong> −0.127 + (−1.701) + (−0.474) = −2.302 for the example above. The cost is now k + 1 dot products (3 here) instead of W (a million).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; def sigma(x):
-...     return 1 / (1 + math.exp(-x))
-&gt;&gt;&gt; real = math.log(sigma(2.0))                          # log σ(v'_(w_O)ᵀ v_(w_I))
-&gt;&gt;&gt; fakes = [math.log(sigma(-s)) for s in (1.5, -0.5)]   # log σ(−v'_(w_i)ᵀ v_(w_I)), k = 2
-&gt;&gt;&gt; round(real, 3), [round(f, 3) for f in fakes]
-(-0.127, [-1.701, -0.474])
-&gt;&gt;&gt; round(real + sum(fakes), 3)
--2.302</code></pre>
+<pre class="in-python"><code>import math
+def sigma(x):
+    return 1 / (1 + math.exp(-x))
+# log σ(v'_(w_O)ᵀ v_(w_I))
+real = math.log(sigma(2.0))
+# log σ(−v'_(w_i)ᵀ v_(w_I)), k = 2
+fakes = [math.log(sigma(-s)) for s in (1.5, -0.5)]
+round(real, 3), [round(f, 3) for f in fakes]  # → (-0.127, [-1.701, -0.474])
+round(real + sum(fakes), 3)  # → -2.302</code></pre>
 <div class="play" id="neg-demo">
   <div class="sliders" id="neg-sliders"></div>
   <div class="shares" id="neg-terms"></div>
@@ -454,16 +457,17 @@
 <p class="inwords"><strong>In words:</strong> “flatten the word frequencies a little by raising them to the power 0.75, then rescale so they add to 1.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for four words with frequencies 0.9, 0.08, 0.018 and 0.002, the powers are 0.924, 0.150, 0.049 and 0.0095, which sum to Z = 1.133. The rare word's share rises from 0.2% to 0.83%, about four times more often, while the common word falls from 90% to 81.6%.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; U = [0.9, 0.08, 0.018, 0.002]     # word frequencies U(w)
-&gt;&gt;&gt; powered = [u ** 0.75 for u in U]  # U(w)^(3/4)
-&gt;&gt;&gt; [round(x, 3) for x in powered[:3]], round(powered[3], 4)
-([0.924, 0.15, 0.049], 0.0095)
-&gt;&gt;&gt; Z = sum(powered)
-&gt;&gt;&gt; round(Z, 3)
-1.133
-&gt;&gt;&gt; P_n = [x / Z for x in powered]    # P_n(w) = U(w)^(3/4) / Z
-&gt;&gt;&gt; round(100 * P_n[0], 1), round(100 * P_n[3], 2)   # % shares: most common, rarest
-(81.6, 0.83)</code></pre>
+<pre class="in-python"><code># word frequencies U(w)
+U = [0.9, 0.08, 0.018, 0.002]
+# U(w)^(3/4)
+powered = [u ** 0.75 for u in U]
+[round(x, 3) for x in powered[:3]], round(powered[3], 4)  # → ([0.924, 0.15, 0.049], 0.0095)
+Z = sum(powered)
+round(Z, 3)  # → 1.133
+# P_n(w) = U(w)^(3/4) / Z
+P_n = [x / Z for x in powered]
+# % shares: most common, rarest
+round(100 * P_n[0], 1), round(100 * P_n[3], 2)  # → (81.6, 0.83)</code></pre>
 <div class="play" id="noise-demo">
   <div class="sliders" id="noise-sliders"></div>
   <div class="shares" id="noise-bars"></div>
@@ -484,16 +488,14 @@
 <p class="inwords"><strong>In words:</strong> “throw away each occurrence of a word with a probability that grows with how common the word is; words rarer than the threshold t are always kept.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with t = 10<sup>−5</sup>, a word making up 5% of the text (f = 0.05) is discarded with probability 1 − √(0.0002) = 1 − 0.014 = 0.986, so only 1.4% of its occurrences survive. A word with f = 10<sup>−4</sup> is discarded with probability 1 − 0.316 = 0.684. A word with f = 10<sup>−5</sup> or rarer is never discarded.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; t = 1e-5
-&gt;&gt;&gt; def P(f):
-...     return 1 - math.sqrt(t / f)   # P(w_i) = 1 − √(t / f(w_i))
-&gt;&gt;&gt; round(math.sqrt(t / 0.05), 3), round(P(0.05), 3)
-(0.014, 0.986)
-&gt;&gt;&gt; round(P(1e-4), 3)
-0.684
-&gt;&gt;&gt; P(1e-5)
-0.0</code></pre>
+<pre class="in-python"><code>import math
+t = 1e-5
+def P(f):
+    # P(w_i) = 1 − √(t / f(w_i))
+    return 1 - math.sqrt(t / f)
+round(math.sqrt(t / 0.05), 3), round(P(0.05), 3)  # → (0.014, 0.986)
+round(P(1e-4), 3)  # → 0.684
+P(1e-5)  # → 0.0</code></pre>
 <div class="plot" id="sub-plot">
   <div class="controls"><label for="sub-t">threshold t = <strong id="sub-t-v">1e-5</strong></label><input type="range" id="sub-t" min="-7" max="-3" step="0.25" value="-5"></div>
   <div id="sub-chart"></div>
@@ -520,15 +522,15 @@
 <p class="inwords"><strong>In words:</strong> “how often the two words appear side by side, minus a small discount, divided by how often each appears at all.”</p>
 <p class="inwords"><strong>With the numbers (illustrative counts):</strong> if “new” appears 2,000 times, “york” 900 times and “new york” 800 times, with δ = 5 the score is (800 − 5) / (2,000 × 900) = 4.4 × 10<sup>−4</sup>. For “this is”, with “this” 50,000 times, “is” 80,000 times and the pair 4,000 times: (4,000 − 5) / (4 × 10<sup>9</sup>) = 1.0 × 10<sup>−6</sup>, over 400 times lower, so “this is” stays two words.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; delta = 5                         # δ, the discount
-&gt;&gt;&gt; def score(count_ij, count_i, count_j):
-...     return (count_ij - delta) / (count_i * count_j)
-&gt;&gt;&gt; print(f"{score(800, 2_000, 900):.1e}")          # "new york"
-4.4e-04
-&gt;&gt;&gt; print(f"{score(4_000, 50_000, 80_000):.1e}")    # "this is"
-1.0e-06
-&gt;&gt;&gt; round(score(800, 2_000, 900) / score(4_000, 50_000, 80_000))
-442</code></pre>
+<pre class="in-python"><code># δ, the discount
+delta = 5
+def score(count_ij, count_i, count_j):
+    return (count_ij - delta) / (count_i * count_j)
+# "new york"
+print(f"{score(800, 2_000, 900):.1e}")  # → 4.4e-04
+# "this is"
+print(f"{score(4_000, 50_000, 80_000):.1e}")  # → 1.0e-06
+round(score(800, 2_000, 900) / score(4_000, 50_000, 80_000))  # → 442</code></pre>
 <div class="play" id="phrase-demo">
   <div class="plot" style="margin:0;border:0;padding:0"><div class="controls"><label for="ph-thr">threshold = <strong id="ph-thr-v"></strong></label><input type="range" id="ph-thr" min="-7" max="-3" step="0.1" value="-5"></div></div>
   <div id="ph-table"></div>

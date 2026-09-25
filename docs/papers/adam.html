@@ -162,21 +162,25 @@
 <p class="inwords"><strong>In words:</strong> “get the gradient; blend it into a running average of gradients and its square into a running average of squared gradients; scale both averages up to undo their zero start; then move the weight by α times the average gradient divided by the square root of the average squared gradient.”</p>
 <p class="inwords"><strong>With the numbers:</strong> at t = 2 in the table: m<sub>2</sub> = 0.9 × 0.2 + 0.1 × 1 = 0.28, v<sub>2</sub> = 0.999 × 0.004 + 0.001 × 1² = 0.004996, m̂<sub>2</sub> = 0.28 / (1 − 0.81) = 1.474, v̂<sub>2</sub> = 0.004996 / (1 − 0.998001) = 2.499, so θ<sub>2</sub> = 0.9 − 0.1 × 1.474 / 1.581 = 0.8068.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; alpha, beta1, beta2, eps = 0.1, 0.9, 0.999, 1e-8
-&gt;&gt;&gt; m_prev, v_prev, theta_prev = 0.2, 0.004, 0.9   # row t = 1 of the table
-&gt;&gt;&gt; t, g = 2, 1                                    # step 2, gradient g_2 = 1
-&gt;&gt;&gt; m = beta1 * m_prev + (1 - beta1) * g           # m_t = β1 m_(t−1) + (1 − β1) g_t
-&gt;&gt;&gt; v = beta2 * v_prev + (1 - beta2) * g ** 2      # v_t = β2 v_(t−1) + (1 − β2) g_t²
-&gt;&gt;&gt; round(m, 2), round(v, 6)
-(0.28, 0.004996)
-&gt;&gt;&gt; m_hat = m / (1 - beta1 ** t)                   # m̂_t = m_t / (1 − β1^t)
-&gt;&gt;&gt; v_hat = v / (1 - beta2 ** t)                   # v̂_t = v_t / (1 − β2^t)
-&gt;&gt;&gt; round(m_hat, 3), round(v_hat, 3)
-(1.474, 2.499)
-&gt;&gt;&gt; theta = theta_prev - alpha * m_hat / (math.sqrt(v_hat) + eps)   # θ_t = θ_(t−1) − α m̂_t / (√v̂_t + ε)
-&gt;&gt;&gt; round(theta, 4)
-0.8068</code></pre>
+<pre class="in-python"><code>import math
+alpha, beta1, beta2, eps = 0.1, 0.9, 0.999, 1e-8
+# row t = 1 of the table
+m_prev, v_prev, theta_prev = 0.2, 0.004, 0.9
+# step 2, gradient g_2 = 1
+t, g = 2, 1
+# m_t = β1 m_(t−1) + (1 − β1) g_t
+m = beta1 * m_prev + (1 - beta1) * g
+# v_t = β2 v_(t−1) + (1 − β2) g_t²
+v = beta2 * v_prev + (1 - beta2) * g ** 2
+round(m, 2), round(v, 6)  # → (0.28, 0.004996)
+# m̂_t = m_t / (1 − β1^t)
+m_hat = m / (1 - beta1 ** t)
+# v̂_t = v_t / (1 − β2^t)
+v_hat = v / (1 - beta2 ** t)
+round(m_hat, 3), round(v_hat, 3)  # → (1.474, 2.499)
+# θ_t = θ_(t−1) − α m̂_t / (√v̂_t + ε)
+theta = theta_prev - alpha * m_hat / (math.sqrt(v_hat) + eps)
+round(theta, 4)  # → 0.8068</code></pre>
 <h3 class="rung">Why it matters today</h3>
 <p>Every operation is element-wise: no matrix inverses, no second derivatives. That is why Adam scales to billions of weights. The price is memory: two extra numbers (m and v) per weight. For a 7-billion-parameter model with 32-bit optimizer state, that is 2 × 7 × 10<sup>9</sup> × 4 bytes = 56 GB before you store the weights themselves.</p>
 </section>
@@ -193,15 +197,16 @@
 <p class="inwords"><strong>In words:</strong> “the step is α times the ratio of the average gradient to its typical size; that ratio is usually between −1 and 1, so the step is usually at most α; and multiplying every gradient by c changes the top and bottom of the ratio equally, so it cancels.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with c = 100 at t = 1: 100 × 2 / √(100² × 4) = 200 / 200 = 1, the same ratio as 2 / √4 = 1, so the step stays 0.1 × 1 = 0.1.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; alpha, c = 0.1, 100
-&gt;&gt;&gt; m_hat, v_hat = 2, 4                          # t = 1 in the §2 table
-&gt;&gt;&gt; c * m_hat / math.sqrt(c ** 2 * v_hat)        # (c m̂_t) / √(c² v̂_t): every gradient times c
-1.0
-&gt;&gt;&gt; m_hat / math.sqrt(v_hat)                     # m̂_t / √v̂_t: the same ratio, c cancelled
-1.0
-&gt;&gt;&gt; alpha * m_hat / math.sqrt(v_hat)             # Δ_t = α · m̂_t / √v̂_t
-0.1</code></pre>
+<pre class="in-python"><code>import math
+alpha, c = 0.1, 100
+# t = 1 in the §2 table
+m_hat, v_hat = 2, 4
+# (c m̂_t) / √(c² v̂_t): every gradient times c
+c * m_hat / math.sqrt(c ** 2 * v_hat)  # → 1.0
+# m̂_t / √v̂_t: the same ratio, c cancelled
+m_hat / math.sqrt(v_hat)  # → 1.0
+# Δ_t = α · m̂_t / √v̂_t
+alpha * m_hat / math.sqrt(v_hat)  # → 0.1</code></pre>
 
 <h4>Try it: the optimizer race</h4>
 <div class="plot" id="race">
@@ -232,14 +237,14 @@
 <p class="inwords"><strong>In words:</strong> “unrolled, v is a weighted sum of all past squared gradients whose weights add up to only 1 − β<sub>2</sub><sup>t</sup>, not 1; so on average v is the true squared gradient shrunk by that factor, and dividing by it undoes the shrinkage.”</p>
 <p class="inwords"><strong>With the numbers:</strong> after t = 10 steps, the weights in v add up to 1 − 0.999<sup>10</sup> = 0.00996, so v is about 1% of the truth; after 1,000 steps they add up to 1 − 0.999<sup>1000</sup> = 0.632.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; beta2, t = 0.999, 10
-&gt;&gt;&gt; weights = [(1 - beta2) * beta2 ** (t - i) for i in range(1, t + 1)]   # the weight on each g_i² inside Σ
-&gt;&gt;&gt; round(sum(weights), 5)                       # they add up to 1 − β2^t, not 1
-0.00996
-&gt;&gt;&gt; round(1 - beta2 ** t, 5)
-0.00996
-&gt;&gt;&gt; round(1 - beta2 ** 1000, 3)                  # after 1,000 steps
-0.632</code></pre>
+<pre class="in-python"><code>beta2, t = 0.999, 10
+# the weight on each g_i² inside Σ
+weights = [(1 - beta2) * beta2 ** (t - i) for i in range(1, t + 1)]
+# they add up to 1 − β2^t, not 1
+round(sum(weights), 5)  # → 0.00996
+round(1 - beta2 ** t, 5)  # → 0.00996
+# after 1,000 steps
+round(1 - beta2 ** 1000, 3)  # → 0.632</code></pre>
 <div class="plot">
   <div class="controls ui"><label for="bias-b2">β<sub>2</sub> = <strong id="bias-b2-v">0.999</strong></label><input type="range" id="bias-b2" min="0" max="3" step="0.01" value="2"><span>(β<sub>1</sub> = 0.9)</span></div>
   <div id="bias-chart"></div>
@@ -261,12 +266,12 @@
 <p class="inwords"><strong>In words:</strong> “regret adds up, over every step, how much worse Adam's current weights did on that step's data than the best fixed weights would have; the paper proves this total grows no faster than the square root of the number of steps, so the per-step average vanishes.”</p>
 <p class="inwords"><strong>With the numbers:</strong> √T / T = 1/√T, so at T = 1,000,000 steps the average regret is on the order of 1/1000 of its scale.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; T = 1_000_000
-&gt;&gt;&gt; math.sqrt(T) / T        # R(T) / T when R(T) grows like √T
-0.001
-&gt;&gt;&gt; 1 / math.sqrt(T)        # the same thing: 1 / √T
-0.001</code></pre>
+<pre class="in-python"><code>import math
+T = 1_000_000
+# R(T) / T when R(T) grows like √T
+math.sqrt(T) / T  # → 0.001
+# the same thing: 1 / √T
+1 / math.sqrt(T)  # → 0.001</code></pre>
 <p>The proof needs assumptions that real networks break: the loss must be <span class="t" data-tip-title="Convex" data-tip="Bowl-shaped everywhere, with no separate dips: any downhill path leads to the same bottom. Linear and logistic regression are convex; neural networks are not.">convex</span>, gradients bounded, the step size decaying like α/√t, and β<sub>1</sub> decaying over time. The paper is explicit that the analysis does not cover non-convex problems.</p>
 <h3 class="rung">Why it matters today</h3>
 <p>In 2018 Reddi, Kale and Kumar showed a flaw in this proof and simple convex problems on which Adam does not converge (their fix is called AMSGrad). In practice this rarely bites, and nobody picks Adam for its theorem: it won on its behaviour in experiments, the subject of §6.</p>
@@ -326,14 +331,15 @@
 <p class="inwords"><strong>In words:</strong> “keep a slowly fading record of the largest gradient magnitude, and divide the bias-corrected average gradient by that record instead of by a root-mean-square.”</p>
 <p class="inwords"><strong>With the numbers:</strong> u = 1 before the spike; at the spike, max(0.999 × 1, |10|) = 10; next step, max(0.999 × 10, 1) = 9.99.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; beta2 = 0.999
-&gt;&gt;&gt; u = 1                            # u before the spike
-&gt;&gt;&gt; u = max(beta2 * u, abs(10))      # u_t = max(β2 · u_(t−1), |g_t|), with the spike g_t = 10
-&gt;&gt;&gt; u
-10
-&gt;&gt;&gt; u = max(beta2 * u, abs(1))       # next step, the gradient is back to 1
-&gt;&gt;&gt; round(u, 2)
-9.99</code></pre>
+<pre class="in-python"><code>beta2 = 0.999
+# u before the spike
+u = 1
+# u_t = max(β2 · u_(t−1), |g_t|), with the spike g_t = 10
+u = max(beta2 * u, abs(10))
+u  # → 10
+# next step, the gradient is back to 1
+u = max(beta2 * u, abs(1))
+round(u, 2)  # → 9.99</code></pre>
 <div class="plot">
   <div id="adamax-chart"></div>
   <p class="readout" id="adamax-readout">Hover or tap to compare the two divisors at any step.</p>
@@ -349,16 +355,18 @@
 <p class="inwords"><strong>In words:</strong> “keep a fading average of the weights themselves, and use that average, corrected for its zero start by dividing by 1 − β<sub>2</sub><sup>t</sup>, as the final model.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with the weights 0.9, 0.8068, 0.7114 from §2 and β<sub>2</sub> = 0.999, θ̄<sub>3</sub> = 0.001 × (0.7114 + 0.999 × 0.8068 + 0.999² × 0.9) ≈ 0.002416, and dividing by 1 − 0.999<sup>3</sup> = 0.002997 gives 0.806, close to the average of the three weights.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; beta2 = 0.999
-&gt;&gt;&gt; theta_bar = 0                                 # θ̄_0: the average starts at zero
-&gt;&gt;&gt; for theta in [0.9, 0.8068, 0.7114]:           # θ_1, θ_2, θ_3 from §2
-...     theta_bar = beta2 * theta_bar + (1 - beta2) * theta   # θ̄_t = β2 · θ̄_(t−1) + (1 − β2) θ_t
-&gt;&gt;&gt; round(theta_bar, 6)
-0.002416
-&gt;&gt;&gt; round(1 - beta2 ** 3, 6)                      # the share of θ̄ that is real data
-0.002997
-&gt;&gt;&gt; round(theta_bar / (1 - beta2 ** 3), 3)        # corrected for the zero start
-0.806</code></pre>
+<pre class="in-python"><code>beta2 = 0.999
+# θ̄_0: the average starts at zero
+theta_bar = 0
+# θ_1, θ_2, θ_3 from §2
+for theta in [0.9, 0.8068, 0.7114]:
+    # θ̄_t = β2 · θ̄_(t−1) + (1 − β2) θ_t
+    theta_bar = beta2 * theta_bar + (1 - beta2) * theta
+round(theta_bar, 6)  # → 0.002416
+# the share of θ̄ that is real data
+round(1 - beta2 ** 3, 6)  # → 0.002997
+# corrected for the zero start
+round(theta_bar / (1 - beta2 ** 3), 3)  # → 0.806</code></pre>
 <h4>Why it matters today</h4>
 <p>Exponential moving averages of weights (often called EMA weights) are standard in image generation models and common in large-scale training. The <a href="attention-is-all-you-need.html">Transformer paper</a> used a close cousin: averaging the last few saved checkpoints.</p>
 </section>

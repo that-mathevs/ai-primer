@@ -113,12 +113,10 @@
 <p class="inwords"><strong>In words:</strong> “each word's query, key and value are made from two ingredients: the word itself and the position it sits at.”</p>
 <p class="inwords"><strong>With the numbers:</strong> in “the cat sat”, the query for “sat” is f<sub>q</sub>(vector for “sat”, 3), and the key for “the” is f<sub>k</sub>(vector for “the”, 1). Different position schemes are simply different recipes for f.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; sentence = ["the", "cat", "sat"]
-&gt;&gt;&gt; for m, x_m in enumerate(sentence, start=1):   # each word with its seat m
-...     print(f"q_{m} = f_q({x_m!r}, {m})")
-q_1 = f_q('the', 1)
-q_2 = f_q('cat', 2)
-q_3 = f_q('sat', 3)</code></pre>
+<pre class="in-python"><code>sentence = ["the", "cat", "sat"]
+# each word with its seat m
+for m, x_m in enumerate(sentence, start=1):
+    print(f"q_{m} = f_q({x_m!r}, {m})")  # → q_1 = f_q('the', 1) q_2 = f_q('cat', 2) q_3 = f_q('sat', 3)</code></pre>
 </section>
 
 <section id="s2-2">
@@ -130,10 +128,12 @@ q_3 = f_q('sat', 3)</code></pre>
 <p class="inwords"><strong>In words:</strong> “add the seat's badge to the word, then project the sum into a query, key or value.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with 2-number toy vectors, word x = (1, 0) at seat 3 with badge p<sub>3</sub> = (0.1, 0.9) becomes (1.1, 0.9) before projection. The same word at seat 4 would carry a different badge, so it enters attention as a slightly different vector.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; x = [1, 0]                   # the word's vector
-&gt;&gt;&gt; p_3 = [0.1, 0.9]             # the badge for seat 3
-&gt;&gt;&gt; [x_k + p_k for x_k, p_k in zip(x, p_3)]   # x_i + p_i, before W_t projects it
-[1.1, 0.9]</code></pre>
+<pre class="in-python"><code># the word's vector
+x = [1, 0]
+# the badge for seat 3
+p_3 = [0.1, 0.9]
+# x_i + p_i, before W_t projects it
+[x_k + p_k for x_k, p_k in zip(x, p_3)]  # → [1.1, 0.9]</code></pre>
 <h4>The catch</h4>
 <p>Badges are added <em>before</em> the words meet, so the score between two words mixes up four things: word with word, word with badge, badge with word, and badge with badge. The relative distance is only implicitly buried in there. Learned badges also stop at the last seat the model was trained with: a model with 512 learned badges has nothing to say about seat 600.</p>
 </section>
@@ -162,12 +162,11 @@ q_3 = f_q('sat', 3)</code></pre>
 <p class="inwords"><strong>In words:</strong> “find recipes for the query and the key such that their dot product depends on the two words and on the gap between their positions, and on nothing else.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the score between a query at seat 2 and a key at seat 1 must equal the score for the same two words at seats 7 and 6, because m − n = 1 in both cases.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; m, n = 2, 1
-&gt;&gt;&gt; m - n
-1
-&gt;&gt;&gt; m, n = 7, 6
-&gt;&gt;&gt; m - n                        # the same gap, so g must give the same score
-1</code></pre>
+<pre class="in-python"><code>m, n = 2, 1
+m - n  # → 1
+m, n = 7, 6
+# the same gap, so g must give the same score
+m - n  # → 1</code></pre>
 <h4>Why it matters</h4>
 <p>Writing the wish as an equation turns a vague goal into a puzzle with a clean answer. The rest of §3 solves it.</p>
 </section>
@@ -230,34 +229,34 @@ q_3 = f_q('sat', 3)</code></pre>
 <p class="inwords"><strong>In words:</strong> “make the query (or key) as usual with a learned matrix, then turn the resulting 2D arrow by position times θ.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with θ = 1 and m = 2, the matrix is [[cos 2, −sin 2], [sin 2, cos 2]] = [[−0.416, −0.909], [0.909, −0.416]], which turns q = (1, 0) into (−0.416, 0.909): the same arrow, pointing 2 radians further round.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; theta, m = 1, 2
-&gt;&gt;&gt; R = [[math.cos(m * theta), -math.sin(m * theta)],
-...      [math.sin(m * theta),  math.cos(m * theta)]]
-&gt;&gt;&gt; [[round(v, 3) for v in row] for row in R]
-[[-0.416, -0.909], [0.909, -0.416]]
-&gt;&gt;&gt; q = [1, 0]
-&gt;&gt;&gt; [round(sum(R[i][j] * q[j] for j in range(2)), 3) for i in range(2)]   # R q
-[-0.416, 0.909]</code></pre>
+<pre class="in-python"><code>import math
+theta, m = 1, 2
+R = [[math.cos(m * theta), -math.sin(m * theta)],
+     [math.sin(m * theta),  math.cos(m * theta)]]
+[[round(v, 3) for v in row] for row in R]  # → [[-0.416, -0.909], [0.909, -0.416]]
+q = [1, 0]
+# R q
+[round(sum(R[i][j] * q[j] for j in range(2)), 3) for i in range(2)]  # → [-0.416, 0.909]</code></pre>
 <p>Why does this solve §3.1? A rotation by angle a, followed by the transpose of a rotation by angle b, is a single rotation by b − a. So the score becomes</p>
 <div class="eq" data-tex="(\htmlData{sym=Rmfull}{R_{m}} \htmlData{sym=qvec}{q})^{\top} (\htmlData{sym=Rnfull}{R_{n}} \htmlData{sym=kvec}{k}) = \htmlData{sym=qvec}{q}^{\top} \htmlData{sym=Rgap}{R_{n-m}}\, \htmlData{sym=kvec}{k}" data-fallback="(R_m q)ᵀ (R_n k) = qᵀ R_{n−m} k"></div>
 <div class="symtable" data-syms="Rmfull,Rnfull,qvec,kvec,Rgap"></div>
 <p class="inwords"><strong>In words:</strong> “rotating the query by its position and the key by its position is the same as leaving the query alone and rotating the key by the <em>difference</em> of the positions.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for q = (2, 1) and k = (1, 1) with θ = 1, positions (3, 1) and positions (8, 6) both give a score of <strong>−0.339</strong>, because both pairs have n − m = −2.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; def R(angle, v):             # turn a 2D arrow by angle
-...     c, s = math.cos(angle), math.sin(angle)
-...     return [c * v[0] - s * v[1], s * v[0] + c * v[1]]
-&gt;&gt;&gt; def dot(a, b):
-...     return sum(a_k * b_k for a_k, b_k in zip(a, b))
-&gt;&gt;&gt; q, k, theta = [2, 1], [1, 1], 1
-&gt;&gt;&gt; round(dot(R(3 * theta, q), R(1 * theta, k)), 3)   # (R_m q)ᵀ (R_n k), m = 3, n = 1
--0.339
-&gt;&gt;&gt; round(dot(R(8 * theta, q), R(6 * theta, k)), 3)   # m = 8, n = 6
--0.339
-&gt;&gt;&gt; round(dot(q, R((1 - 3) * theta, k)), 3)           # qᵀ R_(n−m) k
--0.339</code></pre>
+<pre class="in-python"><code>import math
+# turn a 2D arrow by angle
+def R(angle, v):
+    c, s = math.cos(angle), math.sin(angle)
+    return [c * v[0] - s * v[1], s * v[0] + c * v[1]]
+def dot(a, b):
+    return sum(a_k * b_k for a_k, b_k in zip(a, b))
+q, k, theta = [2, 1], [1, 1], 1
+# (R_m q)ᵀ (R_n k), m = 3, n = 1
+round(dot(R(3 * theta, q), R(1 * theta, k)), 3)  # → -0.339
+# m = 8, n = 6
+round(dot(R(8 * theta, q), R(6 * theta, k)), 3)  # → -0.339
+# qᵀ R_(n−m) k
+round(dot(q, R((1 - 3) * theta, k)), 3)  # → -0.339</code></pre>
 <h4>Why it matters today</h4>
 <p>This two-line argument is the reason RoPE needs no extra parameters, no change to the attention kernel, and no table of learned distances. It is also why it composes with <span class="t" data-t="kv cache">KV caching</span>: a key is rotated once, when it is written, and never touched again. See the <a class="lesson" data-lesson="primer/ml/positional.html">positional information lesson</a>, which checks this property numerically.</p>
 </section>
@@ -279,9 +278,9 @@ q_3 = f_q('sat', 3)</code></pre>
 <p class="inwords"><strong>In words:</strong> “rotate the first pair by m·θ<sub>1</sub>, the second pair by m·θ<sub>2</sub>, and so on, where the speeds shrink geometrically from 1 radian per position down to about 1/10,000.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for d = 8: θ<sub>1</sub> = 10000<sup>0</sup> = 1, θ<sub>2</sub> = 10000<sup>−2/8</sup> = 0.1, θ<sub>3</sub> = 10000<sup>−4/8</sup> = 0.01, θ<sub>4</sub> = 10000<sup>−6/8</sup> = 0.001.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; d = 8
-&gt;&gt;&gt; [round(10000 ** (-2 * (i - 1) / d), 3) for i in range(1, d // 2 + 1)]   # θ_1 … θ_(d/2)
-[1.0, 0.1, 0.01, 0.001]</code></pre>
+<pre class="in-python"><code>d = 8
+# θ_1 … θ_(d/2)
+[round(10000 ** (-2 * (i - 1) / d), 3) for i in range(1, d // 2 + 1)]  # → [1.0, 0.1, 0.01, 0.001]</code></pre>
 <p>The full score then reads <span class="m" data-tex="\htmlData{sym=qmT}{q_m^{\top}} \htmlData{sym=kn2}{k_n} = x_m^{\top} W_q^{\top} \htmlData{sym=RdGap}{R^{d}_{\Theta,\,n-m}} W_k\, x_n" data-fallback="q_mᵀ k_n = x_mᵀ W_qᵀ R^d_{Θ, n−m} W_k x_n"></span>: the two position rotations merge into one rotation by the gap, in every pair at once. The paper also notes that the matrix is almost entirely zeros, so nobody ever builds it (§3.4.2).</p>
 <div class="symtable" data-syms="qmT,kn2,RdGap"></div>
 <h4>Why it matters today</h4>
@@ -306,12 +305,13 @@ q_3 = f_q('sat', 3)</code></pre>
 <p class="inwords"><strong>In words:</strong> “multiply every number by the cosine of its pair's angle, then add the pair-swapped, sign-flipped copy multiplied by the sine.”</p>
 <p class="inwords"><strong>With the numbers:</strong> x = (1, 2, 3, 4) at position m = 1 with θ = (1, 0.01). Cosines (0.540, 0.540, 1.000, 1.000), sines (0.841, 0.841, 0.010, 0.010), rot(x) = (−2, 1, −4, 3). Result: (1·0.540 − 2·0.841, 2·0.540 + 1·0.841, 3·1.000 − 4·0.010, 4·1.000 + 3·0.010) = <strong>(−1.143, 1.922, 2.960, 4.030)</strong>. The fast pair has visibly turned; the slow pair has barely moved.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; x, m, theta = [1, 2, 3, 4], 1, [1, 0.01]
-&gt;&gt;&gt; angle = [m * t for t in theta for _ in (0, 1)]    # both numbers in a pair share mθ
-&gt;&gt;&gt; rot_x = [-x[1], x[0], -x[3], x[2]]                # swap each pair, flip a sign
-&gt;&gt;&gt; [round(x_k * math.cos(a) + r_k * math.sin(a), 3) for x_k, r_k, a in zip(x, rot_x, angle)]
-[-1.143, 1.922, 2.96, 4.03]</code></pre>
+<pre class="in-python"><code>import math
+x, m, theta = [1, 2, 3, 4], 1, [1, 0.01]
+# both numbers in a pair share mθ
+angle = [m * t for t in theta for _ in (0, 1)]
+# swap each pair, flip a sign
+rot_x = [-x[1], x[0], -x[3], x[2]]
+[round(x_k * math.cos(a) + r_k * math.sin(a), 3) for x_k, r_k, a in zip(x, rot_x, angle)]  # → [-1.143, 1.922, 2.96, 4.03]</code></pre>
 <h4>Why it matters today</h4>
 <p>This is, almost line for line, the “rotate half” function found in open-source model code. The cost is a few element-wise multiplications per query and key, which is negligible next to the attention itself.</p>
 </section>
@@ -325,14 +325,15 @@ q_3 = f_q('sat', 3)</code></pre>
 <p class="inwords"><strong>In words:</strong> “add up the first j clock hands as arrows and measure the length of the result; average those lengths over all j. The paper proves the attention score's size is capped in proportion to this average.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for d = 128 at distance 0 every hand points the same way, so |S<sub>j</sub>| = j and the average of 1, 2, …, 64 is <strong>32.5</strong>. At distance 10 it has fallen to about <strong>18.0</strong>, and at distance 100 to about <strong>10.2</strong>.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import cmath
-&gt;&gt;&gt; d = 128
-&gt;&gt;&gt; theta = [10000 ** (-2 * i / d) for i in range(d // 2)]   # θ_0 … θ_(d/2 − 1)
-&gt;&gt;&gt; def bound(gap):                                          # gap = m − n
-...     S = [sum(cmath.exp(1j * gap * theta[i]) for i in range(j)) for j in range(1, d // 2 + 1)]
-...     return sum(abs(S_j) for S_j in S) / (d / 2)
-&gt;&gt;&gt; round(bound(0), 1), round(bound(10), 1), round(bound(100), 1)
-(32.5, 18.0, 10.2)</code></pre>
+<pre class="in-python"><code>import cmath
+d = 128
+# θ_0 … θ_(d/2 − 1)
+theta = [10000 ** (-2 * i / d) for i in range(d // 2)]
+# gap = m − n
+def bound(gap):
+    S = [sum(cmath.exp(1j * gap * theta[i]) for i in range(j)) for j in range(1, d // 2 + 1)]
+    return sum(abs(S_j) for S_j in S) / (d / 2)
+round(bound(0), 1), round(bound(10), 1), round(bound(100), 1)  # → (32.5, 18.0, 10.2)</code></pre>
 <div class="plot" id="decay-plot">
   <div class="controls"><span>Computed live from the formula above with d = 128 and base 10,000.</span></div>
   <div id="decay-chart"></div>

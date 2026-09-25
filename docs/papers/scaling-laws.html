@@ -87,12 +87,13 @@
 <p class="inwords"><strong>In words:</strong> “training compute is about six operations for every parameter, for every token read.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 6 × 10<sup>9</sup> × 10<sup>12</sup> = 6 × 10<sup>21</sup>, and 6 × 10<sup>10</sup> × 10<sup>11</sup> is the same 6 × 10<sup>21</sup>.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; N, D = 10**9, 10**12              # 1 billion parameters, 1 trillion tokens
-&gt;&gt;&gt; C = 6 * N * D                     # C ≈ 6 N D
-&gt;&gt;&gt; print(f"{C:.0e}")
-6e+21
-&gt;&gt;&gt; 6 * 10**10 * 10**11 == C          # 10× the model, a tenth of the data: same bill
-True</code></pre>
+<pre class="in-python"><code># 1 billion parameters, 1 trillion tokens
+N, D = 10**9, 10**12
+# C ≈ 6 N D
+C = 6 * N * D
+print(f"{C:.0e}")  # → 6e+21
+# 10× the model, a tenth of the data: same bill
+6 * 10**10 * 10**11 == C  # → True</code></pre>
 <h3 class="rung">Why it matters</h3>
 <p>Training runs cost millions of dollars and happen once. Getting this split wrong wastes most of the budget, and the two papers gave very different answers: Kaplan's said “mostly spend it on size”, Chinchilla's said “split it evenly”.</p>
 </section>
@@ -129,17 +130,18 @@ True</code></pre>
 <p class="inwords"><strong>In words:</strong> “when only one resource is holding the model back, loss is a fixed constant divided by that resource, raised to a small power.”</p>
 <p class="inwords"><strong>With the numbers:</strong> L(10<sup>9</sup>) = (8.8 × 10<sup>13</sup> / 10<sup>9</sup>)<sup>0.076</sup> = 88,000<sup>0.076</sup> = <strong>2.38</strong> nats. Doubling N multiplies the loss by 2<sup>−0.076</sup> = <strong>0.95</strong>. For data: L(10<sup>10</sup> tokens) = 5,400<sup>0.095</sup> = <strong>2.26</strong>.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; N_c, alpha_N = 8.8e13, 0.076      # the fitted constants of L(N)
-&gt;&gt;&gt; N = 1e9
-&gt;&gt;&gt; round(N_c / N)
-88000
-&gt;&gt;&gt; round((N_c / N) ** alpha_N, 2)    # L(N) = (N_c / N)^α_N, in nats
-2.38
-&gt;&gt;&gt; round(2 ** -alpha_N, 2)           # doubling N multiplies the loss by this
-0.95
-&gt;&gt;&gt; D_c, alpha_D = 5.4e13, 0.095      # the fitted constants of L(D)
-&gt;&gt;&gt; round((D_c / 1e10) ** alpha_D, 2) # L(D) at D = 10^10 tokens
-2.26</code></pre>
+<pre class="in-python"><code># the fitted constants of L(N)
+N_c, alpha_N = 8.8e13, 0.076
+N = 1e9
+round(N_c / N)  # → 88000
+# L(N) = (N_c / N)^α_N, in nats
+round((N_c / N) ** alpha_N, 2)  # → 2.38
+# doubling N multiplies the loss by this
+round(2 ** -alpha_N, 2)  # → 0.95
+# the fitted constants of L(D)
+D_c, alpha_D = 5.4e13, 0.095
+# L(D) at D = 10^10 tokens
+round((D_c / 1e10) ** alpha_D, 2)  # → 2.26</code></pre>
 <div class="plot" id="pl-plot">
   <div class="controls"><label for="pl-n">model size N = <strong id="pl-nv"></strong></label><input type="range" id="pl-n" min="6" max="12" step="0.05" value="9"></div>
   <div id="pl-chart"></div>
@@ -159,16 +161,18 @@ True</code></pre>
 <p class="inwords"><strong>In words:</strong> “a standard Transformer block holds about twelve times its width squared in parameters; training compute is six operations per parameter per token, and the tokens are the batch size times the number of steps.”</p>
 <p class="inwords"><strong>With the numbers:</strong> a 24-layer model of width 1,024 has about 12 × 24 × 1,024<sup>2</sup> ≈ 302 million non-embedding parameters. Training it for 100,000 steps at 500,000 tokens per batch (50 billion tokens) costs about 6 × 3.02 × 10<sup>8</sup> × 5 × 10<sup>10</sup> ≈ 9.1 × 10<sup>19</sup> operations, about 1 petaflop/s-day.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; n_layer, d_model = 24, 1024
-&gt;&gt;&gt; N = 12 * n_layer * d_model**2     # N ≈ 12 n_layer d_model²
-&gt;&gt;&gt; round(N / 1e6)                    # millions of parameters
-302
-&gt;&gt;&gt; B, S = 500_000, 100_000           # tokens per batch, training steps
-&gt;&gt;&gt; C = 6 * N * B * S                 # C ≈ 6 N B S
-&gt;&gt;&gt; print(f"{C:.1e}")
-9.1e+19
-&gt;&gt;&gt; round(C / 8.64e19, 1)             # petaflop/s-days: 10^15 operations a second for a day
-1.0</code></pre>
+<pre class="in-python"><code>n_layer, d_model = 24, 1024
+# N ≈ 12 n_layer d_model²
+N = 12 * n_layer * d_model**2
+# millions of parameters
+round(N / 1e6)  # → 302
+# tokens per batch, training steps
+B, S = 500_000, 100_000
+# C ≈ 6 N B S
+C = 6 * N * B * S
+print(f"{C:.1e}")  # → 9.1e+19
+# petaflop/s-days: 10^15 operations a second for a day
+round(C / 8.64e19, 1)  # → 1.0</code></pre>
 <p>The 12 comes from four d × d attention matrices (query, key, value, output) plus a feed-forward network that widens to 4d and back (8d<sup>2</sup>). The 6 comes from about 2 operations per parameter per token going forward and about 4 going backward. The <a class="lesson" data-lesson="primer/ml/transformer.html">transformer lesson</a> counts both exactly.</p>
 </section>
 
@@ -181,11 +185,12 @@ True</code></pre>
 <p class="inwords"><strong>In words:</strong> “add a term for being too small and a term for having too little data, then apply the same small power to the total; whichever term is larger dominates the loss.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the overfitting penalty depends on N<sup>0.74</sup>/D, so making the model 8 times larger needs 8<sup>0.74</sup> ≈ <strong>4.7</strong> times more data to keep the penalty the same: the paper's “8× the model, about 5× the data”.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; round(0.076 / 0.095, 2)           # α_N / α_D from the single-resource laws
-0.8
-&gt;&gt;&gt; ratio = 0.74                      # the exponent the paper measured for N^0.74 / D
-&gt;&gt;&gt; round(8 ** ratio, 1)              # 8× the model needs this many times the data
-4.7</code></pre>
+<pre class="in-python"><code># α_N / α_D from the single-resource laws
+round(0.076 / 0.095, 2)  # → 0.8
+# the exponent the paper measured for N^0.74 / D
+ratio = 0.74
+# 8× the model needs this many times the data
+round(8 ** ratio, 1)  # → 4.7</code></pre>
 <h4>Why it matters</h4>
 <p>This rule says data needs grow <em>more slowly</em> than model size. That conclusion is exactly what Part II overturns.</p>
 </section>
@@ -200,12 +205,13 @@ True</code></pre>
 <p class="inwords"><strong>In words:</strong> “as compute grows, the best model size grows almost as fast as compute itself; the batch grows a bit; the number of training steps barely grows at all.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 10× more compute means 10<sup>0.73</sup> ≈ <strong>5.4×</strong> bigger model, and since C ≈ 6ND the data only grows by 10 / 5.4 ≈ <strong>1.9×</strong>. The paper's own fitted rule is N<sub>opt</sub> ≈ 1.3 × 10<sup>9</sup> × C<sup>0.73</sup> parameters, with C in petaflop/s-days.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; growth = 10                       # 10× more compute
-&gt;&gt;&gt; N_growth = growth ** 0.73         # N_opt ∝ C_min^0.73
-&gt;&gt;&gt; round(N_growth, 1)
-5.4
-&gt;&gt;&gt; round(growth / N_growth, 1)       # C ≈ 6 N D, so the data grows by what is left
-1.9</code></pre>
+<pre class="in-python"><code># 10× more compute
+growth = 10
+# N_opt ∝ C_min^0.73
+N_growth = growth ** 0.73
+round(N_growth, 1)  # → 5.4
+# C ≈ 6 N D, so the data grows by what is left
+round(growth / N_growth, 1)  # → 1.9</code></pre>
 <p>§6.3 then notices a paradox: extrapolated far enough, this recipe predicts a loss lower than the data-limited law allows, so the laws must break somewhere. The authors guess that point is where Transformers hit their ceiling.</p>
 <h4>Why it matters today</h4>
 <p>This advice explains the models of 2020 and 2021: GPT-3 (175B parameters on 300B tokens), Gopher (280B on 300B), Megatron-Turing NLG (530B on about 300B). All huge, all trained on roughly the same amount of text. Part II shows that was the wrong way round.</p>
@@ -252,30 +258,32 @@ True</code></pre>
 <p class="inwords"><strong>In words:</strong> “predicted loss is an unbeatable floor, plus a penalty that shrinks as the model grows, plus a penalty that shrinks as the data grows.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for Chinchilla (70 billion parameters, 1.4 trillion tokens): 406.4 / (7 × 10<sup>10</sup>)<sup>0.34</sup> ≈ 0.083 and 410.7 / (1.4 × 10<sup>12</sup>)<sup>0.28</sup> ≈ 0.163, so L̂ ≈ 1.69 + 0.083 + 0.163 = <strong>1.94</strong>. For Gopher (280 billion parameters, 300 billion tokens): 1.69 + 0.052 + 0.251 = <strong>1.99</strong>. Gopher's model penalty is smaller, but its data penalty is much bigger.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; E, A, B, alpha, beta = 1.69, 406.4, 410.7, 0.34, 0.28
-&gt;&gt;&gt; def L_hat(N, D):
-...     return E + A / N**alpha + B / D**beta   # L̂ = E + A / N^α + B / D^β
-&gt;&gt;&gt; round(A / 7e10**alpha, 3), round(B / 1.4e12**beta, 3)   # Chinchilla's two penalties
-(0.083, 0.163)
-&gt;&gt;&gt; round(L_hat(7e10, 1.4e12), 2)     # Chinchilla: 70B parameters, 1.4T tokens
-1.94
-&gt;&gt;&gt; round(A / 2.8e11**alpha, 3), round(B / 3e11**beta, 3)    # Gopher's two penalties
-(0.052, 0.251)
-&gt;&gt;&gt; round(L_hat(2.8e11, 3e11), 2)     # Gopher: 280B parameters, 300B tokens
-1.99</code></pre>
+<pre class="in-python"><code>E, A, B, alpha, beta = 1.69, 406.4, 410.7, 0.34, 0.28
+def L_hat(N, D):
+    # L̂ = E + A / N^α + B / D^β
+    return E + A / N**alpha + B / D**beta
+# Chinchilla's two penalties
+round(A / 7e10**alpha, 3), round(B / 1.4e12**beta, 3)  # → (0.083, 0.163)
+# Chinchilla: 70B parameters, 1.4T tokens
+round(L_hat(7e10, 1.4e12), 2)  # → 1.94
+# Gopher's two penalties
+round(A / 2.8e11**alpha, 3), round(B / 3e11**beta, 3)  # → (0.052, 0.251)
+# Gopher: 280B parameters, 300B tokens
+round(L_hat(2.8e11, 3e11), 2)  # → 1.99</code></pre>
 <p>Minimizing this formula under the budget C = 6ND has a closed-form answer:</p>
 <div class="eq" data-tex="\htmlData{sym=Nopt}{N_{\text{opt}}}(C) = \htmlData{sym=G}{G}\left(\frac{\htmlData{sym=C}{C}}{6}\right)^{\htmlData{sym=aexp}{a}}, \quad \htmlData{sym=Dopt}{D_{\text{opt}}}(C) = \htmlData{sym=G}{G}^{-1}\left(\frac{\htmlData{sym=C}{C}}{6}\right)^{\htmlData{sym=bexp}{b}}, \quad \htmlData{sym=aexp}{a} = \frac{\beta}{\alpha+\beta}, \ \htmlData{sym=bexp}{b} = \frac{\alpha}{\alpha+\beta}" data-fallback="N_opt(C) = G (C/6)^a,  D_opt(C) = G⁻¹ (C/6)^b,  a = β/(α+β),  b = α/(α+β)"></div>
 <div class="symtable" data-syms="Dopt,G,aexp,bexp"></div>
 <p class="inwords"><strong>In words:</strong> “the best model size and the best data size are both powers of the budget; the two powers add up to 1, and they are set by how fast each penalty shrinks.”</p>
 <p class="inwords"><strong>With the numbers:</strong> a = 0.28 / 0.62 ≈ <strong>0.45</strong> and b = 0.34 / 0.62 ≈ <strong>0.55</strong>: close to half and half, and close to the 0.46 and 0.54 the paper reports for this approach. Compare Kaplan's 0.73 and 0.27.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; alpha, beta = 0.34, 0.28
-&gt;&gt;&gt; a = beta / (alpha + beta)         # the power on the budget for N_opt
-&gt;&gt;&gt; b = alpha / (alpha + beta)        # the power on the budget for D_opt
-&gt;&gt;&gt; round(a, 2), round(b, 2)
-(0.45, 0.55)
-&gt;&gt;&gt; round(a + b, 6)                   # the two powers always add up to 1
-1.0</code></pre>
+<pre class="in-python"><code>alpha, beta = 0.34, 0.28
+# the power on the budget for N_opt
+a = beta / (alpha + beta)
+# the power on the budget for D_opt
+b = alpha / (alpha + beta)
+round(a, 2), round(b, 2)  # → (0.45, 0.55)
+# the two powers always add up to 1
+round(a + b, 6)  # → 1.0</code></pre>
 </section>
 
 <section id="h-3-4">

@@ -65,17 +65,20 @@ top times every layer's weight times every layer's slope."
 **In Python:**
 
 ```python
->>> def gradient_at_input(w_l, slope, L=10):
-...     grad = 1.0                     # ∂L/∂h_L: the loss hands the top layer 1
-...     for l in range(L):             # Π over the layers: a running product
-...         grad *= w_l * slope        # × w_l φ'(z_l)
-...     return grad
->>> f"{gradient_at_input(1, 0.25):.1e}"   # sigmoid at its steepest
-'9.5e-07'
->>> gradient_at_input(1, 1)               # linear, weight 1
-1.0
->>> round(gradient_at_input(1.5, 1), 1)   # linear, weight 1.5
-57.7
+def gradient_at_input(w_l, slope, L=10):
+    # ∂L/∂h_L: the loss hands the top layer 1
+    grad = 1.0
+    # Π over the layers: a running product
+    for l in range(L):
+        # × w_l φ'(z_l)
+        grad *= w_l * slope
+    return grad
+# sigmoid at its steepest
+f"{gradient_at_input(1, 0.25):.1e}"  # → '9.5e-07'
+# linear, weight 1
+gradient_at_input(1, 1)  # → 1.0
+# linear, weight 1.5
+round(gradient_at_input(1.5, 1), 1)  # → 57.7
 ```
 
 `chain_gradient` builds that chain and backprops through it.
@@ -137,13 +140,13 @@ $1 \times 8 \times 0.7 = 5.6$ per layer, and $5.6^{30} \approx 3 \times 10^{22}$
 **In Python:**
 
 ```python
->>> import math
->>> n_in, typical_slope = 64, 0.7
->>> for sigma_w in (0.01, 1.0):
-...     gain = sigma_w * math.sqrt(n_in) * typical_slope   # σ_w √n_in · typical φ'
-...     print(round(gain, 3), f"{gain ** 30:.0e}")        # per layer, then over 30 layers
-0.056 3e-38
-5.6 3e+22
+import math
+n_in, typical_slope = 64, 0.7
+for sigma_w in (0.01, 1.0):
+    # σ_w √n_in · typical φ'
+    gain = sigma_w * math.sqrt(n_in) * typical_slope
+    # per layer, then over 30 layers
+    print(round(gain, 3), f"{gain ** 30:.0e}")  # → 0.056 3e-38 5.6 3e+22
 ```
 
 **In code:** `gradient_norms` runs a 30-layer, 64-wide network forward and backward and returns the gradient size reaching every layer; `first_to_last_gradient_ratio` divides the first by the last to fill the table.
@@ -221,13 +224,14 @@ deviation is $\sqrt{0.04} = 0.2$.
 **In Python:**
 
 ```python
->>> import math
->>> n_in = 50
->>> var_w = 2 / n_in                    # Var(w) = 2 / n_in, for ReLU
->>> var_w, round(math.sqrt(var_w), 3)   # the variance, then the standard deviation
-(0.04, 0.2)
->>> round(math.sqrt(2 / (100 + 100)), 3)   # Xavier for comparison: 100 in, 100 out
-0.1
+import math
+n_in = 50
+# Var(w) = 2 / n_in, for ReLU
+var_w = 2 / n_in
+# the variance, then the standard deviation
+var_w, round(math.sqrt(var_w), 3)  # → (0.04, 0.2)
+# Xavier for comparison: 100 in, 100 out
+round(math.sqrt(2 / (100 + 100)), 3)  # → 0.1
 ```
 
 **In code:** `init_std` returns the starting weight standard deviation for Xavier, He and two deliberately bad choices; `forward_signal_rms` measures the forward signal plotted above.
@@ -291,13 +295,15 @@ $0.025^{10} \approx 10^{-16}$.
 **In Python:**
 
 ```python
->>> dF_dh = 0.025                  # each block's own slope
->>> plain, residual = 1.0, 1.0
->>> for l in range(10):
-...     plain *= dF_dh             # h ← F(h): the slope is just ∂F/∂h
-...     residual *= 1 + dF_dh      # h ← h + F(h): the slope is I + ∂F/∂h
->>> f"{plain:.1e}", round(residual, 2)
-('9.5e-17', 1.28)
+# each block's own slope
+dF_dh = 0.025
+plain, residual = 1.0, 1.0
+for l in range(10):
+    # h ← F(h): the slope is just ∂F/∂h
+    plain *= dF_dh
+    # h ← h + F(h): the slope is I + ∂F/∂h
+    residual *= 1 + dF_dh
+f"{plain:.1e}", round(residual, 2)  # → ('9.5e-17', 1.28)
 ```
 
 ![Gradient reaching the input as blocks are stacked, with and without skip connections](figures/primer.ml.deep_nets.residual.svg)
@@ -389,20 +395,21 @@ $\sigma^2$ computed across the batch for each feature.
 **In Python:**
 
 ```python
->>> import math
->>> x = [1, 2, 3, 4]
->>> d, eps, gamma, beta = len(x), 1e-5, 1.0, 0.0
->>> mu = sum(x) / d                                  # the row's mean
->>> var = sum((x_i - mu) ** 2 for x_i in x) / d      # σ², the row's variance
->>> mu, var
-(2.5, 1.25)
->>> [round(gamma * (x_i - mu) / math.sqrt(var + eps) + beta, 3) for x_i in x]   # LayerNorm
-[-1.342, -0.447, 0.447, 1.342]
->>> rms = math.sqrt(sum(x_i ** 2 for x_i in x) / d + eps)   # √((1/d) Σ x_i² + ε)
->>> round(rms, 3)
-2.739
->>> [round(gamma * x_i / rms, 3) for x_i in x]       # RMSNorm: no mean subtracted
-[0.365, 0.73, 1.095, 1.461]
+import math
+x = [1, 2, 3, 4]
+d, eps, gamma, beta = len(x), 1e-5, 1.0, 0.0
+# the row's mean
+mu = sum(x) / d
+# σ², the row's variance
+var = sum((x_i - mu) ** 2 for x_i in x) / d
+mu, var  # → (2.5, 1.25)
+# LayerNorm
+[round(gamma * (x_i - mu) / math.sqrt(var + eps) + beta, 3) for x_i in x]  # → [-1.342, -0.447, 0.447, 1.342]
+# √((1/d) Σ x_i² + ε)
+rms = math.sqrt(sum(x_i ** 2 for x_i in x) / d + eps)
+round(rms, 3)  # → 2.739
+# RMSNorm: no mean subtracted
+[round(gamma * x_i / rms, 3) for x_i in x]  # → [0.365, 0.73, 1.095, 1.461]
 ```
 
 **In code:** `batch_norm` normalizes each column across the batch, `layer_norm` each row across its own features, and `rms_norm` divides each row by its root-mean-square.
@@ -460,17 +467,18 @@ optimizers lesson traces (3, 4) → (0.6, 0.8); see
 **In Python:**
 
 ```python
->>> import math
->>> g = [4.8e46, 6.4e46]                          # a stand-in with the same enormous length
->>> norm = math.sqrt(sum(g_i ** 2 for g_i in g))  # ‖g‖
->>> f"{norm:.0e}"
-'8e+46'
->>> c = 1
->>> scale = min(1, c / norm)                      # min(1, c / ‖g‖)
->>> f"{scale:.0e}"
-'1e-47'
->>> round(math.sqrt(sum((g_i * scale) ** 2 for g_i in g)), 6)   # the new length
-1.0
+import math
+# a stand-in with the same enormous length
+g = [4.8e46, 6.4e46]
+# ‖g‖
+norm = math.sqrt(sum(g_i ** 2 for g_i in g))
+f"{norm:.0e}"  # → '8e+46'
+c = 1
+# min(1, c / ‖g‖)
+scale = min(1, c / norm)
+f"{scale:.0e}"  # → '1e-47'
+# the new length
+round(math.sqrt(sum((g_i * scale) ** 2 for g_i in g)), 6)  # → 1.0
 ```
 
 **In code:** `layer_gradients` collects every layer's weight gradient from a 30-layer network, and `global_norm_after_clipping` reports their combined length after clipping.

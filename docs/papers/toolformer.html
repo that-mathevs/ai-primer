@@ -132,12 +132,14 @@
 <p class="inwords"><strong>In words:</strong> “a call is written as the tool's name and its input between markers; the version with a result also includes an arrow followed by what the tool returned.”</p>
 <p class="inwords"><strong>With the numbers:</strong> a<sub>c</sub> = Calculator, i<sub>c</sub> = “180 / 1.5”, r = “120.0”. So e(c) is “[Calculator(180 / 1.5)]” and e(c, r) is “[Calculator(180 / 1.5) -&gt; 120.0]”.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; a_c, i_c = "Calculator", "180 / 1.5"   # the tool and its input
-&gt;&gt;&gt; r = str(180 / 1.5)                     # what the tool returns
-&gt;&gt;&gt; print(f"[{a_c}({i_c})]")               # e(c)
-[Calculator(180 / 1.5)]
-&gt;&gt;&gt; print(f"[{a_c}({i_c}) -&gt; {r}]")        # e(c, r)
-[Calculator(180 / 1.5) -&gt; 120.0]</code></pre>
+<pre class="in-python"><code># the tool and its input
+a_c, i_c = "Calculator", "180 / 1.5"
+# what the tool returns
+r = str(180 / 1.5)
+# e(c)
+print(f"[{a_c}({i_c})]")  # → [Calculator(180 / 1.5)]
+# e(c, r)
+print(f"[{a_c}({i_c}) -&gt; {r}]")  # → [Calculator(180 / 1.5) -&gt; 120.0]</code></pre>
 <h4>Why it matters</h4>
 <p>Writing calls as plain text means any language model can emit them, and any text corpus can be annotated with them. Modern APIs return calls as structured blocks instead, validated against a schema, but the principle is the same; see <a data-lesson="primer/agents/llm.html">talking to a model</a>.</p>
 </section>
@@ -151,11 +153,12 @@
 <p class="inwords"><strong>In words:</strong> “for every position i, ask the model how likely it is to start a tool call there, given the prompt and the text so far; keep the positions where that is above a threshold (at most the top k), and sample up to m candidate calls at each.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if τ<sub>s</sub> = 0.05 and the model gives 0.31 to opening a call right after “an average speed of” but 0.002 after “The train”, only the first position is kept.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; tau_s = 0.05
-&gt;&gt;&gt; p = {"an average speed of": 0.31, "The train": 0.002}   # p_i after each prefix
-&gt;&gt;&gt; I = [i for i in p if p[i] &gt; tau_s]     # I = { i | p_i &gt; τ_s }
-&gt;&gt;&gt; I
-['an average speed of']</code></pre>
+<pre class="in-python"><code>tau_s = 0.05
+# p_i after each prefix
+p = {"an average speed of": 0.31, "The train": 0.002}
+# I = { i | p_i &gt; τ_s }
+I = [i for i in p if p[i] &gt; tau_s]
+I  # → ['an average speed of']</code></pre>
 </section>
 
 <section id="s2-filter">
@@ -182,26 +185,29 @@
 <p class="inwords"><strong>In words:</strong> “measure how surprised the model is by the next few tokens, counting nearer tokens more, in three situations; keep the call only if giving the model the call and its result beats both no call and a result-less call by at least τ<sub>f</sub>.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the raw weights for t = 0, 1, 2, 3, 4 are 1, 0.8, 0.6, 0.4, 0.2 (then 0), summing to 3.0, so the normalised weights are 0.333, 0.267, 0.2, 0.133, 0.067. Only the next five tokens count at all. L⁻ = min(1.764, 1.629) = 1.629, L⁺ = 0.291, difference 1.338 ≥ τ<sub>f</sub> = 1.0: keep.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; w_raw = [max(0.0, 1 - 0.2 * t) for t in range(7)]   # w̃_t = max(0, 1 − 0.2 t)
-&gt;&gt;&gt; [round(x, 1) for x in w_raw], round(sum(w_raw), 1)
-([1.0, 0.8, 0.6, 0.4, 0.2, 0.0, 0.0], 3.0)
-&gt;&gt;&gt; w = [x / sum(w_raw) for x in w_raw]                 # w_t = w̃_t / Σ w̃_s
-&gt;&gt;&gt; [round(x, 3) for x in w[:5]]
-[0.333, 0.267, 0.2, 0.133, 0.067]
-&gt;&gt;&gt; def L(probs):                     # L_i = −Σ w_(j−i) · log p_M(x_j | ...)
-...     return -sum(w[t] * math.log(p) for t, p in enumerate(probs))
-&gt;&gt;&gt; L_none = L([0.02, 0.30, 0.50])    # L_i(ε): no call at all
-&gt;&gt;&gt; L_bare = L([0.03, 0.30, 0.50])    # L_i(e(c_i, ε)): call, but no result
-&gt;&gt;&gt; L_plus = L([0.90, 0.60, 0.55])    # L_i⁺ = L_i(e(c_i, r_i)): call with its result
-&gt;&gt;&gt; round(L_none, 3), round(L_bare, 3), round(L_plus, 3)
-(1.764, 1.629, 0.291)
-&gt;&gt;&gt; L_minus = min(L_none, L_bare)     # L_i⁻
-&gt;&gt;&gt; round(L_minus - L_plus, 3)
-1.338
-&gt;&gt;&gt; tau_f = 1.0
-&gt;&gt;&gt; L_minus - L_plus &gt;= tau_f         # keep the call
-True</code></pre>
+<pre class="in-python"><code>import math
+# w̃_t = max(0, 1 − 0.2 t)
+w_raw = [max(0.0, 1 - 0.2 * t) for t in range(7)]
+[round(x, 1) for x in w_raw], round(sum(w_raw), 1)  # → ([1.0, 0.8, 0.6, 0.4, 0.2, 0.0, 0.0], 3.0)
+# w_t = w̃_t / Σ w̃_s
+w = [x / sum(w_raw) for x in w_raw]
+[round(x, 3) for x in w[:5]]  # → [0.333, 0.267, 0.2, 0.133, 0.067]
+# L_i = −Σ w_(j−i) · log p_M(x_j | ...)
+def L(probs):
+    return -sum(w[t] * math.log(p) for t, p in enumerate(probs))
+# L_i(ε): no call at all
+L_none = L([0.02, 0.30, 0.50])
+# L_i(e(c_i, ε)): call, but no result
+L_bare = L([0.03, 0.30, 0.50])
+# L_i⁺ = L_i(e(c_i, r_i)): call with its result
+L_plus = L([0.90, 0.60, 0.55])
+round(L_none, 3), round(L_bare, 3), round(L_plus, 3)  # → (1.764, 1.629, 0.291)
+# L_i⁻
+L_minus = min(L_none, L_bare)
+round(L_minus - L_plus, 3)  # → 1.338
+tau_f = 1.0
+# keep the call
+L_minus - L_plus &gt;= tau_f  # → True</code></pre>
 
 <h4>Try it: the filter</h4>
 <div class="play" id="flt">

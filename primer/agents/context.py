@@ -239,12 +239,14 @@ requests is 1,000 / 2,060 ≈ 49%. With the timestamp first it's 0 / 2,060 = 0%.
 **In Python:**
 
 ```python
->>> c = [0, 1000]                     # c_r: cached characters in requests 1 and 2 (timestamp last)
->>> ell = [1030, 1030]                # ℓ_r: characters sent in each request
->>> round(100 * sum(c) / sum(ell))    # Σ c_r / Σ ℓ_r, as a percentage
-49
->>> sum([0, 0]) / sum(ell)            # timestamp first: nothing is reused
-0.0
+# c_r: cached characters in requests 1 and 2 (timestamp last)
+c = [0, 1000]
+# ℓ_r: characters sent in each request
+ell = [1030, 1030]
+# Σ c_r / Σ ℓ_r, as a percentage
+round(100 * sum(c) / sum(ell))  # → 49
+# timestamp first: nothing is reused
+sum([0, 0]) / sum(ell)  # → 0.0
 ```
 
 ![Cached share of input across 20 requests: timestamp first vs. last](figures/primer.agents.context.prefix_cache.svg)

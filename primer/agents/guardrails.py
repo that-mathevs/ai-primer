@@ -133,14 +133,16 @@ every second digit from the right (and subtracting 9 from any result over
 **In Python:**
 
 ```python
->>> def f(i, d):
-...     if i % 2 == 0:
-...         return d                              # even position: keep the digit
-...     return 2 * d if 2 * d <= 9 else 2 * d - 9  # odd position: double, fold back below 10
->>> d = [int(ch) for ch in reversed("4111111111111111")]   # d[0] is the rightmost digit
->>> total = sum(f(i, d_i) for i, d_i in enumerate(d))
->>> total, total % 10 == 0
-(30, True)
+def f(i, d):
+    if i % 2 == 0:
+        # even position: keep the digit
+        return d
+    # odd position: double, fold back below 10
+    return 2 * d if 2 * d <= 9 else 2 * d - 9
+# d[0] is the rightmost digit
+d = [int(ch) for ch in reversed("4111111111111111")]
+total = sum(f(i, d_i) for i, d_i in enumerate(d))
+total, total % 10 == 0  # → (30, True)
 ```
 
 ```mermaid
@@ -238,16 +240,16 @@ claims reaches 0.6, so groundedness = 1/2 = 0.5.
 **In Python:**
 
 ```python
->>> S = [{"full", "time", "employees", "accrue", "20", "days", "pto", "per", "year"}]
->>> C = [{"employees", "accrue", "20", "days", "pto", "per", "year"},
-...      {"managers", "get", "unlimited", "sabbaticals"}]
->>> def support(W_c):
-...     return max(len(W_c & W_s) / len(W_c) for W_s in S)   # the best single source
->>> [support(W_c) for W_c in C]
-[1.0, 0.0]
->>> tau = 0.6
->>> sum(1 for W_c in C if support(W_c) >= tau) / len(C)     # groundedness
-0.5
+S = [{"full", "time", "employees", "accrue", "20", "days", "pto", "per", "year"}]
+C = [{"employees", "accrue", "20", "days", "pto", "per", "year"},
+     {"managers", "get", "unlimited", "sabbaticals"}]
+def support(W_c):
+    # the best single source
+    return max(len(W_c & W_s) / len(W_c) for W_s in S)
+[support(W_c) for W_c in C]  # → [1.0, 0.0]
+tau = 0.6
+# groundedness
+sum(1 for W_c in C if support(W_c) >= tau) / len(C)  # → 0.5
 ```
 
 ```mermaid

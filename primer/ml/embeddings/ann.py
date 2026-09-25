@@ -119,17 +119,17 @@ s = 0.8·0.6 + 0.6·0.8 = 0.48 + 0.48 = **0.96**, very similar.
 **In Python:**
 
 ```python
->>> q = [0.8, 0.6]
->>> x = [0.6, 0.8]
->>> round(sum(q_i * x_i for q_i, x_i in zip(q, x)), 2)    # s(q, x) = Σ q_i x_i
-0.96
->>> points = {"A": (0, 0), "B": (2, 1), "C": (4, 0), "D": (1, 3),
-...           "E": (3, 3), "F": (5, 2), "G": (2, 5), "H": (5, 5)}
->>> query = (5, 4)
->>> def sq_dist(p):
-...     return (p[0] - query[0]) ** 2 + (p[1] - query[1]) ** 2
->>> min(points, key=lambda name: sq_dist(points[name]))  # flat search on the map: check all eight
-'H'
+q = [0.8, 0.6]
+x = [0.6, 0.8]
+# s(q, x) = Σ q_i x_i
+round(sum(q_i * x_i for q_i, x_i in zip(q, x)), 2)  # → 0.96
+points = {"A": (0, 0), "B": (2, 1), "C": (4, 0), "D": (1, 3),
+          "E": (3, 3), "F": (5, 2), "G": (2, 5), "H": (5, 5)}
+query = (5, 4)
+def sq_dist(p):
+    return (p[0] - query[0]) ** 2 + (p[1] - query[1]) ** 2
+# flat search on the map: check all eight
+min(points, key=lambda name: sq_dist(points[name]))  # → 'H'
 ```
 
 **In code:** `FlatIndex.search` scores the query against every stored vector
@@ -224,20 +224,18 @@ about 1% of a flat scan.
 **In Python:**
 
 ```python
->>> left = [(0, 0), (2, 1), (4, 0), (1, 3)]
->>> right = [(3, 3), (5, 2), (2, 5), (5, 5)]
->>> def centroid(members):
-...     return tuple(sum(p[i] for p in members) / len(members) for i in range(2))
->>> centroid(left), centroid(right)
-((1.75, 1.0), (3.75, 3.75))
->>> [(c[0] - 5) ** 2 + (c[1] - 4) ** 2 for c in (centroid(left), centroid(right))]   # probe the nearer
-[19.5625, 1.625]
->>> def comparisons(N, n_list, n_probe):
-...     return n_list + N * n_probe // n_list     # n_list centroids + the vectors in the opened lists
->>> comparisons(8, 2, 1)
-6
->>> comparisons(1_000_000, 1_000, 10)
-11000
+left = [(0, 0), (2, 1), (4, 0), (1, 3)]
+right = [(3, 3), (5, 2), (2, 5), (5, 5)]
+def centroid(members):
+    return tuple(sum(p[i] for p in members) / len(members) for i in range(2))
+centroid(left), centroid(right)  # → ((1.75, 1.0), (3.75, 3.75))
+# probe the nearer
+[(c[0] - 5) ** 2 + (c[1] - 4) ** 2 for c in (centroid(left), centroid(right))]  # → [19.5625, 1.625]
+def comparisons(N, n_list, n_probe):
+    # n_list centroids + the vectors in the opened lists
+    return n_list + N * n_probe // n_list
+comparisons(8, 2, 1)  # → 6
+comparisons(1_000_000, 1_000, 10)  # → 11000
 ```
 
 **In code:** `IVFIndex.train` finds the centroids with `kmeans`,
@@ -330,24 +328,25 @@ rounded to.
 **In Python:**
 
 ```python
->>> C = [(1, 0), (0, 1), (-1, 0), (0, -1)]          # the compass codebook, used for both pieces
->>> def dot(a, b):
-...     return sum(a_i * b_i for a_i, b_i in zip(a, b))
->>> def sq_dist(a, b):
-...     return sum((a_i - b_i) ** 2 for a_i, b_i in zip(a, b))
->>> x = [0.9, 0.1, -0.2, 0.8]
->>> pieces = [x[0:2], x[2:4]]
->>> codes = [min(range(4), key=lambda c: sq_dist(piece, C[c])) for piece in pieces]   # c_j(x)
->>> codes
-[0, 1]
->>> q = [1, 0, 0, 1]
->>> T = [[dot(q_j, C[c]) for c in range(4)] for q_j in (q[0:2], q[2:4])]   # T_j[c] = q^(j) · C_j[c]
->>> T
-[[1, 0, -1, 0], [0, 1, 0, -1]]
->>> sum(T[j][codes[j]] for j in range(2))           # ŝ = Σ_j T_j[c_j(x)]
-2
->>> round(dot(q, x), 2)                             # the exact score, for comparison
-1.7
+# the compass codebook, used for both pieces
+C = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+def dot(a, b):
+    return sum(a_i * b_i for a_i, b_i in zip(a, b))
+def sq_dist(a, b):
+    return sum((a_i - b_i) ** 2 for a_i, b_i in zip(a, b))
+x = [0.9, 0.1, -0.2, 0.8]
+pieces = [x[0:2], x[2:4]]
+# c_j(x)
+codes = [min(range(4), key=lambda c: sq_dist(piece, C[c])) for piece in pieces]
+codes  # → [0, 1]
+q = [1, 0, 0, 1]
+# T_j[c] = q^(j) · C_j[c]
+T = [[dot(q_j, C[c]) for c in range(4)] for q_j in (q[0:2], q[2:4])]
+T  # → [[1, 0, -1, 0], [0, 1, 0, -1]]
+# ŝ = Σ_j T_j[c_j(x)]
+sum(T[j][codes[j]] for j in range(2))  # → 2
+# the exact score, for comparison
+round(dot(q, x), 2)  # → 1.7
 ```
 
 **In code:** `ProductQuantizer` learns the codebooks (`ProductQuantizer.train`),
@@ -521,18 +520,18 @@ upper layers "highways".
 **In Python:**
 
 ```python
->>> import math
->>> M = 16
->>> m_L = 1 / math.log(M)                         # m_L = 1 / ln M
->>> round(m_L, 3)
-0.361
->>> for U in (0.5, 0.05):
-...     scaled = -math.log(U) * m_L               # -ln(U) · m_L
-...     print(U, round(scaled, 2), math.floor(scaled))   # ... then round down to get ℓ
-0.5 0.25 0
-0.05 1.08 1
->>> [M ** -l for l in (1, 2)]                     # P(ℓ ≥ l) = M^(-l): 6.25% and about 0.4%
-[0.0625, 0.00390625]
+import math
+M = 16
+# m_L = 1 / ln M
+m_L = 1 / math.log(M)
+round(m_L, 3)  # → 0.361
+for U in (0.5, 0.05):
+    # -ln(U) · m_L
+    scaled = -math.log(U) * m_L
+    # ... then round down to get ℓ
+    print(U, round(scaled, 2), math.floor(scaled))  # → 0.5 0.25 0 0.05 1.08 1
+# P(ℓ ≥ l) = M^(-l): 6.25% and about 0.4%
+[M ** -l for l in (1, 2)]  # → [0.0625, 0.00390625]
 ```
 
 | Knob | Set when | Higher means |
@@ -590,11 +589,13 @@ returns 1 to 9 plus document 42, the overlap is 9, so recall@10 = 9/10 =
 **In Python:**
 
 ```python
->>> true_top = set(range(1, 11))                  # documents 1 to 10
->>> returned = set(range(1, 10)) | {42}           # 1 to 9, plus document 42
->>> k = 10
->>> len(returned & true_top) / k                  # |returned ∩ true| / k
-0.9
+# documents 1 to 10
+true_top = set(range(1, 11))
+# 1 to 9, plus document 42
+returned = set(range(1, 10)) | {42}
+k = 10
+# |returned ∩ true| / k
+len(returned & true_top) / k  # → 0.9
 ```
 
 **In code:** `recall_at_k` computes this share; `ground_truth` runs the exact

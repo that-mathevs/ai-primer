@@ -198,13 +198,13 @@ $$
 **In Python:**
 
 ```python
->>> p = 0.97
->>> round(p ** 5, 3)                  # five calls that must all succeed
-0.859
->>> round(1 - p ** 5, 2)              # about 1 run in 7 fails
-0.14
->>> p ** 1                            # one high-level call
-0.97
+p = 0.97
+# five calls that must all succeed
+round(p ** 5, 3)  # → 0.859
+# about 1 run in 7 fails
+round(1 - p ** 5, 2)  # → 0.14
+# one high-level call
+p ** 1  # → 0.97
 ```
 
 ![Chain success vs. number of calls](figures/primer.agents.tools.compounding.svg)

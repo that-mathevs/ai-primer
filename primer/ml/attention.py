@@ -73,16 +73,17 @@ the sum of *e* raised to every score."
 **In Python:**
 
 ```python
->>> import math
->>> z = [2.0, 1.0, 0.5]                    # animal, tired, street
->>> exps = [math.exp(z_i) for z_i in z]    # e^(z_i) for each score
->>> [round(e, 2) for e in exps]
-[7.39, 2.72, 1.65]
->>> total = sum(exps)                      # Σ_j e^(z_j)
->>> round(total, 2)
-11.76
->>> [round(e / total, 2) for e in exps]    # softmax(z)_i: each share of the total
-[0.63, 0.23, 0.14]
+import math
+# animal, tired, street
+z = [2.0, 1.0, 0.5]
+# e^(z_i) for each score
+exps = [math.exp(z_i) for z_i in z]
+[round(e, 2) for e in exps]  # → [7.39, 2.72, 1.65]
+# Σ_j e^(z_j)
+total = sum(exps)
+round(total, 2)  # → 11.76
+# softmax(z)_i: each share of the total
+[round(e / total, 2) for e in exps]  # → [0.63, 0.23, 0.14]
 ```
 
 Why *e* to the power of the score, and not just the score divided by the
@@ -149,10 +150,10 @@ numbers together, and so on, then add up all the products."
 **In Python:**
 
 ```python
->>> q = [1, 2]
->>> k = [3, 0.5]
->>> sum(q_m * k_m for q_m, k_m in zip(q, k))   # Σ over m of q_m k_m
-4.0
+q = [1, 2]
+k = [3, 0.5]
+# Σ over m of q_m k_m
+sum(q_m * k_m for q_m, k_m in zip(q, k))  # → 4.0
 ```
 
 Vectors that point the same way give big positive scores, vectors at right
@@ -223,20 +224,22 @@ V(animal) = (1, 0), V(tired) = (0, 1) and V(street) = (1, 1), the blend is
 **In Python:**
 
 ```python
->>> import math
->>> q_it = [1, 1, 1, 1]
->>> K = [[1, 1, 1, 1], [1, 1, 0, 0], [1, 0, 0, 0]]   # keys: animal, tired, street
->>> V = [[1, 0], [0, 1], [1, 1]]                     # values, one row per word
->>> d_k = len(q_it)
->>> scores = [sum(q * k for q, k in zip(q_it, k_j)) / math.sqrt(d_k) for k_j in K]   # q Kᵀ / √d_k
->>> scores
-[2.0, 1.0, 0.5]
->>> exps = [math.exp(s) for s in scores]
->>> weights = [e / sum(exps) for e in exps]          # softmax of the row
->>> [round(w, 2) for w in weights]
-[0.63, 0.23, 0.14]
->>> [round(sum(w * v[c] for w, v in zip(weights, V)), 2) for c in range(2)]   # (…)V: blend the values
-[0.77, 0.37]
+import math
+q_it = [1, 1, 1, 1]
+# keys: animal, tired, street
+K = [[1, 1, 1, 1], [1, 1, 0, 0], [1, 0, 0, 0]]
+# values, one row per word
+V = [[1, 0], [0, 1], [1, 1]]
+d_k = len(q_it)
+# q Kᵀ / √d_k
+scores = [sum(q * k for q, k in zip(q_it, k_j)) / math.sqrt(d_k) for k_j in K]
+scores  # → [2.0, 1.0, 0.5]
+exps = [math.exp(s) for s in scores]
+# softmax of the row
+weights = [e / sum(exps) for e in exps]
+[round(w, 2) for w in weights]  # → [0.63, 0.23, 0.14]
+# (…)V: blend the values
+[round(sum(w * v[c] for w, v in zip(weights, V)), 2) for c in range(2)]  # → [0.77, 0.37]
 ```
 
 In practice this one line runs in every layer of every modern language
@@ -345,15 +348,15 @@ variance to 1.
 **In Python:**
 
 ```python
->>> import itertools, math, statistics
->>> d_k = 4
->>> scores = [sum(products) for products in itertools.product([-1, 1], repeat=d_k)]
->>> statistics.pvariance(scores)                                  # Var(q · k) = d_k
-4
->>> statistics.pvariance([s / math.sqrt(d_k) for s in scores])    # Var(q · k / √d_k) = 1
-1.0
->>> round(math.sqrt(128), 1)        # the typical raw swing at d_k = 128
-11.3
+import itertools, math, statistics
+d_k = 4
+scores = [sum(products) for products in itertools.product([-1, 1], repeat=d_k)]
+# Var(q · k) = d_k
+statistics.pvariance(scores)  # → 4
+# Var(q · k / √d_k) = 1
+statistics.pvariance([s / math.sqrt(d_k) for s in scores])  # → 1.0
+# the typical raw swing at d_k = 128
+round(math.sqrt(128), 1)  # → 11.3
 ```
 
 Why "all attention on one word" is bad, beyond being a wrong answer: softmax

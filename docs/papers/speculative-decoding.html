@@ -149,21 +149,24 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 <p class="inwords"><strong>In words:</strong> “take the draft's token if the big model likes it at least as much; if the big model likes it less, keep it only with probability p over q; when you reject, draw from what's left of the big model's list after subtracting the draft's.”</p>
 <p class="inwords"><strong>With the numbers:</strong> three possible next words, target p = (cat 0.5, dog 0.3, fish 0.2), draft q = (0.6, 0.2, 0.2). If the draft says “cat” (q 0.6 &gt; p 0.5), keep it with probability 0.5 / 0.6 = 0.833. If it says “dog” or “fish”, always keep it. When a “cat” is rejected (probability 0.6 × 0.167 = 0.1), redraw from max(0, p − q) = (0, 0.1, 0), normalized: “dog” for certain. Final chances: cat 0.6 × 0.833 = <strong>0.5</strong>, dog 0.2 + 0.1 = <strong>0.3</strong>, fish <strong>0.2</strong>: exactly p.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; p = {"cat": 0.5, "dog": 0.3, "fish": 0.2}     # the target model
-&gt;&gt;&gt; q = {"cat": 0.6, "dog": 0.2, "fish": 0.2}     # the draft model
-&gt;&gt;&gt; keep = {x: min(1, p[x] / q[x]) for x in p}    # min(1, p(x) / q(x))
-&gt;&gt;&gt; round(keep["cat"], 3)
-0.833
-&gt;&gt;&gt; rejected = sum(q[x] * (1 - keep[x]) for x in p)   # 0.6 × 0.167
-&gt;&gt;&gt; round(rejected, 1)
-0.1
-&gt;&gt;&gt; left = {x: max(0, p[x] - q[x]) for x in p}    # max(0, p(x) − q(x))
-&gt;&gt;&gt; p_prime = {x: left[x] / sum(left.values()) for x in p}   # norm(...)
-&gt;&gt;&gt; p_prime["dog"]
-1.0
-&gt;&gt;&gt; final = {x: round(q[x] * keep[x] + rejected * p_prime[x], 3) for x in p}
-&gt;&gt;&gt; final                             # exactly p
-{'cat': 0.5, 'dog': 0.3, 'fish': 0.2}</code></pre>
+<pre class="in-python"><code># the target model
+p = {"cat": 0.5, "dog": 0.3, "fish": 0.2}
+# the draft model
+q = {"cat": 0.6, "dog": 0.2, "fish": 0.2}
+# min(1, p(x) / q(x))
+keep = {x: min(1, p[x] / q[x]) for x in p}
+round(keep["cat"], 3)  # → 0.833
+# 0.6 × 0.167
+rejected = sum(q[x] * (1 - keep[x]) for x in p)
+round(rejected, 1)  # → 0.1
+# max(0, p(x) − q(x))
+left = {x: max(0, p[x] - q[x]) for x in p}
+# norm(...)
+p_prime = {x: left[x] / sum(left.values()) for x in p}
+p_prime["dog"]  # → 1.0
+final = {x: round(q[x] * keep[x] + rejected * p_prime[x], 3) for x in p}
+# exactly p
+final  # → {'cat': 0.5, 'dog': 0.3, 'fish': 0.2}</code></pre>
 
 <h4>Try it: draft, verify, repeat</h4>
 <div class="play" id="spec-play">
@@ -202,16 +205,15 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 <p class="inwords"><strong>In words:</strong> “the chance a draft token survives is the total overlap of the two probability lists; averaged over the text it is α; and a round with γ drafts then produces 1 + α + α² + … + α<sup>γ</sup> tokens on average.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for the worked example, β = min(0.5, 0.6) + min(0.3, 0.2) + min(0.2, 0.2) = 0.5 + 0.2 + 0.2 = <strong>0.9</strong>. With α = 0.8 and γ = 5: (1 − 0.8<sup>6</sup>) / (1 − 0.8) = (1 − 0.262) / 0.2 = <strong>3.69</strong> tokens per big-model run.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; p, q = [0.5, 0.3, 0.2], [0.6, 0.2, 0.2]
-&gt;&gt;&gt; beta = sum(min(px, qx) for px, qx in zip(p, q))   # β = Σ_x min(p(x), q(x))
-&gt;&gt;&gt; round(beta, 1)
-0.9
-&gt;&gt;&gt; alpha, gamma = 0.8, 5
-&gt;&gt;&gt; round(alpha ** (gamma + 1), 3)
-0.262
-&gt;&gt;&gt; tokens = (1 - alpha ** (gamma + 1)) / (1 - alpha)   # E(#tokens)
-&gt;&gt;&gt; round(tokens, 2)
-3.69</code></pre>
+<pre class="in-python"><code>p, q = [0.5, 0.3, 0.2], [0.6, 0.2, 0.2]
+# β = Σ_x min(p(x), q(x))
+beta = sum(min(px, qx) for px, qx in zip(p, q))
+round(beta, 1)  # → 0.9
+alpha, gamma = 0.8, 5
+round(alpha ** (gamma + 1), 3)  # → 0.262
+# E(#tokens)
+tokens = (1 - alpha ** (gamma + 1)) / (1 - alpha)
+round(tokens, 2)  # → 3.69</code></pre>
 </section>
 
 <section id="s3-3">
@@ -223,16 +225,15 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 <p class="inwords"><strong>In words:</strong> “the speed-up is the tokens per round divided by the cost of a round (one big run plus γ small runs); the extra arithmetic is the work of a round divided by the tokens it yields.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with α = 0.8, γ = 5 and a draft that costs 5% of the big model (c = 0.05): 3.69 / (5 × 0.05 + 1) = 3.69 / 1.25 = <strong>2.95×</strong> faster. With a free draft (c = 0), it is 3.69× faster at the price of 1.63× more arithmetic.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; alpha, gamma, c = 0.8, 5, 0.05
-&gt;&gt;&gt; speedup = (1 - alpha ** (gamma + 1)) / ((1 - alpha) * (gamma * c + 1))
-&gt;&gt;&gt; round(speedup, 2)
-2.95
-&gt;&gt;&gt; c, c_hat = 0, 0                   # a free draft
-&gt;&gt;&gt; round((1 - alpha ** (gamma + 1)) / ((1 - alpha) * (gamma * c + 1)), 2)
-3.69
-&gt;&gt;&gt; extra = (1 - alpha) * (gamma * c_hat + gamma + 1) / (1 - alpha ** (gamma + 1))
-&gt;&gt;&gt; round(extra, 2)                   # times more arithmetic
-1.63</code></pre>
+<pre class="in-python"><code>alpha, gamma, c = 0.8, 5, 0.05
+speedup = (1 - alpha ** (gamma + 1)) / ((1 - alpha) * (gamma * c + 1))
+round(speedup, 2)  # → 2.95
+# a free draft
+c, c_hat = 0, 0
+round((1 - alpha ** (gamma + 1)) / ((1 - alpha) * (gamma * c + 1)), 2)  # → 3.69
+extra = (1 - alpha) * (gamma * c_hat + gamma + 1) / (1 - alpha ** (gamma + 1))
+# times more arithmetic
+round(extra, 2)  # → 1.63</code></pre>
 <div class="plot" id="speed-plot">
   <div class="sliders">
     <label for="sp-a">acceptance rate α</label><input type="range" id="sp-a" min="0.1" max="0.95" step="0.01" value="0.8"><output id="sp-av"></output>
@@ -288,14 +289,17 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 <p class="inwords"><strong>In words:</strong> “the chance of keeping a proposed x is the smaller of the two probabilities; the leftover probability mass, handed out by the correction step, tops each token up to exactly what the big model wanted.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for “dog” in the example: kept directly 0.2 (= min(0.3, 0.2)), plus leftover 0.3 − 0.2 = 0.1 from corrections: 0.2 + 0.1 = <strong>0.3</strong> = p(dog).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; p, q = 0.3, 0.2                   # p(dog), q(dog)
-&gt;&gt;&gt; kept = q * min(1, p / q)          # q(x) min(1, p(x)/q(x)) = min(p(x), q(x))
-&gt;&gt;&gt; beta, p_prime = 0.9, 1.0          # β and p'(dog) from the worked example
-&gt;&gt;&gt; leftover = (1 - beta) * p_prime   # (1 − β) p'(x) = p(x) − min(p(x), q(x))
-&gt;&gt;&gt; round(kept, 1), round(leftover, 1)
-(0.2, 0.1)
-&gt;&gt;&gt; round(kept + leftover, 1)         # = p(dog)
-0.3</code></pre>
+<pre class="in-python"><code># p(dog), q(dog)
+p, q = 0.3, 0.2
+# q(x) min(1, p(x)/q(x)) = min(p(x), q(x))
+kept = q * min(1, p / q)
+# β and p'(dog) from the worked example
+beta, p_prime = 0.9, 1.0
+# (1 − β) p'(x) = p(x) − min(p(x), q(x))
+leftover = (1 - beta) * p_prime
+round(kept, 1), round(leftover, 1)  # → (0.2, 0.1)
+# = p(dog)
+round(kept + leftover, 1)  # → 0.3</code></pre>
 </section>
 
 <section id="s6">

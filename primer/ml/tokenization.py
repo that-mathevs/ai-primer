@@ -110,13 +110,15 @@ totals with a `Counter`.
 **In Python:**
 
 ```python
->>> f = {"low": 1, "lower": 1, "lowest": 1}         # f_w: how often each distinct word occurs
->>> def n(w, a, b):                                 # n_w(a, b): a immediately followed by b inside w
-...     return sum(1 for i in range(len(w) - 1) if w[i] == a and w[i + 1] == b)
->>> def count(a, b):
-...     return sum(f_w * n(w, a, b) for w, f_w in f.items())   # Σ_w f_w · n_w(a, b)
->>> count("l", "o"), count("e", "r")
-(3, 1)
+# f_w: how often each distinct word occurs
+f = {"low": 1, "lower": 1, "lowest": 1}
+# n_w(a, b): a immediately followed by b inside w
+def n(w, a, b):
+    return sum(1 for i in range(len(w) - 1) if w[i] == a and w[i + 1] == b)
+def count(a, b):
+    # Σ_w f_w · n_w(a, b)
+    return sum(f_w * n(w, a, b) for w, f_w in f.items())
+count("l", "o"), count("e", "r")  # → (3, 1)
 ```
 
 **In code:** `train_char_bpe` runs the count-and-merge loop and returns one
@@ -266,13 +268,14 @@ appears at all."
 **In Python:**
 
 ```python
->>> f = {"low": 1, "lower": 1, "lowest": 1}
->>> def count(piece):                               # how often a symbol, or a pair written together, appears
-...     return sum(f_w * w.count(piece) for w, f_w in f.items())
->>> def score(a, b):
-...     return count(a + b) / (count(a) * count(b))   # count(ab) / (count(a) · count(b))
->>> score("s", "t"), round(score("l", "o"), 2)
-(1.0, 0.33)
+f = {"low": 1, "lower": 1, "lowest": 1}
+# how often a symbol, or a pair written together, appears
+def count(piece):
+    return sum(f_w * w.count(piece) for w, f_w in f.items())
+def score(a, b):
+    # count(ab) / (count(a) · count(b))
+    return count(a + b) / (count(a) * count(b))
+score("s", "t"), round(score("l", "o"), 2)  # → (1.0, 0.33)
 ```
 
 BERT marks continuation pieces with `##` ("un", "##believ", "##able").
@@ -332,10 +335,10 @@ tokens in millions times the output price."
 **In Python:**
 
 ```python
->>> T_in, T_out = 2_000, 500
->>> p_in, p_out = 3, 15                             # dollars per million tokens
->>> round(T_in / 10**6 * p_in + T_out / 10**6 * p_out, 4)
-0.0135
+T_in, T_out = 2_000, 500
+# dollars per million tokens
+p_in, p_out = 3, 15
+round(T_in / 10**6 * p_in + T_out / 10**6 * p_out, 4)  # → 0.0135
 ```
 
 **Rule of thumb:** English prose averages about **4 characters per token**,

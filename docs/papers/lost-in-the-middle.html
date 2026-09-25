@@ -161,11 +161,12 @@
 <p class="inwords"><strong>In words:</strong> “the gap is the best position's accuracy minus the worst position's; the average is what you get if the useful document lands in a random measured position.”</p>
 <p class="inwords"><strong>With the numbers:</strong> GPT-3.5-Turbo, 20 documents, measured at positions (1, 5, 10, 15, 20): (75.8, 57.2, 53.8, 55.4, 63.2). The gap is 75.8 − 53.8 = <strong>22.0 points</strong>. The average is 305.4 / 5 = <strong>61.1%</strong>. Putting the best document first (75.8%) is worth almost 15 points over leaving its position to chance.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; A = {1: 75.8, 5: 57.2, 10: 53.8, 15: 55.4, 20: 63.2}   # A(p): accuracy at position p
-&gt;&gt;&gt; round(max(A.values()) - min(A.values()), 1)           # Δ: best minus worst
-22.0
-&gt;&gt;&gt; round(sum(A.values()) / len(A), 1)                    # Ā: average over P
-61.1</code></pre>
+<pre class="in-python"><code># A(p): accuracy at position p
+A = {1: 75.8, 5: 57.2, 10: 53.8, 15: 55.4, 20: 63.2}
+# Δ: best minus worst
+round(max(A.values()) - min(A.values()), 1)  # → 22.0
+# Ā: average over P
+round(sum(A.values()) / len(A), 1)  # → 61.1</code></pre>
 <p>The paper proposes exactly this kind of test as a standard: to claim a model can use a long context, show that its best-case and worst-case positions score about the same.</p>
 <h4>Longer windows do not fix it</h4>
 <p>Where a prompt fits in both a model and its extended-context sibling, their curves nearly coincide: GPT-3.5-Turbo and its 16K version, and Claude-1.3 and its 100K version, score within a few tenths of a point of each other at every position. A bigger window lets more text in; it does not make the model read the middle more carefully.</p>

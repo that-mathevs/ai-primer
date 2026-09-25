@@ -107,18 +107,20 @@ nudge, −log σ(0.15) − log σ(0.15) = 0.621 + 0.621 = 1.242.
 **In Python:**
 
 ```python
->>> import math
->>> def sigma(x):
-...     return 1 / (1 + math.exp(-x))            # σ(x) = 1 / (1 + e^(-x))
->>> def dot(a, b):
-...     return sum(a_i * b_i for a_i, b_i in zip(a, b))
->>> def L(v_c, u_o, noise):
-...     return (-math.log(sigma(dot(u_o, v_c)))                          # -log σ(u_o · v_c)
-...             - sum(math.log(sigma(-dot(u_n, v_c))) for u_n in noise))  # - Σ_i log σ(-u_ni · v_c)
->>> round(L((1, 0), (0, 1), [(0, -1)]), 3)
-1.386
->>> round(L((1, 0.1), (0.05, 1), [(-0.05, -1)]), 3)                     # after the nudge
-1.242
+import math
+def sigma(x):
+    # σ(x) = 1 / (1 + e^(-x))
+    return 1 / (1 + math.exp(-x))
+def dot(a, b):
+    return sum(a_i * b_i for a_i, b_i in zip(a, b))
+def L(v_c, u_o, noise):
+    # -log σ(u_o · v_c)
+    return (-math.log(sigma(dot(u_o, v_c)))
+            # - Σ_i log σ(-u_ni · v_c)
+            - sum(math.log(sigma(-dot(u_n, v_c))) for u_n in noise))
+round(L((1, 0), (0, 1), [(0, -1)]), 3)  # → 1.386
+# after the nudge
+round(L((1, 0.1), (0.05, 1), [(-0.05, -1)]), 3)  # → 1.242
 ```
 
 The nudge follows the **gradient**: for each vector, the direction in which
@@ -150,19 +152,20 @@ rate 0.1: vc = (1, 0) − 0.1·(0, −1) = (1, 0.1).
 **In Python:**
 
 ```python
->>> import math
->>> def sigma(x):
-...     return 1 / (1 + math.exp(-x))
->>> v_c, u_o, u_n = (1, 0), (0, 1), (0, -1)
->>> g_o = sigma(sum(u * v for u, v in zip(u_o, v_c))) - 1   # σ(u_o · v_c) - 1
->>> g_1 = sigma(sum(u * v for u, v in zip(u_n, v_c)))       # σ(u_n1 · v_c)
->>> g_o, g_1
-(-0.5, 0.5)
->>> grad = [g_o * o + g_1 * n for o, n in zip(u_o, u_n)]     # ∂L/∂v_c = g_o u_o + Σ_i g_i u_ni
->>> grad
-[0.0, -1.0]
->>> [v - 0.1 * g for v, g in zip(v_c, grad)]                 # step against it, learning rate 0.1
-[1.0, 0.1]
+import math
+def sigma(x):
+    return 1 / (1 + math.exp(-x))
+v_c, u_o, u_n = (1, 0), (0, 1), (0, -1)
+# σ(u_o · v_c) - 1
+g_o = sigma(sum(u * v for u, v in zip(u_o, v_c))) - 1
+# σ(u_n1 · v_c)
+g_1 = sigma(sum(u * v for u, v in zip(u_n, v_c)))
+g_o, g_1  # → (-0.5, 0.5)
+# ∂L/∂v_c = g_o u_o + Σ_i g_i u_ni
+grad = [g_o * o + g_1 * n for o, n in zip(u_o, u_n)]
+grad  # → [0.0, -1.0]
+# step against it, learning rate 0.1
+[v - 0.1 * g for v, g in zip(v_c, grad)]  # → [1.0, 0.1]
 ```
 
 Noise words are drawn in proportion to their count raised to the 3/4 power:
@@ -191,14 +194,14 @@ and 0.941).
 **In Python:**
 
 ```python
->>> counts = [1, 16]
->>> weights = [count ** 0.75 for count in counts]      # count(w)^0.75
->>> weights
-[1.0, 8.0]
->>> [round(w / sum(weights), 3) for w in weights]      # divide by Σ over w′ so the shares add to 1
-[0.111, 0.889]
->>> [round(c / sum(counts), 3) for c in counts]        # without the 3/4 power
-[0.059, 0.941]
+counts = [1, 16]
+# count(w)^0.75
+weights = [count ** 0.75 for count in counts]
+weights  # → [1.0, 8.0]
+# divide by Σ over w′ so the shares add to 1
+[round(w / sum(weights), 3) for w in weights]  # → [0.111, 0.889]
+# without the 3/4 power
+[round(c / sum(counts), 3) for c in counts]  # → [0.059, 0.941]
 ```
 
 **In code:** `sgns_loss` computes L for one center, one context and k noise
@@ -249,19 +252,20 @@ cosine is 1, and queen wins.
 **In Python:**
 
 ```python
->>> import math
->>> def cos(a, b):
-...     dot = sum(a_i * b_i for a_i, b_i in zip(a, b))
-...     return dot / (math.sqrt(sum(a_i ** 2 for a_i in a)) * math.sqrt(sum(b_i ** 2 for b_i in b)))
->>> v = {"man": (1, 0), "woman": (1, 1), "king": (3, 0), "queen": (3, 1)}
->>> a, b, c = "king", "man", "woman"
->>> target = [x_a - x_b + x_c for x_a, x_b, x_c in zip(v[a], v[b], v[c])]   # v_a - v_b + v_c
->>> target
-[3, 1]
->>> candidates = [w for w in v if w not in {a, b, c}]                      # w ∉ {a, b, c}
->>> w_hat = max(candidates, key=lambda w: cos(v[w], target))               # arg max of the cosine
->>> w_hat, round(cos(v[w_hat], target), 2)
-('queen', 1.0)
+import math
+def cos(a, b):
+    dot = sum(a_i * b_i for a_i, b_i in zip(a, b))
+    return dot / (math.sqrt(sum(a_i ** 2 for a_i in a)) * math.sqrt(sum(b_i ** 2 for b_i in b)))
+v = {"man": (1, 0), "woman": (1, 1), "king": (3, 0), "queen": (3, 1)}
+a, b, c = "king", "man", "woman"
+# v_a - v_b + v_c
+target = [x_a - x_b + x_c for x_a, x_b, x_c in zip(v[a], v[b], v[c])]
+target  # → [3, 1]
+# w ∉ {a, b, c}
+candidates = [w for w in v if w not in {a, b, c}]
+# arg max of the cosine
+w_hat = max(candidates, key=lambda w: cos(v[w], target))
+w_hat, round(cos(v[w_hat], target), 2)  # → ('queen', 1.0)
 ```
 
 This lesson trains on a small synthetic corpus built from three independent
@@ -327,17 +331,22 @@ diagonal; the off-diagonal pairs have P(w, c) = 0, so PMI = −∞ and PPMI = 0.
 **In Python:**
 
 ```python
->>> import math
->>> X = [[2, 0], [0, 2]]                          # co-occurrence counts
->>> total = sum(sum(row) for row in X)            # 4 sightings
->>> P_w = [sum(row) / total for row in X]         # P(w): share of each row
->>> P_c = [sum(col) / total for col in zip(*X)]   # P(c): share of each column
->>> def ppmi(w, c):
-...     P_wc = X[w][c] / total
-...     pmi = math.log(P_wc / (P_w[w] * P_c[c])) if P_wc else -math.inf   # log 0 = -∞
-...     return max(pmi, 0.0)                                              # PPMI = max(PMI, 0)
->>> [[round(ppmi(w, c), 3) for c in range(2)] for w in range(2)]
-[[0.693, 0.0], [0.0, 0.693]]
+import math
+# co-occurrence counts
+X = [[2, 0], [0, 2]]
+# 4 sightings
+total = sum(sum(row) for row in X)
+# P(w): share of each row
+P_w = [sum(row) / total for row in X]
+# P(c): share of each column
+P_c = [sum(col) / total for col in zip(*X)]
+def ppmi(w, c):
+    P_wc = X[w][c] / total
+    # log 0 = -∞
+    pmi = math.log(P_wc / (P_w[w] * P_c[c])) if P_wc else -math.inf
+    # PPMI = max(PMI, 0)
+    return max(pmi, 0.0)
+[[round(ppmi(w, c), 3) for c in range(2)] for w in range(2)]  # → [[0.693, 0.0], [0.0, 0.693]]
 ```
 
 The PPMI table has one row per word, as many columns as the vocabulary, and
@@ -394,14 +403,15 @@ pushing the two vectors to agree more.
 **In Python:**
 
 ```python
->>> import math
->>> round(math.log(20), 1)                        # log X_ij: the target for 20 co-occurrences
-3.0
->>> w_ice, w_cold_tilde = (1, 1), (1, 0.5)
->>> b_ice, b_cold_tilde = 0.25, 0.25
->>> left = sum(a * b for a, b in zip(w_ice, w_cold_tilde)) + b_ice + b_cold_tilde   # w_i · w̃_j + b_i + b̃_j
->>> left, round(math.log(20) - left, 1)           # the left side, and how far it still falls short
-(2.0, 1.0)
+import math
+# log X_ij: the target for 20 co-occurrences
+round(math.log(20), 1)  # → 3.0
+w_ice, w_cold_tilde = (1, 1), (1, 0.5)
+b_ice, b_cold_tilde = 0.25, 0.25
+# w_i · w̃_j + b_i + b̃_j
+left = sum(a * b for a, b in zip(w_ice, w_cold_tilde)) + b_ice + b_cold_tilde
+# the left side, and how far it still falls short
+left, round(math.log(20) - left, 1)  # → (2.0, 1.0)
 ```
 
 ![PPMI matrix for the target words and their contexts](figures/primer.ml.embeddings.word2vec.ppmi.svg)
@@ -461,16 +471,18 @@ with the river axis climbs from 0.71 to 0.89.
 **In Python:**
 
 ```python
->>> import math
->>> x = [(1, 0), (1, 1), (1, 0)]                  # river, bank, fish: axis 1 is "river", axis 2 "money"
->>> alpha = [0.25, 0.5, 0.25]                     # attention weights, Σ_j α_j = 1
->>> bank_new = [sum(a_j * x_j[i] for a_j, x_j in zip(alpha, x)) for i in range(2)]   # Σ_j α_j x_j
->>> bank_new
-[1.0, 0.5]
->>> def cos_with_river(v):
-...     return v[0] / math.sqrt(v[0] ** 2 + v[1] ** 2)     # cosine with (1, 0)
->>> round(cos_with_river(x[1]), 2), round(cos_with_river(bank_new), 2)
-(0.71, 0.89)
+import math
+# river, bank, fish: axis 1 is "river", axis 2 "money"
+x = [(1, 0), (1, 1), (1, 0)]
+# attention weights, Σ_j α_j = 1
+alpha = [0.25, 0.5, 0.25]
+# Σ_j α_j x_j
+bank_new = [sum(a_j * x_j[i] for a_j, x_j in zip(alpha, x)) for i in range(2)]
+bank_new  # → [1.0, 0.5]
+def cos_with_river(v):
+    # cosine with (1, 0)
+    return v[0] / math.sqrt(v[0] ** 2 + v[1] ** 2)
+round(cos_with_river(x[1]), 2), round(cos_with_river(bank_new), 2)  # → (0.71, 0.89)
 ```
 
 ```mermaid

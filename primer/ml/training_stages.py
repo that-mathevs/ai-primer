@@ -88,14 +88,14 @@ log of the probability the model gave to the token that actually came next.
 **In Python:**
 
 ```python
->>> import math
->>> p = [0.25, 0.25, 0.5, 0.5]      # p_θ(t_{i+1} | t_{1..i}) for each of the guesses
->>> n = len(p) + 1                  # 5 tokens give n − 1 = 4 guesses
->>> [round(-math.log(p_i), 3) for p_i in p]
-[1.386, 1.386, 0.693, 0.693]
->>> L_pretrain = -sum(math.log(p_i) for p_i in p) / (n - 1)
->>> print(f"{L_pretrain:.3f}")
-1.040
+import math
+# p_θ(t_{i+1} | t_{1..i}) for each of the guesses
+p = [0.25, 0.25, 0.5, 0.5]
+# 5 tokens give n − 1 = 4 guesses
+n = len(p) + 1
+[round(-math.log(p_i), 3) for p_i in p]  # → [1.386, 1.386, 0.693, 0.693]
+L_pretrain = -sum(math.log(p_i) for p_i in p) / (n - 1)
+print(f"{L_pretrain:.3f}")  # → 1.040
 ```
 
 **In code:** `per_position_losses` computes −ln p for every next-token guess
@@ -159,12 +159,12 @@ $$
 **In Python:**
 
 ```python
->>> import math
->>> p = [0.25, 0.25, 0.5, 0.5]
->>> m = [0, 0, 1, 1]                # 1 only where the target is a reply token
->>> L_SFT = -sum(m_i * math.log(p_i) for m_i, p_i in zip(m, p)) / sum(m)
->>> round(L_SFT, 3)
-0.693
+import math
+p = [0.25, 0.25, 0.5, 0.5]
+# 1 only where the target is a reply token
+m = [0, 0, 1, 1]
+L_SFT = -sum(m_i * math.log(p_i) for m_i, p_i in zip(m, p)) / sum(m)
+round(L_SFT, 3)  # → 0.693
 ```
 
 ![Per-position loss, with prompt positions masked out](figures/primer.ml.training_stages.sft_mask.svg)
@@ -249,16 +249,16 @@ loss −ln 0.881 = 0.127.
 **In Python:**
 
 ```python
->>> import math
->>> def sigma(z):
-...     return 1 / (1 + math.exp(-z))
->>> r_w, r_l = 3.0, 1.0
->>> round(sigma(r_w - r_l), 3)                # P(y_w ≻ y_l)
-0.881
->>> round(-math.log(sigma(r_w - r_l)), 3)     # L_RM
-0.127
->>> round(-math.log(sigma(1.0 - 1.0)), 3)     # equal scores: a coin flip, ln 2
-0.693
+import math
+def sigma(z):
+    return 1 / (1 + math.exp(-z))
+r_w, r_l = 3.0, 1.0
+# P(y_w ≻ y_l)
+round(sigma(r_w - r_l), 3)  # → 0.881
+# L_RM
+round(-math.log(sigma(r_w - r_l)), 3)  # → 0.127
+# equal scores: a coin flip, ln 2
+round(-math.log(sigma(1.0 - 1.0)), 3)  # → 0.693
 ```
 
 **In code:** `sigmoid` squashes a score gap into a probability,
@@ -324,19 +324,20 @@ strong ones.
 **In Python:**
 
 ```python
->>> import math
->>> def sigma(z):
-...     return 1 / (1 + math.exp(-z))
->>> beta = 0.1
->>> logpi_w, logpi_ref_w = -10.0, -11.0       # chosen answer: policy, reference
->>> logpi_l, logpi_ref_l = -12.0, -11.0       # rejected answer: policy, reference
->>> margin = beta * ((logpi_w - logpi_ref_w) - (logpi_l - logpi_ref_l))
->>> print(f"{margin:.1f} {sigma(margin):.3f}")
-0.2 0.550
->>> round(-math.log(sigma(margin)), 3)        # L_DPO
-0.598
->>> round(beta * (1 - sigma(margin)), 3)      # how hard this pair pushes
-0.045
+import math
+def sigma(z):
+    return 1 / (1 + math.exp(-z))
+beta = 0.1
+# chosen answer: policy, reference
+logpi_w, logpi_ref_w = -10.0, -11.0
+# rejected answer: policy, reference
+logpi_l, logpi_ref_l = -12.0, -11.0
+margin = beta * ((logpi_w - logpi_ref_w) - (logpi_l - logpi_ref_l))
+print(f"{margin:.1f} {sigma(margin):.3f}")  # → 0.2 0.550
+# L_DPO
+round(-math.log(sigma(margin)), 3)  # → 0.598
+# how hard this pair pushes
+round(beta * (1 - sigma(margin)), 3)  # → 0.045
 ```
 
 ![Update strength falls as the policy learns the preference](figures/primer.ml.training_stages.dpo_strength.svg)
@@ -427,22 +428,28 @@ x = (1, 2): xWᵀ = (1, 2), xAᵀ = 2, 2·Bᵀ = (2, 0), y = (3, 2).
 **In Python:**
 
 ```python
->>> def times_transpose(x, M):              # x Mᵀ: the dot product of x with each row of M
-...     return [sum(x_k * m_k for x_k, m_k in zip(x, row)) for row in M]
->>> W = [[1, 0], [0, 1]]                    # frozen, d_out × d_in
->>> A = [[0, 1]]                            # r × d_in, with r = 1
->>> B = [[1], [0]]                          # d_out × r
->>> x, alpha_over_r = [1, 2], 1
->>> frozen = times_transpose(x, W)          # x Wᵀ
->>> squeezed = times_transpose(x, A)        # x Aᵀ: squeezed to r numbers
->>> correction = times_transpose(squeezed, B)   # (x Aᵀ) Bᵀ: expanded back
->>> frozen, squeezed, correction
-([1, 2], [2], [2, 0])
->>> [f_j + alpha_over_r * c_j for f_j, c_j in zip(frozen, correction)]   # y
-[3, 2]
->>> d_in = d_out = 4096
->>> d_out * d_in, [r * d_in + d_out * r for r in (64, 16, 8)]   # full, then LoRA at each rank
-(16777216, [524288, 131072, 65536])
+# x Mᵀ: the dot product of x with each row of M
+def times_transpose(x, M):
+    return [sum(x_k * m_k for x_k, m_k in zip(x, row)) for row in M]
+# frozen, d_out × d_in
+W = [[1, 0], [0, 1]]
+# r × d_in, with r = 1
+A = [[0, 1]]
+# d_out × r
+B = [[1], [0]]
+x, alpha_over_r = [1, 2], 1
+# x Wᵀ
+frozen = times_transpose(x, W)
+# x Aᵀ: squeezed to r numbers
+squeezed = times_transpose(x, A)
+# (x Aᵀ) Bᵀ: expanded back
+correction = times_transpose(squeezed, B)
+frozen, squeezed, correction  # → ([1, 2], [2], [2, 0])
+# y
+[f_j + alpha_over_r * c_j for f_j, c_j in zip(frozen, correction)]  # → [3, 2]
+d_in = d_out = 4096
+# full, then LoRA at each rank
+d_out * d_in, [r * d_in + d_out * r for r in (64, 16, 8)]  # → (16777216, [524288, 131072, 65536])
 ```
 
 **Parameter savings for one 4096 × 4096 layer:**
@@ -578,19 +585,20 @@ spreads at T = 2 and α = 1 (learn from the teacher alone), the loss is
 **In Python:**
 
 ```python
->>> import math
->>> def soft_targets(z, T):
-...     exps = [math.exp(z_i / T) for z_i in z]      # e^(z_i / T)
-...     return [e / sum(exps) for e in exps]         # divided by Σ_j e^(z_j / T)
->>> [round(p_i, 3) for p_i in soft_targets([2, 1, 0], T=2)]
-[0.506, 0.307, 0.186]
->>> p, q = [0.5, 0.5], [0.9, 0.1]                     # teacher, student
->>> KL = sum(p_i * math.log(p_i / q_i) for p_i, q_i in zip(p, q))
->>> round(KL, 3)
-0.511
->>> alpha, T = 1.0, 2
->>> round(alpha * T ** 2 * KL, 2)                     # the (1 − α)·CE term is zero at α = 1
-2.04
+import math
+def soft_targets(z, T):
+    # e^(z_i / T)
+    exps = [math.exp(z_i / T) for z_i in z]
+    # divided by Σ_j e^(z_j / T)
+    return [e / sum(exps) for e in exps]
+[round(p_i, 3) for p_i in soft_targets([2, 1, 0], T=2)]  # → [0.506, 0.307, 0.186]
+# teacher, student
+p, q = [0.5, 0.5], [0.9, 0.1]
+KL = sum(p_i * math.log(p_i / q_i) for p_i, q_i in zip(p, q))
+round(KL, 3)  # → 0.511
+alpha, T = 1.0, 2
+# the (1 − α)·CE term is zero at α = 1
+round(alpha * T ** 2 * KL, 2)  # → 2.04
 ```
 
 ![Temperature softens the teacher's distribution](figures/primer.ml.training_stages.distill_temperature.svg)

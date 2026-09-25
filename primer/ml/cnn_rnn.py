@@ -118,20 +118,22 @@ padding 3: ⌊(224 + 6 − 7)/2⌋ + 1 = 112.
 **In Python:**
 
 ```python
->>> X = [[0, 0, 1, 1, 1] for _ in range(5)]    # the 5×5 image: one channel, so Σ_c has one term
->>> K = [[-1, 0, 1] for _ in range(3)]         # the vertical-edge filter
->>> n, k, s, p = 5, 3, 1, 0
->>> out = (n + 2 * p - k) // s + 1             # ⌊(n + 2p - k) / s⌋ + 1
->>> out
-3
->>> Y = [[sum(K[u][v] * X[i * s + u][j * s + v]          # Σ_u Σ_v K[u, v] X[i s + u, j s + v]
-...           for u in range(k) for v in range(k))
-...       for j in range(out)]
-...      for i in range(out)]
->>> Y
-[[3, 3, 0], [3, 3, 0], [3, 3, 0]]
->>> (224 + 2 * 3 - 7) // 2 + 1                  # 224 pixels, 7×7 filter, stride 2, padding 3
-112
+# the 5×5 image: one channel, so Σ_c has one term
+X = [[0, 0, 1, 1, 1] for _ in range(5)]
+# the vertical-edge filter
+K = [[-1, 0, 1] for _ in range(3)]
+n, k, s, p = 5, 3, 1, 0
+# ⌊(n + 2p - k) / s⌋ + 1
+out = (n + 2 * p - k) // s + 1
+out  # → 3
+# Σ_u Σ_v K[u, v] X[i s + u, j s + v]
+Y = [[sum(K[u][v] * X[i * s + u][j * s + v]
+          for u in range(k) for v in range(k))
+      for j in range(out)]
+     for i in range(out)]
+Y  # → [[3, 3, 0], [3, 3, 0], [3, 3, 0]]
+# 224 pixels, 7×7 filter, stride 2, padding 3
+(224 + 2 * 3 - 7) // 2 + 1  # → 112
 ```
 
 **In code:** `conv2d` is the loop in the diagram, one multiply-and-add per
@@ -214,15 +216,16 @@ together.
 **In Python:**
 
 ```python
->>> layers = [(3, 1), (2, 2), (3, 1)]   # (k_ℓ, s_ℓ): conv 3, pool 2 with stride 2, conv 3
->>> r, j = 1, 1                          # r_0 = j_0 = 1
->>> for k_l, s_l in layers:
-...     r = r + (k_l - 1) * j            # r_ℓ = r_{ℓ-1} + (k_ℓ - 1) j_{ℓ-1}
-...     j = j * s_l                      # j_ℓ = j_{ℓ-1} s_ℓ
-...     print(r, j)
-3 1
-4 2
-8 2
+# (k_ℓ, s_ℓ): conv 3, pool 2 with stride 2, conv 3
+layers = [(3, 1), (2, 2), (3, 1)]
+# r_0 = j_0 = 1
+r, j = 1, 1
+for k_l, s_l in layers:
+    # r_ℓ = r_{ℓ-1} + (k_ℓ - 1) j_{ℓ-1}
+    r = r + (k_l - 1) * j
+    # j_ℓ = j_{ℓ-1} s_ℓ
+    j = j * s_l
+    print(r, j)  # → 3 1 4 2 8 2
 ```
 
 ![Receptive field grows with depth](figures/primer.ml.cnn_rnn.receptive_field.svg)
@@ -390,16 +393,16 @@ h₃ = tanh(0.5·0.119 + 1) = 0.785.
 **In Python:**
 
 ```python
->>> import math
->>> W_h, W_x, b = 0.5, 1, 0
->>> x = [-1, 0.5, 1]                     # not, very, good
->>> h = 0                                # h_0: a blank page
->>> for x_t in x:
-...     h = math.tanh(W_h * h + W_x * x_t + b)   # h_t = tanh(W_h h_{t-1} + W_x x_t + b)
-...     print(round(h, 3))
--0.762
-0.119
-0.785
+import math
+W_h, W_x, b = 0.5, 1, 0
+# not, very, good
+x = [-1, 0.5, 1]
+# h_0: a blank page
+h = 0
+for x_t in x:
+    # h_t = tanh(W_h h_{t-1} + W_x x_t + b)
+    h = math.tanh(W_h * h + W_x * x_t + b)
+    print(round(h, 3))  # → -0.762 0.119 0.785
 ```
 
 **In code:** `RNNCell` holds W_h, W_x and b; `RNNCell.step` is the formula
@@ -444,15 +447,16 @@ is 0.5 × 0.5 × … (ten times) = 0.00098.
 **In Python:**
 
 ```python
->>> W_h = 0.5
->>> h = [0.0] * 10                       # zero inputs keep every h_t at 0
->>> influence = 1
->>> for h_t in h:
-...     influence *= (1 - h_t ** 2) * W_h   # Π over t of tanh's slope times W_h
->>> round(influence, 5)
-0.00098
->>> round(1.5 ** 10, 1)                  # the same product with a weight of 1.5
-57.7
+W_h = 0.5
+# zero inputs keep every h_t at 0
+h = [0.0] * 10
+influence = 1
+for h_t in h:
+    # Π over t of tanh's slope times W_h
+    influence *= (1 - h_t ** 2) * W_h
+round(influence, 5)  # → 0.00098
+# the same product with a weight of 1.5
+round(1.5 ** 10, 1)  # → 57.7
 ```
 
 ![Gradient reaching back through time: vanilla RNN vs. LSTM](figures/primer.ml.cnn_rnn.rnn_gradient.svg)
@@ -544,22 +548,21 @@ c = 0·0.8 + 1·0.5 = 0.5 and h = 1·tanh(0.5) = 0.462.
 **In Python:**
 
 ```python
->>> import math
->>> def sigma(z):
-...     return 1 / (1 + math.exp(-z))    # σ: any score becomes a dial between 0 and 1
->>> [round(sigma(z), 3) for z in (-4, 0, 4)]
-[0.018, 0.5, 0.982]
->>> def lstm_step(f, i, g, o, c_prev=0.8):
-...     c = f * c_prev + i * g           # c_t = f ⊙ c_{t-1} + i ⊙ g
-...     h = o * math.tanh(c)             # h_t = o ⊙ tanh(c_t)
-...     return c, h
->>> for f, i, g, o in [(1, 0, 0, 1), (0, 0, 0, 1), (0, 1, 0.5, 1), (1, 0, 0, 0)]:
-...     c, h = lstm_step(f, i, g, o)     # the four rows of the table, dials pinned by hand
-...     print(c, round(h, 3))
-0.8 0.664
-0.0 0.0
-0.5 0.462
-0.8 0.0
+import math
+def sigma(z):
+    # σ: any score becomes a dial between 0 and 1
+    return 1 / (1 + math.exp(-z))
+[round(sigma(z), 3) for z in (-4, 0, 4)]  # → [0.018, 0.5, 0.982]
+def lstm_step(f, i, g, o, c_prev=0.8):
+    # c_t = f ⊙ c_{t-1} + i ⊙ g
+    c = f * c_prev + i * g
+    # h_t = o ⊙ tanh(c_t)
+    h = o * math.tanh(c)
+    return c, h
+for f, i, g, o in [(1, 0, 0, 1), (0, 0, 0, 1), (0, 1, 0.5, 1), (1, 0, 0, 0)]:
+    # the four rows of the table, dials pinned by hand
+    c, h = lstm_step(f, i, g, o)
+    print(c, round(h, 3))  # → 0.8 0.664 0.0 0.0 0.5 0.462 0.8 0.0
 ```
 
 **GRUs** simplify this to two dials and no separate notebook: an *update*

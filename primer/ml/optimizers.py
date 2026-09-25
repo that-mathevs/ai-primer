@@ -64,13 +64,13 @@ $w_2 = 0.8 - 0.1 \times 1.6 = 0.64$.
 **In Python:**
 
 ```python
->>> w, eta = 1.0, 0.1
->>> def grad_L(w): return 2 * w      # ∇L for the bowl L = w²
->>> for t in range(2):
-...     w = w - eta * grad_L(w)      # w_(t+1) = w_t - η ∇L(w_t)
-...     print(round(w, 2))
-0.8
-0.64
+w, eta = 1.0, 0.1
+# ∇L for the bowl L = w²
+def grad_L(w): return 2 * w
+for t in range(2):
+    # w_(t+1) = w_t - η ∇L(w_t)
+    w = w - eta * grad_L(w)
+    print(round(w, 2))  # → 0.8 0.64
 ```
 
 "Stochastic" gradient descent (SGD) means the slope is estimated from a
@@ -128,18 +128,17 @@ $1 \to -1.2 \to 1.44 \to -1.728$.
 **In Python:**
 
 ```python
->>> def three_steps(eta, w=1.0):
-...     out = []
-...     for t in range(3):
-...         w = (1 - 2 * eta) * w     # w - η·2w = (1 - 2η) w
-...         out.append(round(w, 3))
-...     return out
->>> three_steps(1.1)
-[-1.2, 1.44, -1.728]
->>> three_steps(0.1)
-[0.8, 0.64, 0.512]
->>> round(0.998 ** 10, 3)             # η = 0.001 after 10 steps: barely moved
-0.98
+def three_steps(eta, w=1.0):
+    out = []
+    for t in range(3):
+        # w - η·2w = (1 - 2η) w
+        w = (1 - 2 * eta) * w
+        out.append(round(w, 3))
+    return out
+three_steps(1.1)  # → [-1.2, 1.44, -1.728]
+three_steps(0.1)  # → [0.8, 0.64, 0.512]
+# η = 0.001 after 10 steps: barely moved
+round(0.998 ** 10, 3)  # → 0.98
 ```
 
 **In code:** `descend_bowl` is the same loop with the learning rate as an argument; call it with each rate in the table to reproduce every row.
@@ -214,14 +213,15 @@ $w_2 = 0.8 - 0.1 \times 3.4 = 0.46$.
 **In Python:**
 
 ```python
->>> w, v, beta, eta = 1.0, 0.0, 0.9, 0.1
->>> for t in range(2):
-...     g = 2 * w                 # the slope of w² here
-...     v = beta * v + g          # v_t = β v_(t-1) + g_t
-...     w = w - eta * v           # w_(t+1) = w_t - η v_t
-...     print(round(v, 2), round(w, 2))
-2.0 0.8
-3.4 0.46
+w, v, beta, eta = 1.0, 0.0, 0.9, 0.1
+for t in range(2):
+    # the slope of w² here
+    g = 2 * w
+    # v_t = β v_(t-1) + g_t
+    v = beta * v + g
+    # w_(t+1) = w_t - η v_t
+    w = w - eta * v
+    print(round(v, 2), round(w, 2))  # → 2.0 0.8 3.4 0.46
 ```
 
 **In code:** `momentum_on_bowl` runs the two-row table; `SGD` with a nonzero momentum keeps its velocity between calls to `SGD.step`. `narrow_valley` is the valley in the figure (`rosenbrock` is a harder, banana-shaped one), and `run` walks any optimizer across a landscape and records its path.
@@ -295,18 +295,21 @@ step $= 0.01 \times 1000 / (1000 + 10^{-8}) = 0.01$.
 **In Python:**
 
 ```python
->>> import math
->>> beta_1, beta_2, eta, eps, t = 0.9, 0.999, 0.01, 1e-8, 1
->>> def first_step(g):
-...     m = beta_1 * 0 + (1 - beta_1) * g           # m_1, starting from m_0 = 0
-...     v = beta_2 * 0 + (1 - beta_2) * g ** 2      # v_1, starting from v_0 = 0
-...     m_hat = m / (1 - beta_1 ** t)               # undo the pull toward zero
-...     v_hat = v / (1 - beta_2 ** t)
-...     return eta * m_hat / (math.sqrt(v_hat) + eps)
->>> round((1 - beta_1) * 1000, 6), round((1 - beta_2) * 1000 ** 2, 6)   # m_1, v_1
-(100.0, 1000.0)
->>> [round(first_step(g), 6) for g in (1000, 1, 0.001)]   # the same step every time
-[0.01, 0.01, 0.01]
+import math
+beta_1, beta_2, eta, eps, t = 0.9, 0.999, 0.01, 1e-8, 1
+def first_step(g):
+    # m_1, starting from m_0 = 0
+    m = beta_1 * 0 + (1 - beta_1) * g
+    # v_1, starting from v_0 = 0
+    v = beta_2 * 0 + (1 - beta_2) * g ** 2
+    # undo the pull toward zero
+    m_hat = m / (1 - beta_1 ** t)
+    v_hat = v / (1 - beta_2 ** t)
+    return eta * m_hat / (math.sqrt(v_hat) + eps)
+# m_1, v_1
+round((1 - beta_1) * 1000, 6), round((1 - beta_2) * 1000 ** 2, 6)  # → (100.0, 1000.0)
+# the same step every time
+[round(first_step(g), 6) for g in (1000, 1, 0.001)]  # → [0.01, 0.01, 0.01]
 ```
 
 **In code:** `Adam` keeps the two running averages and the step count for every weight and applies the five formulas in `Adam.step`; `adam_first_step` shows the first step is always the learning rate.
@@ -375,17 +378,14 @@ weight by learning rate times decay times the weight."
 **In Python:**
 
 ```python
->>> w, eta, adam_step = 1.0, 0.1, 0.0     # no loss gradient: Adam's step is 0
->>> for lam in (0.1, 0.001):
-...     print(round(w - eta * adam_step - eta * lam * w, 4))   # AdamW: shrink by η λ w
-0.99
-0.9999
->>> # Adam with L2: the gradient is λw, and Adam's first step turns any gradient into η
->>> for lam in (0.1, 0.001):
-...     g = lam * w
-...     print(round(w - eta * g / abs(g), 4))
-0.9
-0.9
+# no loss gradient: Adam's step is 0
+w, eta, adam_step = 1.0, 0.1, 0.0
+for lam in (0.1, 0.001):
+    # AdamW: shrink by η λ w
+    print(round(w - eta * adam_step - eta * lam * w, 4))  # → 0.99 0.9999
+for lam in (0.1, 0.001):
+    g = lam * w
+    print(round(w - eta * g / abs(g), 4))  # → 0.9 0.9
 ```
 
 **In code:** `Adam` implements both recipes: with decoupled decay it is AdamW, otherwise it adds the L2 penalty to the gradient. `one_decay_step` runs the table.
@@ -449,15 +449,16 @@ $0 + 0.001 \times (1 + 0)/2 = 0.0005$.
 **In Python:**
 
 ```python
->>> import math
->>> eta_max, eta_min, T_w, T = 0.001, 0.0, 100, 1000
->>> def eta(t):
-...     if t < T_w:
-...         return eta_max * t / T_w                           # the straight ramp
-...     progress = (t - T_w) / (T - T_w)                       # 0 to 1 through the decay
-...     return eta_min + (eta_max - eta_min) * (1 + math.cos(math.pi * progress)) / 2
->>> [round(eta(t), 6) for t in (50, 100, 550, 1000)]
-[0.0005, 0.001, 0.0005, 0.0]
+import math
+eta_max, eta_min, T_w, T = 0.001, 0.0, 100, 1000
+def eta(t):
+    if t < T_w:
+        # the straight ramp
+        return eta_max * t / T_w
+    # 0 to 1 through the decay
+    progress = (t - T_w) / (T - T_w)
+    return eta_min + (eta_max - eta_min) * (1 + math.cos(math.pi * progress)) / 2
+[round(eta(t), 6) for t in (50, 100, 550, 1000)]  # → [0.0005, 0.001, 0.0005, 0.0]
 ```
 
 **In code:** `warmup_cosine` returns the learning rate for any step: the straight ramp during warmup, then the half cosine down to the floor.
@@ -515,15 +516,16 @@ its length equals the limit; otherwise leave it alone."
 **In Python:**
 
 ```python
->>> import math
->>> def clip(g, c):
-...     norm = math.sqrt(sum(g_i ** 2 for g_i in g))   # ‖g‖ = √(Σ g_i²)
-...     scale = min(1, c / norm)                       # shrink only if too long
-...     return [round(g_i * scale, 2) for g_i in g]
->>> clip([3, 4], c=1)
-[0.6, 0.8]
->>> clip([0.3, 0.4], c=1)      # length 0.5: under the limit, left alone
-[0.3, 0.4]
+import math
+def clip(g, c):
+    # ‖g‖ = √(Σ g_i²)
+    norm = math.sqrt(sum(g_i ** 2 for g_i in g))
+    # shrink only if too long
+    scale = min(1, c / norm)
+    return [round(g_i * scale, 2) for g_i in g]
+clip([3, 4], c=1)  # → [0.6, 0.8]
+# length 0.5: under the limit, left alone
+clip([0.3, 0.4], c=1)  # → [0.3, 0.4]
 ```
 
 **In code:** `clip_by_global_norm` measures the length of all gradients together and scales every one by the same factor when it exceeds the limit.

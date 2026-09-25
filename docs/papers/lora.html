@@ -140,12 +140,12 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <p class="inwords"><strong>In words:</strong> “adjust all the weights so that, across every training pair, the model gives as much probability as possible to each correct next token of the target, given the prompt and the target tokens so far.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if the target SQL is 3 tokens long and the model gives them probabilities 0.5, 0.8 and 0.9, this pair contributes ln 0.5 + ln 0.8 + ln 0.9 = −0.69 − 0.22 − 0.11 = −1.02. Training pushes that number up towards 0.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; P = [0.5, 0.8, 0.9]          # P_Φ(y_t | x, y_&lt;t) for t = 1, 2, 3
-&gt;&gt;&gt; [round(math.log(p), 2) for p in P]
-[-0.69, -0.22, -0.11]
-&gt;&gt;&gt; round(sum(math.log(p) for p in P), 2)    # Σ over t of log P
--1.02</code></pre>
+<pre class="in-python"><code>import math
+# P_Φ(y_t | x, y_&lt;t) for t = 1, 2, 3
+P = [0.5, 0.8, 0.9]
+[round(math.log(p), 2) for p in P]  # → [-0.69, -0.22, -0.11]
+# Σ over t of log P
+round(sum(math.log(p) for p in P), 2)  # → -1.02</code></pre>
 <p>The problem: full fine-tuning learns a change ΔΦ as large as the model itself. For GPT-3 that is about 175 billion numbers <em>per task</em>. LoRA instead describes the change with a much smaller set of numbers Θ; for GPT-3, Θ can be as small as 0.01% of the model.</p>
 <h3 class="rung">Why it matters</h3>
 <p>Storage and switching cost scale with the size of what you train. Shrink that, and serving hundreds of custom models from one base becomes practical. See the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> for where fine-tuning sits among pretraining, SFT and preference tuning.</p>
@@ -209,15 +209,18 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <p class="inwords"><strong>In words:</strong> “the layer's output is what the frozen weights would have produced, plus a correction computed by squeezing the input through A and expanding it through B, scaled by α over r.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with d = 4, r = 1, B = (1, 0, 2, 0) and A = (0.5, 1, 0, −1) from §1, and input x = (2, 1, 0, 1): A x = 0.5·2 + 1·1 + 0·0 − 1·1 = 1, a single number. B times that is (1, 0, 2, 0). So the correction adds 1 to the first output and 2 to the third, on top of W₀x (taking α = r, so the scale is 1).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; B = [1, 0, 2, 0]             # d × r column, with r = 1
-&gt;&gt;&gt; A = [0.5, 1, 0, -1]          # r × d row
-&gt;&gt;&gt; x = [2, 1, 0, 1]
-&gt;&gt;&gt; alpha, r = 1, 1              # α = r, so the scale α/r is 1
-&gt;&gt;&gt; Ax = sum(a_j * x_j for a_j, x_j in zip(A, x))   # squeeze d numbers down to r = 1
-&gt;&gt;&gt; Ax
-1.0
-&gt;&gt;&gt; [alpha / r * b_i * Ax for b_i in B]           # expand: the correction (α/r)·BAx
-[1.0, 0.0, 2.0, 0.0]</code></pre>
+<pre class="in-python"><code># d × r column, with r = 1
+B = [1, 0, 2, 0]
+# r × d row
+A = [0.5, 1, 0, -1]
+x = [2, 1, 0, 1]
+# α = r, so the scale α/r is 1
+alpha, r = 1, 1
+# squeeze d numbers down to r = 1
+Ax = sum(a_j * x_j for a_j, x_j in zip(A, x))
+Ax  # → 1.0
+# expand: the correction (α/r)·BAx
+[alpha / r * b_i * Ax for b_i in B]  # → [1.0, 0.0, 2.0, 0.0]</code></pre>
 
 <h4>Try it: how many numbers does LoRA train?</h4>
 <div class="play" id="rank-demo">
@@ -244,15 +247,17 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <p class="inwords"><strong>In words:</strong> “fold the correction into the weights once, and the model runs exactly as fast as before.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the rank-1 table from §1 (16 entries) is added entry by entry into a 4 × 4 W₀; the merged matrix is still 4 × 4. Taking W₀ to be the 4 × 4 identity (ones on the diagonal, zeros elsewhere) to keep the numbers small, the merged W sends x = (2, 1, 0, 1) to (3, 1, 2, 1): exactly W₀x = (2, 1, 0, 1) plus the correction (1, 0, 2, 0) from above.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; B = [1, 0, 2, 0]
-&gt;&gt;&gt; A = [0.5, 1, 0, -1]
-&gt;&gt;&gt; W0 = [[1 if i == j else 0 for j in range(4)] for i in range(4)]     # the identity
-&gt;&gt;&gt; W = [[W0[i][j] + B[i] * A[j] for j in range(4)] for i in range(4)]  # W = W₀ + BA
-&gt;&gt;&gt; len(W), len(W[0])            # still 4 × 4
-(4, 4)
-&gt;&gt;&gt; x = [2, 1, 0, 1]
-&gt;&gt;&gt; [sum(W[i][j] * x[j] for j in range(4)) for i in range(4)]            # W x
-[3.0, 1.0, 2.0, 1.0]</code></pre>
+<pre class="in-python"><code>B = [1, 0, 2, 0]
+A = [0.5, 1, 0, -1]
+# the identity
+W0 = [[1 if i == j else 0 for j in range(4)] for i in range(4)]
+# W = W₀ + BA
+W = [[W0[i][j] + B[i] * A[j] for j in range(4)] for i in range(4)]
+# still 4 × 4
+len(W), len(W[0])  # → (4, 4)
+x = [2, 1, 0, 1]
+# W x
+[sum(W[i][j] * x[j] for j in range(4)) for i in range(4)]  # → [3.0, 1.0, 2.0, 1.0]</code></pre>
 <h4>Why it matters today</h4>
 <p>“Merge the adapter” is a standard deployment step. The flip side, which the paper notes, is that if you merge, you can't mix different tasks' adapters in one batch; serving systems that keep adapters unmerged exist for exactly that. Build it yourself in the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a>.</p>
 </section>
@@ -338,12 +343,15 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <p class="inwords"><strong>In words:</strong> “take the top i directions from the rank-8 run and the top j from the rank-64 run, and score how much of the smaller set lies inside the larger one: 1 means completely, 0 means not at all.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for the single top direction (i = j = 1), the two runs overlap with similarity above 0.5, while the other directions barely overlap. The important change lives in about one direction; the rest looks like noise. To see the formula itself at work, take i = j = 1 and one direction of length 1 from each run, u = (0.8, 0.6) and v = (1, 0): φ = (0.8 × 1 + 0.6 × 0)² / min(1, 1) = 0.64, above 0.5.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; u = [0.8, 0.6]               # top direction of the r = 8 run (length 1)
-&gt;&gt;&gt; v = [1, 0]                   # top direction of the r = 64 run (length 1)
-&gt;&gt;&gt; i = j = 1
-&gt;&gt;&gt; overlap = sum(u_k * v_k for u_k, v_k in zip(u, v))   # Uᵀ U is a 1 × 1 table here
-&gt;&gt;&gt; round(overlap ** 2 / min(i, j), 2)                   # ‖·‖_F² / min(i, j)
-0.64</code></pre>
+<pre class="in-python"><code># top direction of the r = 8 run (length 1)
+u = [0.8, 0.6]
+# top direction of the r = 64 run (length 1)
+v = [1, 0]
+i = j = 1
+# Uᵀ U is a 1 × 1 table here
+overlap = sum(u_k * v_k for u_k, v_k in zip(u, v))
+# ‖·‖_F² / min(i, j)
+round(overlap ** 2 / min(i, j), 2)  # → 0.64</code></pre>
 <h4>Why it matters</h4>
 <p>This is evidence for the paper's opening hypothesis: the task-specific change really is low rank. The authors caution that a very different task, such as a new language, would likely need a larger r.</p>
 </section>
@@ -391,17 +399,18 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <p class="inwords"><strong>In words:</strong> “cut the bell curve into equal-probability slices and put each level halfway between two neighbouring cut points.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with k = 4 there are 2⁴ = 16 levels and 2⁴ + 1 = 17 slices. Straight from the formula, q<sub>8</sub> sits halfway between the cut points Q<sub>X</sub>(8/17) = −0.074 and Q<sub>X</sub>(9/17) = 0.074, at 0, and its neighbour q<sub>9</sub> = 0.148 is close by; out in the tail, q<sub>14</sub> = 1.058 and q<sub>15</sub> = 1.376 are 0.318 apart. After a small fix so that zero is represented exactly, and rescaling into [−1, 1], the paper's NF4 levels run −1, −0.696, −0.525, −0.395, −0.284, −0.185, −0.091, 0, 0.080, 0.161, 0.246, 0.338, 0.441, 0.563, 0.723, 1: dense near zero, sparse at the tails.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; from statistics import NormalDist
-&gt;&gt;&gt; Q_X = NormalDist().inv_cdf    # Q_X: the bell curve's quantile function
-&gt;&gt;&gt; k = 4
-&gt;&gt;&gt; def q(i):                     # halfway between two neighbouring cut points
-...     return (Q_X(i / (2**k + 1)) + Q_X((i + 1) / (2**k + 1))) / 2
-&gt;&gt;&gt; round(Q_X(8 / 17), 3), round(Q_X(9 / 17), 3)
-(-0.074, 0.074)
-&gt;&gt;&gt; round(q(8), 3), round(q(9), 3)       # near zero: levels packed tight
-(0.0, 0.148)
-&gt;&gt;&gt; round(q(14), 3), round(q(15), 3)     # in the tail: levels spread out
-(1.058, 1.376)</code></pre>
+<pre class="in-python"><code>from statistics import NormalDist
+# Q_X: the bell curve's quantile function
+Q_X = NormalDist().inv_cdf
+k = 4
+# halfway between two neighbouring cut points
+def q(i):
+    return (Q_X(i / (2**k + 1)) + Q_X((i + 1) / (2**k + 1))) / 2
+round(Q_X(8 / 17), 3), round(Q_X(9 / 17), 3)  # → (-0.074, 0.074)
+# near zero: levels packed tight
+round(q(8), 3), round(q(9), 3)  # → (0.0, 0.148)
+# in the tail: levels spread out
+round(q(14), 3), round(q(15), 3)  # → (1.058, 1.376)</code></pre>
 <div class="play" id="nf4-demo">
   <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
     <span>Show levels of:</span>
@@ -434,14 +443,15 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <p class="inwords"><strong>In words:</strong> “one 32-bit scale per 64 weights costs half a bit per weight; storing those scales in 8 bits, with one 32-bit scale per 256 of them, cuts it to about an eighth of a bit.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the saving is 0.5 − 0.127 = 0.373 bits per parameter. For a 65B model that is 65 × 10⁹ × 0.373 / 8 ≈ 3 GB, which the paper also reports.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; before = 32 / 64                     # one 32-bit scale per 64 weights
-&gt;&gt;&gt; after = 8 / 64 + 32 / (64 * 256)     # 8-bit scales, plus one 32-bit scale per 256 of them
-&gt;&gt;&gt; before, round(after, 3)
-(0.5, 0.127)
-&gt;&gt;&gt; round(before - after, 3)             # bits saved per parameter
-0.373
-&gt;&gt;&gt; round(65e9 * 0.373 / 8 / 1e9, 1)     # bytes saved on a 65B model, in GB
-3.0</code></pre>
+<pre class="in-python"><code># one 32-bit scale per 64 weights
+before = 32 / 64
+# 8-bit scales, plus one 32-bit scale per 256 of them
+after = 8 / 64 + 32 / (64 * 256)
+before, round(after, 3)  # → (0.5, 0.127)
+# bits saved per parameter
+round(before - after, 3)  # → 0.373
+# bytes saved on a 65B model, in GB
+round(65e9 * 0.373 / 8 / 1e9, 1)  # → 3.0</code></pre>
 </section>
 
 <section id="q-paged">
@@ -459,10 +469,11 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <p class="inwords"><strong>In words:</strong> “expand the 4-bit frozen weights back to 16-bit on the fly, multiply the input by them, and add the LoRA correction computed in 16-bit.”</p>
 <p class="inwords"><strong>With the numbers:</strong> it is §4.1's equation with W₀ replaced by its decompressed 4-bit copy. In the tiny example, the stored level 0.080 and scale 0.31 are expanded to 0.025 just before the multiply. Gradients flow through that decompressed copy but are only kept for L₁ and L₂.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; level, scale = 0.080, 0.31    # a W^NF4 entry and its block's scale
-&gt;&gt;&gt; w = level * scale             # doubleDequant: back to a usable 16-bit weight
-&gt;&gt;&gt; round(w, 3)
-0.025</code></pre>
+<pre class="in-python"><code># a W^NF4 entry and its block's scale
+level, scale = 0.080, 0.31
+# doubleDequant: back to a usable 16-bit weight
+w = level * scale
+round(w, 3)  # → 0.025</code></pre>
 </section>
 
 <section id="q-results">

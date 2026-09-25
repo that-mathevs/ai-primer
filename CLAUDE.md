@@ -51,20 +51,24 @@ is the gold standard; every module meets it.
   gets a real number.
 - an **In Python** block: the same worked example computed in plain Python
   (standard library only), written to mirror the formula symbol by symbol
-  (`sum(...)` for Σ, a loop for Π, variables named after the symbols), as
-  `>>>` examples whose output is exactly the numbers the lesson shows.
-  [`tests/test_math_in_python.py`](tests/test_math_in_python.py) runs every block and fails on a formula
-  without one.
+  (`sum(...)` for Σ, a loop for Π, variables named after the symbols). It is
+  ordinary code a reader can copy and run: each explanation sits on its own
+  comment line above the code it explains, and every line that produces a
+  number the lesson shows ends in `# → value`.
+  [`tests/test_math_in_python.py`](tests/test_math_in_python.py) runs every
+  block and checks every `# →` claim (`tools/inpython.py`), and fails on a
+  formula without a block.
 
   ````markdown
   **In Python:**
 
   ```python
-  >>> import math
-  >>> z = [2.0, 1.0, 0.5]
-  >>> exps = [math.exp(z_i) for z_i in z]   # e^(z_i) for each score
-  >>> [round(e / sum(exps), 2) for e in exps]
-  [0.63, 0.23, 0.14]
+  import math
+  z = [2.0, 1.0, 0.5]
+  # e^(z_i) for each score
+  exps = [math.exp(z_i) for z_i in z]
+  # each share of the total Σ_j e^(z_j)
+  [round(e / sum(exps), 2) for e in exps]  # → [0.63, 0.23, 0.14]
   ```
   ````
 

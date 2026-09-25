@@ -122,13 +122,15 @@
 <p class="inwords"><strong>In words:</strong> “the share of the true K nearest neighbours that the search actually found.”</p>
 <p class="inwords"><strong>With the numbers:</strong> |{3, 8, 11, 20}| / 5 = 4 / 5 = 0.8.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; true = {3, 8, 11, 20, 42}      # the true K nearest neighbours
-&gt;&gt;&gt; found = {3, 8, 11, 20, 57}     # what the approximate search returned
-&gt;&gt;&gt; K = len(true)
-&gt;&gt;&gt; sorted(found &amp; true)           # found ∩ true
-[3, 8, 11, 20]
-&gt;&gt;&gt; len(found &amp; true) / K          # recall
-0.8</code></pre>
+<pre class="in-python"><code># the true K nearest neighbours
+true = {3, 8, 11, 20, 42}
+# what the approximate search returned
+found = {3, 8, 11, 20, 57}
+K = len(true)
+# found ∩ true
+sorted(found &amp; true)  # → [3, 8, 11, 20]
+# recall
+len(found &amp; true) / K  # → 0.8</code></pre>
 <h3 class="rung">The families of approximate search</h3>
 <ul>
   <li><strong>Trees</strong> (kd-trees and relatives): split space into boxes. Great in low dimensions, weak in high.</li>
@@ -170,18 +172,17 @@
 <p class="inwords"><strong>In words:</strong> “draw a random number between 0 and 1, take minus its natural log (a random amount that is usually small but occasionally large), scale it by m<sub>L</sub>, and round down.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with M = 16, m<sub>L</sub> = 1 / ln 16 = 0.361. A draw of 0.5 gives −ln 0.5 × 0.361 = 0.25, rounded down to level 0. A draw of 0.01 gives −ln 0.01 × 0.361 = 4.61 × 0.361 = 1.66, level 1. A point reaches level 2 only if its draw is below e<sup>−2/0.361</sup> = 1/256.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; M = 16
-&gt;&gt;&gt; m_L = 1 / math.log(M)
-&gt;&gt;&gt; round(m_L, 3)
-0.361
-&gt;&gt;&gt; for unif in (0.5, 0.01):       # two random draws
-...     x = -math.log(unif) * m_L
-...     print(round(x, 2), math.floor(x))    # the value, and l after rounding down
-0.25 0
-1.66 1
-&gt;&gt;&gt; round(1 / math.exp(-2 / m_L))  # reaching level 2 needs a draw below 1/256
-256</code></pre>
+<pre class="in-python"><code>import math
+M = 16
+m_L = 1 / math.log(M)
+round(m_L, 3)  # → 0.361
+# two random draws
+for unif in (0.5, 0.01):
+    x = -math.log(unif) * m_L
+    # the value, and l after rounding down
+    print(round(x, 2), math.floor(x))  # → 0.25 0 1.66 1
+# reaching level 2 needs a draw below 1/256
+round(1 / math.exp(-2 / m_L))  # → 256</code></pre>
 </section>
 
 <section id="s3-heur">
@@ -202,16 +203,20 @@
 <p class="inwords"><strong>In words:</strong> “accept a candidate only if it is nearer to the new point than to any neighbour already accepted; stop when M are accepted.”</p>
 <p class="inwords"><strong>With the numbers:</strong> on a line, the new point q sits at 0 and the candidates, nearest first, sit at 1, 1.5 and −2. The one at 1 is kept, since nothing has been accepted yet. The one at 1.5 is 1.5 from q but only 0.5 from the kept 1, so it is rejected. The one at −2 is 2 from q and 3 from the kept 1, so it is kept: a link in the other direction. The demo's readout prints the same two distances for each of its candidates.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; q = 0                            # the new point
-&gt;&gt;&gt; R = []                           # neighbours accepted so far
-&gt;&gt;&gt; for e in [1, 1.5, -2]:           # candidates, nearest first
-...     d_eq = abs(e - q)            # d(e, q)
-...     d_eR = min((abs(e - r) for r in R), default=math.inf)   # min over r in R of d(e, r)
-...     if d_eq &lt; d_eR:
-...         R.append(e)
-&gt;&gt;&gt; R
-[1, -2]</code></pre>
+<pre class="in-python"><code>import math
+# the new point
+q = 0
+# neighbours accepted so far
+R = []
+# candidates, nearest first
+for e in [1, 1.5, -2]:
+    # d(e, q)
+    d_eq = abs(e - q)
+    # min over r in R of d(e, r)
+    d_eR = min((abs(e - r) for r in R), default=math.inf)
+    if d_eq &lt; d_eR:
+        R.append(e)
+R  # → [1, -2]</code></pre>
 <h4>Why it matters</h4>
 <p>Diverse links are what let a greedy walk escape a cluster. The paper found the heuristic always performed at least as well as simple selection, and much better on low-dimensional and clustered data. With enough candidates it recovers the <span class="t" data-tip-title="Relative neighbourhood graph" data-tip="A graph that links two points unless some third point is closer to both of them. It is a subgraph of the Delaunay graph and keeps the data connected.">relative neighbourhood graph</span>, a sparse graph known to stay connected.</p>
 </section>
@@ -285,13 +290,13 @@
 <p class="inwords"><strong>In words:</strong> “each layer up keeps about one point in M.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 16<sup>−1</sup> = 6.25% of points reach layer 1, and 16<sup>−2</sup> = 0.39% reach layer 2.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; M = 16
-&gt;&gt;&gt; m_L = 1 / math.log(M)
-&gt;&gt;&gt; round(math.exp(-1 / m_L), 4), M ** -1    # P(l ≥ 1) both ways
-(0.0625, 0.0625)
-&gt;&gt;&gt; 100 * M ** -1, round(100 * M ** -2, 2)   # percent reaching layers 1 and 2
-(6.25, 0.39)</code></pre>
+<pre class="in-python"><code>import math
+M = 16
+m_L = 1 / math.log(M)
+# P(l ≥ 1) both ways
+round(math.exp(-1 / m_L), 4), M ** -1  # → (0.0625, 0.0625)
+# percent reaching layers 1 and 2
+100 * M ** -1, round(100 * M ** -2, 2)  # → (6.25, 0.39)</code></pre>
 <div class="play" id="lev-demo">
   <div class="row2">
     <label>M = <strong id="lev-M-v">16</strong><input type="range" id="lev-M" min="2" max="64" step="1" value="16"></label>
@@ -312,13 +317,11 @@
 <p class="inwords"><strong>In words:</strong> “the expected number of steps on one layer is bounded by a constant that depends only on m<sub>L</sub>, not on how many points there are” (assuming an ideal Delaunay graph, as the paper's argument does).</p>
 <p class="inwords"><strong>With the numbers:</strong> M = 16 gives m<sub>L</sub> = 0.361, e<sup>−0.361</sup> = 0.697, so S = 1 / 0.303 = 3.3 steps per layer.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; m_L = 1 / math.log(16)
-&gt;&gt;&gt; round(math.exp(-m_L), 3)
-0.697
-&gt;&gt;&gt; S = 1 / (1 - math.exp(-m_L))
-&gt;&gt;&gt; round(S, 1)
-3.3</code></pre>
+<pre class="in-python"><code>import math
+m_L = 1 / math.log(16)
+round(math.exp(-m_L), 3)  # → 0.697
+S = 1 / (1 - math.exp(-m_L))
+round(S, 1)  # → 3.3</code></pre>
 <p>With a constant number of steps per layer and O(log N) layers, search is O(log N). Insertion is a search plus linking, and each point lives on m<sub>L</sub> + 1 layers on average (1.36 for M = 16), so building the index is O(N log N). The paper confirms the scaling empirically for low-dimensional data and notes that for high dimensions the argument is not yet proven.</p>
 <h4>Memory</h4>
 <div class="eq" data-tex="\htmlData{sym=mem}{\text{bytes per point}} = (\htmlData{sym=M0}{M_{\max 0}} + \htmlData{sym=mL}{m_L}\cdot \htmlData{sym=Mmax}{M_{\max}}) \cdot \htmlData{sym=bpl}{\text{bytes\_per\_link}}" data-fallback="bytes per point = (M_max0 + m_L · M_max) · bytes_per_link"></div>
@@ -326,15 +329,15 @@
 <p class="inwords"><strong>In words:</strong> “every point stores up to M<sub>max0</sub> links on layer 0, plus on average m<sub>L</sub> upper layers with up to M<sub>max</sub> links each, and each link is one integer.”</p>
 <p class="inwords"><strong>With the numbers:</strong> M = 16, M<sub>max0</sub> = 32, M<sub>max</sub> = 16, 4-byte links: (32 + 0.361 × 16) × 4 = (32 + 5.8) × 4 ≈ 151 bytes per point for the graph, on top of the vector itself (512 bytes for a 128-dimensional float vector). The paper quotes 60 to 450 bytes for M between 6 and 48.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; m_L = 1 / math.log(16)
-&gt;&gt;&gt; M_max0, M_max, bytes_per_link = 32, 16, 4
-&gt;&gt;&gt; round(m_L * M_max, 1)                         # average upper-layer links
-5.8
-&gt;&gt;&gt; round((M_max0 + m_L * M_max) * bytes_per_link)   # bytes per point
-151
-&gt;&gt;&gt; 128 * 4                                       # the vector itself, 4-byte floats
-512</code></pre>
+<pre class="in-python"><code>import math
+m_L = 1 / math.log(16)
+M_max0, M_max, bytes_per_link = 32, 16, 4
+# average upper-layer links
+round(m_L * M_max, 1)  # → 5.8
+# bytes per point
+round((M_max0 + m_L * M_max) * bytes_per_link)  # → 151
+# the vector itself, 4-byte floats
+128 * 4  # → 512</code></pre>
 <div class="plot" id="mem-plot">
   <div id="mem-chart"></div>
   <p class="readout" id="mem-readout">Hover or tap the chart.</p>

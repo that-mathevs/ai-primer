@@ -63,14 +63,15 @@ $$
 **In Python:**
 
 ```python
->>> x = [1, 2, 3, 4]
->>> total = 0
->>> for x_i in x:        # Σ: visit each x_i, from i = 1 to n ...
-...     total += x_i     # ... and add it to a running total
->>> total
-10
->>> sum(x)               # Python's built-in sum is the same loop
-10
+x = [1, 2, 3, 4]
+total = 0
+# Σ: visit each x_i, from i = 1 to n ...
+for x_i in x:
+    # ... and add it to a running total
+    total += x_i
+total  # → 10
+# Python's built-in sum is the same loop
+sum(x)  # → 10
 ```
 
 **Π (capital pi)** is the same idea with multiplication:
@@ -83,14 +84,14 @@ This single fact explains why long chains of AI agent steps fail so often
 **In Python:**
 
 ```python
->>> x = [1, 2, 3, 4]
->>> product = 1
->>> for x_i in x:        # Π: the same loop, multiplying instead of adding
-...     product *= x_i
->>> product
-24
->>> round(0.95 ** 10, 2)  # ten steps that each succeed 95% of the time
-0.6
+x = [1, 2, 3, 4]
+product = 1
+# Π: the same loop, multiplying instead of adding
+for x_i in x:
+    product *= x_i
+product  # → 24
+# ten steps that each succeed 95% of the time
+round(0.95 ** 10, 2)  # → 0.6
 ```
 
 **In code:** `product` is Π written the same way: a loop with a running product that starts at 1.
@@ -122,10 +123,10 @@ products."
 **In Python:**
 
 ```python
->>> a = [1, 2]
->>> b = [3, 0.5]
->>> sum(a_i * b_i for a_i, b_i in zip(a, b))   # Σ over i of a_i times b_i
-4.0
+a = [1, 2]
+b = [3, 0.5]
+# Σ over i of a_i times b_i
+sum(a_i * b_i for a_i, b_i in zip(a, b))  # → 4.0
 ```
 
 Geometrically, the dot product is large when two arrows point the same way,
@@ -175,13 +176,12 @@ $\lVert (1, 2, 2) \rVert = \sqrt{1 + 4 + 4} = 3$.
 **In Python:**
 
 ```python
->>> import math
->>> def length(x):
-...     return math.sqrt(sum(x_i ** 2 for x_i in x))   # √ of Σ x_i²
->>> length([3, 4])
-5.0
->>> length([1, 2, 2])
-3.0
+import math
+def length(x):
+    # √ of Σ x_i²
+    return math.sqrt(sum(x_i ** 2 for x_i in x))
+length([3, 4])  # → 5.0
+length([1, 2, 2])  # → 3.0
 ```
 
 Dividing a vector by its length gives a **unit vector** of length 1 that
@@ -224,16 +224,17 @@ $\begin{pmatrix}1&2\\3&4\end{pmatrix}\begin{pmatrix}5&6\\7&8\end{pmatrix}
 **In Python:**
 
 ```python
->>> A = [[1, 2], [3, 4]]
->>> B = [[5, 6], [7, 8]]
->>> m = len(B)           # A has m columns, B has m rows: they must match
->>> AB = [[sum(A[i][k] * B[k][j] for k in range(m))     # (AB)_ij = Σ_k A_ik B_kj
-...        for j in range(len(B[0]))]
-...       for i in range(len(A))]
->>> AB
-[[19, 22], [43, 50]]
->>> [list(column) for column in zip(*A)]               # the transpose: rows become columns
-[[1, 3], [2, 4]]
+A = [[1, 2], [3, 4]]
+B = [[5, 6], [7, 8]]
+# A has m columns, B has m rows: they must match
+m = len(B)
+# (AB)_ij = Σ_k A_ik B_kj
+AB = [[sum(A[i][k] * B[k][j] for k in range(m))
+       for j in range(len(B[0]))]
+      for i in range(len(A))]
+AB  # → [[19, 22], [43, 50]]
+# the transpose: rows become columns
+[list(column) for column in zip(*A)]  # → [[1, 3], [2, 4]]
 ```
 
 ```mermaid
@@ -299,14 +300,16 @@ $$
 **In Python:**
 
 ```python
->>> import math
->>> z = [2.0, 1.0, 0.5]
->>> exps = [math.exp(z_i) for z_i in z]   # e^(z_i) for each score
->>> total = sum(exps)                      # Σ_j e^(z_j)
->>> [round(e / total, 2) for e in exps]    # each share of the total
-[0.63, 0.23, 0.14]
->>> max(range(len(z)), key=lambda i: z[i]) # argmax: the position of the largest
-0
+import math
+z = [2.0, 1.0, 0.5]
+# e^(z_i) for each score
+exps = [math.exp(z_i) for z_i in z]
+# Σ_j e^(z_j)
+total = sum(exps)
+# each share of the total
+[round(e / total, 2) for e in exps]  # → [0.63, 0.23, 0.14]
+# argmax: the position of the largest
+max(range(len(z)), key=lambda i: z[i])  # → 0
 ```
 
 **argmax** is simpler: it answers "*which position* holds the largest
@@ -349,17 +352,18 @@ squared distances are (9, 1, 1, 1, 0, 0, 4, 16), which sum to 32, so
 **In Python:**
 
 ```python
->>> import math
->>> x = [2, 4, 4, 4, 5, 5, 7, 9]
->>> n = len(x)
->>> mu = sum(x) / n                               # μ = (1/n) Σ x_i
->>> mu
-5.0
->>> [(x_i - mu) ** 2 for x_i in x]                # the squared distances from μ
-[9.0, 1.0, 1.0, 1.0, 0.0, 0.0, 4.0, 16.0]
->>> variance = sum((x_i - mu) ** 2 for x_i in x) / n   # σ² = their average
->>> variance, math.sqrt(variance)                 # σ is its square root
-(4.0, 2.0)
+import math
+x = [2, 4, 4, 4, 5, 5, 7, 9]
+n = len(x)
+# μ = (1/n) Σ x_i
+mu = sum(x) / n
+mu  # → 5.0
+# the squared distances from μ
+[(x_i - mu) ** 2 for x_i in x]  # → [9.0, 1.0, 1.0, 1.0, 0.0, 0.0, 4.0, 16.0]
+# σ² = their average
+variance = sum((x_i - mu) ** 2 for x_i in x) / n
+# σ is its square root
+variance, math.sqrt(variance)  # → (4.0, 2.0)
 ```
 
 Spread matters constantly in neural networks. If numbers flowing through a
@@ -409,11 +413,11 @@ the output changes per unit of nudge."
 **In Python:**
 
 ```python
->>> def f(x):
-...     return x ** 2
->>> h = 0.00001
->>> round((f(3 + h) - f(3 - h)) / (2 * h), 6)   # rise over run across a tiny step
-6.0
+def f(x):
+    return x ** 2
+h = 0.00001
+# rise over run across a tiny step
+round((f(3 + h) - f(3 - h)) / (2 * h), 6)  # → 6.0
 ```
 
 With many inputs, nudge each one separately. The slope in each direction is
@@ -446,13 +450,14 @@ step goes to (1 − 0.2, 2 − 0.4) = (0.8, 1.6), closer to the bottom.
 **In Python:**
 
 ```python
->>> theta = [1.0, 2.0]                        # (x, y)
->>> gradient = [2 * theta[0], 2 * theta[1]]   # ∇L for L = x² + y²: each slope is 2 times the value
->>> gradient
-[2.0, 4.0]
->>> eta = 0.1
->>> [t - eta * g for t, g in zip(theta, gradient)]   # θ_new = θ − η ∇L
-[0.8, 1.6]
+# (x, y)
+theta = [1.0, 2.0]
+# ∇L for L = x² + y²: each slope is 2 times the value
+gradient = [2 * theta[0], 2 * theta[1]]
+gradient  # → [2.0, 4.0]
+eta = 0.1
+# θ_new = θ − η ∇L
+[t - eta * g for t, g in zip(theta, gradient)]  # → [0.8, 1.6]
 ```
 
 ![Gradient descent on a bowl](figures/primer.notation.gradient_descent.svg)

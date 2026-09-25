@@ -174,12 +174,13 @@
 <p class="inwords"><strong>In words:</strong> “the chance of a whole text is the chance of its first token, times the chance of the second given the first, and so on to the end.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if the model gives “the” 0.1, then “cat” 0.3 given “the”, then “sat” 0.5 given “the cat”, the three-token text has probability 0.1 × 0.3 × 0.5 = <strong>0.015</strong>. A few-shot prompt is simply x<sub>&lt;t</sub>: the demonstrations change which next token looks likely.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; P_next = [0.1, 0.3, 0.5]      # P(the), P(cat | the), P(sat | the cat)
-&gt;&gt;&gt; P_x = 1
-&gt;&gt;&gt; for p in P_next:              # Π over t
-...     P_x *= p
-&gt;&gt;&gt; round(P_x, 3)
-0.015</code></pre>
+<pre class="in-python"><code># P(the), P(cat | the), P(sat | the cat)
+P_next = [0.1, 0.3, 0.5]
+P_x = 1
+# Π over t
+for p in P_next:
+    P_x *= p
+round(P_x, 3)  # → 0.015</code></pre>
 <h4>Why it matters today</h4>
 <p>Prompting is still how most applications steer a model: a system prompt describes the task and a few examples pin down the format. Modern chat models are additionally trained to follow instructions (see <a href="instructgpt.html">InstructGPT</a>), so zero-shot works far better than it did for GPT-3, but few-shot examples remain the most reliable way to show an exact output format.</p>
 </section>
@@ -200,18 +201,18 @@
 <p class="inwords"><strong>In words:</strong> “a Transformer's size is about twelve times the number of layers times the width squared; training costs about six arithmetic operations per parameter for every token of data.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 12 × 96 × 12,288<sup>2</sup> ≈ 174 billion parameters. Then 6 × 175 × 10<sup>9</sup> × 300 × 10<sup>9</sup> = 3.15 × 10<sup>23</sup> operations, about 3,646 petaflop/s-days (the paper's own table, from its exact counts, lists 3,640): a machine doing 10<sup>15</sup> operations per second would need about 10 years.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; n_layer, d_model = 96, 12_288
-&gt;&gt;&gt; N = 12 * n_layer * d_model ** 2
-&gt;&gt;&gt; round(N / 1e9)                         # billions of parameters
-174
-&gt;&gt;&gt; N, D = 175e9, 300e9                    # parameters, training tokens
-&gt;&gt;&gt; C = 6 * N * D
-&gt;&gt;&gt; f"{C:.3g}"
-'3.15e+23'
-&gt;&gt;&gt; round(C / (1e15 * 24 * 3600))          # petaflop/s-days
-3646
-&gt;&gt;&gt; round(C / 1e15 / (365 * 24 * 3600))    # years at 10^15 operations per second
-10</code></pre>
+<pre class="in-python"><code>n_layer, d_model = 96, 12_288
+N = 12 * n_layer * d_model ** 2
+# billions of parameters
+round(N / 1e9)  # → 174
+# parameters, training tokens
+N, D = 175e9, 300e9
+C = 6 * N * D
+f"{C:.3g}"  # → '3.15e+23'
+# petaflop/s-days
+round(C / (1e15 * 24 * 3600))  # → 3646
+# years at 10^15 operations per second
+round(C / 1e15 / (365 * 24 * 3600))  # → 10</code></pre>
 <h4>Why it matters today</h4>
 <p>These two rules of thumb (12·L·d² and 6·N·D) are how practitioners estimate model size and training cost on the back of an envelope. The <a class="lesson" data-lesson="primer/ml/transformer.html">transformer lesson</a> counts parameters exactly and checks the rule; the <a href="scaling-laws.html">scaling laws companion</a> asks how to split a compute budget between N and D.</p>
 </section>
@@ -242,13 +243,15 @@
 <p class="inwords"><strong>In words:</strong> “for each candidate answer, add up the log-probabilities of its tokens and divide by how many tokens it has; pick the candidate with the highest average.”</p>
 <p class="inwords"><strong>With the numbers:</strong> answer A is two tokens with probabilities 0.5 and 0.4: ln 0.5 + ln 0.4 = −0.693 − 0.916 = −1.609, average <strong>−0.805</strong>. Answer B is one token with probability 0.3: ln 0.3 = <strong>−1.204</strong>. By total, B would win (−1.204 &gt; −1.609); by average, A wins (−0.805 &gt; −1.204). Length normalization stops long answers being penalized just for being long.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; def score(c):                          # c: the candidate's token probabilities
-...     return sum(math.log(p) for p in c) / len(c)   # (1/|c|) Σ_t log P(c_t | ...)
-&gt;&gt;&gt; round(math.log(0.5) + math.log(0.4), 3), round(math.log(0.3), 3)   # totals
-(-1.609, -1.204)
-&gt;&gt;&gt; round(score([0.5, 0.4]), 3), round(score([0.3]), 3)                 # averages
-(-0.805, -1.204)</code></pre>
+<pre class="in-python"><code>import math
+# c: the candidate's token probabilities
+def score(c):
+    # (1/|c|) Σ_t log P(c_t | ...)
+    return sum(math.log(p) for p in c) / len(c)
+# totals
+round(math.log(0.5) + math.log(0.4), 3), round(math.log(0.3), 3)  # → (-1.609, -1.204)
+# averages
+round(score([0.5, 0.4]), 3), round(score([0.3]), 3)  # → (-0.805, -1.204)</code></pre>
 <p>The paper uses per-token averaging for most multiple-choice tasks, draws the K demonstrations at random from each task's training set, and uses K between 10 and 100 depending on how many fit in 2,048 tokens.</p>
 <h4>Why it matters today</h4>
 <p>Scoring options by likelihood is still how many benchmarks evaluate base models. The <a class="lesson" data-lesson="primer/ml/losses.html">loss functions lesson</a> explains log-probabilities and why they are summed rather than multiplied.</p>

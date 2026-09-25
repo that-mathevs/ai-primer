@@ -141,21 +141,23 @@
 <p class="inwords"><strong>In words:</strong> “for every unit in layer l, draw a 1 with probability p and a 0 otherwise; multiply the layer's outputs by those 0s and 1s; the next layer computes its usual weighted sum and nonlinearity on what survives. At test time, keep every unit but multiply the weights by p.”</p>
 <p class="inwords"><strong>With the numbers:</strong> y = (2, 0.5, 1) and r = (1, 0, 1) give ỹ = (2, 0, 1); z = 0.5·2 + 0.4·0 − 1·1 + 0.1 = 0.1. At test time with p = 0.5 the weights become (0.25, 0.2, −0.5) and z = 0.5 + 0.1 − 0.5 + 0.1 = 0.2.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; y = [2, 0.5, 1]                  # y^(l), the layer's outputs
-&gt;&gt;&gt; r = [1, 0, 1]                    # r^(l), one Bernoulli(p) draw per unit
-&gt;&gt;&gt; y_tilde = [r_j * y_j for r_j, y_j in zip(r, y)]   # ỹ = r * y
-&gt;&gt;&gt; y_tilde
-[2, 0.0, 1]
-&gt;&gt;&gt; w, b = [0.5, 0.4, -1], 0.1       # w_i^(l+1), b_i^(l+1)
-&gt;&gt;&gt; z = sum(w_j * y_j for w_j, y_j in zip(w, y_tilde)) + b
-&gt;&gt;&gt; round(z, 2)
-0.1
-&gt;&gt;&gt; p = 0.5
-&gt;&gt;&gt; W_test = [p * w_j for w_j in w]  # W_test = p W
-&gt;&gt;&gt; W_test
-[0.25, 0.2, -0.5]
-&gt;&gt;&gt; round(sum(w_j * y_j for w_j, y_j in zip(W_test, y)) + b, 2)   # every unit kept
-0.2</code></pre>
+<pre class="in-python"><code># y^(l), the layer's outputs
+y = [2, 0.5, 1]
+# r^(l), one Bernoulli(p) draw per unit
+r = [1, 0, 1]
+# ỹ = r * y
+y_tilde = [r_j * y_j for r_j, y_j in zip(r, y)]
+y_tilde  # → [2, 0.0, 1]
+# w_i^(l+1), b_i^(l+1)
+w, b = [0.5, 0.4, -1], 0.1
+z = sum(w_j * y_j for w_j, y_j in zip(w, y_tilde)) + b
+round(z, 2)  # → 0.1
+p = 0.5
+# W_test = p W
+W_test = [p * w_j for w_j in w]
+W_test  # → [0.25, 0.2, -0.5]
+# every unit kept
+round(sum(w_j * y_j for w_j, y_j in zip(W_test, y)) + b, 2)  # → 0.2</code></pre>
 
 <h3 class="rung">Why scale the weights at test time?</h3>
 <p><strong>Everyday picture:</strong> a choir rehearses with half its singers absent at random each time, so the audience has come to expect a half-sized choir. On concert night everyone sings; if they all sing at full voice it is twice as loud as rehearsal. So everyone sings at half volume. Multiplying the weights by p does exactly that.</p>
@@ -193,13 +195,13 @@
 <p class="inwords"><strong>In words:</strong> “the length of every hidden unit's incoming weight vector must stay at or below c.”</p>
 <p class="inwords"><strong>With the numbers:</strong> ‖(3, 4)‖ = √(9 + 16) = 5 &gt; 3, so project: (3, 4) × 3/5 = (1.8, 2.4).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; w, c = [3, 4], 3
-&gt;&gt;&gt; norm = math.sqrt(sum(w_j ** 2 for w_j in w))   # ‖w‖₂
-&gt;&gt;&gt; norm, norm &lt;= c
-(5.0, False)
-&gt;&gt;&gt; [round(w_j * c / norm, 2) for w_j in w]         # project back onto ‖w‖₂ = c
-[1.8, 2.4]</code></pre>
+<pre class="in-python"><code>import math
+w, c = [3, 4], 3
+# ‖w‖₂
+norm = math.sqrt(sum(w_j ** 2 for w_j in w))
+norm, norm &lt;= c  # → (5.0, False)
+# project back onto ‖w‖₂ = c
+[round(w_j * c / norm, 2) for w_j in w]  # → [1.8, 2.4]</code></pre>
 <p>The paper's recipe: dropout plus max-norm, large decaying learning rates and high <span class="t" data-t="momentum">momentum</span>. For networks pretrained with RBMs or autoencoders (§5.2), the pretrained weights are first scaled up by 1/p and fine-tuned with smaller learning rates, so the noise does not wipe out what pretraining learned.</p>
 <h3 class="rung">Why it matters today</h3>
 <p>Max-norm faded as normalization layers and weight decay took over, but the underlying worry, keeping weights bounded so aggressive learning rates stay safe, is exactly what those replacements address.</p>
@@ -274,15 +276,16 @@
 <p class="inwords"><strong>In words:</strong> “the average squared error over all dropout masks equals the squared error of a model whose inputs are scaled by p, plus a penalty on the weights; each weight's penalty is scaled by how much its input varies.”</p>
 <p class="inwords"><strong>With the numbers:</strong> ‖3 − 0.5 × (0.5 + 1)‖² = 2.25² = 5.0625; Γ = diag(1, 2) for this single point, so ‖Γw‖² = 0.25 + 1 = 1.25 and p(1 − p) × 1.25 = 0.3125.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; from itertools import product
-&gt;&gt;&gt; x, y, w, p = [1, 2], 3, [0.5, 0.5], 0.5
-&gt;&gt;&gt; masks = list(product([0, 1], repeat=2))   # every R; at p = 0.5 all four are equally likely
-&gt;&gt;&gt; sum((y - sum(R_j * x_j * w_j for R_j, x_j, w_j in zip(R, x, w))) ** 2 for R in masks) / len(masks)
-5.375
-&gt;&gt;&gt; fit = (y - p * sum(x_j * w_j for x_j, w_j in zip(x, w))) ** 2      # ‖y − pXw‖²
-&gt;&gt;&gt; penalty = p * (1 - p) * sum((x_j * w_j) ** 2 for x_j, w_j in zip(x, w))   # p(1 − p)‖Γw‖², Γ = diag(1, 2)
-&gt;&gt;&gt; fit, penalty, fit + penalty
-(5.0625, 0.3125, 5.375)</code></pre>
+<pre class="in-python"><code>from itertools import product
+x, y, w, p = [1, 2], 3, [0.5, 0.5], 0.5
+# every R; at p = 0.5 all four are equally likely
+masks = list(product([0, 1], repeat=2))
+sum((y - sum(R_j * x_j * w_j for R_j, x_j, w_j in zip(R, x, w))) ** 2 for R in masks) / len(masks)  # → 5.375
+# ‖y − pXw‖²
+fit = (y - p * sum(x_j * w_j for x_j, w_j in zip(x, w))) ** 2
+# p(1 − p)‖Γw‖², Γ = diag(1, 2)
+penalty = p * (1 - p) * sum((x_j * w_j) ** 2 for x_j, w_j in zip(x, w))
+fit, penalty, fit + penalty  # → (5.0625, 0.3125, 5.375)</code></pre>
 <p>The penalty's strength is p(1 − p): largest at p = 0.5 and vanishing as p → 1 (no dropout). And because Γ holds each input's spread, dropout squeezes the weights on high-variance inputs hardest. For logistic regression and deep networks there is no exact closed form, though approximate versions exist.</p>
 <h3 class="rung">Why it matters today</h3>
 <p>This is the cleanest proof that dropout is a regularizer and not magic: in the simplest case it <em>is</em> weight decay, with a data-dependent strength. See the <a data-lesson="primer/ml/regularization.html">regularization lesson</a> for L1, L2 and dropout side by side.</p>
@@ -299,11 +302,11 @@
 <p class="inwords"><strong>In words:</strong> “multiply each activation by a random number drawn from a bell curve with mean 1, choosing its variance to match the Bernoulli dropout it replaces.”</p>
 <p class="inwords"><strong>With the numbers:</strong> p = 0.8 gives σ<sup>2</sup> = 0.2 / 0.8 = 0.25, so σ = 0.5. In the paper's Table 10, Gaussian dropout gave 0.95% error on MNIST against 1.08% for Bernoulli, and 12.5% against 12.6% on CIFAR-10 (averaged over 10 random seeds).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; p = 0.8
-&gt;&gt;&gt; sigma2 = (1 - p) / p             # σ² = (1 − p) / p
-&gt;&gt;&gt; round(sigma2, 2), round(math.sqrt(sigma2), 2)
-(0.25, 0.5)</code></pre>
+<pre class="in-python"><code>import math
+p = 0.8
+# σ² = (1 − p) / p
+sigma2 = (1 - p) / p
+round(sigma2, 2), round(math.sqrt(sigma2), 2)  # → (0.25, 0.5)</code></pre>
 <h3 class="rung">Why it matters today</h3>
 <p>The observation that the shape of the noise matters less than its mean and variance opened the door to many variants, and to interpreting dropout as approximate Bayesian inference.</p>
 </section>

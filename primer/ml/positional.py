@@ -76,21 +76,23 @@ order, gets the same weights, and outputs the same **(0.802, 0.599)**.
 **In Python:**
 
 ```python
->>> import math
->>> def Attn(X):                 # q = k = v = the word vector, no positions
-...     out = []
-...     for q in X:
-...         scores = [sum(a * b for a, b in zip(q, k)) / math.sqrt(2) for k in X]
-...         exps = [math.exp(s) for s in scores]
-...         weights = [e / sum(exps) for e in exps]
-...         out.append(tuple(round(sum(w * v[c] for w, v in zip(weights, X)), 3) for c in range(2)))
-...     return out
->>> X = [(1, 0), (0, 1), (1, 1)]          # dog, bites, man
->>> PX = [X[2], X[1], X[0]]               # P swaps rows 1 and 3: man, bites, dog
->>> Attn(X)
-[(0.802, 0.599), (0.599, 0.802), (0.752, 0.752)]
->>> Attn(PX)                              # the same rows, shuffled the same way
-[(0.752, 0.752), (0.599, 0.802), (0.802, 0.599)]
+import math
+# q = k = v = the word vector, no positions
+def Attn(X):
+    out = []
+    for q in X:
+        scores = [sum(a * b for a, b in zip(q, k)) / math.sqrt(2) for k in X]
+        exps = [math.exp(s) for s in scores]
+        weights = [e / sum(exps) for e in exps]
+        out.append(tuple(round(sum(w * v[c] for w, v in zip(weights, X)), 3) for c in range(2)))
+    return out
+# dog, bites, man
+X = [(1, 0), (0, 1), (1, 1)]
+# P swaps rows 1 and 3: man, bites, dog
+PX = [X[2], X[1], X[0]]
+Attn(X)  # → [(0.802, 0.599), (0.599, 0.802), (0.752, 0.752)]
+# the same rows, shuffled the same way
+Attn(PX)  # → [(0.752, 0.752), (0.599, 0.802), (0.802, 0.599)]
 ```
 
 Shuffle the input and you get the same outputs, shuffled the same way.
@@ -183,14 +185,16 @@ the table above.
 **In Python:**
 
 ```python
->>> import math
->>> d, pos = 4, 1
->>> PE = []
->>> for i in range(d // 2):                  # one (sin, cos) pair per i
-...     omega_i = 1 / 10000 ** (2 * i / d)   # ω_i: pair i's speed
-...     PE += [math.sin(pos * omega_i), math.cos(pos * omega_i)]   # columns 2i and 2i+1
->>> [f"{v:.3f}" for v in PE]
-['0.841', '0.540', '0.010', '1.000']
+import math
+d, pos = 4, 1
+PE = []
+# one (sin, cos) pair per i
+for i in range(d // 2):
+    # ω_i: pair i's speed
+    omega_i = 1 / 10000 ** (2 * i / d)
+    # columns 2i and 2i+1
+    PE += [math.sin(pos * omega_i), math.cos(pos * omega_i)]
+[f"{v:.3f}" for v in PE]  # → ['0.841', '0.540', '0.010', '1.000']
 ```
 
 `sinusoidal_encoding(n, d)` builds the whole (n × d) table in four lines. A
@@ -260,12 +264,13 @@ $P_{3}$ = (0.1, 0.3), then $x_3$ = (0.6, 0.1). $P_{1024}$ does not exist.
 **In Python:**
 
 ```python
->>> E_dog = [0.5, -0.2]
->>> P = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.1, 0.3]]   # a position table with rows 0 to 3
->>> [round(e + p, 2) for e, p in zip(E_dog, P[3])]        # x_3 = E_dog + P_3
-[0.6, 0.1]
->>> len(P) > 1024                                         # no row 1024: it cannot be encoded
-False
+E_dog = [0.5, -0.2]
+# a position table with rows 0 to 3
+P = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.1, 0.3]]
+# x_3 = E_dog + P_3
+[round(e + p, 2) for e, p in zip(E_dog, P[3])]  # → [0.6, 0.1]
+# no row 1024: it cannot be encoded
+len(P) > 1024  # → False
 ```
 
 `primer.ml.transformer.TinyGPT` uses exactly this.
@@ -350,16 +355,18 @@ sin 3 · 1 + cos 3 · 0) = (−0.990, 0.141).
 **In Python:**
 
 ```python
->>> import math
->>> def rotate(x, m, theta_i=1.0):
-...     a = m * theta_i                                  # the angle m θ_i
-...     return (math.cos(a) * x[0] - math.sin(a) * x[1],   # row 1 of the grid
-...             math.sin(a) * x[0] + math.cos(a) * x[1])   # row 2 of the grid
->>> [f"{v:.3f}" for v in rotate((1, 0), m=3)]
-['-0.990', '0.141']
->>> d, i = 2, 0
->>> 10000 ** (-2 * i / d)                                # θ_0 = 10000^(-2i/d)
-1.0
+import math
+def rotate(x, m, theta_i=1.0):
+    # the angle m θ_i
+    a = m * theta_i
+    # row 1 of the grid
+    return (math.cos(a) * x[0] - math.sin(a) * x[1],
+            # row 2 of the grid
+            math.sin(a) * x[0] + math.cos(a) * x[1])
+[f"{v:.3f}" for v in rotate((1, 0), m=3)]  # → ['-0.990', '0.141']
+d, i = 2, 0
+# θ_0 = 10000^(-2i/d)
+10000 ** (-2 * i / d)  # → 1.0
 ```
 
 Why only the distance survives: turning q by angle a and k by angle b and
@@ -392,18 +399,19 @@ again at positions 103 and 107.
 **In Python:**
 
 ```python
->>> import math
->>> def R(angle, x):             # turn a pair by an angle (θ = 1, so the angle is the position)
-...     return (math.cos(angle) * x[0] - math.sin(angle) * x[1],
-...             math.sin(angle) * x[0] + math.cos(angle) * x[1])
->>> def dot(a, b): return sum(a_i * b_i for a_i, b_i in zip(a, b))
->>> q = k = (1, 0)
->>> round(dot(R(3, q), R(7, k)), 3)       # ⟨R_m q, R_n k⟩ with m = 3, n = 7
--0.654
->>> round(dot(q, R(7 - 3, k)), 3)         # ⟨q, R_(n-m) k⟩: only the distance
--0.654
->>> round(dot(R(103, q), R(107, k)), 3)   # 100 positions later, the same score
--0.654
+import math
+# turn a pair by an angle (θ = 1, so the angle is the position)
+def R(angle, x):
+    return (math.cos(angle) * x[0] - math.sin(angle) * x[1],
+            math.sin(angle) * x[0] + math.cos(angle) * x[1])
+def dot(a, b): return sum(a_i * b_i for a_i, b_i in zip(a, b))
+q = k = (1, 0)
+# ⟨R_m q, R_n k⟩ with m = 3, n = 7
+round(dot(R(3, q), R(7, k)), 3)  # → -0.654
+# ⟨q, R_(n-m) k⟩: only the distance
+round(dot(q, R(7 - 3, k)), 3)  # → -0.654
+# 100 positions later, the same score
+round(dot(R(103, q), R(107, k)), 3)  # → -0.654
 ```
 
 `apply_rope` does this for a vector or a whole sequence with three
@@ -483,9 +491,9 @@ $$
 **In Python:**
 
 ```python
->>> pos, L_train, L_new = 32_000, 4_096, 32_768
->>> pos * L_train / L_new        # pos' = pos · L_train / L_new
-4000.0
+pos, L_train, L_new = 32_000, 4_096, 32_768
+# pos' = pos · L_train / L_new
+pos * L_train / L_new  # → 4000.0
 ```
 
 NTK-aware scaling (`ntk_scaled_base`) changes the base instead:
@@ -513,17 +521,17 @@ radian per position. The slowest pair goes from $10000^{-126/128} = 1.15
 **In Python:**
 
 ```python
->>> base, s, d = 10_000, 8, 128
->>> round(s ** (d / (d - 2)), 2)             # s^(d/(d-2)): just above 8
-8.27
->>> base_new = base * s ** (d / (d - 2))     # base' = base · s^(d/(d-2))
->>> round(base_new)
-82685
->>> slowest = lambda b: b ** (-126 / 128)     # θ_i for the last pair, 2i = 126
->>> f"{slowest(base):.2e}", f"{slowest(base_new):.2e}"
-('1.15e-04', '1.44e-05')
->>> round(slowest(base) / slowest(base_new), 6)   # exactly 8× slower
-8.0
+base, s, d = 10_000, 8, 128
+# s^(d/(d-2)): just above 8
+round(s ** (d / (d - 2)), 2)  # → 8.27
+# base' = base · s^(d/(d-2))
+base_new = base * s ** (d / (d - 2))
+round(base_new)  # → 82685
+# θ_i for the last pair, 2i = 126
+slowest = lambda b: b ** (-126 / 128)
+f"{slowest(base):.2e}", f"{slowest(base_new):.2e}"  # → ('1.15e-04', '1.44e-05')
+# exactly 8× slower
+round(slowest(base) / slowest(base_new), 6)  # → 8.0
 ```
 
 YaRN refines this per frequency band and is

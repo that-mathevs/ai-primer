@@ -51,14 +51,16 @@ they sit under, so the outline never skips a level: `<h4>` under a subsection
 4. **The math**: each equation, then its Symbols table, an **In words**
    line, a **With the numbers** line, and an **In Python** block: the same
    numbers computed in plain Python (standard library only), mirroring the
-   equation symbol by symbol, as `>>>` examples a test runs
+   equation symbol by symbol. It is ordinary code a reader can copy and run:
+   explanations on their own comment line above the code, and every line that
+   produces a number the page shows ending in `# → value`, which a test checks
    ([`tests/test_math_in_python.py`](../../tests/test_math_in_python.py)):
 
    ```html
    <p class="inwords"><strong>In Python:</strong></p>
-   <pre class="in-python"><code>&gt;&gt;&gt; m = 0.9 * 0.2 + 0.1 * 1
-   &gt;&gt;&gt; round(m, 2)
-   0.28</code></pre>
+   <pre class="in-python"><code># m_t = β1 m_(t−1) + (1 − β1) g_t
+   m = 0.9 * 0.2 + 0.1 * 1
+   round(m, 2)  # → 0.28</code></pre>
    ```
 
    Escape `<`, `>` and `&` as `&lt;`, `&gt;`, `&amp;`; the test reads the

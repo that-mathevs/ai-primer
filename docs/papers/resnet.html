@@ -125,12 +125,13 @@
 <p class="inwords"><strong>In words:</strong> “instead of asking the layers to produce the desired output H(x) directly, ask them for the residual F(x), the desired output minus the input; the block then adds the input back.”</p>
 <p class="inwords"><strong>With the numbers:</strong> H(3) = 3.2, so F(3) = 3.2 − 3 = 0.2, and the block outputs F(3) + 3 = 3.2.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; x, H_x = 3, 3.2              # the input and the desired output H(x)
-&gt;&gt;&gt; F_x = H_x - x                # F(x) := H(x) − x, what the layers learn
-&gt;&gt;&gt; round(F_x, 1)
-0.2
-&gt;&gt;&gt; round(F_x + x, 1)            # the block adds x back: H(x) = F(x) + x
-3.2</code></pre>
+<pre class="in-python"><code># the input and the desired output H(x)
+x, H_x = 3, 3.2
+# F(x) := H(x) − x, what the layers learn
+F_x = H_x - x
+round(F_x, 1)  # → 0.2
+# the block adds x back: H(x) = F(x) + x
+round(F_x + x, 1)  # → 3.2</code></pre>
 <p>The paper tests the “residuals are small” hunch in §4.2: the layer outputs of residual networks are measurably smaller than those of plain networks, and shrink further as the network gets deeper. Each layer only nudges the signal.</p>
 <h4>Why it matters today</h4>
 <p>This framing, “each layer adds a small correction to a running representation”, is how researchers now describe Transformers too: the <span class="t" data-t="residual stream">residual stream</span> is carried through the whole model and every block writes a little into it.</p>
@@ -175,24 +176,24 @@
 <p class="inwords"><strong>In words:</strong> “the block's output is the learned residual plus the input; when the residual has a different width than the input, the input is first passed through a small learned matrix W<sub>s</sub> so the two can be added.”</p>
 <p class="inwords"><strong>With the numbers:</strong> x = (1, 2), W<sub>1</sub>x = (0.5, −2), σ(·) = (0.5, 0), W<sub>2</sub>(0.5, 0) = (0.1, 0.2), so y = (1.1, 2.2). For a stage that grows from 64 to 128 channels, W<sub>s</sub> is a 1×1 convolution with 64 × 128 = 8,192 weights.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; def matvec(W, v):            # multiply a matrix by a vector, row by row
-...     return [sum(w_j * v_j for w_j, v_j in zip(row, v)) for row in W]
-&gt;&gt;&gt; x = [1, 2]
-&gt;&gt;&gt; W1 = [[0.5, 0], [0, -1]]
-&gt;&gt;&gt; W2 = [[0.2, 0], [0.4, 1]]
-&gt;&gt;&gt; W1x = matvec(W1, x)
-&gt;&gt;&gt; W1x
-[0.5, -2]
-&gt;&gt;&gt; relu = [max(0, v) for v in W1x]    # σ keeps positives
-&gt;&gt;&gt; relu
-[0.5, 0]
-&gt;&gt;&gt; F = matvec(W2, relu)               # F = W₂ σ(W₁ x)
-&gt;&gt;&gt; F
-[0.1, 0.2]
-&gt;&gt;&gt; [F_k + x_k for F_k, x_k in zip(F, x)]   # y = F(x) + x
-[1.1, 2.2]
-&gt;&gt;&gt; 1 * 1 * 64 * 128                   # weights in W_s, a 1×1 conv from 64 to 128 channels
-8192</code></pre>
+<pre class="in-python"><code># multiply a matrix by a vector, row by row
+def matvec(W, v):
+    return [sum(w_j * v_j for w_j, v_j in zip(row, v)) for row in W]
+x = [1, 2]
+W1 = [[0.5, 0], [0, -1]]
+W2 = [[0.2, 0], [0.4, 1]]
+W1x = matvec(W1, x)
+W1x  # → [0.5, -2]
+# σ keeps positives
+relu = [max(0, v) for v in W1x]
+relu  # → [0.5, 0]
+# F = W₂ σ(W₁ x)
+F = matvec(W2, relu)
+F  # → [0.1, 0.2]
+# y = F(x) + x
+[F_k + x_k for F_k, x_k in zip(F, x)]  # → [1.1, 2.2]
+# weights in W_s, a 1×1 conv from 64 to 128 channels
+1 * 1 * 64 * 128  # → 8192</code></pre>
 <h4>Why it matters today</h4>
 <p>The shortcut's zero cost was essential to the paper's argument: plain and residual networks could be compared at exactly the same depth, width, parameter count and compute. That is why the comparison in §4 is so convincing.</p>
 </section>
@@ -296,12 +297,10 @@
 <p class="inwords"><strong>In words:</strong> “a convolution layer has one weight for every position in its k × k window, for every input channel, for every output filter.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 3 × 3 × 64 × 64 = 36,864; 1 × 1 × 256 × 64 = 16,384.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; k, C_in, C_out = 3, 64, 64
-&gt;&gt;&gt; k * k * C_in * C_out
-36864
-&gt;&gt;&gt; k, C_in, C_out = 1, 256, 64
-&gt;&gt;&gt; k * k * C_in * C_out
-16384</code></pre>
+<pre class="in-python"><code>k, C_in, C_out = 3, 64, 64
+k * k * C_in * C_out  # → 36864
+k, C_in, C_out = 1, 256, 64
+k * k * C_in * C_out  # → 16384</code></pre>
 <h4>How deep versus how good</h4>
 <div class="plot" id="imnet-plot"><div id="imnet-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each bar is one network's top-1 error on ImageNet validation images (10-crop testing); shorter is better. VGG-16 and the 34-layer plain net sit at the top at about 28%. Adding shortcuts to the 34-layer net drops it to about 25%, and every further increase in depth, 50, 101, then 152 layers, shortens the bar again. There is no sign of degradation. Numbers selected from Table 3 of He et al. (2015).</p>
@@ -348,11 +347,12 @@
 <p class="inwords"><strong>In words:</strong> “how much the block's output moves when its input moves is the identity (a copy) plus whatever the residual branch contributes; even if the branch contributes almost nothing, the copy is still there.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for a one-number block y = x + 0.1x, the slope is 1 + 0.1 = 1.1. Stack 40 plain layers that each shrink the signal to 0.5 of its size and the gradient reaching the first layer is 0.5<sup>40</sup> ≈ 10<sup>−12</sup>; with shortcuts each factor is 1 + (something small) instead.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; dF_dx = 0.1                  # ∂F/∂x for the block y = x + 0.1x
-&gt;&gt;&gt; 1 + dF_dx                    # ∂y/∂x = I + ∂F/∂x
-1.1
-&gt;&gt;&gt; 0.5 ** 40                    # 40 plain layers, each halving: about 10⁻¹²
-9.09...e-13</code></pre>
+<pre class="in-python"><code># ∂F/∂x for the block y = x + 0.1x
+dF_dx = 0.1
+# ∂y/∂x = I + ∂F/∂x
+1 + dF_dx  # → 1.1
+# 40 plain layers, each halving: about 10⁻¹²
+0.5 ** 40  # → 9.09...e-13</code></pre>
 <div class="plot">
   <div class="sliders ui" id="gf-sliders"></div>
   <div id="gf-chart"></div>

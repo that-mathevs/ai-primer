@@ -169,15 +169,17 @@
 <p class="inwords"><strong>In words:</strong> “RAG-Sequence scores the whole answer once per passage and then averages the scores, weighted by how relevant each passage looked. RAG-Token averages over passages separately for every word, then multiplies the words' averaged probabilities together.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the only difference is whether Σ sits outside Π (Sequence: 0.150) or inside it (Token: 0.66 × 0.38 = 0.2508).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; p_eta = [0.7, 0.3]                    # p_η(z | x) for passages z₁, z₂
-&gt;&gt;&gt; p_theta = [[0.9, 0.2], [0.1, 0.8]]    # p_θ(y_i | x, z, y_1:i−1): a row per passage, a column per token
-&gt;&gt;&gt; seq = sum(p_z * math.prod(p_y) for p_z, p_y in zip(p_eta, p_theta))   # Σ outside Π
-&gt;&gt;&gt; round(seq, 3)
-0.15
-&gt;&gt;&gt; tok = math.prod(sum(p_eta[z] * p_theta[z][i] for z in range(2)) for i in range(2))   # Π outside Σ
-&gt;&gt;&gt; round(tok, 4)
-0.2508</code></pre>
+<pre class="in-python"><code>import math
+# p_η(z | x) for passages z₁, z₂
+p_eta = [0.7, 0.3]
+# p_θ(y_i | x, z, y_1:i−1): a row per passage, a column per token
+p_theta = [[0.9, 0.2], [0.1, 0.8]]
+# Σ outside Π
+seq = sum(p_z * math.prod(p_y) for p_z, p_y in zip(p_eta, p_theta))
+round(seq, 3)  # → 0.15
+# Π outside Σ
+tok = math.prod(sum(p_eta[z] * p_theta[z][i] for z in range(2)) for i in range(2))
+round(tok, 4)  # → 0.2508</code></pre>
 
 <h4>Try it: move the probabilities</h4>
 <div class="play" id="marg-demo">
@@ -201,13 +203,13 @@
 <p class="inwords"><strong>In words:</strong> “encode the passage and the question separately into vectors; the more their dot product, the more probable the passage; normalise over the retrieved passages so the probabilities add to 1.”</p>
 <p class="inwords"><strong>With the numbers:</strong> scores (2.0, 1.15) → exp → (7.39, 3.16) → divide by 10.55 → (0.70, 0.30). That is <span class="t" data-t="softmax">softmax</span> over the retrieved passages.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; scores = [2.0, 1.15]                  # d(z)ᵀ q(x) for passages z₁, z₂
-&gt;&gt;&gt; e = [math.exp(s) for s in scores]
-&gt;&gt;&gt; [round(v, 2) for v in e], round(sum(e), 2)
-([7.39, 3.16], 10.55)
-&gt;&gt;&gt; [round(v / sum(e), 2) for v in e]     # normalise: softmax
-[0.7, 0.3]</code></pre>
+<pre class="in-python"><code>import math
+# d(z)ᵀ q(x) for passages z₁, z₂
+scores = [2.0, 1.15]
+e = [math.exp(s) for s in scores]
+[round(v, 2) for v in e], round(sum(e), 2)  # → ([7.39, 3.16], 10.55)
+# normalise: softmax
+[round(v / sum(e), 2) for v in e]  # → [0.7, 0.3]</code></pre>
 <h4>Why it matters today</h4>
 <p>The bi-encoder plus nearest-neighbour index is still the first stage of nearly every retrieval system. See the <a href="dpr.html">DPR companion</a>, the <a data-lesson="primer/ml/embeddings/retrieval.html">retrieval lesson</a> and the <a data-lesson="primer/ml/embeddings/ann.html">vector index lesson</a>.</p>
 </section>
@@ -231,12 +233,11 @@
 <p class="inwords"><strong>In words:</strong> “for each training pair, take minus the log of the probability the whole system gives the correct answer, after mixing over passages; add these up and make the total small.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if RAG-Token gives the correct answer probability 0.2508, that pair contributes −ln 0.2508 = <strong>1.38</strong> to the loss. Raising the probability to 0.5 would cut it to 0.69.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; p = [0.2508]                          # p(y_j | x_j) for each training pair j
-&gt;&gt;&gt; round(sum(-math.log(p_j) for p_j in p), 2)
-1.38
-&gt;&gt;&gt; round(-math.log(0.5), 2)
-0.69</code></pre>
+<pre class="in-python"><code>import math
+# p(y_j | x_j) for each training pair j
+p = [0.2508]
+round(sum(-math.log(p_j) for p_j in p), 2)  # → 1.38
+round(-math.log(0.5), 2)  # → 0.69</code></pre>
 <p>One practical shortcut: the passage encoder and the 21-million-vector index are <strong>frozen</strong>. Only the query encoder and BART are fine-tuned. Re-encoding the whole index after every update would be very expensive, and the paper found it unnecessary.</p>
 <h4>Why it matters today</h4>
 <p>Most production systems freeze the retriever entirely and never train it end to end; they improve retrieval by choosing better embedding models, <span class="t" data-t="hybrid search">hybrid search</span> and <span class="t" data-t="reranker">rerankers</span> instead. The loss here is ordinary <span class="t" data-t="cross-entropy">cross-entropy</span>, covered in the <a data-lesson="primer/ml/losses.html">loss functions lesson</a>.</p>

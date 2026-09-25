@@ -43,11 +43,11 @@ standard once.
 **In Python:**
 
 ```python
->>> A, T = 5, 8
->>> A * T                             # every app wires up every service
-40
->>> A + T                             # each app and each service implements the standard once
-13
+A, T = 5, 8
+# every app wires up every service
+A * T  # → 40
+# each app and each service implements the standard once
+A + T  # → 13
 ```
 
 ![Connectors needed, with and without a shared protocol](figures/primer.agents.mcp.integrations.svg)

@@ -161,11 +161,11 @@ methods agree on rise to the top.
 **In Python:**
 
 ```python
->>> k = 60
->>> round(1 / (k + 1) + 1 / (k + 3), 4)   # 1st by dense, 3rd by keyword: Σ_i 1/(k + rank_i(d))
-0.0323
->>> round(1 / (k + 1), 4)                 # 1st in one list, absent from the other
-0.0164
+k = 60
+# 1st by dense, 3rd by keyword: Σ_i 1/(k + rank_i(d))
+round(1 / (k + 1) + 1 / (k + 3), 4)  # → 0.0323
+# 1st in one list, absent from the other
+round(1 / (k + 1), 4)  # → 0.0164
 ```
 
 ![recall@k for keyword, dense, hybrid and hybrid plus reranking](figures/primer.agents.rag.recall.svg)
@@ -199,9 +199,10 @@ into the top k.
 **In Python:**
 
 ```python
->>> found = [1] * 11 + [0]                # 𝟙[...] for each of the 12 questions; ERR-4012 is the 0
->>> round(sum(found) / len(found), 2)     # (1/|Q|) Σ over q in Q
-0.92
+# 𝟙[...] for each of the 12 questions; ERR-4012 is the 0
+found = [1] * 11 + [0]
+# (1/|Q|) Σ over q in Q
+round(sum(found) / len(found), 2)  # → 0.92
 ```
 
 **In code:** `RAGIndex.retrieve` ranks the allowed passages with

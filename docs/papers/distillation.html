@@ -109,14 +109,14 @@
 <p class="inwords"><strong>In words:</strong> “divide every score by the temperature, then apply the usual softmax; a temperature above 1 flattens the probabilities, below 1 sharpens them.”</p>
 <p class="inwords"><strong>With the numbers:</strong> logits (4, 1, 0) at T = 4: q<sub>1</sub> = e<sup>1</sup> / (e<sup>1</sup> + e<sup>0.25</sup> + e<sup>0</sup>) = 2.718 / 5.002 = 0.543.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; z, T = [4, 1, 0], 4
-&gt;&gt;&gt; denominator = sum(math.exp(z_j / T) for z_j in z)      # Σ_j exp(z_j / T)
-&gt;&gt;&gt; round(denominator, 3)
-5.002
-&gt;&gt;&gt; q = [math.exp(z_i / T) / denominator for z_i in z]     # q_i for every class i
-&gt;&gt;&gt; [round(q_i, 3) for q_i in q]
-[0.543, 0.257, 0.2]</code></pre>
+<pre class="in-python"><code>import math
+z, T = [4, 1, 0], 4
+# Σ_j exp(z_j / T)
+denominator = sum(math.exp(z_j / T) for z_j in z)
+round(denominator, 3)  # → 5.002
+# q_i for every class i
+q = [math.exp(z_i / T) / denominator for z_i in z]
+[round(q_i, 3) for q_i in q]  # → [0.543, 0.257, 0.2]</code></pre>
 
 <h3 class="rung">Try it: turn down the exposure</h3>
 <div class="play" id="temp-demo">
@@ -143,22 +143,25 @@
 <p class="inwords"><strong>In words:</strong> “match the teacher's softened opinions at temperature T, multiplied by T² to keep the gradients at a sensible size, plus a small amount of matching the true labels at normal temperature.” (The paper describes this weighted average in prose; this is our compact notation for it.)</p>
 <p class="inwords"><strong>With the numbers:</strong> in the speech experiment of §4 the best temperature was T = 2 and the hard-label term had a relative weight of 0.5, so L = 4 · H(p<sup>(2)</sup>, q<sup>(2)</sup>) + 0.5 · H(y, q<sup>(1)</sup>). On three classes, with teacher logits (4, 1, 0), student logits (2, 1, 0) and the true class first: p<sup>(2)</sup> = (0.736, 0.164, 0.100) and q<sup>(2)</sup> = (0.506, 0.307, 0.186) give H(p<sup>(2)</sup>, q<sup>(2)</sup>) = 0.862; at T = 1 the student gives the true class 0.665, so H(y, q<sup>(1)</sup>) = −ln 0.665 = 0.408; and L = 4 × 0.862 + 0.5 × 0.408 = 3.652.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; def softmax(z, T=1):
-...     e = [math.exp(z_i / T) for z_i in z]
-...     return [e_i / sum(e) for e_i in e]
-&gt;&gt;&gt; T, lam = 2, 0.5
-&gt;&gt;&gt; p_T = softmax([4, 1, 0], T)              # teacher, softened: p^(T)
-&gt;&gt;&gt; q_T = softmax([2, 1, 0], T)              # student, softened: q^(T)
-&gt;&gt;&gt; [round(x, 3) for x in p_T], [round(x, 3) for x in q_T]
-([0.736, 0.164, 0.1], [0.506, 0.307, 0.186])
-&gt;&gt;&gt; H_soft = -sum(p * math.log(q) for p, q in zip(p_T, q_T))   # H(p^(T), q^(T))
-&gt;&gt;&gt; q_1 = softmax([2, 1, 0])                 # student at T = 1: q^(1)
-&gt;&gt;&gt; H_hard = -math.log(q_1[0])               # H(y, q^(1)) with y = the first class
-&gt;&gt;&gt; round(H_soft, 3), round(q_1[0], 3), round(H_hard, 3)
-(0.862, 0.665, 0.408)
-&gt;&gt;&gt; round(T ** 2 * H_soft + lam * H_hard, 3) # L = T² · H(p, q) + λ · H(y, q)
-3.652</code></pre>
+<pre class="in-python"><code>import math
+def softmax(z, T=1):
+    e = [math.exp(z_i / T) for z_i in z]
+    return [e_i / sum(e) for e_i in e]
+T, lam = 2, 0.5
+# teacher, softened: p^(T)
+p_T = softmax([4, 1, 0], T)
+# student, softened: q^(T)
+q_T = softmax([2, 1, 0], T)
+[round(x, 3) for x in p_T], [round(x, 3) for x in q_T]  # → ([0.736, 0.164, 0.1], [0.506, 0.307, 0.186])
+# H(p^(T), q^(T))
+H_soft = -sum(p * math.log(q) for p, q in zip(p_T, q_T))
+# student at T = 1: q^(1)
+q_1 = softmax([2, 1, 0])
+# H(y, q^(1)) with y = the first class
+H_hard = -math.log(q_1[0])
+round(H_soft, 3), round(q_1[0], 3), round(H_hard, 3)  # → (0.862, 0.665, 0.408)
+# L = T² · H(p, q) + λ · H(y, q)
+round(T ** 2 * H_soft + lam * H_hard, 3)  # → 3.652</code></pre>
 
 <h3 class="rung">Why multiply by T²?</h3>
 <div class="plot">
@@ -181,18 +184,21 @@
 <p class="inwords"><strong>In words:</strong> “the push on each student logit is the gap between the student's and the teacher's softened probabilities, divided by T; when T is large compared with the logits, and the logits average zero, that is just the gap between the logits themselves, divided by N T², which is what minimizing squared logit differences does.”</p>
 <p class="inwords"><strong>With the numbers:</strong> q = softmax((0.1, 0, −0.1)), p = softmax((0.2, 0, −0.2)); (q<sub>1</sub> − p<sub>1</sub>)/10 = −0.00346 ≈ (1 − 2)/300 = −0.00333.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; def softmax(z):
-...     e = [math.exp(z_i) for z_i in z]
-...     return [e_i / sum(e) for e_i in e]
-&gt;&gt;&gt; T, z, v = 10, [1, 0, -1], [2, 0, -2]     # student logits z, teacher logits v
-&gt;&gt;&gt; N = len(z)
-&gt;&gt;&gt; q = softmax([z_i / T for z_i in z])      # softmax((0.1, 0, -0.1))
-&gt;&gt;&gt; p = softmax([v_i / T for v_i in v])      # softmax((0.2, 0, -0.2))
-&gt;&gt;&gt; round((q[0] - p[0]) / T, 5)              # exact: (1/T)(q_i − p_i)
--0.00346
-&gt;&gt;&gt; round((z[0] - v[0]) / (N * T ** 2), 5)   # approximation: (z_i − v_i) / (N T²)
--0.00333</code></pre>
+<pre class="in-python"><code>import math
+def softmax(z):
+    e = [math.exp(z_i) for z_i in z]
+    return [e_i / sum(e) for e_i in e]
+# student logits z, teacher logits v
+T, z, v = 10, [1, 0, -1], [2, 0, -2]
+N = len(z)
+# softmax((0.1, 0, -0.1))
+q = softmax([z_i / T for z_i in z])
+# softmax((0.2, 0, -0.2))
+p = softmax([v_i / T for v_i in v])
+# exact: (1/T)(q_i − p_i)
+round((q[0] - p[0]) / T, 5)  # → -0.00346
+# approximation: (z_i − v_i) / (N T²)
+round((z[0] - v[0]) / (N * T ** 2), 5)  # → -0.00333</code></pre>
 <p>The paper's MNIST results suggest that when the student is much too small to absorb everything, intermediate temperatures work best, a hint that ignoring the teacher's large negative logits helps.</p>
 <h4>Why it matters today</h4>
 <p>“Match the logits” and “match the softened probabilities” are both still used for distilling language models; this section explains how they relate.</p>
@@ -274,18 +280,21 @@
 <p class="inwords"><strong>In words:</strong> “find the single distribution over all classes that is, in total, closest to the generalist's opinion and to every active specialist's opinion.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if the generalist says “bridge” and specialist A covers bridges, viaducts and chimneys, then A_k = {A}, and q balances the generalist's 15,000-class view with A's fine distinctions within its 300 classes. On a toy with three classes (bridge, viaduct, everything else), say p<sup>g</sup> = (0.5, 0.3, 0.2) and p<sup>A</sup> = (0.8, 0.1, 0.1). Choosing q = p<sup>g</sup> scores 0 + 0.197 = 0.197; choosing q = p<sup>A</sup> scores 0.233 + 0 = 0.233; their average, q = (0.65, 0.2, 0.15), scores 0.048 + 0.056 = 0.104, the lowest. For this sum of KL divergences the best q is always the average of the opinions.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; def KL(p, q):                                  # KL divergence: Σ p log(p / q)
-...     return sum(p_c * math.log(p_c / q_c) for p_c, q_c in zip(p, q))
-&gt;&gt;&gt; p_g = [0.5, 0.3, 0.2]                          # the generalist's opinion
-&gt;&gt;&gt; p_A = [0.8, 0.1, 0.1]                          # specialist A, the only member of A_k
-&gt;&gt;&gt; def objective(q):                              # KL(p^g, q) + Σ over m in A_k of KL(p^m, q)
-...     return KL(p_g, q) + sum(KL(p_m, q) for p_m in [p_A])
-&gt;&gt;&gt; round(objective(p_g), 3), round(objective(p_A), 3)
-(0.197, 0.233)
-&gt;&gt;&gt; q = [(a + b) / 2 for a, b in zip(p_g, p_A)]    # the average opinion
-&gt;&gt;&gt; [round(q_c, 2) for q_c in q], round(KL(p_g, q), 3), round(KL(p_A, q), 3), round(objective(q), 3)
-([0.65, 0.2, 0.15], 0.048, 0.056, 0.104)</code></pre>
+<pre class="in-python"><code>import math
+# KL divergence: Σ p log(p / q)
+def KL(p, q):
+    return sum(p_c * math.log(p_c / q_c) for p_c, q_c in zip(p, q))
+# the generalist's opinion
+p_g = [0.5, 0.3, 0.2]
+# specialist A, the only member of A_k
+p_A = [0.8, 0.1, 0.1]
+# KL(p^g, q) + Σ over m in A_k of KL(p^m, q)
+def objective(q):
+    return KL(p_g, q) + sum(KL(p_m, q) for p_m in [p_A])
+round(objective(p_g), 3), round(objective(p_A), 3)  # → (0.197, 0.233)
+# the average opinion
+q = [(a + b) / 2 for a, b in zip(p_g, p_A)]
+[round(q_c, 2) for q_c in q], round(KL(p_g, q), 3), round(KL(p_A, q), 3), round(objective(q), 3)  # → ([0.65, 0.2, 0.15], 0.048, 0.056, 0.104)</code></pre>
 <div class="tablewrap"><table>
   <caption>Selected results from Table 3 of Hinton, Vinyals and Dean (2015): top-1 accuracy on the JFT development set</caption>
   <thead><tr><th>System</th><th class="num">Conditional accuracy</th><th class="num">Test accuracy</th></tr></thead>

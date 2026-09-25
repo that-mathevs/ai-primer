@@ -192,15 +192,14 @@ to $n = 20$ and it's $500 \times 210 = 105{,}000$, almost 4x.
 **In Python:**
 
 ```python
->>> t = 500
->>> def total_input(n):
-...     return sum(k * t for k in range(1, n + 1))   # Σ_k k·t: step k re-sends k steps' worth
->>> total_input(10)
-27500
->>> total_input(20)
-105000
->>> round(total_input(20) / total_input(10), 1)    # almost 4x
-3.8
+t = 500
+def total_input(n):
+    # Σ_k k·t: step k re-sends k steps' worth
+    return sum(k * t for k in range(1, n + 1))
+total_input(10)  # → 27500
+total_input(20)  # → 105000
+# almost 4x
+round(total_input(20) / total_input(10), 1)  # → 3.8
 ```
 
 ![Input tokens sent at each step of a runaway agent](figures/primer.agents.agent_loop.tokens_per_step.svg)

@@ -43,11 +43,10 @@ A 95%-reliable step is a 60%-reliable 10-step task.
 **In Python:**
 
 ```python
->>> p = 0.95
->>> round(p ** 10, 2)                 # ten steps that must all succeed
-0.6
->>> round(p ** 20, 2)
-0.36
+p = 0.95
+# ten steps that must all succeed
+round(p ** 10, 2)  # → 0.6
+round(p ** 20, 2)  # → 0.36
 ```
 
 ![End-to-end success vs. number of steps](figures/primer.agents.planning.compounding.svg)
@@ -189,14 +188,13 @@ $(1 - 0.599) / (0.05 \times 0.599) \approx 13.4$. At $n = 50$ it's about
 **In Python:**
 
 ```python
->>> def with_checkpoints(n, p):
-...     return n / p                  # each step needs 1/p attempts on average
->>> def restart_from_scratch(n, p):
-...     return (1 - p ** n) / ((1 - p) * p ** n)
->>> round(with_checkpoints(10, 0.95), 1), round(restart_from_scratch(10, 0.95), 1)
-(10.5, 13.4)
->>> round(with_checkpoints(50, 0.95), 1), round(restart_from_scratch(50, 0.95))
-(52.6, 240)
+def with_checkpoints(n, p):
+    # each step needs 1/p attempts on average
+    return n / p
+def restart_from_scratch(n, p):
+    return (1 - p ** n) / ((1 - p) * p ** n)
+round(with_checkpoints(10, 0.95), 1), round(restart_from_scratch(10, 0.95), 1)  # → (10.5, 13.4)
+round(with_checkpoints(50, 0.95), 1), round(restart_from_scratch(50, 0.95))  # → (52.6, 240)
 ```
 
 ![Expected step executions: checkpoints vs. restarting](figures/primer.agents.planning.checkpoints.svg)
@@ -275,16 +273,16 @@ catches only half the failures ($d = 0.5$): $0.97375^{10} \approx 77\%$.
 **In Python:**
 
 ```python
->>> def p_step(p, d, r):
-...     return p * sum(((1 - p) * d) ** i for i in range(r + 1))   # p Σ_{i=0}^{r} ((1 - p) d)^i
->>> round(p_step(0.95, 1, 1), 4)          # a perfect check, one retry
-0.9975
->>> round(p_step(0.95, 1, 1) ** 10, 3)    # ten such steps
-0.975
->>> round(p_step(0.95, 0.5, 1), 5)        # a check that catches half the failures
-0.97375
->>> round(p_step(0.95, 0.5, 1) ** 10, 2)
-0.77
+def p_step(p, d, r):
+    # p Σ_{i=0}^{r} ((1 - p) d)^i
+    return p * sum(((1 - p) * d) ** i for i in range(r + 1))
+# a perfect check, one retry
+round(p_step(0.95, 1, 1), 4)  # → 0.9975
+# ten such steps
+round(p_step(0.95, 1, 1) ** 10, 3)  # → 0.975
+# a check that catches half the failures
+round(p_step(0.95, 0.5, 1), 5)  # → 0.97375
+round(p_step(0.95, 0.5, 1) ** 10, 2)  # → 0.77
 ```
 
 ![Ten-step success with and without verification](figures/primer.agents.planning.verification.svg)

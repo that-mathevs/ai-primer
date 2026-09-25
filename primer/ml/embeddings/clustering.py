@@ -91,13 +91,16 @@ to the centre of its cluster.
 **In Python:**
 
 ```python
->>> x = [(0, 0), (0, 1), (10, 0), (10, 1)]
->>> mu = [(0, 0.5), (10, 0.5)]        # the two centroids
->>> c = [0, 0, 1, 1]                  # c(i): the cluster each point joined
->>> J = sum((x_i[0] - mu[c_i][0]) ** 2 + (x_i[1] - mu[c_i][1]) ** 2   # ‖x_i - μ_c(i)‖²
-...         for x_i, c_i in zip(x, c))                                  # Σ over every point
->>> J
-1.0
+x = [(0, 0), (0, 1), (10, 0), (10, 1)]
+# the two centroids
+mu = [(0, 0.5), (10, 0.5)]
+# c(i): the cluster each point joined
+c = [0, 0, 1, 1]
+# ‖x_i - μ_c(i)‖²
+J = sum((x_i[0] - mu[c_i][0]) ** 2 + (x_i[1] - mu[c_i][1]) ** 2
+        # Σ over every point
+        for x_i, c_i in zip(x, c))
+J  # → 1.0
 ```
 
 ![k-means, round by round](figures/primer.ml.embeddings.clustering.kmeans_steps.svg)
@@ -153,13 +156,14 @@ means points sit in the wrong cluster.
 **In Python:**
 
 ```python
->>> import math
->>> a = math.dist((0, 0), (0, 1))     # a(i): distance to its partner
->>> b = (math.dist((0, 0), (10, 0)) + math.dist((0, 0), (10, 1))) / 2   # b(i): the other pair, averaged
->>> a, round(b, 3)
-(1.0, 10.025)
->>> round((b - a) / max(a, b), 3)     # s(i)
-0.9
+import math
+# a(i): distance to its partner
+a = math.dist((0, 0), (0, 1))
+# b(i): the other pair, averaged
+b = (math.dist((0, 0), (10, 0)) + math.dist((0, 0), (10, 1))) / 2
+a, round(b, 3)  # → (1.0, 10.025)
+# s(i)
+round((b - a) / max(a, b), 3)  # → 0.9
 ```
 
 ![Choosing k: inertia and silhouette](figures/primer.ml.embeddings.clustering.choose_k.svg)
@@ -214,14 +218,15 @@ N₀.₁₅(20) = {20}, 1 < 2, so 20 is noise.
 **In Python:**
 
 ```python
->>> points = [0, 0.1, 0.2, 5.0, 5.1, 5.2, 20]
->>> eps, minPts = 0.15, 2
->>> def N(x):                         # N_ε(x): every point within reach of x
-...     return [y for y in points if abs(x - y) <= eps]
->>> N(0.1), len(N(0.1)) >= minPts     # a core point
-([0, 0.1, 0.2], True)
->>> N(20), len(N(20)) >= minPts       # nobody within reach: noise
-([20], False)
+points = [0, 0.1, 0.2, 5.0, 5.1, 5.2, 20]
+eps, minPts = 0.15, 2
+# N_ε(x): every point within reach of x
+def N(x):
+    return [y for y in points if abs(x - y) <= eps]
+# a core point
+N(0.1), len(N(0.1)) >= minPts  # → ([0, 0.1, 0.2], True)
+# nobody within reach: noise
+N(20), len(N(20)) >= minPts  # → ([20], False)
 ```
 
 ```mermaid
@@ -305,16 +310,17 @@ singular values are 2 along the diagonal and 0 across it, so the shares are
 **In Python:**
 
 ```python
->>> import math
->>> centred = [(-1, -1), (0, 0), (1, 1)]
->>> u = [(1 / math.sqrt(2), 1 / math.sqrt(2)),    # along the diagonal
-...      (1 / math.sqrt(2), -1 / math.sqrt(2))]   # across it (the SVD finds these; here we know them)
->>> sigma = [math.sqrt(sum((x * u_j[0] + y * u_j[1]) ** 2 for x, y in centred))   # spread along u_j
-...          for u_j in u]
->>> [round(sigma_j, 3) for sigma_j in sigma]
-[2.0, 0.0]
->>> [round(sigma_j ** 2 / sum(sigma_k ** 2 for sigma_k in sigma), 3) for sigma_j in sigma]
-[1.0, 0.0]
+import math
+centred = [(-1, -1), (0, 0), (1, 1)]
+# along the diagonal
+u = [(1 / math.sqrt(2), 1 / math.sqrt(2)),
+     # across it (the SVD finds these; here we know them)
+     (1 / math.sqrt(2), -1 / math.sqrt(2))]
+# spread along u_j
+sigma = [math.sqrt(sum((x * u_j[0] + y * u_j[1]) ** 2 for x, y in centred))
+         for u_j in u]
+[round(sigma_j, 3) for sigma_j in sigma]  # → [2.0, 0.0]
+[round(sigma_j ** 2 / sum(sigma_k ** 2 for sigma_k in sigma), 3) for sigma_j in sigma]  # → [1.0, 0.0]
 ```
 
 ![The tickets on a 2-D map](figures/primer.ml.embeddings.clustering.map.svg)
@@ -406,20 +412,19 @@ all below θ, so it goes to the fallback.
 **In Python:**
 
 ```python
->>> import math
->>> def cos(a, b):
-...     dot = sum(a_k * b_k for a_k, b_k in zip(a, b))
-...     return dot / (math.sqrt(sum(a_k ** 2 for a_k in a)) * math.sqrt(sum(b_k ** 2 for b_k in b)))
->>> mu = {"it_helpdesk": (1, 0, 0, 0), "finance": (0, 1, 0, 0), "hr": (0, 0, 1, 0)}
->>> theta = 0.3
->>> def route(q):
-...     scores = {r: cos(q, mu_r) for r, mu_r in mu.items()}
-...     best = max(scores, key=scores.get)                 # arg max_r cos(q, μ_r)
-...     return best if scores[best] >= theta else "fallback"
->>> [round(cos((0.8, 0.6, 0, 0), mu_r), 2) for mu_r in mu.values()], route((0.8, 0.6, 0, 0))
-([0.8, 0.6, 0.0], 'it_helpdesk')
->>> [round(cos((0.1, 0.2, 0, 1), mu_r), 2) for mu_r in mu.values()], route((0.1, 0.2, 0, 1))
-([0.1, 0.2, 0.0], 'fallback')
+import math
+def cos(a, b):
+    dot = sum(a_k * b_k for a_k, b_k in zip(a, b))
+    return dot / (math.sqrt(sum(a_k ** 2 for a_k in a)) * math.sqrt(sum(b_k ** 2 for b_k in b)))
+mu = {"it_helpdesk": (1, 0, 0, 0), "finance": (0, 1, 0, 0), "hr": (0, 0, 1, 0)}
+theta = 0.3
+def route(q):
+    scores = {r: cos(q, mu_r) for r, mu_r in mu.items()}
+    # arg max_r cos(q, μ_r)
+    best = max(scores, key=scores.get)
+    return best if scores[best] >= theta else "fallback"
+[round(cos((0.8, 0.6, 0, 0), mu_r), 2) for mu_r in mu.values()], route((0.8, 0.6, 0, 0))  # → ([0.8, 0.6, 0.0], 'it_helpdesk')
+[round(cos((0.1, 0.2, 0, 1), mu_r), 2) for mu_r in mu.values()], route((0.1, 0.2, 0, 1))  # → ([0.1, 0.2, 0.0], 'fallback')
 ```
 
 ![Router scores for three requests](figures/primer.ml.embeddings.clustering.router.svg)

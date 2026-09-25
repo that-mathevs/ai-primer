@@ -114,15 +114,17 @@
 <p class="inwords"><strong>In words:</strong> “each neuron's summed input is the dot product of its weights with the previous layer's outputs; batch norm subtracts that neuron's average over the data, divides by its spread over the data, and multiplies by a learned gain.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for the batch (1, 5, 9): μ = 5, σ = 3.266, so ā = (1/3.266) × (1 − 5) = −1.225 for the first example.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; a = [1, 5, 9]              # one neuron's summed input a_i, over a batch of 3 examples
-&gt;&gt;&gt; mu = sum(a) / len(a)       # μ_i = E_x[a_i]
-&gt;&gt;&gt; sigma = math.sqrt(sum((a_x - mu) ** 2 for a_x in a) / len(a))   # σ_i
-&gt;&gt;&gt; mu, round(sigma, 3)
-(5.0, 3.266)
-&gt;&gt;&gt; g = 1
-&gt;&gt;&gt; round(g / sigma * (a[0] - mu), 3)   # ā_i for the first example
--1.225</code></pre>
+<pre class="in-python"><code>import math
+# one neuron's summed input a_i, over a batch of 3 examples
+a = [1, 5, 9]
+# μ_i = E_x[a_i]
+mu = sum(a) / len(a)
+# σ_i
+sigma = math.sqrt(sum((a_x - mu) ** 2 for a_x in a) / len(a))
+mu, round(sigma, 3)  # → (5.0, 3.266)
+g = 1
+# ā_i for the first example
+round(g / sigma * (a[0] - mu), 3)  # → -1.225</code></pre>
 <p>The expectation E is over <em>all</em> the training data, which would need a pass through the whole dataset after every weight update. So in practice μ and σ are estimated from the current mini-batch. That estimate is what ties batch norm to the batch size.</p>
 <h3 class="rung">Why it matters today</h3>
 <p>Batch norm is still standard in convolutional image networks (the <a href="resnet.html">ResNet companion</a> uses it after every convolution), where batches are large and every example has the same shape.</p>
@@ -152,15 +154,16 @@
 <p class="inwords"><strong>In words:</strong> “for one example, average the summed inputs of all H neurons in the layer, and measure their spread around that average; every neuron in the layer then shares these two numbers.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for a layer of H = 4 neurons with a = (2, 4, 6, 8): μ = 20 / 4 = 5, σ = √((9 + 1 + 1 + 9) / 4) = √5 = 2.236, so the normalized values are (−1.342, −0.447, 0.447, 1.342).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; a = [2, 4, 6, 8]           # the H summed inputs of one layer, one example
-&gt;&gt;&gt; H = len(a)
-&gt;&gt;&gt; mu = sum(a) / H                                              # μ^l
-&gt;&gt;&gt; sigma = math.sqrt(sum((a_i - mu) ** 2 for a_i in a) / H)     # σ^l
-&gt;&gt;&gt; mu, round(sigma, 3)
-(5.0, 2.236)
-&gt;&gt;&gt; [round((a_i - mu) / sigma, 3) for a_i in a]
-[-1.342, -0.447, 0.447, 1.342]</code></pre>
+<pre class="in-python"><code>import math
+# the H summed inputs of one layer, one example
+a = [2, 4, 6, 8]
+H = len(a)
+# μ^l
+mu = sum(a) / H
+# σ^l
+sigma = math.sqrt(sum((a_i - mu) ** 2 for a_i in a) / H)
+mu, round(sigma, 3)  # → (5.0, 2.236)
+[round((a_i - mu) / sigma, 3) for a_i in a]  # → [-1.342, -0.447, 0.447, 1.342]</code></pre>
 <p>As with batch norm, each neuron then gets its own learned <span class="t" data-t="bias">bias</span> b and gain g, applied after normalizing and before the nonlinearity (equation 5 in §5 shows the shared form). And because nothing depends on the batch, training and testing run the identical computation: no running averages to store, no train/test mismatch.</p>
 <h3 class="rung">Why it matters today</h3>
 <p>In a Transformer, each token's vector is one “row”: layer norm normalizes each token across its d<sub>model</sub> features (for example 512), independently of every other token and every other sentence in the batch. Real implementations also add a tiny ε under the square root so the division is safe.</p>
@@ -205,14 +208,17 @@
 <p class="inwords"><strong>In words:</strong> “mix the previous summary and the new input into summed inputs, normalize them using this step's own mean and spread, apply a learned per-unit gain and bias, then the nonlinearity.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if a<sup>t</sup> = (2, 4, 6, 8) then μ<sup>t</sup> = 5 and σ<sup>t</sup> = 2.236; with g = (1, 1, 1, 1) and b = 0 the normalized vector is (−1.342, −0.447, 0.447, 1.342), and tanh of it gives h<sup>t</sup> ≈ (−0.872, −0.420, 0.420, 0.872).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; a = [2, 4, 6, 8]                  # a^t
-&gt;&gt;&gt; mu = sum(a) / len(a)              # μ^t
-&gt;&gt;&gt; sigma = math.sqrt(sum((a_i - mu) ** 2 for a_i in a) / len(a))   # σ^t
-&gt;&gt;&gt; g, b = [1, 1, 1, 1], [0, 0, 0, 0]
-&gt;&gt;&gt; h = [math.tanh(g_i / sigma * (a_i - mu) + b_i) for g_i, a_i, b_i in zip(g, a, b)]   # f = tanh
-&gt;&gt;&gt; [round(h_i, 3) for h_i in h]
-[-0.872, -0.42, 0.42, 0.872]</code></pre>
+<pre class="in-python"><code>import math
+# a^t
+a = [2, 4, 6, 8]
+# μ^t
+mu = sum(a) / len(a)
+# σ^t
+sigma = math.sqrt(sum((a_i - mu) ** 2 for a_i in a) / len(a))
+g, b = [1, 1, 1, 1], [0, 0, 0, 0]
+# f = tanh
+h = [math.tanh(g_i / sigma * (a_i - mu) + b_i) for g_i, a_i, b_i in zip(g, a, b)]
+[round(h_i, 3) for h_i in h]  # → [-0.872, -0.42, 0.42, 0.872]</code></pre>
 <p>The paper points out the key stability property: layer norm makes the recurrent layer invariant to rescaling all its summed inputs, so hidden states can no longer grow or shrink step after step, the root of <span class="t" data-t="exploding gradient">exploding</span> and <span class="t" data-t="vanishing gradient">vanishing</span> gradients in RNNs.</p>
 <h4>Why it matters today</h4>
 <p>“Normalize per position, share the gain and bias across positions” is exactly what a Transformer does per token. The step from “per time step” to “per token” is a small one.</p>
@@ -239,15 +245,17 @@
 <p class="inwords"><strong>In words:</strong> “all three methods normalize a neuron's summed input with some mean and spread, then apply a gain and bias; for layer norm, scaling one example's input by δ scales its mean and spread by δ too, so the δ cancels and the output is unchanged.”</p>
 <p class="inwords"><strong>With the numbers:</strong> δ = 3: (6 − 15) / 6.708 = −1.342, the same as (2 − 5) / 2.236.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; delta = 3
-&gt;&gt;&gt; x = [delta * a_i for a_i in [2, 4, 6, 8]]     # every input scaled by δ
-&gt;&gt;&gt; mu = sum(x) / len(x)                          # μ' = δμ
-&gt;&gt;&gt; sigma = math.sqrt(sum((x_i - mu) ** 2 for x_i in x) / len(x))   # σ' = δσ
-&gt;&gt;&gt; mu, round(sigma, 3)
-(15.0, 6.708)
-&gt;&gt;&gt; round((x[0] - mu) / sigma, 3)                  # same as (2 − 5) / 2.236
--1.342</code></pre>
+<pre class="in-python"><code>import math
+delta = 3
+# every input scaled by δ
+x = [delta * a_i for a_i in [2, 4, 6, 8]]
+# μ' = δμ
+mu = sum(x) / len(x)
+# σ' = δσ
+sigma = math.sqrt(sum((x_i - mu) ** 2 for x_i in x) / len(x))
+mu, round(sigma, 3)  # → (15.0, 6.708)
+# same as (2 − 5) / 2.236
+round((x[0] - mu) / sigma, 3)  # → -1.342</code></pre>
 <div class="tablewrap"><table>
   <caption>Which changes leave the model's output unchanged: the paper's Table 1, reproduced in summary with attribution (Ba et al., 2016)</caption>
   <thead><tr><th></th><th>Rescale the weight matrix</th><th>Re-centre the weight matrix</th><th>Rescale one weight vector</th><th>Rescale the dataset</th><th>Re-centre the dataset</th><th>Rescale one example</th></tr></thead>
@@ -276,16 +284,16 @@
 <p class="inwords"><strong>In words:</strong> “measure the size of a small parameter change by how much it changes the model's predictions; for small changes that is approximately a quadratic form in the change, whose matrix, the Fisher information, describes how sensitive predictions are in each direction.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the paper's result is that in normalized models this sensitivity along a weight vector scales with 1/‖w‖: doubling ‖w‖ from 1 to 2 halves the curvature along it, matching the 5.7° versus 2.9° example. To see the approximation itself, take a coin-like model that predicts y = 1 with probability θ = 0.5 and nudge θ by δ = 0.1: D<sub>KL</sub> = 0.5 ln(0.5 / 0.6) + 0.5 ln(0.5 / 0.4) = 0.0204. A coin's Fisher information is 1 / (θ(1 − θ)) = 4, so ½ × 0.1 × 4 × 0.1 = 0.020: nearly the same.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; round(math.degrees(math.atan(0.1 / 1)), 1), round(math.degrees(math.atan(0.1 / 2)), 1)
-(5.7, 2.9)
-&gt;&gt;&gt; theta, delta = 0.5, 0.1           # a coin: P(y = 1) = θ, nudged by δ
-&gt;&gt;&gt; D_KL = theta * math.log(theta / (theta + delta)) + (1 - theta) * math.log((1 - theta) / (1 - theta - delta))
-&gt;&gt;&gt; round(D_KL, 4)
-0.0204
-&gt;&gt;&gt; F = 1 / (theta * (1 - theta))     # the coin's Fisher information F(θ)
-&gt;&gt;&gt; F, round(0.5 * delta * F * delta, 3)   # ½ δᵀ F(θ) δ
-(4.0, 0.02)</code></pre>
+<pre class="in-python"><code>import math
+round(math.degrees(math.atan(0.1 / 1)), 1), round(math.degrees(math.atan(0.1 / 2)), 1)  # → (5.7, 2.9)
+# a coin: P(y = 1) = θ, nudged by δ
+theta, delta = 0.5, 0.1
+D_KL = theta * math.log(theta / (theta + delta)) + (1 - theta) * math.log((1 - theta) / (1 - theta - delta))
+round(D_KL, 4)  # → 0.0204
+# the coin's Fisher information F(θ)
+F = 1 / (theta * (1 - theta))
+# ½ δᵀ F(θ) δ
+F, round(0.5 * delta * F * delta, 3)  # → (4.0, 0.02)</code></pre>
 <p>The same analysis shows that learning the gain g (the neuron's output scale) depends only on the size of the prediction error, not on the scale of the input, so it is robust to inputs of any size.</p>
 <h4>Why it matters today</h4>
 <p>This interplay between weight length and effective learning rate is one reason <span class="t" data-t="weight decay">weight decay</span> still matters in normalized networks: shrinking the weights keeps their effective learning rate from quietly decaying.</p>
@@ -341,14 +349,13 @@
 <p class="inwords"><strong>In words:</strong> “divide each summed input by the root-mean-square of the whole layer's summed inputs, then apply the gain; no mean is subtracted.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for a = (2, 4, 6, 8): the mean of squares is (4 + 16 + 36 + 64) / 4 = 30, its root is 5.477, so RMSNorm gives (0.365, 0.730, 1.095, 1.461) with g = 1. Unlike layer norm, the values keep their positive offset.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; a, g = [2, 4, 6, 8], [1, 1, 1, 1]
-&gt;&gt;&gt; H = len(a)
-&gt;&gt;&gt; rms = math.sqrt(sum(a_j ** 2 for a_j in a) / H)   # √((1/H) Σ_j a_j²)
-&gt;&gt;&gt; round(rms, 3)
-5.477
-&gt;&gt;&gt; [round(a_i / rms * g_i, 3) for a_i, g_i in zip(a, g)]
-[0.365, 0.73, 1.095, 1.461]</code></pre>
+<pre class="in-python"><code>import math
+a, g = [2, 4, 6, 8], [1, 1, 1, 1]
+H = len(a)
+# √((1/H) Σ_j a_j²)
+rms = math.sqrt(sum(a_j ** 2 for a_j in a) / H)
+round(rms, 3)  # → 5.477
+[round(a_i / rms * g_i, 3) for a_i, g_i in zip(a, g)]  # → [0.365, 0.73, 1.095, 1.461]</code></pre>
 </section>
 
 <section id="glossary">

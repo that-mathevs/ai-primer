@@ -81,11 +81,13 @@ point beyond x = 3 is enormous.
 **In Python:**
 
 ```python
->>> y = [0, 1, 0, 1]                  # the true values at x = 0, 1, 2, 3
->>> y_hat = [0.5, 0.5, 0.5, 0.5]      # the flat line predicts 0.5 everywhere
->>> n = len(y)
->>> sum((y_i - y_hat_i) ** 2 for y_i, y_hat_i in zip(y, y_hat)) / n   # (1/n) Σ (y_i - ŷ_i)²
-0.25
+# the true values at x = 0, 1, 2, 3
+y = [0, 1, 0, 1]
+# the flat line predicts 0.5 everywhere
+y_hat = [0.5, 0.5, 0.5, 0.5]
+n = len(y)
+# (1/n) Σ (y_i - ŷ_i)²
+sum((y_i - y_hat_i) ** 2 for y_i, y_hat_i in zip(y, y_hat)) / n  # → 0.25
 ```
 
 **In code:** `zigzag_fit_error` and `zigzag_predict` fit a polynomial of any
@@ -193,16 +195,18 @@ once you've gone `patience` epochs past it without doing better."
 **In Python:**
 
 ```python
->>> L_val = [1.0, 0.8, 0.6, 0.55, 0.58, 0.65, 0.7]   # validation loss after epoch t = 0, 1, 2, ...
->>> patience = 2
->>> t_star = 0
->>> for t, loss in enumerate(L_val):
-...     if loss < L_val[t_star]:
-...         t_star = t                  # a new best epoch: remember it
-...     if t - t_star >= patience:
-...         break                       # patience used up: stop here
->>> t_star, t
-(3, 5)
+# validation loss after epoch t = 0, 1, 2, ...
+L_val = [1.0, 0.8, 0.6, 0.55, 0.58, 0.65, 0.7]
+patience = 2
+t_star = 0
+for t, loss in enumerate(L_val):
+    if loss < L_val[t_star]:
+        # a new best epoch: remember it
+        t_star = t
+    if t - t_star >= patience:
+        # patience used up: stop here
+        break
+t_star, t  # → (3, 5)
 ```
 
 **In code:** `early_stopping` replays a run's validation losses and returns
@@ -268,14 +272,14 @@ $0.0038 + 4.5 + 0.09 \approx 4.6$. Degree 3 has the best total.
 **In Python:**
 
 ```python
->>> sigma = 0.3
->>> noise = sigma ** 2                  # σ²: the error no model can remove
->>> for degree, bias_sq, variance in [(1, 0.174, 0.022), (3, 0.0035, 0.015), (9, 0.0038, 4.5)]:
-...     total = bias_sq + variance + noise           # bias² + variance + σ²
-...     print(degree, f"{total:.2g}")                # two significant figures
-1 0.29
-3 0.11
-9 4.6
+sigma = 0.3
+# σ²: the error no model can remove
+noise = sigma ** 2
+for degree, bias_sq, variance in [(1, 0.174, 0.022), (3, 0.0035, 0.015), (9, 0.0038, 4.5)]:
+    # bias² + variance + σ²
+    total = bias_sq + variance + noise
+    # two significant figures
+    print(degree, f"{total:.2g}")  # → 1 0.29 3 0.11 9 4.6
 ```
 
 **In code:** `bias_variance` fits one polynomial to each of many random
@@ -347,15 +351,15 @@ lose, and divide the survivors by the keep probability."
 **In Python:**
 
 ```python
->>> import random
->>> random.seed(0)
->>> h = [1, 1, 1, 1]
->>> p = 0.5
->>> m = [1 if random.random() < 1 - p else 0 for _ in h]   # m_i ~ Bernoulli(1 - p): a coin flip each
->>> m
-[0, 0, 1, 1]
->>> [m_i * h_i / (1 - p) for m_i, h_i in zip(m, h)]        # (m ⊙ h) / (1 - p)
-[0.0, 0.0, 2.0, 2.0]
+import random
+random.seed(0)
+h = [1, 1, 1, 1]
+p = 0.5
+# m_i ~ Bernoulli(1 - p): a coin flip each
+m = [1 if random.random() < 1 - p else 0 for _ in h]
+m  # → [0, 0, 1, 1]
+# (m ⊙ h) / (1 - p)
+[m_i * h_i / (1 - p) for m_i, h_i in zip(m, h)]  # → [0.0, 0.0, 2.0, 2.0]
 ```
 
 **In code:** `dropout` draws the mask and scales the survivors during
@@ -422,15 +426,16 @@ the "soft threshold" in `soft_threshold`.
 **In Python:**
 
 ```python
->>> import math
->>> w = [3, 0.5, -2]
->>> lam = 1                             # λ ("lambda" is taken in Python)
->>> sum(w_i ** 2 for w_i in w), sum(abs(w_i) for w_i in w)          # ‖w‖₂², ‖w‖₁
-(13.25, 5.5)
->>> [w_i / (1 + lam) for w_i in w]                                   # L2: shrink every weight
-[1.5, 0.25, -1.0]
->>> [math.copysign(max(abs(w_i) - lam, 0), w_i) for w_i in w]       # L1: sign(w) max(|w| - λ, 0)
-[2.0, 0.0, -1.0]
+import math
+w = [3, 0.5, -2]
+# λ ("lambda" is taken in Python)
+lam = 1
+# ‖w‖₂², ‖w‖₁
+sum(w_i ** 2 for w_i in w), sum(abs(w_i) for w_i in w)  # → (13.25, 5.5)
+# L2: shrink every weight
+[w_i / (1 + lam) for w_i in w]  # → [1.5, 0.25, -1.0]
+# L1: sign(w) max(|w| - λ, 0)
+[math.copysign(max(abs(w_i) - lam, 0), w_i) for w_i in w]  # → [2.0, 0.0, -1.0]
 ```
 
 **In code:** `penalised_weights` gives both closed forms from the table, and
@@ -495,14 +500,16 @@ and scored on 2; if they score 1.0, 0.5, 1.0, 1.0, 0.5, the CV score is 0.8.
 **In Python:**
 
 ```python
->>> examples = list(range(10))
->>> k = 5
->>> folds = [examples[2 * i: 2 * i + 2] for i in range(k)]   # 5 folds of 2
->>> [len(examples) - len(fold) for fold in folds]           # each model trains on the other 8
-[8, 8, 8, 8, 8]
->>> scores = [1.0, 0.5, 1.0, 1.0, 0.5]    # score of the model trained without fold i, on fold i
->>> sum(scores) / k                       # (1/k) Σ_i score_i
-0.8
+examples = list(range(10))
+k = 5
+# 5 folds of 2
+folds = [examples[2 * i: 2 * i + 2] for i in range(k)]
+# each model trains on the other 8
+[len(examples) - len(fold) for fold in folds]  # → [8, 8, 8, 8, 8]
+# score of the model trained without fold i, on fold i
+scores = [1.0, 0.5, 1.0, 1.0, 0.5]
+# (1/k) Σ_i score_i
+sum(scores) / k  # → 0.8
 ```
 
 **In code:** `train_val_test_split` shuffles and cuts the indices into three

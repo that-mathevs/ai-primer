@@ -73,14 +73,13 @@ of the table.
 **In Python:**
 
 ```python
->>> w, eta, target = 0.0, 0.25, 3.0
->>> for step in range(3):
-...     slope = 2 * (w - target)      # ∂L/∂w for the loss (w - 3)²
-...     w = w - eta * slope           # w ← w - η ∂L/∂w
-...     print(w)
-1.5
-2.25
-2.625
+w, eta, target = 0.0, 0.25, 3.0
+for step in range(3):
+    # ∂L/∂w for the loss (w - 3)²
+    slope = 2 * (w - target)
+    # w ← w - η ∂L/∂w
+    w = w - eta * slope
+    print(w)  # → 1.5 2.25 2.625
 ```
 
 `learn_one_weight` runs the table above; `train` runs the loop for a real
@@ -150,14 +149,15 @@ bias, and pass the total through the activation function."
 **In Python:**
 
 ```python
->>> x = [2, 3]
->>> w = [0.5, 1.0]
->>> b = 0.5
->>> def phi(z): return max(0.0, z)                 # ReLU: keep positives, zero the rest
->>> sum(w_i * x_i for w_i, x_i in zip(w, x))       # w · x = Σ_i w_i x_i
-4.0
->>> phi(sum(w_i * x_i for w_i, x_i in zip(w, x)) + b)   # y = φ(w · x + b)
-4.5
+x = [2, 3]
+w = [0.5, 1.0]
+b = 0.5
+# ReLU: keep positives, zero the rest
+def phi(z): return max(0.0, z)
+# w · x = Σ_i w_i x_i
+sum(w_i * x_i for w_i, x_i in zip(w, x))  # → 4.0
+# y = φ(w · x + b)
+phi(sum(w_i * x_i for w_i, x_i in zip(w, x)) + b)  # → 4.5
 ```
 
 **Why it matters:** every dense layer in every model is this, including the
@@ -238,17 +238,21 @@ $(-1) \times 1 \times 2 = -2$.
 **In Python:**
 
 ```python
->>> x, t, z = [2, 3], 5, 4.5
->>> y = max(0.0, z)                 # ReLU(4.5)
->>> dL_dy = 2 * (y - t)             # ∂L/∂y
->>> dy_dz = 1 if z > 0 else 0       # φ'(z): ReLU's slope
->>> [dL_dy * dy_dz * x_i for x_i in x]   # × ∂z/∂w_i = x_i, for w_1 and w_2
-[-2.0, -3.0]
->>> w = [0.5 - 0.01 * -2.0, 1.0 - 0.01 * -3.0]   # one step, learning rate 0.01
->>> b = 0.5 - 0.01 * -1.0
->>> y_new = w[0] * x[0] + w[1] * x[1] + b
->>> round(y_new, 2), round((t - y_new) ** 2, 4)  # the new output and the smaller loss
-(4.64, 0.1296)
+x, t, z = [2, 3], 5, 4.5
+# ReLU(4.5)
+y = max(0.0, z)
+# ∂L/∂y
+dL_dy = 2 * (y - t)
+# φ'(z): ReLU's slope
+dy_dz = 1 if z > 0 else 0
+# × ∂z/∂w_i = x_i, for w_1 and w_2
+[dL_dy * dy_dz * x_i for x_i in x]  # → [-2.0, -3.0]
+# one step, learning rate 0.01
+w = [0.5 - 0.01 * -2.0, 1.0 - 0.01 * -3.0]
+b = 0.5 - 0.01 * -1.0
+y_new = w[0] * x[0] + w[1] * x[1] + b
+# the new output and the smaller loss
+round(y_new, 2), round((t - y_new) ** 2, 4)  # → (4.64, 0.1296)
 ```
 
 `one_neuron_worked_example` computes every row of the table.
@@ -313,14 +317,15 @@ A single weight $W'$ would need $-W' = 0$ and $W' = 6$ at once: impossible.
 **In Python:**
 
 ```python
->>> W_1, W_2 = 3, 2
->>> def phi(z): return max(0, z)          # ReLU
->>> [(x * W_1) * W_2 for x in [-1, 1]]    # (X W_1) W_2 ...
-[-6, 6]
->>> [x * (W_1 * W_2) for x in [-1, 1]]    # ... equals X (W_1 W_2): one layer of 6
-[-6, 6]
->>> [phi(x * W_1) * W_2 for x in [-1, 1]] # φ(X W_1) W_2: no single W' gives 0 and 6
-[0, 6]
+W_1, W_2 = 3, 2
+# ReLU
+def phi(z): return max(0, z)
+# (X W_1) W_2 ...
+[(x * W_1) * W_2 for x in [-1, 1]]  # → [-6, 6]
+# ... equals X (W_1 W_2): one layer of 6
+[x * (W_1 * W_2) for x in [-1, 1]]  # → [-6, 6]
+# φ(X W_1) W_2: no single W' gives 0 and 6
+[phi(x * W_1) * W_2 for x in [-1, 1]]  # → [0, 6]
 ```
 
 ![Decision boundaries: logistic regression vs. a one-hidden-layer MLP on two moons](figures/primer.ml.neural_net.decision_boundaries.svg)
@@ -479,19 +484,24 @@ $\partial L/\partial W_1 = 1 \times -0.4469 = -0.4469$.
 **In Python:**
 
 ```python
->>> import math
->>> X, W_1, W_2, y = 1, 0.5, 2, 1
->>> z_1 = X * W_1
->>> h = math.tanh(z_1)
->>> z_2 = h * W_2
->>> y_hat = 1 / (1 + math.exp(-z_2))   # σ(z_2)
->>> dL_dz2 = y_hat - y                  # ŷ - y
->>> dL_dW2 = h * dL_dz2                 # hᵀ ∂L/∂z_2
->>> dL_dh = dL_dz2 * W_2                # ∂L/∂z_2 W_2ᵀ
->>> dL_dz1 = dL_dh * (1 - h ** 2)       # ⊙ (1 - h²), tanh's slope
->>> dL_dW1 = X * dL_dz1                 # Xᵀ ∂L/∂z_1
->>> [round(v, 4) for v in (dL_dz2, dL_dW2, dL_dh, dL_dz1, dL_dW1)]
-[-0.2841, -0.1313, -0.5682, -0.4469, -0.4469]
+import math
+X, W_1, W_2, y = 1, 0.5, 2, 1
+z_1 = X * W_1
+h = math.tanh(z_1)
+z_2 = h * W_2
+# σ(z_2)
+y_hat = 1 / (1 + math.exp(-z_2))
+# ŷ - y
+dL_dz2 = y_hat - y
+# hᵀ ∂L/∂z_2
+dL_dW2 = h * dL_dz2
+# ∂L/∂z_2 W_2ᵀ
+dL_dh = dL_dz2 * W_2
+# ⊙ (1 - h²), tanh's slope
+dL_dz1 = dL_dh * (1 - h ** 2)
+# Xᵀ ∂L/∂z_1
+dL_dW1 = X * dL_dz1
+[round(v, 4) for v in (dL_dz2, dL_dW2, dL_dh, dL_dz1, dL_dW1)]  # → [-0.2841, -0.1313, -0.5682, -0.4469, -0.4469]
 ```
 
 The hand-written gradients are checked two ways: a **numerical gradient
@@ -559,14 +569,12 @@ per epoch; 2 epochs = 26 steps.
 **In Python:**
 
 ```python
->>> import math
->>> N, B, epochs = 400, 32, 2
->>> N / B
-12.5
->>> math.ceil(N / B)            # ⌈N / B⌉: the last, smaller batch still counts
-13
->>> epochs * math.ceil(N / B)
-26
+import math
+N, B, epochs = 400, 32, 2
+N / B  # → 12.5
+# ⌈N / B⌉: the last, smaller batch still counts
+math.ceil(N / B)  # → 13
+epochs * math.ceil(N / B)  # → 26
 ```
 
 **In code:** `train` reshuffles the data every epoch, takes one plain gradient step per batch and records the loss after each epoch; `MLP.accuracy` reports the fraction of examples classified correctly.

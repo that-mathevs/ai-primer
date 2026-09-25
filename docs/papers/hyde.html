@@ -141,11 +141,13 @@
 <p class="inwords"><strong>In words:</strong> “turn the question into a vector with one encoder, the document into a vector with another, and score their similarity by the inner (dot) product.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with v<sub>q</sub> = (0.2, 0.8) and a document at (0.85, 0.35), sim = 0.2 × 0.85 + 0.8 × 0.35 = 0.17 + 0.28 = <strong>0.45</strong>.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; v_q = (0.2, 0.8)                 # enc_q(q)
-&gt;&gt;&gt; v_d = (0.85, 0.35)               # enc_d(d)
-&gt;&gt;&gt; sim = sum(a * b for a, b in zip(v_q, v_d))   # ⟨v_q, v_d⟩
-&gt;&gt;&gt; round(sim, 2)
-0.45</code></pre>
+<pre class="in-python"><code># enc_q(q)
+v_q = (0.2, 0.8)
+# enc_d(d)
+v_d = (0.85, 0.35)
+# ⟨v_q, v_d⟩
+sim = sum(a * b for a, b in zip(v_q, v_d))
+round(sim, 2)  # → 0.45</code></pre>
 <h4>Why it matters</h4>
 <p>The hard part is making enc<sub>q</sub> and enc<sub>d</sub> agree. HyDE sidesteps it by using only the document encoder: a question becomes a document first.</p>
 </section>
@@ -173,18 +175,19 @@
 <p class="inwords"><strong>In words:</strong> “ask the instruction model to write N passages answering the question, embed each with the document encoder, and average the vectors (optionally including the question's own vector); search with that average.”</p>
 <p class="inwords"><strong>With the numbers:</strong> N = 2 gives (0.8, 0.3). Counting the query too gives ((0.9 + 0.7 + 0.2)/3, (0.1 + 0.5 + 0.8)/3) = (0.6, 0.467), which still prefers the relevant passage (0.673 against 0.600), though by less.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; f_d = [(0.9, 0.1), (0.7, 0.5)]   # f(d̂_k) for the N = 2 fake passages
-&gt;&gt;&gt; f_q = (0.2, 0.8)                 # f(q)
-&gt;&gt;&gt; N = len(f_d)
-&gt;&gt;&gt; v_hat = [sum(v[i] for v in f_d) / N for i in range(2)]              # (1/N) Σ_k f(d̂_k)
-&gt;&gt;&gt; [round(x, 3) for x in v_hat]
-[0.8, 0.3]
-&gt;&gt;&gt; v_hat = [(sum(v[i] for v in f_d) + f_q[i]) / (N + 1) for i in range(2)]   # query as one more vote
-&gt;&gt;&gt; [round(x, 3) for x in v_hat]
-[0.6, 0.467]
-&gt;&gt;&gt; relevant, forum = (0.85, 0.35), (0.3, 0.9)
-&gt;&gt;&gt; [round(sum(a * b for a, b in zip(v_hat, doc)), 3) for doc in (relevant, forum)]
-[0.673, 0.6]</code></pre>
+<pre class="in-python"><code># f(d̂_k) for the N = 2 fake passages
+f_d = [(0.9, 0.1), (0.7, 0.5)]
+# f(q)
+f_q = (0.2, 0.8)
+N = len(f_d)
+# (1/N) Σ_k f(d̂_k)
+v_hat = [sum(v[i] for v in f_d) / N for i in range(2)]
+[round(x, 3) for x in v_hat]  # → [0.8, 0.3]
+# query as one more vote
+v_hat = [(sum(v[i] for v in f_d) + f_q[i]) / (N + 1) for i in range(2)]
+[round(x, 3) for x in v_hat]  # → [0.6, 0.467]
+relevant, forum = (0.85, 0.35), (0.3, 0.9)
+[round(sum(a * b for a, b in zip(v_hat, doc)), 3) for doc in (relevant, forum)]  # → [0.673, 0.6]</code></pre>
 <p>The instructions are short and task-specific. For web search the paper uses “Please write a passage to answer the question”; for scientific claims, “Please write a scientific paper passage to support/refute the claim” (Appendix A.1).</p>
 <h4>Why it matters today</h4>
 <p>The averaged vector is the paper's estimate of the <span class="t" data-tip-title="Expected value" data-tip="The average you would get over many tries. The paper writes 𝔼[v_q] = 𝔼[f(g(q, INST))]: the average embedding of the passages the model might write, estimated by sampling N of them.">expected</span> embedding of a good answer. The same “embed several samples and average” trick is used to make embeddings of noisy or short inputs more stable.</p>

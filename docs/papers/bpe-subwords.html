@@ -208,19 +208,24 @@
 <p class="inwords"><strong>In words:</strong> “the next merge is the neighbouring pair that occurs most often, counting each word as many times as it appears; the final vocabulary is the starting characters plus one new symbol per merge.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for (e, s): f(newest) · 1 + f(widest) · 1 = 6 + 3 = 9, the maximum, so (A, B) = (e, s). The paper's German BPE used M = 59,500 merges; with the few hundred starting characters, that gives the roughly 60,000-symbol vocabulary of Table 1.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; f = {"l o w &lt;/w&gt;": 5, "l o w e r &lt;/w&gt;": 2, "n e w e s t &lt;/w&gt;": 6, "w i d e s t &lt;/w&gt;": 3}   # f(w)
-&gt;&gt;&gt; counts = {}
-&gt;&gt;&gt; for w, f_w in f.items():                       # Σ over words w ...
-...     symbols = w.split()
-...     for a, b in zip(symbols, symbols[1:]):     # ... each neighbouring pair, n_ab(w) times ...
-...         counts[(a, b)] = counts.get((a, b), 0) + f_w   # ... weighted by f(w)
-&gt;&gt;&gt; counts[("e", "s")]                            # 6 + 3
-9
-&gt;&gt;&gt; max(counts, key=counts.get)                   # argmax: (s, t) also scores 9; the first found wins the tie
-('e', 's')
-&gt;&gt;&gt; V_chars, M = 500, 59_500                      # "a few hundred" characters (500 here) plus the paper's merges
-&gt;&gt;&gt; V_chars + M                                   # |V| = |V_chars| + M
-60000</code></pre>
+<pre class="in-python"><code># f(w)
+f = {"l o w &lt;/w&gt;": 5, "l o w e r &lt;/w&gt;": 2, "n e w e s t &lt;/w&gt;": 6, "w i d e s t &lt;/w&gt;": 3}
+counts = {}
+# Σ over words w ...
+for w, f_w in f.items():
+    symbols = w.split()
+    # ... each neighbouring pair, n_ab(w) times ...
+    for a, b in zip(symbols, symbols[1:]):
+        # ... weighted by f(w)
+        counts[(a, b)] = counts.get((a, b), 0) + f_w
+# 6 + 3
+counts[("e", "s")]  # → 9
+# argmax: (s, t) also scores 9; the first found wins the tie
+max(counts, key=counts.get)  # → ('e', 's')
+# "a few hundred" characters (500 here) plus the paper's merges
+V_chars, M = 500, 59_500
+# |V| = |V_chars| + M
+V_chars + M  # → 60000</code></pre>
 <p>Two practical details from the paper: pairs are never counted across word boundaries, so the algorithm can run on a word-frequency list instead of raw text; and applying the merges to new text simply replays them in the order they were learned. The paper also compares learning separate merges for each language with <strong>joint BPE</strong>, one set learned on both languages together (with Russian transliterated into Latin letters for learning), which keeps names segmented consistently on both sides.</p>
 <h4>Why it matters today</h4>
 <p>This loop, count pairs, merge the top one, repeat, is essentially how the tokenizers of GPT-style models are trained today, just on bytes instead of characters and over far more text. See the <a data-lesson="primer/ml/tokenization.html">tokenization lesson</a>, which reproduces the “low lower lowest” merges exactly.</p>
@@ -237,14 +242,14 @@
 <p class="inwords"><strong>In words:</strong> “F1 is the harmonic mean of precision and recall, high only when both are; F-beta tilts that balance: β = 3 (chrF3) treats recall as three times as important as precision, which is why β² = 9 appears in the formula.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the joint-BPE system's English→German OOV words had precision 38.6% and recall 29.8%, so F1 = 2 × 0.386 × 0.298 / (0.386 + 0.298) = 0.336, the 33.6% in Table 2. With β = 3 the same precision and recall give F<sub>3</sub> = 10 × 0.386 × 0.298 / (9 × 0.386 + 0.298) = 0.305, pulled towards the lower of the two, recall.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; P, R = 0.386, 0.298                           # precision and recall
-&gt;&gt;&gt; F1 = 2 * P * R / (P + R)
-&gt;&gt;&gt; round(F1, 3)
-0.336
-&gt;&gt;&gt; beta = 3                                      # chrF3's beta: recall counts three times as much
-&gt;&gt;&gt; F_beta = (1 + beta ** 2) * P * R / (beta ** 2 * P + R)
-&gt;&gt;&gt; round(F_beta, 3)
-0.305</code></pre>
+<pre class="in-python"><code># precision and recall
+P, R = 0.386, 0.298
+F1 = 2 * P * R / (P + R)
+round(F1, 3)  # → 0.336
+# chrF3's beta: recall counts three times as much
+beta = 3
+F_beta = (1 + beta ** 2) * P * R / (beta ** 2 * P + R)
+round(F_beta, 3)  # → 0.305</code></pre>
 </section>
 
 <section id="s4-1">

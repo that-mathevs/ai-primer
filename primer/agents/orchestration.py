@@ -156,12 +156,13 @@ Three 80% judges make an 89.6% panel.
 **In Python:**
 
 ```python
->>> from math import comb
->>> n, p = 3, 0.8
->>> P = sum(comb(n, k) * p ** k * (1 - p) ** (n - k)   # the chance exactly k voters are right ...
-...         for k in range(n // 2 + 1, n + 1))         # ... for every k from ⌊n/2⌋ + 1 to n
->>> round(P, 3)
-0.896
+from math import comb
+n, p = 3, 0.8
+# the chance exactly k voters are right ...
+P = sum(comb(n, k) * p ** k * (1 - p) ** (n - k)
+        # ... for every k from ⌊n/2⌋ + 1 to n
+        for k in range(n // 2 + 1, n + 1))
+round(P, 3)  # → 0.896
 ```
 
 ![Majority accuracy vs. number of voters](figures/primer.agents.orchestration.voting.svg)

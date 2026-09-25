@@ -75,15 +75,17 @@ two lines.
 **In Python:**
 
 ```python
->>> x = [1.0, 2.0]
->>> attn = [0.1, -0.3]                              # what Attn(LN(x)) returned
->>> x = [x_j + a_j for x_j, a_j in zip(x, attn)]    # x ← x + Attn(LN(x))
->>> [round(x_j, 1) for x_j in x]
-[1.1, 1.7]
->>> ffn = [-0.2, 0.4]                               # what FFN(LN(x)) returned
->>> x = [x_j + f_j for x_j, f_j in zip(x, ffn)]     # x ← x + FFN(LN(x))
->>> [round(x_j, 1) for x_j in x]
-[0.9, 2.1]
+x = [1.0, 2.0]
+# what Attn(LN(x)) returned
+attn = [0.1, -0.3]
+# x ← x + Attn(LN(x))
+x = [x_j + a_j for x_j, a_j in zip(x, attn)]
+[round(x_j, 1) for x_j in x]  # → [1.1, 1.7]
+# what FFN(LN(x)) returned
+ffn = [-0.2, 0.4]
+# x ← x + FFN(LN(x))
+x = [x_j + f_j for x_j, f_j in zip(x, ffn)]
+[round(x_j, 1) for x_j in x]  # → [0.9, 2.1]
 ```
 
 **In code:** `TransformerBlock` holds one `primer.ml.attention.MultiHeadAttention`, one `FeedForward` and the two norms' learned gains and biases.
@@ -153,16 +155,17 @@ both variants.
 **In Python:**
 
 ```python
->>> import math
->>> x = [1, 2, 3, 4]
->>> d = len(x)
->>> mu = sum(x) / d                                   # μ = (1/d) Σ x_j
->>> sigma2 = sum((x_j - mu) ** 2 for x_j in x) / d    # σ² = (1/d) Σ (x_j − μ)²
->>> mu, sigma2
-(2.5, 1.25)
->>> eps, gamma, beta = 1e-5, 1.0, 0.0                 # learned gain and bias start at 1 and 0
->>> [round(gamma * (x_j - mu) / math.sqrt(sigma2 + eps) + beta, 3) for x_j in x]
-[-1.342, -0.447, 0.447, 1.342]
+import math
+x = [1, 2, 3, 4]
+d = len(x)
+# μ = (1/d) Σ x_j
+mu = sum(x) / d
+# σ² = (1/d) Σ (x_j − μ)²
+sigma2 = sum((x_j - mu) ** 2 for x_j in x) / d
+mu, sigma2  # → (2.5, 1.25)
+# learned gain and bias start at 1 and 0
+eps, gamma, beta = 1e-5, 1.0, 0.0
+[round(gamma * (x_j - mu) / math.sqrt(sigma2 + eps) + beta, 3) for x_j in x]  # → [-1.342, -0.447, 0.447, 1.342]
 ```
 
 **Why it matters.** Without normalization, activations drift layer after
@@ -230,14 +233,13 @@ code.
 **In Python:**
 
 ```python
->>> import math
->>> def gelu(z):
-...     return 0.5 * z * (1 + math.tanh(math.sqrt(2 / math.pi) * (z + 0.044715 * z ** 3)))
->>> [round(gelu(z), 3) for z in (1, 10, -3, 0)]
-[0.841, 10.0, -0.004, 0.0]
->>> d = 8
->>> d * 4 * d + 4 * d + 4 * d * d + d               # W1 (8 × 32), b1, W2 (32 × 8), b2
-552
+import math
+def gelu(z):
+    return 0.5 * z * (1 + math.tanh(math.sqrt(2 / math.pi) * (z + 0.044715 * z ** 3)))
+[round(gelu(z), 3) for z in (1, 10, -3, 0)]  # → [0.841, 10.0, -0.004, 0.0]
+d = 8
+# W1 (8 × 32), b1, W2 (32 × 8), b2
+d * 4 * d + 4 * d + 4 * d * d + d  # → 552
 ```
 
 ![GELU next to ReLU](figures/primer.ml.transformer.gelu_vs_relu.svg)
@@ -315,10 +317,12 @@ up best.
 **In Python:**
 
 ```python
->>> ln_h = [1.0, -1.0]                              # LN(h) for the last position
->>> E = [[1.0, 0.0], [0.0, 1.0], [-1.0, 1.0]]       # one row per vocabulary entry
->>> [sum(h_k * e_k for h_k, e_k in zip(ln_h, row)) for row in E]   # LN(h) Eᵀ: a dot product with each row
-[1.0, -1.0, -2.0]
+# LN(h) for the last position
+ln_h = [1.0, -1.0]
+# one row per vocabulary entry
+E = [[1.0, 0.0], [0.0, 1.0], [-1.0, 1.0]]
+# LN(h) Eᵀ: a dot product with each row
+[sum(h_k * e_k for h_k, e_k in zip(ln_h, row)) for row in E]  # → [1.0, -1.0, -2.0]
 ```
 
 **In code:** `TinyGPT.hidden` runs everything up to the final norm, and `TinyGPT.n_params` counts the 27,328 weights.
@@ -430,12 +434,12 @@ biases and norms; see `gpt_param_count`).
 **In Python:**
 
 ```python
->>> L, d, V = 12, 768, 50_257
->>> blocks, table = 12 * L * d ** 2, V * d          # 12·L·d² and V·d
->>> print(f"{blocks:,} + {table:,} = {blocks + table:,}")
-84,934,656 + 38,597,376 = 123,532,032
->>> round((124_439_808 - (blocks + table)) / 124_439_808, 3)   # the share it leaves out
-0.007
+L, d, V = 12, 768, 50_257
+# 12·L·d² and V·d
+blocks, table = 12 * L * d ** 2, V * d
+print(f"{blocks:,} + {table:,} = {blocks + table:,}")  # → 84,934,656 + 38,597,376 = 123,532,032
+# the share it leaves out
+round((124_439_808 - (blocks + table)) / 124_439_808, 3)  # → 0.007
 ```
 
 ![Where GPT-2's parameters live](figures/primer.ml.transformer.param_breakdown.svg)
@@ -515,19 +519,21 @@ about 13B active per token.
 **In Python:**
 
 ```python
->>> import math
->>> r, k = [2.0, 1.0, 0.5, -1.0], 2
->>> top_k = sorted(range(len(r)), key=lambda i: r[i], reverse=True)[:k]   # TopK(r)
->>> top_k
-[0, 1]
->>> exps = [math.exp(r[i]) for i in top_k]
->>> [round(e / sum(exps), 3) for e in exps]         # g: softmax over the kept scores only
-[0.731, 0.269]
->>> d, n_experts = 16, 8
->>> expert = d * 4 * d + 4 * d + 4 * d * d + d      # one expert is one feed-forward network
->>> router = d * n_experts                          # W_r
->>> expert, n_experts * expert + router, k * expert + router   # one, all held, touched per token
-(2128, 17152, 4384)
+import math
+r, k = [2.0, 1.0, 0.5, -1.0], 2
+# TopK(r)
+top_k = sorted(range(len(r)), key=lambda i: r[i], reverse=True)[:k]
+top_k  # → [0, 1]
+exps = [math.exp(r[i]) for i in top_k]
+# g: softmax over the kept scores only
+[round(e / sum(exps), 3) for e in exps]  # → [0.731, 0.269]
+d, n_experts = 16, 8
+# one expert is one feed-forward network
+expert = d * 4 * d + 4 * d + 4 * d * d + d
+# W_r
+router = d * n_experts
+# one, all held, touched per token
+expert, n_experts * expert + router, k * expert + router  # → (2128, 17152, 4384)
 ```
 
 A router left alone tends to play favourites, overloading some experts
@@ -557,13 +563,14 @@ Collapsed onto one expert: 4 · (1 · 1) = **4.0**, the maximum
 **In Python:**
 
 ```python
->>> n = 4
->>> def balance(f, P):
-...     return n * sum(f_i * P_i for f_i, P_i in zip(f, P))   # n Σ f_i P_i
->>> balance([0.25] * n, [0.25] * n)                 # every expert gets a quarter
-1.0
->>> balance([1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])   # everything goes to expert 0
-4.0
+n = 4
+def balance(f, P):
+    # n Σ f_i P_i
+    return n * sum(f_i * P_i for f_i, P_i in zip(f, P))
+# every expert gets a quarter
+balance([0.25] * n, [0.25] * n)  # → 1.0
+# everything goes to expert 0
+balance([1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])  # → 4.0
 ```
 
 ![Tokens per expert with an untrained router](figures/primer.ml.transformer.moe_load.svg)
@@ -629,12 +636,13 @@ the roughly 3.14e23 its paper reports (`training_flops`,
 **In Python:**
 
 ```python
->>> def C_infer(N):
-...     return 2 * N                                # per generated token
->>> def C_train(N, D):
-...     return 6 * N * D                            # over all D training tokens
->>> print(f"{C_infer(7e9):.2g}  {C_train(70e9, 1e12):.2g}  {C_train(175e9, 300e9):.3g}")
-1.4e+10  4.2e+23  3.15e+23
+def C_infer(N):
+    # per generated token
+    return 2 * N
+def C_train(N, D):
+    # over all D training tokens
+    return 6 * N * D
+print(f"{C_infer(7e9):.2g}  {C_train(70e9, 1e12):.2g}  {C_train(175e9, 300e9):.3g}")  # → 1.4e+10 4.2e+23 3.15e+23
 ```
 
 **Why it matters.** These two lines let you estimate GPU-hours, serving cost

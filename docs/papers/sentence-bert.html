@@ -106,15 +106,15 @@
 <p class="inwords"><strong>In words:</strong> “each of the n sentences can be paired with the n − 1 others, and each pair is counted twice that way, so halve it.”</p>
 <p class="inwords"><strong>With the numbers:</strong> n = 10,000 gives 49,995,000 pairs. At the paper's reported 65 hours on a V100 GPU, that is 49,995,000 / 234,000 seconds ≈ 214 pairs per second (our arithmetic from the paper's figures).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; n = 10_000
-&gt;&gt;&gt; pairs = n * (n - 1) // 2          # pairs = n (n − 1) / 2
-&gt;&gt;&gt; pairs
-49995000
-&gt;&gt;&gt; seconds = 65 * 60 * 60            # the paper's 65 hours
-&gt;&gt;&gt; seconds
-234000
-&gt;&gt;&gt; round(pairs / seconds)            # pairs scored per second
-214</code></pre>
+<pre class="in-python"><code>n = 10_000
+# pairs = n (n − 1) / 2
+pairs = n * (n - 1) // 2
+pairs  # → 49995000
+# the paper's 65 hours
+seconds = 65 * 60 * 60
+seconds  # → 234000
+# pairs scored per second
+round(pairs / seconds)  # → 214</code></pre>
 <div class="play" id="cost-demo">
   <div class="row2">
     <label>Collection size n = <strong id="cd-n-v"></strong><input type="range" id="cd-n" min="2" max="8" step="0.05" value="4"></label>
@@ -169,11 +169,13 @@
 <p class="inwords"><strong>In words:</strong> “the sentence vector is the average of all the token vectors BERT produced.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for the first column of the demo, (0.2 + 0.9 + 0.7 + 0.1 + 0.6) / 5 = 0.50.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; h = [0.2, 0.9, 0.7, 0.1, 0.6]     # the first number of each token vector h_i
-&gt;&gt;&gt; L = len(h)                        # L = 5 tokens
-&gt;&gt;&gt; u = sum(h) / L                    # u = (1/L) Σ h_i
-&gt;&gt;&gt; print(f"{u:.2f}")
-0.50</code></pre>
+<pre class="in-python"><code># the first number of each token vector h_i
+h = [0.2, 0.9, 0.7, 0.1, 0.6]
+# L = 5 tokens
+L = len(h)
+# u = (1/L) Σ h_i
+u = sum(h) / L
+print(f"{u:.2f}")  # → 0.50</code></pre>
 </section>
 
 <section id="s3-siamese">
@@ -240,15 +242,16 @@
 <p class="inwords"><strong>In words:</strong> “glue the two sentence vectors and their element-wise distance into one long vector, multiply by a learned matrix to get one score per label, and turn the scores into probabilities.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with 2-number vectors u = (1, 2) and v = (2, 1), |u − v| = (1, 1) and the glued vector is (1, 2, 2, 1, 1, 1), six numbers. For BERT-base, n = 768 and k = 3 labels, so W<sub>t</sub> holds 3 × 768 × 3 = 6,912 learned numbers, tiny next to BERT's 110 million. The loss is <span class="t" data-t="cross-entropy">cross-entropy</span> on the correct label.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; u, v = [1, 2], [2, 1]
-&gt;&gt;&gt; diff = [abs(ui - vi) for ui, vi in zip(u, v)]   # |u − v|
-&gt;&gt;&gt; diff
-[1, 1]
-&gt;&gt;&gt; u + v + diff                      # (u, v, |u − v|) glued into one list
-[1, 2, 2, 1, 1, 1]
-&gt;&gt;&gt; n, k = 768, 3                     # BERT-base width, number of labels
-&gt;&gt;&gt; 3 * n * k                         # W_t turns 3n numbers into k scores
-6912</code></pre>
+<pre class="in-python"><code>u, v = [1, 2], [2, 1]
+# |u − v|
+diff = [abs(ui - vi) for ui, vi in zip(u, v)]
+diff  # → [1, 1]
+# (u, v, |u − v|) glued into one list
+u + v + diff  # → [1, 2, 2, 1, 1, 1]
+# BERT-base width, number of labels
+n, k = 768, 3
+# W_t turns 3n numbers into k scores
+3 * n * k  # → 6912</code></pre>
 <h4>2. Regression (for similarity scores)</h4>
 <p><strong>Everyday picture:</strong> show the model two sentences and a human's similarity rating, and train it so the cosine of the two cards matches the rating.</p>
 <div class="eq" data-tex="\htmlData{sym=Lmse}{\mathcal{L}} = \big(\htmlData{sym=cosuv}{\cos(u, v)} - \htmlData{sym=ygold}{y}\big)^2" data-fallback="L = (cos(u, v) − y)²"></div>
@@ -256,15 +259,17 @@
 <p class="inwords"><strong>In words:</strong> “the squared gap between the predicted similarity and the human rating” (<span class="t" data-t="mean squared error">mean squared error</span> when averaged over pairs).</p>
 <p class="inwords"><strong>With the numbers (illustrative):</strong> cos((1, 2), (2, 1)) = 4 / (√5 × √5) = 0.8. If the rating, rescaled to the same range, is 0.9, the loss is (0.8 − 0.9)² = 0.01.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; u, v = [1, 2], [2, 1]
-&gt;&gt;&gt; dot = sum(ui * vi for ui, vi in zip(u, v))      # 1×2 + 2×1 = 4
-&gt;&gt;&gt; cos = dot / (math.hypot(*u) * math.hypot(*v))   # 4 / (√5 × √5)
-&gt;&gt;&gt; round(cos, 2)
-0.8
-&gt;&gt;&gt; y = 0.9                           # the human rating, rescaled
-&gt;&gt;&gt; round((cos - y) ** 2, 2)          # L = (cos(u, v) − y)²
-0.01</code></pre>
+<pre class="in-python"><code>import math
+u, v = [1, 2], [2, 1]
+# 1×2 + 2×1 = 4
+dot = sum(ui * vi for ui, vi in zip(u, v))
+# 4 / (√5 × √5)
+cos = dot / (math.hypot(*u) * math.hypot(*v))
+round(cos, 2)  # → 0.8
+# the human rating, rescaled
+y = 0.9
+# L = (cos(u, v) − y)²
+round((cos - y) ** 2, 2)  # → 0.01</code></pre>
 <h4>3. Triplet (for anchor, positive, negative)</h4>
 <p><strong>Everyday picture:</strong> a sentence (the anchor), one that should be near it (the positive) and one that should be far (the negative). The rule is not “positive close, negative far” in absolute terms, but “the positive must be closer than the negative by at least a safety margin”.</p>
 <div class="eq" data-tex="\htmlData{sym=Ltrip}{\mathcal{L}} = \htmlData{sym=maxz}{\max}\big(\htmlData{sym=dap}{\|s_a - s_p\|} - \htmlData{sym=dan}{\|s_a - s_n\|} + \htmlData{sym=eps}{\epsilon},\ 0\big)" data-fallback="L = max(‖s_a − s_p‖ − ‖s_a − s_n‖ + ε, 0)"></div>
@@ -272,15 +277,16 @@
 <p class="inwords"><strong>In words:</strong> “if the positive is not at least ε closer to the anchor than the negative, pay the shortfall; otherwise pay nothing.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with ε = 1 (the paper's value), d(a, p) = 0.5 and d(a, n) = 1.2 give 0.5 − 1.2 + 1 = 0.3 of loss. Move the negative out to 1.6 and the loss is max(−0.1, 0) = 0: nothing left to learn from this triplet.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; eps = 1                           # ε, the safety margin
-&gt;&gt;&gt; d_ap, d_an = 0.5, 1.2             # ‖s_a − s_p‖ and ‖s_a − s_n‖
-&gt;&gt;&gt; round(max(d_ap - d_an + eps, 0), 1)
-0.3
-&gt;&gt;&gt; d_an = 1.6                        # move the negative further out
-&gt;&gt;&gt; round(d_ap - d_an + eps, 1)
--0.1
-&gt;&gt;&gt; max(d_ap - d_an + eps, 0)         # nothing left to learn
-0</code></pre>
+<pre class="in-python"><code># ε, the safety margin
+eps = 1
+# ‖s_a − s_p‖ and ‖s_a − s_n‖
+d_ap, d_an = 0.5, 1.2
+round(max(d_ap - d_an + eps, 0), 1)  # → 0.3
+# move the negative further out
+d_an = 1.6
+round(d_ap - d_an + eps, 1)  # → -0.1
+# nothing left to learn
+max(d_ap - d_an + eps, 0)  # → 0</code></pre>
 <div class="play" id="trip-demo">
   <svg id="trip-svg" viewBox="0 0 440 300" role="img" aria-label="Drag the positive and negative sentences around the anchor"></svg>
   <p class="readout" id="trip-readout"></p>
@@ -311,18 +317,17 @@
 <p class="inwords"><strong>In words:</strong> “1 minus a penalty that grows with how much the two rankings disagree; 1 means identical order, 0 means no relation, −1 means reversed.”</p>
 <p class="inwords"><strong>With the numbers:</strong> Σd² = 0 + 1 + 1 + 0 = 2, m = 4, so ρ = 1 − 12 / 60 = 0.8. The paper reports ρ × 100, so this would be “80”.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; human_rank = [1, 2, 3, 4]         # from the scores 4.8, 3.9, 2.0, 0.5
-&gt;&gt;&gt; cosines = [0.91, 0.72, 0.80, 0.30]
-&gt;&gt;&gt; model_rank = [sorted(cosines, reverse=True).index(c) + 1 for c in cosines]
-&gt;&gt;&gt; model_rank
-[1, 3, 2, 4]
-&gt;&gt;&gt; d = [h - m for h, m in zip(human_rank, model_rank)]
-&gt;&gt;&gt; d
-[0, -1, 1, 0]
-&gt;&gt;&gt; m = len(d)
-&gt;&gt;&gt; rho = 1 - 6 * sum(di**2 for di in d) / (m * (m**2 - 1))   # 1 − 12 / 60
-&gt;&gt;&gt; rho
-0.8</code></pre>
+<pre class="in-python"><code># from the scores 4.8, 3.9, 2.0, 0.5
+human_rank = [1, 2, 3, 4]
+cosines = [0.91, 0.72, 0.80, 0.30]
+model_rank = [sorted(cosines, reverse=True).index(c) + 1 for c in cosines]
+model_rank  # → [1, 3, 2, 4]
+d = [h - m for h, m in zip(human_rank, model_rank)]
+d  # → [0, -1, 1, 0]
+m = len(d)
+# 1 − 12 / 60
+rho = 1 - 6 * sum(di**2 for di in d) / (m * (m**2 - 1))
+rho  # → 0.8</code></pre>
 <h3 class="rung">4.1 Without any similarity training</h3>
 <div class="play" id="sts-bars"></div>
 <p class="reading"><strong>Reading it:</strong> each bar is a method's average Spearman correlation (× 100) over seven STS datasets, none of which the models were trained on. The grey bars are the obvious shortcuts: plain BERT's [CLS] vector scores 29.2 and averaged BERT token vectors 54.8, both <em>below</em> averaged GloVe word vectors (61.3). The coloured bars are purpose-built sentence encoders; SBERT (74.9 base, 76.6 large) beats InferSent (65.0) and Universal Sentence Encoder (71.2). Selected averages from Table 1 of Reimers and Gurevych (2019).</p>

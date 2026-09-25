@@ -92,13 +92,13 @@ exactly what the human did.
 **In Python:**
 
 ```python
->>> a = ["refund", "refund"] + ["reply"] * 5 + ["refund", "refund", "refund"]
->>> h = ["refund", "escalate"] + ["reply"] * 5 + ["refund", "escalate", "refund"]
->>> indicators = [1 if a_i == h_i else 0 for a_i, h_i in zip(a, h)]   # 𝟙[a_i = h_i]
->>> indicators
-[1, 0, 1, 1, 1, 1, 1, 1, 0, 1]
->>> sum(indicators) / len(indicators)     # (1/N) Σ over i
-0.8
+a = ["refund", "refund"] + ["reply"] * 5 + ["refund", "refund", "refund"]
+h = ["refund", "escalate"] + ["reply"] * 5 + ["refund", "escalate", "refund"]
+# 𝟙[a_i = h_i]
+indicators = [1 if a_i == h_i else 0 for a_i, h_i in zip(a, h)]
+indicators  # → [1, 0, 1, 1, 1, 1, 1, 1, 0, 1]
+# (1/N) Σ over i
+sum(indicators) / len(indicators)  # → 0.8
 ```
 
 ```mermaid
@@ -194,11 +194,10 @@ the allowed margin below the current version's.
 **In Python:**
 
 ```python
->>> p_canary, p_control, delta = 0.90, 0.95, 0.02
->>> round(p_control - delta, 2)
-0.93
->>> p_canary < p_control - delta          # roll back?
-True
+p_canary, p_control, delta = 0.90, 0.95, 0.02
+round(p_control - delta, 2)  # → 0.93
+# roll back?
+p_canary < p_control - delta  # → True
 ```
 
 Users are assigned to the canary by hashing their id into one of 100
@@ -288,13 +287,15 @@ more actions are allowed.
 **In Python:**
 
 ```python
->>> C, r = 5, 1                           # capacity, tokens per second
->>> def b(t, t_0, b_t0):
-...     return min(C, b_t0 + r * (t - t_0))   # what was left plus the drip, capped at C
->>> b(2, 0, 0)                            # 2 s after the burst emptied the jar
-2
->>> b(60, 0, 0)                           # a long wait refills only to capacity
-5
+# capacity, tokens per second
+C, r = 5, 1
+def b(t, t_0, b_t0):
+    # what was left plus the drip, capped at C
+    return min(C, b_t0 + r * (t - t_0))
+# 2 s after the burst emptied the jar
+b(2, 0, 0)  # → 2
+# a long wait refills only to capacity
+b(60, 0, 0)  # → 5
 ```
 
 ![Tokens in the bucket during a burst of requests](figures/primer.agents.deployment.token_bucket.svg)
@@ -351,25 +352,28 @@ doesn't match $h_1$, so the break is again reported at position 1.
 **In Python:**
 
 ```python
->>> import hashlib
->>> def seal(prev, entry):
-...     return hashlib.sha256((prev + entry).encode()).hexdigest()   # SHA256(h_{i-1} ‖ entry_i)
->>> log, prev = [], "0" * 64              # h_0
->>> for entry in ["refund A200 40", "refund A201 15", "escalate A300"]:
-...     prev = seal(prev, entry)
-...     log.append((entry, prev))         # each entry is stored with its h_i
->>> def verify(log):
-...     prev = "0" * 64
-...     for position, (entry, h_i) in enumerate(log):
-...         if seal(prev, entry) != h_i:
-...             return position           # the first broken link
-...         prev = h_i
->>> verify(log) is None
-True
->>> verify([log[0], ("refund A201 1500", log[1][1]), log[2]])   # entry 2's amount changed
-1
->>> verify([log[0], log[2]])                                    # entry 2 deleted
-1
+import hashlib
+def seal(prev, entry):
+    # SHA256(h_{i-1} ‖ entry_i)
+    return hashlib.sha256((prev + entry).encode()).hexdigest()
+# h_0
+log, prev = [], "0" * 64
+for entry in ["refund A200 40", "refund A201 15", "escalate A300"]:
+    prev = seal(prev, entry)
+    # each entry is stored with its h_i
+    log.append((entry, prev))
+def verify(log):
+    prev = "0" * 64
+    for position, (entry, h_i) in enumerate(log):
+        if seal(prev, entry) != h_i:
+            # the first broken link
+            return position
+        prev = h_i
+verify(log) is None  # → True
+# entry 2's amount changed
+verify([log[0], ("refund A201 1500", log[1][1]), log[2]])  # → 1
+# entry 2 deleted
+verify([log[0], log[2]])  # → 1
 ```
 
 ```mermaid

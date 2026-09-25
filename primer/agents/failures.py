@@ -66,11 +66,11 @@ ten-step task at 95% per step fails four times in ten.
 **In Python:**
 
 ```python
->>> p, n = 0.95, 10
->>> round(p ** n, 3)                      # p multiplied by itself n times
-0.599
->>> round(1 - p ** n, 1)                  # fails about four times in ten
-0.4
+p, n = 0.95, 10
+# p multiplied by itself n times
+round(p ** n, 3)  # → 0.599
+# fails about four times in ten
+round(1 - p ** n, 1)  # → 0.4
 ```
 
 ```mermaid
@@ -134,9 +134,9 @@ $d_1$ = min(10, 0.1 × 2) = 0.2 s.
 **In Python:**
 
 ```python
->>> b, D_max = 0.1, 10
->>> [min(D_max, b * 2 ** k) for k in range(2)]   # d_0 and d_1
-[0.1, 0.2]
+b, D_max = 0.1, 10
+# d_0 and d_1
+[min(D_max, b * 2 ** k) for k in range(2)]  # → [0.1, 0.2]
 ```
 
 ```mermaid

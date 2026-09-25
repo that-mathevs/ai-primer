@@ -98,14 +98,15 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 <p class="inwords"><strong>In words:</strong> “one key and one value, each as wide as the model, for every layer, at so many bytes per number.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 2 × 5,120 × 40 × 2 = 819,200 bytes ≈ <strong>800 KB per token</strong>. A single request at the model's maximum length of 2,048 tokens needs 2,048 × 800 KB ≈ <strong>1.6 GB</strong>. On a 40 GB A100, the paper finds about 65% of memory goes to the weights and close to 30% to KV caches, so a few badly packed requests can fill it.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; h, L, b = 5120, 40, 2         # hidden size, layers, bytes per number
-&gt;&gt;&gt; per_token = 2 * h * L * b     # one key and one value, for every layer
-&gt;&gt;&gt; per_token
-819200
-&gt;&gt;&gt; per_token / 1024              # in KB
-800.0
-&gt;&gt;&gt; round(2048 * 800 / 1e6, 1)    # a full 2,048-token request: KB to GB
-1.6</code></pre>
+<pre class="in-python"><code># hidden size, layers, bytes per number
+h, L, b = 5120, 40, 2
+# one key and one value, for every layer
+per_token = 2 * h * L * b
+per_token  # → 819200
+# in KB
+per_token / 1024  # → 800.0
+# a full 2,048-token request: KB to GB
+round(2048 * 800 / 1e6, 1)  # → 1.6</code></pre>
 <h3 class="rung">Why it matters</h3>
 <p>Throughput is capped by how many requests' KV caches fit on the GPU at once. Wasting that memory directly wastes money. The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> does the same arithmetic for a modern model shape.</p>
 </section>
@@ -148,12 +149,12 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 <p class="inwords"><strong>In words:</strong> “exactly ordinary attention, just organized by block: score the query against each block of keys, normalize by the total over all blocks so far, and blend each block of values by its share.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the query for token i = 40 with block size B = 16 needs ⌈40 / 16⌉ = 3 blocks: tokens 1 to 16, 17 to 32 and 33 to 40 (a partly filled block). The kernel fetches those three blocks from wherever they sit in memory; the result is identical to attending over one contiguous array.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; import math
-&gt;&gt;&gt; i, B = 40, 16
-&gt;&gt;&gt; math.ceil(i / B)              # ⌈i/B⌉ blocks to visit
-3
-&gt;&gt;&gt; [(j * B + 1, min((j + 1) * B, i)) for j in range(math.ceil(i / B))]   # tokens in each
-[(1, 16), (17, 32), (33, 40)]</code></pre>
+<pre class="in-python"><code>import math
+i, B = 40, 16
+# ⌈i/B⌉ blocks to visit
+math.ceil(i / B)  # → 3
+# tokens in each
+[(j * B + 1, min((j + 1) * B, i)) for j in range(math.ceil(i / B))]  # → [(1, 16), (17, 32), (33, 40)]</code></pre>
 <h4>Why it matters</h4>
 <p>The maths does not change at all, which is why vLLM's outputs match other systems. What changes is the memory layout, which needs a new GPU kernel that can gather keys and values from scattered blocks.</p>
 </section>

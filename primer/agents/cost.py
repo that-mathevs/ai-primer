@@ -61,11 +61,10 @@ input at full rate, plus output at the output rate, all per million.
 **In Python:**
 
 ```python
->>> n_in, c, n_out = 10_000, 8_000, 500
->>> p_in, p_out, rho = 5, 25, 0.1
->>> cost = (c * rho * p_in + (n_in - c) * p_in + n_out * p_out) / 10**6
->>> round(cost, 4)
-0.0265
+n_in, c, n_out = 10_000, 8_000, 500
+p_in, p_out, rho = 5, 25, 0.1
+cost = (c * rho * p_in + (n_in - c) * p_in + n_out * p_out) / 10**6
+round(cost, 4)  # → 0.0265
 ```
 
 Two facts fall out: output tokens cost several times more than input (ask
@@ -282,17 +281,17 @@ or a bad deploy.
 **In Python:**
 
 ```python
->>> import statistics
->>> history = [1000, 1100, 900, 1050, 950, 1000]
->>> mu = statistics.mean(history)
->>> sigma = statistics.stdev(history)     # divides by 6 - 1, as above
->>> mu, round(sigma, 1)
-(1000, 70.7)
->>> z = 3
->>> round(mu + z * sigma)                 # the alert line
-1212
->>> 10_000 > mu + z * sigma               # alert?
-True
+import statistics
+history = [1000, 1100, 900, 1050, 950, 1000]
+mu = statistics.mean(history)
+# divides by 6 - 1, as above
+sigma = statistics.stdev(history)
+mu, round(sigma, 1)  # → (1000, 70.7)
+z = 3
+# the alert line
+round(mu + z * sigma)  # → 1212
+# alert?
+10_000 > mu + z * sigma  # → True
 ```
 
 **In code:** `TaskBudget.charge` counts each step's tokens and raises
@@ -333,16 +332,16 @@ model wins. With human cleanup, the small model costs 0.002 + 0.40 × 2.00 =
 **In Python:**
 
 ```python
->>> def per_success(c, p):
-...     return c / p                      # retry until it works
->>> def per_task(c, p, h=2.00):
-...     return c + (1 - p) * h            # a person fixes each failure
->>> round(per_success(0.002, 0.60), 4), round(per_success(0.010, 0.95), 4)
-(0.0033, 0.0105)
->>> round(per_task(0.002, 0.60), 3), round(per_task(0.010, 0.95), 3)
-(0.802, 0.11)
->>> round(per_task(0.002, 0.60) / per_task(0.010, 0.95))   # small vs. large, with cleanup
-7
+def per_success(c, p):
+    # retry until it works
+    return c / p
+def per_task(c, p, h=2.00):
+    # a person fixes each failure
+    return c + (1 - p) * h
+round(per_success(0.002, 0.60), 4), round(per_success(0.010, 0.95), 4)  # → (0.0033, 0.0105)
+round(per_task(0.002, 0.60), 3), round(per_task(0.010, 0.95), 3)  # → (0.802, 0.11)
+# small vs. large, with cleanup
+round(per_task(0.002, 0.60) / per_task(0.010, 0.95))  # → 7
 ```
 
 ![Cost per task for a small and a large model, with and without human cleanup](figures/primer.agents.cost.unit_economics.svg)

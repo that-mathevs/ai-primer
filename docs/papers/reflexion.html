@@ -157,13 +157,17 @@
 <p class="inwords"><strong>In words:</strong> “in each trial, the actor (a fixed model reading its memory) produces a trajectory; the evaluator scores it; the reflector writes a lesson from the trajectory and score; the lesson is appended to memory, which keeps only the most recent few; repeat until the evaluator says pass or trials run out.”</p>
 <p class="inwords"><strong>With the numbers:</strong> in the step-through below with Ω = 2, trial 1 fails (r₁ = 0), producing sr₁; memory = [sr₁]. Trial 2 fails (r₂ = 0), producing sr₂; memory = [sr₁, sr₂]. Trial 3 reads both lessons and passes (r₃ = 1).</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; Omega = 2                    # Ω: how many lessons memory keeps
-&gt;&gt;&gt; mem = []
-&gt;&gt;&gt; for t, r_t in [(1, 0), (2, 0)]:     # trials 1 and 2 fail (r_t = 0)
-...     sr_t = f"sr{t}"                 # the reflector's lesson from trial t
-...     mem = (mem + [sr_t])[-Omega:]   # mem ← mem + [sr_t], keep the last Ω
-&gt;&gt;&gt; mem                          # what the actor reads in trial 3
-['sr1', 'sr2']</code></pre>
+<pre class="in-python"><code># Ω: how many lessons memory keeps
+Omega = 2
+mem = []
+# trials 1 and 2 fail (r_t = 0)
+for t, r_t in [(1, 0), (2, 0)]:
+    # the reflector's lesson from trial t
+    sr_t = f"sr{t}"
+    # mem ← mem + [sr_t], keep the last Ω
+    mem = (mem + [sr_t])[-Omega:]
+# what the actor reads in trial 3
+mem  # → ['sr1', 'sr2']</code></pre>
 
 <h4>Why reflection beats plain retrying</h4>
 <p>If every attempt were an independent coin flip with success probability p, the chance of at least one success in T attempts would be:</p>
@@ -172,9 +176,9 @@
 <p class="inwords"><strong>In words:</strong> “the chance of failing every time is (1 − p) multiplied by itself T times; everything else is at least one success.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with p = 0.6: one try 0.6, two tries 1 − 0.4² = 0.84, three tries 1 − 0.4³ = 0.936. But this assumes the failures are random. The paper found that baselines retrying at temperature 0.7 on HotpotQA solved <em>none</em> of their first-trial failures in later trials: the failures were systematic, not bad luck. Reflection is what changes p between trials.</p>
 <p class="inwords"><strong>In Python:</strong></p>
-<pre class="in-python"><code>&gt;&gt;&gt; p = 0.6
-&gt;&gt;&gt; [round(1 - (1 - p) ** T, 3) for T in (1, 2, 3)]   # P(success within T)
-[0.6, 0.84, 0.936]</code></pre>
+<pre class="in-python"><code>p = 0.6
+# P(success within T)
+[round(1 - (1 - p) ** T, 3) for T in (1, 2, 3)]  # → [0.6, 0.84, 0.936]</code></pre>
 </section>
 
 <section id="s3-try">
