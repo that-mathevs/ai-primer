@@ -15,12 +15,14 @@ Three checks, all offline:
 7. Every lesson a paper companion's script links to exists.
 8. No link has an empty address (it would only reload the page).
 9. The specification page lists the whole suite, and every count the site states matches it.
+10. Nothing renders broken: no indented lines collapsed into one paragraph, no raw Markdown.
 
 Links built by JavaScript at runtime are checked by the pages themselves.
 """
 
 from __future__ import annotations
 
+import html as htmllib
 import posixpath
 import re
 import subprocess
@@ -205,6 +207,36 @@ def spec_count_problems(site: Path = SITE) -> list[str]:
     return problems
 
 
+def _visible_text(page_html: str) -> str:
+    """The page's text as a reader sees it, without code, source listings, scripts, styles or math."""
+    html = re.sub(r"<(script|style|pre|code|textarea)\b.*?</\1>", " ", page_html, flags=re.S | re.I)
+    text = htmllib.unescape(re.sub(r"<[^>]+>", " ", html))
+    # Math is typeset in the browser from TeX, where * and _ mean something else.
+    return re.sub(r"\$\$.*?\$\$|\$[^$\n]+\$|\\\(.*?\\\)|\\\[.*?\\\]", " ", text, flags=re.S)
+
+
+def collapsed_blocks(page_html: str) -> list[str]:
+    """Paragraphs whose text has indented lines: a list or diagram that rendered as one run-on paragraph."""
+    found = []
+    for para in re.findall(r"<p\b[^>]*>(.*?)</p>", page_html, re.S):
+        text = htmllib.unescape(re.sub(r"<[^>]+>", "", para))
+        if re.search(r"\n {4,}\S", text):
+            found.append(" ".join(text.split()))
+    return found
+
+
+def raw_markdown(page_html: str) -> list[str]:
+    """Markdown that reached the reader unconverted: *emphasis*, **bold**, `code`, [text](link)."""
+    text = _visible_text(page_html)
+    patterns = [
+        r"\*\*[^*\n]+\*\*",
+        r"(?<![\w*])\*(?!\s)[^*\n]*[A-Za-z][^*\n]*?(?<!\s)\*(?![\w*])",
+        r"`[^`\n]+`",
+        r"\[[^\]\n]+\]\([^)\s]+\)",
+    ]
+    return [m for p in patterns for m in re.findall(p, text)]
+
+
 def main() -> int:
     if not SITE.exists():
         print("docs/html doesn't exist yet: run `make docs` first")
@@ -263,7 +295,17 @@ def main() -> int:
     print(f"test counts that don't match the suite: {len(counts)}")
     for problem in counts:
         print(f"  ✗ {problem}")
-    return 1 if bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties or counts else 0
+
+    rendering: dict[str, list[str]] = {}
+    for page in sorted(SITE.rglob("*.html")):
+        html = page.read_text(errors="ignore")
+        if problems := collapsed_blocks(html) + raw_markdown(html):
+            rendering[page.relative_to(SITE).as_posix()] = problems
+    print(f"broken rendering (collapsed lists or diagrams, raw Markdown): {sum(map(len, rendering.values()))}")
+    for page, problems in rendering.items():
+        for problem in problems[:5]:
+            print(f"  ✗ {page}: {problem[:110]}")
+    return 1 if bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties or counts or rendering else 0
 
 
 if __name__ == "__main__":

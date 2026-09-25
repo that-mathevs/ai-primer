@@ -330,7 +330,10 @@ def step_success(p: float, detect: float, retries: int) -> float:
 
     Attempt 1 succeeds with p. It fails *and is noticed* with (1-p)·detect, which
     buys another attempt. A failure nobody notices counts as a silent failure.
-        P = p · (1 + q + q² + ... + q^retries),  where q = (1-p)·detect
+
+    ```text
+    P = p · (1 + q + q² + ... + q^retries),  where q = (1-p)·detect
+    ```
     """
     q = (1 - p) * detect
     return p * sum(q**i for i in range(retries + 1))

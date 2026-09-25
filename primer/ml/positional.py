@@ -603,11 +603,16 @@ def word_vector(word: str, d: int = D_DEMO) -> np.ndarray:
 def encode_sentence(sentence: str, scheme: str = "none", causal: bool = False) -> np.ndarray:
     """Run one attention layer over `sentence` with a given position scheme.
 
-    scheme:
-        "none":       embeddings only; attention sees an unordered set.
-        "sinusoidal": add the sinusoidal code to each embedding (2017 transformer).
-        "rope":       rotate q and k by position inside attention (modern LLMs).
-    Returns the (n_words, d) output vectors.
+    Args:
+        sentence: the words, separated by spaces.
+        scheme: how position gets in. "none": embeddings only, so attention
+            sees an unordered set. "sinusoidal": add the sinusoidal code to
+            each embedding (the 2017 transformer). "rope": rotate q and k by
+            position inside attention (modern LLMs).
+        causal: when True, each word attends only to itself and earlier words.
+
+    Returns:
+        The (n_words, d) output vectors.
     """
     X = np.stack([word_vector(w) for w in sentence.split()])  # (n, d)
     n = X.shape[0]

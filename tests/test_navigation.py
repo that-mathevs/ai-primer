@@ -788,3 +788,23 @@ class TestTheSpecificationIsPublished:
         (tmp_path / "spec.html").write_text("<h1>The specification: 4 tests</h1>")
         (tmp_path / "index.html").write_text("pinned down by a suite of 1,200 tests")
         assert spec_count_problems(tmp_path) == ["index.html states ['1,200'], the suite has 4"]
+
+
+class TestNothingRendersBroken:
+    def test_given_indented_lines_that_collapsed_into_one_paragraph_the_site_check_reports_them(self):
+        from tools.sitecheck import collapsed_blocks
+
+        page = "<p>scheme:\n    \"none\": embeddings only\n    \"rope\": rotate q and k</p><pre>  indented is fine here</pre>"
+        assert collapsed_blocks(page) == ['scheme: "none": embeddings only "rope": rotate q and k']
+
+    def test_given_markdown_left_raw_in_rendered_text_the_site_check_reports_it(self):
+        from tools.sitecheck import raw_markdown
+
+        page = "<li>Vaswani et al., *Attention Is All You Need* (2017)</li><p>fine: 2 * 3 * 4</p><code>*args</code>"
+        assert raw_markdown(page) == ["*Attention Is All You Need*"]
+
+    def test_given_the_home_page_paper_titles_render_their_emphasis(self):
+        from tools.docsite import render_home
+
+        home = render_home()
+        assert "<em>Attention Is All You Need</em>" in home and "*Attention Is All You Need*" not in home

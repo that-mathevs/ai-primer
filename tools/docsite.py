@@ -743,17 +743,23 @@ def part_intro(part_key: str) -> str:
     intro = doc.split("## Reading order")[0].strip()
     intro = re.sub(r"^# .*\n", "", intro).strip()
 
-    def inline(text: str) -> str:
-        text = htmllib.escape(" ".join(text.split()), quote=False)
-        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    return "".join(f'<p class="blurb">{inline_markdown(para, package)}</p>' for para in re.split(r"\n\s*\n", intro) if para.strip())
 
-        def code(m: re.Match) -> str:
-            target = _code_target(m.group(1), package, "index.html", "") if _CODE_NAME.fullmatch(m.group(1)) else None
-            return f'<code><a href="{target}">{m.group(1)}</a></code>' if target else f"<code>{m.group(1)}</code>"
 
-        return re.sub(r"`([^`]+)`", code, text)
+def inline_markdown(text: str, module: str = "primer") -> str:
+    """Markdown emphasis, bold and code to HTML, for text the home page takes from Markdown sources.
 
-    return "".join(f'<p class="blurb">{inline(para)}</p>' for para in re.split(r"\n\s*\n", intro) if para.strip())
+    Code that names something in this repository becomes a link, as it does on every page.
+    """
+    text = htmllib.escape(" ".join(text.split()), quote=False)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"(?<![\w*])\*(?!\s)([^*]+?)(?<!\s)\*(?![\w*])", r"<em>\1</em>", text)
+
+    def code(m: re.Match) -> str:
+        target = _code_target(m.group(1), module, "index.html", "") if _CODE_NAME.fullmatch(m.group(1)) else None
+        return f'<code><a href="{target}">{m.group(1)}</a></code>' if target else f"<code>{m.group(1)}</code>"
+
+    return re.sub(r"`([^`]+)`", code, text)
 
 
 def render_home(tests: int | None = None) -> str:
@@ -781,8 +787,8 @@ def render_home(tests: int | None = None) -> str:
     )
     paper_rows = "".join(
         "<li>"
-        + (f'<a href="papers/{p["slug"]}.html">{p["title"]}</a> <span class="tag">annotated</span>' if p["exists"]
-           else f'<a href="{p["sources"][0]}">{p["title"]}</a> <span class="tag soon">companion coming</span>')
+        + (f'<a href="papers/{p["slug"]}.html">{inline_markdown(p["title"])}</a> <span class="tag">annotated</span>' if p["exists"]
+           else f'<a href="{p["sources"][0]}">{inline_markdown(p["title"])}</a> <span class="tag soon">companion coming</span>')
         + '<span class="o">Built in: '
         + ", ".join(f'<a href="{_page(m)}">{htmllib.escape(lesson_titles.get(m, m))}</a>' for m in p["lessons"])
         + "</span></li>"
@@ -911,7 +917,7 @@ def build() -> int:
         pdoc = ["uvx", "--with", "numpy", "--with", "matplotlib", "pdoc"]
     subprocess.run(
         pdoc
-        + ["primer", "--docformat", "markdown", "--math", "--mermaid",
+        + ["primer", "--docformat", "google", "--math", "--mermaid",
            "--footer-text", "primer: how modern AI works, built from scratch", "-o", str(SITE)],
         cwd=ROOT, check=True, env={**os.environ, "PYTHONPATH": str(ROOT)},
     )

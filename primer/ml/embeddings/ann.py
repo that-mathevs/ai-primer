@@ -881,10 +881,10 @@ class IVFIndex(_Index):
 class ProductQuantizer:
     """Splits d dims into m sub-spaces, each with a 2^nbits-entry codebook.
 
-    encode: vector -> m small integer codes (1 byte each at nbits=8).
-    decode: codes -> the concatenation of the chosen centroids (lossy).
-    lookup tables: for a query, table[j, c] = q_j · centroid_j[c], so the
-        approximate dot product with any code is sum_j table[j, code_j].
+    - `ProductQuantizer.encode`: vector -> m small integer codes (1 byte each at nbits=8).
+    - `ProductQuantizer.decode`: codes -> the concatenation of the chosen centroids (lossy).
+    - `ProductQuantizer.lookup_table`: for a query, table[j, c] = q_j · centroid_j[c],
+      so the approximate dot product with any code is sum_j table[j, code_j].
     """
 
     def __init__(self, dim: int, m: int = 8, nbits: int = 8, seed: int = 0):

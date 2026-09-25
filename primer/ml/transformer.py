@@ -735,10 +735,12 @@ class TransformerBlock:
 class TinyGPT:
     """A complete decoder-only language model forward pass, GPT-2 style.
 
+    ```text
     token ids (seq,) -> token vectors + position vectors (seq, d)
                      -> n_layers × TransformerBlock          (seq, d)
                      -> final LayerNorm                      (seq, d)
                      -> dot with every token's embedding     (seq, vocab)  "logits"
+    ```
 
     The output layer reuses the token-embedding table (weight tying): the
     score for token t is the dot product of the final vector with t's own

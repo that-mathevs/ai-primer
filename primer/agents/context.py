@@ -366,11 +366,12 @@ from primer.agents.llm import estimate_tokens
 class Section:
     """One candidate piece of context.
 
-    priority: 0 = must include; larger numbers are dropped first.
-    stable: identical across calls (system prompt, tool definitions), so it
-        belongs at the front where prompt caching can reuse it.
-    untrusted: external content (documents, emails, tool output). Its text
-        is escaped so it can't break out of its tag.
+    Attributes:
+        priority: 0 = must include; larger numbers are dropped first.
+        stable: identical across calls (system prompt, tool definitions), so it
+            belongs at the front where prompt caching can reuse it.
+        untrusted: external content (documents, emails, tool output). Its text
+            is escaped so it can't break out of its tag.
     """
 
     name: str
