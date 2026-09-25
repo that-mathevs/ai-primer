@@ -13,6 +13,7 @@ Three checks, all offline:
 5. No mention of code is left unlinked (the same scan the site builder links with).
 6. Every #anchor a link points at exists on its page.
 7. Every lesson a paper companion's script links to exists.
+8. No link has an empty address (it would only reload the page).
 
 Links built by JavaScript at runtime are checked by the pages themselves.
 """
@@ -174,6 +175,17 @@ def broken_companion_lessons(site: Path = SITE) -> dict[str, set[str]]:
     return broken
 
 
+def empty_links(site: Path = SITE) -> dict[str, list[str]]:
+    """Links whose address is empty: clicking one just reloads the page."""
+    found: dict[str, list[str]] = {}
+    for page in sorted(site.rglob("*.html")):
+        html = re.sub(r"<script\b.*?</script>", "", page.read_text(errors="ignore"), flags=re.S | re.I)
+        texts = [re.sub(r"<[^>]+>", "", t).strip() for t in re.findall(r'<a\b[^>]*\bhref=""[^>]*>(.*?)</a>', html, re.S)]
+        if texts:
+            found[page.relative_to(site).as_posix()] = texts
+    return found
+
+
 def main() -> int:
     if not SITE.exists():
         print("docs/html doesn't exist yet: run `make docs` first")
@@ -221,7 +233,12 @@ def main() -> int:
     print(f"companion links to lessons that don't exist: {sum(map(len, companions.values()))}")
     for page, refs in sorted(companions.items()):
         print(f"  ✗ papers/{page} -> {', '.join(sorted(refs))}")
-    return 1 if bad or repo_bad or unlinked or detours or leftovers or missing or companions else 0
+
+    empties = empty_links()
+    print(f"links with an empty address: {sum(map(len, empties.values()))}")
+    for page, texts in sorted(empties.items()):
+        print(f"  ✗ {page}: {', '.join(texts)}")
+    return 1 if bad or repo_bad or unlinked or detours or leftovers or missing or companions or empties else 0
 
 
 if __name__ == "__main__":

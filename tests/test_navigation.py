@@ -664,3 +664,19 @@ class TestNamesWrittenWithoutTheirModule:
         (tmp_path / "primer" / "real.html").write_text("")
         (tmp_path / "papers" / "p.html").write_text('<a data-lesson="primer/real.html">a</a> <a data-lesson="primer/gone.html">b</a>')
         assert broken_companion_lessons(tmp_path) == {"p.html": {"primer/gone.html"}}
+
+
+class TestNoLinkGoesNowhere:
+    def test_given_pdocs_empty_link_to_the_page_itself_it_leads_to_the_lessons_code(self, local):
+        from tools.docsite import link_code_mentions
+
+        # pdoc links a module named on its own page with href="", which just reloads the page.
+        page = '<p>Run: <code>python -m <a href="">primer.ml.embeddings.word2vec</a></code></p>'
+        linked = link_code_mentions(page, "primer.ml.embeddings.word2vec", "primer/ml/embeddings/word2vec.html")
+        assert '<a href="../../../../../primer/ml/embeddings/word2vec.py">primer.ml.embeddings.word2vec</a>' in linked
+
+    def test_given_a_link_with_an_empty_address_the_site_check_reports_it(self, tmp_path):
+        from tools.sitecheck import empty_links
+
+        (tmp_path / "a.html").write_text('<a href="">here</a> <a href="b.html">fine</a>')
+        assert empty_links(tmp_path) == {"a.html": ["here"]}

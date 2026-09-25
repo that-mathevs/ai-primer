@@ -370,6 +370,18 @@ def _scan_code_mentions(page_html: str, module: str, page: str, fix: bool) -> tu
             return text.replace(bare, f'<a href="{code_link(bare, page)}">{bare}</a>', 1) if fix else text
         return _DOTTED.sub(lambda m: link(m.group(0), m.group(0)), text)
 
+    # pdoc links a module named on its own page with href="", which only reloads the page.
+    def empty(m: re.Match) -> str:
+        before, after, inner = m.group(1), m.group(2), m.group(3)
+        name = re.sub(r"<[^>]+>", "", inner).strip()
+        target = _code_target(name, module, page, page_html) if _CODE_NAME.fullmatch(name) else None
+        if not target:
+            return m.group(0)
+        found.append(name)
+        return f'{before}href="{target}"{after}{inner}</a>' if fix else m.group(0)
+
+    page_html = re.sub(r'(<a\b[^>]*?)href=""([^>]*>)(.*?)</a>', empty, page_html, flags=re.S)
+
     out: list[str] = []
     stack: list[str] = []
     for piece in re.split(r"(<[^>]+>)", page_html):
