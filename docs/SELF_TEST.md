@@ -809,7 +809,7 @@ A document on the right topic that doesn't answer the question, like the
 password-reset how-to for "what are the password rules". Fix it with a
 reranker that reads the question and document together, and when you
 fine-tune an embedding model, train on hard negatives so it learns the
-distinction (see `primer.ml.embeddings.contrastive`).
+distinction (see [`primer.ml.embeddings.contrastive`](../primer/ml/embeddings/contrastive.py)).
 
 **What does ColBERT trade to get better precision than a bi-encoder?**
 Storage and some query cost. It keeps one vector per word instead of one per
@@ -1079,7 +1079,7 @@ so keep single-shot retrieval for simple lookups.
 RAG for knowledge: it updates by re-indexing, cites sources, and respects
 permissions. Fine-tuning teaches behaviour and format, not facts that
 change. Most systems are RAG plus a good prompt (see
-`primer.ml.training_stages`).
+[`primer.ml.training_stages`](../primer/ml/training_stages.py)).
 
 
 ### 29. Context engineering
@@ -1289,7 +1289,7 @@ Whether a deploy changed a prompt or a tool (a bigger tool output, a new
 retrieval setting), whether an agent is looping (the same tool called with
 the same arguments), and whether the prompt cache hit rate dropped
 (something volatile moved to the top). Traces make this a lookup rather
-than a guess (`primer.agents.observability`).
+than a guess ([`primer.agents.observability`](../primer/agents/observability.py)).
 
 
 ### 35. Observability

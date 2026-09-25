@@ -31,6 +31,45 @@ def source_path(module: str) -> str:
     return module.replace(".", "/") + ".py"
 
 
+def link_module_names(markdown: str, from_dir: str) -> str:
+    """Make every module named as code (`primer.agents.llm`, `primer.agents.llm.ClaudeLLM`) a link to its file.
+
+    GitHub renders Markdown but not docstrings, so in a .md file a module name
+    only helps a reader if it's a relative link they can follow.
+
+    Args:
+        markdown: the text to link.
+        from_dir: the directory the Markdown file sits in, relative to the repository root.
+    """
+    import os
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+
+    def file_for(name: str) -> Path | None:
+        # The longest prefix that is a module or package: primer.agents.llm.ClaudeLLM -> primer/agents/llm.py.
+        parts = name.split(".")
+        for i in range(len(parts), 0, -1):
+            base = root.joinpath(*parts[:i])
+            if base.with_suffix(".py").is_file():
+                return base.with_suffix(".py")
+            if (base / "__init__.py").is_file():
+                return base / "__init__.py"
+        return None
+
+    def link(m: re.Match) -> str:
+        target = file_for(m.group(1))
+        if target is None:
+            return m.group(0)
+        return f"[`{m.group(1)}`]({os.path.relpath(target, root / from_dir).replace(os.sep, '/')})"
+
+    # Names already inside [ ](…) are links; names in fenced code blocks are code, not prose.
+    name = re.compile(r"(?<!\[)`(primer(?:\.\w+)+)`(?!\])")
+    pieces = re.split(r"(```.*?```)", markdown, flags=re.S)
+    return "".join(piece if i % 2 else name.sub(link, piece) for i, piece in enumerate(pieces))
+
+
 def tests_for(module: str) -> str:
     """The test file that specifies a lesson (tests/test_<name>.py, test_emb_ or test_agents_)."""
     name = module.rsplit(".", 1)[-1]
@@ -126,7 +165,7 @@ def readme_section() -> str:
             for i, l in lessons_in(part.key)
         ]
         out.append("")
-    return "\n".join(out) + "\n"
+    return link_module_names("\n".join(out) + "\n", '.')
 
 
 def reading_list(package: str) -> str:
@@ -330,7 +369,7 @@ def big_questions_table() -> str:
     for q in BIG_QUESTIONS:
         route = ", ".join(f"[{_lesson(m).title}]({m.replace('.', '/')}.py)" for m in q.route)
         rows.append(f"| {q.question} | {route} |")
-    return "\n".join(rows) + "\n"
+    return link_module_names("\n".join(rows) + "\n", '.')
 
 
 def big_questions_page() -> str:
@@ -348,7 +387,7 @@ def big_questions_page() -> str:
         route = " → ".join(f"[{_lesson(m).title}](../{m.replace('.', '/')}.py)" for m in q.route)
         spine = "\n".join(f"{i}. {point}" for i, point in enumerate(q.spine, 1))
         out.append(f"\n## {n}. {q.question}\n\n**Route:** {route}\n\n**Spine of the answer:**\n\n{spine}\n")
-    return "\n".join(out)
+    return link_module_names("\n".join(out), 'docs')
 
 
 def self_test_book() -> str:
@@ -378,7 +417,7 @@ def self_test_book() -> str:
             body = re.sub(r"^(#+) ", lambda h: "#" * (len(h.group(1)) + 2) + " ", m.group(1).strip(), flags=re.M)
             link = lesson.module.replace(".", "/") + ".py"
             out.append(f"\n### {i}. {lesson.title}\n\nFrom [`{lesson.module}`](../{link}).\n\n{body}\n")
-    return "\n".join(out)
+    return link_module_names("\n".join(out), "docs")
 
 
 def _render_doc() -> str:

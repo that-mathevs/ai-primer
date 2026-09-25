@@ -52,7 +52,7 @@ is the gold standard; every module meets it.
 
 Every math term (softmax, dot product, logarithm, gradient, matrix
 multiply, …) is explained in plain words the first time a lesson uses it,
-with a link to `primer.notation` for the full treatment. Unexplained
+with a link to [`primer.notation`](primer/notation.py) for the full treatment. Unexplained
 notation is a bug.
 
 ## Hard rules
@@ -68,7 +68,7 @@ notation is a bug.
    English, formulas in `$$…$$`, diagrams and figures (see
    [Diagrams](#diagrams)), `## In 20 seconds`, `## Self-test questions` (each followed by its answer),
    and `## Further reading`. It ends with a `demo()` that narrates the lesson
-   through `primer._show` and an `if __name__ == "__main__": demo()`.
+   through [`primer._show`](primer/_show.py) and an `if __name__ == "__main__": demo()`.
    `primer/ml/attention.py` is the reference lesson; match it.
 4. **Links are real.** Every URL in Further reading points at a primary
    source you are certain exists: the paper (arXiv), the official docs, the
@@ -127,6 +127,12 @@ Every mechanism section ends its code rung with an `**In code:**` line
 naming what implements it, so a reader clicks from the explanation straight
 to the code. `make sitecheck` fails if a named thing didn't become a link, or
 if any link into the repository points at a missing file or line.
+
+In Markdown (README, docs), GitHub renders the page but not docstrings, so
+every module named as code is a relative link to its file:
+[`primer.agents.llm`](primer/agents/llm.py). The generators do this with
+`link_module_names`; a test fails on any unlinked name, and `make sitecheck`
+checks every relative link in every committed Markdown file.
 
 Code links are never hardcoded. A site built locally links to the files in
 the reader's own checkout (relative paths). The published site, built by

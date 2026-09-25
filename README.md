@@ -53,19 +53,19 @@ make docs            # builds the site; open docs/html/index.html in a browser
 - **In the terminal**: `python -m primer.ml.attention` runs a lesson as a
   narrated walkthrough with real numbers.
 
-**3. Open lesson 0, then lesson 1.** Lesson 0, `primer.notation`, turns every
+**3. Open lesson 0, then lesson 1.** Lesson 0, [`primer.notation`](primer/notation.py), turns every
 symbol you'll meet (Σ, ‖x‖, ∂, ᵀ) into a few lines of Python; skip it if those
-already read easily. Lesson 1, `primer.ml.big_picture`, follows one prompt all the
+already read easily. Lesson 1, [`primer.ml.big_picture`](primer/ml/big_picture.py), follows one prompt all the
 way through a model, and every later lesson zooms into one box of that picture.
 
 **Routes, if you're short on time**
 
 | If you want… | Read these, in order |
 |---|---|
-| The core ideas in one evening | `primer.ml.big_picture`, `primer.ml.attention`, `primer.ml.embeddings.similarity`, `primer.ml.embeddings.retrieval`, `primer.agents.rag` |
-| To build with language models now | `primer.agents.llm`, `primer.agents.agent_loop`, `primer.agents.tools`, `primer.agents.rag`, `primer.agents.evals`, `primer.agents.guardrails` |
-| To understand search and embeddings | `primer.ml.embeddings.word2vec`, then the rest of the embeddings part in order, then `primer.agents.rag` |
-| To see how a model is trained and served | `primer.ml.neural_net`, `primer.ml.optimizers`, `primer.ml.training_stages`, `primer.ml.inference` |
+| The core ideas in one evening | [`primer.ml.big_picture`](primer/ml/big_picture.py), [`primer.ml.attention`](primer/ml/attention.py), [`primer.ml.embeddings.similarity`](primer/ml/embeddings/similarity.py), [`primer.ml.embeddings.retrieval`](primer/ml/embeddings/retrieval.py), [`primer.agents.rag`](primer/agents/rag.py) |
+| To build with language models now | [`primer.agents.llm`](primer/agents/llm.py), [`primer.agents.agent_loop`](primer/agents/agent_loop.py), [`primer.agents.tools`](primer/agents/tools.py), [`primer.agents.rag`](primer/agents/rag.py), [`primer.agents.evals`](primer/agents/evals.py), [`primer.agents.guardrails`](primer/agents/guardrails.py) |
+| To understand search and embeddings | [`primer.ml.embeddings.word2vec`](primer/ml/embeddings/word2vec.py), then the rest of the embeddings part in order, then [`primer.agents.rag`](primer/agents/rag.py) |
+| To see how a model is trained and served | [`primer.ml.neural_net`](primer/ml/neural_net.py), [`primer.ml.optimizers`](primer/ml/optimizers.py), [`primer.ml.training_stages`](primer/ml/training_stages.py), [`primer.ml.inference`](primer/ml/inference.py) |
 | The whole thing | Every lesson in the order below, about one per sitting |
 
 After each lesson, test yourself with its questions in
@@ -129,7 +129,7 @@ browse as a web page.
   as a list of plain-English statements about how things behave.
 - **Offline and deterministic.** The agent lessons run against a scripted
   model, so you can reproduce every failure mode on purpose. Swap in the real
-  Claude adapter (`primer.agents.llm.ClaudeLLM`) when you want to.
+  Claude adapter ([`primer.agents.llm.ClaudeLLM`](primer/agents/llm.py)) when you want to.
 
 ## Reading order
 
@@ -204,7 +204,7 @@ Agents, tools, retrieval, memory, evaluation, safety, cost and deployment.
 
 <!-- END curriculum -->
 
-`primer.glossary` defines every term in one place; the HTML site shows those
+[`primer.glossary`](primer/glossary.py) defines every term in one place; the HTML site shows those
 definitions on hover. [`docs/SELF_TEST.md`](docs/SELF_TEST.md) collects every
 lesson's self-test questions and answers, in reading order.
 

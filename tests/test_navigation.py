@@ -458,3 +458,48 @@ class TestTheHomePageOrder:
         home = render_home()
         positions = [home.index(f'id="{anchor}"') for anchor in ("lessons", "agents", "big", "papers")]
         assert positions == sorted(positions)
+
+
+def _committed_markdown() -> list[str]:
+    import subprocess
+
+    return subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT, capture_output=True, text=True).stdout.split()
+
+
+class TestModuleNamesOnGitHub:
+    # GitHub renders Markdown but not docstrings, so a module named in a .md file must be a link to its file.
+
+    def test_given_a_module_name_in_markdown_it_becomes_a_link_to_its_file(self):
+        from primer.curriculum import link_module_names
+
+        assert link_module_names("See `primer.agents.llm`.", "docs") == "See [`primer.agents.llm`](../primer/agents/llm.py)."
+
+    def test_given_a_name_inside_a_module_the_link_goes_to_the_module_that_defines_it(self):
+        from primer.curriculum import link_module_names
+
+        text = "The adapter (`primer.agents.llm.ClaudeLLM`)."
+        assert link_module_names(text, ".") == "The adapter ([`primer.agents.llm.ClaudeLLM`](primer/agents/llm.py))."
+
+    def test_given_a_package_name_the_link_goes_to_its_init_file(self):
+        from primer.curriculum import link_module_names
+
+        assert link_module_names("`primer.common`", ".") == "[`primer.common`](primer/common/__init__.py)"
+
+    def test_given_a_name_that_is_already_a_link_it_is_left_alone(self):
+        from primer.curriculum import link_module_names
+
+        text = "From [`primer.agents.llm`](../primer/agents/llm.py)."
+        assert link_module_names(text, "docs") == text
+
+    def test_given_a_name_in_a_fenced_code_block_it_is_left_alone(self):
+        from primer.curriculum import link_module_names
+
+        text = "```\n`primer.agents.llm`\n```"
+        assert link_module_names(text, ".") == text
+
+    @pytest.mark.parametrize("markdown", _committed_markdown())
+    def test_given_a_markdown_file_every_module_it_names_is_a_link_github_can_follow(self, markdown):
+        from primer.curriculum import link_module_names
+
+        text = (ROOT / markdown).read_text()
+        assert link_module_names(text, str(Path(markdown).parent)) == text

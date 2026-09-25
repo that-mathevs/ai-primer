@@ -7,7 +7,7 @@ Three checks, all offline:
 
 1. Every internal href and src written into the HTML resolves to a file.
 2. Every link into this repository on GitHub (and every relative link in
-   README.md) names a committed file, and a line range that file has.
+   a committed Markdown file) names a committed file, and a line range that file has.
 3. Every name in an **In code:** line became a link to its code.
 4. No link detours through a package page that only forwards to the home page.
 
@@ -16,6 +16,7 @@ Links built by JavaScript at runtime are checked by the pages themselves.
 
 from __future__ import annotations
 
+import posixpath
 import re
 import subprocess
 import sys
@@ -88,7 +89,7 @@ def unlinked_code_names(page_html: str) -> list[str]:
 
 
 def repo_link_problems() -> dict[str, set[str]]:
-    """Every broken link into this repository, from the site's pages and from README.md."""
+    """Every broken link into this repository, from the site's pages and every committed Markdown file."""
     from primer.curriculum import BRANCH
     from tools.docsite import repo_url
 
@@ -99,12 +100,18 @@ def repo_link_problems() -> dict[str, set[str]]:
         for url in set(re.findall(rf'href="({re.escape(repo)}[^"]*)"', html)):
             if problem := own_repo_problem(url):
                 bad.setdefault(name, set()).add(problem)
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    for target in re.findall(r"\]\(([^)\s]+)\)", readme):
-        if EXTERNAL.match(target) or target.startswith("#"):
-            continue
-        if problem := own_repo_problem(f"{repo}/blob/{BRANCH}/{target.split('#')[0]}"):
-            bad.setdefault("README.md", set()).add(problem)
+    # Relative links in every committed Markdown file, as GitHub resolves them: from the file's own folder.
+    for md in sorted(f for f in (_committed() or ()) if f.endswith(".md")):
+        # Code spans and fenced blocks show link syntax as an example; they aren't links.
+        prose = re.sub(r"```.*?```|`[^`\n]*`", "", (ROOT / md).read_text(encoding="utf-8"), flags=re.S)
+        for target in re.findall(r"\]\(([^)\s]+)\)", prose):
+            if EXTERNAL.match(target) or target.startswith("#"):
+                continue
+            path = posixpath.normpath(posixpath.join(posixpath.dirname(md), target.split("#")[0]))
+            problem = (f"leaves the repository: {target}" if path.startswith("..")
+                       else own_repo_problem(f"{repo}/blob/{BRANCH}/{path}"))
+            if problem:
+                bad.setdefault(md, set()).add(problem)
     return bad
 
 
