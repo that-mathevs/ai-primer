@@ -1,4 +1,4 @@
-# primer: rules for every agent working here
+# AI Primer: rules for every agent working here
 
 ## What this project is
 

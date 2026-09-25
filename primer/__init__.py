@@ -1,5 +1,5 @@
 """
-# primer: how modern AI works, built from scratch
+# AI Primer
 
 Two parts, each a subpackage:
 

@@ -613,7 +613,7 @@ def lesson_nav(module: str, tests: int | None = None) -> str:
     return (
         # A div, not <nav>: pdoc's stylesheet positions every <nav> as its sidebar.
         '<div class="primer-nav" role="navigation" aria-label="Lesson navigation">'
-        f'<div class="pn-crumbs"><a href="{home}">primer</a> &rsaquo; '
+        f'<div class="pn-crumbs"><a href="{home}">AI Primer</a> &rsaquo; '
         f'<a href="{home}#{part.key}">{htmllib.escape(part.title)}</a> &rsaquo; '
         f"<span>Lesson {index} of 0 to {len(CURRICULUM) - 1}: {htmllib.escape(lesson.title)}</span>"
         f'<span class="pn-links"><a href="{home}#lessons">All lessons</a> · '
@@ -729,7 +729,7 @@ def spec_page(collected: list[str]) -> str:
 
 SPEC_TEMPLATE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>primer: the specification</title>
+<title>The specification · AI Primer</title>
 <link rel="stylesheet" href="assets/theme.css"><script src="assets/theme.js"></script>
 <style>
 *{box-sizing:border-box}body{margin:0;font:16px/1.6 system-ui,-apple-system,sans-serif}
@@ -809,7 +809,7 @@ def site_nav(page: str) -> str:
     home = _rel("index.html", page)
     return (
         '<div class="primer-nav" role="navigation" aria-label="Site navigation"><div class="pn-crumbs">'
-        f'<a href="{home}">primer</a><span class="pn-links"><a href="{home}#lessons">All lessons</a> · '
+        f'<a href="{home}">AI Primer</a><span class="pn-links"><a href="{home}#lessons">All lessons</a> · '
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
         f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
@@ -881,7 +881,7 @@ def forward_page(target: str) -> str:
     """A page that sends the reader straight on to `target`, with a plain link as a fallback."""
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-        f'<meta http-equiv="refresh" content="0; url={target}"><title>primer</title></head>'
+        f'<meta http-equiv="refresh" content="0; url={target}"><title>AI Primer</title></head>'
         f'<body><p>This page moved to <a href="{target}">the home page</a>.</p></body></html>\n'
     )
 
@@ -970,11 +970,11 @@ def render_home(tests: int | None = None) -> str:
 
 HOME_TEMPLATE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>primer: how modern AI works</title>
+<title>AI Primer</title>
 <link rel="stylesheet" href="assets/theme.css"><script src="assets/theme.js"></script>
 <style>
 :root{--bg:var(--p-bg);--fg:var(--p-fg);--muted:var(--p-muted);--line:var(--p-border);--card:var(--p-card);--accent:var(--p-accent)}
-.repo{font-weight:600}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
+.repo{font-weight:600}.origin{font-size:1.1rem;color:var(--fg)}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,sans-serif}
 main{max-width:980px;margin:0 auto;padding:2rem 16px 4rem}
 a{color:var(--accent)}header h1{font-size:2.2rem;margin:.2rem 0}header p{color:var(--muted);max-width:44rem}
@@ -993,8 +993,9 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 .route{color:var(--muted);font-size:.92rem;margin:.3rem 0}details ol{margin:.3rem 0 .2rem;padding-left:1.3rem}
 </style></head>
 <body><main>
-<header><div class="top"><h1>primer: how modern AI works, built from scratch</h1><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
-<p>{{COUNT}} lessons, numbered 0 to {{LAST}}. Every idea is built in plain Python, drawn, and decoded symbol by symbol.
+<header><div class="top"><h1>AI Primer</h1><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
+<p class="origin">I made this because the people I work with kept asking me how modern AI works. This is the full answer: every idea built from scratch in plain Python, drawn, and explained until nothing is left as magic.</p>
+<p>{{COUNT}} lessons, numbered 0 to {{LAST}}, with every formula decoded symbol by symbol and worked through in Python.
 Hover over any underlined term for a plain-English definition.</p>
 <p>All of it is pinned down by {{TESTS}}: small programs that run the lessons' code and check it does what the
 lessons claim. They were written before the code (test-driven), and each is named as a plain sentence in the
@@ -1091,7 +1092,7 @@ def build() -> int:
         pdoc
         # primer._show is a private helper for the terminal walkthroughs, not something a reader studies.
         + ["primer", "!primer._show", "--docformat", "google", "--math", "--mermaid",
-           "--footer-text", "primer: how modern AI works, built from scratch", "-o", str(SITE)],
+           "--footer-text", "AI Primer", "-o", str(SITE)],
         cwd=ROOT, check=True, env={**os.environ, "PYTHONPATH": str(ROOT)},
     )
 

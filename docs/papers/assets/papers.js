@@ -845,7 +845,7 @@
     nav.className = "topbar";
     nav.setAttribute("aria-label", "Site");
     nav.innerHTML =
-      `<a class="home" href="${root}index.html">primer</a>` +
+      `<a class="home" href="${root}index.html">AI Primer</a>` +
       `<a href="${root}index.html#lessons">Lessons</a>` +
       `<a href="index.html">Papers</a>` +
       `<a href="${root}primer/glossary.html">Glossary</a>` +

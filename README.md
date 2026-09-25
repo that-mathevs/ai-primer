@@ -1,4 +1,7 @@
-# primer: how modern AI works, built from scratch
+# AI Primer
+
+I made this because the people I work with kept asking me how modern AI works.
+This is my answer.
 
 ## 👉 Read it here: [that-mathevs.github.io/ai-primer](https://that-mathevs.github.io/ai-primer/)
 

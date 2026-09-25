@@ -1048,3 +1048,30 @@ class TestEveryPageWorksWithAKeyboardAndAScreenReader:
         from tools.docsite import DIAGRAM_SCRIPT
 
         assert 'setAttribute("role", "img")' in DIAGRAM_SCRIPT and 'setAttribute("aria-describedby"' in DIAGRAM_SCRIPT
+
+
+class TestTheTitle:
+    ORIGIN = "people I work with kept asking me how modern AI works"
+
+    def test_given_the_home_page_it_is_called_ai_primer(self):
+        from tools.docsite import render_home
+
+        home = render_home()
+        assert "<title>AI Primer</title>" in home and "<h1>AI Primer</h1>" in home
+
+    def test_given_the_home_page_it_says_why_it_was_made(self):
+        from tools.docsite import render_home
+
+        assert self.ORIGIN in render_home().split("</header>")[0]
+
+    def test_given_the_readme_it_opens_with_the_title_and_why_it_was_made(self):
+        opening = (ROOT / "README.md").read_text().split("## ")[0]
+        assert opening.startswith("# AI Primer\n") and self.ORIGIN in opening
+
+    def test_given_every_bar_and_footer_the_old_title_is_gone(self):
+        from tools.docsite import lesson_nav, site_nav
+
+        texts = [lesson_nav("primer.ml.attention"), site_nav("primer/glossary.html"),
+                 (ROOT / "tools" / "docsite.py").read_text(), (ROOT / "docs" / "papers" / "assets" / "papers.js").read_text()]
+        assert all("how modern AI works, built from scratch" not in t for t in texts)
+        assert '">AI Primer</a>' in texts[0] and '">AI Primer</a>' in texts[1]

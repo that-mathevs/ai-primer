@@ -94,7 +94,7 @@ they sit under, so the outline never skips a level: `<h4>` under a subsection
 </details></nav>
 <main>
 <header class="hero">
-  <div class="kicker">An annotated companion · primer</div>
+  <div class="kicker">An annotated companion · AI Primer</div>
   <h1>Paper Title, annotated</h1>
   <p class="byline">A plain-English, hover-to-explain guide to Authors (Year), …</p>
   <div class="toolbar ui">
