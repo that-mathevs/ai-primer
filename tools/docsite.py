@@ -166,6 +166,53 @@ TOOLTIP_ASSETS = """
 """
 
 
+# ---------------------------------------------------------------------------
+# Where code links point. The published site holds only HTML, so its links go
+# to GitHub, pinned to the exact commit the site was built from: the lines they
+# name always match the page. A site built on your own machine links to the
+# files in your own checkout instead, so it always shows the code you have.
+# ---------------------------------------------------------------------------
+
+
+def web_url_of_remote(remote: str) -> str:
+    """A git remote's web page: git@github.com:o/r.git and friends become https://github.com/o/r."""
+    url = remote.strip()
+    ssh = re.match(r"^(?:ssh://)?git@([^:/]+)[:/](.+)$", url)
+    if ssh:
+        url = f"https://{ssh.group(1)}/{ssh.group(2)}"
+    return re.sub(r"\.git$", "", url.rstrip("/"))
+
+
+def repo_url() -> str:
+    """This repository's web page: the Actions run's own repository when publishing,
+    else the checkout's origin remote (so a fork links to itself), else the project's home."""
+    if os.environ.get("GITHUB_REPOSITORY"):
+        return f'{os.environ.get("GITHUB_SERVER_URL", "https://github.com")}/{os.environ["GITHUB_REPOSITORY"]}'
+    out = subprocess.run(["git", "remote", "get-url", "origin"], cwd=ROOT, capture_output=True, text=True)
+    if out.returncode == 0 and out.stdout.strip():
+        return web_url_of_remote(out.stdout)
+    from primer.curriculum import REPO_URL
+
+    return REPO_URL
+
+
+def published_commit() -> str | None:
+    """The commit a published build comes from, or None for a build on a reader's machine."""
+    return os.environ.get("GITHUB_SHA") if os.environ.get("GITHUB_ACTIONS") == "true" else None
+
+
+def code_link(path: str, page: str, first: int | None = None, last: int | None = None) -> str:
+    """A link from `page` (relative to the site root) to a file in the repository, optionally to lines."""
+    sha = published_commit()
+    if sha is None:
+        # Browsers don't jump to line numbers in a plain file, so a local link names the file only.
+        return os.path.relpath(ROOT / path, (SITE / page).parent).replace(os.sep, "/")
+    url = f"{repo_url()}/blob/{sha}/{path}"
+    if first is not None:
+        url += f"#L{first}" + (f"-L{last}" if last is not None and last != first else "")
+    return url
+
+
 _SOURCE_BUTTON = re.compile(r'(<label class="view-source-button" for="([^"]+)-view-source">.*?</label>)', re.S)
 
 
@@ -191,29 +238,27 @@ def _member_lines(module, ident: str) -> tuple[int, int] | None:
     return first, first + len(lines) - 1
 
 
-def link_members_to_github(page_html: str, module_name: str) -> str:
-    """Put a link to each member's exact lines on GitHub beside pdoc's View Source button.
+def link_members_to_source(page_html: str, module_name: str, page: str) -> str:
+    """Put a link to each member's source beside pdoc's View Source button (see `code_link`).
 
     Args:
         page_html: the page pdoc rendered for one module.
         module_name: that module's dotted name, such as "primer.agents.orchestration".
+        page: the page's path relative to the site root.
     """
     import importlib
 
-    from primer.curriculum import source_url
-
     module = importlib.import_module(module_name)
     source = Path(module.__file__).resolve().relative_to(ROOT).as_posix()
+    label = "on GitHub" if published_commit() else "open file"
 
     def add(m: re.Match) -> str:
         ident = m.group(2)
-        if ident.startswith("mod-"):
-            # The module's own button: its source is the whole file.
-            return m.group(1) + f'<a class="gh-source" href="{source_url(source)}">on GitHub</a>'
-        span = _member_lines(module, ident)
+        # The module's own button covers the whole file.
+        span = () if ident.startswith("mod-") else _member_lines(module, ident)
         if span is None:
             return m.group(1)
-        return m.group(1) + f'<a class="gh-source" href="{source_url(source, *span)}">on GitHub</a>'
+        return m.group(1) + f'<a class="code-source" href="{code_link(source, page, *span)}">{label}</a>'
 
     return _SOURCE_BUTTON.sub(add, page_html)
 
@@ -254,7 +299,7 @@ def catalog() -> list[dict]:
 
 def lesson_nav(module: str) -> str:
     """Breadcrumb plus previous/next links for one lesson page."""
-    from primer.curriculum import CURRICULUM, PARTS, REPO_URL, neighbours, source_path, source_url, tests_for
+    from primer.curriculum import CURRICULUM, PARTS, neighbours, source_path, tests_for
 
     page = _page(module)
     index = next(i for i, l in enumerate(CURRICULUM) if l.module == module)
@@ -281,9 +326,9 @@ def lesson_nav(module: str) -> str:
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
         f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
-        f'<a href="{REPO_URL}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div>'
-        f'<div class="pn-code">Code: <a href="{source_url(source_path(module))}">{source_path(module)}</a> · '
-        f'Specified by: <a href="{source_url(tests_for(module))}">{tests_for(module)}</a> · '
+        f'<a href="{repo_url()}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div>'
+        f'<div class="pn-code">Code: <a href="{code_link(source_path(module), page)}">{source_path(module)}</a> · '
+        f'Specified by: <a href="{code_link(tests_for(module), page)}">{tests_for(module)}</a> · '
         f"Run: <code>python -m {module}</code></div>"
         f'<div class="pn-steps">{link(before, True)}{link(after, False)}</div>'
         "</div>"
@@ -301,8 +346,6 @@ def add_theme(page_html: str, page: str) -> str:
 
 def site_nav(page: str) -> str:
     """The bar at the top of pages that aren't lessons: glossary, packages, shared code."""
-    from primer.curriculum import REPO_URL
-
     home = _rel("index.html", page)
     return (
         '<div class="primer-nav" role="navigation" aria-label="Site navigation"><div class="pn-crumbs">'
@@ -310,7 +353,7 @@ def site_nav(page: str) -> str:
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
         f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
-        f'<a href="{REPO_URL}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div></div>'
+        f'<a href="{repo_url()}">GitHub</a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></span></div></div>'
     )
 
 
@@ -322,7 +365,7 @@ NAV_CSS = """
 .pn-links{margin-left:auto}
 .pn-code{color:var(--p-muted);margin-top:.25rem;font-size:13px}
 .pn-code code{font-size:12px}
-.gh-source{float:right;font-size:.75rem;line-height:1.5rem;padding:0 .6rem}
+.code-source{float:right;font-size:.75rem;line-height:1.5rem;padding:0 .6rem}
 .primer-nav .theme-toggle{margin-left:.5rem}
 .pn-steps{display:flex;justify-content:space-between;gap:1rem;margin-top:.4rem;font-weight:600}
 .pn-next{text-align:right;margin-left:auto}
@@ -364,9 +407,9 @@ def render_home() -> str:
         + "</span></li>"
         for p in catalog()
     )
-    from primer.curriculum import REPO_URL
-
-    return HOME_TEMPLATE.replace("{{REPO}}", REPO_URL).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
+    repo = repo_url()
+    return HOME_TEMPLATE.replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
+        "{{REPO_LABEL}}", repo.split("://", 1)[-1]).replace("{{LICENSE}}", code_link("LICENSE", "index.html")).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
         "{{COUNT}}", str(len(CURRICULUM))
     )
 
@@ -413,9 +456,9 @@ points a complete answer covers, and the lessons that teach them, in order.</p>{
 <footer><p>Every lesson is one Python file: the explanation is its docstring, the code follows it, and a test file
 specifies it. Clone it and run any lesson offline with only NumPy:</p>
 <pre><code>git clone {{REPO}}
-cd ai-primer &amp;&amp; python -m pip install -e ".[dev]"
+cd {{REPO_NAME}} &amp;&amp; python -m pip install -e ".[dev]"
 python -m primer.ml.attention</code></pre>
-<p><a href="{{REPO}}">github.com/that-mathevs/ai-primer</a> · <a href="{{REPO}}/blob/main/LICENSE">License: free for noncommercial use</a></p></footer>
+<p><a href="{{REPO}}">{{REPO_LABEL}}</a> · <a href="{{LICENSE}}">License: free for noncommercial use</a></p></footer>
 </main></body></html>
 """
 
@@ -423,11 +466,9 @@ python -m primer.ml.attention</code></pre>
 def catalog_js() -> str:
     import json
 
-    from primer.curriculum import REPO_URL
-
     return (
         "window.PRIMER_PAPERS = " + json.dumps(catalog(), ensure_ascii=False, indent=1) + ";\n"
-        + f"window.PRIMER_REPO = {json.dumps(REPO_URL)};\n"
+        + f"window.PRIMER_REPO = {json.dumps(repo_url())};\n"
     )
 
 
@@ -451,7 +492,7 @@ def _postprocess(path: Path, terms: dict[str, tuple]) -> None:
         text = text.replace("</main>", nav.replace('class="primer-nav"', 'class="primer-nav pn-bottom"') + "</main>", 1)
     else:
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + site_nav(page), text, count=1)
-    text = link_members_to_github(text, module)
+    text = link_members_to_source(text, module, page)
     text = text.replace("</head>", NAV_CSS + "</head>", 1)
     text = add_theme(text, page)
     text = text.replace("</body>", TOOLTIP_ASSETS + "</body>", 1)

@@ -52,14 +52,18 @@ def _committed() -> frozenset[str] | None:
 def own_repo_problem(url: str) -> str | None:
     """What is wrong with a link into this repository on GitHub, or None if nothing.
 
+    Links name the main branch or the commit the site was built from; either way
+    the working tree is what they show (a published build checks out that commit).
     GitHub serves the pushed tree, so a file that exists here but isn't committed
     is still a broken link for readers.
     """
-    from primer.curriculum import BRANCH, REPO_URL
+    from primer.curriculum import BRANCH
+    from tools.docsite import repo_url
 
-    m = re.match(rf"{re.escape(REPO_URL)}/(?:blob|tree)/{re.escape(BRANCH)}/([^#?]+)(?:#L(\d+)(?:-L(\d+))?)?$", url)
+    repo = repo_url()
+    m = re.match(rf"{re.escape(repo)}/(?:blob|tree)/(?:{re.escape(BRANCH)}|[0-9a-f]{{40}})/([^#?]+)(?:#L(\d+)(?:-L(\d+))?)?$", url)
     if not m:
-        return None if url.rstrip("/") == REPO_URL else f"not a file link on {BRANCH}: {url}"
+        return None if url.rstrip("/") == repo else f"not a link to a file in this repository: {url}"
     path, first, last = m.group(1), m.group(2), m.group(3) or m.group(2)
     if not (ROOT / path).exists():
         return f"no such file: {path}"
@@ -84,19 +88,21 @@ def unlinked_code_names(page_html: str) -> list[str]:
 
 def repo_link_problems() -> dict[str, set[str]]:
     """Every broken link into this repository, from the site's pages and from README.md."""
-    from primer.curriculum import REPO_URL
+    from primer.curriculum import BRANCH
+    from tools.docsite import repo_url
 
+    repo = repo_url()
     bad: dict[str, set[str]] = {}
     pages = [(p.relative_to(SITE).as_posix(), p.read_text(errors="ignore")) for p in SITE.rglob("*.html")]
     for name, html in pages:
-        for url in set(re.findall(rf'href="({re.escape(REPO_URL)}[^"]*)"', html)):
+        for url in set(re.findall(rf'href="({re.escape(repo)}[^"]*)"', html)):
             if problem := own_repo_problem(url):
                 bad.setdefault(name, set()).add(problem)
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     for target in re.findall(r"\]\(([^)\s]+)\)", readme):
         if EXTERNAL.match(target) or target.startswith("#"):
             continue
-        if problem := own_repo_problem(f"{REPO_URL}/blob/main/{target.split('#')[0]}"):
+        if problem := own_repo_problem(f"{repo}/blob/{BRANCH}/{target.split('#')[0]}"):
             bad.setdefault("README.md", set()).add(problem)
     return bad
 

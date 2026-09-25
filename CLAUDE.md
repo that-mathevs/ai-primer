@@ -115,7 +115,7 @@ sources of truth:
 | a term | `primer/glossary.py` | the Glossary page, hover definitions on every page (`glossary.js`) |
 | a paper | `docs/papers/CATALOG.md` | papers index, `catalog.js`, companion nav, the home page's paper list |
 | a link from prose to code | an `**In code:**` line naming the function or class in backticks (fully dotted if it lives in another module) | a link to its entry on the page, with View Source and its exact lines on GitHub |
-| the repository's address | `REPO_URL` and `SITE_URL` in `primer/curriculum.py` | every GitHub link: lesson nav (code and tests), each member's lines, README, home page, papers bar |
+| the site's address | `SITE_URL` in `primer/curriculum.py` | the README's links to the live site (absolute, because the built HTML isn't committed) |
 
 Text between `<!-- BEGIN … -->` and `<!-- END … -->` markers is generated.
 Edit its source, never the text itself. `tests/test_navigation.py` fails
@@ -127,6 +127,12 @@ Every mechanism section ends its code rung with an `**In code:**` line
 naming what implements it, so a reader clicks from the explanation straight
 to the code. `make sitecheck` fails if a named thing didn't become a link, or
 if any link into the repository points at a missing file or line.
+
+Code links are never hardcoded. A site built locally links to the files in
+the reader's own checkout (relative paths). The published site, built by
+GitHub Actions, links to GitHub at the exact commit it was built from, so
+line numbers always match. The repository's address comes from the build
+(`tools/docsite.py`: `repo_url`, `code_link`), so a fork's site links to the fork.
 
 ## Diagrams
 

@@ -17,19 +17,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Where the code and the built site live. Every link into GitHub is made from
-# these, so moving the repository means changing two lines.
+# Where the project lives. The README needs absolute links to the site (the
+# built HTML isn't committed). The site builder reads the repository's address
+# from git or GitHub Actions instead, so a fork's site links to the fork; this
+# constant is only its fallback.
 REPO_URL = "https://github.com/that-mathevs/ai-primer"
 SITE_URL = "https://that-mathevs.github.io/ai-primer/"
 BRANCH = "main"
-
-
-def source_url(path: str, first: int | None = None, last: int | None = None) -> str:
-    """A GitHub link to a file in this repository, optionally to lines first..last."""
-    url = f"{REPO_URL}/blob/{BRANCH}/{path}"
-    if first is not None:
-        url += f"#L{first}" + (f"-L{last}" if last is not None and last != first else "")
-    return url
 
 
 def source_path(module: str) -> str:

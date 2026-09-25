@@ -189,23 +189,95 @@ def _resolve(module, name: str):
     return obj
 
 
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+@pytest.fixture
+def published(monkeypatch):
+    """A build running on GitHub Actions, as the Pages workflow does."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_SHA", SHA)
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "someone/a-fork")
+
+
+@pytest.fixture
+def local(monkeypatch):
+    """A build on the reader's own machine, from their own checkout."""
+    for name in ("GITHUB_ACTIONS", "GITHUB_SHA", "GITHUB_REPOSITORY"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def _first_line_of(path: str, prefix: str) -> int:
+    # Found by reading the file, independently of how the site builder locates code.
+    return next(i for i, line in enumerate((ROOT / path).read_text().splitlines(), 1) if line.startswith(prefix))
+
+
+class TestWhereCodeLinksPoint:
+    # The published site holds only HTML, so its code links go to GitHub, pinned to the commit it was
+    # built from. A site built locally links to the reader's own files, so it always shows their code.
+
+    def test_given_a_local_build_a_lesson_links_its_source_file_in_your_own_checkout(self, local):
+        from tools.docsite import lesson_nav
+
+        # primer/ml/attention.html sits in docs/html/primer/ml/; four levels up is the repository root.
+        assert 'href="../../../../primer/ml/attention.py"' in lesson_nav("primer.ml.attention")
+
+    def test_given_a_local_build_a_lesson_links_the_tests_in_your_own_checkout(self, local):
+        from tools.docsite import lesson_nav
+
+        assert 'href="../../../../../tests/test_emb_ann.py"' in lesson_nav("primer.ml.embeddings.ann")
+
+    def test_given_a_published_build_a_lesson_links_its_source_at_the_commit_the_site_was_built_from(self, published):
+        from tools.docsite import lesson_nav
+
+        assert f'href="https://github.com/someone/a-fork/blob/{SHA}/primer/ml/attention.py"' in lesson_nav("primer.ml.attention")
+
+    def test_given_a_published_build_a_function_links_its_exact_lines_at_that_commit(self, published):
+        from tools.docsite import link_members_to_source
+
+        page = '<section id="run_chain"><label class="view-source-button" for="run_chain-view-source"><span>View Source</span></label></section>'
+        linked = link_members_to_source(page, "primer.agents.orchestration", "primer/agents/orchestration.html")
+        first = _first_line_of("primer/agents/orchestration.py", "def run_chain(")
+        assert f'href="https://github.com/someone/a-fork/blob/{SHA}/primer/agents/orchestration.py#L{first}-L' in linked
+
+    def test_given_a_local_build_a_function_links_the_file_in_your_own_checkout(self, local):
+        from tools.docsite import link_members_to_source
+
+        page = '<section id="run_chain"><label class="view-source-button" for="run_chain-view-source"><span>View Source</span></label></section>'
+        linked = link_members_to_source(page, "primer.agents.orchestration", "primer/agents/orchestration.html")
+        assert 'href="../../../../primer/agents/orchestration.py"' in linked
+
+    def test_given_a_member_inherited_from_outside_the_repository_it_gets_no_source_link(self, published):
+        from tools.docsite import link_members_to_source
+
+        # LLM is a typing.Protocol; its __init__ lives in the standard library, not in this repository.
+        page = '<div id="LLM.__init__"><label class="view-source-button" for="LLM.__init__-view-source"><span>View Source</span></label></div>'
+        assert "code-source" not in link_members_to_source(page, "primer.agents.llm", "primer/agents/llm.html")
+
+    def test_given_a_published_build_the_home_page_links_the_repository_it_was_built_from(self, published):
+        from tools.docsite import render_home
+
+        home = render_home()
+        assert 'href="https://github.com/someone/a-fork"' in home and f'href="https://github.com/someone/a-fork/blob/{SHA}/LICENSE"' in home
+
+    @pytest.mark.parametrize("remote", [
+        "https://github.com/someone/a-fork.git",
+        "https://github.com/someone/a-fork",
+        "git@github.com:someone/a-fork.git",
+        "ssh://git@github.com/someone/a-fork.git",
+    ])
+    def test_given_any_form_of_git_remote_the_repository_address_is_its_web_page(self, remote):
+        from tools.docsite import web_url_of_remote
+
+        assert web_url_of_remote(remote) == "https://github.com/someone/a-fork"
+
+
 class TestLinksIntoTheCode:
     def test_given_every_lesson_exactly_one_test_file_specifies_it(self):
         from primer.curriculum import tests_for
 
         assert [l.module for l in CURRICULUM if not (ROOT / tests_for(l.module)).exists()] == []
-
-    def test_given_a_lesson_its_nav_links_its_source_file_on_github(self):
-        from primer.curriculum import REPO_URL
-        from tools.docsite import lesson_nav
-
-        assert f'href="{REPO_URL}/blob/main/primer/ml/attention.py"' in lesson_nav("primer.ml.attention")
-
-    def test_given_a_lesson_its_nav_links_the_tests_that_specify_it(self):
-        from primer.curriculum import REPO_URL
-        from tools.docsite import lesson_nav
-
-        assert f'href="{REPO_URL}/blob/main/tests/test_emb_ann.py"' in lesson_nav("primer.ml.embeddings.ann")
 
     @pytest.mark.parametrize("lesson", [l.module for l in CURRICULUM])
     def test_given_the_lesson_every_name_its_in_code_lines_cite_is_public_code_that_exists(self, lesson):
@@ -227,32 +299,6 @@ class TestLinksIntoTheCode:
                   or not (n.startswith("primer.") or defined_here(n))]
         assert broken == []
 
-    def test_given_a_rendered_function_it_gains_a_link_to_its_exact_lines_on_github(self):
-        from primer.curriculum import REPO_URL
-        from tools.docsite import link_members_to_github
-
-        # The shape pdoc writes: a section per member, its source lines numbered in span ids.
-        page = '<section id="run_chain"><label class="view-source-button" for="run_chain-view-source"><span>View Source</span></label></section>'
-        linked = link_members_to_github(page, "primer.agents.orchestration")
-        # Found by reading the file, independently of how the site builder locates it.
-        lines = (ROOT / "primer/agents/orchestration.py").read_text().splitlines()
-        first = next(i for i, line in enumerate(lines, 1) if line.startswith("def run_chain("))
-        assert f'href="{REPO_URL}/blob/main/primer/agents/orchestration.py#L{first}-L' in linked
-
-    def test_given_a_member_inherited_from_outside_the_repository_it_gets_no_github_link(self):
-        from tools.docsite import link_members_to_github
-
-        # LLM is a typing.Protocol; its __init__ lives in the standard library, not in this repository.
-        page = '<div id="LLM.__init__"><label class="view-source-button" for="LLM.__init__-view-source"><span>View Source</span></label></div>'
-        assert "gh-source" not in link_members_to_github(page, "primer.agents.llm")
-
-    def test_given_the_home_page_it_links_the_repository_and_the_license(self):
-        from primer.curriculum import REPO_URL
-        from tools.docsite import render_home
-
-        home = render_home()
-        assert f'href="{REPO_URL}"' in home and f'href="{REPO_URL}/blob/main/LICENSE"' in home
-
     def test_given_the_readme_each_lesson_row_links_its_page_on_the_live_site(self):
         from primer.curriculum import SITE_URL
 
@@ -271,6 +317,13 @@ class TestCheckingLinksIntoThisRepository:
         from tools.sitecheck import own_repo_problem
 
         assert own_repo_problem(f"{REPO_URL}/blob/main/primer/ml/attention.py#L1-L3") is None
+
+    def test_given_a_link_pinned_to_a_commit_past_the_end_of_a_file_it_is_reported(self, published):
+        from tools.sitecheck import own_repo_problem
+
+        # On GitHub Actions the checkout is that commit, so the working tree is what the link will show.
+        url = f"https://github.com/someone/a-fork/blob/{SHA}/LICENSE#L5-L999"
+        assert own_repo_problem(url) == "LICENSE has 94 lines, link asks for L5-L999"
 
     def test_given_a_link_to_a_file_that_does_not_exist_it_is_reported(self):
         from primer.curriculum import REPO_URL
