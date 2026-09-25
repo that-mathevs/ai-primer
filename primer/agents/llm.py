@@ -163,6 +163,19 @@ so far, so the history term grows with the square of the number of steps."
 **With the numbers:** 10 × 2,000 + 500 × 45 = 20,000 + 22,500 = **42,500 input
 tokens** for a task whose final conversation is only 6,500 tokens long.
 
+**In Python:**
+
+```python
+>>> n, h_0, t = 10, 2000, 500
+>>> calls = [h_0 + (i - 1) * t for i in range(1, n + 1)]   # call i re-sends h_0 and i - 1 steps
+>>> calls[0], calls[-1]
+(2000, 6500)
+>>> sum(calls)                                            # Σ over every call
+42500
+>>> n * h_0 + t * n * (n - 1) // 2                         # the shortcut on the right agrees
+42500
+```
+
 ![Input tokens per call and in total across an agent loop](figures/primer.agents.llm.loop_tokens.svg)
 
 **Reading it:** the bars are the input tokens billed on each call. They grow

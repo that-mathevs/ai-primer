@@ -108,7 +108,19 @@ $$
 position's row."
 
 **With the numbers:** $x_4 = E_{291} + P_4$, one 32-number list plus
-another. The code is `model.wte[ids] + model.wpe[:len(ids)]`.
+another. The code is `model.wte[ids] + model.wpe[:len(ids)]`. In miniature,
+with 3-number rows instead of 32: $E_{291}$ = (0.2, −0.1, 0.5) and $P_4$ =
+(0.1, 0.3, −0.2) give $x_4$ = (0.3, 0.2, 0.3).
+
+**In Python:**
+
+```python
+>>> E_291 = [0.2, -0.1, 0.5]   # row 291 of the token table (3 numbers, not 32)
+>>> P_4 = [0.1, 0.3, -0.2]     # row 4 of the position table
+>>> x_4 = [round(e + p, 2) for e, p in zip(E_291, P_4)]   # E_(t_i) + P_i, number by number
+>>> x_4
+[0.3, 0.2, 0.3]
+```
 
 **In code:** `trace` does both lookups and the add, and keeps every stage's result so you can inspect the grid before and after positions are mixed in.
 
@@ -153,7 +165,30 @@ $$
 **In words:** "run the input through every block in turn, then normalize."
 
 **With the numbers:** here N = 2, so h = LN(Block₂(Block₁(x))). The code is
-the `for block in model.blocks` loop in `trace`.
+the `for block in model.blocks` loop in `trace`. In miniature, with one
+3-number vector and two stand-in blocks that each add an edit: x = (1, 2, 3),
+Block₁ adds (0, 1, 0) and Block₂ adds (0, 0, 2), giving (1, 3, 5). The final
+norm subtracts the mean (3) and divides by the spread (1.63), so
+h = (−1.22, 0, 1.22).
+
+**In Python:**
+
+```python
+>>> import statistics
+>>> x = [1.0, 2.0, 3.0]
+>>> def block_1(v): return [v_i + d for v_i, d in zip(v, [0, 1, 0])]   # a stand-in edit
+>>> def block_2(v): return [v_i + d for v_i, d in zip(v, [0, 0, 2])]
+>>> def LN(v):
+...     mu, sigma = statistics.fmean(v), statistics.pstdev(v)
+...     return [round((v_i - mu) / sigma, 2) for v_i in v]   # centre, then rescale
+>>> h = x
+>>> for block in [block_1, block_2]:   # Block_1 first, then Block_2 ... up to Block_N
+...     h = block(h)
+>>> h
+[1.0, 3.0, 5.0]
+>>> LN(h)
+[-1.22, 0.0, 1.22]
+```
 
 **Why it matters.** This is where nearly all the compute and all the
 "understanding" happen.
@@ -213,6 +248,22 @@ the temperature, divided by the same quantity summed over all tokens."
 e² = 7.39, e¹ = 2.72, total 64.7, so p(A) = 54.6 / 64.7 = **0.844**
 (`next_token_probs`). Temperature 0 is the limit case: all probability on the
 top score.
+
+**In Python:**
+
+```python
+>>> import math
+>>> z = [2.0, 1.0, 0.5]
+>>> T = 0.5
+>>> exps = [math.exp(z_i / T) for z_i in z]   # e^(z_i / T) for each candidate
+>>> [round(e, 2) for e in exps]
+[54.6, 7.39, 2.72]
+>>> total = sum(exps)                         # Σ_j e^(z_j / T)
+>>> round(total, 1)
+64.7
+>>> [round(e / total, 3) for e in exps]       # p_i: each share of the total
+[0.844, 0.114, 0.042]
+```
 
 ![Temperature reshapes the same three scores](figures/primer.ml.big_picture.temperature.svg)
 
@@ -282,6 +333,16 @@ far; add that up over all steps."
 **With the numbers:** 4 × 2 + (4 × 3) / 2 = 8 + 6 = **14**, the count
 `generate` reports as `positions_processed`.
 
+**In Python:**
+
+```python
+>>> p, n = 2, 4
+>>> sum(p + t for t in range(n))   # Σ over t = 0 .. n-1 of (p + t): 2 + 3 + 4 + 5
+14
+>>> n * p + n * (n - 1) // 2       # the closed form gives the same count
+14
+```
+
 ![Positions processed with and without a cache](figures/primer.ml.big_picture.loop_cost.svg)
 
 **Reading it:** the x-axis is how many tokens have been generated after a
@@ -350,6 +411,19 @@ p = 1/400, so each term is −ln(1/400) = ln 400 = **5.99**. Our untrained model
 scores 5.97, so it is still essentially guessing. **Perplexity**, e raised to
 the loss, is 393: "as unsure as choosing among 393 equally likely tokens"
 (`next_token_loss`, `cross_entropy`).
+
+**In Python:**
+
+```python
+>>> import math
+>>> round(-math.log(0.5), 3)          # one guess that gave the true token p = 0.5
+0.693
+>>> n = 12
+>>> p = [1 / 400] * (n - 1)           # a uniform guess gives every true token 1/400
+>>> L = -sum(math.log(p_i) for p_i in p) / (n - 1)   # -(1/(n-1)) Σ ln p
+>>> round(L, 2)
+5.99
+```
 
 **Why it matters.** Pretraining is exactly this, over trillions of tokens:
 predicting the next token well forces the model to absorb grammar, facts and

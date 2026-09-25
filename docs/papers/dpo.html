@@ -136,6 +136,15 @@
 <div class="symtable" data-syms="pstar,y1,succ,y2,x,rstar,sigma"></div>
 <p class="inwords"><strong>In words:</strong> “the chance people prefer answer 1 to answer 2 is the sigmoid of how much higher answer 1's hidden score is.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if answer 1 scores 1.5 and answer 2 scores 0.5, the gap is 1.0 and σ(1.0) = 1 / (1 + e<sup>−1</sup>) = <strong>0.731</strong>: people pick answer 1 about 73% of the time.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; r1, r2 = 1.5, 0.5                            # r*(x, y1), r*(x, y2): the hidden scores
+&gt;&gt;&gt; round(math.exp(r1) / (math.exp(r1) + math.exp(r2)), 3)   # the fraction form
+0.731
+&gt;&gt;&gt; def sigma(t):                                # σ, the sigmoid
+...     return 1 / (1 + math.exp(-t))
+&gt;&gt;&gt; round(sigma(r1 - r2), 3)                     # the same number: σ of the gap
+0.731</code></pre>
 <div class="plot" id="bt-plot">
   <div class="controls"><label for="bt-gap">score gap r₁ − r₂ = <strong id="bt-gap-v">1.0</strong></label><input type="range" id="bt-gap" min="-5" max="5" step="0.1" value="1"></div>
   <div id="bt-chart"></div>
@@ -147,7 +156,16 @@
 <div class="eq" data-tex="\htmlData{sym=LR}{\mathcal{L}_R}(\htmlData{sym=rphi}{r_\phi}, \htmlData{sym=D}{\mathcal{D}}) = -\htmlData{sym=E}{\mathbb{E}}_{(\htmlData{sym=x}{x},\htmlData{sym=yw}{y_w},\htmlData{sym=yl}{y_l})\sim \htmlData{sym=D}{\mathcal{D}}}\Big[\htmlData{sym=log}{\log}\,\htmlData{sym=sigma}{\sigma}\big(\htmlData{sym=rphi}{r_\phi}(\htmlData{sym=x}{x},\htmlData{sym=yw}{y_w}) - \htmlData{sym=rphi}{r_\phi}(\htmlData{sym=x}{x},\htmlData{sym=yl}{y_l})\big)\Big]" data-fallback="L_R = −E[ log σ(r_φ(x, y_w) − r_φ(x, y_l)) ]"></div>
 <div class="symtable" data-syms="LR,rphi,D,E,yw,yl,log"></div>
 <p class="inwords"><strong>In words:</strong> “on average over the labelled pairs, make the winner's score beat the loser's by enough that the sigmoid of the gap is close to 1.”</p>
-<p class="inwords"><strong>With the numbers:</strong> winner scored 1.5 and loser 0.5, so the loss for that pair is −ln σ(1.0) = −ln 0.731 = <strong>0.313</strong>. Widen the gap to 3 and the loss falls to −ln 0.953 = 0.049.</p>
+<p class="inwords"><strong>With the numbers:</strong> winner scored 1.5 and loser 0.5, so the loss for that pair is −ln σ(1.0) = −ln 0.731 = <strong>0.313</strong>. Widen the gap to 3 and the loss falls to −ln σ(3) = −ln 0.9526 = 0.049 (round σ(3) to 0.953 first and you get 0.048).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; def sigma(t):
+...     return 1 / (1 + math.exp(-t))
+&gt;&gt;&gt; r_w, r_l = 1.5, 0.5                          # r_φ(x, y_w), r_φ(x, y_l)
+&gt;&gt;&gt; round(-math.log(sigma(r_w - r_l)), 3)        # −log σ(r_w − r_l) for this one pair
+0.313
+&gt;&gt;&gt; round(sigma(3), 3), round(-math.log(sigma(3)), 3)   # widen the gap to 3
+(0.953, 0.049)</code></pre>
 
 <h3 class="rung">The RL objective</h3>
 <p>With a reward model in hand, RLHF maximizes reward while staying close to the starting model. The closeness penalty is the <span class="t" data-t="kl divergence">KL divergence</span>: a measure of how different two probability distributions are. Without it, the model would find nonsense that happens to fool the reward model.</p>
@@ -155,6 +173,14 @@
 <div class="symtable" data-syms="pitheta,y,beta,KL,piref"></div>
 <p class="inwords"><strong>In words:</strong> “find the model that earns the most reward on average, minus a penalty, scaled by β, for how far its answers drift from the reference model's.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if a candidate model earns average reward 2.0 but has drifted by KL = 5 (in nats, the natural-log unit), then with β = 0.1 its score is 2.0 − 0.1 × 5 = 1.5. A model earning 1.8 with KL = 1 scores 1.7 and wins: less reward, much less drift.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; beta = 0.1
+&gt;&gt;&gt; def score(reward, kl):                       # E[r_φ(x, y)] − β · KL[π_θ ‖ π_ref]
+...     return reward - beta * kl
+&gt;&gt;&gt; round(score(2.0, 5), 2), round(score(1.8, 1), 2)
+(1.5, 1.7)
+&gt;&gt;&gt; max([(2.0, 5), (1.8, 1)], key=lambda m: score(*m))   # max over the candidate models
+(1.8, 1)</code></pre>
 <h3 class="rung">Why it matters</h3>
 <p>Optimizing this needs reinforcement learning because generated text is discrete: you can't take a gradient through “sample a word”. That, and the instability of PPO, is the pain DPO removes. See the <a href="instructgpt.html">InstructGPT companion</a> for the pipeline in practice.</p>
 </section>
@@ -171,6 +197,21 @@
 <div class="symtable" data-syms="pir,Z,r"></div>
 <p class="inwords"><strong>In words:</strong> “the optimal model is the reference model reweighted by e to the reward over β, then normalized so the probabilities add to 1.”</p>
 <p class="inwords"><strong>With the numbers:</strong> two possible answers, each with reference probability 0.5; rewards 1 and 0; β = 1. Unnormalized weights: 0.5 × e<sup>1</sup> = 1.359 and 0.5 × e<sup>0</sup> = 0.5, so Z = 1.859. The optimal model gives the first answer 1.359 / 1.859 = <strong>0.731</strong> and the second <strong>0.269</strong>. With β = 0.1 instead, the first answer's weight becomes 0.5 × e<sup>10</sup>, and the optimal model picks it almost always: small β means “chase reward”, large β means “stay close to the reference”.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; pi_ref, r, beta = [0.5, 0.5], [1, 0], 1
+&gt;&gt;&gt; weights = [p * math.exp(r_y / beta) for p, r_y in zip(pi_ref, r)]   # π_ref(y|x) · exp(r(x,y) / β)
+&gt;&gt;&gt; [round(w, 3) for w in weights]
+[1.359, 0.5]
+&gt;&gt;&gt; Z = sum(weights)                                                     # Z(x): makes the shares add to 1
+&gt;&gt;&gt; round(Z, 3)
+1.859
+&gt;&gt;&gt; [round(w / Z, 3) for w in weights]                                   # π_r(y|x)
+[0.731, 0.269]
+&gt;&gt;&gt; beta = 0.1                                                           # chase reward harder
+&gt;&gt;&gt; weights = [p * math.exp(r_y / beta) for p, r_y in zip(pi_ref, r)]
+&gt;&gt;&gt; weights[0] / sum(weights) &gt; 0.9999                                   # almost always the first answer
+True</code></pre>
 <p>The catch: Z(x) sums over <em>every possible answer</em> to the prompt, which is astronomically many. You can't compute it, so you can't use this formula directly.</p>
 </section>
 
@@ -181,6 +222,17 @@
 <div class="eq" data-tex="\htmlData{sym=r}{r}(\htmlData{sym=x}{x},\htmlData{sym=y}{y}) = \htmlData{sym=beta}{\beta}\,\htmlData{sym=log}{\log}\frac{\htmlData{sym=pir}{\pi_r}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})}{\htmlData{sym=piref}{\pi_{\text{ref}}}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})} + \htmlData{sym=beta}{\beta}\,\htmlData{sym=log}{\log}\,\htmlData{sym=Z}{Z(x)}" data-fallback="r(x,y) = β log(π_r(y|x) / π_ref(y|x)) + β log Z(x)"></div>
 <p class="inwords"><strong>In words:</strong> “a reward is β times how much more likely the model makes an answer than the reference did (on a log scale), plus a term that depends only on the prompt.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for the first answer, 1 × ln(0.731 / 0.5) + 1 × ln 1.859 = 0.380 + 0.620 = <strong>1.000</strong>, the reward we started with. For the second, ln(0.269 / 0.5) + 0.620 = −0.620 + 0.620 = <strong>0</strong>. The formula recovers both rewards exactly.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; beta, pi_ref = 1, 0.5
+&gt;&gt;&gt; Z = 0.5 * math.e + 0.5                       # Z(x) from step 1
+&gt;&gt;&gt; pi_r = [0.5 * math.e / Z, 0.5 / Z]           # the optimal model from step 1
+&gt;&gt;&gt; round(beta * math.log(pi_r[0] / pi_ref), 3), round(beta * math.log(Z), 3)
+(0.38, 0.62)
+&gt;&gt;&gt; r_first = beta * math.log(pi_r[0] / pi_ref) + beta * math.log(Z)   # r = β log(π_r / π_ref) + β log Z
+&gt;&gt;&gt; r_second = beta * math.log(pi_r[1] / pi_ref) + beta * math.log(Z)
+&gt;&gt;&gt; round(r_first, 3), round(r_second, 3) + 0    # + 0 tidies the float's -0.0 into 0.0
+(1.0, 0.0)</code></pre>
 <h4>The trick: Z cancels</h4>
 <p>Recall from Bradley-Terry that only the <em>difference</em> of two rewards matters. Both answers to the same prompt share the same β log Z(x), so in the difference it cancels. The uncomputable term vanishes. That is the whole paper in one sentence.</p>
 </section>
@@ -192,6 +244,19 @@
 <div class="symtable" data-syms="LDPO"></div>
 <p class="inwords"><strong>In words:</strong> “for each labelled pair, measure how much more the model now likes the winner than the reference did, subtract the same for the loser, scale by β, and push that margin up through the same log-sigmoid loss a reward model would use.”</p>
 <p class="inwords"><strong>With the numbers:</strong> β = 0.1. The model gives the winner a <span class="t" data-t="log-probability">log-probability</span> of −12.0 where the reference gave −14.0 (a gain of +2.0), and the loser −15.0 where the reference gave −13.0 (a loss of 2.0). The <span class="t" data-t="implicit reward">implicit rewards</span> are 0.1 × 2.0 = 0.2 and 0.1 × (−2.0) = −0.2, so the margin is 0.4. σ(0.4) = 0.599 and the loss is −ln 0.599 = <strong>0.513</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; def sigma(t):
+...     return 1 / (1 + math.exp(-t))
+&gt;&gt;&gt; beta = 0.1
+&gt;&gt;&gt; logp_w, logp_ref_w = -12.0, -14.0            # log π_θ(y_w|x), log π_ref(y_w|x)
+&gt;&gt;&gt; logp_l, logp_ref_l = -15.0, -13.0            # log π_θ(y_l|x), log π_ref(y_l|x)
+&gt;&gt;&gt; r_w = beta * (logp_w - logp_ref_w)           # β log(π_θ / π_ref) for the winner
+&gt;&gt;&gt; r_l = beta * (logp_l - logp_ref_l)           # ... and for the loser
+&gt;&gt;&gt; round(r_w, 2), round(r_l, 2), round(r_w - r_l, 2)
+(0.2, -0.2, 0.4)
+&gt;&gt;&gt; round(sigma(r_w - r_l), 3), round(-math.log(sigma(r_w - r_l)), 3)   # σ(margin), −log σ(margin)
+(0.599, 0.513)</code></pre>
 
 <h4>Try it: the DPO loss, live</h4>
 <div class="play" id="dpo-demo">
@@ -217,6 +282,16 @@
 <div class="symtable" data-syms="theta,wgt,gradw,gradl,rhat"></div>
 <p class="inwords"><strong>In words:</strong> “move the weights to make the winner more likely and the loser less likely, weighted by how badly the model's implicit rewards currently rank this pair.”</p>
 <p class="inwords"><strong>With the numbers:</strong> in the worked example the implicit rewards were 0.2 (winner) and −0.2 (loser), so the weight is σ(−0.2 − 0.2) = σ(−0.4) = <strong>0.401</strong>. Had the model ranked them the wrong way round (−0.2 and 0.2), the weight would be σ(0.4) = 0.599: a bigger push for the mistake.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; def sigma(t):
+...     return 1 / (1 + math.exp(-t))
+&gt;&gt;&gt; r_w, r_l = 0.2, -0.2                         # r̂_θ(x, y_w), r̂_θ(x, y_l)
+&gt;&gt;&gt; round(sigma(r_l - r_w), 3)                   # the weight σ(r̂_l − r̂_w)
+0.401
+&gt;&gt;&gt; r_w, r_l = -0.2, 0.2                         # ranked the wrong way round
+&gt;&gt;&gt; round(sigma(r_l - r_w), 3)
+0.599</code></pre>
 <p>The paper notes that dropping this weight, so every pair is pushed equally, makes the model degenerate. The weight is not decoration.</p>
 <h4>The recipe</h4>
 <ol>
@@ -238,6 +313,16 @@
 <div class="symtable" data-syms="pi"></div>
 <p class="inwords"><strong>In words:</strong> “any reward worth learning can be expressed as how much a model favours an answer relative to the reference, scaled by β.”</p>
 <p class="inwords"><strong>With the numbers:</strong> in the two-answer example, this form gives rewards 0.380 and −0.620 rather than 1 and 0. They differ from the originals by the same −0.620, so they rank the answers the same way and lead to the same optimal model.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; beta, pi_ref = 1, 0.5
+&gt;&gt;&gt; Z = 0.5 * math.e + 0.5
+&gt;&gt;&gt; pi = [0.5 * math.e / Z, 0.5 / Z]             # the optimal model from step 1
+&gt;&gt;&gt; r = [beta * math.log(p / pi_ref) for p in pi]   # r = β log(π / π_ref)
+&gt;&gt;&gt; [round(r_y, 3) for r_y in r]
+[0.38, -0.62]
+&gt;&gt;&gt; [round(new - old, 3) for new, old in zip(r, [1, 0])]   # the same shift for both answers
+[-0.62, -0.62]</code></pre>
 <h4>Why it matters</h4>
 <p>This is the justification for the paper's subtitle: a language model trained with DPO carries a reward model inside it, readable as β log(π / π<sub>ref</sub>). Practitioners use exactly that quantity to inspect what a DPO model has learned.</p>
 

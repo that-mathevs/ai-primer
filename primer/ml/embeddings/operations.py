@@ -62,6 +62,21 @@ question, as here, this equals recall@k.)
 **On the example:** 11 hits out of 12 = 0.92 with matching models; 3 out of 12 =
 0.25 with mixed models.
 
+**In Python:**
+
+```python
+>>> def hit(rel_q, top_q):
+...     return 1 if rel_q & top_q else 0          # [rel(q) ∩ top_k(q) ≠ ∅]
+>>> hit({"it-004"}, {"it-002", "it-004", "fin-001"})
+1
+>>> hits = [1] * 11 + [0]                       # matching models: 11 of the 12 questions
+>>> round(sum(hits) / len(hits), 2)             # (1/|Q|) Σ over q in Q
+0.92
+>>> hits = [1] * 3 + [0] * 9                    # mixed models: 3 of the 12
+>>> round(sum(hits) / len(hits), 2)
+0.25
+```
+
 ![Recall@3 with matching and mixed models](figures/primer.ml.embeddings.operations.cross_model.svg)
 
 **Reading it:** each bar is recall@3 on the golden set. The first two bars
@@ -143,6 +158,19 @@ tokens in millions times the price gives the cost.
 
 **On the example:** 25 × 10⁹ / (10⁶ × 3600) = **6.94 hours**; 25,000 × $0.02 =
 **$500**.
+
+**In Python:**
+
+```python
+>>> n, t = 50_000_000, 500            # documents, tokens per document
+>>> r, p = 1_000_000, 0.02            # tokens per second, dollars per million tokens
+>>> n * t                             # total tokens
+25000000000
+>>> round(n * t / (r * 3600), 2)      # hours
+6.94
+>>> round(n * t / 10**6 * p, 2)       # dollars
+500.0
+```
 
 ![Time and cost to re-embed a corpus](figures/primer.ml.embeddings.operations.reembed.svg)
 

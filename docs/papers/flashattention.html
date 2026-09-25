@@ -136,6 +136,15 @@
 <div class="symtable" data-syms="Q,KT,V,S,P,O,softmax,N,d"></div>
 <p class="inwords"><strong>In words:</strong> “score every query against every key, turn each row of scores into shares, then use the shares to blend the values.” (The usual 1/√d scaling is folded into Q here, as in the paper.)</p>
 <p class="inwords"><strong>With the numbers:</strong> for GPT-2's N = 1,024 and d = 64, S and P each hold 1,048,576 numbers per head. In 16-bit precision that is 2 MB per head per layer, per sequence; at N = 16,384 it is 512 MB per head. Both tables are written to HBM and read back.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; N, d = 1024, 64
+&gt;&gt;&gt; N * N                         # numbers in S (and again in P), per head
+1048576
+&gt;&gt;&gt; N * N * 2 // 2 ** 20          # MB at 2 bytes per number
+2
+&gt;&gt;&gt; N = 16_384
+&gt;&gt;&gt; N * N * 2 // 2 ** 20
+512</code></pre>
 <h4>Why it matters</h4>
 <p>The math is fine; the problem is where S and P live. Standard implementations need O(N²) memory just to hold them, which is what capped context lengths, and the repeated round trips are what made attention slow.</p>
 </section>
@@ -156,6 +165,22 @@
 <div class="symtable" data-syms="x1,x2,rescale"></div>
 <p class="inwords"><strong>In words:</strong> “the overall maximum is the bigger of the two block maxima; the overall total is each block's total, shrunk by how far its own maximum sits below the overall maximum, added together.”</p>
 <p class="inwords"><strong>With the numbers:</strong> scores x = (1, 3 | 2, 0), split into two blocks. Block 1: m = 3, f = (e<sup>−2</sup>, e<sup>0</sup>) = (0.135, 1), ℓ = 1.135. Block 2: m = 2, f = (1, 0.135), ℓ = 1.135. Merge: m = 3, ℓ = e<sup>0</sup> × 1.135 + e<sup>−1</sup> × 1.135 = 1.135 + 0.418 = <strong>1.553</strong>. Directly: e<sup>1−3</sup> + e<sup>0</sup> + e<sup>2−3</sup> + e<sup>0−3</sup> = 0.135 + 1 + 0.368 + 0.050 = <strong>1.553</strong>. Same answer, one block at a time.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; def summary(x):                          # one block's (m, ℓ)
+...     m = max(x)                           # m(x)
+...     f = [math.exp(x_i - m) for x_i in x] # f(x)
+...     return m, sum(f)                     # ℓ(x) = Σ_i f(x)_i
+&gt;&gt;&gt; m1, l1 = summary([1, 3])
+&gt;&gt;&gt; m2, l2 = summary([2, 0])
+&gt;&gt;&gt; m1, round(l1, 3), m2, round(l2, 3)
+(3, 1.135, 2, 1.135)
+&gt;&gt;&gt; m = max(m1, m2)                                     # merged m(x)
+&gt;&gt;&gt; l = math.exp(m1 - m) * l1 + math.exp(m2 - m) * l2   # merged ℓ(x)
+&gt;&gt;&gt; m, round(l, 3)
+(3, 1.553)
+&gt;&gt;&gt; round(summary([1, 3, 2, 0])[1], 3)                  # all four scores at once
+1.553</code></pre>
 <p>The partial <em>outputs</em> are merged the same way: FlashAttention keeps each query row's running output O, its running maximum m and running total ℓ, and rescales O whenever a new block raises the maximum. After the last block, O is exactly softmax(QKᵀ)V.</p>
 <h4>Why it matters</h4>
 <p>This “online softmax” was known before; the paper's contribution is building a whole fast GPU kernel around it. The same stable-softmax trick (subtract the max) appears in the <a class="lesson" data-lesson="primer/ml/attention.html">attention lesson</a>'s softmax function.</p>
@@ -209,7 +234,13 @@
 <div class="eq" data-tex="\text{standard: } \htmlData{sym=Theta}{\Theta}(\htmlData{sym=N}{N}\htmlData{sym=d}{d} + \htmlData{sym=N}{N}^2) \qquad \text{FlashAttention: } \htmlData{sym=Theta}{\Theta}\!\left(\frac{\htmlData{sym=N}{N}^2 \htmlData{sym=d}{d}^2}{\htmlData{sym=M}{M}}\right) \quad \text{HBM accesses}" data-fallback="standard: Θ(N d + N²)   FlashAttention: Θ(N² d² / M)   HBM accesses"></div>
 <div class="symtable" data-syms="Theta,M"></div>
 <p class="inwords"><strong>In words:</strong> “standard attention moves the inputs plus the full N × N table; FlashAttention moves the N × N work shrunk by the factor d² / M, which is small because a head's width squared is much smaller than the fast memory.”</p>
-<p class="inwords"><strong>With the numbers:</strong> with d = 64 and M around 100,000 (the paper's “around 100KB”), d<sup>2</sup> / M = 4,096 / 100,000 ≈ 0.04, so FlashAttention needs roughly <strong>25 times</strong> fewer HBM accesses, ignoring constant factors. The paper also proves that no exact attention algorithm can do asymptotically better for every SRAM size.</p>
+<p class="inwords"><strong>With the numbers:</strong> with d = 64 and M around 100,000 (the paper's “around 100KB”), d<sup>2</sup> / M = 4,096 / 100,000 ≈ 0.041, so FlashAttention needs roughly <strong>24 times</strong> fewer HBM accesses, ignoring constant factors. The paper also proves that no exact attention algorithm can do asymptotically better for every SRAM size.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; d, M = 64, 100_000
+&gt;&gt;&gt; d ** 2 / M                # the shrink factor d²/M
+0.04096
+&gt;&gt;&gt; round(M / d ** 2)         # N² (standard) over N² d² / M (FlashAttention)
+24</code></pre>
 <div class="tablewrap"><table>
   <caption>Measured on GPT-2 medium attention, forward plus backward (N = 1,024, d = 64, 16 heads, batch 64, A100). Restated from Dao et al. (2022), Figure 2</caption>
   <thead><tr><th></th><th class="num">Standard</th><th class="num">FlashAttention</th></tr></thead>

@@ -118,7 +118,12 @@
 <div class="eq" data-tex="\htmlData{sym=Rret}{R} : (\htmlData{sym=qq}{q}, \htmlData{sym=Ccorp}{\mathcal{C}}) \rightarrow \htmlData{sym=CF}{\mathcal{C}_F}, \qquad |\htmlData{sym=CF}{\mathcal{C}_F}| = \htmlData{sym=kk}{k} \ll |\htmlData{sym=Ccorp}{\mathcal{C}}|" data-fallback="R : (q, C) → C_F, |C_F| = k ≪ |C|"></div>
 <div class="symtable" data-syms="Rret,qq,Ccorp,CF,kk"></div>
 <p class="inwords"><strong>In words:</strong> “a retriever takes a question and the whole collection and returns a small set of k passages, far fewer than the collection holds.”</p>
-<p class="inwords"><strong>With the numbers:</strong> the collection has 21,015,324 passages; k is typically 20 to 100.</p>
+<p class="inwords"><strong>With the numbers:</strong> the collection has 21,015,324 passages; k is typically 20 to 100. Even k = 100 hands back one passage for every 210,153 in the collection.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; C = 21_015_324       # |C|, passages in the collection
+&gt;&gt;&gt; k = 100              # |C_F|, passages handed back
+&gt;&gt;&gt; C // k               # k ≪ |C|: one kept for every this many
+210153</code></pre>
 <h3 class="rung">How a retriever is graded: top-k accuracy</h3>
 <p><span class="t" data-tip-title="Top-k retrieval accuracy" data-tip="The fraction of questions for which at least one of the top k retrieved passages contains the answer. A close cousin of recall@k.">Top-k retrieval accuracy</span> is the share of questions for which at least one of the k retrieved passages contains the answer. <strong>Tiny example:</strong> for 4 questions, if the answer shows up in the top 20 for questions 1, 2 and 4 but not 3, top-20 accuracy is 3/4 = 75%. It is a form of <span class="t" data-t="recall@k">recall@k</span>, and it matters most because the reader can only use what the retriever returns.</p>
 </section>
@@ -164,6 +169,12 @@
 <div class="symtable" data-syms="sim,EQ,EP,pp,dvec"></div>
 <p class="inwords"><strong>In words:</strong> “the similarity of a question and a passage is the dot product of their two vectors.”</p>
 <p class="inwords"><strong>With the numbers (illustrative, 4 dimensions):</strong> question (2.0, 0.1, 0.0, 0.2) and passage (1.8, 0.2, 0.1, 0.0) give 3.6 + 0.02 + 0 + 0 = 3.62.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; E_Q = [2.0, 0.1, 0.0, 0.2]      # E_Q(q), the question's vector
+&gt;&gt;&gt; E_P = [1.8, 0.2, 0.1, 0.0]      # E_P(p), the passage's vector
+&gt;&gt;&gt; sim = sum(q_i * p_i for q_i, p_i in zip(E_Q, E_P))   # E_Q(q)ᵀ E_P(p)
+&gt;&gt;&gt; round(sim, 2)
+3.62</code></pre>
 <p>Each encoder is BERT-base (uncased) and the vector is BERT's output for its [CLS] token, so d = 768. The paper tried cosine and Euclidean distance too: Euclidean performed comparably to the dot product and both beat cosine, so the simpler dot product was kept.</p>
 </section>
 
@@ -175,6 +186,21 @@
 <div class="symtable" data-syms="Lnll,logn,epos,sumneg,eneg,nneg"></div>
 <p class="inwords"><strong>In words:</strong> “turn the scores of the right passage and the n wrong ones into probabilities with a softmax, and pay minus the log of the right passage's probability.”</p>
 <p class="inwords"><strong>With the numbers (illustrative):</strong> the right passage scores 3.62 and three wrong ones 0.21, 0.24 and 0.39. Then e<sup>3.62</sup> = 37.34 out of a total 37.34 + 1.23 + 1.27 + 1.48 = 41.32, a share of 0.904 and a loss of −ln 0.904 = <strong>0.10</strong>. Add one hard wrong passage scoring 3.26 (e<sup>3.26</sup> = 26.05): the share falls to 37.34 / 67.37 = 0.554 and the loss jumps to <strong>0.59</strong>. The hard one is where the learning is.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; pos = 3.62                       # sim(q_i, p_i+), the right passage
+&gt;&gt;&gt; neg = [0.21, 0.24, 0.39]         # sim(q_i, p_ij−), the wrong ones
+&gt;&gt;&gt; total = math.exp(pos) + sum(math.exp(s) for s in neg)   # the softmax's denominator
+&gt;&gt;&gt; round(math.exp(pos), 2), round(total, 2)
+(37.34, 41.32)
+&gt;&gt;&gt; share = math.exp(pos) / total
+&gt;&gt;&gt; round(share, 3), round(-math.log(share), 2)             # the right passage's share, and L
+(0.904, 0.1)
+&gt;&gt;&gt; neg.append(3.26)                 # one hard wrong passage joins
+&gt;&gt;&gt; total = math.exp(pos) + sum(math.exp(s) for s in neg)
+&gt;&gt;&gt; share = math.exp(pos) / total
+&gt;&gt;&gt; round(total, 2), round(share, 3), round(-math.log(share), 2)
+(67.37, 0.554, 0.59)</code></pre>
 <h4>Which wrong passages? Three kinds</h4>
 <ul>
   <li><strong>Random</strong>: any passage from the collection. Easy to reject; teaches little.</li>
@@ -193,6 +219,12 @@
 <div class="symtable" data-syms="Qmat,PT,Smat,Bsz"></div>
 <p class="inwords"><strong>In words:</strong> “stack the batch's question vectors and passage vectors as rows, and one matrix multiplication scores every question against every passage.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the paper's batch size B = 128 gives a 128 × 128 score matrix: 16,384 pairs, of which 128 are correct and 127 wrong passages face each question.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; B = 128                    # questions (and their right passages) in a batch
+&gt;&gt;&gt; B * B                    # entries of S = Q Pᵀ, one per question-passage pair
+16384
+&gt;&gt;&gt; B - 1                    # wrong passages each question is scored against
+127</code></pre>
 <div class="play" id="ib-demo">
   <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem">
     <button type="button" data-hard="0" aria-pressed="true">In-batch negatives only</button>
@@ -222,6 +254,12 @@
 <div class="symtable" data-syms="hyb,bm25,lam"></div>
 <p class="inwords"><strong>In words:</strong> “add the keyword score to the dense score, with the dense score scaled by a weight chosen on development data.”</p>
 <p class="inwords"><strong>With the numbers (illustrative scores):</strong> with λ = 1.1, a passage with BM25 = 20 and sim = 60 scores 20 + 66 = 86, beating one with BM25 = 30 and sim = 50 (30 + 55 = 85).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; lam = 1.1                        # λ
+&gt;&gt;&gt; round(20 + lam * 60)             # BM25(q, p) + λ · sim(q, p), first passage
+86
+&gt;&gt;&gt; round(30 + lam * 50)             # second passage
+85</code></pre>
 <div class="play" id="hyb-demo">
   <div class="plot" style="margin:0;border:0;padding:0"><div class="controls"><label for="hyb-l">λ = <strong id="hyb-l-v">1.1</strong></label><input type="range" id="hyb-l" min="0" max="3" step="0.1" value="1.1"></div></div>
   <div id="hyb-table"></div>
@@ -277,6 +315,13 @@
 <div class="symtable" data-syms="pstart,Pi,wstart,softmax"></div>
 <p class="inwords"><strong>In words:</strong> “score every token of passage i as a possible answer start with one learned vector, and turn the scores into probabilities.” An identical formula with another vector scores the end token, and a third vector applied to each passage's [CLS] token picks the passage.</p>
 <p class="inwords"><strong>With the numbers (illustrative):</strong> if the tokens of “... the villain Sauron in ...” get start scores (0.1, 0.3, 2.5, 0.2), softmax puts about 77% on “Sauron”, which becomes the answer if the end scores agree.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; scores = [0.1, 0.3, 2.5, 0.2]    # P_i w_start: one start score per token
+&gt;&gt;&gt; total = sum(math.exp(s) for s in scores)
+&gt;&gt;&gt; P_start = [math.exp(s) / total for s in scores]   # softmax(...)_s
+&gt;&gt;&gt; round(P_start[2], 2)             # the token "Sauron"
+0.77</code></pre>
 <h3 class="rung">Results</h3>
 <p>On Natural Questions, the DPR-based system reaches 41.5% exact-match accuracy, against 33.3% for ORQA and 32.6% for the same reader on BM25 passages; it beats the concurrently developed REALM (40.4%) without REALM's expensive extra pre-training. Better retrieval turned into better answers on every dataset except SQuAD. Reading k = 50 passages was best on Natural Questions, and k = 10 cost less than one point (40.8%).</p>
 </section>

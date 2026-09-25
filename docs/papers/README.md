@@ -52,7 +52,7 @@ they sit under, so the outline never skips a level: `<h4>` under a subsection
    line, a **With the numbers** line, and an **In Python** block: the same
    numbers computed in plain Python (standard library only), mirroring the
    equation symbol by symbol, as `>>>` examples a test runs
-   (`tests/test_math_in_python.py`):
+   ([`tests/test_math_in_python.py`](../../tests/test_math_in_python.py)):
 
    ```html
    <p class="inwords"><strong>In Python:</strong></p>

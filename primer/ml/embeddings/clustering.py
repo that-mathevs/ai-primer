@@ -88,6 +88,18 @@ to the centre of its cluster.
 
 **On the example:** four points each 0.5 from their centre: J = 4 × 0.25 = 1.0.
 
+**In Python:**
+
+```python
+>>> x = [(0, 0), (0, 1), (10, 0), (10, 1)]
+>>> mu = [(0, 0.5), (10, 0.5)]        # the two centroids
+>>> c = [0, 0, 1, 1]                  # c(i): the cluster each point joined
+>>> J = sum((x_i[0] - mu[c_i][0]) ** 2 + (x_i[1] - mu[c_i][1]) ** 2   # ‖x_i - μ_c(i)‖²
+...         for x_i, c_i in zip(x, c))                                  # Σ over every point
+>>> J
+1.0
+```
+
 ![k-means, round by round](figures/primer.ml.embeddings.clustering.kmeans_steps.svg)
 
 **Reading it:** three snapshots of k-means on 2-D points. Colours are the
@@ -138,6 +150,18 @@ means points sit in the wrong cluster.
 
 **On the example:** (10.025 − 1) / 10.025 = 0.900.
 
+**In Python:**
+
+```python
+>>> import math
+>>> a = math.dist((0, 0), (0, 1))     # a(i): distance to its partner
+>>> b = (math.dist((0, 0), (10, 0)) + math.dist((0, 0), (10, 1))) / 2   # b(i): the other pair, averaged
+>>> a, round(b, 3)
+(1.0, 10.025)
+>>> round((b - a) / max(a, b), 3)     # s(i)
+0.9
+```
+
 ![Choosing k: inertia and silhouette](figures/primer.ml.embeddings.clustering.choose_k.svg)
 
 **Reading it:** both panels sweep k from 2 to 8 on the 30 tickets. On the
@@ -186,6 +210,19 @@ points, and anything no core point can reach is noise.
 
 **On the example:** N₀.₁₅(0.1) = {0, 0.1, 0.2}, 3 ≥ 2, so 0.1 is core;
 N₀.₁₅(20) = {20}, 1 < 2, so 20 is noise.
+
+**In Python:**
+
+```python
+>>> points = [0, 0.1, 0.2, 5.0, 5.1, 5.2, 20]
+>>> eps, minPts = 0.15, 2
+>>> def N(x):                         # N_ε(x): every point within reach of x
+...     return [y for y in points if abs(x - y) <= eps]
+>>> N(0.1), len(N(0.1)) >= minPts     # a core point
+([0, 0.1, 0.2], True)
+>>> N(20), len(N(20)) >= minPts       # nobody within reach: noise
+([20], False)
+```
 
 ```mermaid
 flowchart TD
@@ -265,6 +302,21 @@ $$
 singular values are 2 along the diagonal and 0 across it, so the shares are
 2² / (2² + 0²) = 1 and 0 / 4 = 0.
 
+**In Python:**
+
+```python
+>>> import math
+>>> centred = [(-1, -1), (0, 0), (1, 1)]
+>>> u = [(1 / math.sqrt(2), 1 / math.sqrt(2)),    # along the diagonal
+...      (1 / math.sqrt(2), -1 / math.sqrt(2))]   # across it (the SVD finds these; here we know them)
+>>> sigma = [math.sqrt(sum((x * u_j[0] + y * u_j[1]) ** 2 for x, y in centred))   # spread along u_j
+...          for u_j in u]
+>>> [round(sigma_j, 3) for sigma_j in sigma]
+[2.0, 0.0]
+>>> [round(sigma_j ** 2 / sum(sigma_k ** 2 for sigma_k in sigma), 3) for sigma_j in sigma]
+[1.0, 0.0]
+```
+
 ![The tickets on a 2-D map](figures/primer.ml.embeddings.clustering.map.svg)
 
 **Reading it:** the 128-dimensional ticket embeddings squashed to 2-D with
@@ -343,6 +395,32 @@ the best match is weak, in which case hand it off.
 **On the example:** "my vpn tunnel drops when I work remote" scores highest
 against the IT helpdesk; "what is the capital of france" is near 0 against
 every route, below θ = 0.3, so it goes to the fallback.
+
+**With the numbers:** a toy version with three routes in four dimensions:
+μ_it = (1, 0, 0, 0), μ_finance = (0, 1, 0, 0), μ_hr = (0, 0, 1, 0). The request
+q = (0.8, 0.6, 0, 0) has cosines 0.8, 0.6 and 0.0 with them; the best, 0.8,
+clears θ = 0.3, so it goes to it_helpdesk. The request q = (0.1, 0.2, 0, 1)
+points mostly where no route lies: its cosines are about 0.1, 0.2 and 0.0,
+all below θ, so it goes to the fallback.
+
+**In Python:**
+
+```python
+>>> import math
+>>> def cos(a, b):
+...     dot = sum(a_k * b_k for a_k, b_k in zip(a, b))
+...     return dot / (math.sqrt(sum(a_k ** 2 for a_k in a)) * math.sqrt(sum(b_k ** 2 for b_k in b)))
+>>> mu = {"it_helpdesk": (1, 0, 0, 0), "finance": (0, 1, 0, 0), "hr": (0, 0, 1, 0)}
+>>> theta = 0.3
+>>> def route(q):
+...     scores = {r: cos(q, mu_r) for r, mu_r in mu.items()}
+...     best = max(scores, key=scores.get)                 # arg max_r cos(q, μ_r)
+...     return best if scores[best] >= theta else "fallback"
+>>> [round(cos((0.8, 0.6, 0, 0), mu_r), 2) for mu_r in mu.values()], route((0.8, 0.6, 0, 0))
+([0.8, 0.6, 0.0], 'it_helpdesk')
+>>> [round(cos((0.1, 0.2, 0, 1), mu_r), 2) for mu_r in mu.values()], route((0.1, 0.2, 0, 1))
+([0.1, 0.2, 0.0], 'fallback')
+```
 
 ![Router scores for three requests](figures/primer.ml.embeddings.clustering.router.svg)
 

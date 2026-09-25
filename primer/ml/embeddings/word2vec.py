@@ -104,6 +104,23 @@ probability and every noise pair a low one.
 **On the example:** L = −log σ(0) − log σ(−0) = 0.693 + 0.693 = 1.386; after the
 nudge, −log σ(0.15) − log σ(0.15) = 0.621 + 0.621 = 1.242.
 
+**In Python:**
+
+```python
+>>> import math
+>>> def sigma(x):
+...     return 1 / (1 + math.exp(-x))            # σ(x) = 1 / (1 + e^(-x))
+>>> def dot(a, b):
+...     return sum(a_i * b_i for a_i, b_i in zip(a, b))
+>>> def L(v_c, u_o, noise):
+...     return (-math.log(sigma(dot(u_o, v_c)))                          # -log σ(u_o · v_c)
+...             - sum(math.log(sigma(-dot(u_n, v_c))) for u_n in noise))  # - Σ_i log σ(-u_ni · v_c)
+>>> round(L((1, 0), (0, 1), [(0, -1)]), 3)
+1.386
+>>> round(L((1, 0.1), (0.05, 1), [(-0.05, -1)]), 3)                     # after the nudge
+1.242
+```
+
 The nudge follows the **gradient**: for each vector, the direction in which
 a small change would increase the loss fastest. We step the opposite way.
 For this loss the gradients are short enough to derive by hand
@@ -130,6 +147,24 @@ how much it was wrongly believed.
 ∂L/∂vc = −0.5·(0, 1) + 0.5·(0, −1) = (0, −1). Stepping *against* it with learning
 rate 0.1: vc = (1, 0) − 0.1·(0, −1) = (1, 0.1).
 
+**In Python:**
+
+```python
+>>> import math
+>>> def sigma(x):
+...     return 1 / (1 + math.exp(-x))
+>>> v_c, u_o, u_n = (1, 0), (0, 1), (0, -1)
+>>> g_o = sigma(sum(u * v for u, v in zip(u_o, v_c))) - 1   # σ(u_o · v_c) - 1
+>>> g_1 = sigma(sum(u * v for u, v in zip(u_n, v_c)))       # σ(u_n1 · v_c)
+>>> g_o, g_1
+(-0.5, 0.5)
+>>> grad = [g_o * o + g_1 * n for o, n in zip(u_o, u_n)]     # ∂L/∂v_c = g_o u_o + Σ_i g_i u_ni
+>>> grad
+[0.0, -1.0]
+>>> [v - 0.1 * g for v, g in zip(v_c, grad)]                 # step against it, learning rate 0.1
+[1.0, 0.1]
+```
+
 Noise words are drawn in proportion to their count raised to the 3/4 power:
 
 $$
@@ -150,7 +185,21 @@ $$
 gives rare words a boost.
 
 **On an example:** counts 1 and 16 become 1^0.75 = 1 and 16^0.75 = 8, so the
-shares are 1/9 and 8/9 instead of 1/17 and 16/17.
+shares are 1/9 and 8/9 (0.111 and 0.889) instead of 1/17 and 16/17 (0.059
+and 0.941).
+
+**In Python:**
+
+```python
+>>> counts = [1, 16]
+>>> weights = [count ** 0.75 for count in counts]      # count(w)^0.75
+>>> weights
+[1.0, 8.0]
+>>> [round(w / sum(weights), 3) for w in weights]      # divide by Σ over w′ so the shares add to 1
+[0.111, 0.889]
+>>> [round(c / sum(counts), 3) for c in counts]        # without the 3/4 power
+[0.059, 0.941]
+```
 
 **In code:** `sgns_loss` computes L for one center, one context and k noise
 words, `sgns_update` takes one step against the gradient, and
@@ -196,6 +245,24 @@ same way as king minus man plus woman, not counting those three words.
 
 **On the example:** v = (3, 1) and queen = (3, 1) point the same way, so the
 cosine is 1, and queen wins.
+
+**In Python:**
+
+```python
+>>> import math
+>>> def cos(a, b):
+...     dot = sum(a_i * b_i for a_i, b_i in zip(a, b))
+...     return dot / (math.sqrt(sum(a_i ** 2 for a_i in a)) * math.sqrt(sum(b_i ** 2 for b_i in b)))
+>>> v = {"man": (1, 0), "woman": (1, 1), "king": (3, 0), "queen": (3, 1)}
+>>> a, b, c = "king", "man", "woman"
+>>> target = [x_a - x_b + x_c for x_a, x_b, x_c in zip(v[a], v[b], v[c])]   # v_a - v_b + v_c
+>>> target
+[3, 1]
+>>> candidates = [w for w in v if w not in {a, b, c}]                      # w ∉ {a, b, c}
+>>> w_hat = max(candidates, key=lambda w: cos(v[w], target))               # arg max of the cosine
+>>> w_hat, round(cos(v[w_hat], target), 2)
+('queen', 1.0)
+```
 
 This lesson trains on a small synthetic corpus built from three independent
 attributes (male/female, royal/common, adult/child), so the effect appears
@@ -257,6 +324,22 @@ part.
 **On the example:** PMI = log(0.5 / (0.5 · 0.5)) = log 2 = 0.693 on the
 diagonal; the off-diagonal pairs have P(w, c) = 0, so PMI = −∞ and PPMI = 0.
 
+**In Python:**
+
+```python
+>>> import math
+>>> X = [[2, 0], [0, 2]]                          # co-occurrence counts
+>>> total = sum(sum(row) for row in X)            # 4 sightings
+>>> P_w = [sum(row) / total for row in X]         # P(w): share of each row
+>>> P_c = [sum(col) / total for col in zip(*X)]   # P(c): share of each column
+>>> def ppmi(w, c):
+...     P_wc = X[w][c] / total
+...     pmi = math.log(P_wc / (P_w[w] * P_c[c])) if P_wc else -math.inf   # log 0 = -∞
+...     return max(pmi, 0.0)                                              # PPMI = max(PMI, 0)
+>>> [[round(ppmi(w, c), 3) for c in range(2)] for w in range(2)]
+[[0.693, 0.0], [0.0, 0.693]]
+```
+
 The PPMI table has one row per word, as many columns as the vocabulary, and
 is mostly zeros. **SVD** (singular value decomposition, see `primer.notation`)
 compresses it into a few columns that keep its main patterns; those few
@@ -303,7 +386,23 @@ $$
 that tells you how often they meet, on a log scale.
 
 **On an example:** if "ice" and "cold" appear together 20 times, training
-nudges the vectors until w_ice · w̃_cold + b_ice + b̃_cold ≈ log 20 = 3.0.
+nudges the vectors until w_ice · w̃_cold + b_ice + b̃_cold ≈ log 20 = 3.0. With
+2-D vectors w_ice = (1, 1) and w̃_cold = (1, 0.5) and offsets 0.25 each, the
+left side is 1.5 + 0.25 + 0.25 = 2.0, still 1.0 short, so training keeps
+pushing the two vectors to agree more.
+
+**In Python:**
+
+```python
+>>> import math
+>>> round(math.log(20), 1)                        # log X_ij: the target for 20 co-occurrences
+3.0
+>>> w_ice, w_cold_tilde = (1, 1), (1, 0.5)
+>>> b_ice, b_cold_tilde = 0.25, 0.25
+>>> left = sum(a * b for a, b in zip(w_ice, w_cold_tilde)) + b_ice + b_cold_tilde   # w_i · w̃_j + b_i + b̃_j
+>>> left, round(math.log(20) - left, 1)           # the left side, and how far it still falls short
+(2.0, 1.0)
+```
 
 ![PPMI matrix for the target words and their contexts](figures/primer.ml.embeddings.word2vec.ppmi.svg)
 
@@ -353,7 +452,26 @@ $$
 how relevant each one is.
 
 **On the example:** in "river bank fish", "bank" blends in "river" and "fish",
-and its cosine with the river words climbs from 0.52 to about 0.83.
+and its cosine with the river words climbs from 0.52 to about 0.83. The
+same move by hand, in 2-D where the first axis is "river" and the second is
+"money": river = (1, 0), bank = (1, 1), fish = (1, 0), and α = (0.25, 0.5, 0.25).
+Then bank′ = 0.25·(1, 0) + 0.5·(1, 1) + 0.25·(1, 0) = (1, 0.5), and its cosine
+with the river axis climbs from 0.71 to 0.89.
+
+**In Python:**
+
+```python
+>>> import math
+>>> x = [(1, 0), (1, 1), (1, 0)]                  # river, bank, fish: axis 1 is "river", axis 2 "money"
+>>> alpha = [0.25, 0.5, 0.25]                     # attention weights, Σ_j α_j = 1
+>>> bank_new = [sum(a_j * x_j[i] for a_j, x_j in zip(alpha, x)) for i in range(2)]   # Σ_j α_j x_j
+>>> bank_new
+[1.0, 0.5]
+>>> def cos_with_river(v):
+...     return v[0] / math.sqrt(v[0] ** 2 + v[1] ** 2)     # cosine with (1, 0)
+>>> round(cos_with_river(x[1]), 2), round(cos_with_river(bank_new), 2)
+(0.71, 0.89)
+```
 
 ```mermaid
 flowchart LR

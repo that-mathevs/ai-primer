@@ -131,6 +131,23 @@ the denominator is 2 + 1.5 · (1 − 0.75 + 0.75 · 3/2) = 2 + 1.5 · 1.375 =
 4.0625. The count part is 2 · 2.5 / 4.0625 = 1.231. Score = 0.981 · 1.231 =
 **1.207**.
 
+**In Python:**
+
+```python
+>>> import math
+>>> N, n_t = 3, 1                     # 3 documents; 1 of them contains "cat"
+>>> IDF = math.log(1 + (N - n_t + 0.5) / (n_t + 0.5))   # ln(1 + (N - n(t) + 0.5) / (n(t) + 0.5))
+>>> round(IDF, 3)
+0.981
+>>> f, d_len, avgdl = 2, 3, 2         # f(cat, d1), |d1|, average document length
+>>> k_1, b = 1.5, 0.75
+>>> count_part = f * (k_1 + 1) / (f + k_1 * (1 - b + b * d_len / avgdl))
+>>> round(count_part, 3)
+1.231
+>>> round(IDF * count_part, 3)        # Σ over the query's only word
+1.207
+```
+
 ![BM25 saturation and length normalization](figures/primer.ml.embeddings.retrieval.bm25_curves.svg)
 
 **Reading it:** on the left, the x-axis is how often a word appears in a
@@ -250,6 +267,18 @@ appears in, of one over sixty-plus-its-rank.
 
 **On the example:** X: 1/(60+1) + 1/(60+3) = 0.01639 + 0.01587 = **0.0323**.
 Y: 1/(60+1) = **0.0164**.
+
+**In Python:**
+
+```python
+>>> k = 60
+>>> def RRF(ranks):                   # d's position in each ranking that contains it
+...     return sum(1 / (k + rank_i) for rank_i in ranks)   # Σ_i 1/(k + rank_i(d))
+>>> round(RRF([1, 3]), 4)             # X: 1st in one ranking, 3rd in the other
+0.0323
+>>> round(RRF([1]), 4)                # Y: on one ranking only
+0.0164
+```
 
 ![RRF on "what does ERR-4012 mean"](figures/primer.ml.embeddings.retrieval.rrf_fusion.svg)
 
@@ -403,6 +432,19 @@ document, and add up those best similarities.
 
 **On the example:** max(1.0, 0.6) + max(0.0, 0.8) = 1.0 + 0.8 = **1.8**.
 
+**In Python:**
+
+```python
+>>> q = [(1, 0), (0, 1)]              # one vector per query word
+>>> d = [(1, 0), (0.6, 0.8)]          # one vector per document word
+>>> def dot(a, b):
+...     return sum(a_k * b_k for a_k, b_k in zip(a, b))
+>>> [max(dot(q_i, d_j) for d_j in d) for q_i in q]   # each query word's best match
+[1, 0.8]
+>>> sum(max(dot(q_i, d_j) for d_j in d) for q_i in q)   # Σ_i max_j q_i · d_j
+1.8
+```
+
 ![ColBERT's MaxSim grid for "password rules" vs. the password policy](figures/primer.ml.embeddings.retrieval.maxsim_grid.svg)
 
 **Reading it:** rows are the query's words, columns the document's words,
@@ -501,6 +543,15 @@ $$
 overlap, divided by the step, rounded up.
 
 **On the example:** ⌈(130 − 10)/(50 − 10)⌉ = ⌈120/40⌉ = **3**.
+
+**In Python:**
+
+```python
+>>> import math
+>>> n, s, o = 130, 50, 10             # words, chunk size, overlap
+>>> math.ceil((n - o) / (s - o))      # ⌈(n - o) / (s - o)⌉: the step is s - o
+3
+```
 
 **In code:** `fixed_size_chunks` cuts overlapping windows of words;
 `structure_aware_chunks` cuts at headings and paragraphs and returns `Chunk`

@@ -53,7 +53,7 @@ is the gold standard; every module meets it.
   (standard library only), written to mirror the formula symbol by symbol
   (`sum(...)` for Σ, a loop for Π, variables named after the symbols), as
   `>>>` examples whose output is exactly the numbers the lesson shows.
-  `tests/test_math_in_python.py` runs every block and fails on a formula
+  [`tests/test_math_in_python.py`](tests/test_math_in_python.py) runs every block and fails on a formula
   without one.
 
   ````markdown

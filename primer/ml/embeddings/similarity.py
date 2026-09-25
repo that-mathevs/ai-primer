@@ -105,6 +105,24 @@ differences.
 **On the example:** cos(a, b) = (1·2 + 2·1 + 2·2) / (3 · 3) = 8 / 9 = 0.89;
 ‖a − b‖ = √((1−2)² + (2−1)² + (2−2)²) = √2 = 1.41.
 
+**In Python:**
+
+```python
+>>> import math
+>>> a, b = [1, 2, 2], [2, 1, 2]
+>>> dot = sum(a_i * b_i for a_i, b_i in zip(a, b))          # a · b = Σ a_i b_i
+>>> dot
+8
+>>> norm_a = math.sqrt(sum(a_i ** 2 for a_i in a))          # ‖a‖
+>>> norm_b = math.sqrt(sum(b_i ** 2 for b_i in b))          # ‖b‖
+>>> norm_a, norm_b
+(3.0, 3.0)
+>>> round(dot / (norm_a * norm_b), 2)                       # cos(a, b)
+0.89
+>>> round(math.sqrt(sum((a_i - b_i) ** 2 for a_i, b_i in zip(a, b))), 2)   # ‖a - b‖
+1.41
+```
+
 The code is `cosine`, `dot` and `euclidean`, each a line of NumPy.
 
 **In code:** `rank` sorts a whole collection of documents from best to worst
@@ -144,6 +162,16 @@ $$
 twice the cosine, so the higher the cosine, the smaller the distance, always.
 
 **On the example:** ‖a − b‖² = 1 + 1 − 2·0.6 = 0.8 = 2 − 2·0.6.
+
+**In Python:**
+
+```python
+>>> a, b = [1, 0], [0.6, 0.8]                               # both length 1
+>>> cos = sum(a_i * b_i for a_i, b_i in zip(a, b))          # for unit vectors, a · b is the cosine
+>>> dist_sq = sum((a_i - b_i) ** 2 for a_i, b_i in zip(a, b))   # ‖a - b‖²
+>>> round(dist_sq, 2), round(2 - 2 * cos, 2)                # the two sides of the identity
+(0.8, 0.8)
+```
 
 **L2-normalizing** (dividing a vector by its own length) is what trims every
 arrow to length 1. After it, the dot product *is* the cosine, and distance is
@@ -243,8 +271,29 @@ $$
 **In words:** the ratio is the distance to the closest point divided by the
 distance to the farthest point.
 
-**On the example:** see the demo table: about 0.01 at d = 2, about 0.9 at
-d = 1,000.
+**On the example:** by hand first: a query at (0, 0) and three points at
+(1, 0), (0, 2) and (3, 4) are 1, 2 and 5 away, so the ratio is 1 / 5 = 0.2.
+With 1,000 random points the demo table shows about 0.01 at d = 2 and about
+0.9 at d = 1,000. The Python below draws its own random points, so it lands
+close by rather than on the same digits: 0.02 and 0.9.
+
+**In Python:**
+
+```python
+>>> import math, random
+>>> def ratio(q, xs):
+...     dists = [math.dist(q, x_j) for x_j in xs]           # ‖q - x_j‖ for every j
+...     return min(dists) / max(dists)                      # min over j ÷ max over j
+>>> ratio((0, 0), [(1, 0), (0, 2), (3, 4)])
+0.2
+>>> random.seed(0)
+>>> for d in (2, 1000):
+...     q = [random.random() for _ in range(d)]
+...     xs = [[random.random() for _ in range(d)] for _ in range(1000)]
+...     print(d, f"{ratio(q, xs):.1g}")                     # one significant figure
+2 0.02
+1000 0.9
+```
 
 ![Nearest / farthest distance ratio vs. dimension](figures/primer.ml.embeddings.similarity.curse.svg)
 
@@ -304,6 +353,23 @@ much the personal parts agree.
 **On the example:** unrelated, ρ = 0: (3 + 0) / (3 + 1) = 0.75. A paraphrase with
 ρ = 0.4: (3 + 0.4) / 4 = 0.85.
 
+**In Python:**
+
+```python
+>>> import math
+>>> alpha, beta = math.sqrt(3), 1
+>>> m, n1, n2 = (1, 0, 0), (0, 1, 0), (0, 0, 1)             # shared direction; two unrelated own directions
+>>> v1 = [alpha * m_i + beta * n_i for m_i, n_i in zip(m, n1)]   # v = α m + β n
+>>> v2 = [alpha * m_i + beta * n_i for m_i, n_i in zip(m, n2)]
+>>> dot = sum(a * b for a, b in zip(v1, v2))
+>>> round(dot / (math.hypot(*v1) * math.hypot(*v2)), 2)    # the cosine, measured directly
+0.75
+>>> def cos_formula(rho):
+...     return (alpha ** 2 + beta ** 2 * rho) / (alpha ** 2 + beta ** 2)
+>>> round(cos_formula(0), 2), round(cos_formula(0.4), 2)   # unrelated, and a paraphrase
+(0.75, 0.85)
+```
+
 ![Cosine scores of related and unrelated pairs, raw and mean-centered](figures/primer.ml.embeddings.similarity.anisotropy.svg)
 
 **Reading it:** the left panel shows raw cosine scores for 300 paraphrase
@@ -345,6 +411,19 @@ their sum.
 **On a hand example:** scores 0.9, 0.8, 0.7, 0.6 where the first two are true
 matches. Threshold 0.8 calls exactly those two matches: P = 2/2 = 1,
 R = 2/2 = 1, F₁ = 2·1·1 / 2 = 1. `best_threshold` finds 0.8.
+
+**In Python:**
+
+```python
+>>> scores = [0.9, 0.8, 0.7, 0.6]
+>>> is_match = [True, True, False, False]                   # the labels
+>>> called = [s >= 0.8 for s in scores]                     # threshold 0.8
+>>> true_matches = sum(c and y for c, y in zip(called, is_match))
+>>> P = true_matches / sum(called)                          # precision
+>>> R = true_matches / sum(is_match)                        # recall
+>>> 2 * P * R / (P + R)                                     # F₁
+1.0
+```
 
 ```mermaid
 flowchart LR

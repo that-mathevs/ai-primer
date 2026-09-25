@@ -120,6 +120,17 @@ used.
 **On a worked example:** a refund needs {lookup_order, refund}; an agent that
 only looked the order up scores |{lookup_order}| / 2 = 0.5.
 
+**In Python:**
+
+```python
+>>> T_required = {"lookup_order", "refund"}
+>>> T_called = {"lookup_order"}
+>>> T_required & T_called             # ∩: tools in both sets
+{'lookup_order'}
+>>> len(T_required & T_called) / len(T_required)
+0.5
+```
+
 **In code:** `grade_run` walks the diamonds in the diagram and returns a
 `Grade` with every reason a run failed; `exact_match` is the simplest code
 grader; `tool_selection_accuracy` is the formula above.
@@ -167,6 +178,23 @@ always says pass agrees 60% of the time, but $p_e$ = 0.6·1 + 0.4·0 = 0.6, so
 κ = (0.6 − 0.6) / 0.4 = **0**: all of its agreement is luck. A common rule
 of thumb is to want κ ≥ 0.6 before trusting a judge unsupervised; this one,
 at 0.583, is flagged for a better rubric.
+
+**In Python:**
+
+```python
+>>> p_o = (10 + 6) / 20                                # both pass on 10, both fail on 6
+>>> p_human = {"pass": 12 / 20, "fail": 8 / 20}
+>>> p_judge = {"pass": 12 / 20, "fail": 8 / 20}
+>>> p_e = sum(p_human[label] * p_judge[label] for label in p_human)   # Σ over the labels
+>>> round(p_e, 2)
+0.52
+>>> round((p_o - p_e) / (1 - p_e), 3)                  # κ
+0.583
+>>> always_pass = {"pass": 1.0, "fail": 0.0}
+>>> p_e = sum(p_human[label] * always_pass[label] for label in p_human)
+>>> round((0.6 - p_e) / (1 - p_e), 3)                  # agrees 60% of the time, all by luck
+0.0
+```
 
 ```mermaid
 sequenceDiagram

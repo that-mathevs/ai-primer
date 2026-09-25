@@ -142,13 +142,30 @@
 <p class="reading"><strong>Reading it:</strong> a batch of N image-caption pairs goes in, here N = 4. The image encoder turns each image into a vector I₁ to I₄ (the rows); the text encoder turns each caption into a vector T₁ to T₄ (the columns). Every cell is the similarity of one image with one caption: all N × N combinations. The N cells on the green diagonal are the real pairs; the other N² − N are mismatches. Training pushes diagonal cells up and everything else down. In the real paper N is 32,768, so each image is contrasted with over 32,000 wrong captions at once.</p>
 
 <h4>Tiny example: two pairs</h4>
-<p>Two images and their two captions. After normalizing every vector to length 1, the similarities are: image 1 with caption 1 = 0.9, with caption 2 = 0.1; image 2 with caption 1 = 0.2, with caption 2 = 0.8. Read row 1 as a two-way multiple-choice question: <span class="t" data-t="softmax">softmax</span>(0.9, 0.1) gives the right caption probability e<sup>0.9</sup> / (e<sup>0.9</sup> + e<sup>0.1</sup>) = 2.46 / 3.57 = 0.690, a loss of −ln 0.690 = 0.371. Row 2 gives 0.646 and 0.438. The columns ask the reverse question, “which image matches this caption?”, and give 0.403 each. The average of the two directions is <strong>0.404</strong>.</p>
+<p>Two images and their two captions. After normalizing every vector to length 1, the similarities are: image 1 with caption 1 = 0.9, with caption 2 = 0.1; image 2 with caption 1 = 0.2, with caption 2 = 0.8. Read row 1 as a two-way multiple-choice question: <span class="t" data-t="softmax">softmax</span>(0.9, 0.1) gives the right caption probability e<sup>0.9</sup> / (e<sup>0.9</sup> + e<sup>0.1</sup>) = 2.46 / 3.57 = 0.690, a loss of −ln 0.690 = 0.371. Row 2 gives 0.646 and 0.437. The columns ask the reverse question, “which image matches this caption?”, and give 0.403 each. The average of the two directions is <strong>0.404</strong>.</p>
 
 <h4>The math</h4>
 <div class="eq" data-tex="\htmlData{sym=logit}{\ell_{ij}} = \htmlData{sym=scale}{e^{t}} \cdot \big(\htmlData{sym=Ii}{I_i} \cdot \htmlData{sym=Tj}{T_j}\big), \qquad \htmlData{sym=L}{\mathcal{L}} = \tfrac{1}{2}\Big(\htmlData{sym=CEimg}{\tfrac{1}{N}\sum_{i} -\log \tfrac{e^{\ell_{ii}}}{\sum_j e^{\ell_{ij}}}} + \htmlData{sym=CEtxt}{\tfrac{1}{N}\sum_{j} -\log \tfrac{e^{\ell_{jj}}}{\sum_i e^{\ell_{ij}}}}\Big)" data-fallback="ℓ_ij = e^t · (I_i · T_j);  L = ½ ( mean over rows of −log softmax_row(ℓ)[i,i] + mean over columns of −log softmax_col(ℓ)[j,j] )"></div>
 <div class="symtable" data-syms="Ii,Tj,scale,logit,N,CEimg,CEtxt,L"></div>
 <p class="inwords"><strong>In words:</strong> “score every image against every caption with a scaled dot product of unit vectors; for each image, the right caption should win a softmax over all captions, and for each caption, the right image should win a softmax over all images; average the two losses.”</p>
-<p class="inwords"><strong>With the numbers:</strong> with the scale at 1, the two-pair example gives image-to-text losses 0.371 and 0.438 (mean 0.404) and text-to-image losses 0.403 and 0.403 (mean 0.403); the total is ½(0.404 + 0.403) = 0.404. At CLIP's starting scale of 1/0.07 ≈ 14.3, the same similarities give a loss below 0.001, because scaling stretches the gap between right and wrong.</p>
+<p class="inwords"><strong>With the numbers:</strong> with the scale at 1, the two-pair example gives image-to-text losses 0.371 and 0.437 (mean 0.404) and text-to-image losses 0.403 and 0.403 (mean 0.403); the total is ½(0.404 + 0.403) = 0.404. At CLIP's starting scale of 1/0.07 ≈ 14.3, the same similarities give a loss below 0.001, because scaling stretches the gap between right and wrong.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; sims = [[0.9, 0.1],                # I_i · T_j: row i is image i, column j is caption j
+...         [0.2, 0.8]]
+&gt;&gt;&gt; def loss(scale):
+...     l = [[scale * s for s in row] for row in sims]        # ℓ_ij = e^t · (I_i · T_j)
+...     N = len(l)
+...     img = [-math.log(math.exp(l[i][i]) / sum(math.exp(l[i][j]) for j in range(N))) for i in range(N)]
+...     txt = [-math.log(math.exp(l[j][j]) / sum(math.exp(l[i][j]) for i in range(N))) for j in range(N)]
+...     return img, txt, (sum(img) / N + sum(txt) / N) / 2   # ½ (image-to-text + text-to-image)
+&gt;&gt;&gt; img, txt, L = loss(1)
+&gt;&gt;&gt; [round(x, 3) for x in img], [round(x, 3) for x in txt]
+([0.371, 0.437], [0.403, 0.403])
+&gt;&gt;&gt; round(sum(img) / 2, 3), round(sum(txt) / 2, 3), round(L, 3)
+(0.404, 0.403, 0.404)
+&gt;&gt;&gt; loss(1 / 0.07)[2] &lt; 0.001        # CLIP's starting scale, 1/0.07 ≈ 14.3
+True</code></pre>
 <p>The paper notes this is the same batch trick as the multi-class N-pair loss and <span class="t" data-t="infonce">InfoNCE</span>, earlier used for medical images: the other items in the batch serve as free negatives. See the <a data-lesson="primer/ml/losses.html">losses lesson</a>.</p>
 
 <h4>Try it: the similarity matrix, live</h4>
@@ -188,6 +205,18 @@
 <div class="symtable" data-syms="pk,cos,tau,jj,C"></div>
 <p class="inwords"><strong>In words:</strong> “embed the image and one caption per class; the probability of each class is a softmax over the image's cosine similarity with each caption, sharpened by the temperature.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with two classes, cosines 0.30 (dog) and 0.25 (cat), and τ = 0.01, the logits are 30 and 25, so p(dog) = 1 / (1 + e<sup>−5</sup>) = 0.993. A 0.05 difference in cosine becomes a confident answer.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; cos = {"dog": 0.30, "cat": 0.25}          # cos(I, T_k) for each class caption
+&gt;&gt;&gt; tau = 0.01
+&gt;&gt;&gt; logits = {k: c / tau for k, c in cos.items()}
+&gt;&gt;&gt; {k: round(z) for k, z in logits.items()}
+{'dog': 30, 'cat': 25}
+&gt;&gt;&gt; total = sum(math.exp(z) for z in logits.values())   # Σ_j exp(cos(I, T_j) / τ)
+&gt;&gt;&gt; round(math.exp(logits["dog"]) / total, 3)           # p(y = dog | image)
+0.993
+&gt;&gt;&gt; round(1 / (1 + math.exp(-5)), 3)                    # the same thing, written with the gap of 5
+0.993</code></pre>
 <p>The paper points out that this is a linear classifier whose weights are <em>written by the text encoder</em> from the class names. That is why no training examples are needed.</p>
 <div class="play" id="zs-demo">
   <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem" id="zs-pics"></div>

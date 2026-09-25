@@ -58,6 +58,16 @@ input at full rate, plus output at the output rate, all per million.
 **On the worked example:** (8,000 × 0.1 × 5 + 2,000 × 5 + 500 × 25) / 10⁶ =
 (4,000 + 10,000 + 12,500) / 10⁶ = \$0.0265.
 
+**In Python:**
+
+```python
+>>> n_in, c, n_out = 10_000, 8_000, 500
+>>> p_in, p_out, rho = 5, 25, 0.1
+>>> cost = (c * rho * p_in + (n_in - c) * p_in + n_out * p_out) / 10**6
+>>> round(cost, 4)
+0.0265
+```
+
 Two facts fall out: output tokens cost several times more than input (ask
 for concise answers), and a cached prefix is nearly free (put stable content
 first; see `primer.agents.context`). Caches usually charge a small premium
@@ -210,11 +220,13 @@ for the slowest. Models can ask for several tools in one turn (parallel tool
 use); run them concurrently and return all results in one message. Parallel
 calls cut wall-clock time, not tokens.
 
-![Measured timeline of three tool calls, sequential vs. parallel](figures/primer.agents.cost.parallel.svg)
+![Timeline of three tool calls, sequential vs. parallel](figures/primer.agents.cost.parallel.svg)
 
-**Reading it:** each bar is one tool call on a shared time axis, measured
-with `asyncio`. The sequential calls stack end to end; the parallel ones
-overlap almost perfectly, so the whole batch finishes in the time of one.
+**Reading it:** each bar is one 100 ms tool call on a shared time axis. The
+sequential calls stack end to end, 300 ms in all; the parallel ones start
+together, so the whole batch finishes in the time of one. Run the lesson to
+measure it with `asyncio`: the real timings land within a few milliseconds
+of these bars.
 
 **In code:** `run_sequential` awaits each call before starting the next;
 `run_parallel` starts them all with Python's asyncio gather and waits once.
@@ -263,9 +275,25 @@ three times the usual spread.
 **On the worked example:** history 1000, 1100, 900, 1050, 950, 1000 has mean
 1,000 and standard deviation ≈ 71 (the squared distances from the mean add
 up to 25,000; divided by 6 − 1 = 5 that's 5,000, whose square root is 70.7),
-so the line is 1,000 + 3 × 71 ≈ 1,212.
+so the line is 1,000 + 3 × 70.7 ≈ 1,212.
 A 10,000-token task is far above it: alert. Such jumps usually mean a loop
 or a bad deploy.
+
+**In Python:**
+
+```python
+>>> import statistics
+>>> history = [1000, 1100, 900, 1050, 950, 1000]
+>>> mu = statistics.mean(history)
+>>> sigma = statistics.stdev(history)     # divides by 6 - 1, as above
+>>> mu, round(sigma, 1)
+(1000, 70.7)
+>>> z = 3
+>>> round(mu + z * sigma)                 # the alert line
+1212
+>>> 10_000 > mu + z * sigma               # alert?
+True
+```
 
 **In code:** `TaskBudget.charge` counts each step's tokens and raises
 `BudgetExceeded` at either limit; `TenantSpend.record` adds a finished task's
@@ -301,6 +329,21 @@ plus the chance of failure times the cost of the fix.
 model wins. With human cleanup, the small model costs 0.002 + 0.40 × 2.00 =
 **\$0.802** per task and the large one 0.010 + 0.05 × 2.00 = **\$0.110**: the
 "cheap" model is 7x more expensive.
+
+**In Python:**
+
+```python
+>>> def per_success(c, p):
+...     return c / p                      # retry until it works
+>>> def per_task(c, p, h=2.00):
+...     return c + (1 - p) * h            # a person fixes each failure
+>>> round(per_success(0.002, 0.60), 4), round(per_success(0.010, 0.95), 4)
+(0.0033, 0.0105)
+>>> round(per_task(0.002, 0.60), 3), round(per_task(0.010, 0.95), 3)
+(0.802, 0.11)
+>>> round(per_task(0.002, 0.60) / per_task(0.010, 0.95))   # small vs. large, with cleanup
+7
+```
 
 ![Cost per task for a small and a large model, with and without human cleanup](figures/primer.agents.cost.unit_economics.svg)
 
@@ -784,14 +827,14 @@ def figures() -> dict[str, Any]:
     fig.tight_layout()
     figs["semantic_cache"] = fig
 
-    # 4. Parallel vs sequential timeline (measured).
-    seq = asyncio.run(run_sequential([0.1, 0.1, 0.1]))
-    par = asyncio.run(run_parallel([0.1, 0.1, 0.1]))
+    # 4. Parallel vs sequential timeline: the schedule each approach follows. Drawn from the delays, not
+    # a stopwatch, so the site doesn't change with a millisecond of jitter; the demo measures the real thing.
+    delays_ms = [100, 100, 100]
+    sequential = [(i, sum(delays_ms[:i]), sum(delays_ms[: i + 1])) for i in range(len(delays_ms))]
+    parallel = [(i, 0, d) for i, d in enumerate(delays_ms)]
     fig, ax = plt.subplots(figsize=(6.5, 3))
-    for row, (name, res, color) in enumerate([("sequential", seq, "#c44e52"), ("parallel", par, "#4c72b0")]):
-        for i, start, end in res["spans"]:
-            # Measured times, drawn to the nearest 10 ms: a millisecond of jitter shouldn't redraw the figure.
-            start, end = round(start * 100) * 10, round(end * 100) * 10
+    for row, (name, spans, color) in enumerate([("sequential", sequential, "#c44e52"), ("parallel", parallel, "#4c72b0")]):
+        for i, start, end in spans:
             ax.barh(row * 4 + i, end - start, left=start, color=color)
             ax.text(start + 2, row * 4 + i, f"tool {i}", va="center", fontsize=8, color="white")
     ax.set_yticks([1, 5], ["sequential", "parallel"])

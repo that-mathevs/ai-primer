@@ -205,6 +205,17 @@
 <div class="symtable" data-syms="out,LayerNorm,x,Sublayer"></div>
 <p class="inwords"><strong>In words:</strong> “add the sub-layer's proposed change to the input, then normalize the sum.”</p>
 <p class="inwords"><strong>With the numbers:</strong> LayerNorm((2, 0) + (1, 1)) = LayerNorm((3, 1)) = (1, −1).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; x = [2, 0]
+&gt;&gt;&gt; sublayer_x = [1, 1]                                 # Sublayer(x): the proposed change
+&gt;&gt;&gt; s = [x_i + c_i for x_i, c_i in zip(x, sublayer_x)]  # x + Sublayer(x): the residual
+&gt;&gt;&gt; s
+[3, 1]
+&gt;&gt;&gt; mean = sum(s) / len(s)
+&gt;&gt;&gt; std = math.sqrt(sum((s_i - mean) ** 2 for s_i in s) / len(s))
+&gt;&gt;&gt; [(s_i - mean) / std for s_i in s]                   # LayerNorm: zero mean, unit spread
+[1.0, -1.0]</code></pre>
 <h4>What the paper specifies</h4>
 <ul>
   <li><strong>Encoder:</strong> N = 6 identical layers. Each has two sub-layers, multi-head self-attention and a feed-forward network, each wrapped as above.</li>
@@ -274,6 +285,16 @@
 <div class="symtable" data-syms="Q,K,V,KT,QKT,sqrtdk,softmax,Attention"></div>
 <p class="inwords"><strong>In words:</strong> “score every query against every key, shrink the scores by the square root of the key width, turn each row of scores into shares, and use the shares to blend the values.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the “it” row of QKᵀ/√d<sub>k</sub> is (2.0, 1.0, 0.5); softmax makes it (0.63, 0.23, 0.14); multiplying by V gives 0.63·V(animal) + 0.23·V(tired) + 0.14·V(street).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; scores = [2.0, 1.0, 0.5]                     # the "it" row of Q Kᵀ / √d_k
+&gt;&gt;&gt; total = sum(math.exp(z) for z in scores)
+&gt;&gt;&gt; weights = [math.exp(z) / total for z in scores]   # softmax: one share per word
+&gt;&gt;&gt; [round(w, 2) for w in weights]
+[0.63, 0.23, 0.14]
+&gt;&gt;&gt; V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]        # stand-in values: animal, tired, street, one direction each
+&gt;&gt;&gt; [round(sum(w * v[d] for w, v in zip(weights, V)), 2) for d in range(3)]   # shares times V
+[0.63, 0.23, 0.14]</code></pre>
 
 <h4>Softmax, decoded</h4>
 <p>Softmax is the step that turns any list of scores, including negative ones, into shares that are all positive and add up to exactly 1. Think of it as a vote in which louder voices get disproportionately more say.</p>
@@ -281,6 +302,16 @@
 <div class="symtable" data-syms="z,i,zi,e,sum,zj"></div>
 <p class="inwords"><strong>In words:</strong> “the share for item <em>i</em> is <em>e</em> raised to its score, divided by the sum of <em>e</em> raised to every score.”</p>
 <p class="inwords"><strong>With the numbers:</strong> softmax(2.0, 1.0, 0.5) for “animal” = 7.39 / (7.39 + 2.72 + 1.65) = 7.39 / 11.76 = 0.63.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; z = [2.0, 1.0, 0.5]                          # scores for animal, tired, street
+&gt;&gt;&gt; [round(math.exp(z_j), 2) for z_j in z]       # e^(z_j) for each j
+[7.39, 2.72, 1.65]
+&gt;&gt;&gt; denominator = sum(math.exp(z_j) for z_j in z)   # Σ_j e^(z_j)
+&gt;&gt;&gt; round(denominator, 2)
+11.76
+&gt;&gt;&gt; round(math.exp(z[0]) / denominator, 2)      # softmax(z)_i for i = animal
+0.63</code></pre>
 <div class="play" id="softmax-demo">
   <div class="sliders" id="sm-sliders"></div>
   <div class="shares" id="sm-shares"></div>
@@ -295,6 +326,14 @@
 <div class="symtable" data-syms="q,k,sumdk,Var,dk"></div>
 <p class="inwords"><strong>In words:</strong> “a dot product adds up d<sub>k</sub> products; if each entry of q and k is random with average 0 and spread 1, the sum's variance is d<sub>k</sub>, so its typical size is √d<sub>k</sub>. Dividing by √d<sub>k</sub> brings the typical size back to 1.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the paper's d<sub>k</sub> = 64, so raw scores typically swing by √64 = 8. After dividing by 8 they typically swing by about 1, where softmax is smooth.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; d_k = 64
+&gt;&gt;&gt; variance = d_k                  # Var(q·k) = d_k: each of the d_k products adds spread 1
+&gt;&gt;&gt; math.sqrt(variance)             # typical swing of a raw score
+8.0
+&gt;&gt;&gt; math.sqrt(variance) / math.sqrt(d_k)   # after dividing by √d_k
+1.0</code></pre>
 <h4>Why it matters today</h4>
 <p>Every attention layer in every modern model still divides by √d<sub>k</sub>. The <a data-lesson="primer/ml/attention.html">attention lesson</a> measures the saturation directly: at d<sub>k</sub> = 512 without scaling, the largest share averages above 0.9 and the gradient collapses.</p>
 </section>
@@ -345,6 +384,15 @@
 <div class="symtable" data-syms="headi,WQ,WK,WV,Concat,WO,hsym"></div>
 <p class="inwords"><strong>In words:</strong> “for each head <em>i</em>, project the queries, keys and values down with that head's own matrices and run attention; then glue all the heads' outputs side by side and mix them with one more matrix.”</p>
 <p class="inwords"><strong>With the numbers:</strong> a 10-word sentence gives Q, K, V of shape 10 × 512. Each W<sub>i</sub><sup>Q</sup> is 512 × 64, so each head sees 10 × 64. Eight heads concatenated give 10 × 512, and W<sup>O</sup> (512 × 512) keeps it at 10 × 512. The layer's projection weights total 4 × 512 × 512 = 1,048,576 numbers.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; n, d_model, h = 10, 512, 8
+&gt;&gt;&gt; d_k = d_model // h              # each W_i^Q is d_model × d_k
+&gt;&gt;&gt; (n, d_k)                        # shape of Q W_i^Q: what one head sees
+(10, 64)
+&gt;&gt;&gt; (n, h * d_k)                    # Concat(head_1, ..., head_h)
+(10, 512)
+&gt;&gt;&gt; print(f"{4 * d_model * d_model:,}")   # W^Q, W^K, W^V (8 heads each) and W^O
+1,048,576</code></pre>
 <h4>Why it matters today</h4>
 <p>Researchers have found heads that specialise: some track the previous word, some copy patterns, some resolve pronouns. Modern models keep many query heads but share keys and values across groups of heads (<span class="t" data-t="grouped-query attention">grouped-query attention</span>), which shrinks the memory needed while generating.</p>
 </section>
@@ -387,6 +435,19 @@
 <div class="symtable" data-syms="FFN,xrow,W1,b1,relu,W2,b2"></div>
 <p class="inwords"><strong>In words:</strong> “widen the word's vector by a factor of four, zero out the negatives, and narrow it back to its original width.”</p>
 <p class="inwords"><strong>With the numbers:</strong> in the base model, x has 512 numbers, W<sub>1</sub> widens to d<sub>ff</sub> = 2048, and W<sub>2</sub> returns to 512. That is 2 × 512 × 2048 + 2048 + 512 = 2,099,712 parameters per layer, about twice the attention layer's projections.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; x = [1, -1]                                   # the tiny example, 2 wide
+&gt;&gt;&gt; W1 = [[1, 0, -1], [0, 1, 1]]
+&gt;&gt;&gt; W2 = [[2, 0], [0, 1], [1, 1]]
+&gt;&gt;&gt; xW1 = [sum(x[r] * W1[r][c] for r in range(2)) for c in range(3)]   # x W1 (b1 = 0)
+&gt;&gt;&gt; xW1
+[1, -1, -2]
+&gt;&gt;&gt; hidden = [max(0, a) for a in xW1]             # max(0, ...): ReLU
+&gt;&gt;&gt; [sum(hidden[r] * W2[r][c] for r in range(3)) for c in range(2)]   # ... W2 (b2 = 0)
+[2, 0]
+&gt;&gt;&gt; d_model, d_ff = 512, 2048
+&gt;&gt;&gt; print(f"{d_model * d_ff + d_ff + d_ff * d_model + d_model:,}")   # W1, b1, W2, b2
+2,099,712</code></pre>
 <h4>Why it matters today</h4>
 <p>Feed-forward layers hold about two-thirds of a Transformer's parameters and are thought to store much of its factual knowledge. Modern models swap ReLU for smoother functions (<span class="t" data-t="gelu">GELU</span>, SwiGLU), and <span class="t" data-t="mixture of experts">mixture-of-experts</span> models replace this one network with many, routing each word to a few.</p>
 </section>
@@ -401,6 +462,10 @@
 <div class="symtable" data-syms="hfinal,E,ET,pnext"></div>
 <p class="inwords"><strong>In words:</strong> “score the final vector against every word's embedding, then turn the scores into probabilities.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with a vocabulary of about 37,000 tokens, E is 37,000 × 512 = 18,944,000 numbers. Sharing it between the input, the output and the final linear layer saves two more copies of that.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; K, d_model = 37_000, 512
+&gt;&gt;&gt; print(f"{K * d_model:,}")      # numbers in E: one row of d_model per token
+18,944,000</code></pre>
 <h4>Why it matters today</h4>
 <p>Every language model ends exactly like this: a score per vocabulary token, then softmax, then <span class="t" data-t="temperature">sampling</span>. How text is split into tokens in the first place is covered in the <a data-lesson="primer/ml/tokenization.html">tokenization lesson</a>.</p>
 </section>
@@ -416,6 +481,19 @@
 <div class="symtable" data-syms="PE,pos,ipe,wavelen,sin,cos,dmodel"></div>
 <p class="inwords"><strong>In words:</strong> “for position <em>pos</em>, each pair of dimensions gets a sine and a cosine of the position, divided by a number that grows from 1 to 10,000 as you move across the pairs, so early pairs spin fast and late pairs spin slowly.”</p>
 <p class="inwords"><strong>With the numbers:</strong> PE(1, 0) = sin(1/1) = 0.841; PE(1, 1) = cos(1/1) = 0.540; PE(10, 128) = sin(10/10) = 0.841, because pair i = 64 has 10000<sup>128/512</sup> = 10.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; d_model = 512
+&gt;&gt;&gt; def PE(pos, dim):
+...     i = dim // 2                              # the pair this dimension belongs to
+...     angle = pos / 10000 ** (2 * i / d_model)
+...     return math.sin(angle) if dim % 2 == 0 else math.cos(angle)   # even: sin, odd: cos
+&gt;&gt;&gt; print(f"{PE(1, 0):.3f} {PE(1, 1):.3f}")
+0.841 0.540
+&gt;&gt;&gt; 10000 ** (128 / 512)                          # pair i = 64 divides by exactly 10
+10.0
+&gt;&gt;&gt; print(f"{PE(10, 128):.3f}")
+0.841</code></pre>
 <div class="plot">
   <div class="controls"><span>Positions 0–99 (rows) × the first 128 dimensions (columns), computed live from the formula with d<sub>model</sub> = 512.</span></div>
   <canvas id="pe-canvas" aria-label="Heatmap of the sinusoidal positional encoding"></canvas>
@@ -472,6 +550,16 @@
 <div class="symtable" data-syms="lrate,dmodel,step,warmup,min,pow"></div>
 <p class="inwords"><strong>In words:</strong> “for the first warmup_steps steps, grow the learning rate in a straight line; after that, shrink it in proportion to one over the square root of the step number; scale everything by one over the square root of the model width.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with d<sub>model</sub> = 512 and warmup_steps = 4000, the peak is at step 4000: 512<sup>−0.5</sup> × 4000<sup>−0.5</sup> = 0.0442 × 0.0158 ≈ <strong>7.0 × 10<sup>−4</sup></strong>. By step 100,000 it has decayed to 512<sup>−0.5</sup> × 100000<sup>−0.5</sup> ≈ <strong>1.4 × 10<sup>−4</sup></strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; d_model, warmup_steps = 512, 4000
+&gt;&gt;&gt; def lrate(step_num):
+...     return d_model ** -0.5 * min(step_num ** -0.5, step_num * warmup_steps ** -1.5)
+&gt;&gt;&gt; round(d_model ** -0.5, 4), round(4000 ** -0.5, 4)
+(0.0442, 0.0158)
+&gt;&gt;&gt; round(lrate(4000) * 1e4, 1)          # the peak, in units of 10^-4
+7.0
+&gt;&gt;&gt; round(lrate(100_000) * 1e4, 1)       # decayed by step 100,000
+1.4</code></pre>
 <div class="plot" id="lr-plot">
   <div class="controls"><label for="lr-warm">warmup_steps = <strong id="lr-warm-v">4000</strong></label><input type="range" id="lr-warm" min="500" max="16000" step="500" value="4000"></div>
   <div id="lr-chart"></div>
@@ -493,6 +581,14 @@
 <div class="symtable" data-syms="ysmooth,yk,eps,Kvocab"></div>
 <p class="inwords"><strong>In words:</strong> “take 90% of the true one-hot target and add an equal sliver of the remaining 10% to every token in the vocabulary.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with K = 37,000 and ε<sub>ls</sub> = 0.1, the correct token's target is 0.9 + 0.1 / 37,000 ≈ 0.900003, and every other token's is 0.1 / 37,000 ≈ 0.0000027.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; eps_ls, K = 0.1, 37_000
+&gt;&gt;&gt; def smooth(y_k):
+...     return (1 - eps_ls) * y_k + eps_ls / K     # y'_k = (1 − ε_ls) y_k + ε_ls / K
+&gt;&gt;&gt; round(smooth(1), 6)                  # the correct token, y_k = 1
+0.900003
+&gt;&gt;&gt; print(f"{smooth(0):.7f}")            # every other token, y_k = 0
+0.0000027</code></pre>
 <p>The paper notes that this hurts <span class="t" data-t="perplexity">perplexity</span>, because the model learns to be less sure, but improves accuracy and <span class="t" data-t="bleu">BLEU</span>. That is a nice example of a training metric and a quality metric disagreeing.</p>
 <h4>Why it matters today</h4>
 <p>Very large modern models trained on enormous datasets often use little or no dropout, since they rarely see the same example twice. Label smoothing survives in classification and translation. See the <a data-lesson="primer/ml/regularization.html">regularization lesson</a>.</p>

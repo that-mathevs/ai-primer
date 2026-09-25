@@ -151,6 +151,13 @@
 <div class="symtable" data-syms="m,binom,pairs"></div>
 <p class="inwords"><strong>In words:</strong> “every model must be compared with every other; each of m models meets m − 1 others, and each pairing is counted twice that way, so halve it.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the paper's 6 models need 6 × 5 / 2 = 15 pairings per question; 20 models would need 190. Single-answer grading needs just one judgement per model per question.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; m = 6                        # models being compared
+&gt;&gt;&gt; m * (m - 1) // 2             # pairs = C(m, 2) = m(m − 1) / 2
+15
+&gt;&gt;&gt; m = 20
+&gt;&gt;&gt; m * (m - 1) // 2
+190</code></pre>
 <p>The trade-off, as the paper puts it: pairwise comparison scales poorly as models are added, while single-answer grading can miss subtle differences and its absolute scores shift more when the judge model changes.</p>
 </section>
 
@@ -194,6 +201,17 @@
 <div class="symtable" data-syms="delta,k,beta,sigma,pfirst"></div>
 <p class="inwords"><strong>In words:</strong> “the judge's chance of picking the first answer rises with how much better the first answer really is, plus a constant nudge towards whatever is shown first.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with k = 4 and β = 1, two equally good answers (δ = 0) give σ(1) = 0.73: the first-shown answer wins 73% of the time for no reason. If the first answer is clearly worse (δ = −0.5), σ(−2 + 1) = σ(−1) = 0.27.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; def sigma(z):                # σ squashes any number into (0, 1)
+...     return 1 / (1 + math.exp(-z))
+&gt;&gt;&gt; k, beta = 4, 1               # sensitivity k, lean towards first position β
+&gt;&gt;&gt; delta = 0                    # two equally good answers
+&gt;&gt;&gt; round(sigma(k * delta + beta), 2)
+0.73
+&gt;&gt;&gt; delta = -0.5                 # the first answer is clearly worse
+&gt;&gt;&gt; round(sigma(k * delta + beta), 2)
+0.27</code></pre>
 <p class="reading"><strong>Reading it:</strong> the bars show three rates over the 1,000 simulated pairs. <em>Consistent</em> is how often the judge picks the same underlying answer in both orders, the paper's consistency measure. <em>Single-order errors</em> is how often a one-shot judgement picks the truly worse answer. <em>Swap-rule errors</em> applies the paper's conservative fix: declare a winner only if both orders agree, otherwise call it a tie, and count only wrong winners as errors. Push β up: consistency falls, single-order errors rise, and the swap rule converts most of them into ties. That is its whole purpose.</p>
 </section>
 
@@ -237,6 +255,17 @@
 <div class="symtable" data-syms="po,pe,pjA,phA,pjB,phB,kappa"></div>
 <p class="inwords"><strong>In words:</strong> “take the observed agreement, subtract what two judges with the same habits would agree on by luck, and rescale so 1 means perfect agreement and 0 means no better than luck.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 100 non-tie votes: both say A 40 times, both say B 35 times, judge A while human B 10 times, judge B while human A 15 times. Observed p<sub>o</sub> = 75/100 = 0.75. The judge says A 50% of the time and the human 55%, so p<sub>e</sub> = 0.50 × 0.55 + 0.50 × 0.45 = 0.50. κ = (0.75 − 0.50)/(1 − 0.50) = <strong>0.50</strong>: halfway between luck and perfect.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; both_A, both_B, judge_A_human_B, judge_B_human_A = 40, 35, 10, 15
+&gt;&gt;&gt; n = both_A + both_B + judge_A_human_B + judge_B_human_A
+&gt;&gt;&gt; p_o = (both_A + both_B) / n                    # observed agreement
+&gt;&gt;&gt; p_JA = (both_A + judge_A_human_B) / n          # how often the judge says A
+&gt;&gt;&gt; p_HA = (both_A + judge_B_human_A) / n          # how often the human says A
+&gt;&gt;&gt; p_e = p_JA * p_HA + (1 - p_JA) * (1 - p_HA)    # agreement by luck alone
+&gt;&gt;&gt; p_o, round(p_e, 2)
+(0.75, 0.5)
+&gt;&gt;&gt; round((p_o - p_e) / (1 - p_e), 2)              # κ
+0.5</code></pre>
 <div class="play" id="kappa">
   <div class="sliders" id="k-inputs"></div>
   <div class="shares" id="k-out"></div>

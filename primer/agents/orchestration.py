@@ -153,6 +153,17 @@ voters are right.
 **On the example:** $n = 3$, $p = 0.8$: $0.8^3 + 3 \times 0.8^2 \times 0.2 = 0.512 + 0.384 = 0.896$.
 Three 80% judges make an 89.6% panel.
 
+**In Python:**
+
+```python
+>>> from math import comb
+>>> n, p = 3, 0.8
+>>> P = sum(comb(n, k) * p ** k * (1 - p) ** (n - k)   # the chance exactly k voters are right ...
+...         for k in range(n // 2 + 1, n + 1))         # ... for every k from ⌊n/2⌋ + 1 to n
+>>> round(P, 3)
+0.896
+```
+
 ![Majority accuracy vs. number of voters](figures/primer.agents.orchestration.voting.svg)
 
 **Reading it:** each curve is a per-voter accuracy, and the x-axis adds voters.

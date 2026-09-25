@@ -87,16 +87,33 @@ its speed is set by memory bandwidth; prefill reuses each weight for every
 prompt token, so its speed is set by arithmetic.
 
 **On the worked example:** decode I = 2 × 1 / 2 = 1 FLOP per byte; prefill
-of 1,000 tokens I = 1,000. The GPU breaks even at 10¹⁵ / 3.35×10¹² ≈ **298**
+of 1,000 tokens I = 1,000. The GPU breaks even at 10¹⁵ / 3.35×10¹² ≈ **299**
 FLOPs per byte, so decode sits far below it (**memory-bound**) and prefill
 far above (**compute-bound**).
+
+**In Python:**
+
+```python
+>>> P, b = 8e9, 2                   # 8 billion weights at 2 bytes each (16-bit)
+>>> BW, FLOPS = 3.35e12, 1e15       # bytes read per second, operations per second
+>>> def I(n):
+...     return 2 * n / b            # operations per byte of weights read
+>>> I(1), I(1000)                   # decode, then a 1,000-token prefill
+(1.0, 1000.0)
+>>> round(FLOPS / BW)               # the break-even intensity
+299
+>>> round(P * b / BW * 1000, 2)     # t_decode, in milliseconds per token
+4.78
+>>> round(2 * P * 1000 / FLOPS * 1000, 1)   # t_prefill for 1,000 tokens, in milliseconds
+16.0
+```
 
 ![Roofline: where prefill and decode sit](figures/primer.ml.inference.roofline.svg)
 
 **Reading it:** the x-axis is arithmetic intensity (log scale); the y-axis
 is the speed the GPU can actually reach. The sloped part of the roof is the
 memory limit (bandwidth × intensity); the flat part is the arithmetic limit.
-The corner is the break-even point, ~298. Decode at batch size 1 sits at
+The corner is the break-even point, ~299. Decode at batch size 1 sits at
 intensity 1, deep in the memory-bound region, using well under 1% of the
 GPU's arithmetic. Batching many users together moves decode to the right,
 because one read of the weights then serves every user in the batch. That is
@@ -207,6 +224,19 @@ every token, one key and one value per layer per KV head.
 **On the worked example:** 7×10¹⁰ × 16/8 = 1.4×10¹¹ bytes = 140 GB; and
 2 × 32 × 8 × 128 × 2 = 131,072 bytes per token.
 
+**In Python:**
+
+```python
+>>> P = 7e10
+>>> P * 16 / 8 / 1e9, P * 4 / 8 / 1e9    # weight GB at 16 bits, then at 4 bits
+(140.0, 35.0)
+>>> L, H_kv, d_h, b = 32, 8, 128, 2
+>>> 2 * L * H_kv * d_h * b               # KV bytes per token: a key and a value, per layer, per KV head
+131072
+>>> round(32_000 * 131_072 / 1e9, 1)     # GB of cache for a 32,000-token conversation
+4.2
+```
+
 ![KV cache size versus context length](figures/primer.ml.inference.kv_memory.svg)
 
 **Reading it:** the x-axis is context length per request; the y-axis is KV
@@ -277,6 +307,18 @@ divide by the total so the results sum to one.
 
 **On the worked example:** T = 0.5 turns (2, 1, 0) into (4, 2, 0);
 e⁴ = 54.6, e² = 7.39, e⁰ = 1, total 63.0; probabilities 0.867, 0.117, 0.016.
+
+**In Python:**
+
+```python
+>>> import math
+>>> z, T = [2.0, 1.0, 0.0], 0.5
+>>> exps = [math.exp(z_i / T) for z_i in z]     # e^(z_i / T)
+>>> round(sum(exps), 1)                          # Σ_j e^(z_j / T)
+63.0
+>>> [round(e / sum(exps), 3) for e in exps]      # p_i
+[0.867, 0.117, 0.016]
+```
 
 ![Temperature reshapes the next-token distribution](figures/primer.ml.inference.sampling.svg)
 
@@ -359,6 +401,21 @@ big-model pass is a geometric series in the acceptance rate.
 **On the worked example:** α = 0.8, γ = 4: (1 − 0.8⁵)/(1 − 0.8) =
 (1 − 0.328)/0.2 = 3.36.
 
+**In Python:**
+
+```python
+>>> p = [0.5, 0.3, 0.2]                          # big model
+>>> q = [0.3, 0.3, 0.4]                          # small model
+>>> [round(min(1.0, p_x / q_x), 2) for p_x, q_x in zip(p, q)]   # P(keep x) for each token
+[1.0, 1.0, 0.5]
+>>> alpha = sum(min(p_x, q_x) for p_x, q_x in zip(p, q))
+>>> round(alpha, 2)
+0.8
+>>> gamma = 4
+>>> round((1 - alpha ** (gamma + 1)) / (1 - alpha), 2)   # expected tokens per big-model pass
+3.36
+```
+
 **In code:** `acceptance_rate` computes α and `expected_tokens_per_round` the
 geometric series; `speculative_round` runs the draft, verify and replace
 loop once, and `speculative_generate` repeats it until enough tokens exist.
@@ -401,6 +458,23 @@ back at run time.
 
 **On the worked example:** int4: s = 1.27/7 = 0.181; 0.5/0.181 = 2.76 → 3;
 3 × 0.181 = 0.544.
+
+**In Python:**
+
+```python
+>>> w = [0.5, -1.27, 0.02]
+>>> def quantize(w, bits):
+...     s = max(abs(w_j) for w_j in w) / (2 ** (bits - 1) - 1)   # the step size
+...     return s, [round(w_j / s) for w_j in w]                   # c_j: whole steps
+>>> s, c = quantize(w, bits=8)
+>>> round(s, 3), c
+(0.01, [50, -127, 2])
+>>> s, c = quantize(w, bits=4)
+>>> round(s, 3), c
+(0.181, [3, -7, 0])
+>>> [round(s * c_j, 3) for c_j in c]          # ŵ_j = s · c_j: the 0.02 is gone
+[0.544, -1.27, 0.0]
+```
 
 **In code:** `quantize` returns the integer codes and one scale per row,
 `dequantize` multiplies them back, and `quantization_error` measures how far
@@ -449,6 +523,15 @@ work capacity the server spent serving them.
 
 **On the worked example:** 7 useful slot-steps; static 7/(5×2) = 0.70,
 continuous 7/(4×2) = 0.875.
+
+**In Python:**
+
+```python
+>>> useful = 4 + 1 + 1 + 1                       # decode steps the four requests need
+>>> slots = 2
+>>> useful / (5 * slots), useful / (4 * slots)   # static takes 5 steps, continuous 4
+(0.7, 0.875)
+```
 
 **In code:** `simulate_static_batching` and `simulate_continuous_batching`
 play out the two policies step by step, each returning a `ServingRun` that

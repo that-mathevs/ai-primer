@@ -189,6 +189,20 @@ the total is $t$ times $1 + 2 + \dots + n$, which is about half of $n$ squared t
 $500 \times 55 = 27{,}500$ input tokens, not the $5{,}000$ you'd guess. Double
 to $n = 20$ and it's $500 \times 210 = 105{,}000$, almost 4x.
 
+**In Python:**
+
+```python
+>>> t = 500
+>>> def total_input(n):
+...     return sum(k * t for k in range(1, n + 1))   # Σ_k k·t: step k re-sends k steps' worth
+>>> total_input(10)
+27500
+>>> total_input(20)
+105000
+>>> round(total_input(20) / total_input(10), 1)    # almost 4x
+3.8
+```
+
 ![Input tokens sent at each step of a runaway agent](figures/primer.agents.agent_loop.tokens_per_step.svg)
 
 **Reading it:** each bar is one call to the model in the budget-burner demo

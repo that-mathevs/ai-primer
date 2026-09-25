@@ -202,6 +202,16 @@
 <div class="symtable" data-syms="lossth,kc2,E,x,yw,yl,D,log,sigma,rth"></div>
 <p class="inwords"><strong>In words:</strong> “for every pair from a ranking, the winner's score should beat the loser's; penalize by minus the log of the <span class="t" data-t="sigmoid">sigmoid</span> of the gap, and average over all the pairs.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if the reward model scores the winner 1.5 and the loser 0.5, the pair's loss is −ln σ(1.0) = −ln 0.731 = <strong>0.313</strong>. A ranking of 4 answers contributes 6 such terms, each weighted by 1/6.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; sigma = lambda z: 1 / (1 + math.exp(-z))    # σ
+&gt;&gt;&gt; r_w, r_l = 1.5, 0.5                         # r_θ(x, y_w), r_θ(x, y_l)
+&gt;&gt;&gt; round(sigma(r_w - r_l), 3)
+0.731
+&gt;&gt;&gt; round(-math.log(sigma(r_w - r_l)), 3)       # one pair's loss
+0.313
+&gt;&gt;&gt; math.comb(4, 2)                             # C(K, 2) pairs in a ranking of K = 4
+6</code></pre>
 <p>Two practical details. The paper feeds all C(K, 2) comparisons from one ranking together as a single batch element, because treating them as independent examples made the reward model overfit after one pass. And it used a 6-billion-parameter reward model, since a 175B one trained unstably.</p>
 
 <h4>Step 3: reinforcement learning with PPO</h4>
@@ -210,6 +220,12 @@
 <div class="symtable" data-syms="obj,Drl,y,beta,piRL,piSFT,gamma,Dpre"></div>
 <p class="inwords"><strong>In words:</strong> “for answers the model writes, earn the reward model's score minus a penalty for how much more likely the model now makes that answer than the SFT model did; separately, keep the model good at predicting ordinary pretraining text, weighted by γ.”</p>
 <p class="inwords"><strong>With the numbers</strong> (illustrative values, not the paper's settings): an answer scores 2.0 from the reward model; the RL model gives it a <span class="t" data-t="log-probability">log-probability</span> 3.0 higher than the SFT model did; with β = 0.1 that answer contributes 2.0 − 0.1 × 3.0 = <strong>1.7</strong>. Setting γ = 0 gives the plain “PPO” model; γ &gt; 0 gives PPO-ptx.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; r = 2.0            # r_θ(x, y), the reward model's score
+&gt;&gt;&gt; log_ratio = 3.0    # log(π_RL(y | x) / π_SFT(y | x))
+&gt;&gt;&gt; beta = 0.1         # β
+&gt;&gt;&gt; round(r - beta * log_ratio, 1)
+1.7</code></pre>
 <p>The paper found mixing in pretraining data worked better than simply tightening the leash (raising β), which cost reward without fully fixing the regressions.</p>
 <h4>Why it matters</h4>
 <p>This objective, reward minus a KL leash, is the same one <a href="dpo.html">DPO</a> later solved without reinforcement learning. The <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> shows both.</p>

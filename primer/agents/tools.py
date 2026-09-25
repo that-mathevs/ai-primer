@@ -195,6 +195,18 @@ $$
 **On the example:** with $p = 0.97$ and $n = 5$, $0.97^5 = 0.859$, so about
 1 run in 7 fails. With one high-level call it's $0.97^1 = 0.97$.
 
+**In Python:**
+
+```python
+>>> p = 0.97
+>>> round(p ** 5, 3)                  # five calls that must all succeed
+0.859
+>>> round(1 - p ** 5, 2)              # about 1 run in 7 fails
+0.14
+>>> p ** 1                            # one high-level call
+0.97
+```
+
 ![Chain success vs. number of calls](figures/primer.agents.tools.compounding.svg)
 
 **Reading it:** the x-axis is how many calls the job takes, and the y-axis is the chance

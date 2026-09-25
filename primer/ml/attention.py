@@ -70,6 +70,21 @@ the sum of *e* raised to every score."
 **With the numbers:** softmax(2.0, 1.0, 0.5)₁ = 7.39 / (7.39 + 2.72 + 1.65) =
 7.39 / 11.76 = 0.63.
 
+**In Python:**
+
+```python
+>>> import math
+>>> z = [2.0, 1.0, 0.5]                    # animal, tired, street
+>>> exps = [math.exp(z_i) for z_i in z]    # e^(z_i) for each score
+>>> [round(e, 2) for e in exps]
+[7.39, 2.72, 1.65]
+>>> total = sum(exps)                      # Σ_j e^(z_j)
+>>> round(total, 2)
+11.76
+>>> [round(e / total, 2) for e in exps]    # softmax(z)_i: each share of the total
+[0.63, 0.23, 0.14]
+```
+
 Why *e* to the power of the score, and not just the score divided by the
 total? Three reasons you can check on the table above:
 
@@ -131,6 +146,15 @@ numbers together, and so on, then add up all the products."
 
 **With the numbers:** (1, 2) · (3, 0.5) = 1·3 + 2·0.5 = 3 + 1 = **4**.
 
+**In Python:**
+
+```python
+>>> q = [1, 2]
+>>> k = [3, 0.5]
+>>> sum(q_m * k_m for q_m, k_m in zip(q, k))   # Σ over m of q_m k_m
+4.0
+```
+
 Vectors that point the same way give big positive scores, vectors at right
 angles give zero, and opposite vectors give negative scores. That is why the
 dot product works as a relevance score. The values are then blended with
@@ -189,7 +213,31 @@ turn each row of scores into shares, and use the shares to blend the values."
 
 **With the numbers:** the "it" row of $QK^\top/\sqrt{d_k}$ holds (2.0, 1.0,
 0.5); softmax turns that row into (0.63, 0.23, 0.14); multiplying by $V$
-gives 0.63·V(animal) + 0.23·V(tired) + 0.14·V(street).
+gives 0.63·V(animal) + 0.23·V(tired) + 0.14·V(street). To see every symbol
+at work, take $d_k = 4$: the query of "it" (1, 1, 1, 1) against the keys
+(1, 1, 1, 1), (1, 1, 0, 0) and (1, 0, 0, 0) gives raw scores (4, 2, 1), and
+dividing by $\sqrt{4} = 2$ gives exactly that row. With toy values
+V(animal) = (1, 0), V(tired) = (0, 1) and V(street) = (1, 1), the blend is
+(0.63 + 0.14, 0.23 + 0.14) = (0.77, 0.37).
+
+**In Python:**
+
+```python
+>>> import math
+>>> q_it = [1, 1, 1, 1]
+>>> K = [[1, 1, 1, 1], [1, 1, 0, 0], [1, 0, 0, 0]]   # keys: animal, tired, street
+>>> V = [[1, 0], [0, 1], [1, 1]]                     # values, one row per word
+>>> d_k = len(q_it)
+>>> scores = [sum(q * k for q, k in zip(q_it, k_j)) / math.sqrt(d_k) for k_j in K]   # q Kᵀ / √d_k
+>>> scores
+[2.0, 1.0, 0.5]
+>>> exps = [math.exp(s) for s in scores]
+>>> weights = [e / sum(exps) for e in exps]          # softmax of the row
+>>> [round(w, 2) for w in weights]
+[0.63, 0.23, 0.14]
+>>> [round(sum(w * v[c] for w, v in zip(weights, V)), 2) for c in range(2)]   # (…)V: blend the values
+[0.77, 0.37]
+```
 
 In practice this one line runs in every layer of every modern language
 model, for every word, many times per word generated. Nearly everything
@@ -289,7 +337,24 @@ back to 1 at any width."
 
 **With the numbers:** at d_k = 128, the standard deviation of a raw score is
 √128 ≈ 11.3, so scores of ±20 are routine. After dividing by √128 the
-standard deviation is 1, so scores of ±2 are typical.
+standard deviation is 1, so scores of ±2 are typical. At d_k = 4 you can
+check the formula exactly: the 16 equally likely patterns of four ±1 products
+give raw scores whose variance is 4, and dividing each by √4 = 2 brings the
+variance to 1.
+
+**In Python:**
+
+```python
+>>> import itertools, math, statistics
+>>> d_k = 4
+>>> scores = [sum(products) for products in itertools.product([-1, 1], repeat=d_k)]
+>>> statistics.pvariance(scores)                                  # Var(q · k) = d_k
+4
+>>> statistics.pvariance([s / math.sqrt(d_k) for s in scores])    # Var(q · k / √d_k) = 1
+1.0
+>>> round(math.sqrt(128), 1)        # the typical raw swing at d_k = 128
+11.3
+```
 
 Why "all attention on one word" is bad, beyond being a wrong answer: softmax
 has stopped responding. Its **gradient** (the signal training uses to

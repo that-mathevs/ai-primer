@@ -70,6 +70,19 @@ the slope of the loss at the old weight."
 **With the numbers:** $w \leftarrow 0 - 0.25 \times (-6) = 1.5$, the first row
 of the table.
 
+**In Python:**
+
+```python
+>>> w, eta, target = 0.0, 0.25, 3.0
+>>> for step in range(3):
+...     slope = 2 * (w - target)      # ∂L/∂w for the loss (w - 3)²
+...     w = w - eta * slope           # w ← w - η ∂L/∂w
+...     print(w)
+1.5
+2.25
+2.625
+```
+
 `learn_one_weight` runs the table above; `train` runs the loop for a real
 network.
 
@@ -133,6 +146,19 @@ bias, and pass the total through the activation function."
 
 **With the numbers:** $y = \text{ReLU}(0.5 \cdot 2 + 1.0 \cdot 3 + 0.5) =
 \text{ReLU}(4.5) = 4.5$.
+
+**In Python:**
+
+```python
+>>> x = [2, 3]
+>>> w = [0.5, 1.0]
+>>> b = 0.5
+>>> def phi(z): return max(0.0, z)                 # ReLU: keep positives, zero the rest
+>>> sum(w_i * x_i for w_i, x_i in zip(w, x))       # w · x = Σ_i w_i x_i
+4.0
+>>> phi(sum(w_i * x_i for w_i, x_i in zip(w, x)) + b)   # y = φ(w · x + b)
+4.5
+```
 
 **Why it matters:** every dense layer in every model is this, including the
 feed-forward half of each transformer block, where most of a language
@@ -209,6 +235,22 @@ sum cares about that weight."
 **With the numbers:** for $w_2$: $(-1) \times 1 \times 3 = -3$; for $w_1$:
 $(-1) \times 1 \times 2 = -2$.
 
+**In Python:**
+
+```python
+>>> x, t, z = [2, 3], 5, 4.5
+>>> y = max(0.0, z)                 # ReLU(4.5)
+>>> dL_dy = 2 * (y - t)             # ∂L/∂y
+>>> dy_dz = 1 if z > 0 else 0       # φ'(z): ReLU's slope
+>>> [dL_dy * dy_dz * x_i for x_i in x]   # × ∂z/∂w_i = x_i, for w_1 and w_2
+[-2.0, -3.0]
+>>> w = [0.5 - 0.01 * -2.0, 1.0 - 0.01 * -3.0]   # one step, learning rate 0.01
+>>> b = 0.5 - 0.01 * -1.0
+>>> y_new = w[0] * x[0] + w[1] * x[1] + b
+>>> round(y_new, 2), round((t - y_new) ** 2, 4)  # the new output and the smaller loss
+(4.64, 0.1296)
+```
+
 `one_neuron_worked_example` computes every row of the table.
 
 **Why it matters:** PyTorch's `loss.backward()` does exactly this, for
@@ -267,6 +309,19 @@ but put an activation between them and no single layer can copy them."
 **With the numbers:** without ReLU, $-1 \to -3 \to -6$ and $1 \to 3 \to 6$,
 exactly $6x$. With ReLU, $-1 \to -3 \to 0 \to 0$ and $1 \to 3 \to 3 \to 6$.
 A single weight $W'$ would need $-W' = 0$ and $W' = 6$ at once: impossible.
+
+**In Python:**
+
+```python
+>>> W_1, W_2 = 3, 2
+>>> def phi(z): return max(0, z)          # ReLU
+>>> [(x * W_1) * W_2 for x in [-1, 1]]    # (X W_1) W_2 ...
+[-6, 6]
+>>> [x * (W_1 * W_2) for x in [-1, 1]]    # ... equals X (W_1 W_2): one layer of 6
+[-6, 6]
+>>> [phi(x * W_1) * W_2 for x in [-1, 1]] # φ(X W_1) W_2: no single W' gives 0 and 6
+[0, 6]
+```
 
 ![Decision boundaries: logistic regression vs. a one-hidden-layer MLP on two moons](figures/primer.ml.neural_net.decision_boundaries.svg)
 
@@ -421,6 +476,24 @@ $\partial L/\partial h = -0.2841 \times 2 = -0.5682$;
 $\partial L/\partial z_1 = -0.5682 \times 0.7864 = -0.4469$;
 $\partial L/\partial W_1 = 1 \times -0.4469 = -0.4469$.
 
+**In Python:**
+
+```python
+>>> import math
+>>> X, W_1, W_2, y = 1, 0.5, 2, 1
+>>> z_1 = X * W_1
+>>> h = math.tanh(z_1)
+>>> z_2 = h * W_2
+>>> y_hat = 1 / (1 + math.exp(-z_2))   # σ(z_2)
+>>> dL_dz2 = y_hat - y                  # ŷ - y
+>>> dL_dW2 = h * dL_dz2                 # hᵀ ∂L/∂z_2
+>>> dL_dh = dL_dz2 * W_2                # ∂L/∂z_2 W_2ᵀ
+>>> dL_dz1 = dL_dh * (1 - h ** 2)       # ⊙ (1 - h²), tanh's slope
+>>> dL_dW1 = X * dL_dz1                 # Xᵀ ∂L/∂z_1
+>>> [round(v, 4) for v in (dL_dz2, dL_dW2, dL_dh, dL_dz1, dL_dW1)]
+[-0.2841, -0.1313, -0.5682, -0.4469, -0.4469]
+```
+
 The hand-written gradients are checked two ways: a **numerical gradient
 check** (nudge each weight by ±ε and measure the loss change; see
 `gradient_check`) and, in the tests, PyTorch autograd.
@@ -482,6 +555,19 @@ cover N examples, rounding up."
 
 **With the numbers:** $\lceil 400 / 32 \rceil = \lceil 12.5 \rceil = 13$ steps
 per epoch; 2 epochs = 26 steps.
+
+**In Python:**
+
+```python
+>>> import math
+>>> N, B, epochs = 400, 32, 2
+>>> N / B
+12.5
+>>> math.ceil(N / B)            # ⌈N / B⌉: the last, smaller batch still counts
+13
+>>> epochs * math.ceil(N / B)
+26
+```
 
 **In code:** `train` reshuffles the data every epoch, takes one plain gradient step per batch and records the loss after each epoch; `MLP.accuracy` reports the fraction of examples classified correctly.
 

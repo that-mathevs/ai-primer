@@ -73,6 +73,26 @@ Softmax gives weights 0.401, 0.198, 0.401, so dog's output is
 dog" dog sits in row 3, but it scores the same three keys in a different
 order, gets the same weights, and outputs the same **(0.802, 0.599)**.
 
+**In Python:**
+
+```python
+>>> import math
+>>> def Attn(X):                 # q = k = v = the word vector, no positions
+...     out = []
+...     for q in X:
+...         scores = [sum(a * b for a, b in zip(q, k)) / math.sqrt(2) for k in X]
+...         exps = [math.exp(s) for s in scores]
+...         weights = [e / sum(exps) for e in exps]
+...         out.append(tuple(round(sum(w * v[c] for w, v in zip(weights, X)), 3) for c in range(2)))
+...     return out
+>>> X = [(1, 0), (0, 1), (1, 1)]          # dog, bites, man
+>>> PX = [X[2], X[1], X[0]]               # P swaps rows 1 and 3: man, bites, dog
+>>> Attn(X)
+[(0.802, 0.599), (0.599, 0.802), (0.752, 0.752)]
+>>> Attn(PX)                              # the same rows, shuffled the same way
+[(0.752, 0.752), (0.599, 0.802), (0.802, 0.599)]
+```
+
 Shuffle the input and you get the same outputs, shuffled the same way.
 `encode_sentence(..., scheme="none")` runs a real attention layer and shows
 the "dog" row is the same vector whether "dog" comes first or last.
@@ -160,6 +180,19 @@ cos 1 = 0.540. Pair 1 turns 1/100 radian: sin 0.01 = 0.010, cos 0.01 = 1.000.
 So position 1's code is **(0.841, 0.540, 0.010, 1.000)**, the second row of
 the table above.
 
+**In Python:**
+
+```python
+>>> import math
+>>> d, pos = 4, 1
+>>> PE = []
+>>> for i in range(d // 2):                  # one (sin, cos) pair per i
+...     omega_i = 1 / 10000 ** (2 * i / d)   # ω_i: pair i's speed
+...     PE += [math.sin(pos * omega_i), math.cos(pos * omega_i)]   # columns 2i and 2i+1
+>>> [f"{v:.3f}" for v in PE]
+['0.841', '0.540', '0.010', '1.000']
+```
+
 `sinusoidal_encoding(n, d)` builds the whole (n × d) table in four lines. A
 shift of k positions rotates every (sin, cos) pair by the same angle k·ω_i
 wherever you start, so **the dot product of two position codes depends only
@@ -223,6 +256,17 @@ learned vector."
 
 **With the numbers:** with 2 dimensions, if $E_{dog}$ = (0.5, −0.2) and
 $P_{3}$ = (0.1, 0.3), then $x_3$ = (0.6, 0.1). $P_{1024}$ does not exist.
+
+**In Python:**
+
+```python
+>>> E_dog = [0.5, -0.2]
+>>> P = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.1, 0.3]]   # a position table with rows 0 to 3
+>>> [round(e + p, 2) for e, p in zip(E_dog, P[3])]        # x_3 = E_dog + P_3
+[0.6, 0.1]
+>>> len(P) > 1024                                         # no row 1024: it cannot be encoded
+False
+```
 
 `primer.ml.transformer.TinyGPT` uses exactly this.
 
@@ -303,6 +347,21 @@ where the angle is position times the pair's speed."
 **With the numbers:** x = (1, 0) at m = 3, θ = 1: x′ = (cos 3 · 1 − sin 3 · 0,
 sin 3 · 1 + cos 3 · 0) = (−0.990, 0.141).
 
+**In Python:**
+
+```python
+>>> import math
+>>> def rotate(x, m, theta_i=1.0):
+...     a = m * theta_i                                  # the angle m θ_i
+...     return (math.cos(a) * x[0] - math.sin(a) * x[1],   # row 1 of the grid
+...             math.sin(a) * x[0] + math.cos(a) * x[1])   # row 2 of the grid
+>>> [f"{v:.3f}" for v in rotate((1, 0), m=3)]
+['-0.990', '0.141']
+>>> d, i = 2, 0
+>>> 10000 ** (-2 * i / d)                                # θ_0 = 10000^(-2i/d)
+1.0
+```
+
 Why only the distance survives: turning q by angle a and k by angle b and
 then taking their **dot product** (multiply matching numbers, add them up;
 large when the vectors point the same way) gives the same answer as turning
@@ -329,6 +388,23 @@ score you'd get by leaving the query alone and turning the key by the gap
 **With the numbers:** left side (−0.990, 0.141) · (0.754, 0.657) = −0.654;
 right side (1, 0) · (cos 4, sin 4) = cos 4 = −0.654. Same number, and the same
 again at positions 103 and 107.
+
+**In Python:**
+
+```python
+>>> import math
+>>> def R(angle, x):             # turn a pair by an angle (θ = 1, so the angle is the position)
+...     return (math.cos(angle) * x[0] - math.sin(angle) * x[1],
+...             math.sin(angle) * x[0] + math.cos(angle) * x[1])
+>>> def dot(a, b): return sum(a_i * b_i for a_i, b_i in zip(a, b))
+>>> q = k = (1, 0)
+>>> round(dot(R(3, q), R(7, k)), 3)       # ⟨R_m q, R_n k⟩ with m = 3, n = 7
+-0.654
+>>> round(dot(q, R(7 - 3, k)), 3)         # ⟨q, R_(n-m) k⟩: only the distance
+-0.654
+>>> round(dot(R(103, q), R(107, k)), 3)   # 100 positions later, the same score
+-0.654
+```
 
 `apply_rope` does this for a vector or a whole sequence with three
 element-wise lines, and no matrix multiply.
@@ -404,6 +480,14 @@ $$
 
 **With the numbers:** 32,000 × 4,096 / 32,768 = 32,000 / 8 = **4,000**.
 
+**In Python:**
+
+```python
+>>> pos, L_train, L_new = 32_000, 4_096, 32_768
+>>> pos * L_train / L_new        # pos' = pos · L_train / L_new
+4000.0
+```
+
 NTK-aware scaling (`ntk_scaled_base`) changes the base instead:
 
 $$
@@ -425,6 +509,22 @@ $$
 **With the numbers:** the fastest pair keeps $\theta_0 = base'^{0} = 1$
 radian per position. The slowest pair goes from $10000^{-126/128} = 1.15
 \times 10^{-4}$ to $82685^{-126/128} = 1.44 \times 10^{-5}$: exactly 8× slower.
+
+**In Python:**
+
+```python
+>>> base, s, d = 10_000, 8, 128
+>>> round(s ** (d / (d - 2)), 2)             # s^(d/(d-2)): just above 8
+8.27
+>>> base_new = base * s ** (d / (d - 2))     # base' = base · s^(d/(d-2))
+>>> round(base_new)
+82685
+>>> slowest = lambda b: b ** (-126 / 128)     # θ_i for the last pair, 2i = 126
+>>> f"{slowest(base):.2e}", f"{slowest(base_new):.2e}"
+('1.15e-04', '1.44e-05')
+>>> round(slowest(base) / slowest(base_new), 6)   # exactly 8× slower
+8.0
+```
 
 YaRN refines this per frequency band and is
 used by many long-context models. ALiBi skips position vectors entirely and

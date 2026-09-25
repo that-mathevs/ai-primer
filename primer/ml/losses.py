@@ -86,6 +86,17 @@ model gave the right answer."
 
 **With the numbers:** $-\ln 0.5 = 0.69$; $-\ln 0.01 = 4.61$.
 
+**In Python:**
+
+```python
+>>> import math
+>>> p_correct = 0.5
+>>> round(-math.log(p_correct), 2)   # −ln p_correct
+0.69
+>>> round(-math.log(0.01), 2)        # confidently wrong costs far more
+4.61
+```
+
 `cross_entropy_from_prob` is this one line.
 
 **Why it matters:** a language model predicts the next token by choosing
@@ -153,6 +164,23 @@ out front first."
 1 + 0.368 + 0.150 = 1.518$; $\ln 1.518 = 0.417$; so log-sum-exp $= 2.417$ and the
 loss is $2.417 - 2 = 0.417$ (and $-\ln 0.659 = 0.417$ too).
 
+**In Python:**
+
+```python
+>>> import math
+>>> def log_sum_exp(z):
+...     m = max(z)                                            # m = max_j z_j
+...     return m + math.log(sum(math.exp(z_j - m) for z_j in z))   # m + ln Σ_j e^(z_j − m)
+>>> z, y = [2.0, 1.0, 0.1], 0
+>>> round(log_sum_exp(z), 3)
+2.417
+>>> round(log_sum_exp(z) - z[y], 3)                           # ln Σ_j e^(z_j) − z_y
+0.417
+>>> z, y = [1000.0, 0.0], 1
+>>> log_sum_exp(z) - z[y]                                     # e^1000 is never computed: no overflow
+1000.0
+```
+
 The gradient, which is how each logit should move:
 
 $$
@@ -172,6 +200,18 @@ if it's the right answer."
 
 **With the numbers:** logits (0, ln 3) give softmax (1/4, 3/4); with class 1
 correct, the gradient is (0.25 − 0, 0.75 − 1) = (0.25, −0.25).
+
+**In Python:**
+
+```python
+>>> import math
+>>> z, y = [0.0, math.log(3)], 1
+>>> exps = [math.exp(z_j) for z_j in z]
+>>> softmax = [e / sum(exps) for e in exps]                  # (1/4, 3/4)
+>>> onehot = [1 if j == y else 0 for j in range(len(z))]     # (0, 1)
+>>> [round(s_j - o_j, 2) for s_j, o_j in zip(softmax, onehot)]   # softmax(z) − onehot(y)
+[0.25, -0.25]
+```
 
 **In code:** `log_sum_exp` pulls the largest logit out front, `log_softmax`
 subtracts that total from every logit, and `softmax_cross_entropy` returns
@@ -226,6 +266,19 @@ token."
 
 **With the numbers:** $\exp\left(\frac{1}{3}(0.69 \times 3)\right) = e^{0.69} = 2.0$.
 
+**In Python:**
+
+```python
+>>> import math
+>>> p = [0.5, 0.5, 0.5]
+>>> N = len(p)
+>>> average = sum(-math.log(p_i) for p_i in p) / N   # (1/N) Σ −ln p_i
+>>> round(average, 2)
+0.69
+>>> round(math.exp(average), 1)                      # exp(...)
+2.0
+```
+
 **In code:** `perplexity` averages `cross_entropy_from_prob` over the tokens
 and raises e to the result.
 
@@ -276,6 +329,18 @@ $$
 of the errors ignoring their sign."
 
 **With the numbers:** MSE $= (1+1+1+1+100)/5 = 20.8$; MAE $= (1+1+1+1+10)/5 = 2.8$.
+
+**In Python:**
+
+```python
+>>> y = [0, 0, 0, 0, 0]
+>>> y_hat = [1, -1, 1, -1, 10]
+>>> N = len(y)
+>>> sum((y_i - y_hat_i) ** 2 for y_i, y_hat_i in zip(y, y_hat)) / N   # MSE
+20.8
+>>> sum(abs(y_i - y_hat_i) for y_i, y_hat_i in zip(y, y_hat)) / N     # MAE
+2.8
+```
 
 **In code:** `mse` and `mae` are the two averages, and `outlier_share`
 measures how much of each total the single largest error contributes (the
@@ -355,6 +420,23 @@ charge minus the log of that share."
 = -\ln 0.731 = 0.3133$. At temperature 0.1 the same vectors give
 $-\ln \frac{e^{10}}{e^{10} + 1} \approx 0.000045$: sharper.
 
+**In Python:**
+
+```python
+>>> import math
+>>> q = [[1, 0], [0, 1]]                 # the queries
+>>> d = [[1, 0], [0, 1]]                 # their passages: d[i] is q[i]'s partner
+>>> def dot(a, b):
+...     return sum(a_k * b_k for a_k, b_k in zip(a, b))
+>>> def info_nce(i, tau):
+...     scores = [math.exp(dot(q[i], d_j) / tau) for d_j in d]   # exp(q_i · d_j / τ) for every j
+...     return -math.log(scores[i] / sum(scores))                # −ln (own passage's share)
+>>> round(info_nce(0, tau=1.0), 4)
+0.3133
+>>> print(f"{info_nce(0, tau=0.1):.6f}")
+0.000045
+```
+
 It's just cross-entropy where the "classes" are the passages in the batch,
 so the gradient is the same softmax − onehot, pushed back through the dot
 products into both sets of vectors.
@@ -417,8 +499,24 @@ evenly over all classes; the loss is cross-entropy against that softer
 target."
 
 **With the numbers:** $(1 - 0.1) \cdot 1 + 0.1/4 = 0.925$ on the right class
-and $0.025$ elsewhere; with logits (50, 0, 0, 0) the three wrong classes each
+and $0.025$ elsewhere; with logits (0, 0, 50, 0) the three wrong classes each
 have $\ln \text{softmax} \approx -50$, so $\mathcal{L} \approx 3 \times 0.025 \times 50 = 3.75$.
+
+**In Python:**
+
+```python
+>>> import math
+>>> eps, K, y = 0.1, 4, 2
+>>> t = [(1 - eps) * (1 if k == y else 0) + eps / K for k in range(K)]   # t_k
+>>> [round(t_k, 3) for t_k in t]
+[0.025, 0.025, 0.925, 0.025]
+>>> z = [0.0, 0.0, 50.0, 0.0]
+>>> m = max(z)
+>>> log_total = m + math.log(sum(math.exp(z_k - m) for z_k in z))
+>>> log_softmax = [z_k - log_total for z_k in z]                        # ln softmax(z)_k
+>>> round(-sum(t_k * ls_k for t_k, ls_k in zip(t, log_softmax)), 2)     # −Σ_k t_k ln softmax(z)_k
+3.75
+```
 
 **In code:** `smoothed_targets` builds the soft target t, and
 `smoothed_cross_entropy` scores the logits against it.

@@ -230,7 +230,20 @@
 <div class="eq" data-tex="\htmlData{sym=Ed}{E_d} := \htmlData{sym=Filter}{\texttt{Filter}}\big(\htmlData{sym=Norm}{\texttt{Normalize}}\big(\htmlData{sym=Lin}{\texttt{CNN}}\big(\htmlData{sym=BERT}{\texttt{BERT}}(\text{“[D]}\,d_0 d_1 \ldots d_n\text{”})\big)\big)\big)" data-fallback="E_d := Filter(Normalize(CNN(BERT(“[D] d0 d1 … dn”))))"></div>
 <div class="symtable" data-syms="Eq,Ed,BERT,Lin,Norm,Filter,hash"></div>
 <p class="inwords"><strong>In words:</strong> “run BERT over the marked text, shrink every output vector with a linear layer, scale each to length 1; for documents, also throw away the punctuation vectors.”</p>
-<p class="inwords"><strong>With the numbers:</strong> query: 32 tokens → 32 × 768 from BERT → 32 × 128 → 32 unit vectors. A document of 70 tokens → at most 70 × 128. Because every vector has length 1, a dot product between two of them is exactly their <span class="t" data-t="cosine similarity">cosine similarity</span>, between −1 and 1.</p>
+<p class="inwords"><strong>With the numbers:</strong> query: 32 tokens → 32 × 768 from BERT → 32 × 128 → 32 unit vectors. A document of 70 tokens → at most 70 × 128. Because every vector has length 1, a dot product between two of them is exactly their <span class="t" data-t="cosine similarity">cosine similarity</span>, between −1 and 1. In two dimensions: (3, 4) normalizes to (0.6, 0.8) and (4, 3) to (0.8, 0.6), and their dot product 0.6 × 0.8 + 0.8 × 0.6 = 0.96 is their cosine similarity.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; import math
+&gt;&gt;&gt; N_q, bert_width, m = 32, 768, 128
+&gt;&gt;&gt; (N_q, bert_width), (N_q, m)          # BERT's output, then after the linear layer
+((32, 768), (32, 128))
+&gt;&gt;&gt; def normalize(v):                     # Normalize: divide by the length, so the length is 1
+...     length = math.sqrt(sum(x * x for x in v))
+...     return [x / length for x in v]
+&gt;&gt;&gt; a, b = normalize([3, 4]), normalize([4, 3])
+&gt;&gt;&gt; a, b
+([0.6, 0.8], [0.8, 0.6])
+&gt;&gt;&gt; round(sum(a_k * b_k for a_k, b_k in zip(a, b)), 2)   # dot product of unit vectors = cosine
+0.96</code></pre>
 </section>
 
 <section id="s3-3">
@@ -241,7 +254,20 @@
 <div class="eq" data-tex="\htmlData{sym=Sqd}{S_{q,d}} := \htmlData{sym=sumi}{\sum_{i \in [|E_q|]}}\ \htmlData{sym=maxj}{\max_{j \in [|E_d|]}}\ \htmlData{sym=Eqi}{E_{q_i}} \cdot \htmlData{sym=Edj}{E_{d_j}^{\top}}" data-fallback="S_{q,d} := Σ_i max_j E_{q_i} · E_{d_j}ᵀ"></div>
 <div class="symtable" data-syms="Sqd,sumi,maxj,Eqi,Edj"></div>
 <p class="inwords"><strong>In words:</strong> “for every query vector, find the highest dot product with any document vector, and add those maxima up.”</p>
-<p class="inwords"><strong>With the numbers:</strong> see the demo: for document A, the “built” vector's best match is “completed” and the “when” vector's best match is “1889”, even though neither word appears in the query.</p>
+<p class="inwords"><strong>With the numbers:</strong> in the demo below, document A's five query rows have best matches 0.92 (“when” → “1889”), 0.97 (“eiffel” → “eiffel”), 0.97 (“tower” → “tower”), 0.98 (“built” → “completed”) and 0.77 ([mask] → “paris”), so S<sub>q,d</sub> = 0.92 + 0.97 + 0.97 + 0.98 + 0.77 = 4.61. The “built” vector's best match is “completed” and the “when” vector's best match is “1889”, even though neither word appears in the query.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; doc = ["eiffel", "tower", "completed", "1889", "paris"]    # E_d: document A's vectors
+&gt;&gt;&gt; sims = {                                                   # E_q_i · E_d_j, one row per query vector
+...     "when":   [0.18, 0.08, 0.48, 0.92, 0.03],
+...     "eiffel": [0.97, 0.70, 0.05, 0.11, 0.58],
+...     "tower":  [0.70, 0.97, 0.10, 0.10, 0.21],
+...     "built":  [0.04, 0.09, 0.98, 0.45, 0.00],
+...     "[mask]": [0.20, 0.11, 0.57, 0.68, 0.77],
+... }
+&gt;&gt;&gt; {q: doc[row.index(max(row))] for q, row in sims.items()}   # which document vector each max_j picks
+{'when': '1889', 'eiffel': 'eiffel', 'tower': 'tower', 'built': 'completed', '[mask]': 'paris'}
+&gt;&gt;&gt; round(sum(max(row) for row in sims.values()), 2)          # S_q,d = Σ_i max_j
+4.61</code></pre>
 <div class="play" id="ms-demo">
   <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem">
     <button type="button" data-doc="0" aria-pressed="true">Doc A: answers it</button>
@@ -297,6 +323,11 @@
 <div class="symtable" data-syms="MRR,nQ,sumQ,rankq"></div>
 <p class="inwords"><strong>In words:</strong> “average, over all queries, one over the position of the first right answer, counting nothing if it is not in the top 10.”</p>
 <p class="inwords"><strong>With the numbers:</strong> (1/1 + 1/3 + 0) / 3 = 0.444.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; ranks = [1, 3, None]                  # rank_q of the first right answer; None: not in the top 10
+&gt;&gt;&gt; Q = len(ranks)
+&gt;&gt;&gt; round(sum(1 / r if r is not None and r &lt;= 10 else 0 for r in ranks) / Q, 3)   # (1/|Q|) Σ_q 1/rank_q
+0.444</code></pre>
 <p>Implementation: learning rate 3 × 10<sup>−6</sup>, batch size 32, N<sub>q</sub> = 32 query vectors, m = 128 dimensions, 200,000 training iterations for MS MARCO.</p>
 <h3 class="rung">4.2 Re-ranking and 4.3 end-to-end results</h3>
 <div class="tablewrap"><table>

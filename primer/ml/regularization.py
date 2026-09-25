@@ -78,6 +78,16 @@ never seen."
 Cubic: every miss is 0, so training error is 0; its validation error on any
 point beyond x = 3 is enormous.
 
+**In Python:**
+
+```python
+>>> y = [0, 1, 0, 1]                  # the true values at x = 0, 1, 2, 3
+>>> y_hat = [0.5, 0.5, 0.5, 0.5]      # the flat line predicts 0.5 everywhere
+>>> n = len(y)
+>>> sum((y_i - y_hat_i) ** 2 for y_i, y_hat_i in zip(y, y_hat)) / n   # (1/n) Σ (y_i - ŷ_i)²
+0.25
+```
+
 **In code:** `zigzag_fit_error` and `zigzag_predict` fit a polynomial of any
 degree to the four zig-zag points and report its training error and its
 prediction; `true_function` and `make_curve_data` draw the noisy sine
@@ -180,6 +190,21 @@ once you've gone `patience` epochs past it without doing better."
 
 **With the numbers:** $t^\star = 3$; at $t = 5$, $5 - 3 = 2 \ge 2$, so stop.
 
+**In Python:**
+
+```python
+>>> L_val = [1.0, 0.8, 0.6, 0.55, 0.58, 0.65, 0.7]   # validation loss after epoch t = 0, 1, 2, ...
+>>> patience = 2
+>>> t_star = 0
+>>> for t, loss in enumerate(L_val):
+...     if loss < L_val[t_star]:
+...         t_star = t                  # a new best epoch: remember it
+...     if t - t_star >= patience:
+...         break                       # patience used up: stop here
+>>> t_star, t
+(3, 5)
+```
+
 **In code:** `early_stopping` replays a run's validation losses and returns
 the best epoch and the epoch where training stops; `train_flexible_model`
 trains the over-sized network in the figure and records both losses.
@@ -239,6 +264,19 @@ nobody can predict."
 **With the numbers:** degree 1: $0.174 + 0.022 + 0.09 \approx 0.29$;
 degree 3: $0.0035 + 0.015 + 0.09 \approx 0.11$; degree 9:
 $0.0038 + 4.5 + 0.09 \approx 4.6$. Degree 3 has the best total.
+
+**In Python:**
+
+```python
+>>> sigma = 0.3
+>>> noise = sigma ** 2                  # σ²: the error no model can remove
+>>> for degree, bias_sq, variance in [(1, 0.174, 0.022), (3, 0.0035, 0.015), (9, 0.0038, 4.5)]:
+...     total = bias_sq + variance + noise           # bias² + variance + σ²
+...     print(degree, f"{total:.2g}")                # two significant figures
+1 0.29
+3 0.11
+9 4.6
+```
 
 **In code:** `bias_variance` fits one polynomial to each of many random
 training sets and splits their error into bias², variance and noise.
@@ -306,6 +344,20 @@ lose, and divide the survivors by the keep probability."
 
 **With the numbers:** $(0\cdot1, 0\cdot1, 1\cdot1, 1\cdot1) / 0.5 = (0, 0, 2, 2)$.
 
+**In Python:**
+
+```python
+>>> import random
+>>> random.seed(0)
+>>> h = [1, 1, 1, 1]
+>>> p = 0.5
+>>> m = [1 if random.random() < 1 - p else 0 for _ in h]   # m_i ~ Bernoulli(1 - p): a coin flip each
+>>> m
+[0, 0, 1, 1]
+>>> [m_i * h_i / (1 - p) for m_i, h_i in zip(m, h)]        # (m ⊙ h) / (1 - p)
+[0.0, 0.0, 2.0, 2.0]
+```
+
 **In code:** `dropout` draws the mask and scales the survivors during
 training, and passes activations through unchanged at evaluation time.
 
@@ -367,6 +419,20 @@ $w_{\text{L2}} = w / (1 + \lambda) = (1.5, 0.25, -1)$ and
 $w_{\text{L1}} = \text{sign}(w)\max(\lvert w \rvert - \lambda, 0) = (2, 0, -1)$,
 the "soft threshold" in `soft_threshold`.
 
+**In Python:**
+
+```python
+>>> import math
+>>> w = [3, 0.5, -2]
+>>> lam = 1                             # λ ("lambda" is taken in Python)
+>>> sum(w_i ** 2 for w_i in w), sum(abs(w_i) for w_i in w)          # ‖w‖₂², ‖w‖₁
+(13.25, 5.5)
+>>> [w_i / (1 + lam) for w_i in w]                                   # L2: shrink every weight
+[1.5, 0.25, -1.0]
+>>> [math.copysign(max(abs(w_i) - lam, 0), w_i) for w_i in w]       # L1: sign(w) max(|w| - λ, 0)
+[2.0, 0.0, -1.0]
+```
+
 **In code:** `penalised_weights` gives both closed forms from the table, and
 `fit_sparse_problem` fits the ten-feature problem in the figure (L1 by
 alternating gradient steps with `soft_threshold`).
@@ -425,6 +491,19 @@ their scores on the fold each one didn't see."
 
 **With the numbers:** 10 examples, $k = 5$: five models, each trained on 8
 and scored on 2; if they score 1.0, 0.5, 1.0, 1.0, 0.5, the CV score is 0.8.
+
+**In Python:**
+
+```python
+>>> examples = list(range(10))
+>>> k = 5
+>>> folds = [examples[2 * i: 2 * i + 2] for i in range(k)]   # 5 folds of 2
+>>> [len(examples) - len(fold) for fold in folds]           # each model trains on the other 8
+[8, 8, 8, 8, 8]
+>>> scores = [1.0, 0.5, 1.0, 1.0, 0.5]    # score of the model trained without fold i, on fold i
+>>> sum(scores) / k                       # (1/k) Σ_i score_i
+0.8
+```
 
 **In code:** `train_val_test_split` shuffles and cuts the indices into three
 disjoint sets, and `k_fold` yields the training and validation indices for

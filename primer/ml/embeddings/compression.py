@@ -53,6 +53,20 @@ times the bytes per number.
 **On the example:** 10,000,000 × 1,536 × 32/8 = **61,440,000,000 bytes ≈ 61 GB**.
 As int8 it's **15.4 GB**; as bits, **1.9 GB**.
 
+**In Python:**
+
+```python
+>>> n, d = 10_000_000, 1536
+>>> for b in (32, 8, 1):                         # float32, int8, binary
+...     size = n * d * b // 8                    # bytes = n × d × b/8
+...     print(b, size, round(size / 1e9, 1), "GB")
+32 61440000000 61.4 GB
+8 15360000000 15.4 GB
+1 1920000000 1.9 GB
+>>> n * 2 * 16 * 4 / 1e9                         # HNSW: 2·M ids of 4 bytes each, M = 16, in GB
+1.28
+```
+
 The index adds its own overhead. An HNSW graph (`primer.ml.embeddings.ann`)
 stores about 2·M neighbour ids per vector at 4 bytes each: with M = 16 that's
 10M × 32 × 4 = **1.28 GB** more.
@@ -102,6 +116,24 @@ $$
 **In words:** keep the first m numbers and rescale them to length 1.
 
 **On the example:** m = 2: (0.9, 0.4) / 0.985 = (0.914, 0.406).
+
+**In Python:**
+
+```python
+>>> import math
+>>> v = [0.9, 0.4, 0.1, 0.05]
+>>> m = 2
+>>> prefix = v[:m]                                          # (v_1, ..., v_m)
+>>> length = math.sqrt(sum(v_i ** 2 for v_i in prefix))     # ‖(v_1, ..., v_m)‖
+>>> round(length, 3)
+0.985
+>>> v_m = [v_i / length for v_i in prefix]                  # rescale to length 1
+>>> [round(v_i, 3) for v_i in v_m]
+[0.914, 0.406]
+>>> full = math.sqrt(sum(v_i ** 2 for v_i in v))
+>>> round(sum(a * b / full for a, b in zip(v_m, v)), 3)     # cosine with the full, normalized vector
+0.994
+```
 
 This only works if the important numbers really come first. A real
 Matryoshka model is *trained* that way: the same contrastive loss
@@ -171,7 +203,19 @@ $$
 found.
 
 **On an example:** true (1, 2, 3), found (3, 4, 1): two of the three appear,
-so recall@3 = 2/3.
+so recall@3 = 2/3 ≈ 0.67.
+
+**In Python:**
+
+```python
+>>> true_k = {1, 2, 3}
+>>> found_k = {3, 4, 1}
+>>> k = 3
+>>> found_k & true_k                          # ∩: the items in both
+{1, 3}
+>>> round(len(found_k & true_k) / k, 2)       # |found ∩ true| / k
+0.67
+```
 
 **In code:** `recall_at_k` averages this share over every query. `top_k`
 runs the exact full-precision search that supplies trueₖ, and `make_corpus`
@@ -213,6 +257,18 @@ walk back from the mark to the value.
 
 **On the example:** x = 0, lo = −1, hi = 1: code = round(0.5 × 255) = round(127.5) = 128;
 x̂ = −1 + (128/255)·2 = 0.00392.
+
+**In Python:**
+
+```python
+>>> x, lo, hi = 0, -1, 1
+>>> code = round((x - lo) / (hi - lo) * 255)       # round(127.5): ties go to the even mark
+>>> code
+128
+>>> x_hat = lo + code / 255 * (hi - lo)            # decode: walk back from the mark
+>>> round(x_hat, 5)
+0.00392
+```
 
 ![A vector before and after int8 rounding](figures/primer.ml.embeddings.compression.int8.svg)
 
@@ -261,6 +317,22 @@ measure distance as the number of positions where two codes disagree.
 so the distance is 2. Computers do this with one XOR (mark the differing
 bits) and one popcount (count them), which is why binary search is extremely
 fast.
+
+**In Python:**
+
+```python
+>>> x = [0.3, -0.2, 0.0, 5, -1, 2, -3, 0.1]
+>>> a = [int(x_i > 0) for x_i in x]            # bit_i = [x_i > 0]
+>>> a
+[1, 0, 0, 1, 0, 1, 0, 1]
+>>> int("".join(map(str, a)), 2)               # packed into one byte
+149
+>>> b = [0, 0, 0, 1, 0, 1, 0, 0]               # 0b00010100 = 20
+>>> sum(a_i != b_i for a_i, b_i in zip(a, b))  # hamming(a, b) = Σ [a_i ≠ b_i]
+2
+>>> bin(149 ^ 20).count("1")                   # the computer's way: XOR, then count the 1s
+2
+```
 
 ```mermaid
 flowchart LR

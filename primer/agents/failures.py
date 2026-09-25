@@ -63,6 +63,16 @@ multiplied together once per step.
 **On the worked example:** 0.95 multiplied by itself 10 times is 0.599, so a
 ten-step task at 95% per step fails four times in ten.
 
+**In Python:**
+
+```python
+>>> p, n = 0.95, 10
+>>> round(p ** n, 3)                      # p multiplied by itself n times
+0.599
+>>> round(1 - p ** n, 1)                  # fails about four times in ten
+0.4
+```
+
 ```mermaid
 flowchart LR
   S1[Step 1<br/>95%] --> S2[Step 2<br/>95%] --> S3[...] --> S10[Step 10<br/>95%] --> D[Done:<br/>60% of the time]
@@ -120,6 +130,14 @@ delay, but never exceeds the cap.
 
 **On the worked example:** $d_0$ = min(10, 0.1 × 1) = 0.1 s and
 $d_1$ = min(10, 0.1 × 2) = 0.2 s.
+
+**In Python:**
+
+```python
+>>> b, D_max = 0.1, 10
+>>> [min(D_max, b * 2 ** k) for k in range(2)]   # d_0 and d_1
+[0.1, 0.2]
+```
 
 ```mermaid
 sequenceDiagram

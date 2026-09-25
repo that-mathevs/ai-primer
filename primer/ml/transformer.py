@@ -72,6 +72,20 @@ what each token worked out alone."
 (−0.2, 0.4) = **(0.9, 2.1)**. `TransformerBlock.__call__` is exactly these
 two lines.
 
+**In Python:**
+
+```python
+>>> x = [1.0, 2.0]
+>>> attn = [0.1, -0.3]                              # what Attn(LN(x)) returned
+>>> x = [x_j + a_j for x_j, a_j in zip(x, attn)]    # x ← x + Attn(LN(x))
+>>> [round(x_j, 1) for x_j in x]
+[1.1, 1.7]
+>>> ffn = [-0.2, 0.4]                               # what FFN(LN(x)) returned
+>>> x = [x_j + f_j for x_j, f_j in zip(x, ffn)]     # x ← x + FFN(LN(x))
+>>> [round(x_j, 1) for x_j in x]
+[0.9, 2.1]
+```
+
 **In code:** `TransformerBlock` holds one `primer.ml.attention.MultiHeadAttention`, one `FeedForward` and the two norms' learned gains and biases.
 
 **Why it matters.** The block's output has the same shape as its input, so
@@ -136,6 +150,21 @@ amounts."
 **−1.342**, then × 1 + 0 = −1.342. `layer_norm` and `rms_norm` implement
 both variants.
 
+**In Python:**
+
+```python
+>>> import math
+>>> x = [1, 2, 3, 4]
+>>> d = len(x)
+>>> mu = sum(x) / d                                   # μ = (1/d) Σ x_j
+>>> sigma2 = sum((x_j - mu) ** 2 for x_j in x) / d    # σ² = (1/d) Σ (x_j − μ)²
+>>> mu, sigma2
+(2.5, 1.25)
+>>> eps, gamma, beta = 1e-5, 1.0, 0.0                 # learned gain and bias start at 1 and 0
+>>> [round(gamma * (x_j - mu) / math.sqrt(sigma2 + eps) + beta, 3) for x_j in x]
+[-1.342, -0.447, 0.447, 1.342]
+```
+
 **Why it matters.** Without normalization, activations drift layer after
 layer until training blows up or stalls. It normalizes per token (not per
 batch, unlike the BatchNorm used in image networks), so it works for any
@@ -197,6 +226,19 @@ negative numbers, then narrow it back with another matrix multiply."
 **With the numbers:** GELU(1) = ½ · 1 · (1 + tanh(0.798 · 1.045)) = ½ · (1 +
 tanh(0.834)) = ½ · (1 + 0.683) = **0.841**. `FeedForward` and `gelu` are the
 code.
+
+**In Python:**
+
+```python
+>>> import math
+>>> def gelu(z):
+...     return 0.5 * z * (1 + math.tanh(math.sqrt(2 / math.pi) * (z + 0.044715 * z ** 3)))
+>>> [round(gelu(z), 3) for z in (1, 10, -3, 0)]
+[0.841, 10.0, -0.004, 0.0]
+>>> d = 8
+>>> d * 4 * d + 4 * d + 4 * d * d + d               # W1 (8 × 32), b1, W2 (32 × 8), b2
+552
+```
 
 ![GELU next to ReLU](figures/primer.ml.transformer.gelu_vs_relu.svg)
 
@@ -264,7 +306,20 @@ lines up with the model's final vector."
 
 **With the numbers:** row 5 of the logits holds 50 scores, one per token id;
 softmax turns them into next-token probabilities (see
-`primer.ml.big_picture`). `TinyGPT.__call__` is this pipeline.
+`primer.ml.big_picture`). `TinyGPT.__call__` is this pipeline. Shrink it to
+a width of 2 and a vocabulary of 3 to check by hand: a last position whose
+normalized vector is LN(h) = (1, −1), against table rows (1, 0), (0, 1) and
+(−1, 1), scores 1·1 + (−1)·0 = **1**, then **−1** and **−2**: token 0 lines
+up best.
+
+**In Python:**
+
+```python
+>>> ln_h = [1.0, -1.0]                              # LN(h) for the last position
+>>> E = [[1.0, 0.0], [0.0, 1.0], [-1.0, 1.0]]       # one row per vocabulary entry
+>>> [sum(h_k * e_k for h_k, e_k in zip(ln_h, row)) for row in E]   # LN(h) Eᵀ: a dot product with each row
+[1.0, -1.0, -2.0]
+```
 
 **In code:** `TinyGPT.hidden` runs everything up to the final norm, and `TinyGPT.n_params` counts the 27,328 weights.
 
@@ -369,8 +424,19 @@ $$
 table."
 
 **With the numbers:** 12 · 12 · 589,824 = 84,934,656, plus 38,597,376 =
-123,532,032, about 1% under the exact 124,439,808 (which also counts positions,
+123,532,032, about 0.7% under the exact 124,439,808 (which also counts positions,
 biases and norms; see `gpt_param_count`).
+
+**In Python:**
+
+```python
+>>> L, d, V = 12, 768, 50_257
+>>> blocks, table = 12 * L * d ** 2, V * d          # 12·L·d² and V·d
+>>> print(f"{blocks:,} + {table:,} = {blocks + table:,}")
+84,934,656 + 38,597,376 = 123,532,032
+>>> round((124_439_808 - (blocks + table)) / 124_439_808, 3)   # the share it leaves out
+0.007
+```
 
 ![Where GPT-2's parameters live](figures/primer.ml.transformer.param_breakdown.svg)
 
@@ -446,6 +512,24 @@ touches only 2 × 2,128 + 128 = **4,384**. `MixtureOfExperts` and `top_k_gates`
 are the code. Mixtral 8x7B works the same way: about 47B parameters in total,
 about 13B active per token.
 
+**In Python:**
+
+```python
+>>> import math
+>>> r, k = [2.0, 1.0, 0.5, -1.0], 2
+>>> top_k = sorted(range(len(r)), key=lambda i: r[i], reverse=True)[:k]   # TopK(r)
+>>> top_k
+[0, 1]
+>>> exps = [math.exp(r[i]) for i in top_k]
+>>> [round(e / sum(exps), 3) for e in exps]         # g: softmax over the kept scores only
+[0.731, 0.269]
+>>> d, n_experts = 16, 8
+>>> expert = d * 4 * d + 4 * d + 4 * d * d + d      # one expert is one feed-forward network
+>>> router = d * n_experts                          # W_r
+>>> expert, n_experts * expert + router, k * expert + router   # one, all held, touched per token
+(2128, 17152, 4384)
+```
+
 A router left alone tends to play favourites, overloading some experts
 while others starve. Training adds a small **load-balancing loss** (Switch
 Transformer):
@@ -469,6 +553,18 @@ share times average router probability."
 **With the numbers:** balanced: 4 · (4 · ¼ · ¼) = **1.0**, the minimum.
 Collapsed onto one expert: 4 · (1 · 1) = **4.0**, the maximum
 (`load_balancing_loss`).
+
+**In Python:**
+
+```python
+>>> n = 4
+>>> def balance(f, P):
+...     return n * sum(f_i * P_i for f_i, P_i in zip(f, P))   # n Σ f_i P_i
+>>> balance([0.25] * n, [0.25] * n)                 # every expert gets a quarter
+1.0
+>>> balance([1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])   # everything goes to expert 0
+4.0
+```
 
 ![Tokens per expert with an untrained router](figures/primer.ml.transformer.moe_load.svg)
 
@@ -529,6 +625,17 @@ training costs six per parameter per training token."
 **With the numbers:** GPT-3: 6 × 175e9 × 300e9 = **3.15e23** FLOPs, matching
 the roughly 3.14e23 its paper reports (`training_flops`,
 `inference_flops_per_token`).
+
+**In Python:**
+
+```python
+>>> def C_infer(N):
+...     return 2 * N                                # per generated token
+>>> def C_train(N, D):
+...     return 6 * N * D                            # over all D training tokens
+>>> print(f"{C_infer(7e9):.2g}  {C_train(70e9, 1e12):.2g}  {C_train(175e9, 300e9):.3g}")
+1.4e+10  4.2e+23  3.15e+23
+```
 
 **Why it matters.** These two lines let you estimate GPU-hours, serving cost
 and training budgets on the back of an envelope.

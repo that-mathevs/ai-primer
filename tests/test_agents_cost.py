@@ -165,15 +165,12 @@ class TestFiveTimesPlan:
 
 
 class TestTheParallelFigureIsStable:
-    def test_given_two_builds_the_parallel_calls_figure_draws_the_same_bars(self):
+    def test_given_three_100ms_calls_the_figure_draws_them_end_to_end_then_all_at_once(self):
         import matplotlib
 
         matplotlib.use("Agg")
         from primer.agents.cost import figures
 
-        # Real timings jitter by a millisecond or two; the site shouldn't change on every build because of it.
-        def bars():
-            fig = figures()["parallel"]
-            return [(round(p.get_x(), 6), round(p.get_width(), 6)) for p in fig.axes[0].patches]
-
-        assert bars() == bars()
+        # The figure draws the schedule, so it is identical on every build; the demo and the tests measure it.
+        bars = [(p.get_x(), p.get_width()) for p in figures()["parallel"].axes[0].patches]
+        assert bars == [(0, 100), (100, 100), (200, 100), (0, 100), (0, 100), (0, 100)]

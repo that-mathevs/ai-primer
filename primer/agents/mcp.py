@@ -40,6 +40,16 @@ standard once.
 
 **On the example:** $A = 5$, $T = 8$: 40 connectors versus 13.
 
+**In Python:**
+
+```python
+>>> A, T = 5, 8
+>>> A * T                             # every app wires up every service
+40
+>>> A + T                             # each app and each service implements the standard once
+13
+```
+
 ![Connectors needed, with and without a shared protocol](figures/primer.agents.mcp.integrations.svg)
 
 **Reading it:** the x-axis is the number of tool services and each pair of

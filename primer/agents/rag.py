@@ -158,6 +158,16 @@ keyword search scores 1/61 + 1/63 = 0.0323. A passage ranked 1st by one
 list and absent from the other scores only 1/61 = 0.0164. Passages that both
 methods agree on rise to the top.
 
+**In Python:**
+
+```python
+>>> k = 60
+>>> round(1 / (k + 1) + 1 / (k + 3), 4)   # 1st by dense, 3rd by keyword: Σ_i 1/(k + rank_i(d))
+0.0323
+>>> round(1 / (k + 1), 4)                 # 1st in one list, absent from the other
+0.0164
+```
+
 ![recall@k for keyword, dense, hybrid and hybrid plus reranking](figures/primer.agents.rag.recall.svg)
 
 **Reading it:** the x-axis is how many passages you keep (k); the y-axis is
@@ -185,6 +195,14 @@ into the top k.
 
 **On the worked example:** dense search at k = 3 finds the right document for
 11 of 12 questions (all but `ERR-4012`): 11/12 = 0.92.
+
+**In Python:**
+
+```python
+>>> found = [1] * 11 + [0]                # 𝟙[...] for each of the 12 questions; ERR-4012 is the 0
+>>> round(sum(found) / len(found), 2)     # (1/|Q|) Σ over q in Q
+0.92
+```
 
 **In code:** `RAGIndex.retrieve` ranks the allowed passages with
 `primer.ml.embeddings.retrieval.BM25`, with dense similarity, or with both

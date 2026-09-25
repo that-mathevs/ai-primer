@@ -40,6 +40,16 @@ $$
 **On the example:** $0.95^{10} \approx 0.60$ and $0.95^{20} \approx 0.36$.
 A 95%-reliable step is a 60%-reliable 10-step task.
 
+**In Python:**
+
+```python
+>>> p = 0.95
+>>> round(p ** 10, 2)                 # ten steps that must all succeed
+0.6
+>>> round(p ** 20, 2)
+0.36
+```
+
 ![End-to-end success vs. number of steps](figures/primer.agents.planning.compounding.svg)
 
 **Reading it:** the x-axis is the number of steps in the task, and the y-axis is the
@@ -176,6 +186,19 @@ $10 / 0.95 \approx 10.5$ step runs; restarting from scratch
 $(1 - 0.599) / (0.05 \times 0.599) \approx 13.4$. At $n = 50$ it's about
 52.6 vs. 240.
 
+**In Python:**
+
+```python
+>>> def with_checkpoints(n, p):
+...     return n / p                  # each step needs 1/p attempts on average
+>>> def restart_from_scratch(n, p):
+...     return (1 - p ** n) / ((1 - p) * p ** n)
+>>> round(with_checkpoints(10, 0.95), 1), round(restart_from_scratch(10, 0.95), 1)
+(10.5, 13.4)
+>>> round(with_checkpoints(50, 0.95), 1), round(restart_from_scratch(50, 0.95))
+(52.6, 240)
+```
+
 ![Expected step executions: checkpoints vs. restarting](figures/primer.agents.planning.checkpoints.svg)
 
 **Reading it:** the x-axis is task length, and the y-axis (log scale) is how
@@ -248,6 +271,21 @@ on the next try, and so on. Failures you don't notice get no retry.
 $0.95 + 0.05 \times 0.95 = 0.9975$ per step, so ten steps succeed
 $0.9975^{10} \approx 97.5\%$ of the time instead of 60%. With a check that
 catches only half the failures ($d = 0.5$): $0.97375^{10} \approx 77\%$.
+
+**In Python:**
+
+```python
+>>> def p_step(p, d, r):
+...     return p * sum(((1 - p) * d) ** i for i in range(r + 1))   # p Σ_{i=0}^{r} ((1 - p) d)^i
+>>> round(p_step(0.95, 1, 1), 4)          # a perfect check, one retry
+0.9975
+>>> round(p_step(0.95, 1, 1) ** 10, 3)    # ten such steps
+0.975
+>>> round(p_step(0.95, 0.5, 1), 5)        # a check that catches half the failures
+0.97375
+>>> round(p_step(0.95, 0.5, 1) ** 10, 2)
+0.77
+```
 
 ![Ten-step success with and without verification](figures/primer.agents.planning.verification.svg)
 

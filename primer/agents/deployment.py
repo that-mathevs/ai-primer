@@ -89,6 +89,18 @@ exactly what the human did.
 **On the worked example:** eight of the ten indicators are 1, so agreement
 = 8/10 = 0.8.
 
+**In Python:**
+
+```python
+>>> a = ["refund", "refund"] + ["reply"] * 5 + ["refund", "refund", "refund"]
+>>> h = ["refund", "escalate"] + ["reply"] * 5 + ["refund", "escalate", "refund"]
+>>> indicators = [1 if a_i == h_i else 0 for a_i, h_i in zip(a, h)]   # 𝟙[a_i = h_i]
+>>> indicators
+[1, 0, 1, 1, 1, 1, 1, 1, 0, 1]
+>>> sum(indicators) / len(indicators)     # (1/N) Σ over i
+0.8
+```
+
 ```mermaid
 stateDiagram-v2
   state "Shadow mode: record, don't act" as Shadow
@@ -179,6 +191,16 @@ the allowed margin below the current version's.
 
 **On the worked example:** 0.90 < 0.95 − 0.02 = 0.93, so roll back.
 
+**In Python:**
+
+```python
+>>> p_canary, p_control, delta = 0.90, 0.95, 0.02
+>>> round(p_control - delta, 2)
+0.93
+>>> p_canary < p_control - delta          # roll back?
+True
+```
+
 Users are assigned to the canary by hashing their id into one of 100
 buckets: the same user always lands in the same bucket, so nobody flips
 between versions mid-conversation, and growing from 5% to 25% only adds
@@ -263,6 +285,18 @@ since, but never more than the jar holds.
 **On the worked example:** min(5, 0 + 1 × (2 − 0)) = 2 tokens, so two
 more actions are allowed.
 
+**In Python:**
+
+```python
+>>> C, r = 5, 1                           # capacity, tokens per second
+>>> def b(t, t_0, b_t0):
+...     return min(C, b_t0 + r * (t - t_0))   # what was left plus the drip, capped at C
+>>> b(2, 0, 0)                            # 2 s after the burst emptied the jar
+2
+>>> b(60, 0, 0)                           # a long wait refills only to capacity
+5
+```
+
 ![Tokens in the bucket during a burst of requests](figures/primer.agents.deployment.token_bucket.svg)
 
 **Reading it:** the blue line is the number of tokens in the jar over time;
@@ -313,6 +347,30 @@ recomputing its fingerprint no longer gives the stored $h_2$, so `verify()`
 reports position 1. Delete entry 2 instead, and entry 3 moves up to position
 1; its stored previous fingerprint is $h_2$, the deleted entry's, which
 doesn't match $h_1$, so the break is again reported at position 1.
+
+**In Python:**
+
+```python
+>>> import hashlib
+>>> def seal(prev, entry):
+...     return hashlib.sha256((prev + entry).encode()).hexdigest()   # SHA256(h_{i-1} ‖ entry_i)
+>>> log, prev = [], "0" * 64              # h_0
+>>> for entry in ["refund A200 40", "refund A201 15", "escalate A300"]:
+...     prev = seal(prev, entry)
+...     log.append((entry, prev))         # each entry is stored with its h_i
+>>> def verify(log):
+...     prev = "0" * 64
+...     for position, (entry, h_i) in enumerate(log):
+...         if seal(prev, entry) != h_i:
+...             return position           # the first broken link
+...         prev = h_i
+>>> verify(log) is None
+True
+>>> verify([log[0], ("refund A201 1500", log[1][1]), log[2]])   # entry 2's amount changed
+1
+>>> verify([log[0], log[2]])                                    # entry 2 deleted
+1
+```
 
 ```mermaid
 flowchart LR

@@ -129,6 +129,15 @@
 <div class="symtable" data-syms="o,a,ct,at,pi,A,L,cup,Ahat,ahat"></div>
 <p class="inwords"><strong>In words:</strong> “the agent chooses each action from everything it has seen and done so far. ReAct enlarges the menu of actions with every possible sentence; choosing a sentence (a thought) gets no reply from the world and simply adds the sentence to the context.”</p>
 <p class="inwords"><strong>With the numbers:</strong> in the example below, after one round the context is c = (question, Thought 1, Search[Colorado orogeny], its observation). Thought 2, “It does not mention the eastern sector”, is an element of 𝓛; it produces no observation, only c = (…, Thought 2), and that is what makes Action 2, Lookup[eastern sector], an obvious next move.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; c = ["question", "Thought 1", "Search[Colorado orogeny]", "its observation"]   # c_t
+&gt;&gt;&gt; A = ["Search[Colorado orogeny]", "Lookup[eastern sector]"]    # actions from 𝒜
+&gt;&gt;&gt; a_hat = "Thought 2: It does not mention the eastern sector"   # â_t, a sentence from 𝓛
+&gt;&gt;&gt; a_hat in A                   # not an action the world answers ...
+False
+&gt;&gt;&gt; c = c + [a_hat]              # ... so c_(t+1) = (c_t, â_t), with no observation
+&gt;&gt;&gt; len(c), c[-1]
+(5, 'Thought 2: It does not mention the eastern sector')</code></pre>
 <h3 class="rung">Why it matters today</h3>
 <p>This framing, a policy choosing from actions given a growing history, is how agent frameworks are built. The history is the message list; the actions are tools; the “thoughts” today are often the model's visible reasoning between tool calls. See <a data-lesson="primer/agents/llm.html">talking to a model</a> for the message format.</p>
 </section>
@@ -187,6 +196,16 @@
 <div class="symtable" data-syms="n,cmaj,nhalf"></div>
 <p class="inwords"><strong>In words:</strong> “if fewer than half of the sampled reasoning chains agree on the most popular answer, the model's own knowledge is shaky, so go and look it up.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with n = 21 samples, n/2 = 10.5. If the most common answer appears 9 times, 9 &lt; 10.5, so switch to ReAct. If it appears 14 times, trust it.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>&gt;&gt;&gt; n = 21                       # sampled reasoning chains
+&gt;&gt;&gt; n / 2
+10.5
+&gt;&gt;&gt; c_maj = 9                    # votes for the most common answer
+&gt;&gt;&gt; c_maj &lt; n / 2                # back off to ReAct?
+True
+&gt;&gt;&gt; c_maj = 14
+&gt;&gt;&gt; c_maj &lt; n / 2
+False</code></pre>
 <h4>Fine-tuning</h4>
 <p>The paper also generated 3,000 successful ReAct trajectories and fine-tuned smaller PaLM models (8B and 62B) on them.</p>
 </section>

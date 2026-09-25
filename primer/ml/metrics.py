@@ -96,6 +96,20 @@ F1 = 2 × 0.75 × 0.60 / 1.35 = 0.667; accuracy = (6 + 88)/100 = 0.94. The
 harmonic mean punishes imbalance: P = 1.0 with R = 0.1 gives F1 = 0.18, not
 the ordinary average of 0.55.
 
+**In Python:**
+
+```python
+>>> TP, FP, FN, TN = 6, 2, 4, 88
+>>> N = TP + FP + FN + TN
+>>> P, R = TP / (TP + FP), TP / (TP + FN)       # precision, recall
+>>> P, R
+(0.75, 0.6)
+>>> round(2 * P * R / (P + R), 3), (TP + TN) / N   # F1, accuracy
+(0.667, 0.94)
+>>> round(2 * 1.0 * 0.1 / (1.0 + 0.1), 2)         # F1 when P = 1.0 and R = 0.1
+0.18
+```
+
 **In code:** `confusion` sorts labels and decisions into a `Confusion`,
 whose `Confusion.precision`, `Confusion.recall`, `Confusion.f1` and
 `Confusion.accuracy` are the four formulas. `fraud_example` rebuilds the
@@ -165,7 +179,24 @@ $$
 positive gets the higher score, counting ties as half.
 
 **On the worked example:** 2 positives × 2 negatives = 4 pairs; 3 are
-ordered correctly; AUC = 3/4 = 0.75.
+ordered correctly; AUC = 3/4 = 0.75. One point on the curve: at threshold
+0.5 the model flags the 0.9 fraud and the 0.6 legitimate transaction, so
+TPR = 1/(1 + 1) = 0.5 and FPR = 1/(1 + 1) = 0.5.
+
+**In Python:**
+
+```python
+>>> s_P = [0.9, 0.4]                 # scores of the positives (frauds)
+>>> s_N = [0.6, 0.1]                 # scores of the negatives (legitimate)
+>>> t = 0.5
+>>> TP, FN = sum(s >= t for s in s_P), sum(s < t for s in s_P)
+>>> FP, TN = sum(s >= t for s in s_N), sum(s < t for s in s_N)
+>>> TP / (TP + FN), FP / (FP + TN)   # TPR, FPR
+(0.5, 0.5)
+>>> pairs = sum((s_p > s_n) + 0.5 * (s_p == s_n) for s_p in s_P for s_n in s_N)
+>>> pairs / (len(s_P) * len(s_N))    # AUC: the share of pairs ranked correctly
+0.75
+```
 
 ![ROC curve of the synthetic classifier with its AUC](figures/primer.ml.metrics.roc.svg)
 
@@ -227,7 +258,24 @@ plus false alarms times theirs; pick the threshold where that total is
 lowest.
 
 **On the worked example:** c_FN = 10, c_FP = 1: at t = 0.4, FN = 0 and
-FP = 1, cost 1, the minimum.
+FP = 1, cost 1, the minimum. The other thresholds cost 10 (t = 0.9, one
+miss), 11 (t = 0.6, one miss and one false alarm) and 2 (t = 0.1, two false
+alarms).
+
+**In Python:**
+
+```python
+>>> frauds, legit = [0.9, 0.4], [0.6, 0.1]
+>>> c_FN, c_FP = 10, 1
+>>> def cost(t):
+...     FN = sum(s < t for s in frauds)     # frauds below t are missed
+...     FP = sum(s >= t for s in legit)     # legitimate ones at or above t are false alarms
+...     return c_FN * FN + c_FP * FP
+>>> [cost(t) for t in (0.9, 0.6, 0.4, 0.1)]
+[10, 11, 1, 2]
+>>> min((0.9, 0.6, 0.4, 0.1), key=cost)     # t* = argmin_t cost(t)
+0.4
+```
 
 ![Total error cost as the threshold sweeps, for three cost settings](figures/primer.ml.metrics.cost_vs_threshold.svg)
 
@@ -300,9 +348,29 @@ k; MRR averages one-over-the-rank of the first hit; DCG adds each result's
 grade, discounted by the log of its position; nDCG divides by the best
 possible DCG.
 
-**On the worked example:** DCG = 3/log₂(3) + 2/log₂(6) = 1.893 + 0.774 =
-2.667 (d3 at rank 2, d4 at rank 5). Ideal order d3, d4, d8: IDCG =
-3/1 + 2/1.585 + 1/2 = 4.762. nDCG = 2.667/4.762 = 0.560.
+**On the worked example:** recall@5 = 2/3 = 0.667; with one query whose
+first hit is at rank 2, MRR = 1/2 = 0.5. DCG = 3/log₂(3) + 2/log₂(6) =
+1.8928 + 0.7737 = 2.6665 (d3 at rank 2, d4 at rank 5). Ideal order d3, d4,
+d8: IDCG = 3/1 + 2/1.585 + 1/2 = 4.7619. nDCG = 2.6665/4.7619 = 0.560.
+
+**In Python:**
+
+```python
+>>> import math
+>>> ranked = ["d7", "d3", "d9", "d1", "d4"]
+>>> rel = {"d3": 3, "d4": 2, "d8": 1}                  # relevance grades; missing means 0
+>>> k = 5
+>>> round(len(set(rel) & set(ranked[:k])) / len(rel), 3)   # recall@k
+0.667
+>>> rank_q = next(i for i, doc in enumerate(ranked, start=1) if doc in rel)
+>>> 1 / rank_q                                         # MRR over a single query
+0.5
+>>> DCG = sum(rel.get(doc, 0) / math.log2(i + 1) for i, doc in enumerate(ranked[:k], start=1))
+>>> best = sorted(rel.values(), reverse=True)[:k]      # the same grades, best first
+>>> IDCG = sum(g / math.log2(i + 1) for i, g in enumerate(best, start=1))
+>>> print(f"{DCG:.4f} {IDCG:.4f} {DCG / IDCG:.3f}")
+2.6665 4.7619 0.560
+```
 
 ![How much each rank position counts in DCG](figures/primer.ml.metrics.ndcg_discount.svg)
 
@@ -365,6 +433,41 @@ word sequence.
 against "the cat is here" scores unigram precision 1/4: "the" is credited
 only as often as the reference contains it.
 
+**With the numbers:** the *Monday* answer and the reference are both 11
+words (full stop and capitals dropped), so BP = 1. It matches 10 of its 11
+words, 8 of its 10 word pairs, 6 of its 9 triples and 4 of its 8 four-word
+runs. `bleu` adds 1 to the top and bottom for n ≥ 2 (smoothing, so one
+missing four-word run can't zero the score), giving p = 10/11, 9/11, 7/10,
+5/9, and BLEU = exp(¼(ln 0.909 + ln 0.818 + ln 0.7 + ln 0.556)) = **0.73**.
+Its longest shared in-order run is 10 words, so ROUGE-L = 2 · (10/11) ·
+(10/11) / (20/11) = **0.91**.
+
+**In Python:**
+
+```python
+>>> import math
+>>> ref = "the meeting was moved to friday because the manager is sick".split()
+>>> cand = "the meeting was moved to monday because the manager is sick".split()
+>>> def grams(words, n):                        # every run of n words, in order
+...     return [tuple(words[i:i + n]) for i in range(len(words) - n + 1)]
+>>> def p(n):
+...     c, r = grams(cand, n), grams(ref, n)
+...     hits = sum(min(c.count(g), r.count(g)) for g in set(c))   # clipped: at most as often as ref has it
+...     s = 1 if n > 1 else 0                   # add-one smoothing for n ≥ 2
+...     return (hits + s) / (len(c) + s)
+>>> [round(p(n), 3) for n in range(1, 5)]
+[0.909, 0.818, 0.7, 0.556]
+>>> BP = 1.0 if len(cand) > len(ref) else math.exp(1 - len(ref) / len(cand))
+>>> round(BP * math.exp(sum(math.log(p(n)) for n in range(1, 5)) / 4), 2)   # BLEU
+0.73
+>>> P_LCS, R_LCS = 10 / len(cand), 10 / len(ref)   # every word but "monday", in order
+>>> round(2 * P_LCS * R_LCS / (P_LCS + R_LCS), 2)  # ROUGE-L
+0.91
+>>> P_LCS, R_LCS = 3 / 4, 3 / 4                 # the hand example: LCS "a c d"
+>>> 2 * P_LCS * R_LCS / (P_LCS + R_LCS)
+0.75
+```
+
 ![BLEU and ROUGE-L for a paraphrase, a wrong answer and an exact copy](figures/primer.ml.metrics.overlap_scores.svg)
 
 **Reading it:** three candidate answers to the same reference ("the meeting
@@ -414,6 +517,19 @@ it could beat chance by.
 
 **On the worked example:** p_o = 0.75, p_e = 0.5, κ = (0.75 − 0.5)/(1 − 0.5)
 = 0.5.
+
+**In Python:**
+
+```python
+>>> A = ["y", "y", "n", "n"]                    # rater A's labels
+>>> B = ["y", "n", "n", "n"]                    # rater B's labels
+>>> p_o = sum(a == b for a, b in zip(A, B)) / len(A)
+>>> p_e = sum((A.count(ell) / len(A)) * (B.count(ell) / len(B)) for ell in ("y", "n"))   # Σ_ℓ p_A(ℓ) p_B(ℓ)
+>>> p_o, p_e
+(0.75, 0.5)
+>>> (p_o - p_e) / (1 - p_e)                     # κ
+0.5
+```
 
 ```mermaid
 flowchart LR

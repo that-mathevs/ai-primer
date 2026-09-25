@@ -107,6 +107,18 @@ inside it, multiply by how often the word occurs, and add everything up."
 **3**; count(e, r) = 1·1 (lower) = **1**. `train_char_bpe` computes the same
 totals with a `Counter`.
 
+**In Python:**
+
+```python
+>>> f = {"low": 1, "lower": 1, "lowest": 1}         # f_w: how often each distinct word occurs
+>>> def n(w, a, b):                                 # n_w(a, b): a immediately followed by b inside w
+...     return sum(1 for i in range(len(w) - 1) if w[i] == a and w[i + 1] == b)
+>>> def count(a, b):
+...     return sum(f_w * n(w, a, b) for w, f_w in f.items())   # Σ_w f_w · n_w(a, b)
+>>> count("l", "o"), count("e", "r")
+(3, 1)
+```
+
 **In code:** `train_char_bpe` runs the count-and-merge loop and returns one
 `MergeStep` per round, holding the winning pair, its count, the new token
 and the text after the merge (one row of the table above).
@@ -250,6 +262,19 @@ appears at all."
 
 **With the numbers:** score(s, t) = 1 / (1 · 1) = **1.0**; score(l, o) =
 3 / (3 · 3) = **0.33**. WordPiece merges s+t first (`wordpiece_scores`).
+
+**In Python:**
+
+```python
+>>> f = {"low": 1, "lower": 1, "lowest": 1}
+>>> def count(piece):                               # how often a symbol, or a pair written together, appears
+...     return sum(f_w * w.count(piece) for w, f_w in f.items())
+>>> def score(a, b):
+...     return count(a + b) / (count(a) * count(b))   # count(ab) / (count(a) · count(b))
+>>> score("s", "t"), round(score("l", "o"), 2)
+(1.0, 0.33)
+```
+
 BERT marks continuation pieces with `##` ("un", "##believ", "##able").
 **SentencePiece** is a library that runs BPE or Unigram directly on raw text,
 writing spaces as the visible symbol `▁`.
@@ -303,6 +328,15 @@ tokens in millions times the output price."
 
 **With the numbers:** 2,000/1,000,000 × 3 + 500/1,000,000 × 15 = 0.006 +
 0.0075 = **$0.0135** (`estimate_cost`).
+
+**In Python:**
+
+```python
+>>> T_in, T_out = 2_000, 500
+>>> p_in, p_out = 3, 15                             # dollars per million tokens
+>>> round(T_in / 10**6 * p_in + T_out / 10**6 * p_out, 4)
+0.0135
+```
 
 **Rule of thumb:** English prose averages about **4 characters per token**,
 or **0.75 words per token**, so 1,000 tokens ≈ 750 words

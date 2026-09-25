@@ -113,6 +113,27 @@ average over the batch.
 
 **On the example:** B = 1, M = 2, τ = 1: L = −log(e¹ / (e¹ + e⁰)) = −log 0.731 = 0.313.
 
+**In Python:**
+
+```python
+>>> import math
+>>> def dot(a, b):
+...     return sum(a_i * b_i for a_i, b_i in zip(a, b))
+>>> def info_nce(q, p, tau):
+...     B = len(q)
+...     total = 0
+...     for i in range(B):
+...         exps = [math.exp(dot(q[i], p_j) / tau) for p_j in p]   # exp(q_i · p_j / τ) for every card j
+...         total += math.log(exps[i] / sum(exps))                 # log of the ✔ card's share
+...     return -total / B                                          # -(1/B) Σ_i
+>>> q = [(1, 0)]                  # B = 1 question
+>>> p = [(1, 0), (0, 1)]          # M = 2 cards; card 0 is the question's own answer
+>>> round(info_nce(q, p, tau=1), 3)
+0.313
+>>> print(f"{info_nce(q, p, tau=0.1):.7f}")
+0.0000454
+```
+
 The name InfoNCE comes from "noise-contrastive estimation": telling the true
 pair apart from noise. It's the softmax cross-entropy loss from
 `primer.ml.losses`, where the "classes" are the answer cards in the batch.
@@ -165,6 +186,18 @@ score divided by the total over all cards.
 
 **On the example:** at τ = 1, 2.2255 / (2.2255 + 3 × 1.8221) = **0.289**; at τ = 0.05
 the scores become 16 and 12, and 1 / (1 + 3e⁻⁴) = **0.948**.
+
+**In Python:**
+
+```python
+>>> import math
+>>> def share_plus(tau):
+...     right = math.exp(0.8 / tau)          # e^(0.8/τ)
+...     wrong = 3 * math.exp(0.6 / tau)      # three wrong cards, e^(0.6/τ) each
+...     return right / (right + wrong)
+>>> round(share_plus(1), 3), round(share_plus(0.05), 3)
+(0.289, 0.948)
+```
 
 ![Share of the right answer vs. temperature](figures/primer.ml.embeddings.contrastive.temperature.svg)
 
@@ -313,6 +346,22 @@ its image.
 
 **On the example:** ½(0.313 + 0.313) = 0.313 correctly paired; ½(1.313 + 1.313) =
 1.313 with the captions swapped.
+
+**In Python:**
+
+```python
+>>> import math
+>>> def rows_pick_diagonal(S):           # InfoNCE with τ = 1: row i must pick column i
+...     return -sum(math.log(math.exp(row[i]) / sum(math.exp(s) for s in row))
+...                 for i, row in enumerate(S)) / len(S)
+>>> def clip_loss(S):
+...     columns = [list(col) for col in zip(*S)]              # captions picking images
+...     return (rows_pick_diagonal(S) + rows_pick_diagonal(columns)) / 2   # ½(L_image→text + L_text→image)
+>>> round(clip_loss([[1, 0], [0, 1]]), 3)                     # correctly paired
+0.313
+>>> round(clip_loss([[0, 1], [1, 0]]), 3)                     # captions swapped
+1.313
+```
 
 **In code:** `clip_loss` computes L_CLIP by averaging `info_nce_loss` over the
 rows (images pick captions) and the columns (captions pick images).
