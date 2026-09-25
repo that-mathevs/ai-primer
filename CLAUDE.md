@@ -82,6 +82,11 @@ notation is a bug.
 1. **Voice.** Write as a teacher addressing a curious engineer: general,
    timeless, vendor-neutral where the idea is. The repo is public. It never
    refers to hiring, job preparation or any company's evaluation process.
+   It teaches; it never coaches answers. No "a strong answer", no "points to
+   hit", no "say this", no rehearsing out loud, and no questions phrased as an
+   interviewer would ("walk me through", "argue both sides", "what do you
+   do?"). Questions are the ones a curious learner asks. [`tests/test_house_style.py`](tests/test_house_style.py)
+   checks for this.
 2. **No em dashes, anywhere**: code, comments, docstrings, markdown, HTML.
    Use a colon, a comma, parentheses or a new sentence.
    [`tests/test_house_style.py`](tests/test_house_style.py) enforces it.

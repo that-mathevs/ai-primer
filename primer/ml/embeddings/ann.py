@@ -635,7 +635,7 @@ each half's codebook. What are the codes, and what score does the query
 Codes [0, 1]. The lookup tables are [1, 0, −1, 0] and [0, 1, 0, −1], so the
 approximate score is 1 + 1 = 2, against an exact score of 0.9 + 0.8 = 1.7.
 
-**Walk through an HNSW search and the knobs you'd tune.**
+**How does an HNSW search proceed, and which knobs change its speed and recall?**
 Enter at the top layer's entry point; greedily hop to whichever neighbor is
 closest to the query until none is closer, then drop a layer at the same
 node; at layer 0 run a beam search keeping `efSearch` candidates; return the

@@ -362,7 +362,7 @@ and auditable. The model is used where judgement is needed (classification,
 extraction), and code owns the flow. Reach for an agent only when the path
 genuinely depends on what's discovered along the way.
 
-**Q: Single agent vs. multi-agent for a document-processing workflow: argue both sides.**
+**Q: Single agent vs. multi-agent for a document-processing workflow: what does each side have going for it?**
 A: *For one agent (or a workflow):* documents flow through the same steps,
 hand-offs lose context, multi-agent multiplies tokens, and one trace is far
 easier to debug. *For several agents:* documents are independent and can be
@@ -372,7 +372,7 @@ focused instructions and tools. A common answer is a workflow that fans out
 per document to a focused worker, which is orchestrator-workers rather than free-form
 agents talking to each other.
 
-**Q: Your router's classifier sometimes returns labels that aren't in your list. What do you do?**
+**Q: A router's classifier sometimes returns labels that aren't in its list. How should the code handle that?**
 A: Normalize (case, whitespace), accept only known labels, and send
 everything else to a safe fallback. Log the misses and add them to the
 classifier's evaluation set. Consider structured output with an `enum` so

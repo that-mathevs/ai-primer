@@ -24,3 +24,28 @@ class TestPunctuation:
                 if EM_DASH in line:
                     offenders.setdefault(rel, []).append(n)
         assert offenders == {}, f"em dashes found (file: line numbers): {offenders}"
+
+
+# Coaching language: this is a primer, not a guide to performing answers. Built so this file doesn't trip itself.
+COACHING = [
+    "strong " + "answer", "points to " + "hit", "spine of " + "the answer",
+    "spine of a", "practise answering", "practice answering", "answering each question out " + "loud",
+    "explaining a topic out " + "loud", "walk me " + "through", "walk " + "through what", "walk " + "through exactly",
+    "walk " + "through bpe", "walk " + "through an", "argue both " + "sides", "what would you " + "say",
+    "how would you " + "answer", "say " + "this", "talking " + "points", "in an " + "interview", "interview" + "er",
+    "what do you " + "do?",
+]
+READER_FACING = ("primer/", "docs/", "README.md")
+
+
+class TestTone:
+    def test_given_anything_a_reader_sees_it_teaches_rather_than_coaches_answers(self):
+        offenders = {}
+        for rel, path in source_files():
+            if not rel.startswith(READER_FACING) or rel.endswith((".js", ".css")):
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore").lower()
+            found = [phrase for phrase in COACHING if phrase in text]
+            if found:
+                offenders[rel] = found
+        assert offenders == {}, f"coaching language found: {offenders}"

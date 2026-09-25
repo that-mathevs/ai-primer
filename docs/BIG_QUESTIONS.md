@@ -1,6 +1,6 @@
 # Big questions: the map from the top down
 
-The lessons build the field from the bottom up. Real conversations about AI systems start from the top, with questions like these. For each one: the lessons that answer it, in order, and the **spine** of a complete answer, meaning the points to cover, in the order to cover them. Practise by answering each question out loud in about two minutes, following its spine, then open the lessons to go one level deeper wherever you hesitated.
+The lessons build the field from the bottom up. Real conversations about AI systems start from the top, with questions like these. For each one: the lessons that answer it, in order, and the short version, the main ideas in the order that builds understanding. Read the short version first, then open the lessons wherever you want the full story.
 
 Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme`; edit it there.
 
@@ -9,7 +9,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Math notation, from zero](../primer/notation.py) → [The big picture](../primer/ml/big_picture.py) → [Tokenization](../primer/ml/tokenization.py) → [Attention](../primer/ml/attention.py) → [Positional information](../primer/ml/positional.py) → [The transformer](../primer/ml/transformer.py) → [Inference](../primer/ml/inference.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Tokenizer: text becomes subword IDs; cost and context limits are counted in tokens.
 2. Embedding lookup turns each ID into a vector; position information is mixed in.
@@ -23,7 +23,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Neural networks](../primer/ml/neural_net.py) → [Loss functions](../primer/ml/losses.py) → [Optimizers](../primer/ml/optimizers.py) → [Training deep networks](../primer/ml/deep_nets.py) → [Overfitting and regularization](../primer/ml/regularization.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. A forward pass makes a prediction; a loss turns 'how wrong' into one number.
 2. Backpropagation applies the chain rule to find every weight's gradient.
@@ -36,7 +36,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Attention](../primer/ml/attention.py) → [Positional information](../primer/ml/positional.py) → [The transformer](../primer/ml/transformer.py) → [CNNs and RNNs](../primer/ml/cnn_rnn.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Each token forms a query, key and value; query-key dot products score relevance; softmax turns scores into weights; the output blends values.
 2. Scores are divided by the square root of d_k so softmax doesn't saturate and gradients keep flowing.
@@ -50,7 +50,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Training stages](../primer/ml/training_stages.py) → [Tokenization](../primer/ml/tokenization.py) → [Loss functions](../primer/ml/losses.py) → [Embeddings in production](../primer/ml/embeddings/operations.py) → [Retrieval-augmented generation](../primer/agents/rag.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Pretraining: next-token prediction over trillions of tokens produces a knowledgeable base model.
 2. Supervised fine-tuning teaches the assistant format; preference tuning (RLHF or DPO) shapes helpfulness and safety.
@@ -63,7 +63,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Inference](../primer/ml/inference.py) → [Attention](../primer/ml/attention.py) → [Cost and latency](../primer/agents/cost.py) → [Context engineering](../primer/agents/context.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Prefill is compute-bound and sets time to first token; decode is memory-bound and sets tokens per second.
 2. The KV cache trades GPU memory for speed; its size is 2 × layers × KV heads × head dimension × bytes, per token.
@@ -76,7 +76,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Word embeddings](../primer/ml/embeddings/word2vec.py) → [Training embedding models](../primer/ml/embeddings/contrastive.py) → [Similarity](../primer/ml/embeddings/similarity.py) → [Loss functions](../primer/ml/losses.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. An embedding is a learned vector where closeness means similar meaning.
 2. word2vec learned one vector per word from co-occurrence; contextual models give each token a vector that depends on its sentence.
@@ -90,7 +90,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Similarity](../primer/ml/embeddings/similarity.py) → [Dimensions and compression](../primer/ml/embeddings/compression.py) → [Vector indexes](../primer/ml/embeddings/ann.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. On normalized vectors, cosine, dot product and Euclidean distance give the same ranking; use what the model was trained with.
 2. Storage math: vectors × dimensions × 4 bytes (10M × 1536 is about 61 GB) before index overhead.
@@ -104,7 +104,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Retrieval](../primer/ml/embeddings/retrieval.py) → [Clustering and matching](../primer/ml/embeddings/clustering.py) → [Embeddings in production](../primer/ml/embeddings/operations.py) → [Metrics](../primer/ml/metrics.py) → [Retrieval-augmented generation](../primer/agents/rag.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Chunk on document structure, with overlap and metadata; chunking often matters more than the model.
 2. Dense search finds meaning; BM25 finds exact IDs and rare terms; hybrid search fuses both with reciprocal rank fusion.
@@ -117,7 +117,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Metrics](../primer/ml/metrics.py) → [Loss functions](../primer/ml/losses.py) → [Overfitting and regularization](../primer/ml/regularization.py) → [Evaluation](../primer/agents/evals.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Pick metrics by the cost of each error: precision vs. recall; accuracy misleads on imbalanced data.
 2. Keep training, validation and test data apart, and watch for leakage and benchmark contamination.
@@ -130,7 +130,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Talking to a model](../primer/agents/llm.py) → [Orchestration](../primer/agents/orchestration.py) → [The agent loop](../primer/agents/agent_loop.py) → [Tools](../primer/agents/tools.py) → [Model Context Protocol](../primer/agents/mcp.py) → [Planning](../primer/agents/planning.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Use the least autonomy that solves the problem: fixed workflow, then router, then agent loop, then multiple agents.
 2. Tool calling: the model emits a structured request; your code validates it, runs it and returns the result. The model executes nothing.
@@ -144,7 +144,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Context engineering](../primer/agents/context.py) → [Memory](../primer/agents/memory.py) → [Retrieval-augmented generation](../primer/agents/rag.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Context engineering: the smallest set of high-signal content, structured with clear delimiters.
 2. More context is not better: models use the middle of long inputs least reliably, and quality rots as sessions grow.
@@ -157,7 +157,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Guardrails](../primer/agents/guardrails.py) → [Tools](../primer/agents/tools.py) → [Safe deployment](../primer/agents/deployment.py) → [Observability](../primer/agents/observability.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Layer guardrails on inputs, outputs and actions; no single check is reliable alone.
 2. Treat retrieved content, emails and tool outputs as untrusted: no prompt wording fully prevents injection.
@@ -170,7 +170,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Cost and latency](../primer/agents/cost.py) → [Context engineering](../primer/agents/context.py) → [Inference](../primer/ml/inference.py) → [Clustering and matching](../primer/ml/embeddings/clustering.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Measure cost per successful task, not per call.
 2. Route each step to the cheapest model that handles it; this is usually the biggest lever.
@@ -184,7 +184,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 **Route:** [Why the hard ones fail](../primer/agents/failures.py) → [Planning](../primer/agents/planning.py) → [Retrieval-augmented generation](../primer/agents/rag.py) → [Evaluation](../primer/agents/evals.py) → [Observability](../primer/agents/observability.py)
 
-**Spine of the answer:**
+**In brief:**
 
 1. Compounding error over long tasks: shorten paths, verify steps, checkpoint.
 2. Bad retrieval behind confident wrong answers: hybrid search, reranking, retrieval evals.

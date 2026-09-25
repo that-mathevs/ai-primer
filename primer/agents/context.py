@@ -327,7 +327,7 @@ reliably. A tight, relevant context is cheaper, faster and usually more
 accurate.
 
 **A long-running agent gets worse the longer a session runs. What's
-happening and what do you do?**
+happening, and what helps?**
 Context rot: the window fills with stale turns and verbose tool results, so
 the signal thins while cost rises. Summarize older turns, compress tool
 results to the fields that matter, move durable facts into memory that's

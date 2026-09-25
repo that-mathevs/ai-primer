@@ -93,8 +93,8 @@ make docs                       # rebuild the site after changing a lesson
 The reading order below builds the field from the bottom up. When you need
 the top-down view, start from a big question instead: each one lists the
 lessons that answer it, in order. [`docs/BIG_QUESTIONS.md`](docs/BIG_QUESTIONS.md)
-adds the spine of a complete answer to each question (the points to cover, in
-order), which makes it a good way to practise explaining a topic out loud.
+adds the short version of each: the main ideas, in the order that builds
+understanding.
 
 <!-- BEGIN big-questions -->
 | Big question | Lessons that answer it, in order |

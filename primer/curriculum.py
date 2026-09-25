@@ -257,8 +257,8 @@ def reading_list(package: str) -> str:
 # ---------------------------------------------------------------------------
 # Big questions: the macro map. Lessons are organized bottom-up; real
 # conversations about AI systems start top-down with questions like these.
-# Each one lists the lessons that answer it, in order, and the spine of a
-# strong answer: the points to hit, in the order to hit them.
+# Each one lists the lessons that answer it, in order, and the short version:
+# the main ideas, in the order that builds understanding.
 # ---------------------------------------------------------------------------
 
 
@@ -266,7 +266,7 @@ def reading_list(package: str) -> str:
 class BigQuestion:
     question: str
     route: tuple[str, ...]  # lesson modules, in the order to read them
-    spine: tuple[str, ...]  # the points a complete answer covers, in order
+    in_brief: tuple[str, ...]  # the short version: the main ideas, in the order that builds them
 
 
 _ML, _EMB, _AG = "primer.ml.", "primer.ml.embeddings.", "primer.agents."
@@ -449,20 +449,19 @@ def big_questions_table() -> str:
 
 
 def big_questions_page() -> str:
-    """docs/BIG_QUESTIONS.md: every big question with its route and answer spine."""
+    """docs/BIG_QUESTIONS.md: every big question with its route and the short version."""
     out = [
         "# Big questions: the map from the top down\n",
         "The lessons build the field from the bottom up. Real conversations about AI systems start from the top, "
-        "with questions like these. For each one: the lessons that answer it, in order, and the **spine** of a "
-        "complete answer, meaning the points to cover, in the order to cover them. Practise by answering each "
-        "question out loud in about two minutes, following its spine, then open the lessons to go one level deeper "
-        "wherever you hesitated.\n",
+        "with questions like these. For each one: the lessons that answer it, in order, and the short version, "
+        "the main ideas in the order that builds understanding. Read the short version first, then open the "
+        "lessons wherever you want the full story.\n",
         "Generated from `primer/curriculum.py` by `make readme`; edit it there.\n",
     ]
     for n, q in enumerate(BIG_QUESTIONS, 1):
         route = " → ".join(f"[{_lesson(m).title}](../{m.replace('.', '/')}.py)" for m in q.route)
-        spine = "\n".join(f"{i}. {point}" for i, point in enumerate(q.spine, 1))
-        out.append(f"\n## {n}. {q.question}\n\n**Route:** {route}\n\n**Spine of the answer:**\n\n{spine}\n")
+        in_brief = "\n".join(f"{i}. {point}" for i, point in enumerate(q.in_brief, 1))
+        out.append(f"\n## {n}. {q.question}\n\n**Route:** {route}\n\n**In brief:**\n\n{in_brief}\n")
     return link_code_references("\n".join(out), 'docs')
 
 

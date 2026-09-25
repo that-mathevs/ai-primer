@@ -37,7 +37,7 @@ moves each weight the opposite way, scaled by the learning rate η.
 
 From [`primer.ml.big_picture`](../primer/ml/big_picture.py).
 
-**Walk through what happens when you send a prompt.**
+**What happens, step by step, when you send a prompt?**
 Tokenizer turns text into ids; each id looks up an embedding; position
 information is added; the vectors pass through N transformer blocks; the last
 position's vector is scored against the whole vocabulary; softmax and sampling
@@ -287,7 +287,7 @@ Words give a huge vocabulary and unknown words; characters make sequences
 several times longer, and attention cost grows with the square of length.
 Subwords keep common strings short and still encode anything.
 
-**Walk through BPE training on "low lower lowest".**
+**How does BPE training proceed, step by step, on "low lower lowest"?**
 Split into letters, count neighbouring pairs, and merge the most frequent:
 l+o (3), then lo+w (3), then low+e (2). Record each merge; to encode, replay
 the merges in the order learned.
@@ -487,7 +487,7 @@ agreement.
 
 From [`primer.ml.regularization`](../primer/ml/regularization.py).
 
-**Training loss drops, validation loss rises. What's happening and what do you do?**
+**Training loss drops while validation loss rises. What's happening, and what helps?**
 Overfitting: the model is memorising training-set noise. Stop early (keep
 the best-validation weights), add regularization (dropout, weight decay),
 get more or more varied data, or reduce capacity.
@@ -706,7 +706,7 @@ each half's codebook. What are the codes, and what score does the query
 Codes [0, 1]. The lookup tables are [1, 0, −1, 0] and [0, 1, 0, −1], so the
 approximate score is 1 + 1 = 2, against an exact score of 0.9 + 0.8 = 1.7.
 
-**Walk through an HNSW search and the knobs you'd tune.**
+**How does an HNSW search proceed, and which knobs change its speed and recall?**
 Enter at the top layer's entry point; greedily hop to whichever neighbor is
 closest to the query until none is closer, then drop a layer at the same
 node; at layer 0 run a beam search keeping `efSearch` candidates; return the
@@ -883,7 +883,7 @@ Each model defines its own coordinate system. Even with the same number of
 dimensions, the same text lands in unrelated places, so similarity between
 the two spaces is meaningless.
 
-**Q: A general embedding model performs poorly on a client's internal documents. What do you do?**
+**Q: A general embedding model performs poorly on a company's internal documents. What helps?**
 Build a small eval set from real queries and the documents that resolved
 them, test several models on it, add hybrid (keyword + dense) search for
 exact terms, and fine-tune an embedding model on domain pairs with hard
@@ -903,7 +903,7 @@ a labeled set continuously.
 
 From [`primer.agents.llm`](../primer/agents/llm.py).
 
-**Walk through exactly what happens when a model "uses a tool".**
+**What exactly happens when a model "uses a tool"?**
 You send tool definitions (name, description, JSON Schema) with the
 messages. The model replies with a `tool_use` block and `stop_reason:
 tool_use`. Your code validates the arguments, runs the function, and sends a
@@ -944,7 +944,7 @@ and auditable. The model is used where judgement is needed (classification,
 extraction), and code owns the flow. Reach for an agent only when the path
 genuinely depends on what's discovered along the way.
 
-**Q: Single agent vs. multi-agent for a document-processing workflow: argue both sides.**
+**Q: Single agent vs. multi-agent for a document-processing workflow: what does each side have going for it?**
 A: *For one agent (or a workflow):* documents flow through the same steps,
 hand-offs lose context, multi-agent multiplies tokens, and one trace is far
 easier to debug. *For several agents:* documents are independent and can be
@@ -954,7 +954,7 @@ focused instructions and tools. A common answer is a workflow that fans out
 per document to a focused worker, which is orchestrator-workers rather than free-form
 agents talking to each other.
 
-**Q: Your router's classifier sometimes returns labels that aren't in your list. What do you do?**
+**Q: A router's classifier sometimes returns labels that aren't in its list. How should the code handle that?**
 A: Normalize (case, whitespace), accept only known labels, and send
 everything else to a safe fallback. Log the misses and add them to the
 classifier's evaluation set. Consider structured output with an `enum` so
@@ -1097,7 +1097,7 @@ reliably. A tight, relevant context is cheaper, faster and usually more
 accurate.
 
 **A long-running agent gets worse the longer a session runs. What's
-happening and what do you do?**
+happening, and what helps?**
 Context rot: the window fills with stale turns and verbose tool results, so
 the signal thins while cost rises. Summarize older turns, compress tool
 results to the fields that matter, move durable facts into memory that's
@@ -1131,7 +1131,7 @@ supersede conflicting facts instead of overwriting, retrieve the top few by
 similarity within scope, and support export and deletion per user. Test
 isolation with adversarial queries.
 
-**Q: A long support chat gets worse and more expensive over time. Why, and what do you do?**
+**Q: A long support chat gets worse and more expensive over time. Why, and what helps?**
 A: Every call re-sends the whole history, so cost rises, and models use
 details in the middle of long contexts less reliably. Keep a budget: recent
 turns verbatim, older ones summarized, important facts promoted to

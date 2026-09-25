@@ -242,7 +242,7 @@ supersede conflicting facts instead of overwriting, retrieve the top few by
 similarity within scope, and support export and deletion per user. Test
 isolation with adversarial queries.
 
-**Q: A long support chat gets worse and more expensive over time. Why, and what do you do?**
+**Q: A long support chat gets worse and more expensive over time. Why, and what helps?**
 A: Every call re-sends the whole history, so cost rises, and models use
 details in the middle of long contexts less reliably. Keep a budget: recent
 turns verbatim, older ones summarized, important facts promoted to

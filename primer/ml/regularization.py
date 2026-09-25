@@ -584,7 +584,7 @@ at prediction time?"
 
 ## Self-test questions
 
-**Training loss drops, validation loss rises. What's happening and what do you do?**
+**Training loss drops while validation loss rises. What's happening, and what helps?**
 Overfitting: the model is memorising training-set noise. Stop early (keep
 the best-validation weights), add regularization (dropout, weight decay),
 get more or more varied data, or reduce capacity.

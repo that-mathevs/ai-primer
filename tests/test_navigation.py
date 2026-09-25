@@ -161,10 +161,10 @@ class TestBigQuestions:
         covered = {m for q in BIG_QUESTIONS for m in q.route}
         assert [l.module for l in CURRICULUM if l.module not in covered] == []
 
-    def test_given_every_big_question_its_answer_has_a_spine_of_three_to_seven_points(self):
+    def test_given_every_big_question_its_short_version_has_three_to_seven_ideas(self):
         from primer.curriculum import BIG_QUESTIONS
 
-        assert [q.question for q in BIG_QUESTIONS if not 3 <= len(q.spine) <= 7] == []
+        assert [q.question for q in BIG_QUESTIONS if not 3 <= len(q.in_brief) <= 7] == []
 
     def test_given_the_big_questions_the_generated_page_is_current(self):
         from primer.curriculum import big_questions_page

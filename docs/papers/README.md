@@ -34,7 +34,7 @@ Companions explain; they never republish.
 - Link the original at the top (abstract page and PDF), and on every section
   heading (`ar5iv.labs.arxiv.org/html/<id>#S3.SS2` style anchors for arXiv
   papers).
-- Say this in an "About this page" box at the top.
+- State this in an "About this page" box at the top.
 
 ## How each section is written
 

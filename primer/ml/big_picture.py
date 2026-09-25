@@ -449,7 +449,7 @@ turns the same machinery into a useful model.
 
 ## Self-test questions
 
-**Walk through what happens when you send a prompt.**
+**What happens, step by step, when you send a prompt?**
 Tokenizer turns text into ids; each id looks up an embedding; position
 information is added; the vectors pass through N transformer blocks; the last
 position's vector is scored against the whole vocabulary; softmax and sampling

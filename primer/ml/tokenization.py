@@ -413,7 +413,7 @@ Words give a huge vocabulary and unknown words; characters make sequences
 several times longer, and attention cost grows with the square of length.
 Subwords keep common strings short and still encode anything.
 
-**Walk through BPE training on "low lower lowest".**
+**How does BPE training proceed, step by step, on "low lower lowest"?**
 Split into letters, count neighbouring pairs, and merge the most frequent:
 l+o (3), then lo+w (3), then low+e (2). Record each merge; to encode, replay
 the merges in the order learned.

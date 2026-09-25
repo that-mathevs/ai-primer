@@ -207,7 +207,7 @@ how `ScriptedLLM` gives its fake replies realistic `Usage`.
 
 ## Self-test questions
 
-**Walk through exactly what happens when a model "uses a tool".**
+**What exactly happens when a model "uses a tool"?**
 You send tool definitions (name, description, JSON Schema) with the
 messages. The model replies with a `tool_use` block and `stop_reason:
 tool_use`. Your code validates the arguments, runs the function, and sends a

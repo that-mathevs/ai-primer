@@ -315,7 +315,7 @@ Each model defines its own coordinate system. Even with the same number of
 dimensions, the same text lands in unrelated places, so similarity between
 the two spaces is meaningless.
 
-**Q: A general embedding model performs poorly on a client's internal documents. What do you do?**
+**Q: A general embedding model performs poorly on a company's internal documents. What helps?**
 Build a small eval set from real queries and the documents that resolved
 them, test several models on it, add hybrid (keyword + dense) search for
 exact terms, and fine-tune an embedding model on domain pairs with hard

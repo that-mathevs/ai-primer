@@ -945,7 +945,7 @@ def render_home(tests: int | None = None) -> str:
     big = "".join(
         f'<details><summary>{htmllib.escape(q.question)}</summary>'
         f'<p class="route">Route: ' + " &rarr; ".join(f'<a href="{_page(m)}">{htmllib.escape(lesson_titles[m])}</a>' for m in q.route) + "</p>"
-        "<ol>" + "".join(f"<li>{htmllib.escape(pt)}</li>" for pt in q.spine) + "</ol></details>"
+        "<ol>" + "".join(f"<li>{htmllib.escape(pt)}</li>" for pt in q.in_brief) + "</ol></details>"
         for q in BIG_QUESTIONS
     )
     paper_rows = "".join(
@@ -1015,7 +1015,7 @@ and ends with links to the primary sources. The shared toy data and stand-in emb
 <div id="lessons">{{PARTS}}</div>
 <section id="big"><h2>Big questions</h2>
 <p class="blurb">The lessons build the field from the bottom up. These questions give the top-down view: open one to see the
-points a complete answer covers, and the lessons that teach them, in order.</p>{{BIG}}</section>
+short version, and the lessons that tell the full story, in order.</p>{{BIG}}</section>
 <section id="papers"><h2>The papers behind the lessons</h2>
 <p class="blurb">Annotated, interactive companions: hover over any term or equation symbol. <a href="papers/index.html">All papers</a>.</p>
 <ul class="papers">{{PAPERS}}</ul></section>
