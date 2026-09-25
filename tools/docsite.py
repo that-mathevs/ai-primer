@@ -493,13 +493,13 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 <p>{{COUNT}} lessons. Every idea is built in plain Python, drawn, decoded symbol by symbol, and checked by a test.
 Hover over any underlined term for a plain-English definition.</p></header>
 <nav class="jump" aria-label="Jump to">
-<a href="#big">Big questions</a><a href="#lessons">Lessons</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
+<a href="#lessons">Lessons</a><a href="#big">Big questions</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
 <a href="#papers">Annotated papers</a>
 <a href="{{REPO}}">Source on GitHub</a></nav>
-<section id="big"><h2>Big questions</h2>
-<p class="blurb">The lessons build the field from the bottom up. Start here for the top-down view: open a question to see the
-points a complete answer covers, and the lessons that teach them, in order.</p>{{BIG}}</section>
 <div id="lessons">{{PARTS}}</div>
+<section id="big"><h2>Big questions</h2>
+<p class="blurb">The lessons build the field from the bottom up. These questions give the top-down view: open one to see the
+points a complete answer covers, and the lessons that teach them, in order.</p>{{BIG}}</section>
 <section id="papers"><h2>The papers behind the lessons</h2>
 <p class="blurb">Annotated, interactive companions: hover over any term or equation symbol. <a href="papers/index.html">All papers</a>.</p>
 <ul class="papers">{{PAPERS}}</ul></section>

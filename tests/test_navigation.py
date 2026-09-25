@@ -449,3 +449,12 @@ class TestNoPageRepeatsTheHomePage:
 
         page = '<a href="../attention.html#softmax">softmax</a>'
         assert skip_forwarded_pages(page, "primer/ml/transformer.html") == page
+
+
+class TestTheHomePageOrder:
+    def test_given_the_home_page_the_lessons_come_first_then_the_big_questions_then_the_papers(self):
+        from tools.docsite import render_home
+
+        home = render_home()
+        positions = [home.index(f'id="{anchor}"') for anchor in ("lessons", "agents", "big", "papers")]
+        assert positions == sorted(positions)
