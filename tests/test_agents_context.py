@@ -29,6 +29,16 @@ class TestTokenBudget:
         ]
         assert assemble(sections, budget_tokens=100).dropped == ["old_chat"]
 
+    def test_given_a_section_that_does_not_fit_it_is_skipped_and_a_smaller_one_after_it_still_gets_in(self):
+        # With their tags: system 45, facts 75, note 19 tokens. 45 + 75 = 120 > 100, so the facts are
+        # skipped; the note after them still fits (45 + 19 = 64).
+        sections = [
+            Section("system", tokens(40), priority=0),
+            Section("facts", tokens(70), priority=3),
+            Section("note", tokens(15), priority=5),
+        ]
+        assert assemble(sections, budget_tokens=100).dropped == ["facts"]
+
     def test_given_the_budget_the_assembled_context_never_exceeds_it(self):
         sections = [Section(f"s{i}", tokens(30), priority=i) for i in range(10)]
         assert assemble(sections, budget_tokens=100).tokens <= 100

@@ -27,6 +27,11 @@ class TestUnderfittingAndOverfitting:
     def test_the_exact_fit_does_far_worse_on_new_data_than_a_cubic(self):
         assert reg.polynomial_errors(11)["val"] > 10 * reg.polynomial_errors(3)["val"]
 
+    def test_given_degrees_0_to_11_validation_error_is_lowest_at_degree_5_and_rises_from_degree_6(self):
+        # The lesson's table: degree 5 is the bottom of the valley (0.057); degree 6 is already worse.
+        val = [reg.polynomial_errors(d)["val"] for d in range(12)]
+        assert (int(np.argmin(val)), val[6] > val[5]) == (5, True)
+
     def test_a_straight_line_underfits_with_high_error_on_both_training_and_new_data(self):
         line, cubic = reg.polynomial_errors(1), reg.polynomial_errors(3)
         assert line["train"] > 3 * cubic["train"]

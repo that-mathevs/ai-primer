@@ -99,6 +99,10 @@ class TestTokenizerQuirks:
     def test_given_strawberry_the_model_sees_fewer_tokens_than_its_ten_letters(self, tok):
         assert len(tok.encode(" strawberry")) < 10
 
+    def test_given_strawberry_mid_sentence_it_splits_into_straw_and_berry(self, tok):
+        # The lesson's table and demo: the corpus says " straw" and "berry" often, so two bricks, no letters.
+        assert tok.tokens(" strawberry") == [" straw", "berry"]
+
     def test_given_an_english_trained_tokenizer_hindi_costs_more_tokens_per_character(self, tok):
         english = "The weather is nice today and we will go for a walk."
         hindi = "आज मौसम अच्छा है और हम टहलने जाएंगे।"

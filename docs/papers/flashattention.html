@@ -253,7 +253,7 @@ round(M / d ** 2)  # → 24</code></pre>
     <tr class="hl"><td>Runtime (ms)</td><td class="num">41.7</td><td class="num">7.3</td></tr>
   </tbody>
 </table></div>
-<p>The measured table is the whole argument in three rows: 13% <em>more</em> arithmetic, 9 times less memory traffic, 5.7 times faster. The theory's “25 times” ignores constants; the measured 9 times is what the real kernel achieved.</p>
+<p>The measured table is the whole argument in three rows: 13% <em>more</em> arithmetic, 9 times less memory traffic, 5.7 times faster. The theory's “24 times” ignores constants; the measured 9 times is what the real kernel achieved.</p>
 <h4>Why it matters today</h4>
 <p>Counting memory traffic, not just arithmetic, is now the standard way to reason about kernel speed. The same accounting explains why the <span class="t" data-t="kv cache">KV cache</span> and weight reads dominate text generation; see the <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a>'s <span class="t" data-t="roofline">roofline</span> discussion.</p>
 </section>

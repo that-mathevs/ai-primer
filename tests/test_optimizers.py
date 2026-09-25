@@ -98,3 +98,24 @@ class TestGradientClipping:
         clipped, norm = opt.clip_by_global_norm([np.array([3.0]), np.array([4.0])], max_norm=1.0)
         assert norm == pytest.approx(5.0)
         assert [c[0] for c in clipped] == pytest.approx([0.6, 0.8])
+
+
+class TestTheNarrowValleyPaths:
+    START = (-8.0, 1.0)
+
+    def test_given_momentum_in_the_narrow_valley_it_swings_past_its_start_and_the_minimum_then_settles(self):
+        import numpy as np
+
+        from primer.ml.optimizers import SGD, narrow_valley, run
+
+        path = np.array(run(SGD(lr=0.015, momentum=0.9), narrow_valley, np.array(self.START), 100)["path"])
+        # Further across the valley than it started, past the minimum along it, yet it ends within 0.01.
+        assert path[:, 1].min() < -1.0 and path[:, 0].max() > 1.8 and np.linalg.norm(path[-1]) < 0.01
+
+    def test_given_adam_in_the_narrow_valley_it_overshoots_less_and_ends_about_0_02_from_the_minimum(self):
+        import numpy as np
+
+        from primer.ml.optimizers import Adam, narrow_valley, run
+
+        path = np.array(run(Adam(lr=0.3), narrow_valley, np.array(self.START), 100)["path"])
+        assert path[:, 0].max() < 0.7 and 0.01 < np.linalg.norm(path[-1]) < 0.03

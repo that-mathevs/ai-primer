@@ -34,6 +34,10 @@ class TestModelsHaveTheirOwnSpaces:
         # 20 documents, top 3: a random ranking finds the answer 3/20 = 15% of the time. Nothing crashes.
         assert golden_recall(query_model=SAME_SIZE_NEW_MODEL, doc_model=CURRENT_MODEL, k=3) <= 0.25
 
+    def test_given_v2_queries_over_v1_documents_exactly_3_of_the_12_golden_questions_find_their_answer(self):
+        # The lesson's bar reads 0.25: 3 lucky hits out of 12, a little above the 0.15 of random ranking.
+        assert golden_recall(query_model=SAME_SIZE_NEW_MODEL, doc_model=CURRENT_MODEL, k=3) == pytest.approx(3 / 12)
+
     def test_given_a_new_model_with_more_dimensions_querying_old_document_vectors_fails_loudly(self):
         # 128 numbers can't be dotted with 64: the lucky case, because you find out immediately.
         with pytest.raises(ValueError):

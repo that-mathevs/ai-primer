@@ -217,7 +217,7 @@ alpha * m_hat / math.sqrt(v_hat)  # → 0.1</code></pre>
   </div>
   <div class="sliders ui" id="race-sliders"></div>
   <canvas id="race-canvas" width="720" height="380" aria-label="Loss surface with three optimizer paths. Click to choose a starting point."></canvas>
-  <div class="legend race-legend"><span><i style="background:var(--ff-stroke)"></i>SGD</span><span><i style="background:var(--attn-stroke)"></i>SGD with momentum</span><span><i style="background:var(--soft-stroke)"></i>Adam</span><span>Contours: loss 0.5·(x² + 25·y²) × c</span></div>
+  <div class="legend race-legend"><span><svg class="swatch" viewBox="0 0 28 6" aria-hidden="true"><line x1="0" y1="3" x2="28" y2="3" style="stroke:var(--ff-stroke)" stroke-width="2.4"/></svg>SGD (solid)</span><span><svg class="swatch" viewBox="0 0 28 6" aria-hidden="true"><line x1="0" y1="3" x2="28" y2="3" style="stroke:var(--attn-stroke)" stroke-width="2.4" stroke-dasharray="8 4"/></svg>SGD with momentum (dashed)</span><span><svg class="swatch" viewBox="0 0 28 6" aria-hidden="true"><line x1="0" y1="3" x2="28" y2="3" style="stroke:var(--soft-stroke)" stroke-width="2.4" stroke-dasharray="2 3"/></svg>Adam (dotted)</span><span>Contours: loss 0.5·(x² + 25·y²) × c</span></div>
   <p class="readout" id="race-readout">Click anywhere on the surface to choose where all three start, then press Run.</p>
 </div>
 <p class="reading"><strong>Reading it:</strong> the picture is a map of the loss seen from above; the rings are contour lines and the minimum is the centre. The valley is 25 times steeper across (up and down) than along (left to right), which is the typical shape of a real network's loss. Press Run. SGD (blue) has to use a small step, because a bigger one would overshoot the steep walls: it drops down the wall at once, then crawls along the nearly flat floor. Momentum (orange) builds speed but swings from wall to wall. Adam (green) rescales each direction separately, so it takes similar-sized steps across and along the valley, cutting diagonally towards the centre before settling, and ends with the lowest loss. Now drag <strong>loss scale c</strong>, which multiplies the whole loss (and so every gradient) by c. Down at 0.1, SGD and momentum barely move. Above about 3, SGD overshoots the steep walls and flies off; above about 30, momentum does too. Adam's path does not change at all: watch its end point in the readout stay at the same coordinates for every c. That is the scale invariance from the equation above. Tick <strong>noisy gradients</strong> to see Adam's steps shrink near the minimum as the signal-to-noise ratio falls. This is a toy two-weight problem computed live in your browser, not a result from the paper.</p>
@@ -344,7 +344,7 @@ round(u, 2)  # → 9.99</code></pre>
   <div id="adamax-chart"></div>
   <p class="readout" id="adamax-readout">Hover or tap to compare the two divisors at any step.</p>
 </div>
-<p class="reading"><strong>Reading it:</strong> the gradient is 1 at every step except a spike of 10 at step 20. The AdaMax divisor u (orange) leaps to the spike's size and then decays in a straight, slow line. The Adam divisor √v̂ (green) jumps only to about 2.45, because it averages the spike's square with everything before it, then eases back. The paper derives u as the limit of Adam's p-th power average as p → ∞; the max is what remains. AdaMax also needs no bias correction for u, because a max of values never drifts towards the made-up zero start.</p>
+<p class="reading"><strong>Reading it:</strong> the gradient is 1 at every step except a spike of 10 at step 20. The AdaMax divisor u (orange, solid) leaps to the spike's size and then decays in a straight, slow line. The Adam divisor √v̂ (green, dashed) jumps only to about 2.45, because it averages the spike's square with everything before it, then eases back. The paper derives u as the limit of Adam's p-th power average as p → ∞; the max is what remains. AdaMax also needs no bias correction for u, because a max of values never drifts towards the made-up zero start.</p>
 </section>
 <section id="s7-2">
 <h3>7.2 Temporal averaging</h3>
@@ -554,14 +554,17 @@ function race(P) {
     ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 7); ctx.fill();
   }
   const colors = () => ({ sgd: css("--ff-stroke"), mom: css("--attn-stroke"), adam: css("--soft-stroke") });
+  // Each path has its own line pattern as well as its colour, matching the legend.
+  const dashes = { sgd: [], mom: [8, 4], adam: [2, 3] };
   function draw(p, upto) {
     background();
     const col = colors();
     for (const opt of ["sgd", "mom", "adam"]) {
       const pts = p[opt].slice(0, Math.min(upto, p[opt].length));
-      ctx.strokeStyle = col[opt]; ctx.lineWidth = 2.2; ctx.beginPath();
+      ctx.strokeStyle = col[opt]; ctx.lineWidth = 2.2; ctx.setLineDash(dashes[opt]); ctx.beginPath();
       pts.forEach(([x, y], i) => { const [px, py] = toPx(Math.max(-60, Math.min(60, x)), Math.max(-30, Math.min(30, y))); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.fillStyle = col[opt];
       pts.forEach(([x, y]) => { const [px, py] = toPx(x, y); if (px > -5 && px < W + 5 && py > -5 && py < H + 5) { ctx.beginPath(); ctx.arc(px, py, 1.8, 0, 7); ctx.fill(); } });
     }
@@ -584,6 +587,13 @@ function race(P) {
     const r = canvas.getBoundingClientRect();
     start = toXY(((ev.clientX - r.left) / r.width) * W, ((ev.clientY - r.top) / r.height) * H);
     run();
+  });
+  // The keyboard moves the start point too; the readout (announced) says where it is and how each run ends.
+  P.keyPoint(canvas, {
+    what: "the starting point",
+    get: () => { const [px, py] = toPx(...start); return [px / W, py / H]; },
+    set: (fx, fy) => { start = toXY(fx * W, fy * H); paths = simulate(); draw(paths, Infinity); },
+    announce: false,
   });
   document.getElementById("race-run").addEventListener("click", run);
   document.getElementById("race-reset").addEventListener("click", () => { start = [-4.5, 1.4]; run(); });

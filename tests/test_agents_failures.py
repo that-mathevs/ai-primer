@@ -10,6 +10,7 @@ from primer.agents.failures import (
     is_looping,
     max_steps_for,
     retry_with_backoff,
+    simulate_outage,
 )
 
 
@@ -104,6 +105,12 @@ class TestCircuitBreaker:
         now[0] = 31.0
         assert breaker.call(FlakyService(failures=0)) == "ok"
         assert breaker.state == "closed"
+
+    def test_given_a_fifty_second_outage_the_service_is_reached_five_times_and_21_requests_fail_fast(self):
+        # Requests every 2 s, outage from 10 s to 60 s, threshold 3, cool-down 15 s. By hand: failures at
+        # 10, 12, 14 (open), trials at 30 and 46 (fail again); the other 21 requests up to 60 s fail fast.
+        outcomes = [e["outcome"] for e in simulate_outage()]
+        assert (outcomes.count("failed"), outcomes.count("fast-fail")) == (5, 21)
 
     def test_given_the_trial_call_fails_the_breaker_opens_again(self):
         breaker, now = self.make()

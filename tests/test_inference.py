@@ -229,3 +229,15 @@ class TestPromptCaching:
         # uncached 100 × 10,500 × $3e-6 = $3.15; cached $0.039 once + 99 × $0.0045 = $0.4845.
         uncached, cached = inf.prompt_cache_cost(prefix=10_000, suffix=500, requests=100, price_per_million=3.0)
         assert (round(uncached, 4), round(cached, 4)) == (3.15, 0.4845)
+
+
+class TestTopPAdaptsToConfidence:
+    def test_given_the_lessons_five_tokens_top_p_0_9_cuts_three_at_t_0_5_two_at_t_1_and_one_at_t_2(self):
+        import numpy as np
+
+        from primer.ml.inference import temperature_probs, top_p_filter
+
+        # A confident model reaches 90% with fewer tokens, so more of the tail is cut.
+        logits = np.array([3.0, 2.2, 1.5, 0.5, -0.5])
+        cut = [int((top_p_filter(temperature_probs(logits, t), 0.9) == 0).sum()) for t in (0.5, 1.0, 2.0)]
+        assert cut == [3, 2, 1]

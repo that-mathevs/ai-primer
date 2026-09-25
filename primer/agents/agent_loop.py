@@ -110,7 +110,8 @@ flowchart TD
   N -->|no| M[Call the model again]
 ```
 
-**Reading it:** every red exit is a named `stop_cause` in `AgentResult`.
+**Reading it:** every box that starts with `stop:` is an exit, and each of
+the seven is a named `stop_cause` in `AgentResult`.
 Read top to bottom: first trust the model's own stop reason, then protect
 your wallet (budget), then honor an explicit escalation, then protect
 against repetition, and only then spend time running tools. The order
@@ -202,7 +203,7 @@ total_input(20)  # → 105000
 round(total_input(20) / total_input(10), 1)  # → 3.8
 ```
 
-![Input tokens sent at each step of a runaway agent](figures/primer.agents.agent_loop.tokens_per_step.svg)
+![Each call of a runaway agent sends more tokens than the last, and the run stops at the first call where the running total passes the 12,000-token budget](figures/primer.agents.agent_loop.tokens_per_step.svg)
 
 **Reading it:** each bar is one call to the model in the budget-burner demo
 (a model that keeps searching). Bars grow step by step because the history
@@ -210,7 +211,7 @@ grows. The line is the running total, which is what you pay for, and it
 bends upward. The dashed horizontal line is the token budget. The run stops
 at the first step where the total crosses it, instead of carrying on.
 
-![Cumulative input tokens: linear intuition vs. actual quadratic growth](figures/primer.agents.agent_loop.quadratic_cost.svg)
+![At 10 steps re-sending the history costs 27,500 input tokens against the 5,000 a flat per-step cost suggests, and the gap keeps widening](figures/primer.agents.agent_loop.quadratic_cost.svg)
 
 **Reading it:** the x-axis is the number of steps in a run, and the y-axis is
 the total input tokens sent. The straight line is what people intuitively expect
@@ -219,7 +220,7 @@ call re-sends the history. At 10 steps the gap is about 5x, and it keeps
 widening. That gap is why step limits, trimming tool output, and prompt
 caching (`primer.agents.cost`) matter.
 
-![Wall-clock time for k tool calls, sequential vs. concurrent](figures/primer.agents.agent_loop.parallel_latency.svg)
+![Run one after another, tool calls take the sum of their latencies and keep climbing; run concurrently, they take only as long as the slowest call](figures/primer.agents.agent_loop.parallel_latency.svg)
 
 **Reading it:** the x-axis is how many tools the model requested in one turn,
 each with a realistic latency between 0.2 s and 1.2 s. Run one after another,

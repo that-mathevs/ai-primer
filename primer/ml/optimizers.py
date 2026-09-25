@@ -98,7 +98,7 @@ Worked example on the bowl w², where each step multiplies w by (1 − 2η):
 | 0.5 | 0 | 0, 0, 0 | lands on the bottom in one step |
 | 1.1 | −1.2 | −1.2, 1.44, −1.728 | overshoots further each time: diverges |
 
-![Loss curves for four learning rates on the bowl](figures/primer.ml.optimizers.learning_rates.svg)
+![Over 30 steps, rate 0.001 barely lowers the loss, 0.1 falls steadily, 0.45 plunges fastest, and 1.1 climbs off the chart as every step overshoots](figures/primer.ml.optimizers.learning_rates.svg)
 
 **Reading it:** each line is the loss (log scale) over 30 steps for one
 learning rate. The flat line near the top is 0.001: technically improving,
@@ -181,15 +181,17 @@ loop back: next time, this velocity becomes the "old velocity". Slopes that
 keep pointing the same way pile up; slopes that flip sign every step (the
 walls) mostly cancel.
 
-![SGD, momentum and Adam on a long narrow valley](figures/primer.ml.optimizers.trajectories.svg)
+![After 100 steps from (-8, 1), plain SGD has only crept to x = -1.8 along the valley floor, while momentum and Adam reach the minimum after some overshoot](figures/primer.ml.optimizers.trajectories.svg)
 
 **Reading it:** the ellipses are contour lines of the valley ½(x² + 100y²),
 the start is at the left and the minimum is the star at the centre. Plain
 SGD (its learning rate capped by the steep walls) creeps along the floor and
-after 100 steps is still far from the star. Momentum overshoots the walls a
-little at first, then its velocity carries it swiftly along the floor. Adam
-heads almost straight for the minimum because it rescales each direction
-separately.
+after 100 steps is still far from the star. Momentum swings hard: across
+the valley to y = −1.1 (further out than it started) and past the star to
+x ≈ 1.9, before the swings die down and it settles 0.003 from the minimum.
+Adam, which rescales each direction separately, takes a steadier line: it
+dips to y ≈ −0.5, overshoots to x ≈ 0.6, and ends 0.02 away. Both beat
+plain SGD by far; momentum's overshoot is the price of the speed it builds.
 
 $$
 v_t = \beta\, v_{t-1} + g_t, \qquad w_{t+1} = w_t - \eta\, v_t
@@ -412,7 +414,7 @@ Worked example with peak 0.001, 100 warmup steps, 1,000 steps total:
 | 550 | halfway through decay | 0.0005 |
 | 1000 | end | the floor (e.g. 0.00001) |
 
-![Warmup plus cosine decay learning-rate schedule](figures/primer.ml.optimizers.schedule.svg)
+![The learning rate ramps straight up from 0 to 0.001 over 100 steps, then falls along a half cosine, passing 0.0005 at step 550 and ending near 0.00001](figures/primer.ml.optimizers.schedule.svg)
 
 **Reading it:** the horizontal axis is the training step and the vertical
 axis the learning rate. The short straight ramp on the left is warmup. Then

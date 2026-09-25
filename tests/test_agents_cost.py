@@ -174,3 +174,12 @@ class TestTheParallelFigureIsStable:
         # The figure draws the schedule, so it is identical on every build; the demo and the tests measure it.
         bars = [(p.get_x(), p.get_width()) for p in figures()["parallel"].axes[0].patches]
         assert bars == [(0, 100), (100, 100), (200, 100), (0, 100), (0, 100), (0, 100)]
+
+
+class TestTheSemanticCacheSweep:
+    def test_given_thresholds_from_0_4_up_the_cache_serves_more_wrong_answers_than_right_ones(self):
+        from primer.agents.cost import semantic_cache_sweep
+
+        sweep = semantic_cache_sweep([0.4, 0.95])
+        # At 0.4: 57% of paraphrases hit, 60% of different-intent questions wrongly hit. At 0.95: 14% vs 40%.
+        assert [(round(s["useful_hit_rate"], 2), round(s["wrong_hit_rate"], 2)) for s in sweep] == [(0.57, 0.6), (0.14, 0.4)]

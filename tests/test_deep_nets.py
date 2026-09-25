@@ -37,6 +37,12 @@ class TestGradientsThroughADeepNetwork:
         ratio = dn.first_to_last_gradient_ratio(depth=30, activation="sigmoid", init="xavier")
         assert ratio < 1e-6
 
+    def test_given_sigmoid_with_xavier_the_gradient_shrinks_about_18_orders_of_magnitude_over_30_layers(self):
+        # Xavier makes σ_w·√64 ≈ 1, so each layer multiplies by sigmoid's slope, at most 0.25: 0.25^30 ≈ 8.7e-19.
+        # That is half the ≈ 36 orders lost with too-small weights, not "almost as fast".
+        ratio = dn.first_to_last_gradient_ratio(depth=30, activation="sigmoid", init="xavier")
+        assert 1e-19 < ratio < 1e-17
+
 
 class TestInitialisation:
     def test_xavier_scale_for_100_inputs_and_100_outputs_is_0_1(self):
@@ -50,6 +56,12 @@ class TestInitialisation:
     def test_given_he_initialisation_the_signal_keeps_its_size_through_30_relu_layers(self):
         rms = dn.forward_signal_rms(depth=30, activation="relu", init="he")
         assert 0.5 < rms[-1] / rms[0] < 2.0
+
+    def test_given_sigmoid_with_xavier_the_forward_signal_holds_near_0_5_while_its_gradient_vanishes(self):
+        # Sigmoid's outputs sit around 0.5 whatever comes in, so the forward signal cannot reveal the
+        # vanishing gradient: the backward pass multiplies by sigmoid's slope, the forward pass does not.
+        rms = dn.forward_signal_rms(depth=30, activation="sigmoid", init="xavier")
+        assert np.all((rms[1:] > 0.45) & (rms[1:] < 0.6))
 
 
 class TestResidualConnections:
@@ -107,3 +119,13 @@ class TestClippingAnExplodingGradient:
         grads = dn.layer_gradients(depth=30, activation="relu", init="large")
         clipped_norm = dn.global_norm_after_clipping(grads, max_norm=1.0)
         assert clipped_norm == pytest.approx(1.0)
+
+
+class TestTheGradientFlowFigure:
+    def test_given_the_gradient_flow_figure_every_line_it_describes_is_inside_the_visible_axis(self):
+        # A line clipped off the plot can't show the dive or climb the text asks the reader to see.
+        pytest.importorskip("matplotlib")
+        ax = dn.figures()["gradient_flow"].axes[0]
+        low, high = ax.get_ylim()
+        heights = np.concatenate([line.get_ydata() for line in ax.get_lines()])
+        assert low <= heights.min() and heights.max() <= high

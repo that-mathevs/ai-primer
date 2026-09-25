@@ -141,14 +141,15 @@ vendors means changing the collector's configuration, not the agent.
 warning light came on.
 
 **Worked example.** A user asks "Where is order A-100?" (with a hyphen). The
-agent's answer is an unhelpful "I couldn't find that order." The trace
-shows why in one line:
+agent's answer is an unhelpful "I couldn't find order A-100." From the
+answer alone the order might simply not exist. The trace shows why in one
+line:
 
 ```text
 invoke_agent support-agent  900 ms  [ok]
-├─ chat scripted-large  400 ms  [ok]
+├─ chat scripted-large  400 ms  [ok]  in=68 out=24 tokens
 ├─ execute_tool lookup_order  100 ms  [error]  unknown order id A-100
-└─ chat scripted-large  400 ms  [ok]
+└─ chat scripted-large  400 ms  [ok]  in=135 out=15 tokens
 ```
 
 The model extracted the id exactly as typed and the tool doesn't normalize
@@ -157,14 +158,18 @@ belongs in the tool (normalize ids, or return an error the model can act
 on, such as "ids look like A100"), not in the prompt, and it's the trace
 that tells you so.
 
-![Waterfall view of a run that looks up three orders](figures/primer.agents.observability.waterfall.svg)
+![In a three-order run, four 400 ms model calls alternate back to back with three 100 ms tool calls, so model calls fill most of the 1,900 ms](figures/primer.agents.observability.waterfall.svg)
 
 **Reading it:** the classic trace view. Each row is a span, its bar placed
 on a shared time axis; the top row is the whole task. Model calls (blue)
-alternate with tool calls (orange), and the gaps show the loop's rhythm:
-think, act, think, act. Where the time goes is visible at a glance.
+alternate with tool calls (orange), each one starting the moment the
+previous one ends: that staircase is the loop's rhythm, think, act, think,
+act. The blue bars are four times as long as the orange ones, so where the
+time goes is visible at a glance. In a real trace, a gap between two bars
+would be time spent outside any span (a queue, a retry wait, untraced
+code), and worth a look.
 
-![Input tokens per model call grow as the conversation accumulates](figures/primer.agents.observability.tokens.svg)
+![Input tokens climb with every model call, because each call resends the growing history](figures/primer.agents.observability.tokens.svg)
 
 **Reading it:** each bar is one model call in a run that looks up six
 orders one at a time. Input tokens climb with every step because each call
@@ -172,7 +177,7 @@ resends the growing history. Traces make this visible per call, which is
 how you notice a verbose tool result or a runaway loop before the bill
 does.
 
-![Where the time goes, by kind of span](figures/primer.agents.observability.latency.svg)
+![In the six-order run, model calls take far more of the time than tool calls do](figures/primer.agents.observability.latency.svg)
 
 **Reading it:** total milliseconds spent in model calls versus tool calls
 for that six-order run. Model calls dominate, so the biggest latency wins

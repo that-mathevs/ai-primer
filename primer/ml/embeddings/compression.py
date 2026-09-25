@@ -70,7 +70,7 @@ The index adds its own overhead. An HNSW graph (`primer.ml.embeddings.ann`)
 stores about 2·M neighbour ids per vector at 4 bytes each: with M = 16 that's
 10M × 32 × 4 = **1.28 GB** more.
 
-![Raw storage for 10 million vectors](figures/primer.ml.embeddings.compression.storage.svg)
+![Ten million 3,072-dimension vectors take 123 GB as float32, 31 GB as int8 and under 4 GB as binary; smaller dimensions shrink each bar in proportion](figures/primer.ml.embeddings.compression.storage.svg)
 
 **Reading it:** each group of bars is one common embedding size, from 384 to
 3,072 dimensions. Within a group, the three bars are float32, int8 and
@@ -157,7 +157,7 @@ prefix of the vector is judged by the usual contrastive loss, and the model
 is trained on the sum. That's the whole trick: nothing about the model
 changes, only how its output is graded.
 
-![How much variation each dimension carries](figures/primer.ml.embeddings.compression.spectrum.svg)
+![In importance order variance drops steeply, the first 16 of 256 dimensions holding 96% of it; in random order it stays in a narrow band with no standouts](figures/primer.ml.embeddings.compression.spectrum.svg)
 
 **Reading it:** the horizontal axis is the dimension number and the vertical
 axis is how much the collection varies along it (its **variance**: the
@@ -167,7 +167,7 @@ steadily after that, so cutting from the end loses little. In a random
 order every dimension carries a similar share, so cutting any of them costs
 the same.
 
-![Recall@10 vs. dimensions kept](figures/primer.ml.embeddings.compression.matryoshka.svg)
+![Keeping 32 of 256 dimensions finds 93% of true top-10 neighbours in importance order but 44% in random order; re-ranking a 100 shortlist finds all](figures/primer.ml.embeddings.compression.matryoshka.svg)
 
 **Reading it:** the horizontal axis is how many leading dimensions we keep
 (of 256); the vertical axis is **recall@10**, the share of each query's true
@@ -270,7 +270,7 @@ x_hat = lo + code / 255 * (hi - lo)
 round(x_hat, 5)  # → 0.00392
 ```
 
-![A vector before and after int8 rounding](figures/primer.ml.embeddings.compression.int8.svg)
+![The decoded int8 steps track the first 40 numbers of the vector almost exactly; the rounding error never exceeds half of one step](figures/primer.ml.embeddings.compression.int8.svg)
 
 **Reading it:** the line shows the first 40 numbers of one real vector from
 this lesson's corpus; the steps show the same numbers after rounding to
@@ -350,7 +350,7 @@ document), and the expensive one where the work is small (100 candidates).
 The bits live in fast memory; the full vectors can live somewhere slower
 because only a hundred are read per query.
 
-![Recall@10 of each compression, with and without re-scoring](figures/primer.ml.embeddings.compression.quantization.svg)
+![Recall@10: int8 keeps 0.98 and binary alone only 0.54, but binary re-scored over 100 candidates recovers 0.97 and a 32-dimension shortlist reaches 1.00](figures/primer.ml.embeddings.compression.quantization.svg)
 
 **Reading it:** each bar is one way of storing the documents, measured by
 recall@10 against exact float32 search. int8 alone keeps about 98%. Binary

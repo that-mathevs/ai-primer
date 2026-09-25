@@ -139,10 +139,9 @@ round(sum(c_m * L_m for c_m, L_m in zip(c, loss)) / N, 2)  # → 6.08</code></pr
     <label for="trunc-m">keep the first <strong id="trunc-mv">8</strong> of 64 numbers</label><input type="range" id="trunc-m" min="0" max="5" step="1" value="2">
   </div>
   <div id="trunc-chart"></div>
-  <div class="legend"><span><i style="background:var(--accent)"></i>front-loaded (Matryoshka-like)</span><span><i style="background:var(--active)"></i>spread out (ordinary training)</span></div>
   <p class="readout" id="trunc-readout">Computing…</p>
 </div>
-<p class="reading"><strong>Reading it:</strong> this is a real experiment computed in your browser on synthetic data: 600 “documents” of 64 numbers, and for each a noisy “query” copy. The task is to find each query's own document by cosine similarity using only the first m numbers (the y-axis is recall@1: how often the top result is the right one). The blue curve uses embeddings whose information is packed into the first numbers, the way Matryoshka training arranges it. The red curve holds exactly the same information, rotated so it is spread evenly over all 64 numbers, the way ordinary training leaves it. Both reach 100% with all 64 numbers. Cut them short and the front-loaded one keeps working far longer: that gap is what Matryoshka training buys. The slider reads both curves off at one size and reports what that size would save in storage for 10 million vectors; hover the chart to read any point.</p>
+<p class="reading"><strong>Reading it:</strong> this is a real experiment computed in your browser on synthetic data: 600 “documents” of 64 numbers, and for each a noisy “query” copy. The task is to find each query's own document by cosine similarity using only the first m numbers (the y-axis is recall@1: how often the top result is the right one). The solid blue curve uses embeddings whose information is packed into the first numbers, the way Matryoshka training arranges it. The dashed red curve holds exactly the same information, rotated so it is spread evenly over all 64 numbers, the way ordinary training leaves it. Both reach 100% with all 64 numbers. Cut them short and the front-loaded one keeps working far longer: that gap is what Matryoshka training buys. The slider reads both curves off at one size and reports what that size would save in storage for 10 million vectors; hover the chart to read any point.</p>
 <h3 class="rung">Why it matters</h3>
 <p>The trick costs almost nothing: a few extra small classifiers during training, nothing at inference. You get one model and one stored vector serving every budget.</p>
 </section>
@@ -370,7 +369,7 @@ function truncDemo(P) {
   const front = ms.map((m) => [Math.log2(m), recall(docs, qs, m)]);
   const spread = ms.map((m) => [Math.log2(m), recall(docsR, qsR, m)]);
   P.lineChart(document.getElementById("trunc-chart"), {
-    series: [{ name: "front-loaded (Matryoshka-like)", points: front }, { name: "spread out (ordinary)", points: spread }],
+    series: [{ name: "front-loaded (Matryoshka-like)", points: front }, { name: "spread out (ordinary training)", points: spread }],
     xLabel: "numbers kept, m (doubling scale)", yLabel: "recall@1", yMin: 0, yMax: 1,
     xFmt: (v) => String(Math.round(Math.pow(2, v))), yFmt: (v) => v.toFixed(2),
     readout: document.getElementById("trunc-readout"), ariaLabel: "Recall at 1 against number of dimensions kept, for front-loaded and spread-out embeddings",

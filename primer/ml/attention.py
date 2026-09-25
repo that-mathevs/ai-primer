@@ -103,7 +103,7 @@ the same amount. The code uses this to subtract the largest score before
 exponentiating, which stops *e*¹⁰⁰⁰ from overflowing to infinity. See
 `primer.notation` for exponents and sums from scratch.
 
-![Scores become weights for the word "it"](figures/primer.ml.attention.it_weights.svg)
+![For the word it, scores 2, 1 and 0.5 become weights 0.63, 0.23 and 0.14: animal scores twice tired yet gets almost three times its attention](figures/primer.ml.attention.it_weights.svg)
 
 **Reading it:** for each word, the grey bar is its share of the raw scores
 and the blue bar is its share of attention after softmax. Softmax exaggerates
@@ -288,7 +288,7 @@ region is a lower triangle: the first token sees only itself and the last
 sees everything before it. The same triangle appears as the dark region in
 the heatmap below.
 
-![Causal attention weights on a real sentence](figures/primer.ml.attention.causal_heatmap.svg)
+![Every cell above the diagonal is zero, so each of the 10 words attends only to itself and earlier words, and each row sums to 1](figures/primer.ml.attention.causal_heatmap.svg)
 
 **Reading it:** rows are the token doing the looking (the query), columns are
 the tokens being looked at (the keys), and darker means more weight. The
@@ -366,7 +366,7 @@ are 0, every entry of that matrix is 0. The query and key weights receive no
 signal and stop learning. This is called *saturation*.
 `sqrt_dk_experiment` measures all of this.
 
-![Unscaled attention saturates as width grows](figures/primer.ml.attention.sqrt_dk.svg)
+![As head width grows from 2 to 1024, unscaled attention's top weight climbs from 0.29 to 0.96 and its gradient shrinks fivefold; scaled stays flat](figures/primer.ml.attention.sqrt_dk.svg)
 
 **Reading it:** the x-axis is the head width d_k, on a log scale. On the left,
 the y-axis is the average largest attention weight: 1.0 means one-hot, all
@@ -452,7 +452,7 @@ conversations fit on one GPU, at a small cost in quality. See
 The score matrix is n × n per head per layer, so compute and memory grow
 with **n²**. Doubling the context roughly quadruples attention's cost.
 
-![Quadratic attention overtakes linear projections](figures/primer.ml.attention.quadratic_cost.svg)
+![On log axes, the n-squared attention cost overtakes the linear projection cost at 8,192 tokens (twice d_model of 4,096) and then pulls away](figures/primer.ml.attention.quadratic_cost.svg)
 
 **Reading it:** both axes are logarithmic, so a straight line is a power law
 and a steeper line grows faster. The projections (X·W) cost O(n·d²), a line of

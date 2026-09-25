@@ -71,17 +71,20 @@ filled in properly: every box, a real date, a positive amount? Then does it
 make sense: does this account exist, does it have the money? Only then do
 they open the drawer.
 
-**Tiny worked example.** The model sends `{"ammount": 5, "currency": "usd"}`
-to a payment tool. The validator returns *every* problem at once, each one
-saying what a correct value looks like:
+**Tiny worked example.** A payment tool takes an `amount`, a `currency`
+(EUR, GBP or USD) and an optional `pay_on` date. The model sends
+`{"ammount": 5, "currency": "usd", "pay_on": "next friday"}`. The validator
+returns *every* problem at once, each one saying what a correct value looks
+like:
 
 ```text
 $: missing required field 'amount'
-$: unexpected field 'ammount' (allowed: amount, currency, pay_on, quantity, tags)
+$: unexpected field 'ammount' (allowed: amount, currency, pay_on)
 $.currency: must be one of ['EUR', 'GBP', 'USD'], got 'usd'
+$.pay_on: 'next friday' does not match the required format. Expected: date as YYYY-MM-DD
 ```
 
-Compare that to `invalid input`. With the first, the model fixes all three
+Compare that to `invalid input`. With the first, the model fixes all four
 mistakes in one retry. With the second, it guesses.
 
 ```mermaid
@@ -139,7 +142,7 @@ with every tool (a three-way tie, so it guesses the first). The precise
 `lookup_record` description shares "billing", "status" and "customer" and
 wins.
 
-![Correct tool picks: vague vs. precise descriptions](figures/primer.agents.tools.selection_accuracy.svg)
+![Vague descriptions pick the right tool for 2 of 6 requests; precise descriptions of the same tools get all 6 right](figures/primer.agents.tools.selection_accuracy.svg)
 
 **Reading it:** two bars, one per set of descriptions, each out of the same six
 labelled requests. With vague descriptions the model gets 2 of 6, and only
@@ -207,7 +210,7 @@ round(1 - p ** 5, 2)  # → 0.14
 p ** 1  # → 0.97
 ```
 
-![Chain success vs. number of calls](figures/primer.agents.tools.compounding.svg)
+![Success falls with every extra call: at 99% per call twenty calls succeed about 82% of the time, at 90% ten calls barely a third](figures/primer.agents.tools.compounding.svg)
 
 **Reading it:** the x-axis is how many calls the job takes, and the y-axis is the chance
 the whole job succeeds. Each curve is a different per-call reliability.
@@ -241,7 +244,7 @@ flowchart LR
 "documents" are tool descriptions. The catalogue is embedded ahead of time;
 per request you embed one string and take the top matches.
 
-![Similarity of requests to tools](figures/primer.agents.tools.tool_similarity.svg)
+![Each request is similar to only a small cluster of related tools and dim against the rest of the catalogue](figures/primer.agents.tools.tool_similarity.svg)
 
 **Reading it:** each row is a user request and each column a tool from the
 catalogue. Brighter cells mean more similar. Each request lights up a small
@@ -548,6 +551,20 @@ class ToolRegistry:
 # Tool descriptions are prompts: the model chooses from their words alone
 # ---------------------------------------------------------------------------
 
+# The payment tool from the worked example in section 2. `additionalProperties:
+# False` is what turns a typo like "ammount" into an error instead of a field
+# that is silently ignored.
+PAYMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "amount": {"type": "number", "minimum": 0.01},
+        "currency": {"type": "string", "enum": ["EUR", "GBP", "USD"]},
+        "pay_on": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$", "description": "date as YYYY-MM-DD"},
+    },
+    "required": ["amount", "currency"],
+    "additionalProperties": False,
+}
+
 _OBJ = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
 
 VAGUE_TOOLS = [
@@ -748,19 +765,9 @@ def demo() -> None:
     print()
 
     banner("2. Validation: every problem at once, each with its fix")
-    schema = {
-        "type": "object",
-        "properties": {
-            "amount": {"type": "number", "minimum": 0.01},
-            "currency": {"type": "string", "enum": ["EUR", "GBP", "USD"]},
-            "pay_on": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$", "description": "date as YYYY-MM-DD"},
-        },
-        "required": ["amount", "currency"],
-        "additionalProperties": False,
-    }
     bad = {"ammount": 5, "currency": "usd", "pay_on": "next friday"}
     print(f"  arguments: {bad}")
-    for e in validate(bad, schema):
+    for e in validate(bad, PAYMENT_SCHEMA):
         print(f"  - {e}")
     print()
     takeaway("'invalid input' makes the model guess. A list of fixes gets it right in one retry.")

@@ -195,7 +195,7 @@ is why a byte-level tokenizer round-trips any text.
 ids 0-255 for the bytes and 256, 257, ... for each merge. GPT-2, GPT-4's
 `cl100k_base`, Llama 3 and most current LLMs work this way.
 
-![Characters per token as the vocabulary grows](figures/primer.ml.tokenization.merge_curve.svg)
+![Compression climbs steeply from 1.0 to 2.0 characters per token in the first 44 merges, then flattens near 3.1 by 500 entries](figures/primer.ml.tokenization.merge_curve.svg)
 
 **Reading it:** the x-axis is vocabulary size: 256 raw bytes plus the
 number of merges learned. The y-axis is compression, how many characters of
@@ -346,7 +346,7 @@ or **0.75 words per token**, so 1,000 tokens ≈ 750 words
 (`estimate_tokens`, `tokens_to_words`). Use it for quick estimates; count
 with the real tokenizer for anything that matters.
 
-![Characters per token by content type](figures/primer.ml.tokenization.content_types.svg)
+![English prose gets 2.6 characters per token; German, code and JSON 1.2 to 1.4; Hindi and emoji under 0.4](figures/primer.ml.tokenization.content_types.svg)
 
 **Reading it:** each bar is one kind of text encoded by the same
 English-trained tokenizer from this module; taller bars mean each token
@@ -857,7 +857,8 @@ def demo() -> None:
     )
     say(
         f"""
-        Letters: 'strawberry' -> {tok.tokens(' strawberry')}. The model sees
+        Letters: ' strawberry' (with the leading space it has mid-sentence) ->
+        {tok.tokens(' strawberry')}. The model sees
         {len(tok.encode(' strawberry'))} ids, not 10 letters, so 'how many r's?'
         is harder than it looks.
         """

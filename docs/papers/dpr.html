@@ -497,8 +497,8 @@ function hybridDemo() {
 function mainBars() {
   const rows = [["Natural Questions", 59.1, 78.4], ["TriviaQA", 66.9, 79.4], ["WebQuestions", 55.0, 73.2], ["CuratedTREC", 70.9, 79.8], ["SQuAD", 68.8, 63.2]];
   const cols = "9rem minmax(0,1fr) 3.6rem";
-  document.getElementById("main-bars").innerHTML = `<div class="legend" style="margin:0 0 0.4rem"><span><i style="background:var(--wire)"></i>BM25</span><span><i style="background:var(--accent)"></i>DPR</span><span>top-20 accuracy, axis 0 to 100%</span></div>` +
-    rows.map(([d, b, p]) => barRow(d, b / 100, `${b.toFixed(1)}%`, "var(--wire)", cols) + barRow("", p / 100, `${p.toFixed(1)}%`, "var(--accent)", cols)).join("");
+  document.getElementById("main-bars").innerHTML = `<div class="legend" style="margin:0 0 0.4rem"><span><i style="background:var(--wire)"></i>BM25</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>DPR (striped)</span><span>top-20 accuracy, axis 0 to 100%</span></div>` +
+    rows.map(([d, b, p]) => barRow(d, b / 100, `${b.toFixed(1)}%`, "var(--wire)", cols) + barRow("", p / 100, `${p.toFixed(1)}%`, "var(--hatch) var(--accent)", cols)).join("");
 }
 
 /* ---- Table 3 selected rows ---- */

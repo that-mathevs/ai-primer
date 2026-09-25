@@ -24,7 +24,7 @@ jobs:
       - run: make test
       - run: make docs
       - run: make sitecheck
-      - run: make phonecheck
+      - run: make browsercheck
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/html

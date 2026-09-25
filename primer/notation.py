@@ -276,7 +276,7 @@ Two facts carry most of machine learning:
    "log-probabilities", and why the standard training loss is
    $-\log p$ (see `primer.ml.losses`).
 
-![e^x and its undo button, ln](figures/primer.notation.exp_log.svg)
+![e to the x stays above zero and climbs steeply; ln x mirrors it across y = x and plunges near 0, so ln 0.01 = -4.61 while ln 0.9 = -0.11](figures/primer.notation.exp_log.svg)
 
 **Reading it:** the blue curve $e^x$ is always above zero and climbs steeply;
 every step of 1 to the right multiplies its height by 2.718. The red curve
@@ -371,7 +371,7 @@ network spread out layer after layer, training blows up; normalization layers
 and careful initialization exist to hold σ near 1 (see `primer.ml.deep_nets`
 and the √d_k in `primer.ml.attention`).
 
-![Same mean, different spread](figures/primer.notation.spread.svg)
+![Two histograms share the mean 0, but the sigma 1 samples pile up tall and narrow while the sigma 3 samples spread about three times as wide](figures/primer.notation.spread.svg)
 
 **Reading it:** both histograms are centred on the same mean (the dashed
 line), but the blue one is tall and narrow (σ = 1) while the red one is low
@@ -460,7 +460,7 @@ eta = 0.1
 [t - eta * g for t, g in zip(theta, gradient)]  # → [0.8, 1.6]
 ```
 
-![Gradient descent on a bowl](figures/primer.notation.gradient_descent.svg)
+![Arrows on circular contours point straight at the centre, longest on the steep rim; descent from (1, 2) takes big steps first, then ever smaller ones](figures/primer.notation.gradient_descent.svg)
 
 **Reading it:** the rings are contour lines, as on a hiking map: every point
 on a ring has the same loss, and the bottom of the bowl is the centre. The

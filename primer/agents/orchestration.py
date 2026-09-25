@@ -42,7 +42,7 @@ what is the meal per-diem when travelling?", answered by each design
 | agent loop | 2 | one turn with two parallel tool calls, one answer turn |
 | multi-agent | 4 | plan, one call per specialist (2), final answer |
 
-![Calls and tokens for the same question at each level of autonomy](figures/primer.agents.orchestration.autonomy_costs.svg)
+![Workflow, router and agent loop each make 2 calls and multi-agent 4, but the agent loop uses about 990 tokens, ten times the workflow's 93](figures/primer.agents.orchestration.autonomy_costs.svg)
 
 **Reading it:** the left panel counts model calls and the right counts tokens.
 Calls barely move until multi-agent doubles them. Tokens tell a sharper story.
@@ -165,7 +165,7 @@ P = sum(comb(n, k) * p ** k * (1 - p) ** (n - k)
 round(P, 3)  # → 0.896
 ```
 
-![Majority accuracy vs. number of voters](figures/primer.agents.orchestration.voting.svg)
+![Majority accuracy rises with more independent voters: at 70% per voter, 5 voters reach 84% and 15 reach 95%; at 60% per voter the climb is slow](figures/primer.agents.orchestration.voting.svg)
 
 **Reading it:** each curve is a per-voter accuracy, and the x-axis adds voters.
 Every curve rises: more independent judges, better majority. The catch is
@@ -323,7 +323,7 @@ saved to disk. **Durable execution** means a workflow whose progress
 survives crashes, because each completed step's result is stored and the
 run resumes from there. Engines like Temporal do this at scale.
 
-![Model calls to finish one invoice when posting crashes once](figures/primer.agents.orchestration.resume_cost.svg)
+![After one crash while posting, resuming from the checkpoint finishes in 2 model calls, while restarting from scratch takes 4](figures/primer.agents.orchestration.resume_cost.svg)
 
 **Reading it:** the same crash happens in both bars. Resuming from the checkpoint
 finishes with the 2 model calls already made. Restarting from scratch asks

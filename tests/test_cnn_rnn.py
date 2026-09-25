@@ -22,6 +22,11 @@ class TestConvolution:
         # Each filter detects one pattern; this image has no top-to-bottom change.
         assert cr.conv2d(EDGE_IMAGE, cr.HORIZONTAL_EDGE).tolist() == [[0, 0, 0]] * 3
 
+    def test_given_a_straight_vertical_edge_the_diagonal_filter_still_fires_2_two_thirds_of_the_edge_filter(self):
+        # A diagonal filter is not selective: its weights lean both ways, so a plain edge half-matches it.
+        # Top-left patch rows (0, 0, 1) × rows of weights (0, 1, 1), (-1, 0, 1), (-1, -1, 0) = 1 + 1 + 0 = 2.
+        assert cr.conv2d(EDGE_IMAGE, cr.DIAGONAL_EDGE).tolist() == [[2, 2, 0]] * 3
+
     def test_given_one_pixel_of_zero_padding_a_3x3_filter_keeps_the_5x5_size(self):
         assert cr.conv2d(EDGE_IMAGE, cr.VERTICAL_EDGE, padding=1).shape == (5, 5)
 

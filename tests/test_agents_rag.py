@@ -140,6 +140,12 @@ class TestContextualRetrieval:
     def test_given_chunks_prefixed_with_their_document_title_the_fix_sentence_is_found(self, contextual_index):
         assert self.FIX in [p.text for p in contextual_index.retrieve("how do I fix ERR-4012", EVERYONE, k=3)]
 
+    def test_given_three_phrasings_of_the_question_the_titled_fix_sentence_ranks_second_second_and_fourth(self, contextual_index):
+        # The figure's finding: in the top five every time, though not always in the top three.
+        phrasings = ["how do I fix ERR-4012", "ERR-4012 what should I do", "resolve ERR-4012 on my laptop"]
+        ranks = [[p.text for p in contextual_index.retrieve(q, EVERYONE, k=20)].index(self.FIX) + 1 for q in phrasings]
+        assert ranks == [2, 2, 4]
+
 
 class TestQueryRewriting:
     HISTORY = ["How do I set up the VPN?"]

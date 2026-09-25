@@ -104,11 +104,20 @@
     clearTimeout(hideTimer);
     const html = tipHtml(el);
     if (!html) return;
-    if (owner && owner !== el) owner.classList.remove("on");
+    if (owner && owner !== el) {
+      owner.classList.remove("on");
+      owner.removeAttribute("aria-describedby");
+    }
     owner = el;
     el.classList.add("on");
-    el.setAttribute("aria-describedby", "papers-tip");
     tip.innerHTML = html;
+    // A tooltip may not hold anything focusable, so a tip with a link in it is a plain
+    // described region instead; Tab from the term moves into it (see initTooltips).
+    if (tip.querySelector("a[href]")) tip.removeAttribute("role");
+    else tip.setAttribute("role", "tooltip");
+    // Symbols live in KaTeX's aria-hidden layer: describe their keyboard host instead.
+    if (!el.closest('[aria-hidden="true"]')) el.setAttribute("aria-describedby", "papers-tip");
+    tip.removeAttribute("aria-hidden");
     tip.classList.add("show");
     position(el);
   }
@@ -116,6 +125,8 @@
   function hide() {
     clearTimeout(hideTimer);
     tip.classList.remove("show");
+    // Hidden from assistive tech too, so a stale definition is never read out.
+    tip.setAttribute("aria-hidden", "true");
     if (owner) {
       owner.classList.remove("on");
       owner.removeAttribute("aria-describedby");
@@ -130,15 +141,37 @@
 
   const TIP_SEL = "[data-t],[data-tip],[data-sym]";
 
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, summary, [tabindex]:not([tabindex="-1"])';
+
+  // The next place Tab would land after `el`, skipping the tip itself and anything hidden.
+  function focusableAfter(el) {
+    return [...document.querySelectorAll(FOCUSABLE)].find(
+      (n) =>
+        el.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING &&
+        !el.contains(n) &&
+        !tip.contains(n) &&
+        !n.closest('[aria-hidden="true"]') &&
+        n.getClientRects().length
+    );
+  }
+
   function initTooltips() {
     tip = document.createElement("div");
     tip.className = "tip";
     tip.id = "papers-tip";
     tip.setAttribute("role", "tooltip");
+    tip.setAttribute("aria-hidden", "true");
     document.body.appendChild(tip);
     tip.addEventListener("pointerenter", () => clearTimeout(hideTimer));
     tip.addEventListener("pointerleave", hideSoon);
+    const hint = document.createElement("p");
+    hint.id = "papers-sym-hint";
+    hint.hidden = true;
+    hint.textContent = "Use the left and right arrow keys to step through the symbols; each one is explained as you reach it.";
+    document.body.appendChild(hint);
 
+    // Focus coming back from the tip (Shift+Tab or Escape) should not reopen what was just closed.
+    let skipShow = null;
     document.addEventListener("pointerdown", (e) => (lastPointer = e.pointerType || "mouse"), true);
     document.addEventListener("pointerover", (e) => {
       if (e.pointerType === "touch") return;
@@ -150,11 +183,16 @@
       if (el && !(e.relatedTarget && el.contains(e.relatedTarget))) hideSoon();
     });
     document.addEventListener("focusin", (e) => {
+      if (tip.contains(e.target)) return clearTimeout(hideTimer);
       const el = e.target.closest && e.target.closest(TIP_SEL);
-      if (el) show(el);
+      if (el && el === skipShow) skipShow = null;
+      else if (el) show(el);
     });
     document.addEventListener("focusout", (e) => {
-      if (e.target.closest && e.target.closest(TIP_SEL)) hideSoon();
+      // Moving from a term into its own tip (to reach "Build it in code") keeps the tip open.
+      const into = e.relatedTarget && (tip.contains(e.relatedTarget) || e.relatedTarget === owner);
+      if (into) return;
+      if (tip.contains(e.target) || (e.target.closest && e.target.closest(TIP_SEL))) hideSoon();
     });
     document.addEventListener("click", (e) => {
       const el = e.target.closest && e.target.closest(TIP_SEL);
@@ -165,15 +203,138 @@
       } else if (!tip.contains(e.target)) hide();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") hide();
+      if (e.key === "Escape") {
+        const back = tip.contains(document.activeElement) ? owner : null;
+        hide();
+        if (back) {
+          skipShow = back;
+          back.focus();
+        }
+        return;
+      }
+      // The tip sits at the end of the page, so Tab would never reach its links on its own:
+      // Tab from the term steps into the tip, and Tab off its last link carries on after the term.
+      if (e.key !== "Tab" || e.altKey || e.ctrlKey || e.metaKey || !owner || !tip.classList.contains("show")) return;
+      const links = [...tip.querySelectorAll("a[href]")];
+      if (!links.length) return;
+      const at = links.indexOf(document.activeElement);
+      if (document.activeElement === owner && !e.shiftKey) {
+        e.preventDefault();
+        links[0].focus();
+      } else if (at === 0 && e.shiftKey) {
+        e.preventDefault();
+        skipShow = owner;
+        owner.focus();
+      } else if (at === links.length - 1 && !e.shiftKey) {
+        e.preventDefault();
+        const next = focusableAfter(owner);
+        hide();
+        if (next) next.focus();
+      }
     });
     window.addEventListener("scroll", () => owner && position(owner), { passive: true });
     window.addEventListener("resize", () => owner && position(owner));
   }
 
+  /**
+   * Equation symbols are tagged inside KaTeX's visual layer, which is aria-hidden (screen
+   * readers get the MathML copy and the Symbols table instead). A tab stop in there would
+   * be silent, so the equation itself takes the one tab stop and the arrow keys walk its
+   * symbols, showing each one's tooltip exactly as hovering does.
+   */
+  function makeSymbolHost(host) {
+    if (host.dataset.symHost) return;
+    host.dataset.symHost = "1";
+    if (!host.hasAttribute("tabindex")) host.tabIndex = 0;
+    host.setAttribute("aria-describedby", "papers-sym-hint");
+    let at = 0;
+    const syms = () => [...host.querySelectorAll("[data-sym]")];
+    const pick = (i, speak) => {
+      const list = syms();
+      if (!list.length) return;
+      at = (i + list.length) % list.length;
+      show(list[at]);
+      if (speak) P.announce(tip.innerText, 0);
+    };
+    // Keyboard focus shows the current symbol; a click focuses the host too, but the
+    // clicked symbol is the one to show, so it only moves the place.
+    host.addEventListener("focus", () => host.matches(":focus-visible") && pick(at, false));
+    host.addEventListener("click", (e) => {
+      const i = syms().indexOf(e.target.closest && e.target.closest("[data-sym]"));
+      if (i >= 0) at = i;
+    });
+    host.addEventListener("blur", hideSoon);
+    host.addEventListener("keydown", (e) => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (step) pick(at + step, true);
+      else if (e.key === "Home") pick(0, true);
+      else if (e.key === "End") pick(-1, true);
+      else return;
+      e.preventDefault();
+    });
+  }
+
   function makeFocusable(root) {
     root.querySelectorAll(TIP_SEL).forEach((el) => {
-      if (!el.hasAttribute("tabindex")) el.tabIndex = 0;
+      const hidden = el.closest('[aria-hidden="true"]');
+      if (!hidden) {
+        if (!el.hasAttribute("tabindex")) el.tabIndex = 0;
+        return;
+      }
+      const host = hidden.parentElement && (hidden.parentElement.closest(".eq, .m") || hidden.parentElement.closest(".katex"));
+      if (host) makeSymbolHost(host);
+    });
+  }
+
+  // ------------------------------------------------------------ announcements
+  // One polite live region for the whole page. Readouts change on every pointer move and
+  // every animation frame, so each is announced only once it has settled.
+  let live = null;
+  let liveTimer = null;
+  let userActed = false;
+  P.announce = function (text, delay = 350) {
+    if (!live) return;
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => {
+      live.textContent = String(text || "").replace(/\s+/g, " ").trim();
+    }, delay);
+  };
+
+  function initLiveReadouts() {
+    live = document.createElement("div");
+    live.className = "sr-only";
+    live.id = "papers-live";
+    live.setAttribute("aria-live", "polite");
+    document.body.appendChild(live);
+    // Only what the reader causes is announced, not the page drawing itself on load.
+    ["pointerdown", "keydown"].forEach((t) => document.addEventListener(t, () => (userActed = true), true));
+    const watched = new Set();
+    const obs = new MutationObserver((records) => {
+      if (!userActed) return;
+      const changed = new Set();
+      records.forEach((r) => {
+        const node = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+        const ro = node && node.closest(".readout");
+        if (ro && watched.has(ro)) changed.add(ro);
+      });
+      changed.forEach((ro) => P.announce(ro.textContent));
+    });
+    const watch = () =>
+      document.querySelectorAll("main .readout").forEach((ro) => {
+        // Readouts the page already made live announce themselves.
+        if (watched.has(ro) || ro.closest("[aria-live]")) return;
+        watched.add(ro);
+        obs.observe(ro, { childList: true, characterData: true, subtree: true });
+      });
+    watch();
+    return watch;
+  }
+
+  // A role="img" is one picture to assistive tech, so anything focusable inside it would be a
+  // silent tab stop. A picture with controls in it becomes a named group instead.
+  function exposeControlsInPictures(root = document) {
+    root.querySelectorAll('[role="img"]').forEach((el) => {
+      if (el.querySelector(FOCUSABLE)) el.setAttribute("role", "group");
     });
   }
 
@@ -216,10 +377,22 @@
   };
 
   // ----------------------------------------------------------------- diagrams
+  // Plain text of an HTML snippet (a block title may hold markup).
+  const plain = (html) => {
+    const d = document.createElement("div");
+    d.innerHTML = html;
+    return d.textContent.replace(/\s+/g, " ").trim();
+  };
+
+  let panelCount = 0;
   P.wireDiagrams = function (root = document) {
     root.querySelectorAll("figure.ix").forEach((fig) => {
       const panel = fig.querySelector(".panel");
       const parts = [...fig.querySelectorAll(".blk[data-block]")];
+      if (panel) {
+        if (!panel.id) panel.id = `papers-panel-${++panelCount}`;
+        if (!panel.hasAttribute("aria-live")) panel.setAttribute("aria-live", "polite");
+      }
       const activate = (key) => {
         parts.forEach((b) => b.classList.toggle("on", b.dataset.block === key));
         if (!panel) return;
@@ -234,8 +407,19 @@
           (info.lesson ? `<p><a href="${P.lessonHref(info.lesson)}">Build it in code →</a></p>` : "");
         P.renderMath(panel);
       };
+      // The diagram's parts are buttons a screen reader can reach, each named after the note
+      // it opens; the panel beside them is where that note appears. So the picture is a group
+      // of named parts, not a single image with its parts hidden inside.
+      if (parts.length) fig.querySelectorAll('svg[role="img"]').forEach((svg) => svg.setAttribute("role", "group"));
       parts.forEach((b) => {
         if (!b.hasAttribute("tabindex")) b.setAttribute("tabindex", "0");
+        if (!b.hasAttribute("role")) b.setAttribute("role", "button");
+        if (!b.hasAttribute("aria-label")) {
+          const info = page.blocks[b.dataset.block];
+          const text = [...b.querySelectorAll("text")].map((t) => t.textContent.trim()).filter(Boolean).join(" ");
+          b.setAttribute("aria-label", (info && info.title ? plain(info.title) : "") || text || b.dataset.block);
+        }
+        if (panel) b.setAttribute("aria-controls", panel.id);
         b.addEventListener("pointerenter", () => activate(b.dataset.block));
         b.addEventListener("focus", () => activate(b.dataset.block));
         b.addEventListener("click", () => activate(b.dataset.block));
@@ -333,13 +517,21 @@
   };
   const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
+  // Series are told apart by line pattern as well as colour, so the chart reads the same
+  // in greyscale or to a reader who cannot separate the hues. Its legend draws both.
+  const DASHES = ["", "8 4", "2 3", "10 3 2 3", "5 5"];
+  const SERIES_COLOURS = ["--accent", "--active", "--soft-stroke", "--attn-stroke", "--lin-stroke"];
+
   /**
-   * Line chart with a hover crosshair.
+   * Line chart with a hover crosshair, also driven from the keyboard.
    *   Papers.lineChart(container, {
    *     series: [{ name, color, points: [[x, y], ...] }],   // points sorted by x
    *     xLabel, yLabel, xFmt, yFmt, logX, yMin, yMax, width, height,
-   *     readout: element that receives the hover text (optional)
+   *     readout: element that receives the hover text (optional),
+   *     legend: false to leave out the legend drawn under a chart of two or more series
    *   })  ->  { update(series) }
+   * The chart is one tab stop: the arrow keys (Page Up/Down, Home, End) move the crosshair
+   * along the data and write the same readout the pointer does.
    */
   P.lineChart = function (container, opts) {
     const W = opts.width || 640;
@@ -347,9 +539,25 @@
     const m = { l: 62, r: 18, t: 12, b: 42 };
     const fx = opts.xFmt || ((v) => String(+v.toPrecision(4)));
     const fy = opts.yFmt || ((v) => String(+v.toPrecision(4)));
-    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": opts.ariaLabel || opts.yLabel || "chart" });
+    // A slider is the closest standard widget: one value (a place along x) picked with the arrow keys.
+    const svg = svgEl("svg", {
+      viewBox: `0 0 ${W} ${H}`,
+      role: "slider",
+      tabindex: "0",
+      "aria-label": `${opts.ariaLabel || opts.yLabel || "chart"}. Chart: use the arrow keys to read values.`,
+      "aria-orientation": "horizontal",
+      "aria-valuemin": "0",
+      "aria-valuemax": "0",
+      "aria-valuenow": "0",
+      "aria-valuetext": "Use the arrow keys to read values along the x axis.",
+    });
     container.appendChild(svg);
+    const legend = document.createElement("div");
+    legend.className = "legend chart-legend";
+    if (opts.legend !== false) container.appendChild(legend);
     let series = opts.series;
+    let view = null; // what the current drawing needs to place the crosshair
+    let at = null; // keyboard position: an index into view.grid
 
     function draw() {
       svg.textContent = "";
@@ -387,23 +595,35 @@
       yl.textContent = opts.yLabel || "";
       axis.append(xl, yl);
       svg.append(grid, axis);
-      const palette = ["--accent", "--active", "--soft-stroke", "--attn-stroke", "--lin-stroke"];
+      const look = series.map((s, i) => ({
+        stroke: s.color || cssVar(SERIES_COLOURS[i % SERIES_COLOURS.length]),
+        dash: series.length > 1 ? DASHES[i % DASHES.length] : "",
+      }));
       series.forEach((s, i) => {
         const d = s.points.map((p, j) => `${j ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("");
-        svg.appendChild(svgEl("path", { d, class: "series", stroke: s.color || cssVar(palette[i % palette.length]) }));
+        // As a style, not an attribute, so a colour given as var(--name) works too.
+        const path = svgEl("path", { d, class: "series", style: `stroke:${look[i].stroke}` });
+        if (look[i].dash) path.setAttribute("stroke-dasharray", look[i].dash);
+        svg.appendChild(path);
       });
+      legend.innerHTML =
+        series.length > 1
+          ? series
+              .map(
+                (s, i) =>
+                  `<span><svg class="swatch" viewBox="0 0 28 6" width="28" height="6" aria-hidden="true"><line x1="0" y1="3" x2="28" y2="3" style="stroke:${esc(look[i].stroke)}" stroke-width="2.4"${look[i].dash ? ` stroke-dasharray="${look[i].dash}"` : ""}/></svg>${esc(s.name)}</span>`
+              )
+              .join("")
+          : "";
+      legend.hidden = series.length < 2;
       const cross = svgEl("line", { class: "cross", y1: m.t, y2: H - m.b, visibility: "hidden" });
       const dots = series.map(() => svgEl("circle", { r: 4, class: "dot", visibility: "hidden" }));
       svg.append(cross, ...dots);
       const hit = svgEl("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" });
       svg.appendChild(hit);
-      const move = (ev) => {
-        const pt = svg.createSVGPoint();
-        pt.x = ev.clientX;
-        pt.y = ev.clientY;
-        const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
-        const frac = (loc.x - m.l) / (W - m.l - m.r);
-        const xv = opts.logX ? Math.pow(10, x0 + frac * (x1 - x0)) : x0 + frac * (x1 - x0);
+      // Every x that any series has a point at: the stops the arrow keys move between.
+      const gridXs = [...new Set(xs)].sort((a, b) => a - b);
+      const readAt = (xv) => {
         const parts = [];
         series.forEach((s, i) => {
           let lo = 0;
@@ -426,14 +646,56 @@
           opts.readout.innerHTML =
             `<strong>${esc(opts.xLabel || "x")}</strong> ${fx(parts[0].x)} · ` +
             parts.map((p) => `${esc(p.name)}: <strong>${fy(p.y)}</strong>`).join(" · ");
+        return parts;
+      };
+      const clear = () => {
+        cross.setAttribute("visibility", "hidden");
+        dots.forEach((d) => d.setAttribute("visibility", "hidden"));
+      };
+      view = { grid: gridXs, readAt, clear };
+      svg.setAttribute("aria-valuemax", String(Math.max(0, gridXs.length - 1)));
+      if (at !== null) at = Math.min(at, gridXs.length - 1);
+      const move = (ev) => {
+        const pt = svg.createSVGPoint();
+        pt.x = ev.clientX;
+        pt.y = ev.clientY;
+        const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+        const frac = (loc.x - m.l) / (W - m.l - m.r);
+        readAt(opts.logX ? Math.pow(10, x0 + frac * (x1 - x0)) : x0 + frac * (x1 - x0));
       };
       hit.addEventListener("pointermove", move);
       hit.addEventListener("pointerdown", move);
-      hit.addEventListener("pointerleave", () => {
-        cross.setAttribute("visibility", "hidden");
-        dots.forEach((d) => d.setAttribute("visibility", "hidden"));
-      });
+      hit.addEventListener("pointerleave", clear);
     }
+
+    function keyTo(i) {
+      if (!view || !view.grid.length) return;
+      at = Math.max(0, Math.min(view.grid.length - 1, i));
+      const parts = view.readAt(view.grid[at]);
+      const where = `${opts.xLabel || "x"} ${fx(parts[0].x)}`;
+      svg.setAttribute("aria-valuenow", String(at));
+      // With a readout, its (announced) text carries the values; without one, the slider does.
+      svg.setAttribute(
+        "aria-valuetext",
+        opts.readout ? where : `${where}: ` + parts.map((p) => `${p.name} ${fy(p.y)}`).join(", ")
+      );
+    }
+    svg.addEventListener("keydown", (e) => {
+      if (!view) return;
+      const n = view.grid.length;
+      const big = Math.max(1, Math.round(n / 10));
+      const cur = at === null ? -1 : at;
+      const to = {
+        ArrowRight: cur + 1, ArrowUp: cur + 1, ArrowLeft: cur - 1, ArrowDown: cur - 1,
+        PageUp: cur + big, PageDown: cur - big, Home: 0, End: n - 1,
+      }[e.key];
+      if (to === undefined) return;
+      e.preventDefault();
+      keyTo(at === null && to < 0 ? 0 : to);
+    });
+    svg.addEventListener("focus", () => svg.matches(":focus-visible") && keyTo(at === null ? 0 : at));
+    svg.addEventListener("blur", () => view && view.clear());
+
     draw();
     document.addEventListener("papers:theme", draw);
     return {
@@ -445,7 +707,38 @@
   };
 
   /**
-   * Heatmap on a <canvas> with a hover readout.
+   * Let the keyboard move a point that the pointer places by clicking (a start point, a query).
+   *   Papers.keyPoint(el, { get: () => [x, y], set(x, y), what: "the query", step, announce })
+   * x and y are fractions of the picture, 0 to 1 from the left and from the top. The arrow
+   * keys move the point by `step` (default 0.02), five times as far with Shift held.
+   */
+  P.keyPoint = function (el, o) {
+    if (!el.dataset.keypointLabel) el.dataset.keypointLabel = el.getAttribute("aria-label") || "";
+    el.dataset.keypoint = "1";
+    el.tabIndex = 0;
+    // "application" hands the arrow keys to the page, which a two-dimensional control needs.
+    el.setAttribute("role", "application");
+    el.setAttribute(
+      "aria-label",
+      `${el.dataset.keypointLabel} Arrow keys move ${o.what || "the point"}; hold Shift to move it further.`.trim()
+    );
+    el.addEventListener("keydown", (e) => {
+      const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      const step = (o.step || 0.02) * (e.shiftKey ? 5 : 1);
+      const clamp = (v) => Math.max(0, Math.min(1, v));
+      const [x, y] = o.get();
+      const nx = clamp(x + d[0] * step);
+      const ny = clamp(y + d[1] * step);
+      o.set(nx, ny);
+      if (o.announce !== false)
+        P.announce(`${o.what || "point"} at ${Math.round(nx * 100)}% across, ${Math.round(ny * 100)}% down`, 0);
+    });
+  };
+
+  /**
+   * Heatmap on a <canvas> with a hover readout; the arrow keys move a cell cursor too.
    *   Papers.heatmap(canvas, { rows, cols, value(r, c), min, max, cell, onHover(r, c, v) })
    * Values are coloured on a diverging scale: blue below the midpoint, red above.
    */
@@ -464,11 +757,11 @@
       const a = Math.abs(t);
       return `rgb(${base.map((b, i) => Math.round(b + (end[i] - b) * a)).join(",")})`;
     };
-    for (let r = 0; r < opts.rows; r++)
-      for (let c = 0; c < opts.cols; c++) {
-        ctx.fillStyle = color(opts.value(r, c));
-        ctx.fillRect(c * cell, r * cell, cell, cell);
-      }
+    const paint = (r, c) => {
+      ctx.fillStyle = color(opts.value(r, c));
+      ctx.fillRect(c * cell, r * cell, cell, cell);
+    };
+    for (let r = 0; r < opts.rows; r++) for (let c = 0; c < opts.cols; c++) paint(r, c);
     const where = (ev) => {
       const rect = canvas.getBoundingClientRect();
       const c = Math.floor(((ev.clientX - rect.left) / rect.width) * opts.cols);
@@ -479,6 +772,49 @@
     canvas.addEventListener("pointermove", where);
     canvas.addEventListener("pointerdown", where);
     canvas.addEventListener("pointerleave", () => opts.onHover && opts.onHover(null));
+
+    // Keyboard: a cell cursor, outlined, that reports through the same onHover as the pointer.
+    // The canvas's own label (kept once, since a page may clone the canvas) is its text alternative.
+    if (!canvas.dataset.heatLabel) canvas.dataset.heatLabel = canvas.getAttribute("aria-label") || "Heatmap";
+    canvas.tabIndex = 0;
+    canvas.setAttribute("role", "application");
+    canvas.setAttribute(
+      "aria-label",
+      `${canvas.dataset.heatLabel}, ${opts.rows} rows by ${opts.cols} columns. Arrow keys move between cells and read each value.`
+    );
+    let cur = null;
+    let last = [0, 0];
+    const mark = (next) => {
+      if (cur) {
+        // Repaint the neighbourhood the old outline touched.
+        for (let r = cur[0] - 1; r <= cur[0] + 1; r++)
+          for (let c = cur[1] - 1; c <= cur[1] + 1; c++)
+            if (r >= 0 && c >= 0 && r < opts.rows && c < opts.cols) paint(r, c);
+      }
+      cur = next;
+      if (!cur) return;
+      last = cur;
+      const lw = Math.max(1.5, cell / 5);
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = cssVar("--fg") || "#000";
+      ctx.strokeRect(cur[1] * cell + lw / 2, cur[0] * cell + lw / 2, cell - lw, cell - lw);
+      opts.onHover && opts.onHover(cur[0], cur[1], opts.value(cur[0], cur[1]));
+    };
+    canvas.addEventListener("keydown", (e) => {
+      const d = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      if (!cur) return mark(last);
+      const k = e.shiftKey ? 10 : 1;
+      const r = Math.max(0, Math.min(opts.rows - 1, cur[0] + d[0] * k));
+      const c = Math.max(0, Math.min(opts.cols - 1, cur[1] + d[1] * k));
+      mark([r, c]);
+    });
+    canvas.addEventListener("focus", () => canvas.matches(":focus-visible") && mark(last));
+    canvas.addEventListener("blur", () => {
+      mark(null);
+      opts.onHover && opts.onHover(null);
+    });
   };
 
   // ------------------------------------------------ site nav and paper context
@@ -587,6 +923,19 @@
     initToc();
     buildGlossary();
     if (typeof data.onReady === "function") data.onReady(P);
+    const watchReadouts = initLiveReadouts();
+    exposeControlsInPictures();
+    // Pages redraw their interactive pictures (a new layer, a rebuilt tree): keep them honest.
+    let pending = false;
+    new MutationObserver(() => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        exposeControlsInPictures();
+        watchReadouts();
+      });
+    }).observe(document.querySelector("main") || document.body, { childList: true, subtree: true });
     const missing = P.missingTerms();
     if (missing.length) console.info("papers.js: glossary keys with no definition:", missing);
   });

@@ -200,7 +200,7 @@ pairs = sum((s_p > s_n) + 0.5 * (s_p == s_n) for s_p in s_P for s_n in s_N)
 pairs / (len(s_P) * len(s_N))  # → 0.75
 ```
 
-![ROC curve of the synthetic classifier with its AUC](figures/primer.ml.metrics.roc.svg)
+![ROC curve bowing well above the coin-flip diagonal: the classifier ranks a random positive above a random negative 89% of the time (AUC 0.89)](figures/primer.ml.metrics.roc.svg)
 
 **Reading it:** the solid line is the ROC curve of `synthetic_scores()`
 (positives shifted 1.5 standard deviations above negatives); the dashed
@@ -209,7 +209,7 @@ fraud and one legitimate transaction at random and the model scores the
 fraud higher 89% of the time. Where the curve bends is where a sensible
 threshold lives.
 
-![Precision-recall curve of the same classifier](figures/primer.ml.metrics.pr.svg)
+![Precision-recall curve falling as recall rises: at 80% recall only about a third of the flags are real, against a 10% base rate](figures/primer.ml.metrics.pr.svg)
 
 **Reading it:** the same scores, viewed as precision (y) against recall (x).
 Moving right means lowering the threshold: you find more of the positives,
@@ -280,7 +280,7 @@ def cost(t):
 min((0.9, 0.6, 0.4, 0.1), key=cost)  # → 0.4
 ```
 
-![Total error cost as the threshold sweeps, for three cost settings](figures/primer.ml.metrics.cost_vs_threshold.svg)
+![Total cost against threshold for three error prices: the cheapest threshold moves left when misses cost more and right when false alarms cost more](figures/primer.ml.metrics.cost_vs_threshold.svg)
 
 **Reading it:** each line is the total cost (misses × their price + false
 alarms × their price) at every threshold, and each dot marks that line's
@@ -376,7 +376,7 @@ IDCG = sum(g / math.log2(i + 1) for i, g in enumerate(best, start=1))
 print(f"{DCG:.4f} {IDCG:.4f} {DCG / IDCG:.3f}")  # → 2.6665 4.7619 0.560
 ```
 
-![How much each rank position counts in DCG](figures/primer.ml.metrics.ndcg_discount.svg)
+![DCG weight by rank: rank 1 counts fully, rank 2 counts 63% and rank 10 still counts 29%](figures/primer.ml.metrics.ndcg_discount.svg)
 
 **Reading it:** the bars are the weight 1/log2(rank + 1) that DCG gives a
 result at each position. Rank 1 counts fully, rank 2 counts 63%, rank 10
@@ -475,7 +475,7 @@ P_LCS, R_LCS = 3 / 4, 3 / 4
 2 * P_LCS * R_LCS / (P_LCS + R_LCS)  # → 0.75
 ```
 
-![BLEU and ROUGE-L for a paraphrase, a wrong answer and an exact copy](figures/primer.ml.metrics.overlap_scores.svg)
+![BLEU and ROUGE-L bars: the correct paraphrase scores lowest while the wrong answer that copies the wording scores almost as high as an exact copy](figures/primer.ml.metrics.overlap_scores.svg)
 
 **Reading it:** three candidate answers to the same reference ("the meeting
 was moved to Friday because the manager is sick"). The correct paraphrase
@@ -495,9 +495,10 @@ trust first (next section).
 ## 6. Calibrating a judge: Cohen's kappa
 
 **Everyday picture.** Two teachers grade the same 20 essays pass/fail and
-agree on 18. Impressive? Not if 18 of the essays were obvious passes: two
-teachers who stamped "pass" on everything without reading would also agree
-on 18. **Cohen's kappa** subtracts the agreement you'd expect from luck.
+agree on 18. Impressive? Not if 18 of the essays were obvious passes: a
+careful teacher who reads every essay (and passes those 18) and a lazy one
+who stamps "pass" on everything without reading would also agree on 18.
+**Cohen's kappa** subtracts the agreement you'd expect from luck.
 
 **Tiny worked example.** Human labels: 18 pass, 2 fail. A lazy judge says
 "pass" to everything. Raw agreement is 90%, and chance agreement (both say

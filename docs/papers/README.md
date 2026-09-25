@@ -211,8 +211,16 @@ Block colours come from the class: `attn`, `ff`, `norm`, `emb`, `lin`,
 `soft`, `plain`, `pe` (for a circle), and `frame` (a dashed container). Draw
 wires with `<path class="wire" … marker-end="url(#arr)">`, defining the
 arrow marker in the SVG's `<defs>` as the reference page does. Hover, focus,
-tap and the Enter key all work automatically, and parts are keyboard
-focusable.
+tap and the Enter key all work automatically. `papers.js` makes each part a
+keyboard-focusable button named after its note (its `aria-label`, else the
+block's `title`), and turns the SVG's `role="img"` into a group so screen
+readers can reach the parts; the `.panel` announces the note.
+
+Equations need no extra markup for the keyboard either: an equation with
+`\htmlData` symbols is one tab stop, and the arrow keys step through its
+symbols, showing each tooltip. (KaTeX's visual layer is hidden from screen
+readers, which read its MathML copy and the Symbols table instead.) A term's
+tooltip link ("Build it in code →") is reached with Tab from the term.
 
 ## Plots
 
@@ -220,6 +228,9 @@ focusable.
 
 ```js
 // Line chart with a hover crosshair; call .update(series) to redraw (e.g. from a slider).
+// It is also one tab stop: the arrow keys move the crosshair and write the same readout.
+// With two or more series it draws its own legend and gives each series a line pattern
+// (solid, dashed, dotted, …) as well as a colour; pass legend: false only if the page draws one.
 const chart = P.lineChart(document.getElementById("lr-chart"), {
   series: [{ name: "learning rate", points: [[1, 1e-7], [4000, 7e-4], …] }],   // sorted by x
   xLabel: "training step", yLabel: "learning rate",
@@ -227,11 +238,16 @@ const chart = P.lineChart(document.getElementById("lr-chart"), {
   logX: false, readout: document.getElementById("lr-readout"),
 });
 
-// Heatmap on a canvas with a diverging colour scale and a hover callback.
+// Heatmap on a canvas with a diverging colour scale and a hover callback. Give the canvas an
+// aria-label saying what it shows; the arrow keys move a cell cursor through the same onHover.
 P.heatmap(document.getElementById("pe-canvas"), {
   rows: 100, cols: 128, min: -1, max: 1, value: (r, c) => …,
   onHover(r, c, v) { if (r !== null) readout.textContent = `…`; },
 });
+
+// A point the reader places by clicking (a start point, a query) must move from the keyboard too.
+// x and y are fractions of the picture (0 to 1, from the left and from the top).
+P.keyPoint(canvas, { what: "the starting point", get: () => [x, y], set(x, y) { … } });
 ```
 
 Wrap plots in `<div class="plot">` (with `.controls` for sliders and a
@@ -240,6 +256,13 @@ paragraph. For small one-off interactions (a sentence playground, a slider
 demo), write plain JS in `onReady` using the `.play`, `.sliders`,
 `.share-row`, `.share-bar` and `.tok` classes from `papers.css`. Label any
 illustrative (non-computed) numbers as illustrative, on the page.
+
+Never tell series apart by colour alone. Line charts get patterns
+automatically; for a second series of bars use
+`background: var(--hatch) var(--accent)` (stripes over the colour) and say
+"striped" in its legend and Reading it paragraph. A `.readout` whose text
+changes is announced to screen readers once it settles, so write results
+into readouts rather than only into a picture.
 
 ## Links
 

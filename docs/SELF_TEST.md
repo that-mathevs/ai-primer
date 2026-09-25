@@ -336,9 +336,12 @@ reference as an implicit reward, and applies the same pairwise loss
 directly to the policy. One model, one supervised-style training loop.
 
 **Q: What does β control in DPO?**
-A: How strongly preferences push the policy relative to staying close to
-the reference model. Larger β means sharper preference-following; smaller
-means more conservative updates.
+A: How tightly the policy is held to the reference model. It is the weight
+on the drift penalty in the objective DPO optimises, reward − β × KL(policy
+‖ reference), so larger β keeps the policy closer to the reference and
+smaller β lets the preferences pull it further away. In the loss, a larger β
+makes each unit of log-ratio count for more, so pairs are satisfied with a
+smaller departure.
 
 **Q: Why is B initialised to zero in LoRA?**
 A: So B·A = 0 and the adapted model starts exactly equal to the pretrained
@@ -417,7 +420,7 @@ a cache is valid only up to the first differing token.
 From [`primer.ml.losses`](../primer/ml/losses.py).
 
 **The model puts 1% on the right token. What's the loss, and why so large?**
-−ln(0.01) = 4.61, about 40× the loss at 90%. The log punishes confident
+−ln(0.01) = 4.61, about 44× the loss at 90% (0.105). The log punishes confident
 mistakes steeply, which pushes the model toward calibrated probabilities.
 
 **Loss is 0.69 per token. What's the perplexity?**

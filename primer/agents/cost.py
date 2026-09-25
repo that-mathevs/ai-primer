@@ -151,15 +151,19 @@ wrong. The semantic path adds two gates: the similarity threshold, and the
 guards. An expired entry (older than its **TTL**, time to live) is treated
 as a miss, so answers about changing facts don't go stale forever.
 
-![Semantic cache: useful hits vs. wrong answers as the threshold moves](figures/primer.agents.cost.semantic_cache.svg)
+![No threshold separates them: wrong hits stay at 40 to 60% through 0.95, often above the paraphrase hit rate, and reach 0 only where paraphrase hits do too](figures/primer.agents.cost.semantic_cache.svg)
 
 **Reading it:** the x-axis is the similarity threshold; the blue line is the
 share of genuine paraphrases answered from cache (good), and the red line is
 the share of different-intent questions answered from cache (a wrong answer
-served confidently). Lowering the threshold raises both. Even at 0.95 the
-red line isn't zero, because "sick" vs "vacation" scores 0.97. Semantic
-caching is safe only for narrow, curated FAQ-style traffic, with guards, a
-TTL, and a measured wrong-hit rate.
+served confidently). Lowering the threshold raises both, but look where the
+lines sit: from 0.4 upward the red line is above the blue one, so the cache
+serves more wrong answers than right ones (60% of different-intent questions
+against at most 57% of paraphrases). Even at 0.95 it still answers 40% of
+them wrongly and only 14% of paraphrases, because "sick" vs "vacation"
+scores 0.97. On everyday questions no threshold makes semantic caching safe;
+it's safe only for narrow, curated FAQ-style traffic, with guards, a TTL,
+and a measured wrong-hit rate.
 
 **In code:** `ResponseCache` is the exact cache. `SemanticCache` is the
 semantic path: `SemanticCache.lookup` skips expired entries and entries whose
@@ -219,7 +223,7 @@ for the slowest. Models can ask for several tools in one turn (parallel tool
 use); run them concurrently and return all results in one message. Parallel
 calls cut wall-clock time, not tokens.
 
-![Timeline of three tool calls, sequential vs. parallel](figures/primer.agents.cost.parallel.svg)
+![Three 100 ms tool calls take 300 ms end to end when run one after another, but only 100 ms when started together](figures/primer.agents.cost.parallel.svg)
 
 **Reading it:** each bar is one 100 ms tool call on a shared time axis. The
 sequential calls stack end to end, 300 ms in all; the parallel ones start
@@ -344,7 +348,7 @@ round(per_task(0.002, 0.60), 3), round(per_task(0.010, 0.95), 3)  # → (0.802, 
 round(per_task(0.002, 0.60) / per_task(0.010, 0.95))  # → 7
 ```
 
-![Cost per task for a small and a large model, with and without human cleanup](figures/primer.agents.cost.unit_economics.svg)
+![With automatic retries the small model is cheaper per success (0.3 vs 1.1 cents); if a person fixes each failure the large model wins, 11 cents vs 80](figures/primer.agents.cost.unit_economics.svg)
 
 **Reading it:** the left pair of bars assumes failures can be retried
 automatically: the small model wins. The right pair assumes a person has to
@@ -367,14 +371,14 @@ Order the levers so the ones that can't hurt quality come first:
    change quality, so it's validated with evals before and after.
 5. **Batch** the non-interactive share.
 
-![Cumulative cost of the sample workload as each lever is applied](figures/primer.agents.cost.five_x.svg)
+![Workload cost falls from 67 to 8 cents as levers stack: caching 2.2x, trimming 3.6x, concise output 3.9x, routing 7.8x, batching 8.4x](figures/primer.agents.cost.five_x.svg)
 
 **Reading it:** each bar is the cost of the same 10-task workload after
 applying every lever up to and including that one; the label is the
 cumulative reduction. Caching alone roughly halves it, trimming and concise
 output take it past 3x, routing takes it past 7x, and batching adds the
-last few percent. The first three bars are the free wins that don't touch
-quality.
+last few percent. The three levers after the baseline (caching, trimming,
+concise output) are the free wins that don't touch quality.
 
 **In code:** `five_x_plan` switches the levers on one at a time, in this
 order, and reports the cost and cumulative reduction after each.

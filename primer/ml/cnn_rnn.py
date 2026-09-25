@@ -156,7 +156,7 @@ value in each quarter:
 1 0 | 1 6
 ```
 
-![Input, filter, feature map and pooled map, side by side](figures/primer.ml.cnn_rnn.cnn_pipeline.svg)
+![One CNN layer on an 8×8 bright square: the vertical-edge feature map is positive down the left side and negative down the right, and 2×2 max pooling keeps the left edge while the negative right edge becomes 0](figures/primer.ml.cnn_rnn.cnn_pipeline.svg)
 
 **Reading it:** left to right, one pass of a CNN layer. The input is an 8×8
 image of a bright square on a dark background. The filter is the vertical
@@ -228,7 +228,7 @@ for k_l, s_l in layers:
     print(r, j)  # → 3 1 4 2 8 2
 ```
 
-![Receptive field grows with depth](figures/primer.ml.cnn_rnn.receptive_field.svg)
+![Receptive field against depth: plain 3×3 layers widen the view by 2 pixels per layer, while pooling after every second layer makes the jumps double](figures/primer.ml.cnn_rnn.receptive_field.svg)
 
 **Reading it:** the x-axis is the number of 3×3 convolution layers; the
 y-axis is how many input pixels (along one side) one neuron at that depth
@@ -267,13 +267,20 @@ layer that outputs class probabilities. Nobody hand-designs these filters;
 training discovers them, and first-layer filters in trained networks look
 remarkably like the edge detectors in this lesson.
 
-![Hand-made first-layer filters and a second-layer corner detector](figures/primer.ml.cnn_rnn.filter_hierarchy.svg)
+![Four first-layer filters on an L-shaped block: the edge filters fire on their own sides, the diagonal filter fires on every side, and a second-layer product of the two edge maps lights up only at the L's corners](figures/primer.ml.cnn_rnn.filter_hierarchy.svg)
 
 **Reading it:** the top row shows four 3×3 filters of the kind a first
 layer learns (red = positive weight, blue = negative): vertical edge,
 horizontal edge, diagonal, and a centre-surround "spot". The middle row
-shows each one's response to the same small image of an L-shaped block:
-each lights up only on its own pattern. The last panel is a second-layer
+shows each one's response to the same small image of an L-shaped block.
+The vertical-edge filter fires only on the L's left and right sides (red
+where dark turns bright, blue where bright turns dark) and the
+horizontal-edge filter only on its top and bottom. The diagonal filter is
+not so choosy: its weights lean both ways at once, so it answers about ±2 on
+*every* straight side of the L (two thirds of an edge filter's 3) and ±3 at
+some corners. The spot filter answers faintly (at most about 0.6) all around
+the outline. One first-layer filter is a weak witness on its own, which is
+why the next layer combines several. The last panel is a second-layer
 detector built from first-layer outputs: the vertical-edge strength times
 the horizontal-edge strength, which is large only where a vertical *and* a
 horizontal edge meet, at the L's corners. Combining simple detectors into
@@ -459,7 +466,7 @@ round(influence, 5)  # → 0.00098
 round(1.5 ** 10, 1)  # → 57.7
 ```
 
-![Gradient reaching back through time: vanilla RNN vs. LSTM](figures/primer.ml.cnn_rnn.rnn_gradient.svg)
+![Gradient reaching back through time on a log scale: the plain RNN's plunges to about 10⁻¹⁶ after 50 steps while the LSTM's stays near 1](figures/primer.ml.cnn_rnn.rnn_gradient.svg)
 
 **Reading it:** the x-axis is how many steps separate the start of the
 sequence from the current step; the y-axis (log scale) is how strongly the
@@ -615,7 +622,7 @@ trains in parallel and runs in time linear in sequence length. They carry a
 compressed state like an RNN but avoid its training bottleneck, and some
 hybrid models mix them with attention.
 
-![The "not very good" summary, step by step](figures/primer.ml.cnn_rnn.rnn_trace.svg)
+![The one-number summary after each word of "not very good": negative after "not", near zero after "very", strongly positive after "good", so the negation is lost](figures/primer.ml.cnn_rnn.rnn_trace.svg)
 
 **Reading it:** the worked example as a picture. Each bar is the one-number
 summary after reading a word. "not" drives it negative; "very" pulls it back

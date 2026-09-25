@@ -48,6 +48,12 @@ class TestCheckpoints:
 
         assert expected_step_runs(0.95, 10, checkpoints=False) == pytest.approx(13.41, abs=0.01)
 
+    def test_given_fifty_95_percent_steps_restarting_from_scratch_costs_about_240_step_runs(self):
+        # (1 - 0.95^50) / (0.05 * 0.95^50) = 0.92306 / 0.003847, by hand; checkpoints need only 50 / 0.95 = 52.6.
+        from primer.agents.planning import expected_step_runs
+
+        assert expected_step_runs(0.95, 50, checkpoints=False) == pytest.approx(239.9, abs=0.1)
+
 
 class TestDecomposition:
     # Q3 data: INV-102 (Globex, 1200) was paid 1100; INV-104 (Umbrella, 450) was never paid.

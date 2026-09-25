@@ -39,22 +39,34 @@ you don't find a bigger pad. You tear off the old pages and start a fresh one
 with one line at the top: "Earlier: agreed on the budget, rejected vendor B."
 
 **Tiny worked example.** Six question-and-answer exchanges about invoices,
-about 17 tokens per message (about 210 tokens in all), and a budget of 100 tokens.
-The last four messages stay word for word. The eight older ones fold into one line:
+17 or 18 tokens per message (210 tokens in all), and a budget of 110 tokens.
+The last four messages stay word for word: 18 + 17 + 18 + 17 = 70 tokens,
+which leaves 110 - 70 = 40 tokens for the summary. The summary keeps the
+first sentence of each older message, but all eight of those would take 65
+tokens, so the oldest drop out, one at a time, until the rest fit in 40:
 
 ```text
-summary  : Earlier in this conversation: Question 1 is about invoices; Answer 1 lists the invoice; ...;
-           Question 4 is about invoices; Answer 4 lists the invoice
-messages : Question 5 ..., Answer 5 ..., Question 6 ..., Answer 6 ...   (verbatim)
+summary  : Earlier in this conversation: Question 3 is about invoices; Answer 3 lists the invoice;
+           Question 4 is about invoices; Answer 4 lists the invoice              (36 tokens)
+messages : Question 5 ..., Answer 5 ..., Question 6 ..., Answer 6 ...   (verbatim, 70 tokens)
 ```
 
-![Tokens sent per turn, with and without managing short-term memory](figures/primer.agents.memory.context_tokens.svg)
+Total sent: 36 + 70 = 106 tokens, under the 110 budget. Exchanges 1 and 2
+are gone from the prompt entirely. That's the price of a fixed budget, and
+it's why anything worth keeping forever belongs in long-term memory
+(section 2), not in the conversation.
+
+![Sending the whole history climbs without end, while the managed history levels off just under its 300-token budget](figures/primer.agents.memory.context_tokens.svg)
 
 **Reading it:** the x-axis is the turn number in a long conversation and the
 y-axis is how many tokens of history are sent on that turn. Unmanaged, the
 line climbs forever, and so do cost and latency. The model also gets worse at
-using details buried in the middle. Managed, it climbs to the budget and
-then stays flat, because older turns keep folding into a short summary.
+using details buried in the middle. Managed, it climbs until the history
+first passes the 300-token budget (turn 9), drops as the older turns fold
+into a summary, then climbs back and stays flat just under 300 from about
+turn 17 on. It stays flat because the summary only gets the room the recent
+messages leave: each new turn folds one more exchange in, and the oldest
+one drops out of the summary to make space.
 
 **The code.** `ShortTermMemory.context()` returns `(summary, messages)`. The
 summary goes in the system prompt rather than as a message, so user and
@@ -63,6 +75,10 @@ assistant turns still alternate as the API requires.
 **In code:** `ShortTermMemory.add` appends a message and
 `ShortTermMemory.tokens` totals the history; `first_sentences` is the
 default summarizer, keeping the first sentence of each folded message.
+`ShortTermMemory.context` gives the summary only the budget the recent messages leave
+and drops the oldest folded messages until it fits. A production system
+often re-summarizes the summary with an LLM call instead, trading an
+extra call for losing less.
 
 **Why it matters.** Context rot, where quality drops as a session grows, is
 one of the most common agent failures. Summarize, trim, or reset with a
@@ -87,7 +103,7 @@ comes back first. Asking with `kinds=("procedural",)` searches only habits.
 | semantic | keyed fact (`fiscal_year_start`) | any question the fact answers |
 | procedural | how-to steps | "how do I...", before starting a known task |
 
-![Similarity of two questions to each stored memory](figures/primer.agents.memory.recall_scores.svg)
+![Each question recalls the right kind: the Globex question scores the diary entry highest, the how-to question the procedure](figures/primer.agents.memory.recall_scores.svg)
 
 **Reading it:** each group of bars is one question, and each bar is one of
 Alice's memories, coloured by kind. The tallest bar in each group is what
@@ -136,7 +152,7 @@ supplies, never from the query text. The crossed dotted line is the point:
 there is no path from Carol's search to Acme's records, so no clever query
 can create one.
 
-![What isolation hides: scores against every memory in the system](figures/primer.agents.memory.isolation.svg)
+![Acme's secret scores a perfect match to Carol's quoted query, yet it sits outside her partition and is never searched](figures/primer.agents.memory.isolation.svg)
 
 **Reading it:** Carol (tenant Globex) asks a question that quotes Acme's
 confidential memory word for word. Each bar is that question's similarity to
@@ -298,11 +314,23 @@ class ShortTermMemory:
         Under budget: everything, no summary. Over budget: fold all but the last
         `keep_last` messages into a summary. The summary goes in the system
         prompt rather than as a message, so user/assistant turns still alternate.
+
+        The summary only gets the room the recent messages leave. Without that
+        cap, a summary that gains a sentence per message would itself outgrow
+        the budget in a long conversation. When it doesn't fit, the oldest
+        folded messages drop out first. If even the recent messages overflow
+        the budget, there is no room left and the summary is empty.
         """
         if self.tokens() <= self.budget_tokens:
             return "", list(self.messages)
         old, recent = self.messages[: -self.keep_last], self.messages[-self.keep_last :]
-        return "Earlier in this conversation: " + self.summarize(old), list(recent)
+        room = self.budget_tokens - sum(estimate_tokens(m["content"]) for m in recent)
+        while old:
+            summary = "Earlier in this conversation: " + self.summarize(old)
+            if estimate_tokens(summary) <= room:
+                return summary, list(recent)
+            old = old[1:]  # the oldest detail is the cheapest one to lose
+        return "", list(recent)
 
 
 def first_sentences(messages: list[dict[str, Any]]) -> str:
@@ -520,7 +548,7 @@ def figures() -> dict:
         managed.add("assistant", f"Answer {i} lists the invoice. It shows vendor, amount and due date.")
         summary, msgs = managed.context()
         raw.append(managed.tokens())
-        kept.append(estimate_tokens(summary) + sum(estimate_tokens(m["content"]) for m in msgs) if summary else managed.tokens())
+        kept.append((estimate_tokens(summary) if summary else 0) + sum(estimate_tokens(m["content"]) for m in msgs))
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.plot(range(1, 41), raw, label="send the whole history")
     ax.plot(range(1, 41), kept, label="recent turns + first-sentence summary")
@@ -566,12 +594,12 @@ def demo() -> None:
     from primer._show import banner, say, table, takeaway
 
     banner("1. Short-term memory under a token budget")
-    stm = ShortTermMemory(budget_tokens=100, keep_last=4)
+    stm = ShortTermMemory(budget_tokens=110, keep_last=4)
     for i in range(1, 7):
         stm.add("user", f"Question {i} is about invoices. Please include the vendor name and amount.")
         stm.add("assistant", f"Answer {i} lists the invoice. It shows vendor, amount and due date.")
     summary, msgs = stm.context()
-    say(f"{len(stm.messages)} messages, ~{stm.tokens()} tokens, budget 100.")
+    say(f"{len(stm.messages)} messages, ~{stm.tokens()} tokens, budget 110.")
     say(f"Summary for the system prompt: {summary}")
     say(f"Sent word for word: {[m['content'][:10] for m in msgs]}")
 

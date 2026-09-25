@@ -168,7 +168,7 @@ round(T ** 2 * H_soft + lam * H_hard, 3)  # → 3.652</code></pre>
   <div id="grad-chart"></div>
   <p class="readout" id="grad-readout">Hover or tap to read the gradient size at each temperature.</p>
 </div>
-<p class="reading"><strong>Reading it:</strong> computed live for the “2” above, with an untrained student whose logits are all zero. The x-axis is the temperature; the y-axis is the size of the soft-target gradient, the push training gives the student's logits, on a log scale. Without correction (blue) the push shrinks roughly as 1/T², so at T = 20 it is hundreds of times weaker than at T = 1 and the true-label term would drown it out. Multiplied by T² (green), it stays in the same range at every temperature, so you can change T while experimenting without re-balancing the two losses. That is the paper's stated reason for the T² factor.</p>
+<p class="reading"><strong>Reading it:</strong> computed live for the “2” above, with an untrained student whose logits are all zero. The x-axis is the temperature; the y-axis is the size of the soft-target gradient, the push training gives the student's logits, on a log scale. Without correction (blue, solid) the push shrinks roughly as 1/T², so at T = 20 it is hundreds of times weaker than at T = 1 and the true-label term would drown it out. Multiplied by T² (green, dashed), it stays in the same range at every temperature, so you can change T while experimenting without re-balancing the two losses. That is the paper's stated reason for the T² factor.</p>
 <h3 class="rung">Why it matters today</h3>
 <p>“Soft targets at a raised temperature plus a small hard-label term, scaled by T²” is still the textbook recipe, exactly as written here.</p>
 </section>
@@ -316,7 +316,7 @@ q = [(a + b) / 2 for a, b in zip(p_g, p_A)]
 <h3 class="rung">Tiny example</h3>
 <p>The 85-million-parameter speech model trained on only 3% of the data (about 20 million examples) with ordinary labels badly <span class="t" data-t="overfitting">overfits</span>: training frame accuracy 67.3%, test accuracy only 44.5%, and that was with <span class="t" data-t="early stopping">early stopping</span>. The same model on the same 3%, trained with soft targets from a model that saw all the data, reaches 57.0% test accuracy, within 2 points of the 58.9% achieved with the full data, and it simply converged, with no early stopping needed.</p>
 <div class="plot"><div id="reg-bars"></div></div>
-<p class="reading"><strong>Reading it:</strong> each pair of bars is one training setup: training frame accuracy (grey) and test frame accuracy (blue). With 3% of the data and hard labels, the grey bar is high but the blue one collapses: memorising, not learning. With soft targets on the same 3%, the gap nearly closes and test accuracy almost matches the full-data baseline. Numbers from Table 5 of the paper.</p>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one training setup: training frame accuracy (grey) and test frame accuracy (blue, striped). With 3% of the data and hard labels, the grey bar is high but the striped blue one collapses: memorising, not learning. With soft targets on the same 3%, the gap nearly closes and test accuracy almost matches the full-data baseline. Numbers from Table 5 of the paper.</p>
 <p>The paper suggests the same fix for specialists: train them with soft targets from the generalist for the classes outside their specialty, so they keep their general knowledge while specializing.</p>
 <h3 class="rung">Why it matters today</h3>
 <p>This is the other half of distillation's value: not only a smaller model, but far less labelled data needed, because the teacher's soft outputs are a much richer signal than labels.</p>
@@ -472,8 +472,8 @@ function bars(id, rows, max, unit, legend) {
 
 function pairBars() {
   const rows = [["all data, labels", 63.4, 58.9], ["3% data, labels", 67.3, 44.5], ["3% data, soft targets", 65.4, 57.0]];
-  document.getElementById("reg-bars").innerHTML = `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>training frame accuracy</span><span><i style="background:var(--accent)"></i>test frame accuracy</span> (axis 0 to 80%)</div>` +
-    rows.map(([name, tr, te]) => `<div class="share-row" style="grid-template-columns:11rem minmax(0,1fr) 5rem"><span>${name}</span><div><div class="share-bar" style="width:${(tr / 80) * 100}%;background:var(--wire)"></div><div class="share-bar" style="width:${(te / 80) * 100}%;margin-top:3px"></div></div><span>${tr} / ${te}%</span></div>`).join("");
+  document.getElementById("reg-bars").innerHTML = `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>training frame accuracy</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>test frame accuracy (striped)</span> (axis 0 to 80%)</div>` +
+    rows.map(([name, tr, te]) => `<div class="share-row" style="grid-template-columns:11rem minmax(0,1fr) 5rem"><span>${name}</span><div><div class="share-bar" style="width:${(tr / 80) * 100}%;background:var(--wire)"></div><div class="share-bar" style="width:${(te / 80) * 100}%;margin-top:3px;background:var(--hatch) var(--accent)"></div></div><span>${tr} / ${te}%</span></div>`).join("");
 }
 </script>
 </body>

@@ -132,35 +132,56 @@ TOOLTIP_ASSETS = """
 <style>
 .gl-term{border-bottom:1px dotted currentColor;cursor:help}
 .gl-term:focus{outline:2px solid var(--p-accent);outline-offset:2px}
-#gl-tip{position:absolute;z-index:1000;max-width:22rem;padding:.6rem .75rem;border-radius:.5rem;
+#gl-tip{position:fixed;z-index:1000;max-width:22rem;padding:.6rem .75rem;border-radius:.5rem;
  background:var(--p-tip-bg);color:var(--p-tip-fg);font:14px/1.45 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);display:none}
 #gl-tip a{color:var(--p-tip-link)}
 </style>
-<div id="gl-tip" role="tooltip"></div>
+<span id="gl-tip" role="tooltip"></span>
 <script>
+/* Glossary definitions on hover, tap and keyboard focus.
+   A focused term is described by the tip (aria-describedby), so screen readers read the definition.
+   The tip is moved to sit right after its term, so Tab goes from the term into its "Learn it" link,
+   and it stays open while focus is inside it. Escape closes it and returns focus to the term. */
 (function(){
   var tip=document.getElementById('gl-tip'), current=null, hideTimer=null;
+  function place(el){
+    var r=el.getBoundingClientRect(), w=tip.offsetWidth, vw=document.documentElement.clientWidth;
+    tip.style.left=Math.max(8,Math.min(r.left, vw-w-8))+'px'; tip.style.top=(r.bottom+6)+'px';
+  }
   function show(el){
-    clearTimeout(hideTimer); current=el;
+    clearTimeout(hideTimer);
+    if(current&&current!==el){current.removeAttribute('aria-describedby');}
+    current=el;
     var html=el.dataset.tip.replace(/&/g,'&amp;').replace(/</g,'&lt;');
     if(el.dataset.lesson){html+=' <a href="'+el.dataset.lesson+'">Learn it &rarr;</a>';}
-    tip.innerHTML=html; tip.style.display='block';
-    var r=el.getBoundingClientRect(), w=tip.offsetWidth;
-    var left=Math.max(8,Math.min(window.scrollX+r.left, window.scrollX+document.documentElement.clientWidth-w-8));
-    tip.style.left=left+'px'; tip.style.top=(window.scrollY+r.bottom+6)+'px';
+    tip.innerHTML=html;
+    el.after(tip);
+    el.setAttribute('aria-describedby','gl-tip');
+    tip.style.display='block'; place(el);
   }
-  function hide(){hideTimer=setTimeout(function(){tip.style.display='none';current=null;},150);}
+  function hideNow(){
+    tip.style.display='none';
+    if(current){current.removeAttribute('aria-describedby');}
+    current=null;
+  }
+  function hideSoon(){ clearTimeout(hideTimer); hideTimer=setTimeout(function(){
+    if(!tip.contains(document.activeElement)){hideNow();} },150); }
   document.querySelectorAll('.gl-term').forEach(function(el){
     el.addEventListener('mouseenter',function(){show(el);});
-    el.addEventListener('mouseleave',hide);
+    el.addEventListener('mouseleave',hideSoon);
     el.addEventListener('focus',function(){show(el);});
-    el.addEventListener('blur',hide);
-    el.addEventListener('click',function(e){ if(current===el && tip.style.display==='block'){hide();} else {show(el);} e.stopPropagation();});
+    el.addEventListener('blur',hideSoon);
+    el.addEventListener('click',function(e){ if(current===el && tip.style.display==='block'){hideNow();} else {show(el);} e.stopPropagation();});
   });
   tip.addEventListener('mouseenter',function(){clearTimeout(hideTimer);});
-  tip.addEventListener('mouseleave',hide);
-  document.addEventListener('click',function(e){ if(!tip.contains(e.target)){tip.style.display='none';current=null;} });
-  document.addEventListener('keydown',function(e){ if(e.key==='Escape'){tip.style.display='none';} });
+  tip.addEventListener('mouseleave',hideSoon);
+  tip.addEventListener('focusin',function(){clearTimeout(hideTimer);});
+  tip.addEventListener('focusout',function(e){ if(e.relatedTarget!==current){hideSoon();} });
+  document.addEventListener('click',function(e){ if(!tip.contains(e.target)){hideNow();} });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&current){var el=current; hideNow(); el.focus({preventScroll:true});}
+  });
+  window.addEventListener('scroll',function(){ if(current&&!tip.contains(document.activeElement)){place(current);} },{passive:true});
 })();
 </script>
 """
@@ -746,6 +767,16 @@ const diagrams = [...document.querySelectorAll("div.mermaid")];
 for (const [i, el] of diagrams.entries()) {
   const { svg } = await mermaid.render(`diagram-${i + 1}`, el.textContent);
   el.innerHTML = svg;
+  // Name each diagram, and let its "Reading it" paragraph describe it to screen readers.
+  const drawing = el.querySelector("svg");
+  drawing.setAttribute("role", "img");
+  drawing.setAttribute("aria-label", "Diagram");
+  let next = el.closest("pre") ? el.closest("pre").nextElementSibling : el.nextElementSibling;
+  while (next && !/^Reading it/.test(next.textContent.trim()) && next.tagName !== "H2" && next.tagName !== "H3") next = next.nextElementSibling;
+  if (next && /^Reading it/.test(next.textContent.trim())) {
+    next.id = next.id || `diagram-${i + 1}-reading`;
+    drawing.setAttribute("aria-describedby", next.id);
+  }
 }
 </script>"""
 

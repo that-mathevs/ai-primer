@@ -54,6 +54,17 @@ class TestArgumentValidation:
             "$.quantity: expected integer, got boolean (True)"
         ]
 
+    def test_given_the_lessons_misspelt_payment_every_problem_comes_back_at_once_with_its_fix(self):
+        # The worked example: one typo, one lowercase currency, one plain-English date, so four fixes.
+        from primer.agents.tools import PAYMENT_SCHEMA as LESSON_PAYMENT_SCHEMA
+
+        assert validate({"ammount": 5, "currency": "usd", "pay_on": "next friday"}, LESSON_PAYMENT_SCHEMA) == [
+            "$: missing required field 'amount'",
+            "$: unexpected field 'ammount' (allowed: amount, currency, pay_on)",
+            "$.currency: must be one of ['EUR', 'GBP', 'USD'], got 'usd'",
+            "$.pay_on: 'next friday' does not match the required format. Expected: date as YYYY-MM-DD",
+        ]
+
     def test_given_a_value_outside_the_allowed_set_the_error_lists_the_allowed_values(self):
         assert validate({"amount": 5, "currency": "usd"}, PAYMENT_SCHEMA) == [
             "$.currency: must be one of ['EUR', 'GBP', 'USD'], got 'usd'"

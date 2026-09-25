@@ -86,7 +86,7 @@ travel down the chain. Fewer steps, verification after key steps,
 checkpoints to resume from the middle, and human review at critical points
 all attack the same exponent.
 
-![Chance of finishing a task vs. number of steps, for three per-step reliabilities](figures/primer.agents.failures.compounding.svg)
+![Twenty steps succeed 82% of the time at 99% per step but only 36% at 95% and 12% at 90%](figures/primer.agents.failures.compounding.svg)
 
 **Reading it:** the x-axis is the number of steps; each curve is a per-step
 reliability. At 99% per step a 20-step task still succeeds 82% of the time;
@@ -159,7 +159,7 @@ hammered. Writes must be **idempotent** (safe to repeat: sending the same
 request twice has the same effect as once, usually via an idempotency key)
 before you retry them, or a retried "create order" makes two orders.
 
-![Backoff delays per attempt, without and with jitter](figures/primer.agents.failures.backoff.svg)
+![The delay doubles each attempt until it hits the 10-second cap, and jitter scatters five clients' retries across the whole range below it](figures/primer.agents.failures.backoff.svg)
 
 **Reading it:** the x-axis is the attempt number; the black line is the
 capped exponential delay. The dots are five clients using *full jitter*
@@ -208,7 +208,7 @@ Half-open is a single, cautious test. The breaker turns a slow, cascading
 failure (every request waiting 30 s on a dead service) into a fast,
 contained one.
 
-![Circuit breaker during a 50-second outage](figures/primer.agents.failures.breaker.svg)
+![Through a 50-second outage the failing service is called only 5 times, while 21 requests fail fast at the open breaker instead](figures/primer.agents.failures.breaker.svg)
 
 **Reading it:** the shaded band is when the upstream service is down;
 each marker is one request. Before the outage, calls succeed (green). The
@@ -523,7 +523,8 @@ def demo() -> None:
 
     def flaky():
         calls["n"] += 1
-        if calls["n"] <= 3:
+        # Two timeouts, then an answer: the worked example in the lesson.
+        if calls["n"] <= 2:
             raise TimeoutError("upstream timed out")
         return "ok"
 

@@ -2,13 +2,18 @@
 
 import pytest
 
+from primer.agents.llm import estimate_tokens
 from primer.agents.memory import ShortTermMemory
+
+
+def _chat_turn(memory, i):
+    memory.add("user", f"Question {i} is about invoices. Please include the vendor name and amount.")
+    memory.add("assistant", f"Answer {i} lists the invoice. It shows vendor, amount and due date.")
 
 
 def _chat(memory, n):
     for i in range(1, n + 1):
-        memory.add("user", f"Question {i} is about invoices. Please include the vendor name and amount.")
-        memory.add("assistant", f"Answer {i} lists the invoice. It shows vendor, amount and due date.")
+        _chat_turn(memory, i)
     return memory
 
 
@@ -17,14 +22,27 @@ class TestShortTermMemory:
         summary, messages = _chat(ShortTermMemory(budget_tokens=1000), 2).context()
         assert (summary, len(messages)) == ("", 4)
 
-    def test_given_a_conversation_over_budget_the_oldest_turns_become_a_one_line_summary(self):
-        # Six exchanges (12 messages, about 17 tokens each) against a 100-token budget; the last 4 stay word for word.
-        summary, messages = _chat(ShortTermMemory(budget_tokens=100, keep_last=4), 6).context()
+    def test_given_a_conversation_over_budget_the_older_turns_become_a_one_line_summary(self):
+        # Six exchanges (12 messages, 17 or 18 tokens each) against a 110-token budget. The last 4
+        # messages stay word for word (18 + 17 + 18 + 17 = 70 tokens), leaving 40 for the summary.
+        # All 8 older first sentences would need 65, so the oldest drop out until the rest fit (36).
+        summary, messages = _chat(ShortTermMemory(budget_tokens=110, keep_last=4), 6).context()
         assert summary == (
-            "Earlier in this conversation: Question 1 is about invoices; Answer 1 lists the invoice; "
-            "Question 2 is about invoices; Answer 2 lists the invoice; Question 3 is about invoices; "
+            "Earlier in this conversation: Question 3 is about invoices; "
             "Answer 3 lists the invoice; Question 4 is about invoices; Answer 4 lists the invoice"
         )
+
+    def test_given_a_forty_exchange_conversation_what_is_sent_never_exceeds_the_budget(self):
+        # Without re-compressing the summary, an extractive summary grows one sentence per message
+        # and the history sent would reach 666 tokens by turn 40, more than double the budget.
+        memory = ShortTermMemory(budget_tokens=300, keep_last=6)
+        largest = 0
+        for turn in range(1, 41):
+            _chat_turn(memory, turn)
+            summary, messages = memory.context()
+            sent = (estimate_tokens(summary) if summary else 0) + sum(estimate_tokens(m["content"]) for m in messages)
+            largest = max(largest, sent)
+        assert largest <= 300
 
     def test_given_a_conversation_over_budget_the_most_recent_messages_are_kept_word_for_word(self):
         _, messages = _chat(ShortTermMemory(budget_tokens=100, keep_last=4), 6).context()

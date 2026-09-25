@@ -1,5 +1,6 @@
 """
-Check that every URL in the lessons and the paper catalog is alive.
+Check that every URL in the lessons, the paper catalog, the README and the
+paper companions is alive.
 
     python tools/links.py      # or: make links
 
@@ -33,6 +34,10 @@ def collect() -> dict[str, set[str]]:
     for md in [ROOT / "docs" / "papers" / "CATALOG.md", ROOT / "README.md"]:
         for url in URL.findall(md.read_text()):
             found.setdefault(url.rstrip(".,;:"), set()).add(md.name)
+    # The paper companions cite the most sources: every external link they hold.
+    for page in sorted((ROOT / "docs" / "papers").glob("*.html")):
+        for url in re.findall(r'href="(https?://[^"]+)"', page.read_text(encoding="utf-8")):
+            found.setdefault(url.split("#")[0], set()).add(page.name)
     return found
 
 

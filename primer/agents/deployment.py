@@ -119,7 +119,7 @@ window of recent decisions, not a lucky streak; demotions happen at once,
 on a single incident. Even at the top level, high-risk actions (large
 refunds, deletions) keep needing a person.
 
-![Shadow-mode agreement accumulating until the agent earns promotion](figures/primer.agents.deployment.shadow.svg)
+![Rolling agreement with humans must first clear the 95% bar over a full 50-decision window, and only then is the agent promoted](figures/primer.agents.deployment.shadow.svg)
 
 **Reading it:** the x-axis counts shadow decisions; the blue line is
 agreement with humans over the last 50 of them. The dashed line is the 95%
@@ -165,7 +165,7 @@ release** sends a small share of traffic to the new version, compares its
 metrics with the current version (the *control*), and grows the share only
 while the canary stays healthy.
 
-**Worked example.** Steps 1% → 5% → 25% → 100%, allowed drop 2 points,
+**Worked example.** Steps 1% → 5% → 25% → 50% → 100%, allowed drop 2 points,
 at least 100 canary tasks before judging:
 
 | Control success | Canary success | Canary tasks | Decision |
@@ -225,7 +225,7 @@ growth step waits for enough traffic to judge, and a single bad reading
 sends everyone back to the old version automatically. At worst, a few
 percent of users saw the bad version for one step.
 
-![Canary rollout of a good and a bad version, with the automatic rollback](figures/primer.agents.deployment.canary.svg)
+![The good version tracks the control through 1, 5, 25, 50 and 100%; the bad one passes the 1% step by luck and is rolled back at 5%](figures/primer.agents.deployment.canary.svg)
 
 **Reading it:** each panel is one rollout. The x-axis is the rollout step
 (with the share of traffic on the canary); the lines are measured success
@@ -298,7 +298,7 @@ b(2, 0, 0)  # → 2
 b(60, 0, 0)  # → 5
 ```
 
-![Tokens in the bucket during a burst of requests](figures/primer.agents.deployment.token_bucket.svg)
+![A burst of 8 requests gets 5 through before the bucket empties, then requests pass one per second at the refill rate](figures/primer.agents.deployment.token_bucket.svg)
 
 **Reading it:** the blue line is the number of tokens in the jar over time;
 green dots are allowed actions and red crosses refused ones. The opening

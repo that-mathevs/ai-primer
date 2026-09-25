@@ -149,7 +149,7 @@ round(count_part, 3)  # → 1.231
 round(IDF * count_part, 3)  # → 1.207
 ```
 
-![BM25 saturation and length normalization](figures/primer.ml.embeddings.retrieval.bm25_curves.svg)
+![BM25 credit flattens toward k1 + 1 however often a word repeats, and one mention counts less in a longer document once b is above 0](figures/primer.ml.embeddings.retrieval.bm25_curves.svg)
 
 **Reading it:** on the left, the x-axis is how often a word appears in a
 document and the y-axis is the credit BM25 gives it (before the rarity
@@ -283,7 +283,7 @@ round(RRF([1, 3]), 4)  # → 0.0323
 round(RRF([1]), 4)  # → 0.0164
 ```
 
-![RRF on "what does ERR-4012 mean"](figures/primer.ml.embeddings.retrieval.rrf_fusion.svg)
+![For the query what does ERR-4012 mean, the error-code article collects credit from both BM25 and dense search and fuses to a clear first place](figures/primer.ml.embeddings.retrieval.rrf_fusion.svg)
 
 **Reading it:** each bar is one document's fused score, split into the part
 contributed by BM25 (orange) and by dense search (blue). The error-code
@@ -291,7 +291,7 @@ article it-004 is BM25's only hit and dense search's 4th, and the two
 contributions stack up to put it clearly first. The password-policy article
 that dense search wrongly ranked first gets only its blue half.
 
-![Where each method ranks the right answer, for 20 questions](figures/primer.ml.embeddings.retrieval.method_ranks.svg)
+![BM25 misses the paraphrase questions and dense search misses the error codes, but their misses never overlap, so the hybrid ranks every answer first](figures/primer.ml.embeddings.retrieval.method_ranks.svg)
 
 **Reading it:** one row per question, one column per method; the number is
 the rank at which the right answer appeared (✗ = not in the top 10). Look at
@@ -338,9 +338,13 @@ checks which of the question's *ideas* the document covers:
 
 | | question ideas: {password, rules} | coverage | phrase | exact | score |
 |---|---|---|---|---|---|
-| it-002 policy | password ✓, policy/rules ✓ | 2/2 = **1.0** | 1.0 | 0.5 | ≈ 1.9 |
-| it-001 reset how-to | password ✓, rules ✗ | 1/2 = **0.5** | 0.0 | 0.5 | ≈ 0.7 |
+| it-002 policy | password ✓, policy/rules ✓ | 2/2 = **1.0** | 1.0 | 0.5 | ≈ 1.78 |
+| it-001 reset how-to | password ✓, rules ✗ | 1/2 = **0.5** | 0.0 | 0.5 | ≈ 0.69 |
 
+The score weighs the features: coverage + 0.5 × phrase + 0.25 × exact +
+0.25 × cosine, where the cosine is the ordinary bi-encoder similarity (0.63
+for the policy, 0.27 for the how-to). For the policy that's 1.0 + 0.5 +
+0.125 + 0.16 ≈ 1.78; for the how-to, 0.5 + 0 + 0.125 + 0.07 ≈ 0.69.
 After reranking, the policy is first.
 
 ```mermaid
@@ -450,7 +454,7 @@ def dot(a, b):
 sum(max(dot(q_i, d_j) for d_j in d) for q_i in q)  # → 1.8
 ```
 
-![ColBERT's MaxSim grid for "password rules" vs. the password policy](figures/primer.ml.embeddings.retrieval.maxsim_grid.svg)
+![In ColBERT's MaxSim grid for password rules, password best matches itself at 1.00 and rules best matches policy at 0.85, for a score of 1.85](figures/primer.ml.embeddings.retrieval.maxsim_grid.svg)
 
 **Reading it:** rows are the query's words, columns the document's words,
 and color is the similarity of each pair. The outlined cell in each row is
@@ -503,7 +507,7 @@ chunk that says "The stipend is 50 dollars" still says *which* stipend: the
 idea behind *contextual retrieval*. Metadata rides along so later stages can
 filter by date or by who's allowed to see it (see `primer.agents.rag`).
 
-![Where the two chunkers cut the handbook](figures/primer.ml.embeddings.retrieval.chunk_boundaries.svg)
+![Fixed 40-word windows split the stipend heading from its amount and cut through sections, while one structure-aware chunk holds both](figures/primer.ml.embeddings.retrieval.chunk_boundaries.svg)
 
 **Reading it:** the colored strip in the middle is the handbook, one color
 per section, read left to right by word position. The brackets above it are

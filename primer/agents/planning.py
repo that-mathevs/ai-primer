@@ -12,8 +12,8 @@ and **checkpoint** so a failure costs one step instead of the whole run.
 ## 1. Compounding error: why long tasks fail
 
 **Everyday picture.** A relay race with ten runners. Each runner drops the
-baton only 1 time in 20. That sounds safe, but the team needs *all ten*
-hand-offs to work, and it loses about 4 races in 10.
+baton only 1 time in 20 during their leg. That sounds safe, but the team
+needs *all ten* legs to go cleanly, and it loses about 4 races in 10.
 
 **Tiny worked example.** Each step of an agent succeeds 95% of the time.
 
@@ -49,7 +49,7 @@ round(p ** 10, 2)  # → 0.6
 round(p ** 20, 2)  # → 0.36
 ```
 
-![End-to-end success vs. number of steps](figures/primer.agents.planning.compounding.svg)
+![At 95% per step a 10-step task succeeds only about 60% of the time, and every curve keeps sliding toward zero as steps are added](figures/primer.agents.planning.compounding.svg)
 
 **Reading it:** the x-axis is the number of steps in the task, and the y-axis is the
 chance the whole task succeeds. Every curve starts near the top and slides
@@ -197,13 +197,18 @@ round(with_checkpoints(10, 0.95), 1), round(restart_from_scratch(10, 0.95), 1)  
 round(with_checkpoints(50, 0.95), 1), round(restart_from_scratch(50, 0.95))  # → (52.6, 240)
 ```
 
-![Expected step executions: checkpoints vs. restarting](figures/primer.agents.planning.checkpoints.svg)
+![On the log scale, restarting from scratch climbs as a straight line (exponential growth) while checkpoints stay close to one run per step](figures/primer.agents.planning.checkpoints.svg)
 
 **Reading it:** the x-axis is task length, and the y-axis (log scale) is how
-many step executions you should expect to pay for. With checkpoints the line
-is nearly straight, just slightly above $n$. Restarting from scratch curves
-upward exponentially. Long tasks without checkpoints aren't just
-unreliable; they're expensive. **Durable execution** is the engineering name
+many step executions you should expect to pay for. On a log scale each
+gridline is ten times the one below, so exponential growth draws a
+*straight* line. The restart line is that straight line: every extra step
+multiplies its cost by about $1/0.95 \approx 1.05$. The checkpoint line
+($n/p$, just proportional to $n$) bends over and flattens, because on a log
+scale going from 10 to 20 steps rises no more than going from 5 to 10. The
+widening gap between them is the cost of having no checkpoints, and at 50
+steps it's already about 240 step runs against 53. Long tasks without
+checkpoints aren't just unreliable; they're expensive. **Durable execution** is the engineering name
 for this: a workflow engine that saves each step's result so a crashed run
 resumes where it stopped.
 
@@ -285,7 +290,7 @@ round(p_step(0.95, 0.5, 1), 5)  # → 0.97375
 round(p_step(0.95, 0.5, 1) ** 10, 2)  # → 0.77
 ```
 
-![Ten-step success with and without verification](figures/primer.agents.planning.verification.svg)
+![With the same 95% step, a ten-step task succeeds 97.5% of the time when a check catches every failure and allows one retry, 77% when the check catches half, and 60% with no checks](figures/primer.agents.planning.verification.svg)
 
 **Reading it:** all curves use the same 95%-reliable step. The bottom curve has
 no checks. The middle ones add a retry after a failure is caught, with a

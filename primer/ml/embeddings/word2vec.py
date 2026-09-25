@@ -272,7 +272,7 @@ This lesson trains on a small synthetic corpus built from three independent
 attributes (male/female, royal/common, adult/child), so the effect appears
 in seconds on a laptop.
 
-![2-D projection of the learned word vectors](figures/primer.ml.embeddings.word2vec.space.svg)
+![In a 2-D PCA view, the arrows king to queen, man to woman, prince to princess and boy to girl all point the same way with nearly equal length](figures/primer.ml.embeddings.word2vec.space.svg)
 
 **Reading it:** these are the learned 16-dimensional vectors, squashed to 2-D
 with **PCA** (a way to find the two directions along which the points are
@@ -414,7 +414,7 @@ left = sum(a * b for a, b in zip(w_ice, w_cold_tilde)) + b_ice + b_cold_tilde
 left, round(math.log(20) - left, 1)  # → (2.0, 1.0)
 ```
 
-![PPMI matrix for the target words and their contexts](figures/primer.ml.embeddings.word2vec.ppmi.svg)
+![A block pattern: male words light up under he and his, female under she and her, royals under crown and throne, children under young and school](figures/primer.ml.embeddings.word2vec.ppmi.svg)
 
 **Reading it:** rows are the eight target words, columns are the context
 words, and brighter cells mean higher PPMI (they meet more than chance). You
@@ -502,7 +502,7 @@ attention, which blends in the surrounding words, so the output depends on
 the sentence. `contextual_bank_demo` runs exactly this with the learned
 vectors and one attention step.
 
-![Where 'bank' lands, static vs. in context](figures/primer.ml.embeddings.word2vec.bank.svg)
+![Static bank is about equally close to the river and money senses (0.52 vs 0.50); in context it tilts to 0.83 river or 0.85 money](figures/primer.ml.embeddings.word2vec.bank.svg)
 
 **Reading it:** bars show cosine similarity to the river sense (probe words
 water, shore, boat) and to the money sense (money, deposit, account). The

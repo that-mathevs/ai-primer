@@ -13,6 +13,7 @@ from primer.ml.transformer import (
     inference_flops_per_token,
     layer_norm,
     load_balancing_loss,
+    mask_patterns,
     rms_norm,
     top_k_gates,
     training_flops,
@@ -105,6 +106,12 @@ class TestTransformerBlock:
         changed[4] += rng.standard_normal(16)
         assert not np.allclose(block(changed)[0], block(x)[0])
 
+    def test_given_the_same_input_only_the_last_tokens_attention_row_matches_between_encoder_and_decoder(self):
+        # The last token may see everything under either mask; every earlier row renormalises over fewer tokens.
+        encoder, decoder = mask_patterns().values()
+        rows_match = [bool(np.allclose(e, d)) for e, d in zip(encoder, decoder)]
+        assert rows_match == [False, False, False, False, False, True]
+
 
 class TestTinyGPT:
     def test_it_returns_one_score_per_vocabulary_entry_for_every_position(self):
@@ -136,6 +143,11 @@ class TestParameterCounting:
         # The published size of GPT-2 small: vocab 50257, width 768, 12 layers, 1024 positions.
         assert gpt_param_count(vocab=50257, d_model=768, n_layers=12, max_len=1024) == 124_439_808
 
+    def test_given_gpt2_small_without_attention_biases_it_has_124402944_parameters(self):
+        # The tiny model's recipe: 12·(12·768² + 9·768) + 50257·768 + 1024·768 + 2·768 = 124,402,944,
+        # which is 36,864 (12 blocks × 4·768 attention biases) short of the published size.
+        assert gpt_param_count(vocab=50257, d_model=768, n_layers=12, max_len=1024, attn_bias=False) == 124_402_944
+
     def test_without_embeddings_a_wide_model_has_about_12_times_layers_times_width_squared(self):
         # 4·d² for attention + 8·d² for the 4×-wide feed-forward; biases and norms are tiny.
         body = gpt_param_count(vocab=0, d_model=4096, n_layers=32, max_len=0)
@@ -164,6 +176,12 @@ class TestMixtureOfExperts:
     def test_with_top_2_routing_each_token_uses_only_4384_of_those_parameters(self):
         # two experts 2·2128 + the router 128: about a quarter of the total.
         assert MixtureOfExperts(d_model=16, n_experts=8, k=2).active_params() == 4384
+
+    def test_given_an_untrained_router_and_256_tokens_the_load_ranges_from_51_to_75_against_an_even_64(self):
+        # The lesson's figure: random routing is already lopsided before training compounds it.
+        moe = MixtureOfExperts(d_model=16, n_experts=8, k=2, seed=0)
+        moe(np.random.default_rng(1).standard_normal((256, 16)))
+        assert moe.tokens_per_expert().tolist() == [67, 56, 51, 75, 66, 75, 67, 55]
 
 
 class TestLoadBalancing:

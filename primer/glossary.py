@@ -263,7 +263,7 @@ GLOSSARY: dict[str, Entry] = {
     'bradley-terry model': _E('The rule that the probability A beats B is the sigmoid of their score difference.', 'primer.ml.training_stages'),
     'reference model': _E('A frozen copy of the starting model that DPO and RLHF measure drift against.', 'primer.ml.training_stages'),
     'policy': _E('In preference tuning, the model being trained, viewed as a probability distribution over responses.', 'primer.ml.training_stages', scope=('primer/ml/training_stages',)),
-    'implicit reward': _E('In DPO, how much more likely training has made a response than the reference model did.', 'primer.ml.training_stages'),
+    'implicit reward': _E('In DPO, β times the log of how much more likely training has made a response than the reference model did.', 'primer.ml.training_stages'),
     'log-probability': _E("The logarithm of a probability; for a whole response, the sum of its tokens' log-probabilities.", 'primer.ml.training_stages'),
     'qlora': _E('LoRA adapters trained on top of base weights stored in 4 bits.', 'primer.ml.training_stages'),
     'adapter': _E('A small trainable module added beside frozen weights to specialise a model.', 'primer.ml.training_stages', scope=('primer/ml/training_stages',)),

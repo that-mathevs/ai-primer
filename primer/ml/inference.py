@@ -111,7 +111,7 @@ round(P * b / BW * 1000, 2)  # → 4.78
 round(2 * P * 1000 / FLOPS * 1000, 1)  # → 16.0
 ```
 
-![Roofline: where prefill and decode sit](figures/primer.ml.inference.roofline.svg)
+![Decode for 1 user uses 0.3% of the GPU's compute and a batch of 64 reaches 21%, while a 1,000-token prefill passes the 299 break-even to run at full speed](figures/primer.ml.inference.roofline.svg)
 
 **Reading it:** the x-axis is arithmetic intensity (log scale); the y-axis
 is the speed the GPU can actually reach. The sloped part of the roof is the
@@ -168,7 +168,7 @@ token's query, key and value, reading everything older from the cache. The
 outputs are identical (`TinyDecoder` checks this to 10 decimal places); only
 the cost differs.
 
-![Work done while generating, with and without the KV cache](figures/primer.ml.inference.kv_cache_work.svg)
+![Without a cache, total work curves upward to about 20 times the cached total after 32 tokens; with the cache it grows in a straight line](figures/primer.ml.inference.kv_cache_work.svg)
 
 **Reading it:** the x-axis is how many tokens have been generated after an
 8-token prompt; the y-axis is total operations spent so far, counted inside
@@ -240,7 +240,7 @@ L, H_kv, d_h, b = 32, 8, 128, 2
 round(32_000 * 131_072 / 1e9, 1)  # → 4.2
 ```
 
-![KV cache size versus context length](figures/primer.ml.inference.kv_memory.svg)
+![At 128k tokens, 32 KV heads need 67 GB, more than the 64 GB free, while 8 KV heads need 17 GB, so three such requests fit](figures/primer.ml.inference.kv_memory.svg)
 
 **Reading it:** the x-axis is context length per request; the y-axis is KV
 cache memory for one request. The steep line is a model with 32 KV heads
@@ -324,13 +324,15 @@ round(sum(exps), 1)  # → 63.0
 [round(e / sum(exps), 3) for e in exps]  # → [0.867, 0.117, 0.016]
 ```
 
-![Temperature reshapes the next-token distribution](figures/primer.ml.inference.sampling.svg)
+![Five tokens at three temperatures: at T = 0.5 the favourite takes 79% and top-p 0.9 cuts three tokens; at T = 2 it falls to 38% and only one is cut](figures/primer.ml.inference.sampling.svg)
 
 **Reading it:** five candidate tokens with fixed scores, shown at three
-temperatures. At T = 0.5 (left) the favourite takes almost everything; at
-T = 2 (right) the distribution is nearly flat. The hatched bars are the
-tokens top-p = 0.9 would cut at each temperature: fewer when the model is
-confident, more when it isn't.
+temperatures. At T = 0.5 (left) the favourite takes 79%; at T = 2 (right) it
+falls to 38% and the rest spread out, down to 7% for the least likely. The
+hatched bars are the tokens top-p = 0.9 would cut: three at T = 0.5, two at
+T = 1, one at T = 2. A confident model reaches 90% with fewer tokens, so
+top-p cuts more of them; an unsure one needs more tokens to reach 90%, so it
+cuts fewer. That's why top-p adapts where a fixed top-k can't.
 
 **Temperature 0 is not a determinism guarantee.** Floating-point addition
 isn't associative: in 32-bit floats, (10⁸ + 1) − 10⁸ = 0 but (10⁸ − 10⁸) + 1 = 1.
@@ -502,7 +504,7 @@ two slots. Static: {4, 1} runs 4 steps with one slot idle for 3, then
 requests slide into the freed slot while the long one runs: **4 steps,
 87.5%** busy.
 
-![Slot timelines: static vs. continuous batching](figures/primer.ml.inference.batching.svg)
+![With 32 requests on 8 slots, static batching leaves idle gaps and needs 433 steps at 60% busy; continuous batching needs 318 steps at 82%](figures/primer.ml.inference.batching.svg)
 
 **Reading it:** each row is a GPU batch slot and each column is one decode
 step; colour identifies the request occupying the slot, and white is an idle

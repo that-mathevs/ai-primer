@@ -168,6 +168,21 @@ class TestHNSWSearchPath:
         sims_top_down = [first_sim_per_layer[l] for l in sorted(first_sim_per_layer, reverse=True)]
         assert sims_top_down == sorted(sims_top_down)
 
+    def test_given_300_points_and_m_of_6_the_graph_has_four_layers_of_300_64_14_and_1_nodes(self, trace):
+        # The figure draws only the lower three; the lone top node is the entry point, with nowhere to hop.
+        index, _ = trace
+        assert [sum(1 for lv in index.levels if lv >= layer) for layer in range(index.max_level + 1)] == [300, 64, 14, 1]
+
+    def test_given_the_figures_query_the_search_compares_it_with_51_of_the_300_points(self, trace):
+        # Counted from a fresh search: a few dozen comparisons instead of a 300-point scan.
+        from primer.ml.embeddings.ann import planar_vectors
+
+        index, _ = trace
+        query, _ = planar_vectors(1, seed=5)
+        index.ndist = 0
+        index.search_trace(query[0], k=5)
+        assert index.ndist == 51
+
 
 class TestEightPointMap:
     """The hand-checkable toy: eight houses on a grid, query at (5, 4). Distances are squared."""

@@ -80,3 +80,9 @@ class TestCLIP:
 
     def test_given_contrastive_training_images_are_labeled_by_their_nearest_caption_embedding(self):
         assert train_clip_toy()["zero_shot_accuracy"] >= 0.9
+
+    def test_given_contrastive_training_4_of_the_40_pictured_test_images_are_closest_to_another_class_caption(self):
+        # The lesson's heatmap is not a perfect staircase: 36 rows peak in their own column, 4 do not.
+        result = train_clip_toy()
+        misses = int(np.sum(result["similarity"].argmax(axis=1) != result["labels"]))
+        assert misses == 4

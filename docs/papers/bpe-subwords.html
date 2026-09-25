@@ -529,8 +529,8 @@ function bpeMachine() {
 function f1Bars() {
   const groups = [["EN→DE all words", 58.1, 58.5], ["EN→DE rare", 36.8, 41.8], ["EN→DE unseen (OOV)", 36.8, 33.6], ["EN→RU all words", 54.8, 55.8], ["EN→RU rare", 26.5, 29.7], ["EN→RU unseen (OOV)", 6.6, 18.3]];
   document.getElementById("f1-bars").innerHTML =
-    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>WDict (words + dictionary)</span><span><i style="background:var(--accent)"></i>BPE-J90k (joint BPE)</span> · unigram F1 %, axis 0 to 60</div>` +
-    groups.map(([k, a, b]) => `<div class="share-row" style="grid-template-columns:10rem minmax(0,1fr) 6rem"><span>${k}</span><div><div class="share-bar" style="width:${(a / 60) * 100}%;background:var(--wire)"></div><div class="share-bar" style="width:${(b / 60) * 100}%;margin-top:3px"></div></div><span>${a} → ${b}</span></div>`).join("");
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>WDict (words + dictionary)</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>BPE-J90k (joint BPE, striped)</span> · unigram F1 %, axis 0 to 60</div>` +
+    groups.map(([k, a, b]) => `<div class="share-row" style="grid-template-columns:10rem minmax(0,1fr) 6rem"><span>${k}</span><div><div class="share-bar" style="width:${(a / 60) * 100}%;background:var(--wire)"></div><div class="share-bar" style="width:${(b / 60) * 100}%;margin-top:3px;background:var(--hatch) var(--accent)"></div></div><span>${a} → ${b}</span></div>`).join("");
 }
 </script>
 </body>

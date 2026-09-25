@@ -8,7 +8,9 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.attention",
    "primer.ml.transformer",
-   "primer.ml.positional"
+   "primer.ml.positional",
+   "primer.ml.big_picture",
+   "primer.ml.cnn_rnn"
   ],
   "exists": true
  },
@@ -100,7 +102,8 @@ window.PRIMER_PAPERS = [
    "https://arxiv.org/abs/2203.15556"
   ],
   "lessons": [
-   "primer.ml.training_stages"
+   "primer.ml.training_stages",
+   "primer.ml.transformer"
   ],
   "exists": true
  },
@@ -227,7 +230,8 @@ window.PRIMER_PAPERS = [
    "https://arxiv.org/abs/2103.00020"
   ],
   "lessons": [
-   "primer.ml.embeddings.contrastive"
+   "primer.ml.embeddings.contrastive",
+   "primer.ml.losses"
   ],
   "exists": true
  },
@@ -305,7 +309,8 @@ window.PRIMER_PAPERS = [
   ],
   "lessons": [
    "primer.agents.agent_loop",
-   "primer.agents.orchestration"
+   "primer.agents.orchestration",
+   "primer.agents.llm"
   ],
   "exists": true
  },
@@ -316,7 +321,8 @@ window.PRIMER_PAPERS = [
    "https://arxiv.org/abs/2302.04761"
   ],
   "lessons": [
-   "primer.agents.tools"
+   "primer.agents.tools",
+   "primer.agents.llm"
   ],
   "exists": true
  },
@@ -338,7 +344,8 @@ window.PRIMER_PAPERS = [
    "https://arxiv.org/abs/2306.05685"
   ],
   "lessons": [
-   "primer.agents.evals"
+   "primer.agents.evals",
+   "primer.ml.metrics"
   ],
   "exists": true
  }

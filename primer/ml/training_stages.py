@@ -167,7 +167,7 @@ L_SFT = -sum(m_i * math.log(p_i) for m_i, p_i in zip(m, p)) / sum(m)
 round(L_SFT, 3)  # → 0.693
 ```
 
-![Per-position loss, with prompt positions masked out](figures/primer.ml.training_stages.sft_mask.svg)
+![Only the two reply positions count: SFT loss 0.693 versus 1.040 averaged over every position](figures/primer.ml.training_stages.sft_mask.svg)
 
 **Reading it:** each bar is one next-token prediction from the worked
 example, and its height is the penalty −ln p. Grey bars predict prompt
@@ -307,16 +307,17 @@ $$
 |---|---|---|
 | $\pi_\theta(y)$ | the policy: the model being trained, with weights θ; π(y) is the probability it gives response y | 0 … 1 |
 | $\pi_{\text{ref}}(y)$ | the frozen reference model (usually the SFT model) | 0 … 1 |
-| $\log\pi_\theta(y) - \log\pi_{\text{ref}}(y)$ | the implicit reward: how much more likely training has made y | any real |
-| $\beta$ | beta, the strength knob: larger means preferences push harder relative to staying near the reference | typically 0.1 to 0.5 |
+| $\log\pi_\theta(y) - \log\pi_{\text{ref}}(y)$ | the log-ratio: how much more likely training has made y. β times it is the **implicit reward** $\hat r(y)$, so the bracket scaled by β is $\hat r(y_w) - \hat r(y_l)$ | any real |
+| $\beta$ | beta, the leash to the reference: it sets how much a change in log-probability counts, so a larger β satisfies the loss with a smaller departure and keeps the policy closer to the reference; a smaller β lets the preferences pull it further away | typically 0.1 to 0.5 |
 | $\sigma$, $\log$ | sigmoid and natural log, as above | |
 
 **In words:** raise the probability of the chosen answer and lower the
 rejected one, measured relative to the frozen starting model, and penalise
 the model by minus the log-sigmoid of that scaled gap.
 
-**On the worked example:** β = 0.1, implicit rewards +1 (chosen) and −1
-(rejected), margin 0.2, σ(0.2) = 0.550, loss 0.598. The gradient's size is
+**On the worked example:** β = 0.1, log-ratios +1 (chosen) and −1
+(rejected), so implicit rewards r̂ = 0.1 × 1 = +0.1 and 0.1 × (−1) = −0.1,
+margin 0.1 − (−0.1) = 0.2, σ(0.2) = 0.550, loss 0.598. The gradient's size is
 β × (1 − σ(margin)) = 0.1 × 0.450 = **0.045**: pairs the policy already
 ranks correctly get gentle updates, and pairs it ranks the wrong way get
 strong ones.
@@ -332,7 +333,11 @@ beta = 0.1
 logpi_w, logpi_ref_w = -10.0, -11.0
 # rejected answer: policy, reference
 logpi_l, logpi_ref_l = -12.0, -11.0
-margin = beta * ((logpi_w - logpi_ref_w) - (logpi_l - logpi_ref_l))
+# implicit rewards r̂ = β × log-ratio
+r_w = beta * (logpi_w - logpi_ref_w)
+r_l = beta * (logpi_l - logpi_ref_l)
+print(f"{r_w:.1f} {r_l:.1f}")  # → 0.1 -0.1
+margin = r_w - r_l
 print(f"{margin:.1f} {sigma(margin):.3f}")  # → 0.2 0.550
 # L_DPO
 round(-math.log(sigma(margin)), 3)  # → 0.598
@@ -340,7 +345,7 @@ round(-math.log(sigma(margin)), 3)  # → 0.598
 round(beta * (1 - sigma(margin)), 3)  # → 0.045
 ```
 
-![Update strength falls as the policy learns the preference](figures/primer.ml.training_stages.dpo_strength.svg)
+![DPO's push is β for pairs ranked backwards, half that at margin 0, and fades to zero once a pair is learned](figures/primer.ml.training_stages.dpo_strength.svg)
 
 **Reading it:** the x-axis is the DPO margin (how strongly the policy
 already prefers the chosen answer, relative to the reference); the y-axis is
@@ -349,17 +354,19 @@ backwards and gets the full push, β. At zero (no preference yet) it gets
 half. Far right, the pair is learned and updates fade to nothing, so
 training effort flows automatically to the pairs still wrong.
 
-![DPO moves probability towards the preferred answer](figures/primer.ml.training_stages.dpo_training.svg)
+![The helpful answer climbs towards 1 while rude falls fastest and rambling falls more slowly, staying above rude](figures/primer.ml.training_stages.dpo_training.svg)
 
 **Reading it:** a one-prompt toy policy starts uniform over three answers
 (1/3 each). The preference data says "helpful and correct" beats both
 others and "correct but rambling" beats "rude". As training steps pass
 (x-axis), probability (y-axis) flows to the top answer, the rude answer is
-pushed down fastest, and the rambling answer settles in between: exactly
-the ordering people expressed.
+pushed down fastest, and the rambling answer falls too but more slowly
+(0.166 at step 50, 0.005 by step 200), staying above rude the whole way:
+the ordering people expressed. Nothing here stops the top answer taking
+nearly everything, because every pair it appears in keeps pushing it up.
 
-**In code:** `dpo_margin` computes the β-scaled gap between implicit
-rewards, `dpo_loss` turns it into −log σ(margin), and `dpo_update_strength`
+**In code:** `dpo_margin` computes the gap between implicit rewards
+(β times each log-ratio), `dpo_loss` turns it into −log σ(margin), and `dpo_update_strength`
 gives the push β × (1 − σ(margin)) plotted in the first figure;
 `train_toy_dpo` trains the three-answer toy policy of the second.
 
@@ -461,7 +468,7 @@ d_out * d_in, [r * d_in + d_out * r for r in (64, 16, 8)]  # → (16777216, [524
 | LoRA r = 16 | 131,072 | 0.78% |
 | LoRA r = 8 | 65,536 | 0.39% |
 
-![Training a LoRA adapter at different ranks](figures/primer.ml.training_stages.lora_ranks.svg)
+![A rank-1 adapter plateaus while ranks 2 and 4 drive the error to essentially zero](figures/primer.ml.training_stages.lora_ranks.svg)
 
 **Reading it:** the task needs a rank-2 change to a frozen 16 × 16 layer.
 The y-axis (log scale) is the training error; the x-axis is the training
@@ -601,7 +608,7 @@ alpha, T = 1.0, 2
 round(alpha * T ** 2 * KL, 2)  # → 2.04
 ```
 
-![Temperature softens the teacher's distribution](figures/primer.ml.training_stages.distill_temperature.svg)
+![Raising temperature from 1 to 5 flattens the teacher's 0.665, 0.245, 0.090 towards even, revealing the ranking of wrong answers](figures/primer.ml.training_stages.distill_temperature.svg)
 
 **Reading it:** the same three teacher logits (2, 1, 0) shown at three
 temperatures. At T = 1 (left group) the top answer dominates. At T = 2 and
@@ -654,9 +661,12 @@ reference as an implicit reward, and applies the same pairwise loss
 directly to the policy. One model, one supervised-style training loop.
 
 **Q: What does β control in DPO?**
-A: How strongly preferences push the policy relative to staying close to
-the reference model. Larger β means sharper preference-following; smaller
-means more conservative updates.
+A: How tightly the policy is held to the reference model. It is the weight
+on the drift penalty in the objective DPO optimises, reward − β × KL(policy
+‖ reference), so larger β keeps the policy closer to the reference and
+smaller β lets the preferences pull it further away. In the loss, a larger β
+makes each unit of log-ratio count for more, so pairs are satisfied with a
+smaller departure.
 
 **Q: Why is B initialised to zero in LoRA?**
 A: So B·A = 0 and the adapted model starts exactly equal to the pretrained
@@ -804,8 +814,9 @@ def dpo_margin(
 ) -> float:
     """beta × [(log π(y_w) - log π_ref(y_w)) - (log π(y_l) - log π_ref(y_l))].
 
-    Each bracket is the policy's *implicit reward* for an answer: how much
-    more likely the policy makes it than the frozen reference model did.
+    Each bracket is a log-ratio: how much more likely the policy makes an
+    answer than the frozen reference model did. beta times it is that
+    answer's *implicit reward*, so the margin is r̂(chosen) - r̂(rejected).
     Inputs are total log-probabilities of whole answers (sums over tokens).
     """
     return beta * ((policy_chosen - ref_chosen) - (policy_rejected - ref_rejected))

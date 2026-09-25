@@ -203,7 +203,7 @@ def share_plus(tau):
 round(share_plus(1), 3), round(share_plus(0.05), 3)  # → (0.289, 0.948)
 ```
 
-![Share of the right answer vs. temperature](figures/primer.ml.embeddings.contrastive.temperature.svg)
+![With the right card 0.2 ahead in cosine it gets under a third of the softmax share at temperature 1 and about 95% at temperature 0.05](figures/primer.ml.embeddings.contrastive.temperature.svg)
 
 **Reading it:** the horizontal axis is τ (log scale), the vertical axis is
 the right card's softmax share when it beats three wrong cards by 0.2 in
@@ -255,7 +255,7 @@ question, a card that has the right topic but the wrong intent. Both models
 then take the same exam: for a question about an unseen topic, does the
 right card beat its look-alike?
 
-![Look-alike test accuracy during training](figures/primer.ml.embeddings.contrastive.training.svg)
+![Without hard negatives the model stays mostly below a coin flip on look-alike cards and ends near 60%, while with hard negatives it reaches 100% within ten steps](figures/primer.ml.embeddings.contrastive.training.svg)
 
 **Reading it:** the horizontal axis is training steps, the vertical axis is
 the share of held-out questions whose right card beats the same-topic
@@ -267,7 +267,7 @@ learned about topics. With hard negatives the model reaches 100% within ten
 steps, *on topics it never trained on*, because it learned what "fix" and
 "rules" mean.
 
-![Where held-out questions and answers land](figures/primer.ml.embeddings.contrastive.space.svg)
+![With in-batch negatives only, held-out questions and cards group by topic; with hard negatives they split by intent, each question beside the card that answers it](figures/primer.ml.embeddings.contrastive.space.svg)
 
 **Reading it:** each panel squashes the embeddings of the four unseen topics
 to 2-D with PCA (the two most spread-out directions; see `primer.notation`).
@@ -277,7 +277,7 @@ by *topic*, and how-to and policy questions sit on top of each other. With
 hard negatives (right), they split by *intent*, and each question sits next
 to the kind of card that actually answers it.
 
-![Question-by-card similarity for the unseen "password" topic](figures/primer.ml.embeddings.contrastive.heatmap.svg)
+![On the unseen password topic, the in-batch-only model scores both cards almost alike, while the hard-negative model lights up the reset card for how-to questions and the policy card for policy questions](figures/primer.ml.embeddings.contrastive.heatmap.svg)
 
 **Reading it:** rows are the ten "password" questions (five how-to, then five
 policy), columns are the two password cards, and brighter means a higher
@@ -395,13 +395,17 @@ embed it, and pick the label whose caption is closest.
 feature spaces. Before training, zero-shot labeling is near chance (20% for
 five classes); after training it's above 90%.
 
-![Image-by-caption similarity after training](figures/primer.ml.embeddings.contrastive.clip.svg)
+![After training, 36 of the 40 test images are most similar to their own label's caption, forming a diagonal staircase; the 4 misses are mostly classes 0 and 4 mistaken for each other](figures/primer.ml.embeddings.contrastive.clip.svg)
 
 **Reading it:** rows are 40 test images sorted by their true class, columns
 are the five label captions, and brighter means more similar. Each block of
-rows lights up in exactly one column, its own label. That diagonal staircase
-is zero-shot classification working: no classifier was trained, just two
-encoders that agree on where meanings live.
+rows lights up brightest in its own label's column, and that diagonal
+staircase is zero-shot classification working: no classifier was trained,
+just two encoders that agree on where meanings live. It isn't perfect. Look
+for the rows whose brightest cell sits in the wrong column: 4 of these 40
+images are closest to another class's caption, three of them classes 0 and 4
+mistaken for each other. Over all 500 held-out test images the accuracy is
+92%, the number in the figure's title.
 
 **Why it matters:** the shared space enables search across modalities
 (find images with text, or text with images), zero-shot classification,

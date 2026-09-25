@@ -242,7 +242,7 @@ d = 8
 d * 4 * d + 4 * d + 4 * d * d + d  # → 552
 ```
 
-![GELU next to ReLU](figures/primer.ml.transformer.gelu_vs_relu.svg)
+![GELU tracks ReLU far from zero but bends smoothly through it and dips slightly below zero for small negatives](figures/primer.ml.transformer.gelu_vs_relu.svg)
 
 **Reading it:** the x-axis is the number going into the activation and the
 y-axis is what comes out. ReLU (grey) is a hard hinge: zero for every
@@ -367,14 +367,17 @@ only the past is what makes generation possible.
 | Decoder-only    | GPT, Claude, Llama       | Causal        | Generation, chat, agents        |
 | Encoder-decoder | T5, original transformer | Both          | Translation, summarization      |
 
-![Encoder vs. decoder attention patterns](figures/primer.ml.transformer.masks.svg)
+![The encoder spreads attention over the whole grid; the decoder's upper-right triangle is empty, and only the last row matches](figures/primer.ml.transformer.masks.svg)
 
 **Reading it:** both panels are attention weights from one block on the
 same 6 input vectors; rows are the token looking, columns the token looked
 at, darker is more weight. On the left (encoder) weight is spread over the
 whole grid. On the right (decoder) the upper-right triangle is empty, so
-nothing reads the future. The bottom rows are identical in both panels: the
-last token sees everything either way.
+nothing reads the future. Only the bottom row is identical in both panels:
+the last token sees everything either way, so the mask changes nothing for
+it. Every other decoder row differs, because its weights are shared out over
+only the tokens it may see: the first token, seeing only itself, puts all
+of its weight (1.0) there.
 
 **In code:** `TransformerBlock` with its causal flag on is a decoder block and with it off an encoder block; `mask_patterns` runs one of each on the same input to draw the figure.
 
@@ -390,7 +393,10 @@ blueprint, without opening the box.
 (W_q, W_k, W_v, W_o), feed-forward 8·d² (two d × 4d matrices), plus small
 bias and norm terms. With d = 32: 12 · 1,024 = 12,288, plus 160 (biases) plus
 128 (norms) = 12,576 per block. Two blocks, plus tables of 50 × 32 and 16 × 32
-and a final norm of 64, gives **27,328**. The same recipe gives GPT-2 small
+and a final norm of 64, gives **27,328**. The same recipe on GPT-2 small
+(d = 768, 12 blocks, 50,257 tokens, 1,024 positions) gives 124,402,944.
+GPT-2 also puts a bias on its attention projections, which the tiny model
+leaves out: 4·d = 3,072 more per block, 36,864 in all, and that brings it to
 exactly its published **124,439,808**.
 
 ```mermaid
@@ -442,7 +448,7 @@ print(f"{blocks:,} + {table:,} = {blocks + table:,}")  # → 84,934,656 + 38,597
 round((124_439_808 - (blocks + table)) / 124_439_808, 3)  # → 0.007
 ```
 
-![Where GPT-2's parameters live](figures/primer.ml.transformer.param_breakdown.svg)
+![Feed-forward is always the largest share; embeddings fall from 32% of GPT-2 small to 5% of XL](figures/primer.ml.transformer.param_breakdown.svg)
 
 **Reading it:** each bar is one GPT-2 size, split by where the parameters
 live. Feed-forward (red) is always the largest block of the stack. In the
@@ -573,12 +579,12 @@ balance([0.25] * n, [0.25] * n)  # → 1.0
 balance([1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])  # → 4.0
 ```
 
-![Tokens per expert with an untrained router](figures/primer.ml.transformer.moe_load.svg)
+![An untrained router is lopsided: experts 3 and 5 get 75 tokens each, expert 2 only 51, against an even 64](figures/primer.ml.transformer.moe_load.svg)
 
 **Reading it:** each bar counts how many of 256 tokens an untrained router
 sent to each of 8 experts (top-2, so 512 slots in all); the dashed line is the
-perfectly even 64. Expert 3 gets 99 tokens while others get about 55: even
-random routing is lopsided, and in training the imbalance compounds because
+perfectly even 64. Experts 3 and 5 get 75 tokens each while expert 2 gets
+only 51: even random routing is lopsided, and in training the imbalance compounds because
 favoured experts improve and attract more traffic. The balancing loss pushes
 the bars back towards the line.
 
@@ -1136,13 +1142,22 @@ def demo() -> None:
         ["model", "width", "layers", "parameters"],
         [(n, d, L, f"{gpt_param_count(50257, d, L, 1024):,}") for n, (d, L) in GPT2_SIZES.items()],
     )
-    say("GPT-2 small comes out at exactly its published 124,439,808. Roughly 12·layers·width² plus the embeddings.")
+    no_attn_bias = gpt_param_count(50257, 768, 12, 1024, attn_bias=False)
+    say(
+        f"""
+        GPT-2 small comes out at exactly its published 124,439,808, counting the
+        attention biases GPT-2 has (4·width per block). Without them, as in the
+        tiny model above, it is {no_attn_bias:,}. Roughly 12·layers·width² plus
+        the embeddings.
+        """
+    )
 
     banner("5. Mixture of Experts: a triage desk")
     gates = top_k_gates(np.array([[2.0, 1.0, 0.5, -1.0]]), k=2)
     say(f"Router scores (2, 1, 0.5, -1) -> gates {np.round(gates[0], 3).tolist()}: experts 0 and 1, 73% / 27%.")
     moe = MixtureOfExperts(d_model=16, n_experts=8, k=2)
-    moe(rng.standard_normal((256, 16)))
+    # The same 256 tokens as the figure, so the counts printed here are the bars drawn there.
+    moe(np.random.default_rng(1).standard_normal((256, 16)))
     say(
         f"""
         8 experts hold {moe.n_params():,} parameters but each token touches only

@@ -24,7 +24,7 @@ This lesson uses 30 short IT, HR and finance support tickets (five kinds, six
 of each) and two off-topic ones, embedded with the repo's toy embedder
 (`primer.common.embedder`).
 
-![Ticket-by-ticket similarity](figures/primer.ml.embeddings.clustering.similarity.svg)
+![Tickets of the same kind form five bright squares along the diagonal, and the two off-topic tickets are dark almost everywhere](figures/primer.ml.embeddings.clustering.similarity.svg)
 
 **Reading it:** rows and columns are the 32 tickets in the same order, grouped
 by kind, and brighter cells mean a higher cosine similarity. The five bright
@@ -103,7 +103,7 @@ J = sum((x_i[0] - mu[c_i][0]) ** 2 + (x_i[1] - mu[c_i][1]) ** 2
 J  # → 1.0
 ```
 
-![k-means, round by round](figures/primer.ml.embeddings.clustering.kmeans_steps.svg)
+![k-means centres drift into the middle of their crowds round by round while the total squared distance only goes down](figures/primer.ml.embeddings.clustering.kmeans_steps.svg)
 
 **Reading it:** three snapshots of k-means on 2-D points. Colours are the
 current assignments and black crosses are the centres. On the left, the
@@ -166,7 +166,7 @@ a, round(b, 3)  # → (1.0, 10.025)
 round((b - a) / max(a, b), 3)  # → 0.9
 ```
 
-![Choosing k: inertia and silhouette](figures/primer.ml.embeddings.clustering.choose_k.svg)
+![Inertia falls at every k, so it cannot pick k, while the silhouette peaks clearly at the true k of 5](figures/primer.ml.embeddings.clustering.choose_k.svg)
 
 **Reading it:** both panels sweep k from 2 to 8 on the 30 tickets. On the
 left, inertia always falls as k grows (more boxes, shorter walks), so the
@@ -248,7 +248,7 @@ points, the self-loop on the "Add" box, until the crowd's edge is reached.
 **In code:** `dbscan` finds the core points, floods each cluster outward
 through them, and labels everything unreached −1 (noise).
 
-![DBSCAN on the tickets](figures/primer.ml.embeddings.clustering.dbscan.svg)
+![DBSCAN at reach 0.6 marks exactly the two off-topic tickets as noise but merges the VPN and printer tickets into one cluster](figures/primer.ml.embeddings.clustering.dbscan.svg)
 
 **Reading it:** the tickets drawn on the 2-D map from the next section,
 coloured by the clusters DBSCAN found (cosine distance, so ε = 0.6 means
@@ -258,15 +258,20 @@ exist. Notice that VPN and printer tickets share a cluster: a chain of
 tickets that are each close to the next ("can't connect", "not working",
 "offline") bridges the two kinds.
 
-![How the reach ε changes DBSCAN's answer](figures/primer.ml.embeddings.clustering.eps_sweep.svg)
+![No reach gets DBSCAN right: small reaches strand real tickets as noise, and by the time noise is only the off-topic pair the kinds have begun chaining together](figures/primer.ml.embeddings.clustering.eps_sweep.svg)
 
 **Reading it:** the horizontal axis is the reach ε. The blue line counts
 clusters and the orange line counts noise points; the dashed line marks the
-two truly off-topic tickets. With a small reach, DBSCAN finds all five kinds
-but strands genuine tickets as noise. As the reach grows, noise falls to
-just the off-topic pair, but kinds start **chaining** together (A is near B,
-B is near C, so A and C end up in one cluster) until only two clusters are
-left. No single ε gets everything right, and on real data you rarely know
+two truly off-topic tickets. At the smallest reach (0.45) most tickets have
+too few neighbours: DBSCAN finds only three clusters and calls 22 of the 32
+tickets noise. Between 0.5 and 0.55 it finds all five kinds, but still
+strands genuine tickets as noise (15, then 9). By 0.6 noise is down to just
+the off-topic pair, but kinds have already started **chaining** together (A
+is near B, B is near C, so A and C end up in one cluster): VPN and printer
+share a cluster, so only four are left. Keep widening and the chains keep
+growing, to three clusters, then two, until by 0.825 one cluster holds every
+kind and has swallowed an off-topic ticket as well, leaving a single noise
+point. No single ε gets everything right, and on real data you rarely know
 where the sweet spot is.
 
 That's the problem **HDBSCAN** solves. It effectively runs DBSCAN at every
@@ -323,7 +328,7 @@ sigma = [math.sqrt(sum((x * u_j[0] + y * u_j[1]) ** 2 for x, y in centred))
 [round(sigma_j ** 2 / sum(sigma_k ** 2 for sigma_k in sigma), 3) for sigma_j in sigma]  # → [1.0, 0.0]
 ```
 
-![The tickets on a 2-D map](figures/primer.ml.embeddings.clustering.map.svg)
+![Squashed to 2-D, each kind of ticket forms its own patch with its k-means centre inside it](figures/primer.ml.embeddings.clustering.map.svg)
 
 **Reading it:** the 128-dimensional ticket embeddings squashed to 2-D with
 PCA, coloured by their true kind; black crosses are the k-means centres,
@@ -427,7 +432,7 @@ def route(q):
 [round(cos((0.1, 0.2, 0, 1), mu_r), 2) for mu_r in mu.values()], route((0.1, 0.2, 0, 1))  # → ([0.1, 0.2, 0.0], 'fallback')
 ```
 
-![Router scores for three requests](figures/primer.ml.embeddings.clustering.router.svg)
+![The VPN complaint clears the threshold only for IT, the receipt question only for finance, and the off-topic question for no route, so it goes to a human](figures/primer.ml.embeddings.clustering.router.svg)
 
 **Reading it:** each group of bars is one incoming request; each bar is its
 cosine with one route's centroid; the dashed line is the threshold θ. The

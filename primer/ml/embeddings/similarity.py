@@ -182,7 +182,7 @@ arrow to length 1. After it, the dot product *is* the cosine, and distance is
 a decreasing function of the cosine. So **once vectors are L2-normalized,
 cosine, dot product and Euclidean distance give the same ranking.**
 
-![Squared distance vs. cosine for random unit vectors](figures/primer.ml.embeddings.similarity.identity.svg)
+![All 400 random unit-vector pairs fall exactly on the line squared distance = 2 - 2 x cosine, so higher cosine always means smaller distance](figures/primer.ml.embeddings.similarity.identity.svg)
 
 **Reading it:** each dot is one pair of random unit vectors. The horizontal
 axis is their cosine and the vertical axis is their squared Euclidean
@@ -233,7 +233,7 @@ win ties. Cosine throws that away; the dot product keeps it.
 
 Cosine prefers the niche item; the dot product prefers the popular one.
 
-![Two items against one query: direction vs. length](figures/primer.ml.embeddings.similarity.arrows.svg)
+![The short item points almost along the query and wins on cosine (0.99 vs 0.95); the item three times longer wins on dot product (2.85 vs 0.99)](figures/primer.ml.embeddings.similarity.arrows.svg)
 
 **Reading it:** the black arrow is the query. The blue arrow (niche item)
 points almost exactly the same way but is short. The orange arrow (popular
@@ -299,7 +299,7 @@ for d in (2, 1000):
     print(d, f"{ratio(q, xs):.1g}")  # → 2 0.02 1000 0.9
 ```
 
-![Nearest / farthest distance ratio vs. dimension](figures/primer.ml.embeddings.similarity.curse.svg)
+![The nearest-to-farthest distance ratio rises from about 0 in 2 dimensions to 0.8 at 200 and 0.92 at 2,000: random points become almost equidistant](figures/primer.ml.embeddings.similarity.curse.svg)
 
 **Reading it:** the horizontal axis is the number of dimensions (log scale);
 the vertical axis is the nearest-to-farthest ratio above. In 2-D the ratio is
@@ -376,7 +376,7 @@ def cos_formula(rho):
 round(cos_formula(0), 2), round(cos_formula(0.4), 2)  # → (0.75, 0.85)
 ```
 
-![Cosine scores of related and unrelated pairs, raw and mean-centered](figures/primer.ml.embeddings.similarity.anisotropy.svg)
+![Raw cosines crowd paraphrases (0.76 to 0.87) and unrelated pairs (0.72 to 0.78) together; mean-centred, unrelated sit near 0 and paraphrases near 0.3](figures/primer.ml.embeddings.similarity.anisotropy.svg)
 
 **Reading it:** the left panel shows raw cosine scores for 300 paraphrase
 pairs (one colour) and 300 unrelated pairs (the other). Both piles sit
@@ -450,7 +450,7 @@ so it is *measured*, not guessed. Label pairs, score them, sweep, and pick.
 The loop back from "model upgraded" is the step people forget: a new model
 has a different score distribution, so the old threshold is meaningless.
 
-![F1 vs. threshold on the anisotropic model](figures/primer.ml.embeddings.similarity.threshold.svg)
+![F1 on raw scores swings within a few hundredths: the calibrated threshold 0.776 reaches F1 0.99, while the guessed 0.80 drops to 0.87](figures/primer.ml.embeddings.similarity.threshold.svg)
 
 **Reading it:** the curve is F1 at each candidate threshold on the raw
 anisotropic scores. The dashed line is the "obvious" guess of 0.8; the

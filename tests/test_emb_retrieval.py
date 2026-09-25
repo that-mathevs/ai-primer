@@ -137,6 +137,16 @@ class TestCrossEncoderReranking:
         assert judge.coverage("what are the password rules", policy) == 1.0
         assert judge.coverage("what are the password rules", reset) == 0.5
 
+    def test_given_password_rules_the_policy_scores_about_1_78_and_the_reset_how_to_about_0_69(self):
+        from primer.ml.embeddings.retrieval import CrossEncoder
+
+        # coverage + 0.5·phrase + 0.25·exact + 0.25·cosine, by hand from the lesson's table:
+        # policy 1.0 + 0.5·1.0 + 0.25·0.5 + 0.25·0.63 ≈ 1.78; how-to 0.5 + 0 + 0.25·0.5 + 0.25·0.27 ≈ 0.69.
+        judge = CrossEncoder()
+        policy, reset = (next(d for d in DOCS if d.id == i) for i in ("it-002", "it-001"))
+        scores = (judge.score("what are the password rules", policy), judge.score("what are the password rules", reset))
+        assert scores == (pytest.approx(1.78, abs=0.005), pytest.approx(0.69, abs=0.005))
+
     def test_when_reranked_the_password_policy_ranks_first(self, engine):
         from primer.ml.embeddings.retrieval import retrieve_then_rerank
 

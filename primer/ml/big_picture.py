@@ -268,20 +268,24 @@ round(total, 1)  # → 64.7
 [round(e / total, 3) for e in exps]  # → [0.844, 0.114, 0.042]
 ```
 
-![Temperature reshapes the same three scores](figures/primer.ml.big_picture.temperature.svg)
+![At T = 0.25 token A takes 98% of the probability; at T = 2 the three tokens share it 48%, 29% and 23%](figures/primer.ml.big_picture.temperature.svg)
 
 **Reading it:** three groups of bars, one per candidate token; within each
 group the bars run from low temperature (left) to high (right). For token A
 the bars fall as temperature rises, and for tokens B and C they rise. At
 T = 0.25, A takes almost everything; at T = 2 the three are much closer.
 
-![What an untrained model predicts next](figures/primer.ml.big_picture.untrained_next_token.svg)
+![The untrained model's 12 favourites are random byte fragments, each only 1.25 to 1.4 times the uniform 1-in-400 share](figures/primer.ml.big_picture.untrained_next_token.svg)
 
 **Reading it:** the bars are the 12 most probable next tokens after "The cat
 sat on the", according to our untrained model; the dashed line is a uniform
-guess, 1 in 400. Every bar sits almost on that line and the "favourites" are
-random byte fragments. That is exactly what random weights should give: the
-machinery works, but nothing has been learned yet.
+guess, 1 in 400 (0.25%). Even these favourites clear the line only
+modestly: the top one gets about 0.35%, 1.4 times the uniform share, and the
+twelfth about 1.25 times. Across all 400 tokens every probability stays
+between 0.74 and 1.39 times uniform, and the "favourites" are random byte
+fragments. That is exactly what random weights should give: a nearly flat
+guess with small random bumps. The machinery works, but nothing has been
+learned yet.
 
 **Why it matters.** Use low temperature for extraction and tool calls,
 where you want the most likely answer, and higher temperature for creative
@@ -346,7 +350,7 @@ sum(p + t for t in range(n))  # → 14
 n * p + n * (n - 1) // 2  # → 14
 ```
 
-![Positions processed with and without a cache](figures/primer.ml.big_picture.loop_cost.svg)
+![Without a cache work grows with the square of output length, 23,900 positions at 200 tokens against 219 with a KV cache](figures/primer.ml.big_picture.loop_cost.svg)
 
 **Reading it:** the x-axis is how many tokens have been generated after a
 20-token prompt; the y-axis is total work in token positions. The red curve

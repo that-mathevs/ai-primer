@@ -50,10 +50,10 @@ token.
 | 0.1 | 2.30 |
 | 0.01 | 4.61 |
 
-Being confidently wrong (1%) costs about **40×** more than being mostly
+Being confidently wrong (1%) costs about **44×** more than being mostly
 right (90%): 4.61 / 0.105 ≈ 44.
 
-![Cross-entropy loss as a function of the probability on the correct answer](figures/primer.ml.losses.cross_entropy.svg)
+![The loss −ln p is near zero and flat above 90% but climbs steeply to 4.61 at p = 0.01](figures/primer.ml.losses.cross_entropy.svg)
 
 **Reading it:** the horizontal axis is how much probability the model put on
 the right answer; the vertical axis is the loss it pays. Start at the right
@@ -302,7 +302,7 @@ Worked example: four predictions miss by 1 and one misses by 10.
 MSE = (1 + 1 + 1 + 1 + 100) / 5 = **20.8**, and the outlier is 100/104 = 96% of
 it. MAE = (1 + 1 + 1 + 1 + 10) / 5 = **2.8**, and the outlier is 10/14 = 71%.
 
-![MSE vs. MAE penalty per error, and where each puts the best constant prediction](figures/primer.ml.losses.mse_vs_mae.svg)
+![The squared penalty pulls away past an error of 1, and one outlier drags MSE's best constant to the mean 5.0 while MAE's stays at the median 3](figures/primer.ml.losses.mse_vs_mae.svg)
 
 **Reading it:** the left panel is the price of a single error. Near zero the
 two curves are similar, but past an error of 1 the squared penalty climbs
@@ -388,7 +388,7 @@ passages is mine?") whose right answer is on the diagonal. Cross-entropy on
 those rows pulls each query toward its own passage and away from all the
 others at once.
 
-![InfoNCE probability matrix for a batch with one hard negative](figures/primer.ml.losses.infonce_matrix.svg)
+![Rows 0, 1 and 3 put over 0.9 on their own passage; row 2 puts 0.91 on the hard negative and only 0.07 on its own](figures/primer.ml.losses.infonce_matrix.svg)
 
 **Reading it:** rows are queries, columns are passages, and each cell is the
 probability that query i "picks" passage j. A well-trained model shows a
@@ -544,7 +544,7 @@ was used to train the original transformer.
 ## Self-test questions
 
 **The model puts 1% on the right token. What's the loss, and why so large?**
-−ln(0.01) = 4.61, about 40× the loss at 90%. The log punishes confident
+−ln(0.01) = 4.61, about 44× the loss at 90% (0.105). The log punishes confident
 mistakes steeply, which pushes the model toward calibrated probabilities.
 
 **Loss is 0.69 per token. What's the perplexity?**

@@ -71,7 +71,7 @@ change which point is nearest.
 Checking all eight rows is **flat search**. It's exact, and it costs one
 distance per stored point.
 
-![The eight-point map, its two HNSW layers and the search path](figures/primer.ml.embeddings.ann.toy_map.svg)
+![On the eight-point map, HNSW reaches the query's nearest point in two hops, one along the highway from A to E and one along a street from E to H](figures/primer.ml.embeddings.ann.toy_map.svg)
 
 **Reading it:** the eight dots are the stored points and the yellow star is
 the query at (5, 4). Thin grey lines are the "streets" (layer 0: every point,
@@ -192,7 +192,7 @@ The set of all points closer to one centroid than to any other is called that
 centroid's **Voronoi cell**: the "section" of the library. IVF's blind spot
 is a true neighbor sitting just across a cell boundary.
 
-![IVF cells and the two a query probes](figures/primer.ml.embeddings.ann.ivf_cells.svg)
+![IVF compares the query with 12 centroids and scans only the two nearest cells, so every point in the other ten cells is never looked at](figures/primer.ml.embeddings.ann.ivf_cells.svg)
 
 **Reading it:** 600 points, colored by which of 12 centroids (black X) they
 belong to; each color patch is a Voronoi cell. The query (yellow star)
@@ -363,7 +363,7 @@ vectors kept on disk. Real systems combine PQ with IVF (**IVF-PQ**) and
 encode each vector's *residual* (its offset from its cluster centroid),
 which is smaller and so rounds more precisely.
 
-![Bytes per vector vs. recall, with and without re-scoring](figures/primer.ml.embeddings.ann.pq_tradeoff.svg)
+![PQ scores alone find under half of the true top 10 at 8 bytes per vector, while re-scoring PQ's shortlist with exact vectors is near perfect from 8 bytes up](figures/primer.ml.embeddings.ann.pq_tradeoff.svg)
 
 **Reading it:** left to right, each vector gets more bytes (less
 compression). The orange line uses PQ scores alone: at 8 bytes per vector
@@ -443,15 +443,17 @@ exploring from the most promising. That wider net is what protects against
 getting stuck at a point that is only *locally* the best. `efSearch` is the
 dial you tune at query time.
 
-![One HNSW query on 300 points, layer by layer](figures/primer.ml.embeddings.ann.hnsw_search_path.svg)
+![One HNSW query takes a couple of long hops on the 14-node layer, a few on the 64-node layer, then a small local search among all 300 points, comparing only 51 vectors in all](figures/primer.ml.embeddings.ann.hnsw_search_path.svg)
 
-**Reading it:** the same 300 points, drawn three times: the top layer on the
-left (14 nodes), the middle (64) and the bottom (all 300). Grey lines are the
-graph's links. The red path is one real query (yellow star) run by the code
-below; the red circle marks where the search entered each layer. On the left
-it covers most of the map in a couple of long hops. By the bottom layer it
-is already next to the star, and it only explores a small neighborhood. Out
-of 300 points, it looked at a few dozen.
+**Reading it:** this graph has four layers: 300 nodes at the bottom, then
+64, then 14, and a single node on top, which is the entry point. The top
+layer has nothing to hop to, so the figure leaves it out and draws the other
+three, left to right: 14 nodes, 64, and the bottom with all 300. Grey lines
+are the graph's links. The red path is one real query (yellow star) run by
+the code below; the red circle marks where the search entered each layer. On
+the left it covers most of the map in a couple of long hops. By the bottom
+layer it is already next to the star, and it only explores a small
+neighborhood. Out of 300 points, it compared the query with 51, a few dozen.
 
 **In code:** `HNSWIndex.search` runs the greedy descent and the bottom-layer
 beam search; `HNSWIndex.search_trace` does the same and returns every node it
@@ -553,7 +555,7 @@ shard HNSW across machines, or use disk-based graphs (DiskANN).
 
 ## Turning the dial: recall vs. work
 
-![Recall vs. share of the corpus compared, for HNSW and IVF](figures/primer.ml.embeddings.ann.recall_vs_work.svg)
+![Both HNSW and IVF rise steeply and then flatten as their dial widens, and HNSW reaches about 0.95 recall while comparing around a fifth of the 2,000 vectors](figures/primer.ml.embeddings.ann.recall_vs_work.svg)
 
 **Reading it:** each point is one setting of the dial (the small labels are
 efSearch for HNSW and nprobe for IVF). The x-axis is the share of the whole

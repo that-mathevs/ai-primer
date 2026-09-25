@@ -168,7 +168,7 @@ round(1 / (k + 1) + 1 / (k + 3), 4)  # → 0.0323
 round(1 / (k + 1), 4)  # → 0.0164
 ```
 
-![recall@k for keyword, dense, hybrid and hybrid plus reranking](figures/primer.agents.rag.recall.svg)
+![Dense search plateaus at 92% recall because it never finds the error code, while hybrid reaches 100% by k = 2 and reranking lifts its top-1 from 75% to 92%](figures/primer.agents.rag.recall.svg)
 
 **Reading it:** the x-axis is how many passages you keep (k); the y-axis is
 **recall@k**, the share of the 12 labelled questions whose correct document
@@ -365,13 +365,17 @@ where it comes from. Here that's just the title and department; Anthropic's
 version asks a model to write one sentence situating the chunk in its
 document.
 
-![Rank of the passage containing the fix, with and without a context line](figures/primer.agents.rag.contextual.svg)
+![Without a context line the fix passage misses the top 20 for all three phrasings; with the title prefixed it ranks 2nd, 2nd and 4th](figures/primer.agents.rag.contextual.svg)
 
 **Reading it:** three ways of asking how to fix ERR-4012; each pair of bars
 is the rank of the passage "Update AnyConnect to version 5.1 or later and
 reboot." (shorter is better, and 21 means not in the top 20). Without
-context the passage never mentions ERR-4012, so it ranks poorly or not at
-all. With the title prefixed, it's in the top three every time.
+context the passage never mentions ERR-4012, and for all three phrasings it
+doesn't make the top 20 at all. With the title prefixed it ranks 2nd, 2nd
+and 4th: in the top five every time, though "resolve ERR-4012 on my
+laptop" still ranks three passages from the laptop guide above it. A context line turns
+"never found" into "found", and ranking the right passage first is then
+the reranker's job.
 
 ## Agentic RAG: let the model decide when and what to search
 
@@ -478,7 +482,7 @@ measurement, not a guess. Most teams jump straight to the bottom-right box
 and edit the prompt; the diagram says to rule out the three earlier failure
 points first, because they're more common and a prompt can't fix them.
 
-![Where the wrong answers come from, by retrieval method](figures/primer.agents.rag.diagnosis.svg)
+![Dense search has the only retrieval miss; switching to hybrid removes it, and the wrong answers left are generation misses](figures/primer.agents.rag.diagnosis.svg)
 
 **Reading it:** each bar is one retrieval method over the 12 labelled
 questions, split into ok (green), generation misses (orange) and retrieval

@@ -123,6 +123,13 @@ class TestActionPolicy:
         policy.record({"amount": 80})
         assert policy.check("refund", {"amount": 30}).verdict == "deny"
 
+    def test_given_a_refund_over_the_sign_off_threshold_that_would_also_break_the_cap_it_is_denied_not_escalated(self):
+        # The lesson's worked table: 40 already spent, then 120 against a cap of 150.
+        # The cap is checked first, so no person is asked to approve a refund that can't happen.
+        policy = ActionPolicy(allowed_tools={"refund"}, spend_cap=150, approval_over=100)
+        policy.record({"amount": 40})
+        assert policy.check("refund", {"amount": 120}).verdict == "deny"
+
     def test_given_an_email_to_an_outside_domain_a_human_must_approve(self):
         policy = ActionPolicy(allowed_tools={"send_email"}, internal_domains={"example.com"})
         assert policy.check("send_email", {"to": "x@evil.example"}).verdict == "needs_approval"
@@ -145,6 +152,10 @@ class TestPrivilegeSeparation:
     def test_given_the_user_only_asked_for_a_summary_even_a_benign_reply_waits_for_the_user(self):
         # Actions proposed by email content never run on the email's say-so, however harmless.
         assert {"action": "reply", "target": "dana@example.com"} in run_separated_agent(INBOX)["blocked"]
+
+    def test_given_four_phrasings_of_one_attack_the_detector_catches_only_the_blunt_and_hidden_comment_ones(self):
+        detected = {o["variant"] for o in attack_outcomes() if o["detected"]}
+        assert detected == {"blunt", "hidden comment"}
 
     def test_given_every_attack_variant_only_the_naive_design_leaks(self):
         outcomes = attack_outcomes()

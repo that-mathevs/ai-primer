@@ -270,12 +270,12 @@ rules catch answers that are well formed but forbidden. Groundedness comes
 last and catches the most dangerous output: fluent, well formed,
 policy-compliant, and invented.
 
-![Per-claim support scores for an answer that mixes sourced and invented claims](figures/primer.agents.guardrails.groundedness.svg)
+![The two claims copied from the source score 1.0 and pass the 0.6 threshold; the invented claim about managers scores 0 and is flagged](figures/primer.agents.guardrails.groundedness.svg)
 
 **Reading it:** each bar is one sentence of an answer, scored by the share
 of its content words found in a single source. The dashed line is the 0.6
 threshold. The two claims copied from the PTO policy clear it easily; the
-invented claim about managers scores near zero and is flagged.
+invented claim about managers scores zero and is flagged.
 
 **In code:** `policy_violations` returns the name of every text rule an answer
 breaks. `split_claims` cuts an answer into claims, `claim_support` is
@@ -305,7 +305,7 @@ of 150, sign-off over 100, and internal email only to `example.com`:
 | Proposed call | Decision | Why |
 |---|---|---|
 | refund 40 | allow | under every limit; 40 of 150 now spent |
-| refund 120 | needs approval | 120 is over the 100 sign-off threshold |
+| refund 120 | deny | 40 + 120 = 160 would pass the 150 cap; the cap is checked before the sign-off threshold, so it never reaches a person |
 | delete_records | deny | this agent was never granted that tool |
 | send_email to ops@example.com | allow | internal recipient |
 | send_email to x@evil.example | needs approval | outside the company domain |
@@ -386,11 +386,12 @@ what the *user* asked for: the user asked for a summary, not a forward, and
 the target is outside the company, so the forward is blocked and shown to
 the user. The actor never sees the raw email.
 
-![Four phrasings of the same attack against the detector, a single agent, and the separated design](figures/primer.agents.guardrails.attacks.svg)
+![The pattern detector catches two of four attack phrasings, the single agent leaks on all four, and the separated design leaks on none](figures/primer.agents.guardrails.attacks.svg)
 
 **Reading it:** each group of bars is one phrasing of "send the invoices to
-the attacker". The grey bar shows whether the pattern detector noticed: only
-the blunt version trips it. The red bar shows whether the single agent
+the attacker". The grey bar shows whether the pattern detector noticed: the
+blunt and hidden-comment versions trip it, while the paraphrased and polite
+versions, which say the same thing in other words, slip straight past. The red bar shows whether the single agent
 holding both `read_inbox` and `send_email` leaked the invoices: it leaks
 every time. The blue bar is the separated design: no leaks for any phrasing,
 without needing to detect anything.

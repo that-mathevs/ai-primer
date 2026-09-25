@@ -46,7 +46,7 @@ forward pass turns them into predictions; the loss scores how wrong those
 predictions were as a single number; backpropagation works out, for every
 weight, which direction would have made that number smaller; the optimizer
 nudges each weight a small step that way. Then the next batch arrives. The
-single-knob table above is one trip around this loop, four times.
+single-knob table above is one trip around this loop, three times.
 
 The update rule, for every weight at once, with learning rate η:
 
@@ -328,7 +328,7 @@ def phi(z): return max(0, z)
 [phi(x * W_1) * W_2 for x in [-1, 1]]  # → [0, 6]
 ```
 
-![Decision boundaries: logistic regression vs. a one-hidden-layer MLP on two moons](figures/primer.ml.neural_net.decision_boundaries.svg)
+![Two-moons decision boundaries: logistic regression's straight line misclassifies the moon tips (88%), while one hidden tanh layer bends around the gap (100%)](figures/primer.ml.neural_net.decision_boundaries.svg)
 
 **Reading it:** both panels show the same two interleaving half-moons,
 coloured by class; the shaded background is what each model predicts at
@@ -361,7 +361,7 @@ sigmoid′, means "the slope of"):
 | 0 | 0 | 0.5 | **0.25** (its maximum) | **1** (its maximum) | 0 |
 | 1 | 1 | 0.731 | 0.197 | 0.420 | 0.841 |
 
-![Activation functions and their derivatives](figures/primer.ml.neural_net.activations.svg)
+![Activations and their slopes: sigmoid's slope peaks at 0.25 and sigmoid and tanh slopes vanish past |z| = 3, while ReLU's slope is a clean step from 0 to 1](figures/primer.ml.neural_net.activations.svg)
 
 **Reading it:** the left panel shows each activation's output, the right its
 derivative, which is how much gradient passes back through it. Look at the
@@ -538,7 +538,7 @@ flowchart LR
 every batch produces exactly one weight update. Shuffling each epoch means
 batches differ every time, so the gradient noise doesn't repeat.
 
-![Training loss per epoch for the MLP on two moons](figures/primer.ml.neural_net.training_curve.svg)
+![Training loss per epoch on a log axis: slow at first, a steep fall once hidden units find features, then a flat tail near zero](figures/primer.ml.neural_net.training_curve.svg)
 
 **Reading it:** the horizontal axis counts epochs on a log scale; the vertical
 axis is the loss on the whole training set after each one. Loss drops slowly

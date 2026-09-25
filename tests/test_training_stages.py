@@ -70,6 +70,17 @@ class TestDirectPreferenceOptimization:
         assert before[0] == pytest.approx(1 / 3)  # starts uniform over three candidate answers
         assert after[0] > 0.6
 
+    def test_when_a_toy_policy_trains_for_50_steps_the_rambling_answer_falls_more_slowly_than_the_rude_one(self):
+        # Rambling loses one pair and wins one, rude loses both: from 1/3 each, rambling is at 0.166, rude at 0.035.
+        # Values from an independent pure-Python rerun of the same 50 steps.
+        _, after = ts.train_toy_dpo(steps=50)
+        assert after.tolist() == pytest.approx([0.799, 0.035, 0.166], abs=0.001)
+
+    def test_given_a_larger_beta_the_same_departure_from_the_reference_already_gives_a_lower_loss(self):
+        # beta is the leash: at beta = 0.5 the worked example's log-ratios (+1, -1) give margin 1.0,
+        # loss -ln sigmoid(1) = 0.313 versus 0.598 at beta = 0.1, so less drift is needed to satisfy a pair.
+        assert ts.dpo_loss(-10.0, -12.0, -11.0, -11.0, beta=0.5) == pytest.approx(0.313, abs=0.001)
+
 
 class TestLoRA:
     def test_given_the_adapter_starts_with_B_at_zero_the_adapted_layer_behaves_exactly_like_the_frozen_one(self):

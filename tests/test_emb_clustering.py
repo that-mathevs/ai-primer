@@ -73,6 +73,19 @@ class TestDensityClustering:
         labels = dbscan(X, eps=0.75, min_samples=3)
         assert len(set(labels.tolist()) - {-1}) < len(TICKETS)
 
+    def test_given_a_reach_sweep_from_0_45_to_0_85_clusters_and_noise_follow_the_lessons_figure(self):
+        # The eps_sweep figure's story, reach by reach: (clusters, noise points). Too tight strands
+        # tickets; five kinds appear only at 0.5 to 0.55; widening past 0.6 chains everything together.
+        X, _ = ticket_embeddings(include_outliers=True)
+
+        def counts(eps):
+            labels = dbscan(X, eps=eps, min_samples=3)
+            return len(set(labels.tolist()) - {-1}), int(np.sum(labels == -1))
+
+        assert [counts(e) for e in (0.45, 0.5, 0.55, 0.6, 0.625, 0.725, 0.825)] == [
+            (3, 22), (5, 15), (5, 9), (4, 2), (3, 2), (2, 2), (1, 1)
+        ]
+
 
 class TestPCA:
     def test_given_points_on_a_straight_line_the_first_direction_explains_all_the_variation(self):

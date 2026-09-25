@@ -99,7 +99,7 @@ Shuffle the input and you get the same outputs, shuffled the same way.
 `encode_sentence(..., scheme="none")` runs a real attention layer and shows
 the "dog" row is the same vector whether "dog" comes first or last.
 
-![Pooled sentence similarity under each position scheme](figures/primer.ml.positional.order_blindness.svg)
+![Without positions the two sentences are identical (similarity 1.0); sinusoidal codes and RoPE pull it just below 1, and a causal mask alone drops it to 0.52](figures/primer.ml.positional.order_blindness.svg)
 
 **Reading it:** each bar compares the pooled attention output of "dog bites
 man" with that of "man bites dog", as a cosine similarity (1.0 means
@@ -202,7 +202,7 @@ shift of k positions rotates every (sin, cos) pair by the same angle k·ω_i
 wherever you start, so **the dot product of two position codes depends only
 on their distance**.
 
-![Sinusoidal encoding heatmap](figures/primer.ml.positional.sinusoidal_heatmap.svg)
+![Left columns flip colour every few positions and right columns change slowly, so every row is a unique fingerprint and neighbours look alike](figures/primer.ml.positional.sinusoidal_heatmap.svg)
 
 **Reading it:** each row is a position (0 at the top), each column one
 dimension, and colour is the value from −1 to +1. The left columns flip
@@ -417,7 +417,7 @@ round(dot(R(103, q), R(107, k)), 3)  # → -0.654
 `apply_rope` does this for a vector or a whole sequence with three
 element-wise lines, and no matrix multiply.
 
-![RoPE score vs. distance](figures/primer.ml.positional.rope_relative.svg)
+![The score curves for starting positions 0, 100 and 1,000 lie exactly on top of each other: only the distance matters](figures/primer.ml.positional.rope_relative.svg)
 
 **Reading it:** the x-axis is the distance n − m between a query and a key;
 each line uses the same q and k but places the pair at a different absolute
@@ -425,7 +425,7 @@ starting position (0, 100, 1,000). The lines lie exactly on top of each
 other: the score depends only on distance. That is the relative-position
 property in one picture.
 
-![RoPE rotation angle per pair](figures/primer.ml.positional.rope_frequencies.svg)
+![Pair 0 wraps a full turn about every 6 tokens while the last pairs barely turn across the whole range](figures/primer.ml.positional.rope_frequencies.svg)
 
 **Reading it:** each line is one pair of dimensions; the y-axis is how far
 that pair has turned (wrapped to one full turn, 2π) at each position on the
@@ -538,7 +538,7 @@ YaRN refines this per frequency band and is
 used by many long-context models. ALiBi skips position vectors entirely and
 subtracts a penalty proportional to distance from each attention score.
 
-![Slowest RoPE angle: trained, extended and interpolated](figures/primer.ml.positional.context_extension.svg)
+![Raw positions leave the trained angle band right after 4k and reach 8 times its top by 32k; interpolation and NTK scaling stay inside it](figures/primer.ml.positional.context_extension.svg)
 
 **Reading it:** the x-axis is position up to 32k and the y-axis is the angle
 of the slowest RoPE pair. The shaded band is the range of angles the model
@@ -559,8 +559,9 @@ attention (BERT-style) has no such crutch and is fully order-blind.
 **In code:** `encode_sentence` with its causal flag set runs the same layer under `primer.ml.attention.causal_mask`; its pooled similarity is the "causal mask only" bar in the first figure.
 
 ## In 20 seconds
-- Attention is permutation-invariant: without position information, "dog
-  bites man" equals "man bites dog".
+- Attention is permutation-equivariant: shuffle the words and the outputs
+  shuffle the same way, so without position information "dog bites man"
+  pools to exactly the same vector as "man bites dog".
 - The original transformer adds fixed sine/cosine codes; GPT-2 and BERT
   learn a position table that ends at max_len.
 - Modern LLMs use RoPE: rotate q and k by a position-dependent angle so the

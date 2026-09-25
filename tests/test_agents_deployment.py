@@ -11,6 +11,7 @@ from primer.agents.deployment import (
     TokenBucket,
     in_canary,
     shadow_agreement,
+    simulate_rollout,
 )
 
 
@@ -105,18 +106,22 @@ class TestCanaryAssignment:
 
 class TestCanaryRollout:
     def test_given_the_canary_matches_control_the_rollout_advances_to_the_next_step(self):
-        c = CanaryController(steps=[1, 5, 25, 100], max_drop=0.02, min_samples=100)
+        c = CanaryController(steps=[1, 5, 25, 50, 100], max_drop=0.02, min_samples=100)
         c.observe(control_successes=95, control_total=100, canary_successes=95, canary_total=100)
         assert c.step() == 5
 
     def test_given_the_canary_is_five_points_worse_the_rollout_rolls_back_to_zero(self):
-        c = CanaryController(steps=[1, 5, 25, 100], max_drop=0.02, min_samples=100)
+        c = CanaryController(steps=[1, 5, 25, 50, 100], max_drop=0.02, min_samples=100)
         c.observe(control_successes=95, control_total=100, canary_successes=90, canary_total=100)
         assert c.step() == 0
         assert c.rolled_back
 
+    def test_given_a_healthy_version_the_rollout_passes_through_1_5_25_50_and_100_percent(self):
+        # The lesson's step ladder; each step waits for enough canary tasks before growing.
+        assert [r["percent"] for r in simulate_rollout(0.95, seed=0)] == [1, 5, 25, 50, 100]
+
     def test_given_too_few_canary_samples_the_rollout_waits(self):
-        c = CanaryController(steps=[1, 5, 25, 100], max_drop=0.02, min_samples=100)
+        c = CanaryController(steps=[1, 5, 25, 50, 100], max_drop=0.02, min_samples=100)
         c.observe(control_successes=950, control_total=1000, canary_successes=9, canary_total=10)
         assert c.step() == 1
 

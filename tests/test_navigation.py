@@ -95,6 +95,15 @@ class TestEveryLessonMeetsTheStandard:
         slugs = set(re.findall(r"papers/([a-z0-9-]+)\.html", doc))
         assert {s for s in slugs if f"`{s}`" not in catalog} == set()
 
+    def test_given_the_lesson_every_companion_it_links_to_lists_it_among_the_lessons_that_build_it(self, lesson):
+        from tools.docsite import catalog
+
+        # The companion's "Lessons that build this" box comes from the catalog, so the link must run both ways.
+        doc = importlib.import_module(lesson.module).__doc__ or ""
+        slugs = set(re.findall(r"papers/([a-z0-9-]+)\.html", doc))
+        lessons_of = {p["slug"]: p["lessons"] for p in catalog()}
+        assert sorted(s for s in slugs if s in lessons_of and lesson.module not in lessons_of[s]) == []
+
 
 class TestTheSite:
     def test_given_the_curriculum_the_home_page_links_every_lesson(self):
@@ -1003,19 +1012,39 @@ class TestDiagramsDrawOnce:
 
 
 class TestEveryPageFitsAPhone:
-    # tools/phonecheck.py loads every page at 390px in headless Chrome; these specify what it counts as a problem.
+    # tools/browsercheck.py loads every page at 390px in headless Chrome; these specify what it counts as a problem.
 
     def test_given_a_page_wider_than_the_screen_it_is_reported(self):
-        from tools.phonecheck import too_wide
+        from tools.browsercheck import too_wide
 
         results = [{"page": "a.html", "width": 968, "screen": 390, "wide": ["mjx-container: ..."]},
                    {"page": "b.html", "width": 390, "screen": 390, "wide": []}]
         assert [r["page"] for r in too_wide(results)] == ["a.html"]
 
     def test_given_a_site_its_forwarding_stubs_are_not_checked(self, tmp_path):
-        from tools.phonecheck import pages_to_check
+        from tools.browsercheck import pages_to_check
 
         # They show nothing: the browser moves straight on to the home page.
         (tmp_path / "index.html").write_text("<h1>primer</h1>")
         (tmp_path / "primer.html").write_text('<meta http-equiv="refresh" content="0; url=index.html">')
         assert pages_to_check(tmp_path) == ["index.html"]
+
+
+class TestEveryPageWorksWithAKeyboardAndAScreenReader:
+    # tools/browsercheck.py runs these checks inside each loaded page; this specifies what it reports.
+
+    def test_given_pages_with_barriers_only_those_are_reported(self):
+        from tools.browsercheck import accessibility_problems
+
+        results = [{"page": "a.html", "a11y": ["image without alt text: x.svg"]}, {"page": "b.html", "a11y": []}]
+        assert [r["page"] for r in accessibility_problems(results)] == ["a.html"]
+
+    def test_given_the_glossary_script_a_focused_term_is_described_by_its_definition(self):
+        from tools.docsite import TOOLTIP_ASSETS
+
+        assert "setAttribute('aria-describedby','gl-tip')" in TOOLTIP_ASSETS and "el.after(tip)" in TOOLTIP_ASSETS
+
+    def test_given_the_diagram_script_each_diagram_is_named_and_described_by_its_reading(self):
+        from tools.docsite import DIAGRAM_SCRIPT
+
+        assert 'setAttribute("role", "img")' in DIAGRAM_SCRIPT and 'setAttribute("aria-describedby"' in DIAGRAM_SCRIPT

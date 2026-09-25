@@ -42,9 +42,11 @@ the souvenir you might not need goes in only if there's room.
 | retrieved facts | 3 | 90 | kept |
 | old chat | 5 | 135 > 100 | **dropped** |
 
-The assembler admits sections most-important-first until the next one
-wouldn't fit, so what gets cut is the *least* useful content, not whatever
-happened to come last.
+The assembler walks the sections most-important-first and admits each one
+that still fits. A section that doesn't fit is skipped, and the walk
+carries on, so a small, less important section further down can still use
+the room a big one left. Either way, what gets cut is the *least* useful
+content that doesn't fit, not whatever happened to come last.
 
 ```mermaid
 flowchart LR
@@ -68,7 +70,7 @@ stays does the assembler decide *where* it goes, and that order is driven by
 caching (next sections), not by importance: content that is identical on
 every request goes first.
 
-![What gets kept and dropped at two budgets](figures/primer.agents.context.budget.svg)
+![At 400 tokens only the old turns are dropped; at 250 the memory and retrieved facts go too, while system rules, tools and recent turns stay](figures/primer.agents.context.budget.svg)
 
 **Reading it:** each bar is one assembled context, split into the sections
 it contains, measured in tokens. With a 400-token budget everything but the
@@ -111,7 +113,7 @@ gist, so they collapse into a summary. Here the summary is extractive (the
 start of each old turn) so it's deterministic; in production a small, cheap
 model writes it and is told to keep decisions, numbers and names.
 
-![Context size per turn with and without summarization](figures/primer.agents.context.summarization.svg)
+![The full history grows without end, while the summary plus the last six turns grows far more slowly](figures/primer.agents.context.summarization.svg)
 
 **Reading it:** the x-axis is the turn number in one long conversation; the
 y-axis is the history tokens sent on that turn. The red line (full history)
@@ -249,7 +251,7 @@ round(100 * sum(c) / sum(ell))  # → 49
 sum([0, 0]) / sum(ell)  # → 0.0
 ```
 
-![Cached share of input across 20 requests: timestamp first vs. last](figures/primer.agents.context.prefix_cache.svg)
+![With the timestamp last the cached share climbs past 90% over 20 requests; with it first, nothing is ever reused](figures/primer.agents.context.prefix_cache.svg)
 
 **Reading it:** `PrefixCache` replays 20 requests that share a 2,000-character
 system prompt. With the timestamp at the end (blue), every request after the
@@ -286,7 +288,7 @@ flowchart LR
 positions. Restating the question after the material makes it the last
 thing read.
 
-![Illustrative U-shaped use of information by position](figures/primer.agents.context.lost_in_middle.svg)
+![Sandwich ordering moves the second-best chunk from near the start to the far end, so both best chunks sit where use is highest and the weakest take the dip in the middle](figures/primer.agents.context.lost_in_middle.svg)
 
 **Reading it:** the grey curve is an *illustrative* U-shape of the effect
 reported by Liu et al. (2023), not their measured numbers: information at

@@ -57,6 +57,12 @@ class TestTokens:
 
         assert sum(loop_input_tokens(10, 2000, 500)) == 42_500
 
+    def test_given_the_same_loop_the_tenth_call_re_sends_6500_tokens_of_history(self):
+        # 2,000 to start plus nine earlier steps of 500; the tenth step's own 500 then makes the 7,000-token conversation.
+        from primer.agents.llm import loop_input_tokens
+
+        assert loop_input_tokens(10, 2000, 500)[-1] == 6_500
+
 
 class TestReadingAConversation:
     CONVERSATION = [

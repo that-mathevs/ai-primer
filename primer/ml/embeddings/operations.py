@@ -78,12 +78,13 @@ hits = [1] * 3 + [0] * 9
 round(sum(hits) / len(hits), 2)  # → 0.25
 ```
 
-![Recall@3 with matching and mixed models](figures/primer.ml.embeddings.operations.cross_model.svg)
+![Recall@3 is 0.92 when documents and queries share a model, and falls to 0.25, near the 0.15 of random ranking, when v2 queries search v1 documents](figures/primer.ml.embeddings.operations.cross_model.svg)
 
 **Reading it:** each bar is recall@3 on the golden set. The first two bars
 use one model for both documents and queries, v1 then v2: both work. The
-third bar searches v1 documents with v2 queries: recall falls to the dashed
-line, which is what random ranking would score. A model with a *different*
+third bar searches v1 documents with v2 queries: recall falls to 0.25 (3 of
+the 12 questions), barely above the dashed line at 0.15, which is what random
+ranking would score (3 of 20 documents shown). A model with a *different*
 number of dimensions would at least crash (you can't dot a 128-number vector
 with a 64-number one); a same-size model fails silently, which is worse.
 
@@ -175,7 +176,7 @@ round(n * t / (r * 3600), 2)  # → 6.94
 round(n * t / 10**6 * p, 2)  # → 500.0
 ```
 
-![Time and cost to re-embed a corpus](figures/primer.ml.embeddings.operations.reembed.svg)
+![Re-embedding time and cost both grow in step with corpus size: ten times the documents, ten times the hours and the dollars](figures/primer.ml.embeddings.operations.reembed.svg)
 
 **Reading it:** the horizontal axis is corpus size (log scale); the left
 panel shows hours at three throughputs, the right panel shows dollars at
@@ -206,7 +207,7 @@ document first for **1 of 4**. A version that has learned the four jargon
 words (`DomainTunedEmbedder`, standing in for a model fine-tuned on
 company pairs) gets **4 of 4**.
 
-![Rank of the right document for each jargon question](figures/primer.ml.embeddings.operations.jargon.svg)
+![On company jargon the general model buries three of the four right answers, while the tuned model ranks every one first](figures/primer.ml.embeddings.operations.jargon.svg)
 
 **Reading it:** each pair of bars is one jargon question; the height is where
 the right document ranked (1 is best, shorter is better). The general model
@@ -270,7 +271,7 @@ If it was retrieved and ignored, the problem is downstream, in the prompt or
 the context. Only the retrieval half can be measured without a model, which
 is why recall@k on a golden set is the first number to track.
 
-![What went wrong, by question, as k changes](figures/primer.ml.embeddings.operations.triage.svg)
+![Retrieving more documents turns some retrieval failures into generation failures, and the error-code question stays wrong at every k](figures/primer.ml.embeddings.operations.triage.svg)
 
 **Reading it:** each bar is the 12 golden questions, answered by a toy
 generator that always uses the top document, with k documents retrieved.

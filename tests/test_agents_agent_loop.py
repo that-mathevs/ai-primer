@@ -145,6 +145,18 @@ class TestCost:
         assert json.loads(content) == {"employee": "alice", "as_of": "2026-09-25", "days_left": 12}
 
 
+class TestStopCauses:
+    def test_given_the_controls_diagram_every_one_of_its_seven_exits_is_a_named_stop_cause(self):
+        # The diagram's seven "stop:" boxes, in its order; a run never ends without saying which one.
+        from typing import get_args
+
+        from primer.agents.agent_loop import StopCause
+
+        assert set(get_args(StopCause)) == {
+            "refusal", "max_tokens", "completed", "budget_exceeded", "handoff", "loop_detected", "max_steps",
+        }
+
+
 class TestFigures:
     def test_given_the_lesson_it_draws_token_growth_quadratic_cost_and_parallel_latency(self):
         pytest.importorskip("matplotlib")

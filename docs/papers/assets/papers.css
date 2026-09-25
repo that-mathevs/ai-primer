@@ -87,14 +87,23 @@ tr.hl td { background: var(--accent-soft); font-weight: 600; }
 .t, [data-sym] { cursor: help; }
 .t { border-bottom: 1.5px dotted var(--accent); }
 .t:focus, [data-sym]:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+/* An equation with explained symbols is one tab stop; the arrow keys walk its symbols. */
+[data-sym-host]:focus { outline: none; }
+[data-sym-host]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.tip a:focus-visible { outline: 2px solid var(--tip-link); outline-offset: 2px; border-radius: 2px; }
+/* Read by screen readers, not drawn. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 [data-sym] { border-radius: 3px; transition: background 0.1s; }
 [data-sym]:hover, [data-sym].on { background: var(--accent-soft); }
 .tip {
   position: fixed; z-index: 50; max-width: min(360px, calc(100vw - 24px)); background: var(--tip-bg); color: var(--tip-fg);
   border-radius: 10px; padding: 0.7rem 0.85rem; font-size: 0.85rem; line-height: 1.45; box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-  opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity 0.12s, transform 0.12s;
+  opacity: 0; pointer-events: none; transform: translateY(4px);
+  /* visibility, not just opacity, so a closed tip is gone for screen readers and Tab too;
+     it switches off only after the fade-out has finished. */
+  visibility: hidden; transition: opacity 0.12s, transform 0.12s, visibility 0s linear 0.12s;
 }
-.tip.show { opacity: 1; pointer-events: auto; transform: none; }
+.tip.show { opacity: 1; pointer-events: auto; transform: none; visibility: visible; transition-delay: 0s; }
 .tip b.tt { display: block; font-size: 0.92rem; margin-bottom: 0.2rem; }
 .tip .meta { display: block; margin-top: 0.35rem; opacity: 0.85; }
 .tip a { color: var(--tip-link); }
@@ -137,6 +146,10 @@ svg .ghost { fill: var(--card); stroke: var(--wire); stroke-width: 1; }
 .sliders input[type=range] { width: 100%; }
 .shares { margin-top: 0.8rem; }
 .share-row { display: grid; grid-template-columns: 4.5rem minmax(0,1fr) 3.4rem; gap: 0.5rem; align-items: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.82rem; margin: 0.2rem 0; }
+/* Stripes laid over a bar's colour: the second of two bar series is striped, so a pair of bars
+   never relies on colour alone. Use as  background: var(--hatch) var(--accent). */
+:root { --hatch: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0 2px, transparent 2px 5px); }
+.legend i.hatch { height: 10px; width: 16px; }
 .share-bar { height: 14px; background: var(--accent); border-radius: 4px; transition: width 0.12s; }
 canvas { width: 100%; height: auto; display: block; border-radius: 6px; image-rendering: pixelated; }
 .chip { display: inline-block; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.72rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-right: 0.3rem; vertical-align: 2px; }
@@ -162,6 +175,13 @@ p.reading > strong:first-child { font-family: ui-sans-serif, system-ui, sans-ser
 .plot .series { fill: none; stroke-width: 2; }
 .plot .cross { stroke: var(--active); stroke-dasharray: 3 3; }
 .plot .dot { fill: var(--active); }
+/* Charts, heatmaps and click-to-place pictures are keyboard controls: show where focus is. */
+.plot svg[role="slider"]:focus, canvas[role="application"]:focus, [data-keypoint]:focus { outline: none; }
+.plot svg[role="slider"]:focus-visible, canvas[role="application"]:focus-visible, [data-keypoint]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px;
+}
+/* The legend Papers.lineChart draws: each swatch is a short line in the series' colour and dash. */
+.plot .legend svg.swatch { display: inline-block; width: 28px; height: 6px; vertical-align: middle; margin-right: 0.35rem; overflow: visible; }
 .plot .controls { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; align-items: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; margin-bottom: 0.5rem; }
 .plot .controls input[type=range] { flex: 1 1 160px; }
 .legend { display: flex; flex-wrap: wrap; gap: 0.8rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; }

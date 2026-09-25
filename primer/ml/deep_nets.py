@@ -105,16 +105,20 @@ gradient at the first layer to the gradient at the last:
 | ReLU, weights too large (std 1) | ≈ 10²² (exploded) |
 | sigmoid, Xavier initialization | ≈ 10⁻¹⁸ (vanished) |
 
-![Gradient size at every layer of a 30-layer network](figures/primer.ml.deep_nets.gradient_flow.svg)
+![Gradient size at every layer, relative to layer 30: ReLU with He stays near 1, too-small weights dive 36 orders of magnitude, sigmoid dives 18, too-large weights climb 22, and sigmoid with skip connections stays flat](figures/primer.ml.deep_nets.gradient_flow.svg)
 
 **Reading it:** the horizontal axis is the layer (1 is next to the input, 30
-next to the loss) and the vertical axis is the size of the gradient reaching
-that layer, on a log scale where each gridline is 10× apart. Read each line
-from right to left, following backprop. The healthy ReLU + He line stays
-flat. The too-small line dives, and the sigmoid line dives almost as fast.
-The too-large line climbs about 22 orders of magnitude. The dashed line is the same sigmoid
-network with skip connections, and it stays flat too (see residual
-connections below).
+next to the loss). The vertical axis is the size of the gradient reaching
+that layer divided by its size at layer 30, on a log scale where each
+gridline is a factor of 10⁶. So every line starts at 1 on the right; read it
+from right to left, following backprop, and its height at layer 1 is the
+ratio in the table. The healthy ReLU + He line stays within a factor of
+about 5 of 1. The too-small line dives about 36 orders of magnitude. The
+sigmoid line dives too, but only about half as far, 18 orders: Xavier keeps
+the weights' own gain near 1, so what shrinks the gradient is sigmoid's
+slope, at most 0.25, about 4× per layer. The too-large line climbs about 22
+orders. The dashed line is the same sigmoid network with skip connections,
+and it stays flat (see residual connections below).
 
 $$
 \text{gain per layer} \approx \sigma_w \sqrt{n_{\text{in}}}\;\cdot\;\text{typical }\phi'
@@ -186,14 +190,20 @@ flowchart LR
 rules have the same goal, shown in the last box: a layer should neither
 shrink nor grow what passes through it.
 
-![Size of the forward signal at every layer, for four initializations](figures/primer.ml.deep_nets.signal.svg)
+![Forward signal size at every layer: ReLU with He stays near 1, too-small weights fade to 10⁻³⁸, too-large weights grow to 10²², and sigmoid holds flat near 0.5 even though its gradient vanishes](figures/primer.ml.deep_nets.signal.svg)
 
 **Reading it:** this is the forward direction: the typical size of the
 activations entering each layer, log scale. With He initialization the ReLU
 network's signal stays near 1 for all 30 layers. Too small, it fades to
 nothing within a few layers; too large, it grows by about 5.6× per layer.
-The backward picture above mirrors this one, because the same weights
-scale both directions.
+For the three ReLU lines the backward picture above mirrors this one,
+because the same weights scale both directions. The sigmoid line is where
+the mirror breaks: its signal holds steady near 0.5 for all 30 layers
+(sigmoid's outputs sit around 0.5 whatever comes in), yet its gradient
+above lost 18 orders of magnitude. The forward pass only sends values
+through sigmoid; the backward pass multiplies by sigmoid's slope, at most
+0.25, at every layer. A healthy forward signal does not prove a healthy
+gradient, so check both.
 
 $$
 \operatorname{Var}(z) = n_{\text{in}}\,\operatorname{Var}(w)\,\mathbb{E}[h^2]
@@ -306,7 +316,7 @@ for l in range(10):
 f"{plain:.1e}", round(residual, 2)  # → ('9.5e-17', 1.28)
 ```
 
-![Gradient reaching the input as blocks are stacked, with and without skip connections](figures/primer.ml.deep_nets.residual.svg)
+![Gradient reaching the input as blocks are stacked: without skip connections it falls 40× per block to 10⁻¹⁶ after 10 blocks, with them it stays near 1](figures/primer.ml.deep_nets.residual.svg)
 
 **Reading it:** the x-axis counts stacked blocks and the y-axis, on a log
 scale, is how much gradient survives the trip back to the input (1 means
@@ -789,9 +799,12 @@ def figures() -> dict:
     fig, ax = plt.subplots(figsize=(7, 4))
     for label, act, init, res in _SETUPS:
         g = gradient_norms(depth, act, init, res)[:depth]
-        ax.plot(layers, g, ls="--" if res else "-", marker=".", ms=3, label=label)
-    ax.set(yscale="log", ylim=(1e-40, 1e30), xlabel="layer (1 = next to the input)",
-           ylabel="gradient size reaching the layer", title="Gradient flow through 30 layers")
+        # Relative to layer 30, so every line starts at 1 on the right and its height at layer 1
+        # is the first/last ratio in the lesson's table (raw sizes span 10⁻⁷⁵ to 10⁴⁶).
+        ax.plot(layers, g / g[-1], ls="--" if res else "-", marker=".", ms=3, label=label)
+    ax.set(yscale="log", ylim=(1e-38, 1e26), yticks=[10.0**k for k in range(-36, 25, 6)],
+           xlabel="layer (1 = next to the input)",
+           ylabel="gradient size ÷ size at layer 30", title="Gradient flow through 30 layers")
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.tight_layout()

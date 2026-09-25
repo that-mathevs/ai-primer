@@ -262,7 +262,7 @@ round(-math.log(0.5), 2)  # → 0.69</code></pre>
   <li><strong>Library:</strong> the December 2018 Wikipedia dump, split into disjoint 100-word <span class="t" data-t="chunking">chunks</span>: 21 million passages.</li>
   <li><strong>Index:</strong> FAISS with an <span class="t" data-t="hnsw">HNSW</span> <span class="t" data-t="approximate nearest neighbor">approximate nearest-neighbour</span> index.</li>
   <li><strong>Retrieved per question:</strong> K = 5 or 10 during training.</li>
-  <li><strong>Size:</strong> 626 million trainable parameters (two 110M-parameter BERT encoders, only one of them trained, plus 406M for BART). The index is 21 million vectors, about 15.3 billion numbers.</li>
+  <li><strong>Size:</strong> 626 million parameters as the paper counts them (two 110M-parameter BERT encoders plus 406M for BART). Because the passage encoder stays frozen, 110M + 406M = 516 million of them are actually trained. The index is 21 million vectors, about 15.3 billion numbers.</li>
 </ul>
 <h3 class="rung">Four kinds of task</h3>
 <div class="tablewrap"><table>
@@ -294,7 +294,7 @@ round(-math.log(0.5), 2)  # → 0.69</code></pre>
   </tbody>
 </table></div>
 <div class="plot" id="nq-plot"><div id="nq-bars"></div></div>
-<p class="reading"><strong>Reading it:</strong> each bar is one system's exact-match score on Natural Questions, on an axis from 0 to 50. The closed-book T5 is the shortest bar despite having about 18 times RAG's 626 million trainable parameters: memorising more is a poor substitute for looking things up. The two retrieve-then-extract systems are close to RAG, but RAG gets there without a separate reranker or span extractor. It also answered 11.8% of questions correctly even when no retrieved passage contained the answer, which an extractor, limited to copying text, can never do.</p>
+<p class="reading"><strong>Reading it:</strong> each bar is one system's exact-match score on Natural Questions, on an axis from 0 to 50. The closed-book T5 is the shortest bar despite having about 18 times RAG's 626 million parameters: memorising more is a poor substitute for looking things up. The two retrieve-then-extract systems are close to RAG, but RAG gets there without a separate reranker or span extractor. It also answered 11.8% of questions correctly even when no retrieved passage contained the answer, which an extractor, limited to copying text, can never do.</p>
 <h3 class="rung">More factual and more specific (human judges)</h3>
 <p>On Jeopardy clue writing, judges compared 452 pairs of clues from BART alone and from RAG-Token. BART was judged more factual in 7.1% of pairs; RAG in <strong>42.7%</strong>. RAG was also judged more specific by a wide margin.</p>
 <h3 class="rung">Did it fetch the right evidence?</h3>

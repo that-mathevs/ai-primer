@@ -14,10 +14,10 @@ class TestCrossEntropy:
     def test_given_probability_p_on_the_right_token_the_loss_is_minus_ln_p(self, p_correct, expected):
         assert losses.cross_entropy_from_prob(p_correct) == pytest.approx(expected, abs=0.005)
 
-    def test_being_confidently_wrong_costs_about_forty_times_more_than_being_mostly_right(self):
-        # 4.61 / 0.105 ≈ 44: the steep penalty that pushes models toward calibrated probabilities.
+    def test_given_1_percent_versus_90_percent_on_the_right_token_the_loss_is_about_44_times_larger(self):
+        # ln(100) / ln(10/9) = 4.605 / 0.1054 = 43.7: the steep penalty that pushes models toward calibrated probabilities.
         ratio = losses.cross_entropy_from_prob(0.01) / losses.cross_entropy_from_prob(0.9)
-        assert 40 < ratio < 45
+        assert ratio == pytest.approx(43.7, abs=0.05)
 
     def test_given_certainty_on_the_right_answer_the_loss_is_zero(self):
         assert losses.cross_entropy_from_prob(1.0) == pytest.approx(0.0)

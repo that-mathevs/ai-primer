@@ -216,7 +216,7 @@ and only the comparison decides whether the judge is trusted. Recheck
 whenever you change the judge's model or the rubric, since the judge is
 itself a model and can drift.
 
-![Raw agreement vs. kappa for judges of different quality](figures/primer.agents.evals.kappa.svg)
+![Near-perfect judge: 95% agreement, kappa 0.89; worked example: 80%, kappa 0.58; coin flip at 50% and always-pass at 60% both score kappa 0](figures/primer.agents.evals.kappa.svg)
 
 **Reading it:** each pair of bars is one judge scored against the same 20
 human labels. Grey is raw agreement, blue is kappa. The always-pass judge
@@ -286,14 +286,14 @@ integration: the checks that run on every proposed change before it can
 merge), just like unit tests. The useful output isn't just "blocked" but *which* task regressed
 and the trace of what the agent did, so the fix starts from evidence.
 
-![Per-task results for v1 and v2](figures/primer.agents.evals.regression.svg)
+![v1 passes all four golden tasks; v2 passes three and fails only the over-limit refund](figures/primer.agents.evals.regression.svg)
 
 **Reading it:** each column pair is one golden task: a filled bar means
 pass. v1 passes everything. v2 matches v1 everywhere except the over-limit
 refund, a single failure that a spot check would easily miss and that would
 cost 900 per incident in production.
 
-![Steps per task: the regressed version is the cheaper one](figures/primer.agents.evals.steps.svg)
+![v2 makes one tool call on each refund where v1 makes two, so it is slightly cheaper per success (2.24 vs 2.38 dollars per 1,000) despite the broken limit](figures/primer.agents.evals.steps.svg)
 
 **Reading it:** bars show how many tool calls each version used per task.
 v2 uses fewer steps on refunds because it no longer checks the order total,

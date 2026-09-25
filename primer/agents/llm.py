@@ -161,7 +161,9 @@ $$
 so far, so the history term grows with the square of the number of steps."
 
 **With the numbers:** 10 × 2,000 + 500 × 45 = 20,000 + 22,500 = **42,500 input
-tokens** for a task whose final conversation is only 6,500 tokens long.
+tokens** for a task whose final conversation is only 7,000 tokens long:
+the tenth call re-sends 6,500 tokens, and its own 500-token step brings
+the history to 7,000.
 
 **In Python:**
 
@@ -176,7 +178,7 @@ sum(calls)  # → 42500
 n * h_0 + t * n * (n - 1) // 2  # → 42500
 ```
 
-![Input tokens per call and in total across an agent loop](figures/primer.agents.llm.loop_tokens.svg)
+![Ten calls bill 42,500 input tokens in total, six times the 7,000-token conversation they end with, because every call re-sends the history](figures/primer.agents.llm.loop_tokens.svg)
 
 **Reading it:** the bars are the input tokens billed on each call. They grow
 by the same amount every step, because each call re-sends the whole history.
@@ -694,7 +696,7 @@ def demo() -> None:
     banner("2. Every call pays for the whole conversation")
     per_call = loop_input_tokens(10, 2000, 500)
     table(["call", "input tokens", "running total"], [(i + 1, t, sum(per_call[: i + 1])) for i, t in enumerate(per_call)])
-    say("10 calls bill 42,500 input tokens for a conversation that ends at 7,000 tokens long.")
+    say("10 calls bill 42,500 input tokens for a conversation that ends 7,000 tokens long.")
 
 
 if __name__ == "__main__":

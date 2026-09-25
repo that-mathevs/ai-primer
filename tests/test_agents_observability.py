@@ -71,8 +71,21 @@ class TestDebuggingFromATrace:
         assert span.name == "execute_tool lookup_order"
         assert span.error == "unknown order id A-100"
 
+    def test_given_the_lookup_failed_the_agent_tells_the_user_it_could_not_find_the_order(self):
+        # The trace, not the answer, says why: the answer alone looks like a missing order.
+        assert failed_run().root.attributes["app.output"] == "I couldn't find order A-100."
+
     def test_given_a_successful_run_there_is_no_error_span(self):
         assert first_error(successful_run().root) is None
+
+
+class TestWaterfall:
+    def test_given_a_three_order_run_each_step_starts_the_moment_the_previous_one_ends(self):
+        # Model 400 ms, tool 100 ms, alternating: no idle gaps between the loop's steps.
+        steps = list(run_traced_agent("Where are orders A100, A200 and A300?").root.children)
+        assert [(s.start_ms, s.duration_ms) for s in steps] == [
+            (0, 400), (400, 100), (500, 400), (900, 100), (1000, 400), (1400, 100), (1500, 400),
+        ]
 
 
 class TestRendering:

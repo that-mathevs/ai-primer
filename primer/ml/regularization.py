@@ -43,7 +43,7 @@ unchecked, fits the noise too. Only the middle path does well on new data.
 Regularization techniques are ways of steering a high-capacity model onto
 that middle path without giving up its capacity.
 
-![Polynomial fits of degree 1, 3 and 11 to 12 noisy points](figures/primer.ml.regularization.fits.svg)
+![Three polynomial fits to 12 noisy sine samples: the degree-1 line misses the curve, the cubic follows it, and the degree-11 polynomial hits every dot but swings wildly between them](figures/primer.ml.regularization.fits.svg)
 
 **Reading it:** the dots are 12 noisy samples of the grey sine curve (the
 true pattern). The straight line (degree 1) can't bend and misses the shape
@@ -112,16 +112,17 @@ validation, polynomials of increasing degree.
 |---|---|---|---|
 | 1 | 0.20 | 0.30 | underfit: both high |
 | 3 | 0.021 | 0.065 | about right |
-| 9 | 0.004 | 0.71 | overfitting begins |
+| 5 | 0.013 | 0.057 | best: lowest validation error |
+| 9 | 0.004 | 0.71 | overfit: validation 12× worse than at degree 5 |
 | 11 | 0.0000 | 7,631 | memorised |
 
-![Training and validation error as polynomial degree grows](figures/primer.ml.regularization.degree_sweep.svg)
+![Error against polynomial degree on a log scale: training error only falls, while validation error is lowest at degree 5 and then climbs steeply](figures/primer.ml.regularization.degree_sweep.svg)
 
 **Reading it:** the horizontal axis is model capacity (polynomial degree);
 the vertical axis is error on a log scale. The training curve (blue) only
 ever goes down: more capacity always fits the training data better. The
-validation curve (orange) falls, bottoms out around degree 3 to 5, then shoots
-up. The left side of that valley is underfitting, the right side
+validation curve (orange) falls, is nearly flat from degree 3 to 5 (lowest
+at 5), then climbs from degree 6 onward and shoots up. The left side of that valley is underfitting, the right side
 overfitting; the bottom is the model you want.
 
 **In code:** `polynomial_errors` fits by least squares (choosing the
@@ -163,7 +164,7 @@ best validation loss so far? If yes, snapshot the weights. If not, count a
 strike. Reaching the patience limit ends training and restores the
 snapshot, so you always ship the best model seen, not the last one.
 
-![Training vs. validation loss for an over-sized network](figures/primer.ml.regularization.learning_curves.svg)
+![Loss curves for an over-sized network: training loss keeps falling while validation loss bottoms out near epoch 300 and then rises](figures/primer.ml.regularization.learning_curves.svg)
 
 **Reading it:** a 64-unit network trained on only 30 noisy points. Both
 curves fall at first. Around epoch 300 (the dashed line) the validation
@@ -235,7 +236,7 @@ points each, and measure (averaged over the input range):
 | 3 | 0.0035 | 0.015 |
 | 9 | 0.0038 | 4.5 |
 
-![Fits from 20 different training sets, for degree 1 and degree 9](figures/primer.ml.regularization.bias_variance.svg)
+![Twenty fits from different training sets: degree-1 lines agree but all miss the sine (high bias), degree-9 curves average to the sine but scatter widely (high variance)](figures/primer.ml.regularization.bias_variance.svg)
 
 **Reading it:** each thin line is the model fitted to one random training
 set; the thick grey curve is the truth. On the left (degree 1), the lines
@@ -389,7 +390,7 @@ and use penalty strength 1:
 | 0.5 | 0.25 | **0** |
 | −2 | −1 | −1 |
 
-![L1 vs. L2 weights on a problem where only 3 of 10 features matter](figures/primer.ml.regularization.l1_vs_l2.svg)
+![Fitted weights on ten features where only three matter: L2 leaves small nonzero weights on every useless feature, L1 sets most of them to exactly zero](figures/primer.ml.regularization.l1_vs_l2.svg)
 
 **Reading it:** ten features, but only the first three affect the target
 (grey bars show the true weights: 3, −2, 1.5, then zeros). The L2 fit (blue)

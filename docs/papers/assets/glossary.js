@@ -995,7 +995,7 @@ window.PRIMER_GLOSSARY = {
   "term": "IDF"
  },
  "implicit reward": {
-  "def": "In DPO, how much more likely training has made a response than the reference model did.",
+  "def": "In DPO, β times the log of how much more likely training has made a response than the reference model did.",
   "lesson": "primer/ml/training_stages.html",
   "term": "implicit reward"
  },

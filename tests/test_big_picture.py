@@ -79,5 +79,11 @@ class TestTrainingIsTheSameForwardPassPlusALoss:
         # Uniform over 400 tokens: loss = ln 400 = 5.99, i.e. perplexity ≈ 400.
         assert next_token_loss(TRAINING_SENTENCE, *pipeline) == pytest.approx(math.log(400), abs=0.1)
 
+    def test_given_an_untrained_model_every_next_token_gets_between_0_74_and_1_39_times_the_uniform_share(self, pipeline):
+        # Random weights give a nearly flat guess: no token after "The cat sat on the" strays far from 1/400.
+        probs = trace("The cat sat on the", *pipeline)["next_token_probs"]
+        share_of_uniform = probs * 400
+        assert (share_of_uniform.min(), share_of_uniform.max()) == pytest.approx((0.742, 1.385), abs=0.001)
+
 
 TRAINING_SENTENCE = "The model reads tokens, not words."
