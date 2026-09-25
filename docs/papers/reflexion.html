@@ -73,26 +73,26 @@
 <section id="abstract">
 <h2>Abstract</h2>
 <blockquote class="quote">“We propose Reflexion, a novel framework to reinforce language agents not by updating weights, but instead through linguistic feedback.”<cite>Shinn et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2303.11366">Read the original</a></cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A student fails a practice exam. They could simply sit it again and hope. Or they could write themselves a short note (“I lost marks because I never checked units; next time, check units before answering”) and read it before the next attempt. Reflexion gives an <span class="t" data-t="agent">agent</span> that habit. After each failed attempt it writes a lesson in plain language, keeps the last few lessons in memory, and reads them before trying again. Nothing about the model's weights changes.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Agents improve over repeated attempts at the same task by reflecting in words, with no fine-tuning.</li>
   <li>Feedback can be a simple pass/fail signal, a hand-written rule, or the agent's own evaluation (for example, tests it wrote itself).</li>
   <li>Gains over strong baselines: +22 points on ALFWorld, +20 on HotpotQA and +11 on HumanEval, reaching 91% pass@1 on HumanEval against GPT-4's 80% at the time.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Try, check against something real, write down what went wrong, retry” is how many coding agents work. This paper is also a careful study of when self-critique helps and when it misleads, which is the practical question.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2303.11366#S1">original</a></span></h2>
 <blockquote class="quote">“This self-reflective feedback acts as a ‘semantic’ gradient signal by providing the agent with a concrete direction to improve upon.”<cite>Shinn et al. (2023), §1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Classic reinforcement learning improves an agent by adjusting millions of weights using a score (a reward), over thousands of attempts. For a huge language model that is slow and expensive, and a bare score says little: “you failed” does not say <em>why</em>. Reflexion turns the score into a sentence that does say why, and keeps it in the prompt.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>A reward of 0 tells an agent only that it failed. The reflection “I searched for the director's name but never checked the release year, so I picked the wrong film; next time, confirm the year first” says <em>which</em> step to change and how. Working out which earlier step deserves the blame for a failure is the <span class="t" data-tip-title="Credit assignment" data-tip="Working out which of many earlier actions deserves the blame (or credit) for how an episode ended. It is one of the central difficulties of reinforcement learning.">credit assignment</span> problem, and the reflection is the model attempting it in language.</p>
-<h4>Advantages and costs, as the paper lists them</h4>
+<h3 class="rung">Advantages and costs, as the paper lists them</h3>
 <ul>
   <li><strong>For:</strong> no fine-tuning; richer feedback than a number; an explicit, readable memory; concrete hints for the next attempt.</li>
   <li><strong>Against:</strong> it depends on the model evaluating itself well, and there is no guarantee it converges.</li>
@@ -180,7 +180,7 @@
     <span id="rx-count" class="readout" style="margin:0"></span>
   </div>
   <div id="rx-body"></div>
-  <h5 style="margin:.8rem 0 .3rem">Long-term memory (what the Actor reads)</h5>
+  <p style="margin:.8rem 0 .3rem;font-weight:600;font-size:1rem">Long-term memory (what the Actor reads)</p>
   <div id="rx-mem" class="readout"></div>
 </div>
 <p class="reading"><strong>Reading it:</strong> each press runs one trial: the Actor proposes code, the Evaluator runs the self-written tests (✓ or ✗ each), and on failure the Self-Reflection step writes a lesson into memory. With reflection, each lesson removes one mistake and trial 3 passes every test. With plain retry, nothing carries over, and the same mistake repeats. With weak tests (only two easy cases), trial 1 <em>passes</em> its own tests and is submitted, but fails the hidden tests: a <strong>false positive</strong>, the failure mode the paper analyses for code in §4.3.</p>

@@ -63,7 +63,7 @@ button, .btn {
 button:hover, .btn:hover { border-color: var(--accent); }
 h2 { font-size: 1.55rem; margin: 3.2rem 0 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
 h3 { font-size: 1.2rem; margin: 2.2rem 0 0.4rem; }
-h4 { font-size: 0.8rem; margin: 1.6rem 0 0.2rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+h4, h3.rung { font-size: 0.8rem; margin: 1.6rem 0 0.2rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
 a { color: var(--accent); }
 .note, .permission { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1.1rem; font-size: 0.93rem; }
 .permission { border-left: 4px solid var(--accent); }

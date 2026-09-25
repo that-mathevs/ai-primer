@@ -69,9 +69,9 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147">original</a></span></h2>
 <blockquote class="quote">“This leads us to ask: can we design a flexible representation that can adapt to multiple downstream tasks with varying computational resources?”<cite>Kusupati et al. (2022), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A set of Russian nesting dolls: open the big doll and a smaller, complete doll is inside, and a smaller one inside that. A Matryoshka <span class="t" data-t="embedding">embedding</span> is a list of numbers whose first 8 numbers are already a usable (coarse) embedding, the first 16 a better one, and so on up to the full length. You pick how much to keep, per task, without retraining or re-encoding anything.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Each prefix of the embedding is at least as accurate as a separate model trained at that small size.</li>
   <li>For ImageNet classification, the same accuracy with an embedding up to <strong>14×</strong> smaller.</li>
@@ -79,17 +79,17 @@
   <li>Up to 2% better accuracy on rare classes, and as robust as ordinary embeddings.</li>
   <li>No extra cost at inference, and it works for images, text and image-text models.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Many production text-embedding models are trained this way, so you can store shorter vectors for cheaper search. When a provider lets you choose the embedding size, this is usually the technique behind it.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Computing an embedding is paid once per item. <em>Using</em> it is paid every time you search or classify, and that cost grows with the number of dimensions × the number of items. At web scale the using dominates. Yet ordinary training spreads information across all dimensions, so you can't just drop some: every number carries a bit of everything.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Store 10 million embeddings of 2,048 numbers at 4 bytes each: 10,000,000 × 2,048 × 4 = <strong>81.9 GB</strong>. Keep only the first 256 numbers and it is <strong>10.2 GB</strong>, 8× less, with every search 8× cheaper too. The question is whether those 256 numbers are any good. Normally they aren't. Matryoshka training makes them good.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>The usual alternatives each cost something: train several models of different sizes (and store every item several times), compress afterwards (and lose accuracy), or pick features on the fly (expensive). Matryoshka training gets all sizes from one model and one stored vector. The storage arithmetic is worked through in the <a data-lesson="primer/ml/embeddings/compression.html">compression lesson</a>.</p>
 </section>
 
@@ -100,7 +100,7 @@
 
 <section id="s3">
 <h2>3 Matryoshka Representation Learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.13147#S3">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A teacher marks one essay several times: once reading only the first paragraph, once the first two, and so on, and the student is graded on every reading. The student quickly learns to put the most important point first. Matryoshka training grades the embedding at several lengths at once, so the network learns to pack the most useful information into the first numbers.</p>
 
 <figure class="ix wide" id="fig1">
@@ -114,16 +114,16 @@
 </figure>
 <p class="reading"><strong>Reading it:</strong> the long bar at the bottom is one 2,048-number embedding. Each shorter bar above it marks a prefix: the first 8 numbers, the first 16, 32, and so on. Every one of them is a complete embedding on its own, and each larger one contains the smaller ones, like nesting dolls. Each is twice the length of the one below it, so there are only 9 of them for 2,048 numbers. The lengths are drawn on a doubling (log) scale; the 8-number doll is really 256 times shorter than the full one.</p>
 
-<h4>The math</h4>
+<h3 class="rung">The math</h3>
 <div class="eq" data-tex="\min_{\{\htmlData{sym=Wm}{\mathbf{W}^{(m)}}\},\,\htmlData{sym=thetaF}{\theta_F}} \; \htmlData{sym=avgN}{\frac{1}{N}\sum_{i}} \; \htmlData{sym=sumM}{\sum_{m \in \mathcal{M}}} \htmlData{sym=cm}{c_m} \cdot \htmlData{sym=CE}{\mathcal{L}}\Big(\htmlData{sym=Wm}{\mathbf{W}^{(m)}} \cdot \htmlData{sym=prefix}{F(x_i;\theta_F)_{1:m}} \; ; \; \htmlData{sym=yi}{y_i}\Big)" data-fallback="min over W^(m) and θ_F of (1/N) Σ_i Σ_{m in M} c_m · L( W^(m) · F(x_i; θ_F)_{1:m} ; y_i )"></div>
 <div class="symtable" data-syms="thetaF,prefix,sumM,Wm,cm,CE,yi,avgN"></div>
 <p class="inwords"><strong>In words:</strong> “take the first m numbers of each embedding, for every m in the chosen set; give each prefix its own small classifier; add up the classification losses of all prefixes; and train the network and all the classifiers to make that total small.”</p>
 <p class="inwords"><strong>With the numbers:</strong> say for one image the <span class="t" data-t="cross-entropy">cross-entropy</span> losses are 1.2 using the first 8 numbers, 0.8 using 16, and so on down to 0.5 using all 2,048. With every c<sub>m</sub> = 1 the training loss is the sum of all nine; the gradient from the 8-number term pushes the most important information into the first 8 numbers, because that is the only place it can help.</p>
 <p>With a ResNet-50 on ImageNet, d = 2,048 and the set of sizes is ℳ = {8, 16, 32, …, 1024, 2048}: 9 sizes, halving each time. The paper sets every c<sub>m</sub> to 1.</p>
-<h4>A cheaper variant: MRL-E</h4>
+<h3 class="rung">A cheaper variant: MRL-E</h3>
 <p>Instead of 9 separate classifiers, share one weight matrix and let each size use its first m columns. That roughly halves the classifier memory, which matters when there are millions of classes. The paper calls this MRL-E; it is within about 1% of full MRL from 16 dimensions up.</p>
 
-<h4>Try it: truncate an embedding, live</h4>
+<h3 class="rung">Try it: truncate an embedding, live</h3>
 <div class="plot" id="trunc-plot">
   <div class="controls">
     <label for="trunc-m">keep the first <strong id="trunc-mv">8</strong> of 64 numbers</label><input type="range" id="trunc-m" min="0" max="5" step="1" value="2">
@@ -133,7 +133,7 @@
   <p class="readout" id="trunc-readout">Computing…</p>
 </div>
 <p class="reading"><strong>Reading it:</strong> this is a real experiment computed in your browser on synthetic data: 600 “documents” of 64 numbers, and for each a noisy “query” copy. The task is to find each query's own document by cosine similarity using only the first m numbers (the y-axis is recall@1: how often the top result is the right one). The blue curve uses embeddings whose information is packed into the first numbers, the way Matryoshka training arranges it. The red curve holds exactly the same information, rotated so it is spread evenly over all 64 numbers, the way ordinary training leaves it. Both reach 100% with all 64 numbers. Cut them short and the front-loaded one keeps working far longer: that gap is what Matryoshka training buys. The slider reads both curves off at one size and reports what that size would save in storage for 10 million vectors; hover the chart to read any point.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>The trick costs almost nothing: a few extra small classifiers during training, nothing at inference. You get one model and one stored vector serving every budget.</p>
 </section>
 

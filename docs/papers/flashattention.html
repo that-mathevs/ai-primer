@@ -75,26 +75,26 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135">original</a></span></h2>
 <blockquote class="quote">“We argue that a missing principle is making attention algorithms IO-aware […] accounting for reads and writes between levels of GPU memory.”<cite>Dao et al. (2022), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A chef works at a small counter; the ingredients live in a big pantry down a flight of stairs. However fast the chef chops, if every step of the recipe means a trip down and up the stairs, the meal is slow. Standard attention is that chef: it computes quickly, but it writes a huge intermediate table to slow memory and reads it back several times. FlashAttention reorganizes the recipe so each ingredient is carried up once, everything possible is done at the counter, and only the finished dish goes back down.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>An <strong>exact</strong> attention algorithm: the same result as standard attention, not an approximation.</li>
   <li>Much less memory traffic between the GPU's large, slow memory and its small, fast memory, and a proof that no exact algorithm can do asymptotically better across all fast-memory sizes.</li>
   <li>Real speedups: 15% faster BERT-large training than the MLPerf 1.1 record, 3× faster GPT-2 training, 2.4× on long-sequence benchmarks.</li>
   <li>Memory that grows only linearly with sequence length, enabling much longer contexts and the first Transformers to beat chance on the Path-X (16K tokens) and Path-256 (64K tokens) tasks.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>FlashAttention and its successors are now the default way attention runs on GPUs. Much of the jump from 2,048-token to million-token context windows rests on this idea.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Attention's cost grows with the square of the sequence length (see the <span class="t" data-t="big-o">O(n²)</span> discussion in the attention lesson). Many earlier papers tried to reduce the <em>arithmetic</em> with approximations: skip some word pairs, compress others. The authors point out that these tricks often did not make training faster in practice, because arithmetic was not the bottleneck. Moving data was. It is like trying to speed up the chef by teaching faster chopping when the real problem is the stairs.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Count the reads and writes for a 1,024-token sequence and a head width of 64. The inputs Q, K and V hold 3 × 1,024 × 64 ≈ 197,000 numbers. The score table S holds 1,024 × 1,024 ≈ 1,049,000 numbers: over five times more than all the inputs put together, and standard attention writes it to slow memory and reads it back, then does the same again for the softmax table P. Most of the traffic is intermediate results nobody asked for.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>The lesson generalizes far beyond attention: on modern hardware, the number of memory transfers often predicts speed better than the number of arithmetic operations. The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> uses the same idea to explain why generating text is <span class="t" data-t="memory-bound">memory-bound</span>.</p>
 </section>
 
@@ -232,7 +232,7 @@
 
 <section id="s4">
 <h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2205.14135#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Faster is only interesting if the model stays exactly as good. Because FlashAttention is exact, the models reach the same quality; the question is how much sooner, and what the freed-up memory makes possible.</p>
 <div class="tablewrap"><table>
   <caption>Selected results, restated from Dao et al. (2022), Tables 1, 2 and 4 and §4.2</caption>
@@ -247,7 +247,7 @@
   </tbody>
 </table></div>
 <p>The highlighted row shows the second benefit: with memory now growing linearly, GPT-2 could be trained on 4 times longer texts, <em>still</em> faster than the previous 1K-context training, and it got better (lower perplexity) because it could see more context. The memory footprint measured up to 20 times smaller than exact-attention baselines.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Longer context turned out to be one of the most valuable capabilities of language models, and this is one of the papers that made it affordable.</p>
 </section>
 

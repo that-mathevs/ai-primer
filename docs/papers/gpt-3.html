@@ -78,9 +78,9 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165">original</a></span></h2>
 <blockquote class="quote">“Here we show that scaling up language models greatly improves task-agnostic, few-shot performance, sometimes even reaching competitiveness with prior state-of-the-art fine-tuning approaches.”<cite>Brown et al. (2020), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Before GPT-3, teaching a model a new job was like hiring a temp and sending them on a week-long training course for every new task: thousands of labelled examples and a round of <span class="t" data-t="fine-tuning">fine-tuning</span>. GPT-3 is more like a very well-read new hire who, shown two or three filled-in forms, can fill in the next one straight away. No retraining, no change to a single weight: just examples in the message you send.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>GPT-3 has 175 billion <span class="t" data-t="parameters">parameters</span>, 10 times more than any earlier non-sparse language model.</li>
   <li>With no fine-tuning at all, only examples in the prompt, it is strong on translation, question answering and fill-in-the-blank tasks, and sometimes matches fine-tuned systems.</li>
@@ -88,18 +88,18 @@
   <li>People could barely tell its short news articles from human-written ones.</li>
   <li>It still fails on some tasks, and training on a web-scale corpus raises real methodological problems.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>This is the paper that turned “prompting” into the main way people use AI. Every time you paste an example into a chat and say “do it like this”, you are doing what this paper named few-shot learning.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S1">original</a></span></h2>
 <blockquote class="quote">“We use the term “in-context learning” to describe the inner loop of this process, which occurs within the forward-pass upon each sequence.”<cite>Brown et al. (2020), Figure 1.1 caption</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>There are two kinds of learning in this paper, running on two very different clocks. The <strong>outer loop</strong> is <span class="t" data-t="pretraining">pre-training</span>: months of reading the internet, slowly adjusting billions of weights. The <strong>inner loop</strong> happens in a fraction of a second, inside a single prompt: the model notices the pattern in the examples you gave (“English word, arrow, French word”) and continues it. Nothing is stored; close the chat and the “learning” is gone. That inner loop is <span class="t" data-tip-title="In-context learning" data-tip="Picking up a task from instructions or examples placed in the prompt, with no change to the model's weights. It lasts only for that one input.">in-context learning</span>.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Somewhere in its training data the model has seen pages that list word translations, pages of worked sums, and pages of quiz questions followed by answers. So a prompt that <em>looks like</em> the start of such a page is naturally continued in the same style. Show it “cat → chat, dog → chien, cheese →” and the most likely next token is “fromage”, because that is what such a list would say next.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>The introduction's argument is practical: collecting thousands of labelled examples for every task is expensive, fine-tuned models can overfit narrow datasets, and people learn most tasks from a sentence of instruction and a couple of examples. If a model could too, it would be vastly more useful. The bet is that scale makes this possible.</p>
 </section>
 
@@ -290,10 +290,10 @@
 
 <section id="s4">
 <h2>4 Measuring and preventing memorization of benchmarks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.14165#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>If a student has seen the exam paper before the exam, a high score proves little. A model trained on a large slice of the internet may well have read the test questions. That is <span class="t" data-t="benchmark contamination">benchmark contamination</span>.</p>
 <p>The authors tried to remove every overlap with their benchmarks from the training data, but a bug left some in, and the model was too expensive to retrain. So they built “clean” versions of each benchmark, dropping every question that shared a 13-word sequence with the training data, and compared scores. For most benchmarks the score barely moved, though a few were flagged as possibly inflated.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Contamination is now a standing concern for every published benchmark score. The <a class="lesson" data-lesson="primer/ml/regularization.html">regularization lesson</a> covers data leakage, its smaller cousin.</p>
 </section>
 

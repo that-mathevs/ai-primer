@@ -74,42 +74,42 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531">original</a></span></h2>
 <blockquote class="quote">“Caruana and his collaborators have shown that it is possible to compress the knowledge in an ensemble into a single model which is much easier to deploy and we develop this approach further using a different compression technique.”<cite>Hinton, Vinyals and Dean (2015), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A master chef can't open a restaurant in every town, so they train apprentices. Handing an apprentice only the finished dishes (“this is a soufflé”) teaches a little. Letting them hear the master think aloud (“this is mostly soufflé, a bit like a mousse, nothing like a steak”) teaches far more. <span class="t" data-t="distillation">Distillation</span> trains a small model (the student) on a big model's (the teacher's) full spread of opinions instead of on bare right answers.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Averaging many models (an ensemble) is accurate but too expensive to deploy. Its knowledge can be squeezed into one small model.</li>
   <li>The trick is to raise the <span class="t" data-t="temperature">temperature</span> of the teacher's <span class="t" data-t="softmax">softmax</span>, so its small probabilities become visible, and train the student to match them.</li>
   <li>It works on MNIST digits and on a speech recognizer used by Android voice search.</li>
   <li>A new kind of ensemble, one generalist plus many cheap “specialists”, helps on a dataset of 100 million images.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Many of the small, fast models you use every day were distilled from larger ones. Whenever someone says “we trained the small model on the big model's outputs”, this paper is the root.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S1">original</a></span></h2>
 <blockquote class="quote">“An image of a BMW, for example, may only have a very small chance of being mistaken for a garbage truck, but that mistake is still many times more probable than mistaking it for a carrot.”<cite>Hinton, Vinyals and Dean (2015), §1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The paper opens with insects: a larva is built for eating and growing, an adult for flying and reproducing, and the two forms look nothing alike. Machine learning usually uses the same model for learning (where you can afford to be huge and slow) and for serving millions of users (where you must be small and fast). Distillation separates the two: learn with a cumbersome model, then transfer what it learned into a compact one.</p>
-<h4>Tiny example: dark knowledge</h4>
+<h3 class="rung">Tiny example: dark knowledge</h3>
 <p>A trained model shown a BMW might say 0.99 BMW, 0.009 garbage truck, 0.001 carrot, …. The “right answer” label only says BMW. But the <em>ratios</em> of the wrong answers, garbage truck nine times likelier than carrot, reveal how the model sees the world: cars resemble trucks more than vegetables. That similarity structure is the knowledge worth transferring, and it lives in numbers so small that normal training barely notices them. It has been nicknamed <span class="t" data-t="dark knowledge">dark knowledge</span>.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The key conceptual step is to stop thinking of a model's knowledge as its weights and think of it as its input-to-output mapping. Then you can move the knowledge into a model with completely different weights, and a completely different shape.</p>
 </section>
 
 <section id="s2">
 <h2>2 Distillation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A confident teacher's opinions are like a photo so over-exposed that everything except the brightest object is white: 0.997 for the right answer and nothing visible anywhere else. Raising the temperature is like turning down the exposure: the bright object dims and the faint details appear. Train the student on the dimmed photo, at the same temperature, and it sees everything the teacher saw.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Scores (<span class="t" data-t="logits">logits</span>) of (4, 1, 0). At temperature 1, e<sup>4</sup> = 54.6, e<sup>1</sup> = 2.72, e<sup>0</sup> = 1, total 58.3, giving probabilities (0.936, 0.047, 0.017). At temperature 4, divide the scores first: (1, 0.25, 0), so e<sup>1</sup> = 2.718, e<sup>0.25</sup> = 1.284, e<sup>0</sup> = 1, total 5.002, giving (0.543, 0.257, 0.200). Same ranking, but the second and third options now carry real information.</p>
 <div class="eq" data-tex="\htmlData{sym=qi}{q_i} = \frac{\htmlData{sym=exp}{\exp}(\htmlData{sym=zi}{z_i}/\htmlData{sym=T}{T})}{\htmlData{sym=sumj}{\sum_j} \htmlData{sym=exp}{\exp}(\htmlData{sym=zj}{z_j}/\htmlData{sym=T}{T})}" data-fallback="q_i = exp(z_i / T) / Σ_j exp(z_j / T)"></div>
 <div class="symtable" data-syms="qi,zi,zj,T,exp,sumj"></div>
 <p class="inwords"><strong>In words:</strong> “divide every score by the temperature, then apply the usual softmax; a temperature above 1 flattens the probabilities, below 1 sharpens them.”</p>
 <p class="inwords"><strong>With the numbers:</strong> logits (4, 1, 0) at T = 4: q<sub>1</sub> = e<sup>1</sup> / (e<sup>1</sup> + e<sup>0.25</sup> + e<sup>0</sup>) = 2.718 / 5.002 = 0.543.</p>
 
-<h4>Try it: turn down the exposure</h4>
+<h3 class="rung">Try it: turn down the exposure</h3>
 <div class="play" id="temp-demo">
   <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
     <span>Teacher is shown:</span>
@@ -127,20 +127,20 @@
 </div>
 <p class="reading"><strong>Reading it:</strong> the upper bars are the teacher's probabilities for the ten digits; the lower bars are the plain label, which only says “2”. The teacher's scores are illustrative, chosen to mimic the paper's example, not taken from a trained model. At T = 1 the teacher is almost certain: 2 gets over 99% and every other bar is invisible, so the soft targets say barely more than the label. Drag T up. Around 4 to 5, the runner-up appears, and switching between the two images reveals the point the paper makes about MNIST: the labels are identical, but one “2” looks like a 3 and the other like a 7. That is exactly the information a student can learn from soft targets and never from labels. Push T to 20 and everything flattens towards 10% each: too hot, and the useful ranking starts to wash out.</p>
 
-<h4>The training objective</h4>
+<h3 class="rung">The training objective</h3>
 <p>The student is trained on a weighted mix of two losses: <span class="t" data-t="cross-entropy">cross-entropy</span> with the teacher's soft targets, both softened at the same high temperature T, and cross-entropy with the true labels at T = 1. The paper found the best results with a considerably lower weight on the true-label term. After training, the student runs at T = 1.</p>
 <div class="eq" data-tex="\htmlData{sym=L}{\mathcal{L}} = \htmlData{sym=T2}{T^2}\cdot \htmlData{sym=Hce}{H}\big(\htmlData{sym=pT}{\mathbf{p}^{(T)}},\, \htmlData{sym=qT}{\mathbf{q}^{(T)}}\big) \;+\; \htmlData{sym=lam}{\lambda}\cdot \htmlData{sym=Hce}{H}\big(\htmlData{sym=yhard}{\mathbf{y}},\, \htmlData{sym=q1}{\mathbf{q}^{(1)}}\big)" data-fallback="L = T² · H(p^(T), q^(T)) + λ · H(y, q^(1))"></div>
 <div class="symtable" data-syms="L,T2,Hce,pT,qT,lam,yhard,q1"></div>
 <p class="inwords"><strong>In words:</strong> “match the teacher's softened opinions at temperature T, multiplied by T² to keep the gradients at a sensible size, plus a small amount of matching the true labels at normal temperature.” (The paper describes this weighted average in prose; this is our compact notation for it.)</p>
 <p class="inwords"><strong>With the numbers:</strong> in the speech experiment of §4 the best temperature was T = 2 and the hard-label term had a relative weight of 0.5, so L = 4 · H(p<sup>(2)</sup>, q<sup>(2)</sup>) + 0.5 · H(y, q<sup>(1)</sup>).</p>
 
-<h4>Why multiply by T²?</h4>
+<h3 class="rung">Why multiply by T²?</h3>
 <div class="plot">
   <div id="grad-chart"></div>
   <p class="readout" id="grad-readout">Hover or tap to read the gradient size at each temperature.</p>
 </div>
 <p class="reading"><strong>Reading it:</strong> computed live for the “2” above, with an untrained student whose logits are all zero. The x-axis is the temperature; the y-axis is the size of the soft-target gradient, the push training gives the student's logits, on a log scale. Without correction (blue) the push shrinks roughly as 1/T², so at T = 20 it is hundreds of times weaker than at T = 1 and the true-label term would drown it out. Multiplied by T² (green), it stays in the same range at every temperature, so you can change T while experimenting without re-balancing the two losses. That is the paper's stated reason for the T² factor.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Soft targets at a raised temperature plus a small hard-label term, scaled by T²” is still the textbook recipe, exactly as written here.</p>
 </section>
 
@@ -161,7 +161,7 @@
 
 <section id="s3">
 <h2>3 Preliminary experiments on MNIST <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S3">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A test of whether a student can inherit what a teacher learned from experiences the student never had. The teacher trained on images jiggled by up to two pixels; the student never sees a jiggled image, yet inherits the robustness through the soft targets.</p>
 <div class="tablewrap"><table>
   <caption>Selected results from §3 of Hinton, Vinyals and Dean (2015): test errors out of 10,000 MNIST digits</caption>
@@ -174,18 +174,18 @@
 </table></div>
 <div class="plot"><div id="mnist-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> fewer errors is better. The same small network goes from 146 errors (labels alone) to 74 (soft targets), nearly matching the big teacher's 67, with no dropout and no jittered images of its own. The numbers are from §3 of the paper.</p>
-<h4>The mythical digit</h4>
+<h3 class="rung">The mythical digit</h3>
 <p>Next, every 3 was removed from the student's training data. The student made 206 test errors, 133 of them on the 1,010 threes. Most of those mistakes came from its learned bias for the class 3 being too low. After raising that bias by 3.5, it made 109 errors, only 14 on threes: it got <strong>98.6% of the 3s right without ever having seen one</strong>. Everything it knew about 3s came from the soft targets on other digits (“this 5 looks a bit like a 3”). Trained on only the 7s and 8s, and with those two biases lowered by 7.6, its error across all ten digits was 13.2%.</p>
 <p>Temperature mattered with a tiny student: with 300 or more units per layer, any T above 8 worked about equally; with only 30 units per layer, T between 2.5 and 4 was clearly best.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The mythical-digit result is the most vivid demonstration that soft targets carry information about the whole data distribution, not just the labelled answer.</p>
 </section>
 
 <section id="s4">
 <h2>4 Experiments on speech recognition <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A real product test. The acoustic model of a speech recognizer listens to about a quarter-second of audio and guesses which of 14,000 sound states is being spoken. Ten copies trained from different random starts, averaged, beat any one of them; the question is whether one model the size of a single copy can capture most of the ten's advantage.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>The baseline gets 58.9% of frames right, the 10-model ensemble 61.1%, and the distilled single model 60.8%. The ensemble's gain is 61.1 − 58.9 = 2.2 points; the distilled model recovers 60.8 − 58.9 = 1.9 of them, 1.9 / 2.2 = 86%, which is the paper's “more than 80%”. On the metric users care about, word error rate, both the ensemble and the distilled model reach 10.7% against the baseline's 10.9%.</p>
 <div class="tablewrap"><table>
   <caption>Table 1 of Hinton, Vinyals and Dean (2015), reproduced in summary with attribution</caption>
@@ -197,15 +197,15 @@
   </tbody>
 </table></div>
 <p>Training data: about 2,000 hours of spoken English, roughly 700 million training examples. Temperatures of 1, 2, 5 and 10 were tried; 2 was best.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Ensembles are the most reliable way to squeeze out extra accuracy and the least deployable. This result turned “train an ensemble, ship a single model” into a standard recipe.</p>
 </section>
 
 <section id="s5">
 <h2>5 Training ensembles of specialists on very big datasets <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S5">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A hospital does not train every doctor in everything. A general practitioner sees everyone and refers you to a specialist when your case falls in a confusing corner: the specialist knows 300 kinds of mushroom apart but lumps everything else into “not my area”. The paper builds exactly that: one generalist model, plus many small specialists, each focused on a cluster of classes the generalist tends to confuse.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>JFT, an internal Google dataset: 100 million labelled images in 15,000 classes. The generalist had taken about six months to train. Each of 61 specialists handled 300 classes plus one “dustbin” class for everything else, started from the generalist's weights, and trained in a few days, all in parallel. Specialist training sets were half examples from the specialist's own classes and half random others, so afterwards the dustbin's score is raised by the log of how much the specialist's classes were oversampled, correcting the bias.</p>
 <figure class="ix" id="fig-spec">
   <div class="ixgrid">
@@ -243,31 +243,31 @@
   </tbody>
 </table></div>
 <p>Test accuracy rose from 25.0% to 26.1%, a 4.4% relative improvement (1.1 / 25.0). Accuracy gains grew with the number of specialists covering the correct class, which is encouraging because specialists are trivially parallel to train. The paper notes that it had not yet shown the specialists could be distilled back into one model.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Routing inputs to specialists is the idea behind modern <span class="t" data-t="mixture of experts">mixture-of-experts</span> models, although those learn the routing jointly (§7 explains the difference).</p>
 </section>
 
 <section id="s6">
 <h2>6 Soft targets as regularizers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S6">original</a></span></h2>
 <blockquote class="quote">“This shows that soft targets are a very effective way of communicating the regularities discovered by a model trained on all of the data to another model.”<cite>Hinton, Vinyals and Dean (2015), §6</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A student with only 3% of the textbook but a tutor who has read all of it can still learn most of the subject: the tutor's graded, nuanced feedback carries far more than 3% of the information.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>The 85-million-parameter speech model trained on only 3% of the data (about 20 million examples) with ordinary labels badly <span class="t" data-t="overfitting">overfits</span>: training frame accuracy 67.3%, test accuracy only 44.5%, and that was with <span class="t" data-t="early stopping">early stopping</span>. The same model on the same 3%, trained with soft targets from a model that saw all the data, reaches 57.0% test accuracy, within 2 points of the 58.9% achieved with the full data, and it simply converged, with no early stopping needed.</p>
 <div class="plot"><div id="reg-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each pair of bars is one training setup: training frame accuracy (grey) and test frame accuracy (blue). With 3% of the data and hard labels, the grey bar is high but the blue one collapses: memorising, not learning. With soft targets on the same 3%, the gap nearly closes and test accuracy almost matches the full-data baseline. Numbers from Table 5 of the paper.</p>
 <p>The paper suggests the same fix for specialists: train them with soft targets from the generalist for the classes outside their specialty, so they keep their general knowledge while specializing.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>This is the other half of distillation's value: not only a smaller model, but far less labelled data needed, because the teacher's soft outputs are a much richer signal than labels.</p>
 </section>
 
 <section id="s7">
 <h2>7 Relationship to mixtures of experts <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1503.02531#S7">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A mixture of experts learns, at the same time, what each expert is good at and which expert to send each case to. That is powerful but hard to parallelize: every expert's workload keeps shifting as the router learns. The specialist scheme decides the assignment once, up front, from what the generalist confuses, and then trains every specialist completely independently.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>With 61 specialists and 61 machines, the specialists train in the time of one, because no specialist needs anything from another. A jointly trained mixture must keep all experts and the router in sync throughout.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Modern language models took the other branch: mixture-of-experts layers with a learned router, trained jointly at enormous scale, made practical by specialized infrastructure. The trade-off this section names, joint learning versus easy parallelism, is still the right way to think about it. See the <a data-lesson="primer/ml/transformer.html">transformer lesson</a>.</p>
 </section>
 

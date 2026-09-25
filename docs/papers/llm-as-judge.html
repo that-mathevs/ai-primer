@@ -69,24 +69,24 @@
 <section id="abstract">
 <h2>Abstract</h2>
 <blockquote class="quote">“Our results reveal that strong LLM judges like GPT-4 can match both controlled and crowdsourced human preferences well, achieving over 80% agreement, the same level of agreement between humans.”<cite>Zheng et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2306.05685">Read the original</a></cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A cooking competition needs judges. Human judges are the gold standard but slow and expensive. Could an experienced chef grade thousands of dishes instead? Only if we first check how often the chef agrees with the human panel, and what quirks the chef has, such as always preferring the first plate tasted or the biggest portion. This paper does that check for <span class="t" data-t="llm-as-judge">LLM judges</span>.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A strong model (GPT-4) agrees with expert humans over 80% of the time on which of two chatbot answers is better: about as often as two humans agree with each other.</li>
   <li>LLM judges have measurable biases: position (favouring the first or second answer), verbosity (favouring longer answers), possibly favouring their own answers, and trouble grading maths and reasoning.</li>
   <li>Simple fixes help: swap the answer order and require a consistent verdict, show a reference answer, or ask the judge to solve the problem first.</li>
   <li>Two public benchmarks: MT-Bench (80 two-turn questions) and Chatbot Arena (crowd-sourced head-to-head votes).</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Automated grading of open-ended output is now routine in building AI systems. This paper supplies the vocabulary (pairwise, single-answer, reference-guided; position and verbosity bias) and, more importantly, the habit: <strong>check the judge against humans before trusting it</strong>.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A multiple-choice exam can tell whether a student knows facts. It cannot tell whether they write a helpful, well-organised reply to a messy, open-ended request. Chatbots trained to be helpful were clearly preferred by people over their base models, yet standard benchmarks such as MMLU barely told them apart.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>In the paper's own comparison, LLaMA-13B (a base model) and Vicuna-13B (the same model fine-tuned on conversations) score similarly on knowledge benchmarks, but on an open-ended follow-up request people strongly prefer Vicuna. The benchmark measured what the model knows; people care about how it helps.</p>
 </section>
 
@@ -217,9 +217,9 @@
 
 <section id="s4">
 <h2>4 Agreement with humans <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>If two human judges agree 81% of the time, a machine judge that agrees with humans 85% of the time is doing as well as a human could. The comparison that matters is not “is the judge always right?” but “does it agree with people as often as people agree with each other?”</p>
-<h4>How agreement is defined</h4>
+<h3 class="rung">How agreement is defined</h3>
 <p>Agreement is the probability that a randomly chosen judge of one type and a randomly chosen judge of the other type give the same verdict on a randomly chosen question. It is reported two ways: <strong>S1</strong> counts ties (and position-inconsistent verdicts as ties), so random guessing among A, B and tie would agree 33% of the time; <strong>S2</strong> keeps only non-tie votes, so random guessing would agree 50%.</p>
 <div class="tablewrap"><table>
   <caption>Selected numbers from Zheng et al. (2023), Table 5, MT-Bench first turn. Summarised with attribution.</caption>
@@ -231,7 +231,7 @@
   </tbody>
 </table></div>
 <p>Two more findings: when an expert disagreed with GPT-4 and was shown GPT-4's reasoning, they judged it reasonable 75% of the time and changed their own vote 34% of the time. And agreement rose with how different the two models were, from about 70% for close pairs to nearly 100% for very unequal ones.</p>
-<h4>How much of an agreement rate is real? Cohen's kappa</h4>
+<h3 class="rung">How much of an agreement rate is real? Cohen's kappa</h3>
 <p>Raw agreement flatters: two judges who both say “A” most of the time will agree often by chance alone. <span class="t" data-t="cohen's kappa">Cohen's kappa</span> subtracts the agreement expected by chance.</p>
 <div class="eq" data-tex="\htmlData{sym=kappa}{\kappa} = \frac{\htmlData{sym=po}{p_o} - \htmlData{sym=pe}{p_e}}{1 - \htmlData{sym=pe}{p_e}}, \qquad \htmlData{sym=pe}{p_e} = \htmlData{sym=pjA}{p_{J,A}}\,\htmlData{sym=phA}{p_{H,A}} + \htmlData{sym=pjB}{p_{J,B}}\,\htmlData{sym=phB}{p_{H,B}}" data-fallback="κ = (p_o − p_e) / (1 − p_e),  p_e = p_J,A · p_H,A + p_J,B · p_H,B"></div>
 <div class="symtable" data-syms="po,pe,pjA,phA,pjB,phB,kappa"></div>
@@ -247,7 +247,7 @@
 
 <section id="s5">
 <h2>5 Two kinds of benchmark <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2306.05685#S5">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A driving test has a written part (knowledge) and a road part (practice). Passing one does not guarantee the other.</p>
 <div class="tablewrap"><table>
   <caption>Selected rows from Zheng et al. (2023), Table 9. MMLU measures knowledge (5-shot, %); MT-Bench is GPT-4's score out of 10. Summarised with attribution.</caption>

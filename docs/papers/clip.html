@@ -89,21 +89,21 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020">original</a></span></h2>
 <blockquote class="quote">“We demonstrate that the simple pre-training task of predicting which caption goes with which image is an efficient and scalable way to learn SOTA image representations from scratch on a dataset of 400 million (image, text) pairs collected from the internet.”<cite>Radford et al. (2021), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Traditional image models learn from a fixed list of labels: “this is one of 1,000 categories”. To recognize something new you need new labelled photos. <span class="t" data-t="clip">CLIP</span> learns from the captions people already write next to images on the web, and ends up able to recognize anything you can describe in words. You classify a photo by asking which of several descriptions matches it best.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Matching images to captions, trained on 400 million web pairs, learns strong image <span class="t" data-t="embedding">representations</span> from scratch.</li>
   <li>With no task-specific training at all (“zero-shot”), it matches the original ResNet-50 on ImageNet, 76.2%, without using any of ImageNet's 1.28 million labelled training images.</li>
   <li>It transfers to over 30 datasets: text in images, actions in videos, locations, fine-grained categories.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>CLIP-style shared image-text spaces power image search by description, many multimodal assistants' vision encoders, filtering of training data, and text-to-image generators that need to know what a caption “looks like”.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Language models improved dramatically by learning from raw web text instead of hand-labelled datasets. Vision was still trained mostly on crowd-labelled sets like ImageNet. The question: can learning from raw web text do for vision what it did for language?</p>
 <p>Earlier attempts to learn from captions existed, but performed far below labelled training; one reached 11.5% zero-shot on ImageNet. The paper's answer is mostly <em>scale</em> (far more data) plus a more efficient training objective.</p>
 </section>
@@ -242,13 +242,13 @@
 
 <section id="s3-3">
 <h2>3.3 Robustness to distribution shift <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2103.00020#S3.SS3">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A student who memorized one textbook's photos of bananas may fail on a sketch of a banana, or a banana photographed in a kitchen. ImageNet models are like that: accuracy drops sharply on new kinds of images of the same things (sketches, renditions, adversarially chosen photos, differently collected sets). A ResNet-101 makes 5 times as many mistakes on these natural shifts as on ImageNet itself.</p>
 <ul>
   <li>Zero-shot CLIP closed the gap between ImageNet accuracy and accuracy under shift by <strong>up to 75%</strong>.</li>
   <li>Training a classifier on CLIP's features specifically for ImageNet raised ImageNet accuracy by 9.2% but gave essentially no gain on the shifted sets: the gain was ImageNet-specific.</li>
 </ul>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>A benchmark score is a measurement on one distribution. Models trained on broad data and evaluated zero-shot tend to hold up better when the world shifts, which is the practical situation.</p>
 </section>
 

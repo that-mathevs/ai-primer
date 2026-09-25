@@ -98,30 +98,30 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=1">original</a></span></h2>
 <blockquote class="quote">“The maximum layer in which an element is present is selected randomly with an exponentially decaying probability distribution.”<cite>Malkov and Yashunin, Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>To drive to a house in a city you have never visited, you take the motorway to the right region, then main roads to the right district, then side streets to the right door. You never look at most of the city's streets. HNSW builds that road network for a cloud of points: a sparse top layer of long “motorway” links, denser layers of shorter links underneath, and a bottom layer that connects every point to its near neighbours.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A fully graph-based <span class="t" data-t="approximate nearest neighbor">approximate nearest-neighbour</span> index, with no separate tree or clustering needed to find a starting point.</li>
   <li>Search cost that grows only <span class="t" data-t="big-o">logarithmically</span> with the number of stored points.</li>
   <li>A neighbour-selection rule that keeps the graph connected even on highly clustered data.</li>
   <li>Much faster than the open-source competition of the time at the same <span class="t" data-t="recall">recall</span>.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>When a <span class="t" data-t="rag">RAG</span> system finds the 10 passages closest to your question among millions in a few milliseconds, the index doing the work is very often HNSW. <a href="dpr.html">DPR</a>, for example, used FAISS's HNSW index to answer 995 questions per second over 21 million passages.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>“Find the 10 most similar songs to this one” is a K-nearest-neighbour search. The honest way is to measure the distance to every song in the catalogue: fine for a thousand songs, hopeless for a billion. And in the hundreds of dimensions that embeddings use, the clever exact tricks that work on a 2-D map stop helping: the <span class="t" data-t="curse of dimensionality">curse of dimensionality</span>. So we accept being <em>approximately</em> right: return 10 songs that are nearly always the true 10, very quickly.</p>
-<h4>Tiny example: recall</h4>
+<h3 class="rung">Tiny example: recall</h3>
 <p>The true 5 nearest neighbours of a query are points {3, 8, 11, 20, 42}. An approximate search returns {3, 8, 11, 20, 57}. Four of the five are right, so recall is 4 / 5 = 0.8.</p>
 <div class="eq" data-tex="\htmlData{sym=recall}{\text{recall}} = \frac{|\htmlData{sym=found}{\text{found}} \cap \htmlData{sym=truek}{\text{true}}|}{\htmlData{sym=K}{K}}" data-fallback="recall = |found ∩ true| / K"></div>
 <div class="symtable" data-syms="recall,found,truek,K"></div>
 <p class="inwords"><strong>In words:</strong> “the share of the true K nearest neighbours that the search actually found.”</p>
 <p class="inwords"><strong>With the numbers:</strong> |{3, 8, 11, 20}| / 5 = 4 / 5 = 0.8.</p>
-<h4>The families of approximate search</h4>
+<h3 class="rung">The families of approximate search</h3>
 <ul>
   <li><strong>Trees</strong> (kd-trees and relatives): split space into boxes. Great in low dimensions, weak in high.</li>
   <li><strong>Hashing</strong> (<span class="t" data-tip-title="Locality-sensitive hashing" data-tip="Hash functions designed so that nearby points usually land in the same bucket. Search only the query's bucket.">LSH</span>): hash nearby points into the same buckets.</li>
@@ -132,22 +132,22 @@
 
 <section id="s2">
 <h2>2 Related work: greedy walks and small worlds <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>In the famous 1960s Milgram experiment, people passed a letter towards a stranger only through personal acquaintances, each choosing the friend they thought “closest” to the target. Letters often arrived in a handful of hops. Networks where such local, greedy choices reach any target in few steps are called <span class="t" data-tip-title="Navigable small world" data-tip="A network where greedy routing (always step to the neighbour closest to the target) reaches any target in a number of hops that grows only logarithmically (or polylogarithmically) with the network size.">navigable small worlds</span>.</p>
-<h4>2.1 Greedy search on a proximity graph</h4>
+<h3 class="rung">2.1 Greedy search on a proximity graph</h3>
 <p>Start at some node. Look at its neighbours; move to whichever is closest to the query. Repeat until no neighbour is closer. On the ideal graph for this (the <span class="t" data-tip-title="Delaunay graph" data-tip="The graph that connects points whose regions of 'closest territory' touch. Greedy search on it always ends at the true nearest neighbour, but it is impractical to build in high dimensions.">Delaunay graph</span>) greedy search always finds the true nearest neighbour, but that graph cannot be built efficiently in high dimensions, so practical systems approximate it by linking each point to its nearest neighbours (a k-NN graph). Two problems follow: the number of steps grows as a power of the dataset size, and on clustered data the graph can split into islands that the walk cannot cross.</p>
-<h4>Navigable Small World (NSW), the authors' earlier method</h4>
+<h3 class="rung">Navigable Small World (NSW), the authors' earlier method</h3>
 <p>Insert points one at a time in random order, linking each new point to the M closest points already present. The early points' links were made when the graph was sparse, so they are long; they become the “bridges” that let a greedy walk cross the space quickly. NSW search takes a polylogarithmic number of steps: good, but it still suffered badly on low-dimensional data, sometimes losing to trees by orders of magnitude.</p>
-<h4>2.2 Why the name</h4>
+<h3 class="rung">2.2 Why the name</h3>
 <p>Kleinberg showed that a grid with extra long-range links, drawn with just the right distribution of lengths, is navigable. That requires knowing the data's layout in advance. NSW builds navigability without that knowledge, just from insertion order. HNSW goes one step further and makes the scales of the links explicit.</p>
 </section>
 
 <section id="s3">
 <h2>3 Motivation: separate the links by length <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=2">original</a></span></h2>
 <blockquote class="quote">“The idea of Hierarchical NSW algorithm is to separate the links according to their length scale into different layers and then search in a multilayer graph.”<cite>Malkov and Yashunin, §3</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>In NSW the motorways and side streets are all mixed on one map, so at every junction you must look at many roads. HNSW prints separate maps: a motorway map with only a few towns, a main-road map with more, and a street map with everything. You zoom in map by map, and on each map only a handful of roads leave each place.</p>
-<h4>Tiny example: the one-dimensional version is a skip list</h4>
+<h3 class="rung">Tiny example: the one-dimensional version is a skip list</h3>
 <p>The paper points out that HNSW generalises a classic data structure, the <span class="t" data-tip-title="Skip list" data-tip="A sorted linked list with extra 'express lanes' on top: each element is promoted to the next lane with a fixed probability. Search runs along the top lane and drops down when it would overshoot, taking about log(n) steps.">skip list</span>. Numbers are kept sorted in a bottom lane; some are promoted at random to an express lane above, fewer again to a lane above that. To find a number, run along the top lane until the next stop would overshoot, then drop down a lane and continue.</p>
 <div class="play" id="sl-demo">
   <div class="btnrow ui" id="sl-targets"></div>
@@ -155,7 +155,7 @@
   <p class="readout" id="sl-readout"></p>
 </div>
 <p class="reading"><strong>Reading it:</strong> each row is a lane and each box a stored number; a box appears in the upper lanes only if it was promoted. Pick a target. The red path starts at the top-left and runs right along the express lane while the next box is not past the target, then drops down, and so on until it reaches the target in the bottom lane. The readout counts comparisons: far fewer than walking the bottom lane from the start. HNSW does the same thing with proximity graphs instead of lanes: “not past the target” becomes “closer to the query”.</p>
-<h4>How a point's top layer is chosen</h4>
+<h3 class="rung">How a point's top layer is chosen</h3>
 <p>Each new point draws a random level l. It appears in layers 0, 1, …, l. Most points get l = 0; a few get 1; very few get 2.</p>
 <div class="eq" data-tex="\htmlData{sym=lev}{l} = \big\lfloor -\htmlData{sym=ln}{\ln}(\htmlData{sym=unif}{\text{unif}(0,1)}) \cdot \htmlData{sym=mL}{m_L} \big\rfloor" data-fallback="l = floor( −ln(unif(0,1)) · m_L )"></div>
 <div class="symtable" data-syms="lev,ln,unif,mL,floor"></div>
@@ -186,7 +186,7 @@
 
 <section id="s4">
 <h2>4 The algorithm <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Searching and inserting are the same walk. To <strong>search</strong>, enter at the top, walk greedily to the closest point on each layer, drop down, and at the bottom widen the search into a careful local exploration. To <strong>insert</strong>, do exactly that search for the new point, then link it to good neighbours on every layer from its own top level down.</p>
 <figure class="ix" id="fig-algos">
   <div class="ixgrid">
@@ -208,7 +208,7 @@
   <figcaption>How the paper's five algorithms fit together, drawn for this page. Algorithm numbering follows Malkov and Yashunin, §4.</figcaption>
 </figure>
 <p class="reading"><strong>Reading it:</strong> the two things you do with an index sit on top: building it (INSERT) and querying it (K-NN-SEARCH). Both are built on one workhorse, SEARCH-LAYER, which finds the ef closest points to a target on a single layer, starting from given entry points. INSERT additionally chooses which of those points to link to, with either the simple rule or the heuristic from the previous section. Hover each box for the exact steps.</p>
-<h4>SEARCH-LAYER in one paragraph</h4>
+<h3 class="rung">SEARCH-LAYER in one paragraph</h3>
 <p>Keep two lists: <em>candidates</em> still to explore, and the <em>best ef found so far</em>. Repeatedly take the closest unexplored candidate. If it is farther than the worst of the best-ef list, stop: nothing left can improve the answer. Otherwise look at each of its neighbours you have not seen yet; any that beats the worst of the best-ef list (or if that list is not full) joins both lists, and the list is trimmed back to ef. This is a <span class="t" data-t="beam search">beam search</span> whose width is ef: with ef = 1 it is plain greedy walking.</p>
 </section>
 
@@ -286,7 +286,7 @@
 
 <section id="s5">
 <h2>5 Performance evaluation <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=8">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A race between search methods, judged on a speed-versus-accuracy chart: for each method, how fast can it answer while still finding, say, 90% of the true neighbours?</p>
 <ul>
   <li><strong>5.1 Against NSW</strong>: on 10 million random 4-dimensional points, HNSW needs far fewer distance computations for the same recall, especially at high recall, and its cost grows no worse than logarithmically with the dataset size.</li>
@@ -310,13 +310,13 @@
 <section id="s6">
 <h2>6 Discussion <span class="orig">· <a href="https://arxiv.org/pdf/1603.09320#page=10">original</a></span></h2>
 <blockquote class="quote">“Robustness of the approach is a strong feature which makes it very attractive for practical applications.”<cite>Malkov and Yashunin, §6</cite></blockquote>
-<h4>Strengths the authors stress</h4>
+<h3 class="rung">Strengths the authors stress</h3>
 <ul>
   <li><strong>Robust</strong>: best on every dataset tested, including general metric spaces, so you rarely need to pick a different algorithm per problem. Real data can be high-dimensional at large scales and low-dimensional at small scales, and HNSW handles both.</li>
   <li><strong>Incremental</strong>: points can be inserted at any time, with no rebuild. Deletion and update were listed as future work.</li>
   <li><strong>One real dial</strong>: M.</li>
 </ul>
-<h4>The weakness they admit</h4>
+<h3 class="rung">The weakness they admit</h3>
 <p>Every search starts at the single top-layer entry point, so a straightforward distributed version would have all machines queueing for the few top-layer nodes. Splitting the data across machines works but does not scale throughput well; skip-list techniques for distribution might help.</p>
 </section>
 

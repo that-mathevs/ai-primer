@@ -790,8 +790,10 @@ def figures() -> dict[str, Any]:
     fig, ax = plt.subplots(figsize=(6.5, 3))
     for row, (name, res, color) in enumerate([("sequential", seq, "#c44e52"), ("parallel", par, "#4c72b0")]):
         for i, start, end in res["spans"]:
-            ax.barh(row * 4 + i, (end - start) * 1000, left=start * 1000, color=color)
-            ax.text(start * 1000 + 2, row * 4 + i, f"tool {i}", va="center", fontsize=8, color="white")
+            # Measured times, drawn to the nearest 10 ms: a millisecond of jitter shouldn't redraw the figure.
+            start, end = round(start * 100) * 10, round(end * 100) * 10
+            ax.barh(row * 4 + i, end - start, left=start, color=color)
+            ax.text(start + 2, row * 4 + i, f"tool {i}", va="center", fontsize=8, color="white")
     ax.set_yticks([1, 5], ["sequential", "parallel"])
     ax.invert_yaxis()
     ax.set_xlabel("milliseconds since the agent started the calls")

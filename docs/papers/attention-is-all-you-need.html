@@ -82,42 +82,42 @@
 <section id="abstract">
 <h2>Abstract</h2>
 <blockquote class="quote">“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.”<cite>Vaswani et al. (2017), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/1706.03762">Read the original</a></cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Before 2017, the best translation systems read a sentence the way you'd read through a keyhole: one word at a time, carrying a running summary in your head. This paper says: lay the whole sentence on the table, and let every word look at every other word directly. That “looking” is <span class="t" data-t="attention">attention</span>, and a model built only from attention (plus some simple per-word processing) is the <span class="t" data-t="transformer">Transformer</span>.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A <span class="t" data-tip-title="Machine translation" data-tip="Turning a sentence in one language into another. The paper tests the Transformer on English→German and English→French.">translation</span> model with no <span class="t" data-t="rnn">recurrence</span> and no <span class="t" data-t="convolution">convolutions</span>: attention only.</li>
   <li>Better quality: 28.4 <span class="t" data-t="bleu">BLEU</span> on English→German and 41.8 on English→French, new records at the time.</li>
   <li>Much cheaper to train, because every word can be processed <span class="t" data-tip-title="Parallelism" data-tip="Doing many calculations at the same time instead of one after another. GPUs have thousands of small cores built exactly for this.">in parallel</span>: the big model trained in 3.5 days on 8 <span class="t" data-tip-title="GPU" data-tip="Graphics processing unit: a chip with thousands of simple cores that do arithmetic in parallel. Neural networks are mostly big matrix multiplications, which GPUs are built for.">GPUs</span>.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Almost every modern language model (GPT, Claude, Llama, Gemini), most image and speech models, and every modern <span class="t" data-t="embedding">embedding</span> model is a descendant of the architecture in this paper. Understanding these 15 pages is understanding the core of modern AI.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S1">original</a></span></h2>
 <blockquote class="quote">“This inherently sequential nature precludes parallelization within training examples, which becomes critical at longer sequence lengths, as memory constraints limit batching across examples.”<cite>Vaswani et al. (2017), §1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Imagine a relay race where each runner can only start when the previous one hands over the baton. Adding more runners doesn't make the race faster. That is a <span class="t" data-t="rnn">recurrent neural network (RNN)</span>: to process word 50, it must first finish words 1 to 49, because each step needs the <span class="t" data-tip-title="Hidden state" data-tip="The running summary an RNN carries from one word to the next: a fixed-size vector it rewrites after reading each word.">hidden state</span> from the step before. A <span class="t" data-tip-title="GPU" data-tip="Graphics processing unit: a chip with thousands of simple cores that do arithmetic in parallel. Neural networks are mostly big matrix multiplications, which GPUs are built for.">GPU</span>, which is built to do thousands of things at once, sits mostly idle.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Take “The cat sat down”. An RNN computes four steps in a strict chain: h<sub>1</sub> from “The”; h<sub>2</sub> from h<sub>1</sub> and “cat”; h<sub>3</sub> from h<sub>2</sub> and “sat”; h<sub>4</sub> from h<sub>3</sub> and “down”. Information about “The” reaches “down” only after surviving three hand-offs. The Transformer computes all four words' new representations at once, and “down” can look at “The” in a single step.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>This is the paper's core bet: give up the step-by-step memory, and gain parallelism plus direct connections. The bet paid off so well that training on vastly more data became practical, which is what eventually produced today's large language models. The <a class="lesson" data-lesson="primer/ml/cnn_rnn.html">CNN and RNN lesson</a> builds an RNN from scratch and measures exactly how it forgets.</p>
 </section>
 
 <section id="s2">
 <h2>2 Background <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Others had already tried to escape the relay race. Convolution-based models (ByteNet, ConvS2S) read words in small overlapping windows, like reading a page through a sliding frame a few words wide. Windows run in parallel, but for two far-apart words to “meet”, the frames have to be stacked many layers deep.</p>
-<h4>The key idea the paper borrows</h4>
+<h3 class="rung">The key idea the paper borrows</h3>
 <p><span class="t" data-t="self-attention">Self-attention</span> (relating different positions of one sequence to each other) already existed as a helper inside recurrent models. The new move is making it the <em>only</em> mechanism. The paper also flags the price: averaging over many positions blurs detail, which is why it introduces <em>multi-head</em> attention (§3.2.2): several attentions side by side, each free to focus on something different.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>“Any two words are one step apart” is the property that makes Transformers good at long-range relationships, such as which noun a pronoun refers to 30 words later.</p>
 </section>
 
 <section id="s3">
 <h2>3 Model Architecture <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S3">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Think of a two-person translation team. The <span class="t" data-t="encoder">encoder</span> reads the whole English sentence and writes rich notes about every word. The <span class="t" data-t="decoder">decoder</span> writes the German sentence one word at a time; before each word, it rereads what it has written so far <em>and</em> consults the encoder's notes. Writing one word at a time, each time feeding the output back in, is what <span class="t" data-tip-title="Auto-regressive" data-tip="Generating one piece at a time, feeding each output back in as input for the next step. Every chat model writes this way, one token after another.">auto-regressive</span> means.</p>
 <p>Hover or tap any block in the redrawn figure to see what it does and the shape of the data flowing through it. The numbers use the paper's base model: <span class="t" data-tip-title="d_model" data-tip="The width of every vector passed between layers: 512 numbers per token in the paper's base model (1024 in the big one).">d<sub>model</sub></span> = 512, <span class="t" data-tip-title="h (heads)" data-tip="How many attention heads run side by side in each attention layer: 8 in the base model, each working on 512 / 8 = 64 numbers.">h</span> = 8 heads, <span class="t" data-tip-title="N (layers)" data-tip="How many times the encoder layer (and the decoder layer) is stacked: 6 in the paper. Modern large models stack 30 to 120.">N</span> = 6 layers, and a 10-token sentence as the example.</p>
 
@@ -429,7 +429,7 @@
 
 <section id="s4">
 <h2>4 Why self-attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>How many phone calls does it take for news to travel between two people? In a chain of friends (an RNN), it takes as many calls as there are people between them. In a group call (self-attention), it takes one. The paper compares layer types on three questions: how much work per layer, how much must happen in sequence, and how many hops information needs between any two words.</p>
 <div class="tablewrap"><table>
   <caption>Table 1, reproduced with attribution (Vaswani et al., 2017)</caption>
@@ -442,14 +442,14 @@
   </tbody>
 </table></div>
 <p>Here <em>n</em> is the sentence length, <em>d</em> the vector width, <em>k</em> the convolution window and <em>r</em> the attention window. <span class="t" data-t="big-o">O(·)</span> describes how cost grows, ignoring constant factors.</p>
-<h4>Tiny example: when is n² cheaper than d²?</h4>
+<h3 class="rung">Tiny example: when is n² cheaper than d²?</h3>
 <div class="plot" id="cmp-plot">
   <div class="controls"><label for="cmp-n">Sentence length n = <strong id="cmp-nv"></strong></label><input type="range" id="cmp-n" min="1" max="4" step="0.01" value="1.5"><span>d = 512</span></div>
   <div id="cmp-bars"></div>
   <p class="readout" id="cmp-readout"></p>
 </div>
 <p class="reading"><strong>Reading it:</strong> the two bars compare the work per layer of self-attention (n²·d) and of a recurrent layer (n·d²). Slide n. While sentences are shorter than the vector width (n &lt; d = 512), self-attention is <em>cheaper</em>, and in 2017 most sentences were a few dozen tokens long. Past n = 512 the balance flips. Today's contexts run to hundreds of thousands of tokens, which is why so much modern engineering (<a href="flashattention.html">FlashAttention</a>, sliding windows, the KV cache) goes into taming the n² term.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The two columns that won the argument are the last two: O(1) sequential steps means training uses the whole GPU, and an O(1) path means distant words connect directly. The paper's closing aside about attention being more <em>interpretable</em>, since you can inspect what attends to what, started a whole research field.</p>
 </section>
 
@@ -501,7 +501,7 @@
 
 <section id="s6">
 <h2>6 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1706.03762#S6">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p><span class="t" data-t="bleu">BLEU</span> scores a translation by how many of its word sequences also appear in a professional human translation, on a 0–100 scale. A gain of 1–2 points is considered a clear improvement. Output was generated with <span class="t" data-tip-title="Beam search" data-tip="Instead of always taking the single most likely next word, keep the best few partial translations (the beam; 4 in the paper) and extend them all, keeping the overall best at the end.">beam search</span> (beam size 4) and averaged the weights from the last few saved <span class="t" data-tip-title="Checkpoint averaging" data-tip="Averaging the weights saved at the last few checkpoints of training (5 for the base model, 20 for big). The average is often slightly better than any single checkpoint.">checkpoints</span>.</p>
 <div class="tablewrap"><table>
   <caption>Selected rows of Table 2, reproduced with attribution (Vaswani et al., 2017). BLEU on newstest2014; training cost in FLOPs</caption>
@@ -515,7 +515,7 @@
 </table></div>
 <div class="plot" id="bleu-plot"><div id="bleu-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each bar is one model's English→German BLEU, with its training cost beside it. The base Transformer beats the previous best single models while costing a fraction of the compute (3.3 × 10<sup>18</sup> <span class="t" data-tip-title="FLOPs" data-tip="Floating-point operations: individual additions and multiplications. A standard way to measure how much computation training took, independent of hardware.">FLOPs</span>, against 9.6 × 10<sup>18</sup> for ConvS2S). The big model adds another point. See the paper for the full table, including ensembles.</p>
-<h4>What the ablations show (Table 3)</h4>
+<h3 class="rung">What the ablations show (Table 3)</h3>
 <div class="tablewrap"><table>
   <caption>Selected rows of Table 3, reproduced with attribution (Vaswani et al., 2017). EN→DE development set (newstest2013)</caption>
   <thead><tr><th>Variant</th><th class="num">h</th><th class="num">d<sub>k</sub></th><th class="num">Perplexity</th><th class="num">BLEU</th></tr></thead>
@@ -530,7 +530,7 @@
   </tbody>
 </table></div>
 <p>Rows (A) keep the total width fixed and trade the number of heads against their width. One head is 0.9 BLEU worse than the best setting, and too many narrow heads also hurts: multi-head attention helps, but only up to a point. Row (E) shows that learned positions work about as well as the sine-and-cosine stamps.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The pattern here, a simpler architecture that is better <em>and</em> cheaper to train, is why the Transformer spread to every modality within three years.</p>
 </section>
 

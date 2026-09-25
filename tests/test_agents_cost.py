@@ -162,3 +162,18 @@ class TestFiveTimesPlan:
         # Caching and trimming don't change the model, so they can't hurt quality; try them first.
         names = [s["lever"] for s in five_x_plan()]
         assert names.index("prompt caching") < names.index("route easy tasks to the small model")
+
+
+class TestTheParallelFigureIsStable:
+    def test_given_two_builds_the_parallel_calls_figure_draws_the_same_bars(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from primer.agents.cost import figures
+
+        # Real timings jitter by a millisecond or two; the site shouldn't change on every build because of it.
+        def bars():
+            fig = figures()["parallel"]
+            return [(round(p.get_x(), 6), round(p.get_width(), 6)) for p in fig.axes[0].patches]
+
+        assert bars() == bars()

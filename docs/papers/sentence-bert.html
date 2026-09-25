@@ -83,23 +83,23 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084">original</a></span></h2>
 <blockquote class="quote">“Finding the most similar pair in a collection of 10,000 sentences requires about 50 million inference computations (~65 hours) with BERT.”<cite>Reimers and Gurevych (2019), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>You have 10,000 job applicants and want the two most similar CVs. Method one: sit every possible pair of CVs side by side and read them together, 50 million readings. Method two: write a short summary card for each CV once, 10,000 summaries, then compare the cards. BERT, as used in 2019, could only do method one. Sentence-BERT teaches it method two, without losing much accuracy.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A small change to <span class="t" data-t="transformer">BERT</span>, a pooling step plus <span class="t" data-tip-title="Siamese network" data-tip="Two copies of the same network, sharing every weight, each reading one input. Because the copies are identical, the two outputs live in the same space and can be compared directly.">siamese</span> fine-tuning, produces sentence <span class="t" data-t="embedding">embeddings</span> you can compare with <span class="t" data-t="cosine similarity">cosine similarity</span>.</li>
   <li>Finding the most similar pair among 10,000 sentences drops from about 65 hours to about 5 seconds.</li>
   <li>Better than earlier sentence embedding methods (InferSent, Universal Sentence Encoder) on standard similarity benchmarks.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Almost every semantic search system, RAG pipeline and embedding API follows this recipe: encode each text once into a vector, store the vectors, and compare vectors at query time. This paper is where BERT-quality models first became usable that way.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction: 65 hours versus 5 seconds <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A <span class="t" data-t="cross-encoder">cross-encoder</span> is a judge who must hear both sides at once: to score two sentences, BERT reads them together in one pass. That is accurate, because every word of one sentence can attend to every word of the other, but the work grows with the number of <em>pairs</em>. A <span class="t" data-t="bi-encoder">bi-encoder</span> reads each sentence alone and writes down a vector; comparing two vectors is a single <span class="t" data-t="dot product">dot product</span>.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>With 5 sentences there are 5 × 4 / 2 = 10 pairs; with 10,000 sentences there are 10,000 × 9,999 / 2 = 49,995,000 pairs. The number of pairs grows with the square of the collection.</p>
 <div class="eq" data-tex="\htmlData{sym=pairs}{\text{pairs}} = \frac{\htmlData{sym=nsent}{n}\,(\htmlData{sym=nsent}{n} - 1)}{2}" data-fallback="pairs = n (n − 1) / 2"></div>
 <div class="symtable" data-syms="pairs,nsent"></div>
@@ -117,15 +117,15 @@
   <p class="readout" id="cd-readout"></p>
 </div>
 <p class="reading"><strong>Reading it:</strong> the left card is BERT as a cross-encoder, the right card is SBERT as a bi-encoder, both using rates derived from the paper's own numbers (about 214 cross-encoded pairs per second; about 2,000 sentences embedded per second; about 5 billion cosine comparisons per second). Slide n to the right. In <strong>pair</strong> mode the BERT time grows with n² and passes a year of GPU time before n reaches a million, while SBERT's stays in minutes. In <strong>search</strong> mode, with the collection already embedded, SBERT answers a query in a fraction of a second; at the paper's Quora example of 40 million questions BERT needs over 50 hours per query. Adding an approximate index such as <a href="hnsw.html">HNSW</a> brings the search time down to milliseconds.</p>
-<h4>The surprise in the introduction</h4>
+<h3 class="rung">The surprise in the introduction</h3>
 <p>People had tried the obvious shortcut: feed one sentence into plain BERT and average its output vectors, or take the output of its special <span class="mono">[CLS]</span> token. The paper shows this gives <em>bad</em> sentence embeddings for similarity, often worse than averaging old-fashioned <a href="word2vec.html">word vectors</a> (GloVe). BERT was never trained to make its vectors comparable by cosine; SBERT's fine-tuning is what fixes that.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The “retrieve with a bi-encoder, rerank the top few with a cross-encoder” pipeline used in nearly every production search system is this trade-off put to work. See the <a data-lesson="primer/ml/embeddings/retrieval.html">retrieval lesson</a>.</p>
 </section>
 
 <section id="s2">
 <h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Before SBERT there were two camps. One had accurate but slow judges (BERT reading pairs). The other had fast summary-writers that were less accurate: InferSent, a <span class="t" data-t="lstm">BiLSTM</span> trained on natural language inference data, and Google's Universal Sentence Encoder, a transformer trained on several tasks. SBERT's idea is to take the best judge and teach it to write summaries.</p>
 <ul>
   <li><strong>BERT for pairs</strong>: the two sentences are joined with a <span class="mono">[SEP]</span> token and read together, with a small regression head on top. It set the state of the art on the STS benchmark.</li>
@@ -256,41 +256,41 @@
 
 <section id="s4">
 <h2>4 Evaluation: semantic textual similarity <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Humans rated thousands of sentence pairs from 0 (unrelated) to 5 (same meaning). A good embedding model should put the pairs in the same <em>order</em> as the humans. We do not care whether its cosine for a “5” pair is 0.9 or 0.7, only that the “5” pairs come out ahead of the “3” pairs.</p>
-<h4>Tiny example: Spearman rank correlation</h4>
+<h3 class="rung">Tiny example: Spearman rank correlation</h3>
 <p>Four pairs with human scores 4.8, 3.9, 2.0 and 0.5 (ranks 1, 2, 3, 4) get cosines 0.91, 0.72, 0.80 and 0.30 (ranks 1, 3, 2, 4). The rank differences are 0, −1, 1 and 0.</p>
 <div class="eq" data-tex="\htmlData{sym=rho}{\rho} = 1 - \frac{6\,\htmlData{sym=sumd2}{\sum d_i^2}}{\htmlData{sym=npairs}{m}\,(\htmlData{sym=npairs}{m}^2 - 1)}" data-fallback="ρ = 1 − 6 Σ d_i² / (m (m² − 1))"></div>
 <div class="symtable" data-syms="rho,sumd2,npairs"></div>
 <p class="inwords"><strong>In words:</strong> “1 minus a penalty that grows with how much the two rankings disagree; 1 means identical order, 0 means no relation, −1 means reversed.”</p>
 <p class="inwords"><strong>With the numbers:</strong> Σd² = 0 + 1 + 1 + 0 = 2, m = 4, so ρ = 1 − 12 / 60 = 0.8. The paper reports ρ × 100, so this would be “80”.</p>
-<h4>4.1 Without any similarity training</h4>
+<h3 class="rung">4.1 Without any similarity training</h3>
 <div class="play" id="sts-bars"></div>
 <p class="reading"><strong>Reading it:</strong> each bar is a method's average Spearman correlation (× 100) over seven STS datasets, none of which the models were trained on. The grey bars are the obvious shortcuts: plain BERT's [CLS] vector scores 29.2 and averaged BERT token vectors 54.8, both <em>below</em> averaged GloVe word vectors (61.3). The coloured bars are purpose-built sentence encoders; SBERT (74.9 base, 76.6 large) beats InferSent (65.0) and Universal Sentence Encoder (71.2). Selected averages from Table 1 of Reimers and Gurevych (2019).</p>
-<h4>4.2 With similarity training: the cross-encoder still wins</h4>
+<h3 class="rung">4.2 With similarity training: the cross-encoder still wins</h3>
 <p>Fine-tuned on the STS benchmark's own training data (after NLI), the BERT cross-encoder reaches 88.3 (base) against SBERT's 85.4. Reading both sentences together is genuinely more accurate. The trade is roughly three points of correlation for an enormous speed-up, and it explains the modern two-stage design: a bi-encoder retrieves a shortlist fast, a <span class="t" data-t="reranker">cross-encoder reranks</span> it carefully.</p>
-<h4>4.3 A harder test: argument similarity</h4>
+<h3 class="rung">4.3 A harder test: argument similarity</h3>
 <p>On the Argument Facet Similarity corpus (arguments about gun control, gay marriage and the death penalty), SBERT nearly matches BERT when trained and tested on the same topics. Trained on two topics and tested on the third, it falls about 7 points behind (50.7 against 57.2 Spearman for the base models). The authors' explanation: BERT can compare two arguments word by word with attention; SBERT must place an argument on an unseen topic in the right spot in vector space on its own, which is harder.</p>
-<h4>4.4 Wikipedia sections</h4>
+<h3 class="rung">4.4 Wikipedia sections</h3>
 <p>Using the triplet objective on about 1.8 million triplets (anchor and positive from the same Wikipedia section, negative from another section of the same article), SBERT reached 80.4% accuracy against 74% for the earlier BiLSTM approach.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Measure the ranking, not the raw score” is the right habit for any similarity system. Cosine values from different models are not comparable (see anisotropy in the <a data-lesson="primer/ml/embeddings/similarity.html">similarity lesson</a>); orderings are.</p>
 </section>
 
 <section id="s5">
 <h2>5 Evaluation: SentEval <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S5">original</a></span></h2>
 <blockquote class="quote">“Cosine-similarity treats all dimensions equally.”<cite>Reimers and Gurevych (2019), §5</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>SentEval freezes the sentence vectors and trains a small <span class="t" data-tip-title="Logistic regression" data-tip="The simplest classifier: a weighted sum of the inputs passed through a sigmoid. Training learns one weight per input, so it can ignore useless inputs and amplify useful ones.">logistic regression</span> classifier on top for tasks such as sentiment. That is a different exam from cosine similarity: a classifier can learn to pay attention to the few dimensions that matter and ignore the rest.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Two review sentences have vectors (0.1, 5) and (−0.1, 5): the second number is a big “topic: film” signal and the first is a small sentiment signal. Their cosine is (−0.01 + 25) / (5.001 × 5.001) = 0.9992: nearly identical. A classifier with weights (10, 0) gives them scores +1 and −1: perfectly separated. Averaged BERT vectors do reasonably well on SentEval (84.9 average) while failing at cosine similarity for exactly this reason.</p>
-<h4>Result</h4>
+<h3 class="rung">Result</h3>
 <p>SBERT-NLI-large averages 87.7 over seven transfer tasks, about 2 points ahead of InferSent (85.6) and Universal Sentence Encoder (85.1), with large gains on the sentiment tasks. The authors stress that transfer learning is not SBERT's purpose; fine-tuning all of BERT is better for that.</p>
 </section>
 
 <section id="s6">
 <h2>6 Ablation study <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S6">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Take the recipe apart one ingredient at a time and taste the result. Which pooling rule matters? Which pieces does the training classifier need to see?</p>
 <div class="play" id="abl-demo">
   <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem">
@@ -305,7 +305,7 @@
 
 <section id="s7">
 <h2>7 Computational efficiency <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1908.10084#S7">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A <span class="t" data-t="gpu">GPU</span> processes a batch of sentences as one rectangle of numbers, so short sentences are <span class="t" data-t="padding">padded</span> to the length of the longest one in the batch. If a batch mixes a 5-word sentence with a 60-word one, the short one wastes 55 slots. <strong>Smart batching</strong> sorts sentences by length first, so each batch holds similar lengths and little is wasted.</p>
 <div class="play" id="batch-demo">
   <div class="ui toggle" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem">

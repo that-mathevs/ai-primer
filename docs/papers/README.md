@@ -39,7 +39,10 @@ Companions explain; they never republish.
 ## How each section is written
 
 Follow the paper's own section order. Inside each section, climb the ladder
-from [`CLAUDE.md`](../../CLAUDE.md) using `<h4>` labels:
+from [`CLAUDE.md`](../../CLAUDE.md) using labels one level below the heading
+they sit under, so the outline never skips a level: `<h4>` under a subsection
+(`<h3>`), and `<h3 class="rung">` (styled the same) directly under a section
+(`<h2>`). `make sitecheck` fails on a skipped level.
 
 1. **Everyday picture**: an analogy with no jargon.
 2. **Tiny example**: numbers small enough to check by hand.

@@ -78,15 +78,15 @@
 
 <section id="big">
 <h2>The question both papers answer</h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>You have a fixed budget for building a library of knowledge in someone's head. You can hire a bigger brain (more <span class="t" data-t="parameters">parameters</span>, N) or buy more books for it to read (more training <span class="t" data-t="token">tokens</span>, D). A bigger brain costs more per book read, so with a fixed budget, every extra neuron means fewer books. What is the best split?</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Training cost is roughly 6 × N × D operations (six per parameter per token). So a budget of 6 × 10<sup>21</sup> operations buys a 1-billion-parameter model reading 1 trillion tokens, <em>or</em> a 10-billion-parameter model reading 100 billion tokens, <em>or</em> a 100-billion-parameter model reading only 10 billion. Same bill, very different models. Which one ends up smartest?</p>
 <div class="eq" data-tex="\htmlData{sym=C}{C} \approx 6\, \htmlData{sym=N}{N}\, \htmlData{sym=D}{D}" data-fallback="C ≈ 6 N D"></div>
 <div class="symtable" data-syms="C,N,D"></div>
 <p class="inwords"><strong>In words:</strong> “training compute is about six operations for every parameter, for every token read.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 6 × 10<sup>9</sup> × 10<sup>12</sup> = 6 × 10<sup>21</sup>, and 6 × 10<sup>10</sup> × 10<sup>11</sup> is the same 6 × 10<sup>21</sup>.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>Training runs cost millions of dollars and happen once. Getting this split wrong wastes most of the budget, and the two papers gave very different answers: Kaplan's said “mostly spend it on size”, Chinchilla's said “split it evenly”.</p>
 </section>
 

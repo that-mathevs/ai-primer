@@ -78,26 +78,26 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864">original</a></span></h2>
 <blockquote class="quote">“Specifically, the proposed RoPE encodes the absolute position with a rotation matrix and meanwhile incorporates the explicit relative position dependency in self-attention formulation.”<cite>Su et al. (2021), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Give every word a clock hand. The first word's hand points at 1 o'clock, the second at 2 o'clock, and so on: that is an <em>absolute</em> position. Now ask a different question: how far apart are two words? You don't need to know either time; you only need the angle <em>between</em> the two hands, and that angle is the same whether the words sit at 1 and 3 o'clock or at 7 and 9. RoPE turns this into mathematics: it rotates each word's <span class="t" data-t="query">query</span> and <span class="t" data-t="key">key</span> by an angle set by its position, so the <span class="t" data-t="attention">attention</span> score between two words ends up depending only on how far apart they are.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A position scheme that <strong>stores absolute positions but produces relative behaviour</strong>: attention scores depend on the gap between words, not on where the pair sits.</li>
   <li>Three useful properties: it works for <strong>any sequence length</strong> (no learned table with a fixed number of rows), word pairs that are <strong>far apart get a naturally weaker link</strong>, and it is compatible with <span class="t" data-tip-title="Linear attention" data-tip="A family of cheaper attention variants that avoid scoring every pair of words, so cost grows in proportion to the sequence length n instead of n². Many position schemes cannot be combined with them; RoPE can.">linear attention</span>.</li>
   <li>The resulting model, RoFormer, trains faster than its baselines and does better on long documents.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>RoPE became the default position scheme for large language models: the Llama family, Mistral and many others rotate queries and keys exactly as described here. Understanding this paper explains a line of code that runs in nearly every open model, and why "extending the context window" of a model is mostly a question about rotation speeds.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S1">original</a></span></h2>
 <blockquote class="quote">“The sequential order of words is of great value to natural language understanding.”<cite>Su et al. (2021), §1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>“Dog bites man” and “man bites dog” use the same three words; only the order changes the news. A <span class="t" data-t="rnn">recurrent network</span> gets order for free, because it reads one word at a time. A Transformer reads all words at once, like tipping a bag of Scrabble tiles onto the table: without extra help, it cannot tell which tile came first. That property has a name, <span class="t" data-t="permutation equivariance">permutation equivariance</span>: shuffle the input words and the outputs simply shuffle the same way.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Take three word vectors and run plain attention (no positions). Swap the first and last word. Every score is a <span class="t" data-t="dot product">dot product</span> between two words' vectors, and a dot product does not care where the words sit, so the score grid is the same numbers in shuffled rows and columns. The model literally cannot tell the two sentences apart. Position information has to be injected somehow, and this paper is about the best way to do it.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>Every Transformer needs some position scheme. The choice affects quality, how well the model copes with texts longer than it saw in training, and how cheaply the context window can later be stretched. The <a class="lesson" data-lesson="primer/ml/positional.html">positional information lesson</a> demonstrates the “dog bites man” problem in code.</p>
 </section>
 
@@ -283,7 +283,7 @@
 
 <section id="s4">
 <h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2104.09864#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A new part for an engine is tested by swapping it into several existing engines and running them on the usual tracks. The paper swaps RoPE into a translation Transformer, into BERT, and into the Performer, and tries long Chinese legal documents.</p>
 <div class="tablewrap"><table>
   <caption>Selected results, restated with attribution (Su et al., 2021, Tables 1, 2 and 5)</caption>
@@ -300,7 +300,7 @@
   </tbody>
 </table></div>
 <p>Read the table honestly. On translation the gain is small (0.2 BLEU). On GLUE, RoFormer wins three tasks and loses three, which the paper summarises as a significant win on three of six. The clearest result is the last row: with 1,024-token inputs RoFormer beats the 512-token models by 1.5 to 2 points on long documents, the setting where a position scheme matters most. Pre-training plots (§4.2, §4.4) show RoFormer's loss falling faster than BERT's and the Performer's, but give no final numbers.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>RoPE did not win on headline benchmark gains. It won on engineering: no parameters, no kernel changes, relative behaviour, and a clean handle for stretching context. Those properties mattered more and more as models and context windows grew.</p>
 </section>
 

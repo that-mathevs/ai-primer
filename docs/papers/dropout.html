@@ -75,23 +75,23 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=1">original</a></span></h2>
 <blockquote class="quote">“The key idea is to randomly drop units (along with their connections) from the neural network during training.”<cite>Srivastava et al. (2014), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A sports team that trains every day with a few random players benched learns not to depend on any single star: every player must be useful with any combination of teammates. On match day everyone plays. Dropout does this to a neural network: during training each <span class="t" data-t="neuron">neuron</span> is switched off at random for each example, and at test time all of them work together, slightly turned down to compensate.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Large networks <span class="t" data-t="overfitting">overfit</span>, and averaging many networks would help but is too expensive. Dropout gets most of that benefit from one network.</li>
   <li>Training with dropout is like training an exponential number of “thinned” networks that share weights; using the full network with scaled-down weights approximates averaging them all.</li>
   <li>It improved results in vision, speech, text and computational biology, reaching the best published results on several benchmarks.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Dropout became a default ingredient for a decade, and the original Transformer used it throughout. Very large language models trained on enormous datasets often use little or none, but the idea behind it, that injecting noise during training makes models robust, runs through modern deep learning.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>With limited training data, a big network learns real patterns and accidents of the sample alike. The gold standard fix is to ask many different models and average their answers, but training and running many big networks is prohibitively expensive. Dropout's trick is to train a single network in a way that makes it behave like a crowd.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>A network with n droppable units can be thinned in 2<sup>n</sup> ways, since each unit is either kept or dropped. With 5 units that is 2<sup>5</sup> = 32 sub-networks; with the paper's large MNIST network of 2 layers × 8,192 units it is 2<sup>16,384</sup>, a number with about 4,900 digits. They all share the same weights, so storage stays that of one network. Each training example trains one freshly sampled thinned network, so most of them are trained rarely or never, yet sharing weights lets them all benefit.</p>
 <div class="play" id="net-demo">
   <div class="controls ui" style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;font-size:.85rem">
@@ -104,36 +104,36 @@
   <p class="readout" id="net-readout"></p>
 </div>
 <p class="reading"><strong>Reading it:</strong> the network has 4 inputs (pink), two hidden layers of 5 units (blue) and 2 outputs (green). Each press of <strong>Resample</strong> is one training step: every hidden unit is kept with probability p (here 0.5, the paper's default for hidden units), and dropped units, crossed out in red, vanish with all their connections. What remains is the thinned network trained on this one example. Press it a few times and notice that no two steps train the same network. Lower p and more units drop. Tick <strong>test time</strong> and every unit is back, with the readout showing the outgoing weights multiplied by p, as §4 explains. (The paper usually keeps inputs with p = 0.8; this demo drops only hidden units, to keep the picture simple.)</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Many models for the price of one” is the recurring theme: shared weights, sampled sub-networks, one cheap approximation at test time. The same idea reappears in stochastic depth (dropping whole layers) and in using dropout at test time to estimate uncertainty.</p>
 </section>
 
 <section id="s2">
 <h2>2 Motivation <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=4">original</a></span></h2>
 <blockquote class="quote">“Ten conspiracies each involving five people is probably a better way to create havoc than one big conspiracy that requires fifty people to all play their parts correctly.”<cite>Srivastava et al. (2014), §2</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The paper offers two analogies. <strong>Evolution:</strong> sexual reproduction splits up sets of genes that work well together, which should hurt, yet most advanced life reproduces that way. One theory is that it rewards genes that are useful in <em>any</em> company, which makes the whole organism more robust. <strong>Conspiracies:</strong> a plan that needs fifty people to act perfectly is fragile, while many small plans survive surprises. In a network, a neuron that only works when specific other neurons fix its mistakes is part of a fragile fifty-person plan. Dropout makes such <span class="t" data-tip-title="Co-adaptation" data-tip="When neurons learn to depend on each other's exact behaviour, each correcting the others' quirks. It fits the training data well but breaks on new data. Dropout discourages it by making every partner unreliable.">co-adaptation</span> impossible, because any partner might be missing.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>If a neuron's usefulness depends on 3 specific partners, each present with probability 0.5, all three are present together only 0.5<sup>3</sup> = 12.5% of the time. A neuron that relies on that team is useless 87.5% of the time, so training pushes it towards features that help on their own.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Break up co-adaptation” remains the most common one-line intuition for why dropout works, alongside “it is a cheap ensemble”. The paper checks the first intuition directly in §7.1.</p>
 </section>
 
 <section id="s3">
 <h2>3 Related work <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Adding noise during training was not new: denoising autoencoders corrupt their <em>inputs</em> and learn to reconstruct the clean version. Dropout applies noise to <em>hidden</em> units as well, frames it as model averaging, and uses it for ordinary supervised learning.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Denoising autoencoders typically worked best with about 5% input noise. Thanks to the test-time weight scaling of §4, dropout tolerated far more: dropping 20% of input units and 50% of hidden units was often best.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Corrupt the input and learn to repair it” later became the training objective of masked language models such as BERT: a close cousin of the denoising line this section cites.</p>
 </section>
 
 <section id="s4">
 <h2>4 Model description <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=5">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Before each layer reads its inputs, flip a biased coin for every unit in the layer below: heads (probability p) the unit speaks, tails it stays silent. The layer then does its usual weighted sum over whatever it heard.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>A layer below outputs y = (2, 0.5, 1). The coins come up r = (1, 0, 1), so the thinned outputs are ỹ = (2, 0, 1). With incoming weights w = (0.5, 0.4, −1) and bias 0.1, the summed input is 0.5 × 2 + 0.4 × 0 − 1 × 1 + 0.1 = 0.1, and ReLU gives 0.1. With a different mask, r = (1, 1, 0), it would be 1 + 0.2 + 0 + 0.1 = 1.3.</p>
 <div class="eq" data-tex="\htmlData{sym=r}{r_j^{(l)}} \htmlData{sym=sim}{\sim} \htmlData{sym=Bern}{\text{Bernoulli}}(\htmlData{sym=p}{p}), \qquad \htmlData{sym=ytilde}{\tilde{\mathbf{y}}^{(l)}} = \htmlData{sym=rvec}{\mathbf{r}^{(l)}} \htmlData{sym=star}{*} \htmlData{sym=y}{\mathbf{y}^{(l)}}" data-fallback="r_j^(l) ~ Bernoulli(p),   ỹ^(l) = r^(l) * y^(l)"></div>
 <div class="eq" data-tex="\htmlData{sym=z}{z_i^{(l+1)}} = \htmlData{sym=w}{\mathbf{w}_i^{(l+1)}}\,\htmlData{sym=ytilde}{\tilde{\mathbf{y}}^{(l)}} + \htmlData{sym=b}{b_i^{(l+1)}}, \qquad \htmlData{sym=ynext}{y_i^{(l+1)}} = \htmlData{sym=f}{f}(\htmlData{sym=z}{z_i^{(l+1)}}), \qquad \htmlData{sym=Wtest}{W^{(l)}_{\text{test}}} = \htmlData{sym=p}{p}\,\htmlData{sym=W}{W^{(l)}}" data-fallback="z_i^(l+1) = w_i^(l+1) ỹ^(l) + b_i^(l+1),   y_i^(l+1) = f(z_i^(l+1)),   W_test = p W"></div>
@@ -141,7 +141,7 @@
 <p class="inwords"><strong>In words:</strong> “for every unit in layer l, draw a 1 with probability p and a 0 otherwise; multiply the layer's outputs by those 0s and 1s; the next layer computes its usual weighted sum and nonlinearity on what survives. At test time, keep every unit but multiply the weights by p.”</p>
 <p class="inwords"><strong>With the numbers:</strong> y = (2, 0.5, 1) and r = (1, 0, 1) give ỹ = (2, 0, 1); z = 0.5·2 + 0.4·0 − 1·1 + 0.1 = 0.1. At test time with p = 0.5 the weights become (0.25, 0.2, −0.5) and z = 0.5 + 0.1 − 0.5 + 0.1 = 0.2.</p>
 
-<h4>Why scale the weights at test time?</h4>
+<h3 class="rung">Why scale the weights at test time?</h3>
 <p><strong>Everyday picture:</strong> a choir rehearses with half its singers absent at random each time, so the audience has come to expect a half-sized choir. On concert night everyone sings; if they all sing at full voice it is twice as loud as rehearsal. So everyone sings at half volume. Multiplying the weights by p does exactly that.</p>
 <figure class="ix" id="fig2">
   <div class="ixgrid">
@@ -162,28 +162,28 @@
   <figcaption>Figure 2 of the paper, redrawn: a unit at training time and at test time. Based on Srivastava et al. (2014), Figure 2.</figcaption>
 </figure>
 <p class="reading"><strong>Reading it:</strong> on the left, during training, the unit takes part only a fraction p of the time; when present it sends its output y through weight w. On average the next layer receives p × w × y. On the right, at test time, the unit is always present, so its weight is scaled to p × w: the next layer receives exactly p × w × y, what it was used to receiving on average. With y = 2, w = 0.5 and p = 0.5: during training, half the time 1.0 and half the time 0, averaging 0.5; at test time 0.25 × 2 = 0.5.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Frameworks now use <em>inverted dropout</em>, which the paper notes in §10 is equivalent: divide the surviving outputs by p during training, and use the weights unchanged at test time. Test-time code then does not need to know dropout exists.</p>
 </section>
 
 <section id="s5">
 <h2>5 Learning dropout nets <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=6">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Training is ordinary <span class="t" data-t="backpropagation">backpropagation</span>, run on each example's thinned network. A weight that belonged to a dropped unit simply gets zero <span class="t" data-t="gradient">gradient</span> from that example. The paper pairs dropout with one extra rule that it found especially helpful: a <span class="t" data-tip-title="Max-norm constraint" data-tip="Cap the length of each neuron's incoming weight vector at a fixed radius c; whenever an update pushes it beyond c, shrink it back onto the sphere of radius c.">max-norm constraint</span>, a leash on how long each neuron's weight vector can get.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>With c = 3, a neuron's weights w = (3, 4) have length 5, too long, so they are rescaled to 3/5 of their size: (1.8, 2.4), which has length exactly 3. The leash lets training use a large learning rate without weights blowing up, while dropout's noise keeps it exploring.</p>
 <div class="eq" data-tex="\lVert \htmlData{sym=w}{\mathbf{w}} \rVert_2 \le \htmlData{sym=c}{c}" data-fallback="‖w‖₂ ≤ c"></div>
 <div class="symtable" data-syms="c"></div>
 <p class="inwords"><strong>In words:</strong> “the length of every hidden unit's incoming weight vector must stay at or below c.”</p>
 <p class="inwords"><strong>With the numbers:</strong> ‖(3, 4)‖ = √(9 + 16) = 5 &gt; 3, so project: (3, 4) × 3/5 = (1.8, 2.4).</p>
 <p>The paper's recipe: dropout plus max-norm, large decaying learning rates and high <span class="t" data-t="momentum">momentum</span>. For networks pretrained with RBMs or autoencoders (§5.2), the pretrained weights are first scaled up by 1/p and fine-tuned with smaller learning rates, so the noise does not wipe out what pretraining learned.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Max-norm faded as normalization layers and weight decay took over, but the underlying worry, keeping weights bounded so aggressive learning rates stay safe, is exactly what those replacements address.</p>
 </section>
 
 <section id="s6">
 <h2>6 Experimental results <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=7">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>If dropout is a general tool and not a trick for one dataset, it should help everywhere. The authors test images, speech, text and genetics. Every dataset improved.</p>
 <div class="tablewrap"><table>
   <caption>Selected results from §6 of Srivastava et al. (2014): error rates (%) without and with dropout, lower is better</caption>
@@ -200,18 +200,18 @@
 </table></div>
 <div class="plot"><div id="gain-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each bar is the <em>relative</em> reduction in error from adding dropout, computed from the table above: (without − with) / without. Vision gains are large, from about 16% on CIFAR-10 to about 41% on MNIST, where dropout also allowed a much bigger network; speech gains are moderate; text is smallest at about 5%. The paper notes this pattern too: the bag-of-words text model benefited least.</p>
-<h4>Two careful comparisons</h4>
+<h3 class="rung">Two careful comparisons</h3>
 <ul>
   <li><strong>Against Bayesian neural networks (6.4):</strong> on a small genetics dataset, a properly Bayesian network, which weighs every model by how well it fits, still scored best (code quality 623 bits, higher is better), but dropout (567) beat everything else, including standard networks (440). Dropout is an equal-weights shortcut to the Bayesian ideal, far cheaper to train and use.</li>
   <li><strong>Against other regularizers (6.5):</strong> on the same MNIST network, L2 weight decay gave 1.62% error, max-norm alone 1.35%, dropout with L2 1.25%, and dropout with max-norm 1.05%.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The ImageNet row is AlexNet (Krizhevsky et al., 2012): the network that started the deep-learning boom used dropout in its fully connected layers. The companion to that story is the <a data-lesson="primer/ml/cnn_rnn.html">CNN and RNN lesson</a>.</p>
 </section>
 
 <section id="s7">
 <h2>7 Salient features <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=14">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Five experiments open the box. Each asks one question about what dropout actually does inside a network.</p>
 <ol>
   <li><strong>Features (7.1).</strong> An autoencoder with 256 hidden units trained without dropout learns features that look like noise individually: they only work as a tangled team. With dropout (p = 0.5), individual units learn recognisable edges, strokes and spots. This is co-adaptation, broken, made visible.</li>
@@ -220,51 +220,51 @@
   <li><strong>Data size (7.4).</strong> On 100 or 500 examples dropout did not help: the network could memorise even through the noise. The gain grows with more data, up to a point, then shrinks, because with enough data overfitting stops being the problem.</li>
   <li><strong>Averaging (7.5).</strong> Sampling k thinned networks and averaging their predictions matches the cheap weight-scaling rule at around k = 50, and is only slightly better beyond. So weight scaling is a good approximation.</li>
 </ol>
-<h4>Try it: Monte-Carlo averaging versus weight scaling</h4>
+<h3 class="rung">Try it: Monte-Carlo averaging versus weight scaling</h3>
 <div class="plot">
   <div class="controls ui"><button type="button" id="mc-reseed">New random network</button><span>2 hidden layers of 64 ReLU units, p = 0.5, one fixed input</span></div>
   <div id="mc-chart"></div>
   <p class="readout" id="mc-readout">Hover or tap to compare the estimates at each k.</p>
 </div>
 <p class="reading"><strong>Reading it:</strong> this is a live toy, not the paper's experiment: a small random network in your browser, one input, and the probability it assigns to class 1. Every line is plotted as its difference from the true average over thinned networks (estimated with 20,000 random masks), so the flat green line at 0 is the truth. The flat orange line is the weight-scaling answer: one pass with every unit on and weights multiplied by p. The wobbly blue line is the Monte-Carlo estimate from the first k masks. At small k it jumps around; by one or two hundred masks it has settled close to the green line (the paper's trained MNIST network needed about 50 to match weight scaling). The orange and green lines are close but not identical: weight scaling is exact for a single linear layer and an approximation once nonlinearities are stacked, which matches the paper's finding that it is “a fairly good approximation”.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Keeping dropout on at test time and averaging several passes, which the paper calls Monte-Carlo model averaging, was later reinterpreted as an approximate Bayesian method for estimating a model's uncertainty (“MC dropout”, Gal and Ghahramani, 2016).</p>
 </section>
 
 <section id="s8">
 <h2>8 Dropout restricted Boltzmann machines <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=19">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A <span class="t" data-tip-title="Restricted Boltzmann machine" data-tip="An older kind of neural network (popular around 2006 to 2012) with one visible and one hidden layer, trained to model the probability of its inputs. Stacks of them were used to pretrain deep networks.">restricted Boltzmann machine</span> is a two-layer model that learns what typical inputs look like. The dropout trick carries over: randomly silence hidden units while it learns. Dropout RBMs learned coarser features, had very few dead units, and produced much sparser activity than standard RBMs.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>RBMs themselves have faded, but this section makes the paper's broader point: dropout is a general principle (train a large model by sampling sub-models from it), not a trick for one architecture.</p>
 </section>
 
 <section id="s9">
 <h2>9 Marginalizing dropout <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=21">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Instead of flipping coins, you could work out the <em>average</em> effect of all the coin flips with algebra and train on that directly: no randomness, same result on average. For linear regression this is possible, and the answer is a familiar friend: dropout turns into a form of <span class="t" data-t="l2 regularization">L2 regularization</span> (ridge regression).</p>
-<h4>Tiny example (check it by hand)</h4>
+<h3 class="rung">Tiny example (check it by hand)</h3>
 <p>One data point x = (1, 2) with target y = 3, weights w = (0.5, 0.5), and p = 0.5. The four equally likely masks give predictions 0, 0.5, 1 and 1.5, so squared errors of 9, 6.25, 4 and 2.25, averaging <strong>5.375</strong>. The formula below gives (3 − 0.5 × 1.5)<sup>2</sup> + 0.5 × 0.5 × (1² × 0.5² + 2² × 0.5²) = 5.0625 + 0.3125 = <strong>5.375</strong>. They agree.</p>
 <div class="eq" data-tex="\htmlData{sym=ER}{\mathbb{E}_{R\sim \text{Bernoulli}(p)}}\,\lVert \htmlData{sym=yv}{\mathbf{y}} - (\htmlData{sym=R}{R} \htmlData{sym=star}{*} \htmlData{sym=X}{X})\htmlData{sym=wv}{\mathbf{w}} \rVert^2 = \lVert \htmlData{sym=yv}{\mathbf{y}} - \htmlData{sym=p}{p}\htmlData{sym=X}{X}\htmlData{sym=wv}{\mathbf{w}} \rVert^2 + \htmlData{sym=p}{p}(1-\htmlData{sym=p}{p})\,\lVert \htmlData{sym=Gamma}{\Gamma}\htmlData{sym=wv}{\mathbf{w}} \rVert^2" data-fallback="E_R ‖y − (R * X) w‖² = ‖y − pXw‖² + p(1 − p) ‖Γw‖²"></div>
 <div class="symtable" data-syms="ER,yv,R,X,wv,Gamma"></div>
 <p class="inwords"><strong>In words:</strong> “the average squared error over all dropout masks equals the squared error of a model whose inputs are scaled by p, plus a penalty on the weights; each weight's penalty is scaled by how much its input varies.”</p>
 <p class="inwords"><strong>With the numbers:</strong> ‖3 − 0.5 × (0.5 + 1)‖² = 2.25² = 5.0625; Γ = diag(1, 2) for this single point, so ‖Γw‖² = 0.25 + 1 = 1.25 and p(1 − p) × 1.25 = 0.3125.</p>
 <p>The penalty's strength is p(1 − p): largest at p = 0.5 and vanishing as p → 1 (no dropout). And because Γ holds each input's spread, dropout squeezes the weights on high-variance inputs hardest. For logistic regression and deep networks there is no exact closed form, though approximate versions exist.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>This is the cleanest proof that dropout is a regularizer and not magic: in the simplest case it <em>is</em> weight decay, with a data-dependent strength. See the <a data-lesson="primer/ml/regularization.html">regularization lesson</a> for L1, L2 and dropout side by side.</p>
 </section>
 
 <section id="s10">
 <h2>10 Multiplicative Gaussian noise <span class="orig">· <a href="https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf#page=23">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Dropout multiplies each activation by a random 0 or 1. Why not multiply by a random number from a smooth bell curve centred on 1? The paper found that this “Gaussian dropout” works as well or slightly better, and it needs no rescaling at test time, because the average multiplier is already 1.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Inverted Bernoulli dropout with p = 0.5 multiplies by 2 half the time and 0 half the time: mean 1, variance (1 − p)/p = 1. Gaussian dropout with σ<sup>2</sup> = (1 − p)/p = 1 multiplies by a draw from N(1, 1): the same mean and variance, but the multiplier could be 0.3, 1.7 or −0.4.</p>
 <div class="eq" data-tex="\htmlData{sym=rg}{r'} \htmlData{sym=sim}{\sim} \htmlData{sym=N}{\mathcal{N}}(1, \htmlData{sym=sigma2}{\sigma^2}), \qquad \htmlData{sym=sigma2}{\sigma^2} = \frac{1-\htmlData{sym=p}{p}}{\htmlData{sym=p}{p}}" data-fallback="r′ ~ N(1, σ²),   σ² = (1 − p) / p"></div>
 <div class="symtable" data-syms="rg,N,sigma2"></div>
 <p class="inwords"><strong>In words:</strong> “multiply each activation by a random number drawn from a bell curve with mean 1, choosing its variance to match the Bernoulli dropout it replaces.”</p>
 <p class="inwords"><strong>With the numbers:</strong> p = 0.8 gives σ<sup>2</sup> = 0.2 / 0.8 = 0.25, so σ = 0.5. In the paper's Table 10, Gaussian dropout gave 0.95% error on MNIST against 1.08% for Bernoulli, and 12.5% against 12.6% on CIFAR-10 (averaged over 10 random seeds).</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The observation that the shape of the noise matters less than its mean and variance opened the door to many variants, and to interpreting dropout as approximate Bayesian inference.</p>
 </section>
 

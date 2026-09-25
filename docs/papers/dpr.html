@@ -89,37 +89,37 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906">original</a></span></h2>
 <blockquote class="quote">“In this work, we show that retrieval can be practically implemented using dense representations alone, where embeddings are learned from a small number of questions and passages by a simple dual-encoder framework.”<cite>Karpukhin et al. (2020), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>To answer a trivia question from Wikipedia, you first need to find the right page. The classic librarian, <span class="t" data-t="bm25">BM25</span>, matches the words in your question against the words in each passage. DPR is a librarian who has learned what questions <em>mean</em>: it turns every passage into a point in space once, turns your question into a point, and fetches the nearest passages, even when they share no words with your question.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Two <span class="t" data-t="bi-encoder">BERT encoders</span>, one for questions and one for passages, fine-tuned only on question-passage pairs, with no special pre-training.</li>
   <li>9 to 19 points better than a strong Lucene BM25 system at getting an answer-containing passage into the top 20.</li>
   <li>New state-of-the-art end-to-end answer accuracy on several open-domain QA benchmarks.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Embed the question, find the nearest passages, hand them to a reader” is the retrieval half of every <span class="t" data-t="rag">RAG</span> system. DPR is the paper that made it the default (see the <a href="rag.html">RAG companion</a>).</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Ask “Who is the bad guy in Lord of the Rings?” The passage with the answer says “Sala Baker is best known for portraying the villain Sauron”. It never says “bad guy”. A keyword matcher struggles; a system that knows “bad guy” and “villain” mean the same thing finds it. That example is the paper's own.</p>
-<h4>Tiny example: sparse versus dense</h4>
+<h3 class="rung">Tiny example: sparse versus dense</h3>
 <p>A keyword system represents text as a very long, mostly-zero vector, one slot per vocabulary word (a <em>sparse</em> vector). “bad guy” has 1s in the “bad” and “guy” slots; “villain” has a 1 in the “villain” slot; their overlap is 0. A dense system represents each as, say, 768 numbers learned so that similar meanings point the same way: “bad guy” might be (0.8, 0.1, …) and “villain” (0.7, 0.2, …), with a high <span class="t" data-t="dot product">dot product</span>. The paper stresses the two are <em>complementary</em>: dense for meaning, sparse for exact rare names.</p>
-<h4>The claim in numbers</h4>
+<h3 class="rung">The claim in numbers</h3>
 <p>On Natural Questions, DPR puts an answer-containing passage in its top 5 for 65.2% of questions, against 42.9% for BM25. End-to-end answer accuracy rises to 41.5% from the 33.3% of ORQA, the earlier dense retriever that needed an expensive extra pre-training task.</p>
 </section>
 
 <section id="s2">
 <h2>2 Background: retrieve, then read <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>An open-book exam with a library of 21 million pages. You cannot read them all per question, so a <strong>retriever</strong> fetches a handful and a <strong>reader</strong> studies those closely to extract the exact answer. If the retriever misses the right page, the best reader in the world cannot help.</p>
 <div class="eq" data-tex="\htmlData{sym=Rret}{R} : (\htmlData{sym=qq}{q}, \htmlData{sym=Ccorp}{\mathcal{C}}) \rightarrow \htmlData{sym=CF}{\mathcal{C}_F}, \qquad |\htmlData{sym=CF}{\mathcal{C}_F}| = \htmlData{sym=kk}{k} \ll |\htmlData{sym=Ccorp}{\mathcal{C}}|" data-fallback="R : (q, C) → C_F, |C_F| = k ≪ |C|"></div>
 <div class="symtable" data-syms="Rret,qq,Ccorp,CF,kk"></div>
 <p class="inwords"><strong>In words:</strong> “a retriever takes a question and the whole collection and returns a small set of k passages, far fewer than the collection holds.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the collection has 21,015,324 passages; k is typically 20 to 100.</p>
-<h4>How a retriever is graded: top-k accuracy</h4>
+<h3 class="rung">How a retriever is graded: top-k accuracy</h3>
 <p><span class="t" data-tip-title="Top-k retrieval accuracy" data-tip="The fraction of questions for which at least one of the top k retrieved passages contains the answer. A close cousin of recall@k.">Top-k retrieval accuracy</span> is the share of questions for which at least one of the k retrieved passages contains the answer. <strong>Tiny example:</strong> for 4 questions, if the answer shows up in the top 20 for questions 1, 2 and 4 but not 3, top-20 accuracy is 3/4 = 75%. It is a form of <span class="t" data-t="recall@k">recall@k</span>, and it matters most because the reader can only use what the retriever returns.</p>
 </section>
 
@@ -209,9 +209,9 @@
 
 <section id="s4">
 <h2>4 Experimental setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S4">original</a></span></h2>
-<h4>4.1 The library</h4>
+<h3 class="rung">4.1 The library</h3>
 <p>The English Wikipedia dump of 20 December 2018, cleaned of tables, infoboxes, lists and disambiguation pages, then cut into disjoint blocks of 100 words: <strong>21,015,324 passages</strong>. Each passage is prefixed with its article title. This is a simple form of <span class="t" data-t="chunking">chunking</span>; the paper found fixed-length passages worked better than natural paragraphs, and overlapping passages did not help.</p>
-<h4>4.2 The questions</h4>
+<h3 class="rung">4.2 The questions</h3>
 <p>Five datasets: Natural Questions (real Google search queries), TriviaQA (trivia questions), WebQuestions (Google Suggest questions answered from Freebase), CuratedTREC (TREC QA and web questions) and SQuAD v1.1 (questions written while looking at a paragraph). Where a dataset gives only an answer, the positive passage is the highest-ranked BM25 passage that contains it.</p>
 </section>
 
@@ -271,13 +271,13 @@
 
 <section id="s6">
 <h2>6 End-to-end question answering <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2004.04906#S6">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Now the reader: a BERT model that looks at the top k passages, decides which passage is most likely to hold the answer, and highlights the answer span inside it. Unlike the retriever, the reader <em>does</em> read question and passage together (cross-attention), which is affordable because it only sees k passages.</p>
 <div class="eq" data-tex="\htmlData{sym=pstart}{P_{\text{start},i}(s)} = \htmlData{sym=softmax}{\text{softmax}}\big(\htmlData{sym=Pi}{\mathbf{P}_i}\,\htmlData{sym=wstart}{\mathbf{w}_{\text{start}}}\big)_{s}" data-fallback="P_start,i(s) = softmax(P_i w_start)_s"></div>
 <div class="symtable" data-syms="pstart,Pi,wstart,softmax"></div>
 <p class="inwords"><strong>In words:</strong> “score every token of passage i as a possible answer start with one learned vector, and turn the scores into probabilities.” An identical formula with another vector scores the end token, and a third vector applied to each passage's [CLS] token picks the passage.</p>
 <p class="inwords"><strong>With the numbers (illustrative):</strong> if the tokens of “... the villain Sauron in ...” get start scores (0.1, 0.3, 2.5, 0.2), softmax puts about 77% on “Sauron”, which becomes the answer if the end scores agree.</p>
-<h4>Results</h4>
+<h3 class="rung">Results</h3>
 <p>On Natural Questions, the DPR-based system reaches 41.5% exact-match accuracy, against 33.3% for ORQA and 32.6% for the same reader on BM25 passages; it beats the concurrently developed REALM (40.4%) without REALM's expensive extra pre-training. Better retrieval turned into better answers on every dataset except SQuAD. Reading k = 50 passages was best on Natural Questions, and k = 10 cost less than one point (40.8%).</p>
 </section>
 

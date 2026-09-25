@@ -67,25 +67,25 @@
 <section id="abstract">
 <h2>Abstract</h2>
 <blockquote class="quote">“In this paper, we explore the use of LLMs to generate both reasoning traces and task-specific actions in an interleaved manner, allowing for greater synergy between the two.”<cite>Yao et al. (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2210.03629">Read the original</a></cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A detective who only thinks, never checking facts, builds elegant theories on false premises. A detective who only runs around gathering evidence, never stopping to think, collects clues without knowing what they mean. A good detective alternates: think about what to check, check it, think about what was found, decide the next step. ReAct asks a <span class="t" data-t="llm">language model</span> to work like the good detective, writing its thinking and its actions in one interleaved transcript.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Interleaving reasoning traces with actions beats doing either alone on interactive tasks, and on fact verification.</li>
   <li>Reasoning grounded in fetched facts suffers far less from <span class="t" data-t="hallucination">hallucination</span> than reasoning from memory alone.</li>
   <li>With one or two examples in the prompt, it beat imitation and reinforcement learning systems trained on thousands of examples: +34 points of success rate on ALFWorld and +10 on WebShop.</li>
   <li>The transcripts are readable, so people can inspect and even correct the agent mid-task.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The think, act, observe loop in this paper is the skeleton of nearly every <span class="t" data-t="agent">agent</span> built since. Modern APIs formalise the “Action” line as structured <span class="t" data-t="tool calling">tool calls</span>, but the shape of the loop is ReAct's.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S1">original</a></span></h2>
 <blockquote class="quote">“I don’t have salt, so let me use soy sauce and pepper instead.”<cite>Yao et al. (2022), §1, an example of the inner speech that guides human action</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The paper's own example is cooking. Between actions you talk to yourself: to track progress (“everything is cut, now heat the water”), to handle surprises (the salt example above), and to notice when you need information (“how do I make dough? let me look it up”). And you act to support your thinking: open the cookbook, check the fridge.</p>
-<h4>The two traditions it joins</h4>
+<h3 class="rung">The two traditions it joins</h3>
 <div class="tablewrap"><table>
   <thead><tr><th></th><th>Reason only (chain of thought)</th><th>Act only</th></tr></thead>
   <tbody>
@@ -99,7 +99,7 @@
 
 <section id="s2">
 <h2>2 The idea: thoughts as actions <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Picture an agent's options as a menu of buttons: “search”, “look up”, “finish”. ReAct adds one more button labelled “think”. Pressing it changes nothing in the outside world and returns no new information. It only writes a note on the agent's own notepad, and that note is visible when choosing the next button.</p>
 <figure class="ix" id="fig-loop">
   <div class="ixgrid">
@@ -123,13 +123,13 @@
 </figure>
 <p class="reading"><strong>Reading it:</strong> start at the context: the question plus everything written so far. The model writes a thought. The dashed arrow shows the thought going straight back into the context, because it touches nothing outside. Then it writes an action, which <em>does</em> go outside: the environment runs it and returns an observation, which is appended to the context too. Round and round, until the action is “finish”. The only difference from an act-only agent is the thought box; the only difference from chain-of-thought is the environment box.</p>
 
-<h4>The math</h4>
+<h3 class="rung">The math</h3>
 <div class="eq" data-tex="\htmlData{sym=ct}{c_t} = (\htmlData{sym=o}{o_1}, \htmlData{sym=a}{a_1}, \ldots, \htmlData{sym=o}{o_{t-1}}, \htmlData{sym=a}{a_{t-1}}, \htmlData{sym=o}{o_t}), \qquad \htmlData{sym=at}{a_t} \sim \htmlData{sym=pi}{\pi}(\htmlData{sym=at}{a_t} \mid \htmlData{sym=ct}{c_t})" data-fallback="c_t = (o_1, a_1, …, o_{t−1}, a_{t−1}, o_t),  a_t ~ π(a_t | c_t)"></div>
 <div class="eq" data-tex="\htmlData{sym=Ahat}{\hat{\mathcal{A}}} = \htmlData{sym=A}{\mathcal{A}} \htmlData{sym=cup}{\cup} \htmlData{sym=L}{\mathcal{L}}, \qquad \htmlData{sym=ahat}{\hat{a}_t} \in \htmlData{sym=L}{\mathcal{L}} \;\Rightarrow\; \htmlData{sym=ct}{c_{t+1}} = (\htmlData{sym=ct}{c_t}, \htmlData{sym=ahat}{\hat{a}_t})" data-fallback="Â = A ∪ L,  â_t ∈ L ⇒ c_{t+1} = (c_t, â_t)"></div>
 <div class="symtable" data-syms="o,a,ct,at,pi,A,L,cup,Ahat,ahat"></div>
 <p class="inwords"><strong>In words:</strong> “the agent chooses each action from everything it has seen and done so far. ReAct enlarges the menu of actions with every possible sentence; choosing a sentence (a thought) gets no reply from the world and simply adds the sentence to the context.”</p>
 <p class="inwords"><strong>With the numbers:</strong> in the example below, after one round the context is c = (question, Thought 1, Search[Colorado orogeny], its observation). Thought 2, “It does not mention the eastern sector”, is an element of 𝓛; it produces no observation, only c = (…, Thought 2), and that is what makes Action 2, Lookup[eastern sector], an obvious next move.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>This framing, a policy choosing from actions given a growing history, is how agent frameworks are built. The history is the message list; the actions are tools; the “thoughts” today are often the model's visible reasoning between tool calls. See <a data-lesson="primer/agents/llm.html">talking to a model</a> for the message format.</p>
 </section>
 
@@ -230,7 +230,7 @@
 
 <section id="s4">
 <h2>4 Decision-making tasks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.03629#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Two text games with long horizons. In <strong>ALFWorld</strong>, a simulated household, the agent receives goals like “examine the paper under the desk lamp” and must move between up to 50 locations, open things and use objects, sometimes over 50 steps. In <strong>WebShop</strong>, a shopping site with 1.18 million real products, it must buy an item matching instructions such as “a nightstand with drawers, nickel finish, under $140”. Here thoughts are <em>sparse</em>: the model decides for itself when a thought is worth writing.</p>
 <div class="tablewrap"><table>
   <caption>From Tables 3 and 4 of Yao et al. (2022), reproduced under CC BY 4.0: ALFWorld overall success rate (%) and WebShop score and success rate.</caption>
@@ -245,7 +245,7 @@
 </table></div>
 <div class="plot"><div id="alf-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each bar is overall ALFWorld success on the 134 unseen games. ReAct's best prompt reaches 71%, against 45% for the best act-only prompt and 37% for BUTLER, which was trained on example trajectories. Even ReAct's <em>worst</em> prompt (48%) beat the best of both. The ReAct-IM bar is an ablation whose thoughts only restate what the environment said (“inner monologue”); it lands in between, which shows the value is in genuine reasoning (decomposing goals, using common sense about where desk lamps usually are), not just in narrating feedback.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Without thoughts, the act-only agent loses track of what it has already done and what subgoal comes next. Production agents solve the same problem more explicitly: a written plan, task state kept outside the model, and progress checks. See the <a data-lesson="primer/agents/planning.html">planning lesson</a>.</p>
 </section>
 

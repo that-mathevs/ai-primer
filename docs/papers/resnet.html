@@ -75,40 +75,40 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1512.03385">original</a></span></h2>
 <blockquote class="quote">“We explicitly reformulate the layers as learning residual functions with reference to the layer inputs, instead of learning unreferenced functions.”<cite>He et al. (2015), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Asking each layer of a network to produce a brand-new picture of the input is like asking every editor in a long chain to retype the whole manuscript from memory. Asking each editor only to mark <em>corrections</em> on the manuscript they were handed is far easier, and if a page is already fine they simply leave it alone. A residual network does the second: every block receives its input, computes a correction, and <em>adds</em> it to the input.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Deeper “plain” networks can be <em>worse</em>, even on the data they were trained on. Residual networks fix this.</li>
   <li>A 152-layer residual network, 8× deeper than the popular VGG nets, but cheaper to run.</li>
   <li>An ensemble reached 3.57% top-5 error on the ImageNet test set and won first place in the ILSVRC 2015 classification contest, plus first places in detection, localization and segmentation tracks.</li>
   <li>Networks of 100 and even 1,000 layers trained on CIFAR-10.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The “+ x” this paper introduced is in every Transformer block, twice. Without residual connections there would be no hundred-layer language models.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1512.03385#S1">original</a></span></h2>
 <blockquote class="quote">“Is learning better networks as easy as stacking more layers?”<cite>He et al. (2015), §1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>If a 20-storey building works, a 56-storey building made of the same floors should at least not be <em>worse</em>: you could always make the extra 36 floors empty corridors that pass everything straight through. The paper found that, in practice, deeper stacks of ordinary layers trained worse, even on their training data, so this was not <span class="t" data-t="overfitting">overfitting</span>. The training procedure simply could not find the “empty corridor” solution. The authors call this the <span class="t" data-tip-title="Degradation problem" data-tip="The finding that adding more layers to a plain (non-residual) network can raise its error on the training data itself, not just on new data. It is an optimization failure, not overfitting.">degradation problem</span>.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>From the paper's Table 2 (ImageNet validation, top-1 error, lower is better): a plain 18-layer net scores 27.94% and a plain 34-layer net 28.54%, so 16 extra layers made it <em>worse</em> by 0.6 points. The residual versions, with the same layers plus shortcuts and no extra parameters, score 27.88% and 25.03%: the deeper one is now better by 2.85 points.</p>
 <div class="plot" id="deg-plot"><div id="deg-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each bar is one network's top-1 error on ImageNet validation images; shorter is better. Compare within each colour. Grey (plain): going from 18 to 34 layers makes the bar <em>longer</em>, which is the degradation problem. Blue (residual): the same step makes it clearly shorter. The 18-layer pair is nearly tied; depth is where shortcuts pay off. Numbers are selected from Table 2 of He et al. (2015).</p>
 <p>The problem was not the classic <span class="t" data-t="vanishing gradient">vanishing gradient</span>, which careful <span class="t" data-t="initialization">initialization</span> and <span class="t" data-t="batch normalization">batch normalization</span> had largely solved by 2015. The paper checks this: its plain networks use batch normalization and their gradients have healthy sizes. Something subtler was wrong.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The lesson generalizes: “the model family can represent the solution” does not mean “the optimizer will find it”. How you parameterize a network changes what is easy to learn.</p>
 </section>
 
 <section id="s2">
 <h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1512.03385#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Encoding differences instead of whole values is an old trick: video files store how each frame differs from the last, not every frame in full. The paper cites residual ideas from image retrieval (VLAD, Fisher vectors), from solving equations at multiple scales (multigrid methods), and older “shortcut connections” in neural networks.</p>
-<h4>The closest cousin</h4>
+<h3 class="rung">The closest cousin</h3>
 <p><span class="t" data-tip-title="Highway networks" data-tip="Networks (Srivastava, Greff and Schmidhuber, 2015) with shortcut paths controlled by learned gates, which decide how much of the input to pass through unchanged. ResNet's shortcut has no gate: it always passes everything.">Highway networks</span>, published months earlier, also had shortcuts, but controlled by learned gates that could close, and they had not shown gains beyond about 100 layers. ResNet's shortcut is gateless and parameter-free: the input always passes through.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Always on, no parameters” turned out to be the winning simplicity. Gated shortcuts survive in LSTMs, but the plain additive shortcut won in deep networks.</p>
 </section>
 
@@ -308,7 +308,7 @@
 <section id="grad">
 <h2>Why gradients like shortcuts</h2>
 <p>This section is our addition. The paper's own argument (§4.1) is about optimization: with batch normalization its plain networks' gradients were healthy, yet they still trained worse. A follow-up paper by the same authors (He et al., 2016, “Identity Mappings in Deep Residual Networks”) made the gradient view precise, and it is the view most people carry today.</p>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Training sends a message (the <span class="t" data-t="gradient">gradient</span>) backwards from the output to every layer. In a plain network the message is retold by every layer in turn, and a message retold forty times by people who each drop a little of it arrives as a whisper. A residual network adds an express lane: the ⊕ passes the message straight through every block, untouched, alongside whatever the block adds.</p>
 <div class="eq" data-tex="\frac{\partial \htmlData{sym=y}{\mathbf{y}}}{\partial \htmlData{sym=x}{\mathbf{x}}} = \htmlData{sym=I}{I} + \frac{\partial \htmlData{sym=F}{\mathcal{F}}}{\partial \htmlData{sym=x}{\mathbf{x}}}" data-fallback="∂y/∂x = I + ∂F/∂x"></div>
 <div class="symtable" data-syms="partial,I"></div>
@@ -320,7 +320,7 @@
   <p class="readout" id="gf-readout">Hover or tap to read the gradient size at any depth.</p>
 </div>
 <p class="reading"><strong>Reading it:</strong> this is a live simulation, not a result from the paper: a 40-layer network, 16 units wide, with random weights and no batch normalization. The x-axis is the layer, from the input (0) to the output (40). The y-axis is how large the gradient is at that layer, relative to the output, on a log scale: 0 means “the same size”, −6 means “a millionth”. Start with <strong>weight scale</strong> at 0.5, small initial weights. The plain network (blue) shrinks the gradient by a factor of about 10<sup>13</sup> by the time it reaches the first layer: its early layers cannot learn. The residual network (green) never falls below about the output's size, because every ⊕ passes the gradient through. Now raise the weight scale to 1 (the He initialization): the plain network now stays within about a factor of ten, but the residual one <em>grows</em>, by a factor of several thousand, backwards through the blocks, since every block adds its own contribution on top of the copy. Finally lower <strong>branch scale</strong>, which multiplies each residual branch by a small number: the green line flattens near 0, a network that starts out as nearly the identity. That is why the paper pairs shortcuts with batch normalization, and why modern practice often initializes the last layer of every residual branch at or near zero.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Pre-norm Transformers keep a clean identity path from the last layer all the way to the first (normalization sits only inside the branches), for exactly this reason. See the <a data-lesson="primer/ml/deep_nets.html">deep networks lesson</a>, which measures gradient flow through plain and residual stacks in NumPy.</p>
 </section>
 

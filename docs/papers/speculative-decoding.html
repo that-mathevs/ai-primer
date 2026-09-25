@@ -83,26 +83,26 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192">original</a></span></h2>
 <blockquote class="quote">“In this work we introduce speculative decoding - an algorithm to sample from autoregressive models faster without any changes to the outputs, by computing several tokens in parallel.”<cite>Leviathan, Kalman and Matias (2022), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A senior author writes a book one word at a time and hates being rushed. A quick junior assistant, who knows the author's style, drafts the next five words. The author reads all five in one glance, keeps the ones they agree with, and fixes the first one they don't. When the draft is good, five words are done in the time the author used to take for one. When it's bad, nothing is lost but the assistant's time. And crucially, the final book reads exactly as if the author had written every word alone.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A way to speed up generation from any large <span class="t" data-t="autoregressive generation">autoregressive</span> model with <strong>no retraining, no architecture change, and no change to the output distribution</strong>.</li>
   <li>A new sampling rule, <em>speculative sampling</em>, that makes the “no change” guarantee hold even for random sampling, not only for always picking the most likely token.</li>
   <li>2× to 3× faster generation from T5-XXL (11 billion parameters) with identical outputs.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p><span class="t" data-t="speculative decoding">Speculative decoding</span> and its many descendants are now a standard part of how large models are served, because they cut response time without any risk to quality.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S1">original</a></span></h2>
 <blockquote class="quote">“We additionally observe that inference from large models is often not bottlenecked on arithmetic operations, but rather on memory bandwidth and communication, so additional computation resources might be available.”<cite>Leviathan, Kalman and Matias (2022), §1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Generating each token means reading every one of the model's billions of weights from memory. For a single token, the chip spends most of its time fetching weights and very little time doing arithmetic: the arithmetic units sit idle. Checking five tokens at once costs roughly the same fetch as checking one, so the idle arithmetic is effectively free. The paper borrows the name from processors, which have long used <span class="t" data-tip-title="Speculative execution" data-tip="A processor trick: guess what work will be needed next and start it early, in parallel. If the guess was right, time is saved; if wrong, the work is thrown away and nothing is harmed.">speculative execution</span> to start likely work before it is certain to be needed.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Generating 100 tokens normally takes 100 runs of the big model, one after another, because each token depends on the one before. If the big model could accept 3 drafted tokens per run on average, plus the one it adds itself, 100 tokens would take about 25 runs.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>The one-token-at-a-time loop is the reason chat responses stream out slowly. Earlier speed-ups (<span class="t" data-t="distillation">distillation</span>, <span class="t" data-t="quantization">quantization</span>, sparsity) changed the model and therefore its answers. This one doesn't. The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> explains why decoding is <span class="t" data-t="memory-bound">memory-bound</span>.</p>
 </section>
 
@@ -225,7 +225,7 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 
 <section id="s4">
 <h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The test: a real 11-billion-parameter model (T5-XXL) on translation and summarization, drafts from smaller T5 models, one chip, one request at a time, measured against a well-optimized standard implementation.</p>
 <div class="tablewrap"><table>
   <caption>Selected rows of Table 2, reproduced with attribution (Leviathan, Kalman and Matias, 2022, CC BY 4.0). Target T5-XXL (11B); temp 0 = greedy, temp 1 = sampling</caption>
@@ -243,7 +243,7 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 
 <section id="a1">
 <h2>A.1 Why the output is unchanged <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2211.17192#A1.SS1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>There are two ways a token x can come out: the draft proposes it and it is kept, or some draft is rejected and x is drawn from the leftovers. Add the two up and you get p(x) exactly.</p>
 <div class="eq" data-tex="P(\text{output} = \htmlData{sym=x}{x}) = \underbrace{q(x)\min\!\left(1, \tfrac{p(x)}{q(x)}\right)}_{\htmlData{sym=kept}{\min(p(x),\, q(x))}} + \underbrace{(1 - \beta)\, p'(x)}_{\htmlData{sym=left}{p(x) - \min(p(x),\, q(x))}} = \htmlData{sym=p}{p(x)}" data-fallback="P(output = x) = q(x)·min(1, p(x)/q(x)) + (1 − β)·p'(x) = min(p, q) + (p − min(p, q)) = p(x)"></div>
 <div class="symtable" data-syms="kept,left"></div>

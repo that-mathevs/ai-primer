@@ -15,7 +15,8 @@ Three checks, all offline:
 7. Every lesson a paper companion's script links to exists.
 8. No link has an empty address (it would only reload the page).
 9. The specification page lists the whole suite, and every count the site states matches it.
-10. Nothing renders broken: no indented lines collapsed into one paragraph, no raw Markdown.
+10. Nothing renders broken: no indented lines collapsed into one paragraph, no raw Markdown,
+    no heading that skips a level.
 11. Every page can be reached: some other page links to it.
 
 Links built by JavaScript at runtime are checked by the pages themselves.
@@ -275,6 +276,18 @@ def collapsed_blocks(page_html: str) -> list[str]:
     return found
 
 
+def heading_skips(page_html: str) -> list[str]:
+    """Headings that jump more than one level down (h2 straight to h4)."""
+    found, last = [], None
+    html = re.sub(r"<(script|style)\b.*?</\1>", "", page_html, flags=re.S | re.I)
+    for level, text in re.findall(r"<h([1-6])\b[^>]*>(.*?)</h\1>", html, re.S):
+        level = int(level)
+        if last is not None and level > last + 1:
+            found.append(f"h{last} -> h{level}: {' '.join(re.sub(r'<[^>]+>', ' ', text).split())}")
+        last = level
+    return found
+
+
 def raw_markdown(page_html: str) -> list[str]:
     """Markdown that reached the reader unconverted: *emphasis*, **bold**, `code`, [text](link)."""
     text = _visible_text(page_html)
@@ -364,7 +377,7 @@ def main() -> int:
     rendering: dict[str, list[str]] = {}
     for page in sorted(SITE.rglob("*.html")):
         html = page.read_text(errors="ignore")
-        if problems := collapsed_blocks(html) + raw_markdown(html):
+        if problems := collapsed_blocks(html) + raw_markdown(html) + heading_skips(html):
             rendering[page.relative_to(SITE).as_posix()] = problems
     print(f"broken rendering (collapsed lists or diagrams, raw Markdown): {sum(map(len, rendering.values()))}")
     for page, problems in rendering.items():

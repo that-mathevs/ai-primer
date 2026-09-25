@@ -69,23 +69,23 @@
 <section id="abstract">
 <h2>Abstract</h2>
 <blockquote class="quote">“We introduce Toolformer, a model trained to decide which APIs to call, when to call them, what arguments to pass, and how to best incorporate the results into future token prediction.”<cite>Schick et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2302.04761">Read the original</a></cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A bright student who is bad at long division and does not know today's date. Give them a calculator and a calendar, and they still have to learn <em>when</em> reaching for each one actually helps. Toolformer is a way for a <span class="t" data-t="llm">language model</span> to learn that by itself: try tool calls on ordinary text, and keep only the ones whose answers made the rest of the text easier to predict.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A model can learn to use a calculator, a question-answering system, a search engine, a translator and a calendar with only a handful of human-written examples per tool.</li>
   <li>Learning is <strong>self-supervised</strong>: the model's own prediction <span class="t" data-t="loss">loss</span> decides which tool calls were useful.</li>
   <li>A 6.7-billion-parameter model with tools beat the 175-billion-parameter GPT-3 on several zero-shot benchmarks, without losing its ordinary language-modelling ability.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Today's models are taught <span class="t" data-t="tool calling">tool calling</span> mostly through large, curated training sets, but Toolformer's core test (does the tool's answer actually help?) remains a useful way to think about when an agent should call a tool at all.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Large models are paradoxical: they write essays and code, yet fumble arithmetic, forget what year it is, and invent facts. Much smaller, simpler tools do those jobs perfectly. The obvious fix is to let the model call the tools. Earlier attempts needed lots of human annotation showing when to call what, or worked only for one task decided in advance.</p>
-<h4>The two requirements the paper sets</h4>
+<h3 class="rung">The two requirements the paper sets</h3>
 <ol>
   <li>Learn tool use <strong>without much human annotation</strong>, partly because what a human finds useful may differ from what helps the model.</li>
   <li>Keep the model <strong>general</strong>: it decides for itself when and how to use which tool, on any text.</li>
@@ -94,7 +94,7 @@
 
 <section id="s2">
 <h2>2 Approach <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Take a huge pile of ordinary web text. For each passage, let the model suggest a few places where a tool call <em>might</em> help and what it would ask. Actually run those calls. Then keep a call only if seeing its answer made the model better at predicting the words that follow. Finally, fine-tune the model on the passages with the kept calls written in. The model has now seen thousands of examples of useful tool calls, all chosen by its own predictions.</p>
 <p>Hover or tap any block in the redrawn pipeline.</p>
 <figure class="ix wide" id="fig2">
@@ -217,7 +217,7 @@
 
 <section id="s4">
 <h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S4">original</a></span></h2>
-<h4>Setup</h4>
+<h3 class="rung">Setup</h3>
 <ul>
   <li><strong>Model:</strong> GPT-J, 6.7 billion parameters. <strong>Text:</strong> a subset of CCNet web text, pre-filtered per tool (for example, only passages with at least three numbers for the calculator).</li>
   <li><strong>Fine-tuning:</strong> batch size 128, learning rate 1 × 10⁻⁵ with linear <span class="t" data-t="warmup">warmup</span> over the first 10% of training.</li>
@@ -236,20 +236,20 @@
 </table></div>
 <div class="plot"><div id="res-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each group compares the plain model, Toolformer and GPT-3 on one task (scores are the percentage answered correctly under each benchmark's lenient check). With its tools, the small model beats a model 25 times its size on facts, arithmetic and dates. On open questions, where it relies on a simple keyword search it cannot refine, it still trails GPT-3. The model also chose the right tool almost every time: the question-answering tool on 98.1% of fact questions, the calculator on 97.9% of maths problems, and search on 99.3% of open questions.</p>
-<h4>Two important non-results</h4>
+<h3 class="rung">Two important non-results</h3>
 <ul>
   <li><strong>No cost to ordinary text.</strong> <span class="t" data-t="perplexity">Perplexity</span> on WikiText was 10.3 with or without the tool-call training (with calls disabled), so learning tools did not damage general language modelling.</li>
   <li><strong>Size matters.</strong> Applying the method to smaller GPT-2 models showed that useful tool use only emerges at around 775 million parameters; smaller models score the same with and without tools.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The pattern (a small model plus the right tool beating a large model alone) is the economic argument behind giving agents calculators, search and code execution, and behind <span class="t" data-t="model routing">routing</span> easy work to small models; see the <a data-lesson="primer/agents/cost.html">cost lesson</a>.</p>
 </section>
 
 <section id="s5">
 <h2>5 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2302.04761#S5">original</a></span></h2>
-<h4>How eager should the model be to call?</h4>
+<h3 class="rung">How eager should the model be to call?</h3>
 <p>With ordinary greedy decoding (open a call only if “[” is the single most likely token), the model called a tool on 40.3% of fact questions and only 8.5% of open questions. Allowing a call whenever “[” is in the top 10 raised that to 98.1% and 100%. Interestingly, at the strict setting the model was somewhat <em>calibrated</em>: it tended to call tools on exactly the questions it would otherwise get wrong.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“When should the agent use a tool?” is still a tuning problem: too eager wastes time and money, too reluctant leaves errors unfixed. Clear tool descriptions and instructions play the role that the top-k trick played here; see the <a data-lesson="primer/agents/tools.html">tools lesson</a>.</p>
 </section>
 

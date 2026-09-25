@@ -79,34 +79,34 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450">original</a></span></h2>
 <blockquote class="quote">“In this paper, we transpose batch normalization into layer normalization by computing the mean and variance used for normalization from all of the summed inputs to the neurons in a layer on a single training case.”<cite>Ba, Kiros and Hinton (2016), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Two ways to grade on a curve. <strong>Batch normalization</strong> grades each question by comparing everyone in the class on that question: to know if your answer is good, it needs the rest of the class present. <strong>Layer normalization</strong> grades each student by comparing their answers to all the questions against their own average: it needs nobody else. That independence is the whole point.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Normalization statistics can come from all the units in one layer, for one example, instead of from one unit across a batch.</li>
   <li>So it works with any batch size, including 1, and does exactly the same computation during training and at test time.</li>
   <li>It fits recurrent networks naturally, one normalization per time step, and stabilizes their hidden states.</li>
   <li>It speeds up training on six tasks, mostly with recurrent networks.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Every Transformer, and so every large language model, normalizes with layer norm or its close cousin <span class="t" data-t="rmsnorm">RMSNorm</span>, typically twice per block. The paper's own experiments are about RNNs; its lasting impact came a year later, when the <a href="attention-is-all-you-need.html">Transformer</a> adopted it.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Deep networks are like a relay of translators, each passing their version to the next. If one translator starts shouting (numbers growing) or whispering (numbers shrinking), everyone after them struggles. Normalization is a volume knob at every hand-off that resets the message to a standard level. Batch normalization already did this and made training much faster, but its knob needs a whole batch of examples to set the level.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Batch norm estimates a neuron's average from the current batch. With a batch of 256 that estimate is decent; with a batch of 2 it is little more than the average of two random numbers; with a batch of 1 the spread is zero and the formula divides by zero. Recurrent networks make it worse: a sentence of 40 words needs separate statistics for each of 40 time steps, and a test sentence of 60 words has no statistics at all for steps 41 to 60.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Language models train on variable-length sequences, sharded across many GPUs, often with small per-device batches. A normalization that never looks across the batch is simply easier to live with.</p>
 </section>
 
 <section id="s2">
 <h2>2 Background: batch normalization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A neuron adds up its weighted inputs into one number, its <em>summed input</em>. Batch norm watches that number across all the examples in the batch, subtracts the batch average, divides by the batch spread, and then lets a learned <em>gain</em> set the spread it actually wants.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>One neuron's summed inputs across a batch of three examples are 1, 5 and 9. The mean is 5 and the <span class="t" data-t="standard deviation">standard deviation</span> is √((16 + 0 + 16) / 3) = 3.266. So the normalized values are (1 − 5)/3.266 = −1.225, then 0, then +1.225. With gain g = 1 they stay as they are.</p>
 <div class="eq" data-tex="\htmlData{sym=ail}{a_i^l} = {\htmlData{sym=wil}{w_i^l}}^{\top}\htmlData{sym=hl}{h^l} \qquad \htmlData{sym=hnext}{h_i^{l+1}} = \htmlData{sym=f}{f}(\htmlData{sym=ail}{a_i^l} + \htmlData{sym=bil}{b_i^l})" data-fallback="a_i^l = w_i^l⊤ h^l,   h_i^(l+1) = f(a_i^l + b_i^l)"></div>
 <div class="eq" data-tex="\htmlData{sym=abar}{\bar a_i^l} = \frac{\htmlData{sym=gi}{g_i^l}}{\htmlData{sym=sigmai}{\sigma_i^l}}\left(\htmlData{sym=ail}{a_i^l} - \htmlData{sym=mui}{\mu_i^l}\right) \qquad \htmlData{sym=mui}{\mu_i^l} = \htmlData{sym=Ex}{\mathbb{E}_{x\sim P(x)}}\!\left[\htmlData{sym=ail}{a_i^l}\right] \qquad \htmlData{sym=sigmai}{\sigma_i^l} = \sqrt{\htmlData{sym=Ex}{\mathbb{E}_{x\sim P(x)}}\!\left[(\htmlData{sym=ail}{a_i^l} - \htmlData{sym=mui}{\mu_i^l})^2\right]}" data-fallback="ā_i = (g_i / σ_i)(a_i − μ_i),  μ_i = E_x[a_i],  σ_i = √(E_x[(a_i − μ_i)²])"></div>
@@ -114,16 +114,16 @@
 <p class="inwords"><strong>In words:</strong> “each neuron's summed input is the dot product of its weights with the previous layer's outputs; batch norm subtracts that neuron's average over the data, divides by its spread over the data, and multiplies by a learned gain.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for the batch (1, 5, 9): μ = 5, σ = 3.266, so ā = (1/3.266) × (1 − 5) = −1.225 for the first example.</p>
 <p>The expectation E is over <em>all</em> the training data, which would need a pass through the whole dataset after every weight update. So in practice μ and σ are estimated from the current mini-batch. That estimate is what ties batch norm to the batch size.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Batch norm is still standard in convolutional image networks (the <a href="resnet.html">ResNet companion</a> uses it after every convolution), where batches are large and every example has the same shape.</p>
 </section>
 
 <section id="s3">
 <h2>3 Layer normalization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S3">original</a></span></h2>
 <blockquote class="quote">“Unlike batch normalization, layer normaliztion does not impose any constraint on the size of a mini-batch and it can be used in the pure online regime with batch size 1.”<cite>Ba, Kiros and Hinton (2016), §3 (spelling as in the original)</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Picture the numbers as a table: one row per example in the batch, one column per neuron in the layer. Batch norm computes its average and spread down each <strong>column</strong> (one neuron, many examples). Layer norm computes them along each <strong>row</strong> (one example, all its neurons). Same arithmetic, different direction.</p>
-<h4>Try it: the same table, two directions</h4>
+<h3 class="rung">Try it: the same table, two directions</h3>
 <div class="play" id="bnln">
   <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
     <span>Normalize with:</span>
@@ -142,7 +142,7 @@
 <p class="inwords"><strong>In words:</strong> “for one example, average the summed inputs of all H neurons in the layer, and measure their spread around that average; every neuron in the layer then shares these two numbers.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for a layer of H = 4 neurons with a = (2, 4, 6, 8): μ = 20 / 4 = 5, σ = √((9 + 1 + 1 + 9) / 4) = √5 = 2.236, so the normalized values are (−1.342, −0.447, 0.447, 1.342).</p>
 <p>As with batch norm, each neuron then gets its own learned <span class="t" data-t="bias">bias</span> b and gain g, applied after normalizing and before the nonlinearity (equation 5 in §5 shows the shared form). And because nothing depends on the batch, training and testing run the identical computation: no running averages to store, no train/test mismatch.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>In a Transformer, each token's vector is one “row”: layer norm normalizes each token across its d<sub>model</sub> features (for example 512), independently of every other token and every other sentence in the batch. Real implementations also add a tiny ε under the square root so the division is safe.</p>
 </section>
 
@@ -191,9 +191,9 @@
 
 <section id="s4">
 <h2>4 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Several ways to keep a network's numbers at a sensible level had appeared by 2016. <strong>Recurrent batch norm</strong> kept separate statistics for every time step and needed careful initialization of its gain (0.1 worked, 1.0 did not). <strong>Weight normalization</strong> divides each neuron's weight vector by its length instead of looking at activations at all. Layer norm is different from both: it is not a re-parameterization of the network but a genuinely different computation, which is why its invariances in §5 differ.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The idea space keeps growing (group norm for small-batch vision, RMSNorm for language models), but these three axes, across the batch, across the layer, or on the weights, remain the vocabulary for describing any of them.</p>
 </section>
 
@@ -244,7 +244,7 @@
 
 <section id="s6">
 <h2>6 Experimental results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1607.06450#S6">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Six tasks, chosen to be where batch norm is awkward: mostly recurrent networks with variable-length sequences. In every case the gain and bias start at 1 and 0, and the comparison is the same model with and without layer norm.</p>
 <div class="tablewrap"><table>
   <caption>The experiments, summarized in our own words from §6 (Ba, Kiros and Hinton, 2016)</caption>
@@ -259,13 +259,13 @@
     <tr><td>6.7</td><td>Convolutional networks (preliminary)</td><td>Faster than no normalization, but batch norm was better</td></tr>
   </tbody>
 </table></div>
-<h4>Tiny example: why batch norm hates small batches</h4>
+<h3 class="rung">Tiny example: why batch norm hates small batches</h3>
 <div class="plot">
   <div id="noise-chart"></div>
   <p class="readout" id="noise-readout">Hover or tap to read the noise at each batch size.</p>
 </div>
 <p class="reading"><strong>Reading it:</strong> this chart is computed from simple statistics, not taken from the paper. If a neuron's summed input varies across examples with spread 1, then batch norm's estimate of its mean from a batch of B examples wobbles by about 1/√B from batch to batch (blue). At B = 256 that is ±0.06, negligible; at B = 4 it is ±0.5, so the same example is normalized differently depending on who shares its batch. Layer norm (orange) does not use the batch at all, so its line is flat at zero. The paper's §6.6 saw this in practice: with a batch of 4, layer norm still trained well.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>§6.7 is the honest footnote: in convolutional networks, units near the image border behave very differently from those in the centre, so pooling statistics across all of a layer's units fits them poorly. That is why image CNNs kept batch norm, while sequence models, and then Transformers, standardized on layer norm.</p>
 </section>
 

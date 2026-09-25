@@ -90,24 +90,24 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <section id="abstract">
 <h2>LoRA: Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685">original</a></span></h2>
 <blockquote class="quote">“We propose Low-Rank Adaptation, or LoRA, which freezes the pre-trained model weights and injects trainable rank decomposition matrices into each layer of the Transformer architecture, greatly reducing the number of trainable parameters for downstream tasks.”<cite>Hu et al. (2021), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>You own a 1,000-page textbook and want it to suit a new course. Reprinting the whole book for every course is absurd. Instead you keep the book exactly as it is and add a thin booklet of corrections for each course. Swap the booklet, and the same book serves a different class. <span class="t" data-t="lora">LoRA</span> is that booklet for a neural network: the huge <span class="t" data-t="weight">weights</span> stay frozen, and a tiny set of new numbers carries each task's changes.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Compared with <span class="t" data-t="full fine-tune">full fine-tuning</span> of GPT-3 175B with <span class="t" data-t="adam">Adam</span>, LoRA cuts the number of trainable <span class="t" data-t="parameters">parameters</span> by 10,000× and the GPU memory needed by 3×.</li>
   <li>Quality is on par with or better than full fine-tuning on RoBERTa, DeBERTa, GPT-2 and GPT-3.</li>
   <li>No extra delay when the model runs, unlike <span class="t" data-t="adapter">adapter</span> layers, because the booklet can be folded back into the book.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>LoRA is the default way to customize open-weight language models. When someone ships a “LoRA” for a model, they are shipping a few megabytes that turn a general model into a specialist.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S1">original</a></span></h2>
 <blockquote class="quote">“We hypothesize that the change in weights during model adaptation also has a low ‘intrinsic rank’, leading to our proposed Low-Rank Adaptation (LoRA) approach.”<cite>Hu et al. (2021), §1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Adapting a model that already knows English to write SQL, or to summarize conversations, probably doesn't require rewriting everything it knows. It needs a few focused adjustments. The authors bet that the <em>change</em> to each weight matrix can be described with very few independent “directions” of change. That count of directions is what <span class="t" data-tip-title="Rank" data-tip="How many independent directions a matrix really contains. A 4 × 4 table built by multiplying one column by one row has rank 1: every row is a multiple of the same row.">rank</span> means.</p>
-<h4>Tiny example: a big table from two short lists</h4>
+<h3 class="rung">Tiny example: a big table from two short lists</h3>
 <p>Take a column of 4 numbers, B = (1, 0, 2, 0), and a row of 4 numbers, A = (0.5, 1, 0, −1). Multiply every entry of B by every entry of A and you get a full 4 × 4 table, 16 numbers from only 8:</p>
 <div class="tablewrap"><table style="max-width:22rem">
   <caption>B × A: a rank-1 update</caption>
@@ -120,35 +120,35 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
   </tbody>
 </table></div>
 <p>Every row is a multiple of (0.5, 1, 0, −1), so the table has rank 1. At the scale of a real model, a 4,096 × 4,096 weight matrix has 16.8 million entries, but a rank-1 change to it needs only 4,096 + 4,096 = 8,192 numbers. That ratio, 2,048 to 1, is the whole trick.</p>
-<h4>Four advantages the paper lists</h4>
+<h3 class="rung">Four advantages the paper lists</h3>
 <ul>
   <li><strong>Many tasks, one model:</strong> keep one frozen copy and swap small A and B pairs per task.</li>
   <li><strong>Cheaper training:</strong> no gradients or <span class="t" data-t="optimizer">optimizer</span> state for the frozen weights, which lowers the hardware needed by up to 3×.</li>
   <li><strong>No inference latency:</strong> the update can be added into the weights before serving.</li>
   <li><strong>Composable:</strong> it combines with other methods such as prefix tuning.</li>
 </ul>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>The claim is not only “cheaper”. It is that the useful part of fine-tuning really is low-dimensional, which §7 tests directly.</p>
 </section>
 
 <section id="s2">
 <h2>2 Problem statement <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Fine-tuning means showing the model many examples of a task, such as a question paired with its SQL, and nudging its weights so that the right answer becomes more likely, one <span class="t" data-t="token">token</span> at a time.</p>
 <div class="eq" data-tex="\max_{\htmlData{sym=Phi}{\Phi}} \htmlData{sym=sumZ}{\sum_{(x,y)\in\mathcal{Z}}} \htmlData{sym=sumt}{\sum_{t=1}^{|y|}} \htmlData{sym=log}{\log}\big(\htmlData{sym=PPhi}{P_{\Phi}}(\htmlData{sym=yt}{y_t} \mid \htmlData{sym=x}{x}, \htmlData{sym=ylt}{y_{&lt;t}})\big)" data-fallback="max over Φ of Σ over (x,y) in Z of Σ over t of log P_Φ(y_t | x, y_<t)"></div>
 <div class="symtable" data-syms="Phi,sumZ,sumt,log,PPhi,yt,x,ylt"></div>
 <p class="inwords"><strong>In words:</strong> “adjust all the weights so that, across every training pair, the model gives as much probability as possible to each correct next token of the target, given the prompt and the target tokens so far.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if the target SQL is 3 tokens long and the model gives them probabilities 0.5, 0.8 and 0.9, this pair contributes ln 0.5 + ln 0.8 + ln 0.9 = −0.69 − 0.22 − 0.11 = −1.02. Training pushes that number up towards 0.</p>
 <p>The problem: full fine-tuning learns a change ΔΦ as large as the model itself. For GPT-3 that is about 175 billion numbers <em>per task</em>. LoRA instead describes the change with a much smaller set of numbers Θ; for GPT-3, Θ can be as small as 0.01% of the model.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>Storage and switching cost scale with the size of what you train. Shrink that, and serving hundreds of custom models from one base becomes practical. See the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> for where fine-tuning sits among pretraining, SFT and preference tuning.</p>
 </section>
 
 <section id="s3">
 <h2>3 Why not adapters or prompts? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S3">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Two earlier ways to avoid full fine-tuning each had a catch. <span class="t" data-t="adapter">Adapters</span> insert small extra layers into the network: like adding extra stops on a train line, every journey now takes longer, and at a batch size of 1 the stops dominate. <span class="t" data-tip-title="Prefix tuning" data-tip="Learning a handful of special 'virtual token' vectors that are prepended to every input. The model stays frozen; only those vectors are trained.">Prefix tuning</span> learns special tokens that sit in the prompt: like reserving seats on the train for luggage, it takes up space the passengers (your actual input) could have used, and the paper found it hard to optimize.</p>
-<h4>The latency cost, measured</h4>
+<h3 class="rung">The latency cost, measured</h3>
 <div class="tablewrap"><table>
   <caption>Selected numbers from Hu et al. (2021), Table 1: one forward pass of GPT-2 medium, in milliseconds (batch 1, 128 tokens)</caption>
   <thead><tr><th>Method</th><th class="num">Latency</th><th class="num">Extra</th></tr></thead>
@@ -159,7 +159,7 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
   </tbody>
 </table></div>
 <p>With big batches the overhead shrinks (about 2 to 3% at batch 32), because the GPU is busy anyway. Online serving usually has small batches, where adapters hurt most.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>The goal was an adaptation method with no serving penalty and no loss of usable context. That design constraint is what led to a change that can be merged into the existing weights.</p>
 </section>
 
@@ -254,7 +254,7 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 
 <section id="s5">
 <h2>5 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2106.09685#S5">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The test is simple: does the booklet teach as well as reprinting the book? The paper compares LoRA with full fine-tuning and other cheap methods on language understanding (the GLUE benchmark), text generation (E2E NLG) and three GPT-3 tasks: turning questions into SQL (WikiSQL), judging whether one sentence follows from another (MultiNLI) and summarizing chats (SAMSum).</p>
 <div class="tablewrap"><table>
   <caption>Selected results written for this page from Hu et al. (2021), Tables 2 to 4. Higher is better</caption>
@@ -274,7 +274,7 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <div class="plot"><div id="params-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each row pair compares full fine-tuning with LoRA on the same model. The bars show trainable parameters on a log scale (a bar's length follows how many digits its number has), so even a modest gap in length means hundreds of times fewer parameters. LoRA trains between a hundred and tens of thousands of times fewer numbers and lands within a point of full fine-tuning, often above it. Scores come from different benchmarks, so compare rows within a pair, not across pairs.</p>
 <p>One more finding: not every cheap method improves with more trainable parameters. Prefix methods got worse past a few dozen to a few hundred special tokens, while LoRA stayed stable.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>“As good as full fine-tuning with a fraction of the parameters” is the result that made LoRA the default. The <a data-lesson="primer/ml/metrics.html">metrics lesson</a> explains BLEU and ROUGE, two of the scores used here.</p>
 </section>
 
@@ -331,9 +331,9 @@ svg .blk:hover path.shape, svg .blk:focus path.shape, svg .blk.on path.shape { s
 <section id="qlora">
 <h2>QLoRA (Dettmers et al., 2023) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.14314">original</a></span></h2>
 <blockquote class="quote">“We present QLoRA, an efficient finetuning approach that reduces memory usage enough to finetune a 65B parameter model on a single 48GB GPU while preserving full 16-bit finetuning task performance.”<cite>Dettmers et al. (2023), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>LoRA shrank what you <em>train</em>, but you still had to hold the whole frozen model in GPU memory at 16 bits per number. QLoRA stores the frozen book in shorthand, 4 bits per number, and writes the corrections booklet in full precision. When a page is needed, it is expanded from shorthand on the fly.</p>
-<h4>Try it: how much GPU memory does fine-tuning need?</h4>
+<h3 class="rung">Try it: how much GPU memory does fine-tuning need?</h3>
 <div class="play" id="mem-demo">
   <div class="sliders">
     <label for="mem-slider">model size</label><input type="range" id="mem-slider" min="0" max="3" step="1" value="3"><output id="mem-v">65B</output>

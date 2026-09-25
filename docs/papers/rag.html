@@ -76,27 +76,27 @@
 <section id="abstract">
 <h2>Abstract</h2>
 <blockquote class="quote">“We explore a general-purpose fine-tuning recipe for retrieval-augmented generation (RAG).”<cite>Lewis et al. (2020), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2005.11401">Read the original</a></cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A closed-book exam tests what you memorised. An open-book exam lets you look things up first. A plain <span class="t" data-t="llm">language model</span> sits every exam closed-book: everything it knows is baked into its <span class="t" data-t="parameters">parameters</span>. This paper hands the model a library (all of Wikipedia, cut into short passages) and a librarian who fetches the most relevant pages before it writes each answer. That combination is <span class="t" data-t="rag">retrieval-augmented generation</span>.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A single recipe that joins a pre-trained retriever and a pre-trained text generator, then fine-tunes them together on any input-to-output task.</li>
   <li>New best results on three open-domain question-answering benchmarks, beating both models that answer from memory and specialised “find the answer span” systems.</li>
   <li>More factual, more specific and more varied text than the same generator without retrieval.</li>
   <li>Knowledge you can update by swapping the library, without retraining.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Almost every assistant that answers from a company's own documents is a descendant of this idea: fetch first, then write with the fetched text in view, and cite it. The details have changed (see <a href="#today">What changed since 2020</a>), but the split between <em>what the model knows</em> and <em>what it can look up</em> comes straight from here.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.11401#S1">original</a></span></h2>
 <blockquote class="quote">“They cannot easily expand or revise their memory, can’t straightforwardly provide insight into their predictions, and may produce ‘hallucinations’.”<cite>Lewis et al. (2020), §1, on models that store knowledge only in their weights</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Think of two kinds of memory. <strong>Parametric memory</strong> is what you know by heart: fast, fluent, but impossible to inspect and awkward to update. <strong>Non-parametric memory</strong> is a filing cabinet: slow to search, but you can open a drawer, show someone the page, and replace an outdated sheet. The paper argues a good system needs both, and joins them so each covers the other's weakness.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Ask “Who is the President of Peru?” A model trained on 2018 text answers with whoever held office in 2018, and nothing short of retraining changes that. A retrieval model answers from whatever passage the filing cabinet returns, so replacing the cabinet's pages with 2016 pages changes the answer to the 2016 office holder. §4.5 of the paper runs exactly this experiment.</p>
-<h4>The three problems it targets</h4>
+<h3 class="rung">The three problems it targets</h3>
 <div class="tablewrap"><table>
   <thead><tr><th>Problem with memory-only models</th><th>How retrieval helps</th></tr></thead>
   <tbody>
@@ -105,13 +105,13 @@
     <tr><td><span class="t" data-t="hallucination">Hallucination</span>: confident, unsupported claims</td><td>Generation is conditioned on real text, so it drifts less</td></tr>
   </tbody>
 </table></div>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>These three problems are still the reasons teams reach for RAG: freshness, <span class="t" data-t="grounding">grounding</span> with citations, and fewer invented facts.</p>
 </section>
 
 <section id="s2">
 <h2>2 Methods <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.11401#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A research assistant gets your question, turns it into a search, pulls the five most promising index cards from a card catalogue of 21 million cards, and hands them to a writer. The writer drafts an answer while reading the cards. Crucially, the writer does not have to trust any single card: it weighs its answer across all of them, leaning on the ones the assistant was most confident about.</p>
 <p>Hover or tap any block in the redrawn figure. The numbers use the paper's setup: <span class="t" data-tip-title="K" data-tip="How many documents are retrieved per question. The paper trains with K = 5 or 10.">K</span> = 5 retrieved passages from an index of 21 million 100-word Wikipedia chunks.</p>
 
@@ -231,14 +231,14 @@
 
 <section id="s3">
 <h2>3 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.11401#S3">original</a></span></h2>
-<h4>The setup, in numbers</h4>
+<h3 class="rung">The setup, in numbers</h3>
 <ul>
   <li><strong>Library:</strong> the December 2018 Wikipedia dump, split into disjoint 100-word <span class="t" data-t="chunking">chunks</span>: 21 million passages.</li>
   <li><strong>Index:</strong> FAISS with an <span class="t" data-t="hnsw">HNSW</span> <span class="t" data-t="approximate nearest neighbor">approximate nearest-neighbour</span> index.</li>
   <li><strong>Retrieved per question:</strong> K = 5 or 10 during training.</li>
   <li><strong>Size:</strong> 626 million trainable parameters (two 110M-parameter BERT encoders, only one of them trained, plus 406M for BART). The index is 21 million vectors, about 15.3 billion numbers.</li>
 </ul>
-<h4>Four kinds of task</h4>
+<h3 class="rung">Four kinds of task</h3>
 <div class="tablewrap"><table>
   <thead><tr><th>Task</th><th>Example</th><th>Scored by</th></tr></thead>
   <tbody>
@@ -248,13 +248,13 @@
     <tr><td>Fact verification (FEVER)</td><td>is this claim supported, refuted, or unverifiable?</td><td><span class="t" data-t="accuracy">accuracy</span></td></tr>
   </tbody>
 </table></div>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Split the source into roughly 100-word passages and index their embeddings” is still the default starting point. How you chunk often matters more than which embedding model you pick; see the <a data-lesson="primer/ml/embeddings/retrieval.html">retrieval lesson</a>.</p>
 </section>
 
 <section id="s4">
 <h2>4 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2005.11401#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>On trivia-style questions, the open-book student beat both the biggest closed-book student (a model 18 times larger) and the specialist who only highlights answers inside the fetched text.</p>
 <div class="tablewrap"><table>
   <caption>Selected numbers from Lewis et al. (2020), Table 1: Natural Questions, exact match (higher is better). Summarised with attribution.</caption>
@@ -269,11 +269,11 @@
 </table></div>
 <div class="plot" id="nq-plot"><div id="nq-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each bar is one system's exact-match score on Natural Questions, on an axis from 0 to 50. The closed-book T5 is the shortest bar despite having about 18 times RAG's 626 million trainable parameters: memorising more is a poor substitute for looking things up. The two retrieve-then-extract systems are close to RAG, but RAG gets there without a separate reranker or span extractor. It also answered 11.8% of questions correctly even when no retrieved passage contained the answer, which an extractor, limited to copying text, can never do.</p>
-<h4>More factual and more specific (human judges)</h4>
+<h3 class="rung">More factual and more specific (human judges)</h3>
 <p>On Jeopardy clue writing, judges compared 452 pairs of clues from BART alone and from RAG-Token. BART was judged more factual in 7.1% of pairs; RAG in <strong>42.7%</strong>. RAG was also judged more specific by a wide margin.</p>
-<h4>Did it fetch the right evidence?</h4>
+<h3 class="rung">Did it fetch the right evidence?</h3>
 <p>On FEVER, the top retrieved passage came from a correct evidence article in 71% of cases, and a correct article was in the top 10 in 90% of cases, even though the retriever was never told which evidence was correct.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The habit worth copying is measuring retrieval separately from generation. If the right passage is not retrieved, no amount of prompt tuning fixes the answer. That is <span class="t" data-t="recall@k">recall@k</span>, taught in the <a data-lesson="primer/ml/metrics.html">metrics lesson</a>.</p>
 </section>
 

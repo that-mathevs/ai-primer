@@ -76,23 +76,23 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155">original</a></span></h2>
 <blockquote class="quote">“Making language models bigger does not inherently make them better at following a user’s intent.”<cite>Ouyang et al. (2022), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A <span class="t" data-t="base model">base model</span> like <span class="t" data-tip-title="GPT-3" data-tip="OpenAI's 2020 language model with 175 billion parameters, trained only to predict the next token of web text.">GPT-3</span> learned by predicting the next word on web pages, so it is a brilliant mimic, not a helpful assistant. Ask it “Write a poem about the sea” and it might continue with a list of other writing prompts, because that is what such a line is often followed by online. This paper teaches the model what people actually want by showing it examples, and then asking people to grade its attempts.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>People preferred the answers of a <strong>1.3-billion-parameter</strong> InstructGPT model over those of the <strong>175-billion-parameter</strong> GPT-3: over 100 times smaller, yet more useful.</li>
   <li>InstructGPT is more truthful and somewhat less toxic than GPT-3, with small losses on public benchmarks that a tweak to training largely fixes.</li>
   <li>The method: <span class="t" data-t="sft">supervised fine-tuning</span> on human demonstrations, then <span class="t" data-t="rlhf">reinforcement learning from human feedback</span>.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>This three-step recipe (demonstrate, compare, reinforce) is the template behind the chat assistants that followed. Even where the final step has changed, the idea of shaping a model with human preferences comes from here.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The authors call the next-word objective <em>misaligned</em>: “predict what comes next on a web page” is a different job from “follow the user's instructions helpfully and safely”. They borrow a three-word target from earlier work: a model should be <strong>helpful</strong> (solve the user's task), <strong>honest</strong> (not make things up) and <strong>harmless</strong> (not cause harm).</p>
-<h4>The main findings, in one list</h4>
+<h3 class="rung">The main findings, in one list</h3>
 <ul>
   <li>Labelers preferred 175B InstructGPT to 175B GPT-3 <strong>85 ± 3%</strong> of the time, and to GPT-3 given a carefully written <span class="t" data-tip-title="Few-shot prompt" data-tip="A prompt that includes a few worked examples of the task before the real question, so the model can infer what is wanted from the pattern.">few-shot prompt</span> <strong>71 ± 4%</strong> of the time.</li>
   <li>On the <span class="t" data-tip-title="TruthfulQA" data-tip="A benchmark of questions that some people answer falsely because of common misconceptions. It checks whether a model repeats the misconception or tells the truth.">TruthfulQA</span> benchmark, InstructGPT gave truthful and informative answers about <strong>twice</strong> as often as GPT-3.</li>
@@ -271,14 +271,14 @@
 
 <section id="s5">
 <h2>5 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.02155#S5">original</a></span></h2>
-<h4>Cheap, compared with pretraining</h4>
+<h3 class="rung">Cheap, compared with pretraining</h3>
 <p>The whole alignment process was a small fraction of GPT-3's training compute.</p>
 <div class="plot"><div id="compute-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> the bars compare training compute in <span class="t" data-tip-title="Petaflop/s-day" data-tip="A unit of total computation: a machine doing 10^15 floating-point operations every second, running for a whole day. About 8.6 × 10^19 operations.">petaflop/s-days</span> (one petaflop per second sustained for a day), on a log scale, as reported in the paper. Fine-tuning the 175B SFT model took 4.9 and the PPO-ptx stage 60, against 3,640 for pretraining GPT-3: roughly 60 times less compute for the RL stage, for a gain labelers valued more than a 100× increase in model size.</p>
-<h4>Who are we aligning to?</h4>
+<h3 class="rung">Who are we aligning to?</h3>
 <blockquote class="quote">“This procedure aligns the behavior of GPT-3 to the stated preferences of a specific group of people (mostly our labelers and researchers), rather than any broader notion of ‘human values’; we discuss this further in Section 5.2.”<cite>Ouyang et al. (2022), §1</cite></blockquote>
 <p>The model is shaped by the labelers (mostly English-speaking, in the United States or Southeast Asia), by the researchers who wrote their instructions, and by the customers whose prompts were used. Labelers disagreed with each other about 27% of the time. The authors call for broader participation and for ways to condition models on the values of different groups.</p>
-<h4>Limitations and open questions</h4>
+<h3 class="rung">Limitations and open questions</h3>
 <p>The models are neither fully aligned nor fully safe: they can still produce toxic or biased text, make things up, and follow harmful instructions. Open questions include adversarial data collection to find worst-case behaviour, combining preferences with other signals, and deciding what the model should do when a user's request conflicts with avoiding harm.</p>
 </section>
 

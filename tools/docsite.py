@@ -594,7 +594,7 @@ def lesson_nav(module: str, tests: int | None = None) -> str:
         '<div class="primer-nav" role="navigation" aria-label="Lesson navigation">'
         f'<div class="pn-crumbs"><a href="{home}">primer</a> &rsaquo; '
         f'<a href="{home}#{part.key}">{htmllib.escape(part.title)}</a> &rsaquo; '
-        f"<span>Lesson {index} of {len(CURRICULUM) - 1}: {htmllib.escape(lesson.title)}</span>"
+        f"<span>Lesson {index} of 0 to {len(CURRICULUM) - 1}: {htmllib.escape(lesson.title)}</span>"
         f'<span class="pn-links"><a href="{home}#lessons">All lessons</a> · '
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
@@ -737,6 +737,15 @@ offline, and <code>make spec</code> prints this page in a terminal.</p>
 """
 
 
+def label_sections(page_html: str) -> str:
+    """pdoc's section labels ("Arguments:", "Returns:", "Inherited Members") as bold labels.
+
+    pdoc writes them as h5/h6 wherever they fall, so a page's outline would jump from h2 to h6;
+    they label a block rather than start a section of the page.
+    """
+    return re.sub(r"<h([56])\b([^>]*)>(.*?)</h\1>", r'<p class="doc-label"\2><strong>\3</strong></p>', page_html, flags=re.S)
+
+
 def add_theme(page_html: str, page: str) -> str:
     """Load the shared theme at the end of <head>: after pdoc's styles so it wins,
     and before the body so a dark choice never flashes light."""
@@ -773,6 +782,7 @@ NAV_CSS = """
 .pn-next{text-align:right;margin-left:auto}
 .primer-nav.pn-bottom{margin:2.5rem 0 0}
 .pdoc img{max-width:100%;height:auto}
+.doc-label{margin:.9rem 0 .2rem}
 </style>
 """
 
@@ -905,7 +915,7 @@ def render_home(tests: int | None = None) -> str:
         "{{EXAMPLE_CODE}}", code_link("primer/ml/attention.py", "index.html")).replace(
         "{{HOME_REPO}}", REPO_URL).replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
         "{{REPO_LABEL}}", repo.split("://", 1)[-1]).replace("{{LICENSE}}", code_link("LICENSE", "index.html")).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
-        "{{COUNT}}", str(len(CURRICULUM))).replace(
+        "{{COUNT}}", str(len(CURRICULUM))).replace("{{LAST}}", str(len(CURRICULUM) - 1)).replace(
         "{{TESTS}}", f"a suite of {tests:,} tests" if tests else "a suite of tests")
 
 
@@ -935,7 +945,7 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 </style></head>
 <body><main>
 <header><div class="top"><h1>primer: how modern AI works, built from scratch</h1><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
-<p>{{COUNT}} lessons. Every idea is built in plain Python, drawn, and decoded symbol by symbol.
+<p>{{COUNT}} lessons, numbered 0 to {{LAST}}. Every idea is built in plain Python, drawn, and decoded symbol by symbol.
 Hover over any underlined term for a plain-English definition.</p>
 <p>All of it is pinned down by {{TESTS}}: small programs that run the lessons' code and check it does what the
 lessons claim. They were written before the code (test-driven), and each is named as a plain sentence in the
@@ -1004,6 +1014,7 @@ def _postprocess(path: Path, terms: dict[str, tuple], counts: dict[str, int] | N
         text = text.replace("</main>", nav.replace('class="primer-nav"', 'class="primer-nav pn-bottom"') + "</main>", 1)
     else:
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + site_nav(page), text, count=1)
+    text = label_sections(text)
     text = link_code_mentions(text, module, page)
     text = link_members_to_source(text, module, page)
     text = skip_forwarded_pages(text, page)

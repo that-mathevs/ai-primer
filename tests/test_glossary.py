@@ -99,3 +99,39 @@ class TestScopedTerms:
     def test_given_the_glossary_everyday_words_with_a_technical_meaning_are_scoped(self):
         for word in ("key", "value", "query", "rank", "recall", "policy", "patch", "filter", "kernel", "padding", "checkpoint", "span", "trace"):
             assert GLOSSARY[word].scope, f"'{word}' has an everyday meaning; scope it to the lessons that use the technical one"
+
+
+class TestTermsShowTheirUsualCase:
+    # Entries are keyed in lower case for matching; readers see each term the way the lessons write it.
+
+    def test_given_an_acronym_it_shows_in_capitals(self):
+        from primer.glossary import display_term
+
+        assert display_term("acl") == "ACL" and display_term("hnsw") == "HNSW"
+
+    def test_given_a_name_with_mixed_case_it_keeps_it(self):
+        from primer.glossary import display_term
+
+        assert display_term("adamw") == "AdamW" and display_term("kv cache") == "KV cache"
+
+    def test_given_an_ordinary_word_capitalised_only_at_the_start_of_sentences_it_stays_lower_case(self):
+        from primer.glossary import display_term
+
+        assert display_term("attention") == "attention" and display_term("embedding") == "embedding"
+
+    def test_given_a_term_capitalised_only_in_headings_tables_and_paper_titles_it_stays_lower_case(self):
+        from primer.glossary import display_term
+
+        for term in ("dry run", "kill switch", "rate limit", "layer normalization", "positional encoding", "reflection",
+                     "dense retrieval", "late interaction", "short-term memory"):
+            assert display_term(term) == term
+
+    def test_given_a_proper_name_it_keeps_its_capital(self):
+        from primer.glossary import display_term
+
+        assert display_term("adam") == "Adam" and display_term("luhn check") == "Luhn check"
+
+    def test_given_the_glossary_page_it_shows_terms_in_their_usual_case(self):
+        import primer.glossary
+
+        assert "| **AdamW** |" in primer.glossary.__doc__ and "| **adamw** |" not in primer.glossary.__doc__

@@ -76,41 +76,41 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=1">original</a></span></h2>
 <blockquote class="quote">“We introduce Adam, an algorithm for first-order gradient-based optimization of stochastic objective functions, based on adaptive estimates of lower-order moments.”<cite>Kingma and Ba (2014), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Training a neural network means walking downhill on a landscape made of the model's error (the <span class="t" data-t="loss">loss</span>), in thick fog, feeling the slope under your feet (the <span class="t" data-t="gradient">gradient</span>). The question every <span class="t" data-t="optimizer">optimizer</span> answers is: how big a step should I take, in which direction? Adam's answer: keep a running average of the slopes you have felt (so a single bumpy step doesn't throw you), keep a running average of how <em>large</em> the slopes have been, and take each step in proportion to their ratio. Where the ground has been steep and erratic you tread carefully; where it has been gentle but consistent you stride out. And it does this separately for every one of the model's millions of adjustable numbers.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>A method that needs only gradients (“first-order”), little memory, and is simple to implement.</li>
   <li>Step sizes that do not change if every gradient is multiplied by a constant, and that are roughly capped by one setting, the step size α.</li>
   <li>Hyperparameters that “typically require little tuning”, with defaults that became universal: α = 0.001, β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.999, ε = 10<sup>−8</sup>.</li>
   <li>A convergence guarantee for convex problems, and experiments where Adam matches or beats the alternatives on logistic regression, fully connected nets and convolutional nets.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Adam, and its descendant <span class="t" data-t="adamw">AdamW</span>, is the default optimizer for Transformers, including every large language model. If you train anything with a neural network today, this paper is probably running inside your training loop.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=1">original</a></span></h2>
 <blockquote class="quote">“The method computes individual adaptive learning rates for different parameters from estimates of first and second moments of the gradients; the name Adam is derived from adaptive moment estimation.”<cite>Kingma and Ba (2014), §1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Imagine tuning a mixing desk with a thousand sliders, where some sliders make a huge difference with a tiny nudge and others barely matter. A single “how far to move” setting for all of them is hopeless: too big and the sensitive sliders overshoot, too small and the insensitive ones never get anywhere. Adam gives every slider its own step size, learned from that slider's own history. The paper names the two things it tracks after statistics: the <em>first moment</em> (the average) and the <em>second moment</em> (the average of the squares, a measure of size).</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Suppose weight A's recent gradients were (10, 12, 8) and weight B's were (0.1, 0.12, 0.08). Plain <span class="t" data-t="stochastic gradient descent">stochastic gradient descent</span> with learning rate 0.01 moves A by about 0.1 and B by about 0.001: a hundredfold difference, purely because of scale. Adam divides each average gradient by the typical size of that weight's gradients. For A that is roughly 10 / 10 = 1, for B roughly 0.1 / 0.1 = 1, so both move by about the same step, α.</p>
-<h4>Two ancestors it combines</h4>
+<h3 class="rung">Two ancestors it combines</h3>
 <ul>
   <li><span class="t" data-tip-title="AdaGrad" data-tip="An optimizer (Duchi et al., 2011) that divides each weight's step by the square root of the sum of all its past squared gradients. Great for rare features, but the sum only grows, so steps shrink forever.">AdaGrad</span> works well when gradients are <span class="t" data-tip-title="Sparse gradients" data-tip="Gradients that are zero most of the time for a given weight, for example the weight for a rare word that appears in few examples. The weight gets few updates, so it needs larger ones when they come.">sparse</span>.</li>
   <li><span class="t" data-tip-title="RMSProp" data-tip="An optimizer (Tieleman and Hinton, 2012, from a lecture slide) that divides each step by the square root of a running average of recent squared gradients. It forgets old gradients, so it copes with changing conditions.">RMSProp</span> works well when the problem keeps changing (“non-stationary”).</li>
 </ul>
 <p>Adam takes RMSProp's running average of squared gradients, adds a running average of the gradients themselves (<span class="t" data-t="momentum">momentum</span>), and fixes a start-up flaw both share (§3).</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Per-weight step sizes are exactly what deep networks need: the gradients of an embedding table, an attention matrix and a layer-norm gain differ by orders of magnitude. The <a data-lesson="primer/ml/optimizers.html">optimizers lesson</a> races these methods on an ill-conditioned bowl.</p>
 </section>
 
 <section id="s2">
 <h2>2 The algorithm <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Think of a hiker with two notebooks. In the first, after every step, they update a running average of which way the ground slopes: mostly the old average, a little of the newest reading. In the second, they update a running average of how <em>steep</em> the ground has been, ignoring direction. Before each step they divide the first by the square root of the second: “which way, relative to how steep it usually is.” That ratio, times a fixed stride length α, is the step.</p>
-<h4>Tiny example: three steps on one weight</h4>
+<h3 class="rung">Tiny example: three steps on one weight</h3>
 <p>One weight θ starts at 1.0. Settings: α = 0.1, β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.999, ε = 10<sup>−8</sup>. The gradients arrive as 2, then 1, then 1.5.</p>
 <div class="tablewrap"><table>
   <thead><tr><th>t</th><th class="num">g<sub>t</sub></th><th class="num">m<sub>t</sub></th><th class="num">v<sub>t</sub></th><th class="num">m̂<sub>t</sub></th><th class="num">v̂<sub>t</sub></th><th class="num">step α·m̂/√v̂</th><th class="num">θ<sub>t</sub></th></tr></thead>
@@ -154,14 +154,14 @@
 </figure>
 <p class="reading"><strong>Reading it:</strong> read from the bottom up; this loop runs once per training step, separately for every weight. The fresh gradient splits into two lanes. The left lane (blue) averages the gradient itself into <em>m</em>, which gives the direction. The right lane (orange) averages the <em>squared</em> gradient into <em>v</em>, which gives the typical size of the gradient. Both averages start at zero, so the yellow boxes rescale them to undo that start-up bias (§3). The right lane is square-rooted to get back to gradient units, the left lane is divided by it, and the result times α is subtracted from the weight. The dashed box marks the optimizer's memory: <em>m</em> and <em>v</em> are two extra numbers stored for every weight in the model.</p>
 
-<h4>The math</h4>
+<h3 class="rung">The math</h3>
 <div class="eq" data-tex="\htmlData{sym=g}{g_t} = \htmlData{sym=nabla}{\nabla_\theta} \htmlData{sym=ft}{f_t}(\htmlData{sym=thetaprev}{\theta_{t-1}})" data-fallback="g_t = ∇_θ f_t(θ_{t−1})"></div>
 <div class="eq" data-tex="\htmlData{sym=m}{m_t} = \htmlData{sym=b1}{\beta_1}\, \htmlData{sym=mprev}{m_{t-1}} + (1-\htmlData{sym=b1}{\beta_1})\, \htmlData{sym=g}{g_t} \qquad \htmlData{sym=v}{v_t} = \htmlData{sym=b2}{\beta_2}\, \htmlData{sym=vprev}{v_{t-1}} + (1-\htmlData{sym=b2}{\beta_2})\, \htmlData{sym=gsq}{g_t^2}" data-fallback="m_t = β1 m_{t−1} + (1 − β1) g_t,   v_t = β2 v_{t−1} + (1 − β2) g_t²"></div>
 <div class="eq" data-tex="\htmlData{sym=mhat}{\hat m_t} = \frac{\htmlData{sym=m}{m_t}}{1-\htmlData{sym=b1t}{\beta_1^t}} \qquad \htmlData{sym=vhat}{\hat v_t} = \frac{\htmlData{sym=v}{v_t}}{1-\htmlData{sym=b2t}{\beta_2^t}} \qquad \htmlData{sym=theta}{\theta_t} = \htmlData{sym=thetaprev}{\theta_{t-1}} - \htmlData{sym=alpha}{\alpha}\,\frac{\htmlData{sym=mhat}{\hat m_t}}{\htmlData{sym=sqrtv}{\sqrt{\hat v_t}} + \htmlData{sym=eps}{\epsilon}}" data-fallback="m̂_t = m_t / (1 − β1^t),  v̂_t = v_t / (1 − β2^t),  θ_t = θ_{t−1} − α m̂_t / (√v̂_t + ε)"></div>
 <div class="symtable" data-syms="t,g,nabla,ft,theta,thetaprev,m,mprev,v,vprev,gsq,b1,b2,b1t,b2t,mhat,vhat,sqrtv,alpha,eps"></div>
 <p class="inwords"><strong>In words:</strong> “get the gradient; blend it into a running average of gradients and its square into a running average of squared gradients; scale both averages up to undo their zero start; then move the weight by α times the average gradient divided by the square root of the average squared gradient.”</p>
 <p class="inwords"><strong>With the numbers:</strong> at t = 2 in the table: m<sub>2</sub> = 0.9 × 0.2 + 0.1 × 1 = 0.28, v<sub>2</sub> = 0.999 × 0.004 + 0.001 × 1² = 0.004996, m̂<sub>2</sub> = 0.28 / (1 − 0.81) = 1.474, v̂<sub>2</sub> = 0.004996 / (1 − 0.998001) = 2.499, so θ<sub>2</sub> = 0.9 − 0.1 × 1.474 / 1.581 = 0.8068.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Every operation is element-wise: no matrix inverses, no second derivatives. That is why Adam scales to billions of weights. The price is memory: two extra numbers (m and v) per weight. For a 7-billion-parameter model with 32-bit optimizer state, that is 2 × 7 × 10<sup>9</sup> × 4 bytes = 56 GB before you store the weights themselves.</p>
 </section>
 
@@ -197,9 +197,9 @@
 <section id="s3">
 <h2>3 Initialization bias correction <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=3">original</a></span></h2>
 <blockquote class="quote">“In algorithm 1 we therefore divide by this term to correct the initialization bias.”<cite>Kingma and Ba (2014), §3</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>You start a running average of daily temperatures with an empty notebook, so you write down “0°” as yesterday's average. After one warm day of 20°, a 90%-old / 10%-new average says 2°, which is absurd. Your average is dragged towards the made-up zero until enough real days have washed it out. The fix is to divide by the fraction of the average that is real data so far: after one day that fraction is 10%, and 2° / 0.1 = 20°, which is right.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>In the §2 table, v<sub>1</sub> = 0.004 although the squared gradient was 4. Only 1 − 0.999<sup>1</sup> = 0.1% of v is real data, so v̂<sub>1</sub> = 0.004 / 0.001 = 4. Without the correction the first step would be 0.1 × 0.2 / √0.004 = 0.316, more than 3× too big, and by step 12 the uncorrected step would be about 6.6× too big. For v, with β<sub>2</sub> = 0.999, it takes about 1,000 steps before the correction stops mattering.</p>
 <div class="eq" data-tex="\htmlData{sym=v}{v_t} = (1-\htmlData{sym=b2}{\beta_2})\htmlData{sym=sumi}{\sum_{i=1}^{t}} \htmlData{sym=b2}{\beta_2}^{\,t-i}\, \htmlData{sym=gisq}{g_i^2} \qquad \htmlData{sym=E}{\mathbb{E}}[\htmlData{sym=v}{v_t}] = \htmlData{sym=E}{\mathbb{E}}[\htmlData{sym=gsq}{g_t^2}]\,(1-\htmlData{sym=b2t}{\beta_2^t}) + \htmlData{sym=zeta}{\zeta}" data-fallback="v_t = (1 − β2) Σ_{i=1..t} β2^(t−i) g_i²,   E[v_t] = E[g_t²] (1 − β2^t) + ζ"></div>
 <div class="symtable" data-syms="sumi,gisq,E,zeta"></div>
@@ -211,28 +211,28 @@
   <p class="readout" id="bias-readout">Hover or tap the chart to read values at any step.</p>
 </div>
 <p class="reading"><strong>Reading it:</strong> the x-axis is the training step on a log scale. The two lower curves show how much of m and of v is real data so far (1 − β<sub>1</sub><sup>t</sup> and 1 − β<sub>2</sub><sup>t</sup>); both start near zero and climb to 1. The top curve is how much bigger each step would be <em>without</em> bias correction: the ratio (1 − β<sub>1</sub><sup>t</sup>) / √(1 − β<sub>2</sub><sup>t</sup>). With the default β<sub>2</sub> = 0.999 it peaks at about 6.6× at step 12. Slide β<sub>2</sub> to 0.9999, as sparse problems need, and the peak grows to about 21×. The paper's §6.4 found exactly this: without the correction, β<sub>2</sub> close to 1 made training unstable early on.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>This is the one ingredient that separates Adam from “RMSProp with momentum”, and it is what makes the first few hundred steps of training safe. Learning-rate <span class="t" data-t="warmup">warmup</span>, now standard for Transformers, attacks the same early-training fragility from a different side.</p>
 </section>
 
 <section id="s4">
 <h2>4 Convergence analysis <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Picture a weather forecaster who has to commit to a forecast each morning before seeing the day's weather, and is scored against the single best fixed forecast they could have chosen with hindsight. The shortfall, added up over all days, is called <span class="t" data-tip-title="Regret" data-tip="In online learning: the total extra loss you suffered by choosing each day's parameters before seeing that day's data, compared with the best single fixed choice made with hindsight.">regret</span>. A good strategy's regret grows more slowly than the number of days, so its <em>average</em> shortfall per day shrinks to zero: you end up as good as the best fixed choice.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>If regret grows like √T, then after 100 days the average shortfall is proportional to √100 / 100 = 0.1, and after 10,000 days to √10000 / 10000 = 0.01. More days means a smaller average gap, heading to zero.</p>
 <div class="eq" data-tex="\htmlData{sym=RT}{R(T)} = \htmlData{sym=sumT}{\sum_{t=1}^{T}} \big[\htmlData{sym=ft}{f_t}(\htmlData{sym=theta}{\theta_t}) - \htmlData{sym=ft}{f_t}(\htmlData{sym=thetastar}{\theta^*})\big] \qquad \htmlData{sym=RT}{R(T)} = \htmlData{sym=bigO}{O}(\sqrt{\htmlData{sym=T}{T}}) \;\Rightarrow\; \frac{\htmlData{sym=RT}{R(T)}}{\htmlData{sym=T}{T}} \to 0" data-fallback="R(T) = Σ_{t=1..T} [f_t(θ_t) − f_t(θ*)],   R(T) = O(√T) ⇒ R(T)/T → 0"></div>
 <div class="symtable" data-syms="RT,sumT,thetastar,T,bigO"></div>
 <p class="inwords"><strong>In words:</strong> “regret adds up, over every step, how much worse Adam's current weights did on that step's data than the best fixed weights would have; the paper proves this total grows no faster than the square root of the number of steps, so the per-step average vanishes.”</p>
 <p class="inwords"><strong>With the numbers:</strong> √T / T = 1/√T, so at T = 1,000,000 steps the average regret is on the order of 1/1000 of its scale.</p>
 <p>The proof needs assumptions that real networks break: the loss must be <span class="t" data-tip-title="Convex" data-tip="Bowl-shaped everywhere, with no separate dips: any downhill path leads to the same bottom. Linear and logistic regression are convex; neural networks are not.">convex</span>, gradients bounded, the step size decaying like α/√t, and β<sub>1</sub> decaying over time. The paper is explicit that the analysis does not cover non-convex problems.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>In 2018 Reddi, Kale and Kumar showed a flaw in this proof and simple convex problems on which Adam does not converge (their fix is called AMSGrad). In practice this rarely bites, and nobody picks Adam for its theorem: it won on its behaviour in experiments, the subject of §6.</p>
 </section>
 
 <section id="s5">
 <h2>5 Related work <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Three hikers, three note-taking habits. The AdaGrad hiker writes down every squared slope forever and divides by the square root of the running total, so they get more and more cautious and eventually barely move. The RMSProp hiker keeps only a fading memory of recent squared slopes, so their caution tracks current conditions. The Adam hiker keeps RMSProp's fading memory, adds a fading memory of direction, and corrects both for the empty-notebook start.</p>
 <div class="tablewrap"><table>
   <caption>How the paper relates Adam to earlier methods (summarized from §5)</caption>
@@ -245,13 +245,13 @@
   </tbody>
 </table></div>
 <p>The paper also links Adam to <span class="t" data-tip-title="Natural gradient" data-tip="A family of optimizers that rescale the gradient by how sensitive the model's predictions are to each parameter (the Fisher information). Adam's divisor √v̂ is a cheap, per-weight, diagonal stand-in for this idea.">natural gradient</span> methods: dividing by √v̂ is a cheap, per-weight approximation to rescaling by the curvature of the problem, but a more conservative one.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The family has kept growing (AdamW, Adafactor, Lion, Shampoo, Sophia), but nearly every member is still recognisably a running average of gradients divided by some estimate of their size.</p>
 </section>
 
 <section id="s6">
 <h2>6 Experiments <span class="orig">· <a href="https://arxiv.org/pdf/1412.6980v9#page=5">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The authors race optimizers on four courses of increasing difficulty and give every competitor its best settings, found by a grid search. Winning on a bowl-shaped course (logistic regression) is expected; the interesting courses are the bumpy ones (deep networks), where the theory says nothing.</p>
 <div class="tablewrap"><table>
   <caption>The experiments, summarized in our own words from §6 (Kingma and Ba, 2014)</caption>
@@ -265,9 +265,9 @@
   </tbody>
 </table></div>
 <blockquote class="quote">“In summary, Adam performed equal or better than RMSProp, regardless of hyper-parameter setting.”<cite>Kingma and Ba (2014), §6.4</cite></blockquote>
-<h4>Tiny example: why AdaGrad fades on the CNN</h4>
+<h3 class="rung">Tiny example: why AdaGrad fades on the CNN</h3>
 <p>The paper notes that on the CNN, v̂ fell towards zero after a few epochs and was dominated by ε. AdaGrad's divisor, a <em>sum</em> of all past squared gradients, only grows: after 10,000 steps of gradients of size 0.1 it is √(10000 × 0.01) = 10, so every step is divided by 10 and keeps shrinking. A running average (RMSProp, Adam) of the same gradients stays at √0.01 = 0.1.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Works well with little tuning across very different models” is exactly the property that made Adam the default. The paper's own §6.3 also hints at the caveat still discussed today: carefully tuned SGD with momentum can match Adam on convolutional networks, and sometimes generalizes slightly better.</p>
 </section>
 

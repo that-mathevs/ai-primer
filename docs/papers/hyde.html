@@ -68,30 +68,30 @@
 <section id="abstract">
 <h2>Abstract</h2>
 <blockquote class="quote">“The generated document is not real, can contain factual errors but is like a relevant document.”<cite>Gao et al. (2022), §1. <a href="https://ar5iv.labs.arxiv.org/html/2212.10496">Read the original</a></cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>You want a recipe but can only describe the dish badly: “that orange soup with coconut, from somewhere in Asia?” Searching with that question finds other people asking similar questions. Instead, you scribble what you <em>think</em> the recipe looks like (“Thai pumpkin soup: simmer pumpkin with coconut milk, red curry paste and lime…”), and hold that against the cookbook. Your guess may be wrong in details, but it <em>looks like a recipe</em>, so it lands on the right page. HyDE does this with a <span class="t" data-t="llm">language model</span> writing the guess and an <span class="t" data-t="embedding">embedding</span> model doing the matching.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Strong search with <strong>no relevance labels at all</strong>: no example of which document answers which question is needed.</li>
   <li>It beats the same embedding model used the normal way on every English benchmark tested, and is competitive with retrievers fine-tuned on large labelled datasets.</li>
   <li>No model is trained. An off-the-shelf instruction-following model and an off-the-shelf embedding model are simply chained.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Rewrite the query before searching” is now a standard move in <span class="t" data-t="rag">RAG</span> systems, and HyDE is its most famous form. It is also a clean lesson in how questions and answers live in different neighbourhoods of an embedding space.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A dense retriever is trained by showing it thousands of (question, correct passage) pairs until questions land near their answers. Where do those pairs come from? Mostly one big dataset, MS-MARCO, which restricts commercial use and does not cover your legal contracts or your support tickets. Without such pairs you are doing <strong>zero-shot</strong> retrieval: the system must work on data it has never been tuned for.</p>
-<h4>The paper's move</h4>
+<h3 class="rung">The paper's move</h3>
 <p>Split search into two jobs that each need no labels:</p>
 <ol>
   <li><strong>Generate:</strong> an instruction-following model writes a passage that <em>would</em> answer the question (the “hypothetical document”).</li>
   <li><strong>Match:</strong> an unsupervised embedding model, trained only to put similar <em>documents</em> near each other, finds real documents near the hypothetical one.</li>
 </ol>
 <p>The question is never compared with a document directly. Relevance is handled by the writer; similarity by the embedder.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Most organisations start a search project with zero labelled pairs. HyDE is a way to get strong retrieval on day one, before any search logs exist.</p>
 </section>
 
@@ -187,14 +187,14 @@
 
 <section id="s4">
 <h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S4">original</a></span></h2>
-<h4>Setup</h4>
+<h3 class="rung">Setup</h3>
 <ul>
   <li><strong>Writer:</strong> InstructGPT (text-davinci-003), sampled at <span class="t" data-t="temperature">temperature</span> 0.7.</li>
   <li><strong>Encoder:</strong> Contriever, trained with unsupervised <span class="t" data-t="contrastive loss">contrastive learning</span> (no relevance labels); mContriever for other languages.</li>
   <li><strong>Benchmarks:</strong> web search (TREC DL19 and DL20), six low-resource BEIR tasks, and four languages from Mr.TyDi.</li>
   <li><strong>Metric:</strong> mainly <span class="t" data-t="ndcg">nDCG@10</span> (how good the top 10 results are, rewarding relevant results higher up) and recall.</li>
 </ul>
-<h4>Web search</h4>
+<h3 class="rung">Web search</h3>
 <div class="tablewrap"><table>
   <caption>Selected numbers from Gao et al. (2022), Table 1: nDCG@10 on TREC DL19 and DL20 (higher is better). Summarised with attribution.</caption>
   <thead><tr><th>System</th><th>Relevance labels used?</th><th class="num">DL19</th><th class="num">DL20</th></tr></thead>
@@ -207,18 +207,18 @@
 </table></div>
 <div class="plot"><div id="dl-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each pair of bars is one system on DL19 and DL20, on an axis from 0 to 70. Unsupervised Contriever used the normal way is <em>worse</em> than keyword search. The same encoder searching with HyDE's fake answers jumps past BM25 and nearly reaches the version fine-tuned on a large labelled dataset, which is effectively an upper bound here.</p>
-<h4>Low-resource and multilingual search</h4>
+<h3 class="rung">Low-resource and multilingual search</h3>
 <p>On six BEIR tasks, HyDE improved Contriever everywhere. The most dramatic: TREC-COVID nDCG@10 went from 27.3 to <strong>59.3</strong> (BM25: 59.5). In other languages the gains were smaller but real, for example Japanese MRR@100 from 19.5 to 30.7, and the paper notes both the small multilingual encoder and the writer are weaker outside English.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Two lessons carry over. Always compare against BM25: a “semantic” retriever can lose to keyword search on a new domain. And measure retrieval on its own with <span class="t" data-t="recall@k">recall@k</span> or nDCG before judging the whole RAG system; see the <a data-lesson="primer/ml/metrics.html">metrics lesson</a>.</p>
 </section>
 
 <section id="s5">
 <h2>5 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.10496#S5">original</a></span></h2>
-<h4>A better writer gives better search</h4>
+<h3 class="rung">A better writer gives better search</h3>
 <div class="plot"><div id="size-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each bar is HyDE's DL19 nDCG@10 with a different instruction-following model writing the fake passages, from 11 billion to 175 billion parameters (numbers from Gao et al., 2022, Table 4). All three beat plain Contriever (44.5, the grey bar), and bigger writers help more. The writer is doing the “relevance” work, so a smarter writer produces fake answers that land closer to real ones.</p>
-<h4>With an already fine-tuned encoder</h4>
+<h3 class="rung">With an already fine-tuned encoder</h3>
 <p>HyDE is meant for when you have no labels, but the paper also tried it on top of the fine-tuned Contriever. With the strongest writer it still helped (DL19: 62.1 → 67.4); with smaller writers it slightly hurt. So the fake answers carry some signal even a supervised retriever misses, but only when they are good.</p>
 </section>
 

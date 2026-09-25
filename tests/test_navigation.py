@@ -613,6 +613,12 @@ class TestNoCodeMentionIsLeftUnlinked:
 
         assert unlinked_code_mentions("<p><code>LLM</code></p>", "primer.agents.agent_loop") == ["LLM"]
 
+    def test_given_a_path_to_a_committed_file_it_links_to_that_file(self, local):
+        from tools.docsite import link_code_mentions
+
+        linked = link_code_mentions("<p><code>primer/glossary.py</code></p>", "primer.curriculum", "primer/curriculum.html")
+        assert '<code><a href="../../../primer/glossary.py">primer/glossary.py</a></code>' in linked
+
 
 class TestEveryAnchorExists:
     def test_given_a_link_to_an_anchor_the_page_does_not_have_it_is_reported(self, tmp_path):
@@ -644,26 +650,10 @@ class TestNamesWrittenWithoutTheirModule:
         # SemanticCache exists in both the cost lesson and the clustering lesson; only the author knows which.
         assert unlinked_code_mentions("<p><code>SemanticCache</code></p>", "primer.agents.evals") == ["SemanticCache"]
 
-    def test_given_a_path_to_a_committed_file_it_links_to_that_file(self, local):
-        from tools.docsite import link_code_mentions
-
-        linked = link_code_mentions("<p><code>primer/glossary.py</code></p>", "primer.curriculum", "primer/curriculum.html")
-        assert '<code><a href="../../../primer/glossary.py">primer/glossary.py</a></code>' in linked
-
     def test_given_a_parameter_that_shares_a_functions_name_the_site_check_leaves_it_alone(self, local):
         from tools.sitecheck import unlinked_code_mentions
 
         assert unlinked_code_mentions("<p><code>answer</code></p>", "primer.agents.evals") == []
-
-    def test_given_a_companion_whose_script_links_a_lesson_that_does_not_exist_it_is_reported(self, tmp_path):
-        from tools.sitecheck import broken_companion_lessons
-
-        # Companions write lesson links as data for their script, so a normal crawl never sees them.
-        (tmp_path / "papers").mkdir()
-        (tmp_path / "primer").mkdir()
-        (tmp_path / "primer" / "real.html").write_text("")
-        (tmp_path / "papers" / "p.html").write_text('<a data-lesson="primer/real.html">a</a> <a data-lesson="primer/gone.html">b</a>')
-        assert broken_companion_lessons(tmp_path) == {"p.html": {"primer/gone.html"}}
 
 
 class TestNoLinkGoesNowhere:
@@ -703,29 +693,18 @@ class TestTheHomePageKeepsEachPartsIntroduction:
 
         assert 'href="primer/common.html"' in render_home()
 
-    def test_given_the_home_page_its_header_shows_the_repositorys_address_as_a_link(self):
-        from primer.curriculum import REPO_URL
+    def test_given_any_part_its_section_never_says_the_same_sentence_twice(self):
+        from primer.curriculum import PARTS
         from tools.docsite import render_home
 
-        header = render_home().split("</header>")[0]
-        # Written out in full, so a reader sees exactly where the code lives.
-        assert f'<a href="{REPO_URL}">{REPO_URL}</a>' in header
-
-    def test_given_the_home_page_the_example_run_command_links_to_the_code_it_runs(self, local):
-        from tools.docsite import render_home
-
-        # A run command links to the code it runs, on every page.
-        assert '<code>python -m <a href="../../primer/ml/attention.py">primer.ml.attention</a></code>' in render_home()
-
-    def test_given_the_home_page_it_says_what_a_test_is_and_shows_a_real_one(self, local):
-        from tools.docsite import render_home
-
-        header = render_home().split("</header>")[0]
-        assert "checked by a test." not in header  # jargon: says nothing to someone who doesn't write tests
-        # The example it quotes must be a real test, and the link must lead to the file that holds it.
-        assert "given a causal mask, future tokens receive zero attention" in header
-        assert "def test_given_a_causal_mask_future_tokens_receive_zero_attention" in (ROOT / "tests/test_attention.py").read_text()
-        assert 'href="../../tests/test_attention.py"' in header
+        home = render_home()
+        for part in PARTS:
+            section = home.split(f'id="{part.key}"')[1].split("</section>")[0]
+            # The prose after the heading (which has no full stop), with tags turned to spaces so sentences don't glue.
+            prose = section.split("</h2>", 1)[1].split('<ol class="cards">')[0]
+            text = " ".join(re.sub(r"<[^>]+>", " ", prose).split())
+            sentences = [s.strip() for s in re.split(r"(?<=\.)\s+", text) if s.strip()]
+            assert len(sentences) == len(set(sentences)), part.key
 
 
 # A small collected suite, in pytest's "path::Class::test[param]" form, so these specs don't run pytest.
@@ -810,6 +789,26 @@ class TestNothingRendersBroken:
         home = render_home()
         assert "<em>Attention Is All You Need</em>" in home and "*Attention Is All You Need*" not in home
 
+    def test_given_a_heading_that_skips_a_level_the_site_check_reports_it(self):
+        from tools.sitecheck import heading_skips
+
+        # Screen readers and outlines navigate by heading level; h2 -> h4 leaves a hole.
+        page = "<h1>A</h1><h2>B</h2><h4>Everyday picture</h4><h3>C</h3><h4>fine</h4>"
+        assert heading_skips(page) == ["h2 -> h4: Everyday picture"]
+
+    def test_given_pdocs_section_labels_they_become_labels_not_headings_that_skip_levels(self):
+        from tools.docsite import label_sections
+
+        page = '<h2>Title</h2><h6 id="arguments">Arguments:</h6><ul></ul><h5>Inherited Members</h5>'
+        assert label_sections(page) == ('<h2>Title</h2><p class="doc-label" id="arguments"><strong>Arguments:</strong></p><ul></ul>'
+                                        '<p class="doc-label"><strong>Inherited Members</strong></p>')
+
+    @pytest.mark.parametrize("companion", sorted(p.name for p in (ROOT / "docs" / "papers").glob("*.html")))
+    def test_given_a_companion_its_headings_never_skip_a_level(self, companion):
+        from tools.sitecheck import heading_skips
+
+        assert heading_skips((ROOT / "docs" / "papers" / companion).read_text()) == []
+
 
 class TestEveryWayOfNamingCodeIsLinked:
     def test_given_a_call_written_with_its_arguments_the_function_name_links(self, local):
@@ -879,27 +878,6 @@ class TestEveryWayOfNamingCodeIsLinked:
         linked = link_code_mentions(page, "primer.ml.big_picture", "primer/ml/big_picture.html")
         assert '<a href="transformer.html#TinyGPT">TinyGPT</a>' in linked
 
-    def test_given_a_companion_whose_script_links_a_forwarding_page_the_site_check_reports_it(self, tmp_path):
-        from tools.sitecheck import links_through_forwards
-
-        (tmp_path / "papers").mkdir()
-        (tmp_path / "primer.html").write_text('<meta http-equiv="refresh" content="0; url=index.html#lessons">')
-        (tmp_path / "papers" / "p.html").write_text('<a data-lesson="primer.html">The primer</a>')
-        assert links_through_forwards(tmp_path) == {"papers/p.html": {"primer.html"}}
-
-    def test_given_any_part_its_section_never_says_the_same_sentence_twice(self):
-        from primer.curriculum import PARTS
-        from tools.docsite import render_home
-
-        home = render_home()
-        for part in PARTS:
-            section = home.split(f'id="{part.key}"')[1].split("</section>")[0]
-            # The prose after the heading (which has no full stop), with tags turned to spaces so sentences don't glue.
-            prose = section.split("</h2>", 1)[1].split('<ol class="cards">')[0]
-            text = " ".join(re.sub(r"<[^>]+>", " ", prose).split())
-            sentences = [s.strip() for s in re.split(r"(?<=\.)\s+", text) if s.strip()]
-            assert len(sentences) == len(set(sentences)), part.key
-
 
 class TestTheSameThingLooksTheSameEverywhere:
     def test_given_any_bar_or_page_the_repository_link_reads_code_on_github(self):
@@ -938,3 +916,60 @@ class TestEveryPageCanBeReached:
         from tools.docsite import render_home
 
         assert 'href="primer/curriculum.html"' in render_home()
+
+
+class TestCompanionLinks:
+    # Companions write lesson links as data for their script, so a normal crawl never sees them.
+
+    def test_given_a_companion_whose_script_links_a_lesson_that_does_not_exist_it_is_reported(self, tmp_path):
+        from tools.sitecheck import broken_companion_lessons
+
+        # Companions write lesson links as data for their script, so a normal crawl never sees them.
+        (tmp_path / "papers").mkdir()
+        (tmp_path / "primer").mkdir()
+        (tmp_path / "primer" / "real.html").write_text("")
+        (tmp_path / "papers" / "p.html").write_text('<a data-lesson="primer/real.html">a</a> <a data-lesson="primer/gone.html">b</a>')
+        assert broken_companion_lessons(tmp_path) == {"p.html": {"primer/gone.html"}}
+
+    def test_given_a_companion_whose_script_links_a_forwarding_page_the_site_check_reports_it(self, tmp_path):
+        from tools.sitecheck import links_through_forwards
+
+        (tmp_path / "papers").mkdir()
+        (tmp_path / "primer.html").write_text('<meta http-equiv="refresh" content="0; url=index.html#lessons">')
+        (tmp_path / "papers" / "p.html").write_text('<a data-lesson="primer.html">The primer</a>')
+        assert links_through_forwards(tmp_path) == {"papers/p.html": {"primer.html"}}
+
+
+class TestTheHomePageHeader:
+    # The first thing a reader sees: what this is, where the code lives, and how it is checked.
+
+    def test_given_the_home_page_its_header_shows_the_repositorys_address_as_a_link(self):
+        from primer.curriculum import REPO_URL
+        from tools.docsite import render_home
+
+        header = render_home().split("</header>")[0]
+        # Written out in full, so a reader sees exactly where the code lives.
+        assert f'<a href="{REPO_URL}">{REPO_URL}</a>' in header
+
+    def test_given_the_home_page_the_example_run_command_links_to_the_code_it_runs(self, local):
+        from tools.docsite import render_home
+
+        # A run command links to the code it runs, on every page.
+        assert '<code>python -m <a href="../../primer/ml/attention.py">primer.ml.attention</a></code>' in render_home()
+
+    def test_given_the_home_page_it_says_what_a_test_is_and_shows_a_real_one(self, local):
+        from tools.docsite import render_home
+
+        header = render_home().split("</header>")[0]
+        assert "checked by a test." not in header  # jargon: says nothing to someone who doesn't write tests
+        # The example it quotes must be a real test, and the link must lead to the file that holds it.
+        assert "given a causal mask, future tokens receive zero attention" in header
+        assert "def test_given_a_causal_mask_future_tokens_receive_zero_attention" in (ROOT / "tests/test_attention.py").read_text()
+        assert 'href="../../tests/test_attention.py"' in header
+
+    def test_given_lessons_numbered_from_zero_the_home_page_and_breadcrumbs_agree(self):
+        from tools.docsite import lesson_nav, render_home
+
+        # 38 lessons, numbered 0 to 37: say both, so "Lesson 5 of 37" and "38 lessons" can't look contradictory.
+        assert "38 lessons, numbered 0 to 37" in render_home()
+        assert "Lesson 5 of 0 to 37" in lesson_nav("primer.ml.attention")

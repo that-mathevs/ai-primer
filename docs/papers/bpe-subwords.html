@@ -85,48 +85,48 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909">original</a></span></h2>
 <blockquote class="quote">“Neural machine translation (NMT) models typically operate with a fixed vocabulary, but translation is an open-vocabulary problem.”<cite>Sennrich, Haddow and Birch (2015), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A neural translator in 2015 had a fixed word list, around 30,000 to 50,000 entries. Any word not on the list became a blank, “UNK” (unknown). But language is endless: new names, new compounds, rare inflections. The paper's fix: instead of whole words, use a fixed kit of word <em>pieces</em>, like a Lego set. Common words are single bricks; rare words are built from several. Then no word is ever unknown.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Rare and unknown words can be translated by breaking them into <span class="t" data-tip-title="Subword unit" data-tip="A piece of a word: a single letter, a common chunk like 'ing' or 'un', or a whole frequent word. A fixed set of such pieces can spell any word.">subword units</span>, with no separate dictionary for unknown words.</li>
   <li><span class="t" data-t="byte pair encoding">Byte pair encoding</span>, an old compression trick, makes a good way to choose the pieces.</li>
   <li>Better translation of rare words, and gains of up to 1.1 and 1.3 <span class="t" data-t="bleu">BLEU</span> over a dictionary-based baseline for English→German and English→Russian.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>GPT, Claude, Llama and most other language models split text with a descendant of this algorithm (usually byte-level BPE). Why models are priced per token, why they struggle to count letters, and why some languages cost more than others all trace back to here.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>German glues words together: <em>Abwasserbehandlungsanlage</em> is “sewage water treatment plant” as a single word. A word-level model has either seen that exact word or it hasn't. A human translator splits it into parts they know, Abwasser | behandlungs | anlage, and translates the parts. The paper wants the network to do the same.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>Before this paper, the standard patch was a <em>back-off dictionary</em>: when the model outputs UNK, look up the aligned source word in a bilingual dictionary, or copy it across. That works for “Obama” into German, but not for “Obama” into Russian, which needs a different alphabet (Обама), and not for compounds that have no one-to-one counterpart.</p>
-<h4>Two contributions</h4>
+<h3 class="rung">Two contributions</h3>
 <ol>
   <li>Open-vocabulary translation works by encoding rare words as sequences of subword units, and it is simpler and better than large vocabularies plus back-off dictionaries.</li>
   <li>Byte pair encoding, a compression algorithm from 1994, adapted to choose those units.</li>
 </ol>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>“Never have an unknown token” became a hard requirement for language models; modern tokenizers go further, down to raw bytes, so even emoji and binary junk have a spelling.</p>
 </section>
 
 <section id="s2">
 <h2>2 Neural machine translation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The translator used is the attention-based <span class="t" data-t="encoder-decoder">encoder-decoder</span> of 2015: a recurrent <span class="t" data-t="encoder">encoder</span> reads the source sentence in both directions, and a recurrent <span class="t" data-t="decoder">decoder</span> writes the translation one piece at a time, using <span class="t" data-t="attention">attention</span> to look back at the most relevant source pieces at each step. The paper stresses that its method is not tied to this architecture: it only changes what the pieces are.</p>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>With subwords, attention can focus on part of a word: when writing <em>Gesundheits</em>, it can attend to the English piece “health”, and when writing <em>forschungs</em>, to “research”. A word-level model can only attend to whole words.</p>
-<h4>Setup, for reference</h4>
+<h3 class="rung">Setup, for reference</h3>
 <p>Hidden layers of 1,000 units, embeddings of 620, the Adadelta optimizer with mini-batches of 80, about 7 days of training per model, and <span class="t" data-t="beam search">beam search</span> with a beam of 12.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Two years later the Transformer replaced the recurrent parts, and it adopted subword units from the start: the <a href="attention-is-all-you-need.html">Transformer paper</a> used byte pair encoding for English→German.</p>
 </section>
 
 <section id="s3">
 <h2>3 Subword translation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S3">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A good human translator can handle a word they have never seen if they know its parts. The paper names three kinds of word where that works: <strong>names</strong> (copy or transliterate them), <strong>cognates and loanwords</strong> (translate with regular letter changes), and <strong>morphologically complex words</strong> (translate each part).</p>
 <div class="tablewrap"><table>
   <caption>Examples from §3 of Sennrich, Haddow and Birch (2015), CC BY 4.0</caption>
@@ -137,11 +137,11 @@
     <tr><td>Compound</td><td>solar system</td><td>Sonnen + system (German), Nap + rendszer (Hungarian)</td></tr>
   </tbody>
 </table></div>
-<h4>Tiny example: what rare words really are</h4>
+<h3 class="rung">Tiny example: what rare words really are</h3>
 <p>The authors examined 100 rare German words from their training data (words outside the 50,000 most frequent). 56 were compounds, 21 names, 6 loanwords, 5 transparent affixations (like <em>süßlich</em> = süß + lich, “sweetish”), 1 number and 1 computer-language identifier. So the great majority could, in principle, be translated piece by piece.</p>
 <div class="plot"><div id="rare-bars"></div></div>
 <p class="reading"><strong>Reading it:</strong> each bar counts how many of the 100 sampled rare German words fell into each category. Compounds dominate: over half of all rare words were glued-together combinations of words the model may well know. Together with names, that is 77 of the 100, all candidates for piece-by-piece translation. Numbers from §3 of the paper.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>The same argument applies with more force to code (identifiers like <code>parseHttpResponseHeader</code>) and to morphologically rich languages; subword tokenizers let one model handle all of them.</p>
 </section>
 
@@ -214,9 +214,9 @@
 
 <section id="s4">
 <h2>4 Evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S4">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Two questions: do subwords translate rare words better, and which way of splitting is best for vocabulary size, text length and quality? The test bed is WMT 2015: English→German (4.2 million sentence pairs, about 100 million tokens) and English→Russian (2.6 million pairs, about 50 million tokens).</p>
-<h4>How quality is measured</h4>
+<h3 class="rung">How quality is measured</h3>
 <p><span class="t" data-t="bleu">BLEU</span> counts overlapping word sequences with a reference translation; <span class="t" data-tip-title="chrF3" data-tip="A character n-gram F-score with β = 3, which weights recall three times as much as precision. It rewards getting parts of words right, useful for languages with long compounds.">chrF3</span> does the same with character sequences, weighting recall more. Because the paper's claim is about rare words, it also reports <span class="t" data-t="f1">F1</span> on single words, separately for all words, rare words and words never seen in training (OOV).</p>
 <div class="eq" data-tex="\htmlData{sym=F1}{F_1} = \frac{2\,\htmlData{sym=P}{P}\,\htmlData{sym=R}{R}}{\htmlData{sym=P}{P} + \htmlData{sym=R}{R}} \qquad \htmlData{sym=Fb}{F_\beta} = \frac{(1+\htmlData{sym=beta}{\beta}^2)\,\htmlData{sym=P}{P}\,\htmlData{sym=R}{R}}{\htmlData{sym=beta}{\beta}^2 \htmlData{sym=P}{P} + \htmlData{sym=R}{R}}" data-fallback="F1 = 2PR / (P + R),   F_β = (1 + β²) PR / (β² P + R)"></div>
 <div class="symtable" data-syms="P,R,F1,Fb,beta"></div>
@@ -288,7 +288,7 @@
 
 <section id="s5">
 <h2>5 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1508.07909#S5">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Two checks. First, sort target words by how often they appeared in training and plot accuracy for each band: word-level models collapse on rare words, subword models degrade gracefully. Second, look at actual translations.</p>
 <div class="tablewrap"><table>
   <caption>Table 4 of Sennrich, Haddow and Birch (2015), reproduced (CC BY 4.0). “|” marks subword boundaries</caption>
@@ -301,9 +301,9 @@
     <tr class="hl"><td>BPE-J90k</td><td>Gesundheits|forsch|ungsin|stitute</td></tr>
   </tbody>
 </table></div>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>The subword models build a correct German compound from pieces, even though the pieces do not follow linguistic boundaries: “forsch | ungsin | stitute” is not how a linguist would split it, yet the translation comes out right. For Russian, joint BPE segments the name Mirzayeva consistently on both sides (Mir | za | yeva → Мир | за | ева), while separate BPE vocabularies occasionally learned spurious letter mappings from inconsistent splits.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>Tokens are not morphemes, and models cope anyway. That is both why BPE works in practice and why models behave oddly on tasks that depend on individual letters: they never see the letters directly.</p>
 </section>
 

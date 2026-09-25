@@ -11,7 +11,9 @@ This module is the single source of truth: `make docs` turns it into
 
 from __future__ import annotations
 
+import functools
 import json
+from collections import Counter
 from dataclasses import dataclass
 
 
@@ -547,6 +549,48 @@ GLOSSARY: dict[str, Entry] = {
 }
 
 
+@functools.lru_cache(maxsize=1)
+def _usage_text() -> str:
+    """Every lesson's prose, as the case of each term is judged from it."""
+    import ast
+    import re
+    from pathlib import Path
+
+    # Read the docstrings from the source, without importing the lessons.
+    root = Path(__file__).resolve().parent
+    text = "\n".join(ast.get_docstring(ast.parse(f.read_text(encoding="utf-8"))) or "" for f in sorted(root.rglob("*.py")))
+    text = re.sub(r"```.*?```", " ", text, flags=re.S)  # fenced code and diagram labels
+    # Inline code, italic titles (which may wrap onto a second line) and link text; then citation lines.
+    text = re.sub(r"`[^`\n]*`|(?<!\*)\*(?!\s)[^*]+?(?<!\s)\*(?!\*)|\[[^\]\n]*\]\([^)]*\)", " ", text)
+    return "\n".join(line for line in text.splitlines() if "http" not in line and "arxiv" not in line.lower())
+
+
+@functools.lru_cache(maxsize=None)
+def _usage(terms: tuple[str, ...]) -> dict[str, Counter]:
+    """How often each casing of each term appears mid-sentence, found in one pass over the text."""
+    import re
+
+    # Only mid-sentence uses count: after a lower-case word and a space, or an opening bracket.
+    # Headings, table cells, list items and sentence starts capitalise words for reasons that aren't the term's.
+    alternation = "|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True))
+    pattern = re.compile(rf"(?:(?<=[a-z0-9,;)] )|(?<=\())(?:{alternation})(?![\w-])", re.I)
+    counts: dict[str, Counter] = {}
+    for m in pattern.finditer(_usage_text()):
+        counts.setdefault(m.group(0).lower(), Counter())[m.group(0)] += 1
+    return counts
+
+
+def display_term(term: str) -> str:
+    """How the lessons usually write a term: "acl" -> "ACL", "adamw" -> "AdamW", "attention" -> "attention".
+
+    Counted over every lesson's text, mid-sentence only, where capitals mean something
+    about the word. A term the lessons never use mid-sentence keeps its key.
+    """
+    terms = tuple(sorted(GLOSSARY)) if term in GLOSSARY else (term,)
+    forms = _usage(terms).get(term.lower())
+    return forms.most_common(1)[0][0] if forms else term
+
+
 def lesson_path(dotted: str) -> str:
     """"primer.ml.attention" -> "primer/ml/attention.html", the pdoc page for that module."""
     return dotted.replace(".", "/") + ".html"
@@ -555,7 +599,7 @@ def lesson_path(dotted: str) -> str:
 def glossary_js() -> str:
     """The glossary as a script that sets `window.PRIMER_GLOSSARY` (works from file:// too)."""
     data = {
-        term: {"def": e.definition, "lesson": lesson_path(e.lesson) if e.lesson else None}
+        term: {"def": e.definition, "lesson": lesson_path(e.lesson) if e.lesson else None, "term": display_term(term)}
         for term, e in sorted(GLOSSARY.items())
     }
     return "window.PRIMER_GLOSSARY = " + json.dumps(data, ensure_ascii=False, indent=1) + ";\n"
@@ -563,7 +607,7 @@ def glossary_js() -> str:
 
 def _render_doc() -> str:
     rows = "\n".join(
-        f"| **{term}** | {e.definition} | {f'`{e.lesson}`' if e.lesson else ''} |" for term, e in sorted(GLOSSARY.items())
+        f"| **{display_term(term)}** | {e.definition} | {f'`{e.lesson}`' if e.lesson else ''} |" for term, e in sorted(GLOSSARY.items())
     )
     return __doc__ + "\n| Term | Meaning | Taught in |\n|---|---|---|\n" + rows + "\n"
 

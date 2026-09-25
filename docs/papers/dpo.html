@@ -71,23 +71,23 @@
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290">original</a></span></h2>
 <blockquote class="quote">“In this paper we introduce a new parameterization of the reward model in RLHF that enables extraction of the corresponding optimal policy in closed form, allowing us to solve the standard RLHF problem with only a simple classification loss.”<cite>Rafailov et al. (2023), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The standard way to teach a chat model manners, <span class="t" data-t="rlhf">RLHF</span>, is like training a dog through an interpreter. First you train a judge (a <span class="t" data-t="reward model">reward model</span>) to score answers the way people would. Then the model practises answering, the judge scores each attempt, and a reinforcement learning algorithm slowly improves the model. It works, but it is slow, fiddly and unstable. DPO says: skip the judge. Show the model pairs of answers where people preferred one, and adjust it directly so it favours the preferred one, using an ordinary classification-style loss.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>DPO optimizes <em>the same objective</em> as RLHF, exactly, without a separate reward model and without sampling from the model during training.</li>
   <li>It is stable and needs almost no hyperparameter tuning.</li>
   <li>It matched or beat PPO-based RLHF on controlling sentiment, summarization and single-turn dialogue, with models of up to 6 billion parameters.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>DPO and its many variants became a standard way to do <span class="t" data-t="preference tuning">preference tuning</span>, especially for open models, because it is far simpler to run than a reinforcement learning loop.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A <span class="t" data-t="pretraining">pretrained</span> model has read everything: brilliant code and buggy code, facts and common misconceptions. The paper's example: we want the model to <em>know</em> a misconception that half of people believe, but not to <em>assert</em> it half of the time. Preference tuning selects the behaviour we want from everything the model can do.</p>
-<h4>Why not just use RLHF?</h4>
+<h3 class="rung">Why not just use RLHF?</h3>
 <p>RLHF trains several models (the policy, a reward model, a value model) and samples fresh text from the policy inside the training loop. That is expensive and famously finicky. DPO's key observation is mathematical: the RLHF objective can be rewritten so that the language model itself <em>is</em> the reward model, and then a simple loss on preference pairs solves it.</p>
 </section>
 
@@ -98,7 +98,7 @@
 
 <section id="s3">
 <h2>3 Preliminaries: the RLHF pipeline <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S3">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>RLHF has three phases. <strong>SFT:</strong> teach the format by example. <strong>Reward modelling:</strong> show people two answers to the same prompt, record which they preferred, and train a judge to predict that choice. <strong>RL fine-tuning:</strong> let the model write answers, score them with the judge, and push the model towards high scores without drifting too far from where it started.</p>
 
 <figure class="ix wide" id="fig1">
@@ -130,7 +130,7 @@
 </figure>
 <p class="reading"><strong>Reading it:</strong> both rows start from the same data: prompts with a preferred and a rejected answer. The top row (RLHF) trains a reward model first, then runs a reinforcement learning loop in which the model writes new answers that the reward model scores, over and over (the feedback arrow). The bottom row (DPO) goes straight from preference pairs to the final model with one loss, using a frozen copy of the starting model (π_ref) as a reference point. Same destination, one box and one loop fewer.</p>
 
-<h4>The reward model: Bradley-Terry</h4>
+<h3 class="rung">The reward model: Bradley-Terry</h3>
 <p>How do you turn “people preferred A over B” into numbers? The <span class="t" data-t="bradley-terry model">Bradley-Terry model</span> says: give every answer a hidden score, and the chance that A beats B depends only on the <em>difference</em> of their scores, passed through a <span class="t" data-t="sigmoid">sigmoid</span>. It is how chess ratings work: a 200-point gap means a predictable win rate, whatever the absolute ratings.</p>
 <div class="eq" data-tex="\htmlData{sym=pstar}{p^*}(\htmlData{sym=y1}{y_1} \htmlData{sym=succ}{\succ} \htmlData{sym=y2}{y_2} \mid \htmlData{sym=x}{x}) = \frac{\exp\big(\htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y1}{y_1})\big)}{\exp\big(\htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y1}{y_1})\big) + \exp\big(\htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y2}{y_2})\big)} = \htmlData{sym=sigma}{\sigma}\big(\htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y1}{y_1}) - \htmlData{sym=rstar}{r^*}(\htmlData{sym=x}{x},\htmlData{sym=y2}{y_2})\big)" data-fallback="p*(y1 ≻ y2 | x) = exp(r*(x,y1)) / (exp(r*(x,y1)) + exp(r*(x,y2))) = σ(r*(x,y1) − r*(x,y2))"></div>
 <div class="symtable" data-syms="pstar,y1,succ,y2,x,rstar,sigma"></div>
@@ -149,13 +149,13 @@
 <p class="inwords"><strong>In words:</strong> “on average over the labelled pairs, make the winner's score beat the loser's by enough that the sigmoid of the gap is close to 1.”</p>
 <p class="inwords"><strong>With the numbers:</strong> winner scored 1.5 and loser 0.5, so the loss for that pair is −ln σ(1.0) = −ln 0.731 = <strong>0.313</strong>. Widen the gap to 3 and the loss falls to −ln 0.953 = 0.049.</p>
 
-<h4>The RL objective</h4>
+<h3 class="rung">The RL objective</h3>
 <p>With a reward model in hand, RLHF maximizes reward while staying close to the starting model. The closeness penalty is the <span class="t" data-t="kl divergence">KL divergence</span>: a measure of how different two probability distributions are. Without it, the model would find nonsense that happens to fool the reward model.</p>
 <div class="eq" data-tex="\max_{\htmlData{sym=pitheta}{\pi_\theta}} \; \htmlData{sym=E}{\mathbb{E}}\big[\htmlData{sym=rphi}{r_\phi}(\htmlData{sym=x}{x},\htmlData{sym=y}{y})\big] - \htmlData{sym=beta}{\beta}\,\htmlData{sym=KL}{\mathbb{D}_{\mathrm{KL}}}\big[\htmlData{sym=pitheta}{\pi_\theta}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x}) \,\|\, \htmlData{sym=piref}{\pi_{\text{ref}}}(\htmlData{sym=y}{y}\mid \htmlData{sym=x}{x})\big]" data-fallback="max over π_θ of E[r_φ(x, y)] − β · KL[π_θ(y|x) ‖ π_ref(y|x)]"></div>
 <div class="symtable" data-syms="pitheta,y,beta,KL,piref"></div>
 <p class="inwords"><strong>In words:</strong> “find the model that earns the most reward on average, minus a penalty, scaled by β, for how far its answers drift from the reference model's.”</p>
 <p class="inwords"><strong>With the numbers:</strong> if a candidate model earns average reward 2.0 but has drifted by KL = 5 (in nats, the natural-log unit), then with β = 0.1 its score is 2.0 − 0.1 × 5 = 1.5. A model earning 1.8 with KL = 1 scores 1.7 and wins: less reward, much less drift.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>Optimizing this needs reinforcement learning because generated text is discrete: you can't take a gradient through “sample a word”. That, and the instability of PPO, is the pain DPO removes. See the <a href="instructgpt.html">InstructGPT companion</a> for the pipeline in practice.</p>
 </section>
 
@@ -247,17 +247,17 @@
 
 <section id="s6">
 <h2>6 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.18290#S6">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Three tasks, rising in realism. <strong>Sentiment:</strong> continue movie-review openings so they come out positive, where a sentiment classifier provides the true reward, so the reward-versus-drift trade-off can be measured exactly. <strong>Summarization:</strong> summarize Reddit posts (TL;DR). <strong>Dialogue:</strong> answer single-turn requests from the Anthropic Helpful and Harmless dataset of 170,000 dialogues.</p>
-<h4>6.1 The reward versus drift frontier</h4>
+<h3 class="rung">6.1 The reward versus drift frontier</h3>
 <p>On sentiment, across 22 runs with different settings, DPO reached the highest reward at every level of KL drift. It beat PPO even when PPO was given the true reward instead of a learned one. Both optimize the same objective; DPO simply optimizes it better.</p>
-<h4>6.2 Real preference data</h4>
+<h3 class="rung">6.2 Real preference data</h3>
 <ul>
   <li><strong>Summarization:</strong> judged by GPT-4 against human-written reference summaries, DPO won about 61% of the time at sampling temperature 0, against about 57% for PPO at its best temperature. DPO also held up better at higher temperatures.</li>
   <li><strong>Head to head with humans judging:</strong> DPO summaries at temperature 0.25 were preferred 58% of the time over PPO's best.</li>
   <li><strong>Dialogue:</strong> DPO was the only computationally efficient method that improved on the dataset's own preferred answers, matching an expensive best-of-128 sampling baseline.</li>
 </ul>
-<h4>6.3 A new input distribution</h4>
+<h3 class="rung">6.3 A new input distribution</h3>
 <div class="tablewrap"><table>
   <caption>Table 1 of Rafailov et al. (2023), reproduced under CC BY 4.0: GPT-4 win rate against reference summaries on CNN/DailyMail news articles (trained on Reddit posts)</caption>
   <thead><tr><th>Method</th><th class="num">Temperature 0</th><th class="num">Temperature 0.25</th></tr></thead>
@@ -267,7 +267,7 @@
   </tbody>
 </table></div>
 <p>Trained on Reddit and tested on news, DPO kept its lead: early evidence that it generalizes at least as well as PPO.</p>
-<h4>6.4 Can GPT-4 stand in for human judges?</h4>
+<h3 class="rung">6.4 Can GPT-4 stand in for human judges?</h3>
 <div class="tablewrap"><table>
   <caption>Table 2 of Rafailov et al. (2023), reproduced under CC BY 4.0: each method's summaries compared against PPO at temperature 0</caption>
   <thead><tr><th></th><th class="num">DPO</th><th class="num">SFT</th><th class="num">PPO-1</th></tr></thead>

@@ -75,54 +75,54 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 <section id="abstract">
 <h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180">original</a></span></h2>
 <blockquote class="quote">“…we propose PagedAttention, an attention algorithm inspired by the classical virtual memory and paging techniques in operating systems.”<cite>Kwon et al. (2023), Abstract</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>A restaurant seats walk-in groups without knowing how long they'll stay or how many friends will join. The old policy: give every group a table for twelve, just in case. Most seats sit empty, and the restaurant turns people away while half the chairs are unused. The new policy: seat people at small four-seat tables, anywhere in the room, and add another small table whenever a group grows. The same room serves many more groups.</p>
-<h4>What the paper claims</h4>
+<h3 class="rung">What the paper claims</h3>
 <ul>
   <li>Existing serving systems waste most of the GPU memory set aside for the KV cache: only 20% to 38% of it holds real data.</li>
   <li>PagedAttention stores each request's KV cache in small fixed-size blocks that need not sit next to each other, cutting the waste to nearly zero and letting requests <em>share</em> blocks.</li>
   <li>vLLM, the serving system built on it, delivers 2 to 4 times the throughput of the best existing systems at the same latency.</li>
 </ul>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>vLLM became one of the most widely used open-source engines for serving large language models, and paged KV-cache management is now standard across serving systems. When a hosted model answers you quickly and cheaply, ideas from this paper are very likely involved.</p>
 </section>
 
 <section id="s1">
 <h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S1">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Serving a model is like running a busy kitchen: the more orders cooked together, the cheaper each one gets, because every order shares the same trip to fetch the model's weights. The limit on how many orders fit at once is not the chefs but the counter space, and on a GPU the counter space is mostly taken by the model's weights and, for every request in flight, its KV cache.</p>
-<h4>Tiny example: how big is one token's KV cache?</h4>
+<h3 class="rung">Tiny example: how big is one token's KV cache?</h3>
 <p>For every token, every layer stores a key vector and a value vector. The paper's example is OPT-13B.</p>
 <div class="eq" data-tex="\text{bytes per token} = \htmlData{sym=two}{2} \times \htmlData{sym=hidden}{h} \times \htmlData{sym=layers}{L} \times \htmlData{sym=bytes}{b}" data-fallback="bytes per token = 2 × h × L × b"></div>
 <div class="symtable" data-syms="two,hidden,layers,bytes"></div>
 <p class="inwords"><strong>In words:</strong> “one key and one value, each as wide as the model, for every layer, at so many bytes per number.”</p>
 <p class="inwords"><strong>With the numbers:</strong> 2 × 5,120 × 40 × 2 = 819,200 bytes ≈ <strong>800 KB per token</strong>. A single request at the model's maximum length of 2,048 tokens needs 2,048 × 800 KB ≈ <strong>1.6 GB</strong>. On a 40 GB A100, the paper finds about 65% of memory goes to the weights and close to 30% to KV caches, so a few badly packed requests can fill it.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>Throughput is capped by how many requests' KV caches fit on the GPU at once. Wasting that memory directly wastes money. The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> does the same arithmetic for a modern model shape.</p>
 </section>
 
 <section id="s2">
 <h2>2 Background: how serving works <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S2.SS2">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Every request goes through two phases. In the <span class="t" data-t="prefill">prompt phase</span> the whole prompt is processed at once and its keys and values are written into the KV cache. In the <span class="t" data-t="decode">generation phase</span> one token is produced per step, each adding one more key and value to the cache. Nobody knows in advance how long the answer will be.</p>
 <p>To keep the GPU busy, servers run many requests together. The older way, <span class="t" data-t="static batching">static batching</span>, waits for the whole batch to finish. The better way, <span class="t" data-t="continuous batching">continuous (iteration-level) batching</span>, lets finished requests leave and new ones join at every step. That makes memory the real limit: every joining request needs KV space right away.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>This is the setting the whole paper lives in: many requests, unpredictable lengths, a cache that grows by one token per step per request.</p>
 </section>
 
 <section id="s3">
 <h2>3 Memory challenges <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S3">original</a></span></h2>
 <blockquote class="quote">“…our profiling results in Fig. 2 show that only 20.4% - 38.2% of the KV cache memory is used to store the actual token states in the existing systems.”<cite>Kwon et al. (2023), §3.1</cite></blockquote>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>Existing systems store each request's KV cache in one unbroken stretch of memory, because the standard attention code expects that. Since the final length is unknown, they reserve room for the maximum length up front. That wastes memory in three ways:</p>
 <ul>
   <li><strong>Reserved:</strong> space for tokens that will be generated later, held empty for the request's whole lifetime.</li>
   <li><span class="t" data-tip-title="Internal fragmentation" data-tip="Memory reserved for a request that it never uses, because the request finished well short of its maximum length.">Internal fragmentation</span>: space for tokens that will <em>never</em> be generated, because the answer stopped early.</li>
   <li><span class="t" data-tip-title="External fragmentation" data-tip="Free memory broken into gaps between reserved chunks, each too small to fit a new request's chunk, so it goes unused even though the total free space would be enough.">External fragmentation</span>: small leftover gaps between reservations, each too small for a new request.</li>
 </ul>
-<h4>Tiny example</h4>
+<h3 class="rung">Tiny example</h3>
 <p>A request with a 100-token prompt that produces a 200-token answer, under a 2,048-token reservation, uses 300 slots and wastes 1,748: <strong>85%</strong> of its reservation. With 16-token pages allocated on demand, it would use 19 pages (304 slots) and waste 4.</p>
-<h4>Why it matters</h4>
+<h3 class="rung">Why it matters</h3>
 <p>The paper also points out a second, less obvious loss: techniques that produce several answers from one prompt (parallel sampling, beam search) could share the prompt's KV cache, but contiguous storage makes sharing impossible, so it is duplicated.</p>
 </section>
 
@@ -238,7 +238,7 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 
 <section id="s6">
 <h2>6 Evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2309.06180#S6">original</a></span></h2>
-<h4>Everyday picture</h4>
+<h3 class="rung">Everyday picture</h3>
 <p>The test: serve realistic streams of chat and instruction requests and see how many requests per second each system can sustain before response times blow up.</p>
 <div class="tablewrap"><table>
   <caption>Table 1, reproduced with attribution (Kwon et al., 2023, CC BY 4.0): model sizes and server configurations</caption>
@@ -253,7 +253,7 @@ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-s
 </table></div>
 <p><strong>Check the 13B column yourself:</strong> 12 GB (12 × 2<sup>30</sup> bytes) divided by 800 KB per token is about 15,700 tokens: the whole server can hold only about seven or eight maximum-length requests at a time, which is why wasting that space hurts so much.</p>
 <p>The headline results, restated: on the ShareGPT chat workload vLLM sustains 1.7 to 2.7 times the request rate of the best configuration of Orca (a strong earlier system), 2.7 to 8 times that of Orca's standard configuration, and up to 22 times that of FasterTransformer, at similar latency. For OPT-13B it keeps 2.2 times as many requests in flight as the best Orca configuration. With a shared few-shot prefix, throughput rises to 1.67 times (one example) and 3.58 times (five examples) that of Orca.</p>
-<h4>Why it matters today</h4>
+<h3 class="rung">Why it matters today</h3>
 <p>These gains come from memory management alone, with the model and its outputs unchanged. Cheaper serving is what makes large models affordable to use at scale.</p>
 </section>
 
