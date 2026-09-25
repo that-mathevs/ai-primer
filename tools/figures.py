@@ -40,6 +40,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 plt.rcParams.update(
     {
         "figure.dpi": 110,
+        # Fixed ids instead of random ones, so re-rendering an unchanged figure leaves its file unchanged.
+        "svg.hashsalt": "primer",
         "font.size": 10,
         "axes.titlesize": 11,
         "axes.titleweight": "bold",
@@ -86,7 +88,7 @@ def main(filter_text: str = "") -> int:
                 continue
             for key, fig in figs.items():
                 stem = f"{name}.{key}"
-                fig.savefig(OUT / f"{stem}.svg", bbox_inches="tight")
+                fig.savefig(OUT / f"{stem}.svg", bbox_inches="tight", metadata={"Date": None})
                 plt.close(fig)
                 produced.add(stem)
                 rendered += 1
