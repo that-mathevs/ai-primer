@@ -121,6 +121,11 @@ With the Claude API you can add `"strict": true` to a tool definition
 arguments validate against the schema. You still need the business-rule
 checks.
 
+**In code:** `validate` checks a value against a JSON Schema subset and
+returns every problem with its path. `ToolRegistry.call` walks the diamonds
+above in order and wraps the result in a `ToolOutcome`, whose
+`ToolOutcome.is_error` says whether the model should treat it as a failure.
+
 ## 3. Descriptions are prompts
 
 **Everyday picture.** A wall of drawers labelled "stuff", "things" and
@@ -147,6 +152,10 @@ changed.
 but they choose from exactly the same text. Precise descriptions, a few
 parameters, `enum`s instead of free text, and error messages that explain
 the fix remove a large share of agent errors.
+
+**In code:** `selection_accuracy` runs `pick_tool` over the labelled
+requests and counts the correct picks, which is what the figure plots for
+`VAGUE_TOOLS` and `PRECISE_TOOLS`.
 
 ## 4. Fewer, higher-level tools
 
@@ -193,6 +202,8 @@ the whole job succeeds. Each curve is a different per-call reliability.
 Even at 99% per call, twenty calls succeed only about 82% of the time, and at
 90% per call, ten calls succeed barely a third of the time. Fewer calls is
 the cheapest reliability you can buy.
+
+**In code:** `chain_success` evaluates $p^{\,n}$.
 
 ## 5. Too many tools: load only the relevant ones
 
@@ -289,6 +300,12 @@ won't open the boot. Give each agent credentials (**scopes**, named
 permissions such as `payments:write`) for its job only. An agent that reads
 tickets holds `tickets:read`, so even if a malicious email tricks it, it
 *cannot* issue refunds.
+
+**In code:** a `Tool` carries its safety settings: the scopes it needs,
+whether it reads, writes or acts irreversibly, and an optional approval
+rule, which `Tool.requires_approval` combines. `ToolRegistry.call` enforces
+them, given the caller's credentials, an idempotency key, a dry-run flag and
+an approver.
 
 ## In 20 seconds
 - The model writes a request (`tool_use`). Your code validates it, runs it, and returns a `tool_result`.

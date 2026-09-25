@@ -59,8 +59,7 @@ notation is a bug.
 
 1. **Voice.** Write as a teacher addressing a curious engineer: general,
    timeless, vendor-neutral where the idea is. The repo is public. It never
-   refers to hiring, job preparation, any company's evaluation process, or
-   the private notes it grew from.
+   refers to hiring, job preparation or any company's evaluation process.
 2. **No em dashes, anywhere**: code, comments, docstrings, markdown, HTML.
    Use a colon, a comma, parentheses or a new sentence.
    `tests/test_house_style.py` enforces it.
@@ -115,12 +114,19 @@ sources of truth:
 | a big question | `BIG_QUESTIONS` in `primer/curriculum.py` | README's big-questions map and `docs/BIG_QUESTIONS.md` (`make readme`), the home page's Big questions |
 | a term | `primer/glossary.py` | the Glossary page, hover definitions on every page (`glossary.js`) |
 | a paper | `docs/papers/CATALOG.md` | papers index, `catalog.js`, companion nav, the home page's paper list |
+| a link from prose to code | an `**In code:**` line naming the function or class in backticks (fully dotted if it lives in another module) | a link to its entry on the page, with View Source and its exact lines on GitHub |
+| the repository's address | `REPO_URL` and `SITE_URL` in `primer/curriculum.py` | every GitHub link: lesson nav (code and tests), each member's lines, README, home page, papers bar |
 
 Text between `<!-- BEGIN … -->` and `<!-- END … -->` markers is generated.
 Edit its source, never the text itself. `tests/test_navigation.py` fails
 when anything drifts: a lesson on disk that isn't in the curriculum, a stale
 README, a link to an unknown paper, a lesson missing a required section.
 Every new term a lesson introduces gets a glossary entry in the same change.
+
+Every mechanism section ends its code rung with an `**In code:**` line
+naming what implements it, so a reader clicks from the explanation straight
+to the code. `make sitecheck` fails if a named thing didn't become a link, or
+if any link into the repository points at a missing file or line.
 
 ## Diagrams
 
@@ -190,6 +196,7 @@ python -m primer.ml.attention        # any single lesson
 - `python -m <module>` runs cleanly and teaches something on its own.
 - Every mechanism has a mermaid diagram, the lesson has data figures, and
   each one is followed by its `**Reading it:**` explanation.
+- Every mechanism section has an `**In code:**` line, and `make sitecheck` passes.
 - Every section climbs the ladder, and every formula has its Symbols table,
   In words line and worked numbers.
 - The docstring has every section from rule 3. Its self-test questions reach

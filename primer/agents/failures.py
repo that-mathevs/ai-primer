@@ -27,6 +27,8 @@ detection).
 | Brittle integrations | Timeouts, expired credentials, API changes | Retries with backoff, circuit breakers, contract tests | `primer.agents.failures` |
 | No adoption | It works, and nobody uses it | Build with users, show sources, easy human handoff | `primer.agents.deployment` |
 
+**In code:** `FAILURES` is this table as data, one `Failure` record per row.
+
 ## Compounding error
 
 **Everyday picture.** A relay race where each baton pass succeeds 95% of
@@ -81,6 +83,9 @@ reliability. At 99% per step a 20-step task still succeeds 82% of the time;
 at 95% it's 36%; at 90%, 12%. Small gains in per-step reliability are worth
 far more than they look, and demos with three steps say little about tasks
 with twenty.
+
+**In code:** `chain_success` is $p^{\,n}$; `max_steps_for` runs it backwards,
+returning the most steps you can chain and still reach a target success rate.
 
 ## Brittle integrations: retries with backoff
 
@@ -144,6 +149,11 @@ capped exponential delay. The dots are five clients using *full jitter*
 all retrying at the same moment, their retries spread out, which is what
 lets a recovering service actually recover.
 
+**In code:** `backoff_delays` lists the capped waits $d_k$;
+`retry_with_backoff` calls a function, retries only the exceptions in
+`RETRYABLE` with those waits (optionally with full jitter), and raises
+anything else at once.
+
 ## Brittle integrations: circuit breakers
 
 **Everyday picture.** The breaker in your home's fuse box. When a circuit
@@ -190,6 +200,10 @@ cool-down. Once the service is back, the next trial succeeds and traffic
 resumes. The service received a handful of calls during the outage instead
 of all of them.
 
+**In code:** `CircuitBreaker.call` is the state diagram: it raises
+`CircuitOpen` while open, lets one trial call through after the cool-down,
+and closes on success. `simulate_outage` replays the outage in the figure.
+
 **Contract tests** (automated checks that an external API still accepts
 and returns what your tool expects) catch the third kind of brittleness,
 upstream API changes, before users do.
@@ -207,6 +221,9 @@ come back, so the agent is looping. `search("vpn")`, `search("vpn error")`,
 Combine loop detection with hard step and token budgets
 (`primer.agents.cost.TaskBudget`) so a confused agent stops and hands off
 instead of burning money.
+
+**In code:** `is_looping` reports whether the last few calls were the same
+tool with identical arguments.
 
 ## In 20 seconds
 - Long tasks fail multiplicatively: at 95% per step, 10 steps succeed 60%

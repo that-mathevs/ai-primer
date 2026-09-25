@@ -33,6 +33,9 @@ each other and not the rest. The last two rows and columns (the off-topic
 tickets) are dark almost everywhere. Clustering is the job of finding those
 squares *without* knowing the order.
 
+**In code:** `ticket_embeddings` returns the tickets' unit vectors and texts,
+and `ticket_kinds` their true kinds, which the clustering never sees.
+
 ## k-means: k meeting points
 
 **Everyday picture:** a town wants k post boxes placed so that everyone's
@@ -94,6 +97,11 @@ round; on the right, the final state. The centres drift into the middle of
 their crowds and the total squared distance printed above each panel only
 goes down.
 
+**In code:** `kmeans` alternates assign and move from k-means++ starts and
+returns the labels, centres and inertia J of the best of several restarts;
+`kmeans_history` records one run round by round, which is what this figure
+draws.
+
 **Why it matters:** k-means is fast and simple, and it's inside things you
 use: IVF vector indexes cluster the corpus with it (`primer.ml.embeddings.ann`),
 and topic discovery over tickets or documents often starts with it. Its
@@ -138,6 +146,10 @@ lowest value is useless; you look for the **elbow** where it stops falling
 steeply. On the right, the silhouette has a clear peak at k = 5, the true
 number of ticket kinds. When the elbow is vague, the silhouette usually
 isn't.
+
+**In code:** `silhouette` averages s(i) over every point, and
+`best_k_by_silhouette` runs `kmeans` for each candidate k and keeps the one
+with the highest silhouette.
 
 ## Density clustering: DBSCAN and HDBSCAN
 
@@ -190,6 +202,9 @@ flowchart TD
 left as noise (it can still be claimed later as the edge of someone else's
 crowd). A core point starts a cluster that floods outward through other core
 points, the self-loop on the "Add" box, until the crowd's edge is reached.
+
+**In code:** `dbscan` finds the core points, floods each cluster outward
+through them, and labels everything unreached −1 (noise).
 
 ![DBSCAN on the tickets](figures/primer.ml.embeddings.clustering.dbscan.svg)
 
@@ -259,6 +274,9 @@ Kinds form separate patches and the centres sit inside them. The title says
 what share of the variation the two axes keep: the rest is invisible here,
 so tickets that look close on this map can be far apart in the real space.
 
+**In code:** `pca` centres the data, projects it onto the top n directions
+from the SVD, and returns each direction's explained share.
+
 UMAP and t-SNE draw prettier maps by a different rule: keep each point's
 *neighbours* next to it, and let distances elsewhere stretch. Like a subway
 map, they're great for "what's near what" and misleading for "how far" or
@@ -291,6 +309,9 @@ what happens on a hit.
 identical vectors. "password reset link expired" and "The password reset
 link has expired!" score cosine 1.0 here; flag pairs above a threshold
 calibrated on labeled pairs (`primer.ml.embeddings.similarity`).
+
+**In code:** `near_duplicates` embeds a list of texts and returns every pair
+whose cosine reaches the threshold.
 
 **Routing.** A receptionist listening to a request and pointing to the right
 desk. Each route (a team, a tool, an agent) is represented by the centroid
@@ -332,9 +353,17 @@ finance, and the off-topic question clears nothing, so it goes to a human.
 The fallback is the important part: a router without one sends every
 unanswerable question *somewhere*.
 
+**In code:** `Router` holds one unit-length centroid per route;
+`Router.scores` gives a request's cosine with each, and `Router.route`
+applies θ and the fallback. `support_router` builds the lesson's three
+routes.
+
 **Anomaly detection.** A stranger at a party is far from every group. Score
 each item by its distance to the nearest cluster centre; the largest scores
 are the unusual items. Here the coffee machine and the dog come out on top.
+
+**In code:** `anomaly_scores` returns each point's distance to its nearest
+cluster centre.
 
 **Semantic caching.** An FAQ desk that remembers answers. If a new question
 means the same as one already answered, return the stored answer and skip
@@ -360,6 +389,11 @@ flowchart LR
 **Reading it:** the filter comes *before* the similarity search, not after:
 an answer from another user's context is never even a candidate, so no
 threshold setting can leak it. Only then does similarity decide.
+
+**In code:** `SemanticCache.put` stores a question, its answer and its
+context; `SemanticCache.lookup` filters by context and expiry, then finds the
+most similar entry, and `SemanticCache.get` returns its answer only above the
+threshold.
 
 ## In 20 seconds
 - k-means alternates "assign to nearest centre" and "move centre to the

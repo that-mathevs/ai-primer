@@ -115,6 +115,9 @@ has one number per place the filter can stand.
 ⌊(5 + 0 − 3)/1⌋ + 1 = 3. For a 224-pixel image, a 7×7 filter, stride 2 and
 padding 3: ⌊(224 + 6 − 7)/2⌋ + 1 = 112.
 
+**In code:** `conv2d` is the loop in the diagram, one multiply-and-add per
+position, and `conv_output_size` is the output-size formula.
+
 ## A2. Pooling: summarise each neighbourhood by its loudest voice
 
 **Everyday picture.** A manager asks each of four teams for one number: the
@@ -146,6 +149,9 @@ The right edge's negative responses become 0, because max pooling keeps the
 zeroes negatives) before pooling anyway, and detect the bright-to-dark edge
 with a second, mirror-image filter. Numbers in the cells are the actual
 values.
+
+**In code:** `max_pool2d` keeps the largest value in each non-overlapping
+block.
 
 ## A3. Weight sharing and the receptive field
 
@@ -195,6 +201,10 @@ slowly. With a 2×2 pool after every second layer (upper line) the jumps
 double each time, so a dozen layers already see most of a 224-pixel image.
 That growth is what lets deep layers recognise whole objects.
 
+**In code:** `conv_params` and `dense_params` count the two layers'
+parameters, and `receptive_field` applies the recurrence to a stack of
+(kernel, stride) layers.
+
 ## A4. From edges to parts to objects
 
 **Everyday picture.** Reading starts with strokes, then letters, then words,
@@ -233,6 +243,10 @@ the horizontal-edge strength, which is large only where a vertical *and* a
 horizontal edge meet, at the L's corners. Combining simple detectors into
 more specific ones is the whole hierarchy in miniature.
 
+**In code:** the figure runs each first-layer filter over the L with
+`conv2d`, and the corner detector multiplies two of those feature maps
+entry by entry.
+
 ## A5. Landmarks, and patches as tokens
 
 - **AlexNet (2012)** won the ImageNet competition by a wide margin by training
@@ -263,6 +277,9 @@ flowchart LR
 **Reading it:** after the cut-and-flatten step, an image is just a sequence
 of 196 tokens, and everything downstream is the same transformer used for
 text. Multimodal language models read images mostly this way.
+
+**In code:** `patchify` does the cut-and-flatten step, turning an image into
+one row of numbers per patch.
 
 **Why it matters in practice.** CNNs remain efficient and strong for small
 vision tasks, on-device models and limited data, because their built-in
@@ -337,6 +354,10 @@ its weights, the new word times its weights, and a bias.
 h₁ = tanh(0.5·0 − 1) = −0.762; h₂ = tanh(0.5·(−0.762) + 0.5) = 0.119;
 h₃ = tanh(0.5·0.119 + 1) = 0.785.
 
+**In code:** `RNNCell` holds W_h, W_x and b; `RNNCell.step` is the formula
+once, `RNNCell.run` applies it along a sequence, and `RNNCell.scalar` builds
+the one-number cell of the worked example.
+
 ## B2. Why RNNs forget: the vanishing gradient
 
 **Everyday picture.** A photocopy of a photocopy of a photocopy. Each copy
@@ -381,6 +402,10 @@ RNN's line plunges: after 20 steps the start has almost no influence, and by
 50 it's around 10⁻¹⁶, which means it cannot learn anything about the start.
 The LSTM's line stays near 1 across all 50 steps. That flat line is the
 reason LSTMs replaced plain RNNs.
+
+**In code:** `RNNCell.influence_of_start` multiplies out the product above
+for one sequence, and `gradient_through_time` measures both lines of the
+figure.
 
 ## B3. LSTM: a notebook with an eraser, a pen and a highlighter
 
@@ -460,6 +485,12 @@ candidate (z = 0), and a *reset* gate decides how much old state feeds that
 candidate: h = (1 − z) ⊙ n + z ⊙ h_prev, where n is the candidate.
 Similar performance, fewer parameters.
 
+**In code:** `LSTMCell` holds the four gates' stacked weights;
+`LSTMCell.step` computes the dials and updates the notebook,
+`LSTMCell.run` carries it along a sequence, and
+`LSTMCell.fixed_gates` pins the dials to replay the table above;
+`GRUCell.step` is the two-dial version.
+
 ## B4. Why transformers won
 
 **Everyday picture.** An RNN is a line of people passing a note: the last
@@ -489,6 +520,9 @@ pair is compared directly. Parallel training is what made it practical to
 train on vastly more data, and that is what led to modern language models.
 The price is attention's cost growing with the square of the sequence length
 (see `primer.ml.attention`).
+
+**In code:** `sequential_steps` and `path_length` return the two counts in
+the worked example for an RNN or a transformer.
 
 **State-space models** such as Mamba revisit recurrence with a design that
 trains in parallel and runs in time linear in sequence length. They carry a

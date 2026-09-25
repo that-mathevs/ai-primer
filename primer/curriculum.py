@@ -17,6 +17,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Where the code and the built site live. Every link into GitHub is made from
+# these, so moving the repository means changing two lines.
+REPO_URL = "https://github.com/that-mathevs/ai-primer"
+SITE_URL = "https://that-mathevs.github.io/ai-primer/"
+BRANCH = "main"
+
+
+def source_url(path: str, first: int | None = None, last: int | None = None) -> str:
+    """A GitHub link to a file in this repository, optionally to lines first..last."""
+    url = f"{REPO_URL}/blob/{BRANCH}/{path}"
+    if first is not None:
+        url += f"#L{first}" + (f"-L{last}" if last is not None and last != first else "")
+    return url
+
+
+def source_path(module: str) -> str:
+    """The file a module lives in, relative to the repository root."""
+    return module.replace(".", "/") + ".py"
+
+
+def tests_for(module: str) -> str:
+    """The test file that specifies a lesson (tests/test_<name>.py, test_emb_ or test_agents_)."""
+    name = module.rsplit(".", 1)[-1]
+    prefix = "emb_" if module.startswith("primer.ml.embeddings.") else "agents_" if module.startswith("primer.agents.") else ""
+    return f"tests/test_{prefix}{name}.py"
+
 
 @dataclass(frozen=True)
 class Part:
@@ -99,8 +125,12 @@ def readme_section() -> str:
     """The README's reading-order tables. Regenerate with `make readme`."""
     out = []
     for part in PARTS:
-        out.append(f"### {part.title}\n\n{part.blurb}\n\n| # | Lesson | What you'll be able to explain |\n|---|---|---|")
-        out += [f"| {i} | [{l.title}]({l.module.replace('.', '/')}.py) | {l.outcome} |" for i, l in lessons_in(part.key)]
+        out.append(f"### {part.title}\n\n{part.blurb}\n\n| # | Lesson | What you'll be able to explain | Read |\n|---|---|---|---|")
+        out += [
+            f"| {i} | [{l.title}]({source_path(l.module)}) | {l.outcome} | "
+            f"[page]({SITE_URL}{l.module.replace('.', '/')}.html) · [tests]({tests_for(l.module)}) |"
+            for i, l in lessons_in(part.key)
+        ]
         out.append("")
     return "\n".join(out) + "\n"
 

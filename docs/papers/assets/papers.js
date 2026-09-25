@@ -529,7 +529,8 @@
       `<a class="home" href="${root}index.html">primer</a>` +
       `<a href="${root}index.html#lessons">Lessons</a>` +
       `<a href="index.html">Papers</a>` +
-      `<a href="${root}primer/glossary.html">Glossary</a>`;
+      `<a href="${root}primer/glossary.html">Glossary</a>` +
+      (window.PRIMER_REPO ? `<a href="${window.PRIMER_REPO}">Code on GitHub</a>` : "");
     document.body.prepend(nav);
 
     const list = papers();

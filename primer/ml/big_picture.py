@@ -56,6 +56,8 @@ of this box works only with integers and vectors.
 **The code.** `tok.encode(prompt)`; how the kit is learned is the whole of
 `primer.ml.tokenization`.
 
+**In code:** `build_pipeline` trains the toy tokenizer (`primer.ml.tokenization.ByteBPE`) and builds an untrained `primer.ml.transformer.TinyGPT` sized to its vocabulary.
+
 **Why it matters.** Prompt length, price and context limits are all counted
 in these tickets.
 
@@ -107,6 +109,8 @@ position's row."
 
 **With the numbers:** $x_4 = E_{291} + P_4$, one 32-number list plus
 another. The code is `model.wte[ids] + model.wpe[:len(ids)]`.
+
+**In code:** `trace` does both lookups and the add, and keeps every stage's result so you can inspect the grid before and after positions are mixed in.
 
 **Why it matters.** This is the only place a token's identity enters the
 model; every later step works on these vectors.
@@ -285,6 +289,8 @@ far; add that up over all steps."
 bends upward: it grows with the square of the output length. The blue line
 (with a KV cache) grows by exactly one per token. At 200 tokens the gap is
 more than a hundredfold.
+
+**In code:** `Generation` holds the generated ids, the decoded text and the positions count; `naive_vs_cached_work` counts the positions processed with and without a KV cache for the figure.
 
 **Why it matters.** Output length drives latency and cost; this is why
 every serving system caches keys and values.

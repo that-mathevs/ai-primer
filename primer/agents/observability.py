@@ -55,6 +55,10 @@ attributes, and every box can be opened to see exactly what went in and
 came out. Retrieval, sub-agents and guardrail checks become spans too, so
 the tree shows the whole path.
 
+**In code:** `Span` holds one step: its name, kind, start and end times,
+attributes, status and children. `walk` visits a tree parents first, in time
+order, and `render` draws it as the text tree above.
+
 ## Recording spans as the agent runs
 
 ```mermaid
@@ -87,6 +91,11 @@ step starts and ends; it never changes what the agent does. Opening a span
 before a call and closing it after is all **instrumentation** means. In
 Python it's a `with tracer.span(...):` block, and an exception inside the
 block marks the span as an error automatically.
+
+**In code:** `Tracer.span` opens a child of whatever span is open, and
+closes and times it when the block ends; `Span.fail` marks an error that
+didn't raise. `FakeClock` makes the timings deterministic, and
+`run_traced_agent` is the agent loop in the diagram, recording every step.
 
 ## Speaking a common language: OpenTelemetry
 
@@ -169,6 +178,9 @@ does.
 for that six-order run. Model calls dominate, so the biggest latency wins
 are fewer model calls (batch tool calls into one turn, run them in
 parallel) and smaller contexts, not faster tools.
+
+**In code:** `trace_totals` adds up a trace's duration, model and tool calls,
+tokens, cost and errors, the numbers behind these figures.
 
 ## Closing the loop
 

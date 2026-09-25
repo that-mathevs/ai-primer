@@ -39,6 +39,8 @@ Those two steps are called **softmax**. The new meaning of "it" is 63%
 "animal", 23% "tired" and 14% "street". Without being told any grammar rule,
 the model has worked out that "it" is the animal.
 
+**In code:** `worked_example_it` runs these three scores through softmax and returns each word's share.
+
 ### Softmax, decoded
 
 Softmax turns any list of numbers, positive or negative, into shares that
@@ -93,6 +95,8 @@ differences: "animal" scores only twice as high as "tired", yet it ends up
 with almost three times the attention, because exponentiating stretches the
 gaps. That is how attention commits to the most relevant word while keeping
 a little of the others.
+
+**In code:** `softmax` subtracts the largest score before exponentiating, and turns masked scores of −∞ into weights of exactly 0.
 
 ## Where the scores come from: queries, keys and values
 
@@ -191,6 +195,8 @@ In practice this one line runs in every layer of every modern language
 model, for every word, many times per word generated. Nearly everything
 about a model's speed and memory use traces back to it.
 
+**In code:** `scaled_dot_product_attention` is the whole formula, one commented step per box of the diagram, and returns both the blended values and the attention weights.
+
 ## Shapes: the part that is easiest to get wrong
 
 For one sequence of `n` tokens with model width `d_model`:
@@ -244,6 +250,8 @@ the tokens that actually help, such as "it" lighting up "animal".
 Masking only the future is also what makes generation cheap: a token's
 output never changes when later tokens arrive, so it can be computed once
 and cached. See `primer.ml.inference` for the KV cache.
+
+**In code:** `causal_mask` builds the lower triangle of allowed positions, and `scaled_dot_product_attention` sets every score outside it to −∞ before softmax.
 
 ## Why divide by √d_k?
 
@@ -304,6 +312,8 @@ In one sentence: *dot products grow with dimension, large scores saturate
 softmax and kill gradients, and scaling by √d_k keeps scores in the range
 where softmax is smooth and trainable.*
 
+**In code:** `softmax_jacobian` builds the diag(p) − p pᵀ matrix, so you can watch every entry fall to 0 as one share approaches 1.
+
 ## Multi-head attention
 
 Instead of one attention with d_k = d_model, run h heads in parallel, each
@@ -328,6 +338,8 @@ first diagram on its own slab, independently and in parallel. The heads'
 outputs are glued back side by side, and W_o lets them exchange what they
 found. The output has the same shape as the input, which is what lets blocks
 stack.
+
+**In code:** `MultiHeadAttention` holds the four projections W_q, W_k, W_v and W_o; calling it slices the projections into one slab per head, runs `scaled_dot_product_attention` on every head at once, and glues the results back together before W_o.
 
 ## Grouped-query attention: sharing keys and values
 
@@ -365,6 +377,8 @@ conversation during generation (the KV cache). Fewer boxes means more
 conversations fit on one GPU, at a small cost in quality. See
 `primer.ml.inference` for the memory arithmetic.
 
+**In code:** `MultiHeadAttention` takes a number of KV heads: fewer than the query heads is GQA, one is MQA. `MultiHeadAttention.kv_params` counts the key and value weights that shrink.
+
 ## Cost: why long context is expensive
 
 The score matrix is n × n per head per layer, so compute and memory grow
@@ -385,6 +399,8 @@ memory, so the n × n matrix is never written to slow memory. Sliding-window
 and sparse attention let each token see only some others. GQA and MQA shrink
 the KV cache. State-space models such as Mamba replace attention with a
 linear-time recurrence.
+
+**In code:** `attention_cost` counts the quadratic score-and-mix FLOPs and the linear projection FLOPs plotted above.
 
 ## In 20 seconds
 

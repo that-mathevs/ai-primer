@@ -118,6 +118,8 @@ activation's typical slope."
 per layer, and $0.057^{30} \approx 10^{-37}$. Too large:
 $1 \times 8 \times 0.7 = 5.6$ per layer, and $5.6^{30} \approx 10^{22}$.
 
+**In code:** `gradient_norms` runs a 30-layer, 64-wide network forward and backward and returns the gradient size reaching every layer; `first_to_last_gradient_ratio` divides the first by the last to fill the table.
+
 **Why it matters:** you can't see this from the loss curve alone. A network
 whose early layers get no gradient still trains a little (the late layers
 learn), just badly. Plotting per-layer gradient norms is a standard
@@ -188,6 +190,8 @@ the fan-in."
 **With the numbers:** $\operatorname{Var}(w) = 2/50 = 0.04$, so the standard
 deviation is $\sqrt{0.04} = 0.2$.
 
+**In code:** `init_std` returns the starting weight standard deviation for Xavier, He and two deliberately bad choices; `forward_signal_rms` measures the forward signal plotted above.
+
 **Why it matters:** every framework initializes this way by default
 (PyTorch's `nn.Linear` uses a Kaiming-style uniform init). Custom layers or
 deep stacks built without it can silently fail to train.
@@ -253,6 +257,8 @@ straight plunge on a log scale, and after 10 blocks it is at 10⁻¹⁶: early
 layers receive essentially nothing. The residual line stays near 1 at every
 depth, because each block's "1 +" passes the gradient through intact. That
 flat line is why networks with hundreds of layers can be trained at all.
+
+**In code:** `residual_chain_gradient` multiplies the per-block factors from the table, with or without the skip path.
 
 **Why it matters:** residual connections (ResNet, 2015) made 100+ layer
 networks trainable, and every transformer wraps both its attention and its
@@ -328,6 +334,8 @@ RMSNorm: $4 / \sqrt{7.5} = 4/2.739 = 1.461$.
 BatchNorm is the column version of the same formula, with $\mu$ and
 $\sigma^2$ computed across the batch for each feature.
 
+**In code:** `batch_norm` normalizes each column across the batch, `layer_norm` each row across its own features, and `rms_norm` divides each row by its root-mean-square.
+
 **Why it matters:** transformers use LayerNorm or RMSNorm, never BatchNorm:
 sequences have different lengths, batches at inference are often size 1, and
 an example's output must not depend on its batch-mates. Modern LLMs
@@ -377,6 +385,8 @@ with $c = 1$ every entry is multiplied by about $10^{-47}$ and the new length
 is exactly 1. (The
 optimizers lesson traces (3, 4) → (0.6, 0.8); see
 `primer.ml.optimizers.clip_by_global_norm`, which this lesson reuses.)
+
+**In code:** `layer_gradients` collects every layer's weight gradient from a 30-layer network, and `global_norm_after_clipping` reports their combined length after clipping.
 
 **Why it matters:** clipping treats the symptom, not the cause: it makes a
 rare spike harmless, but a network that explodes on every step needs better

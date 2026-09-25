@@ -60,6 +60,10 @@ then stays flat, because older turns keep folding into a short summary.
 summary goes in the system prompt rather than as a message, so user and
 assistant turns still alternate as the API requires.
 
+**In code:** `ShortTermMemory.add` appends a message and
+`ShortTermMemory.tokens` totals the history; `first_sentences` is the
+default summarizer, keeping the first sentence of each folded message.
+
 **Why it matters.** Context rot, where quality drops as a session grows, is
 one of the most common agent failures. Summarize, trim, or reset with a
 written hand-off.
@@ -91,6 +95,11 @@ gets recalled. "What happened with Globex?" lights up the diary entry,
 because only it mentions Globex. "How do I reconcile invoices?" lights up
 the procedure. This is RAG (retrieval-augmented generation, see
 `primer.agents.rag`) over the agent's own history.
+
+**In code:** `LongTermMemory.remember` stores a `MemoryRecord` of one kind
+with its embedding and reports back in a `WriteResult`.
+`LongTermMemory.recall` returns the current records in a scope most similar
+to the query, optionally limited to some kinds.
 
 ## 3. The hard parts: what to write, conflicts, isolation, deletion
 
@@ -142,6 +151,12 @@ Regulation) can require it. `export(scope)` shows everything including
 superseded facts, and `delete_user(scope)` erases one user without touching
 colleagues.
 
+**In code:** `LongTermMemory.remember` applies the write policy and marks
+an older record with the same key as superseded; `LongTermMemory.history`
+lists every value a key has had. `LongTermMemory` keeps one partition per
+`Scope`, and `LongTermMemory.export`, `LongTermMemory.forget` and
+`LongTermMemory.delete_user` show, remove one record, and erase a user.
+
 ## 4. Task state outside the model
 
 **Everyday picture.** A checklist on a clipboard. The assistant can *suggest*
@@ -180,6 +195,12 @@ through your code, which checks it against the stored truth before writing
 it inside a transaction (all or nothing). After the crash, the new process
 learns where to resume from the database, not from a conversation that no
 longer exists.
+
+**In code:** `TaskStateStore` keeps tasks and steps in SQLite.
+`TaskStateStore.create_task` writes a task and its steps in one transaction,
+`TaskStateStore.next_step` finds the first unfinished step, and
+`TaskStateStore.apply` validates a proposal, raising `InvalidUpdate` for a
+bad status or a skipped step, before writing it.
 
 **Why it matters.** Authoritative state in a database makes runs
 inspectable, resumable and auditable. That's much of the difference between a

@@ -67,6 +67,8 @@ of the time all succeed with probability $\prod 0.95 = 0.95^{10} \approx 0.60$.
 This single fact explains why long chains of AI agent steps fail so often
 (`primer.agents.planning`).
 
+**In code:** `product` is Π written the same way: a loop with a running product that starts at 1.
+
 ## The dot product: how much two lists agree
 
 **Everyday picture.** A recipe needs 2 eggs, 3 cups of flour and 1 cup of
@@ -111,6 +113,8 @@ first entries with first entries and second with second. Every product then
 flows into one addition. A dot product is always this shape: many
 multiplications feeding one sum, however long the lists get.
 
+**In code:** `dot` pairs up matching entries, multiplies them and adds the products with `summation`, refusing lists of different lengths.
+
 ## ‖x‖: the length of a vector
 
 **Everyday picture.** Walk 3 blocks east and 4 blocks north. As the crow
@@ -137,6 +141,8 @@ Dividing a vector by its length gives a **unit vector** of length 1 that
 points the same way. Embedding systems do this constantly, because then the
 dot product measures only direction (see
 `primer.ml.embeddings.similarity`).
+
+**In code:** `norm` is the square root of a vector's dot product with itself.
 
 ## Matrix multiply and transpose
 
@@ -180,6 +186,8 @@ flowchart LR
 B must be the same length, or there is nothing to pair up. Almost all the
 computation in a neural network is this one operation, which is why GPUs,
 built to do thousands of multiply-adds at once, are the hardware of AI.
+
+**In code:** `transpose` turns columns into rows; `matmul` transposes B once, then fills each cell with one `dot` of a row of A and a column of B.
 
 ## e and log: growth, and its undo button
 
@@ -231,6 +239,8 @@ value?", not "what is the largest value?". argmax(0.1, 7.0, 3.0) = position
 2 (index 1 in Python). "Greedy decoding" in a language model is picking the
 argmax token every step.
 
+**In code:** `softmax` subtracts the largest score before exponentiating, so the exponentials cannot overflow; `argmax` walks the list and remembers the position of the biggest value.
+
 ## Mean, variance, standard deviation: the middle and the spread
 
 **Everyday picture.** Two classes both average 70% on a test. In one,
@@ -273,6 +283,8 @@ line), but the blue one is tall and narrow (σ = 1) while the red one is low
 and wide (σ = 3). The standard deviation is roughly how far from the dashed
 line a typical sample lands. About two thirds of samples fall within one σ
 of the mean.
+
+**In code:** `mean`, `variance` and `std` are the three formulas above, each a short loop built on `summation`.
 
 ## Derivatives and gradients: which way is downhill?
 
@@ -345,6 +357,8 @@ $y = f(g(x))$, then $\frac{dy}{dx} = f'(g(x)) \cdot g'(x)$. Multiply the
 slopes along the chain. **Backpropagation** is the chain rule applied
 backwards through every layer of a network, reusing work as it goes (see
 `primer.ml.neural_net`).
+
+**In code:** `derivative` measures a slope by nudging the input a hair up and a hair down; `gradient` does that for each input in turn and collects the slopes into one list.
 
 ## Probability notation
 

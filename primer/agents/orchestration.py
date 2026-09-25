@@ -56,6 +56,9 @@ need the flexibility, and all of it is waste if you don't.
 These names (from Anthropic's *Building effective agents*) let you describe
 a design in one word.
 
+**In code:** every pattern below is built from `ask`, one model call with
+one user message that returns the reply's text.
+
 ### Prompt chaining
 
 **Everyday picture.** A relay race with an inspector at each hand-off: if
@@ -75,6 +78,10 @@ flowchart LR
 **Reading it:** two model calls in a fixed order, with plain code in the
 middle. The gate is where you catch a bad intermediate result before
 paying for, and being misled by, the next step.
+
+**In code:** `run_chain` runs a list of `ChainStep`s in order, feeding each
+output into the next prompt and stopping at the first gate that reports a
+problem; `ChainResult` records the outputs and where and why it stopped.
 
 ### Routing
 
@@ -97,6 +104,10 @@ flowchart LR
 **Reading it:** one cheap model call decides the path, then specialised
 handling takes over. The "anything else" arrow is essential, because the label is free
 text from a model and code must never assume it's one of the keys.
+
+**In code:** `route` makes the one classifier call, normalizes the label,
+swaps anything unknown for the fallback, and hands the request to that
+label's handler.
 
 ### Parallelization: sectioning and voting
 
@@ -150,6 +161,12 @@ the word *independent*. Five copies of the same model with the same prompt
 tend to make the *same* mistake, and then voting buys little. Vary the
 prompt, the model or the evidence.
 
+**In code:** `run_sections` is sectioning: it runs independent pieces of
+work on a thread pool and collects every result. `vote` is voting: it asks
+each reviewer the same prompt through `run_sections` and returns the
+majority label with its tally, and `majority_accuracy` evaluates the formula
+above.
+
 ### Orchestrator-workers
 
 **Everyday picture.** A project lead reads the brief, splits it into
@@ -175,6 +192,11 @@ flowchart TD
 advance. The orchestrator *decides* them from the request, which is what makes it
 suited to open-ended requests.
 
+**In code:** `orchestrate` asks the orchestrator for subtasks, runs the
+workers on them in parallel with `run_sections`, and asks the synthesizer for
+one answer, returning an `OrchestratorResult`. `policy_worker` is the worker
+in the example: it finds the one current policy document for a subtask.
+
 ### Evaluator-optimizer
 
 **Everyday picture.** A writer and an editor. The draft goes back and forth
@@ -196,6 +218,10 @@ flowchart LR
 **Reading it:** the loop only exits on PASS or on the round limit. Without
 the limit, a critic that's never satisfied loops forever. Clear, checkable
 criteria make this pattern work.
+
+**In code:** `evaluate_optimize` alternates generator drafts and evaluator
+verdicts, feeding each critique back, and returns the last draft, the rounds
+used and whether it passed.
 
 ## 3. Multi-agent: a supervisor and specialists
 
@@ -233,6 +259,11 @@ separable, such as independent research threads or per-document work that would
 overflow one context. The costs are real: more tokens, context lost at every
 hand-off, and much harder debugging.
 
+**In code:** `supervise` gets a delegation plan from the supervisor, sends
+each specialist only its own task (reporting unknown names instead of
+crashing), then asks the supervisor for the final answer; `SupervisorResult`
+keeps the delegations and every specialist's answer.
+
 ## 4. An explicit state machine, with the model at specific nodes
 
 **Everyday picture.** A board game. The squares and the rules for moving
@@ -269,6 +300,12 @@ two arrows are labelled "LLM". The rest are rules you can read, test and
 audit. When something goes wrong, you know exactly which state it was in and
 why it moved.
 
+**In code:** `InvoiceWorkflow.run` walks the states, calling the model only
+at RECEIVED and CLASSIFIED; `validate_invoice` is the code check between
+EXTRACTED and VALIDATED; `InvoiceWorkflow.approve` is the human step that
+releases a paused invoice. `WorkflowRun` holds the current state, its history
+and the extracted data.
+
 **Checkpoints and durable execution.** After every transition the run is
 saved to disk. **Durable execution** means a workflow whose progress
 survives crashes, because each completed step's result is stored and the
@@ -280,6 +317,11 @@ run resumes from there. Engines like Temporal do this at scale.
 finishes with the 2 model calls already made. Restarting from scratch asks
 the model both questions again, doubling cost, and, worse, risks a
 *different* answer the second time.
+
+**In code:** `InvoiceWorkflow` saves a checkpoint file after every
+transition and loads it at the start of `InvoiceWorkflow.run`, so a rerun
+resumes. `resume_comparison` crashes the ledger once and counts the model
+calls each way.
 
 ## 5. Frameworks vs. plain code
 

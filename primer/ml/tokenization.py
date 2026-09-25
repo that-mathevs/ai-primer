@@ -41,6 +41,9 @@ piece for its number. Those numbers pick rows from the embedding table (see
 the model knows about spelling it had to learn through this narrow window.
 (The ids shown are illustrative.)
 
+**In code:** `trained_tokenizer` builds this lesson's toy kit, and
+`ByteBPE.encode` turns any text into its list of ids.
+
 **Why it matters.** Everything downstream is counted in tokens: price,
 speed, and how much fits in the context window.
 
@@ -103,6 +106,10 @@ inside it, multiply by how often the word occurs, and add everything up."
 **With the numbers:** count(l, o) = 1·1 (low) + 1·1 (lower) + 1·1 (lowest) =
 **3**; count(e, r) = 1·1 (lower) = **1**. `train_char_bpe` computes the same
 totals with a `Counter`.
+
+**In code:** `train_char_bpe` runs the count-and-merge loop and returns one
+`MergeStep` per round, holding the winning pair, its count, the new token
+and the text after the merge (one row of the table above).
 
 **Why it matters.** Frequent strings end up as single tokens and rare ones
 stay in pieces, which is exactly why token counts differ from word counts,
@@ -186,6 +193,10 @@ out of repeated strings near 500; real corpora keep going.) Production
 tokenizers sit far to the right, at 50k to 200k entries, and reach about 4
 characters per token on English. Bigger kits mean shorter sequences but a
 larger embedding table and output layer.
+
+**In code:** `ByteBPE.train` learns the byte merges, `ByteBPE.encode` and
+`ByteBPE.decode` make the round trip, and `compression_curve` trains
+tokenizers of growing size and measures each one for the figure above.
 
 **Why it matters.** No "unknown token" failures, ever, for any input. The
 price is that unfamiliar scripts fall back to near-byte level and cost many
@@ -308,6 +319,9 @@ because symbols and unusual identifiers were rarely merged. German shares the
 alphabet but not the words. Hindi and emoji fall below one character per
 token: each character is 3-4 UTF-8 bytes and few of those byte pairs were
 ever merged, the worst case of byte-level fallback.
+
+**In code:** `chars_per_token` computes each bar: the length of the text
+divided by the number of ids `ByteBPE.encode` returns for it.
 
 **Why it matters.** The same request can differ several-fold in cost,
 latency and context usage depending on language and content: dense JSON,

@@ -71,6 +71,9 @@ guardrails. Notice too that the second call to the model carries messages
 1 to 3, not just the new result: the model is stateless, so the history
 travels every time.
 
+**In code:** `ToolCall` holds the request in message 2, and
+`tool_result_block` builds the reply in message 3, carrying the matching id.
+
 ## The message format
 
 Messages use the Anthropic Messages API shape directly, so what you learn
@@ -100,6 +103,11 @@ A **tool definition** is a name, a description and a JSON Schema for the
 input. The model chooses tools by reading those descriptions, so writing
 them well is prompt engineering (see `primer.agents.tools`).
 
+**In code:** `LLMResponse` is one reply, normalized: its text, its
+`ToolCall` list, its stop reason, its `Usage` and the exact content blocks
+to append as the assistant turn. `content_blocks`, `last_user_text`,
+`tool_results` and `tool_calls_so_far` read a conversation in this format.
+
 ## Two implementations of one interface
 
 Every agent lesson is written against one small interface, `LLM`, with one
@@ -121,6 +129,11 @@ deterministically, and lets tests stage a model that loops, calls the wrong
 tool or follows an injected instruction, which is hard to get a real model
 to do on cue. Swapping in `ClaudeLLM` runs the identical loop against the
 real thing.
+
+**In code:** `ClaudeLLM.complete` builds its request with `claude_request`
+and turns the API's reply into an `LLMResponse`. `OllamaLLM` is a third
+implementation for a local open model (text only), using `ollama_request`
+and `parse_ollama_reply`.
 
 ## Cost: why every call pays for the whole conversation
 
@@ -159,6 +172,11 @@ dashed line is what you might naively expect: the size of the final
 conversation, billed once. The gap between the dashed line and the curve is
 why prompt caching, trimming tool outputs and keeping loops short are the
 main cost levers (`primer.agents.cost`, `primer.agents.context`).
+
+**In code:** `loop_input_tokens` lists the tokens billed on each call of
+such a loop. `estimate_tokens` is the four-characters-per-token rule of
+thumb, and `conversation_chars` measures everything a call resends, which is
+how `ScriptedLLM` gives its fake replies realistic `Usage`.
 
 ## In 20 seconds
 

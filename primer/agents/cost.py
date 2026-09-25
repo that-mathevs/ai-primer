@@ -63,6 +63,9 @@ for concise answers), and a cached prefix is nearly free (put stable content
 first; see `primer.agents.context`). Caches usually charge a small premium
 the first time a prefix is written; this module ignores it for simplicity.
 
+**In code:** `request_cost` is the formula above, reading each model's
+`Price` from `PRICES`.
+
 ## Route each task to the cheapest model that can do it
 
 **Everyday picture.** A hospital triage nurse: sprained ankles go to the
@@ -90,6 +93,10 @@ the left branch: most traffic in real systems is simple, and simple work
 runs well on small models. Validate the router with evals
 (`primer.agents.evals`): a router that sends hard tasks to the small model
 saves money and quietly loses quality.
+
+**In code:** `route` is the rule-based router; `workload_cost` prices a list
+of `WorkItem` tasks with any levers switched on; `routing_savings` compares
+all-large against routed on `SAMPLE_WORKLOAD`.
 
 ## Response caching and semantic caching
 
@@ -145,6 +152,12 @@ red line isn't zero, because "sick" vs "vacation" scores 0.97. Semantic
 caching is safe only for narrow, curated FAQ-style traffic, with guards, a
 TTL, and a measured wrong-hit rate.
 
+**In code:** `ResponseCache` is the exact cache. `SemanticCache` is the
+semantic path: `SemanticCache.lookup` skips expired entries and entries whose
+identifiers or negation differ, then returns the nearest survivor, and
+`SemanticCache.get` applies the threshold. `semantic_cache_sweep` draws the
+figure from the labelled pairs in `CACHE_PAIRS`.
+
 ## Trim tokens
 
 **Everyday picture.** Don't photocopy the whole binder when the colleague
@@ -152,6 +165,9 @@ needs one page. Compress tool results to the fields the next step needs
 (`primer.agents.context.compress_tool_output`), send the top few reranked
 chunks instead of dozens, remove repeated boilerplate from system prompts,
 and ask for concise output, because output is the expensive direction.
+
+**In code:** `workload_cost` models trimming as cutting each task's tool
+output to 500 tokens, and concise output as cutting long answers by a third.
 
 ## Run independent tool calls at the same time
 
@@ -200,6 +216,9 @@ calls cut wall-clock time, not tokens.
 with `asyncio`. The sequential calls stack end to end; the parallel ones
 overlap almost perfectly, so the whole batch finishes in the time of one.
 
+**In code:** `run_sequential` awaits each call before starting the next;
+`run_parallel` starts them all with Python's asyncio gather and waits once.
+
 **Streaming** (showing tokens as they're generated) doesn't reduce total
 time either, but users see progress immediately, which changes how fast the
 system *feels*.
@@ -211,6 +230,8 @@ price instead of waiting at the express counter. Providers offer **batch
 APIs**: submit many requests, get results within hours (often within 24),
 typically at about half the price. Use them for anything no one is waiting
 on: nightly evals, backfilling document processing, bulk classification.
+
+**In code:** `batch_cost` prices a list of requests at the batch discount.
 
 ## Budgets and alerts
 
@@ -245,6 +266,11 @@ up to 25,000; divided by 6 − 1 = 5 that's 5,000, whose square root is 70.7),
 so the line is 1,000 + 3 × 71 ≈ 1,212.
 A 10,000-token task is far above it: alert. Such jumps usually mean a loop
 or a bad deploy.
+
+**In code:** `TaskBudget.charge` counts each step's tokens and raises
+`BudgetExceeded` at either limit; `TenantSpend.record` adds a finished task's
+cost to its tenant's total and returns a cap alert or an anomaly alert (the
+formula above).
 
 ## Unit economics: cost per successful task
 
@@ -284,6 +310,9 @@ fix each failure: the large model wins by a mile. Which world you're in
 decides which model is cheaper, and the model's price per token barely
 matters in the second one.
 
+**In code:** `cost_per_success_with_retries` is $c/p$ and
+`cost_per_success_with_cleanup` is $c + (1-p)\,h$.
+
 ## Putting it together: a 5x plan, in order
 
 Order the levers so the ones that can't hurt quality come first:
@@ -304,6 +333,9 @@ cumulative reduction. Caching alone roughly halves it, trimming and concise
 output take it past 3x, routing takes it past 7x, and batching adds the
 last few percent. The first three bars are the free wins that don't touch
 quality.
+
+**In code:** `five_x_plan` switches the levers on one at a time, in this
+order, and reports the cost and cumulative reduction after each.
 
 ## In 20 seconds
 - Measure cost per *successful* task, not per call; include retries and

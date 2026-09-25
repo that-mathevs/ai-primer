@@ -69,6 +69,9 @@ comes to "ignore length". The bottom path subtracts the vectors and measures
 what's left: that's distance. Everything later in this lesson is these three
 boxes.
 
+**In code:** `worked_example` computes every number in the table above from
+a, b and c, so you can check your hand arithmetic against it.
+
 ## The math
 
 $$
@@ -103,6 +106,9 @@ differences.
 ‖a − b‖ = √((1−2)² + (2−1)² + (2−2)²) = √2 = 1.41.
 
 The code is `cosine`, `dot` and `euclidean`, each a line of NumPy.
+
+**In code:** `rank` sorts a whole collection of documents from best to worst
+match under whichever of the three metrics you name.
 
 **Why it matters:** every vector database, semantic search box and RAG
 system does exactly this comparison, millions of times per second. Knowing
@@ -167,6 +173,11 @@ embedding models are trained with cosine, so you normalize once when you
 write vectors, then use the plain dot product at query time. It gives the
 same order as cosine and costs less. Only when length is deliberate signal
 do you skip normalizing.
+
+**In code:** `l2_normalize` trims every row to length 1;
+`rankings_agree_after_normalizing` ranks random documents by all three metrics
+before and after normalizing and reports which rankings match, and
+`l2_identity_check` returns both sides of the identity for two random vectors.
 
 **Why it matters:** vector databases typically normalize on insert and
 then use the dot product, the cheapest of the three. If you mix normalized
@@ -243,6 +254,10 @@ near 0: the nearest point really is much nearer. By a few hundred dimensions
 the curve flattens toward 1, so every random point is roughly equally far
 away, and "nearest" tells you almost nothing about random data.
 
+**In code:** `curse_of_dimensionality` scatters the random points, measures
+from a random query, and returns the nearest, farthest and ratio for each
+dimension.
+
 **Why it matters:** exact nearest-neighbour search in high dimensions gets
 slow and fragile, which is one reason vector search uses approximate indexes
 (`primer.ml.embeddings.ann`). Real embeddings aren't random: meaning puts
@@ -300,6 +315,10 @@ direction). Unrelated pairs drop to about 0, paraphrases sit clearly above,
 and the gap is easy to see. The information was there all along, squeezed
 into a narrow band.
 
+**In code:** `anisotropic_embeddings` builds the pairs as α·m + β·n,
+`pair_cosines` scores each pair, and `mean_center` subtracts the average
+vector to remove the shared direction.
+
 ### Picking a threshold from data, not folklore
 
 Sometimes you need a yes/no cut-off: "are these duplicates?", "is this
@@ -349,6 +368,10 @@ anisotropic scores. The dashed line is the "obvious" guess of 0.8; the
 solid line is the calibrated threshold. F1 changes sharply over a few
 hundredths of cosine, which is exactly why a threshold carried over from a
 different model (or a blog post) can be badly wrong.
+
+**In code:** `f1_curve` computes F1 at every candidate threshold for this
+plot; `best_threshold` returns the single best one with its precision and
+recall.
 
 **Why it matters:**
 

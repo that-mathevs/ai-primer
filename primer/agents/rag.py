@@ -36,6 +36,10 @@ or a passage missing at *Retrieve* can't be fixed by a better prompt at
 *Generate*. That's why most RAG quality work happens in the first boxes, not
 the last.
 
+**In code:** `RAGIndex` is the top row: it chunks every document and builds
+the keyword and dense indexes. `answer` is the bottom row, from filtered
+retrieval to verified citations, and returns a `RAGResult`.
+
 The rest of this lesson walks the boxes in order, then covers the upgrades
 and how to debug a wrong answer.
 
@@ -85,6 +89,9 @@ image of a page) for scanned documents, with a quality check on the output.
 tables that span pages. If parsing garbles the numbers, no retriever or
 model can recover them, and the failure looks like a *model* error.
 
+**In code:** `extract_table` finds a table by its header row in the cleaned
+text and returns each row as a dict, ready for `table_rows_as_sentences`.
+
 ## Chunking, with metadata that travels
 
 **Everyday picture.** Index cards. Each card holds one idea, small enough to
@@ -107,6 +114,10 @@ sections), not at fixed character counts that cut a sentence in half.
 second card doesn't say *which* error it fixes; see contextual retrieval
 below). The metadata is what makes permission and date filters possible
 later.
+
+**In code:** `chunk_document` splits a document on sentence boundaries into
+`Passage`s, and each `Passage` carries its id, title, department, date and
+readers.
 
 ## Retrieval: keyword and meaning, fused
 
@@ -175,6 +186,11 @@ into the top k.
 **On the worked example:** dense search at k = 3 finds the right document for
 11 of 12 questions (all but `ERR-4012`): 11/12 = 0.92.
 
+**In code:** `RAGIndex.retrieve` ranks the allowed passages with
+`primer.ml.embeddings.retrieval.BM25`, with dense similarity, or with both
+fused by `primer.ml.embeddings.retrieval.reciprocal_rank_fusion`, depending
+on the mode you ask for. `recall_curve` measures recall@k for each method.
+
 ## Reranking: read the question and each passage together
 
 **Everyday picture.** The librarians bring back twenty books quickly; an
@@ -186,6 +202,9 @@ precise than comparing precomputed vectors, and far too slow to run over
 every passage. So retrieval casts a wide, cheap net (here 8 candidates) and
 the reranker keeps the best few (here 3). This module reuses the toy
 cross-encoder from `primer.ml.embeddings.retrieval`.
+
+**In code:** `RAGIndex.rerank` scores each (question, passage) pair with
+`primer.ml.embeddings.retrieval.CrossEncoder` and keeps the best few.
 
 ## Assemble, generate, cite, verify
 
@@ -229,6 +248,11 @@ runs at the index, before any passage is fetched; the model only ever sees
 three passages; and nothing reaches the user until the citations check out.
 Citations are what let a person verify an answer in seconds, which is most
 of what makes people trust the system.
+
+**In code:** `assemble_context` builds the tagged sources and the question.
+`generate` sends them to the model with the answer-from-sources rules, and
+`grounded_policy` is the offline stand-in model that honours them. `answer`
+chains retrieve, rerank, assemble, generate and `verify_citations`.
 
 ## Permission-aware retrieval: filter before, never after
 
@@ -277,6 +301,10 @@ number is already in its words, and deleting the citation marker afterwards
 leaves the fact behind. In the green box the passage never left the index.
 Permission changes in the source system must also sync to the index
 quickly, or a revoked user keeps access until the next re-index.
+
+**In code:** `post_generation_filter_answer` is the wrong way, kept so the
+leak can be shown: it retrieves for every group, generates, then strips the
+restricted citation markers.
 
 ## Retrieval upgrades
 
@@ -360,6 +388,10 @@ better, at the cost of more model calls, more latency, and a loop that needs
 the usual step budget (`primer.agents.agent_loop`). The search tool here also
 applies the freshness filter itself, so the agent can't forget it.
 
+**In code:** `agentic_answer` offers the model one search tool and runs the
+loop: each search retrieves, reranks and returns tagged passages, until the
+model answers or the step limit is hit.
+
 ## GraphRAG: questions about connections
 
 **Everyday picture.** A detective's corkboard: photos of people and places
@@ -391,6 +423,10 @@ neighbours of one circle, with citations for free. Real GraphRAG uses a
 model to extract typed relations ("requires", "replaces") and to write a
 summary for each cluster, which is what makes broad, whole-collection
 questions answerable.
+
+**In code:** `communities` groups the graph from `build_graph` into
+connected clusters of entities, the "themes" a real GraphRAG system would
+summarize.
 
 ## Debugging a confident wrong answer
 

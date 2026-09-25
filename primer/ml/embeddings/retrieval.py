@@ -142,6 +142,10 @@ winning. Smaller k₁ flattens sooner. On the right, one mention in documents
 of different lengths: with b = 0 length is ignored; with b = 0.75 a mention
 in a document twice the average length counts noticeably less.
 
+**In code:** `BM25` precomputes each word's IDF and each document's length;
+`BM25.scores` applies the formula to every document, and `BM25.search`
+returns the top k with a non-zero score.
+
 **Why it matters:** BM25 is decades old, needs no training, runs on any
 search engine (Elasticsearch, OpenSearch, Lucene), and is still very hard to
 beat on exact identifiers: product codes, error numbers, names, ticket IDs.
@@ -183,6 +187,12 @@ which takes milliseconds over millions of documents. The price: the model
 never sees the question and the document side by side, so it can't check
 fine details like "does this passage answer *this* question, or just share
 its topic?".
+
+**In code:** `SearchEngine` embeds every document once with
+`primer.common.embedder.ConceptEmbedder` into a
+`primer.ml.embeddings.ann.FlatIndex`; `SearchEngine.dense` embeds the
+question and returns the nearest documents. `doc_text` decides what gets
+indexed: the title plus the body.
 
 **Why it matters:** dense retrieval handles paraphrases, synonyms and other
 languages, but it blurs exact tokens. Measure both kinds of queries on your
@@ -264,6 +274,11 @@ both: the hybrid column is all 1s.
 | Dense alone | 0.90 | 0.85 |
 | **Hybrid (RRF)** | **1.00** | **1.00** |
 
+**In code:** `reciprocal_rank_fusion` adds up 1/(k + rank) across any number
+of rankings; `SearchEngine.hybrid` fuses `SearchEngine.bm25` with
+`SearchEngine.dense`, and `evaluate` measures recall@k and MRR for any search
+method.
+
 **Why it matters:** company data is full of both paraphrase-style questions
 and exact identifiers, so hybrid search almost always beats either method
 alone. It's cheap to add: most search engines and vector databases support
@@ -323,6 +338,11 @@ can be precomputed, because the score depends on the pair.
 shortlist of 50, it's 0.5 s, or much less when the pairs are batched. That
 is why the standard pipeline is *retrieve wide and cheap, then rerank narrow
 and precise*, and why you cap the shortlist to keep latency predictable.
+
+**In code:** `CrossEncoder.score` reads one question-document pair and adds
+`CrossEncoder.coverage`, `CrossEncoder.phrase` and `CrossEncoder.exact`, with
+`ideas` grouping synonyms into ideas. `retrieve_then_rerank` shortlists with
+hybrid search, then reorders the shortlist with the cross-encoder.
 
 **Why it matters, and a warning:** rerankers are models too, and can be wrong.
 On this repo's 20 questions, reranking fixes the hard negatives but demotes
@@ -391,6 +411,10 @@ that row's maximum, the only number that counts. "password" finds itself
 (1.00), ignoring the near-identical "passwords"; "rules" finds "policy"
 (0.85), a synonym it could never match by spelling. The score is the sum of
 the outlined cells: 1.00 + 0.85 = 1.85.
+
+**In code:** `maxsim` computes the score from two sets of word vectors;
+`LateInteraction.token_vectors` gives a text one vector per word, and
+`LateInteraction.search` ranks documents by MaxSim.
 
 **Why it matters:** late interaction gets much of a cross-encoder's precision
 while keeping precomputed documents. The cost is storage: one vector per
@@ -478,6 +502,12 @@ overlap, divided by the step, rounded up.
 
 **On the example:** ⌈(130 − 10)/(50 − 10)⌉ = ⌈120/40⌉ = **3**.
 
+**In code:** `fixed_size_chunks` cuts overlapping windows of words;
+`structure_aware_chunks` cuts at headings and paragraphs and returns `Chunk`
+records that carry their heading and metadata. `best_chunk` picks the chunk
+BM25 ranks highest, and `parent_child_search` matches a sentence and returns
+its whole section.
+
 **Why it matters:** chunking choices often matter more than the choice of
 embedding model. Split on structure, keep headings with their content, add
 modest overlap, and attach metadata for filtering.
@@ -518,6 +548,10 @@ stamped, vectors aligned. In the bottom box the documents were indexed
 unstamped. The model still returns vectors, and the pipeline runs, but the
 two sides no longer line up well. The only way to catch it is to measure
 recall on labeled questions, which is the habit this whole lesson argues for.
+
+**In code:** `PrefixedEmbedder` simulates such a model:
+`PrefixedEmbedder.encode_one` strips a known prefix and encodes normally, but
+partly rotates the vector of any text that lacks one.
 
 **Why it matters:** always read the embedding model's card for required
 prefixes or instructions, use the *same* model and settings at indexing and

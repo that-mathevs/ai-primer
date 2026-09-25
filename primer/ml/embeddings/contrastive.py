@@ -125,6 +125,11 @@ result to length 1. `_contrastive_grads` and `_normalize_backward` derive the
 the loss) by hand, and `encoder_gradient_check` confirms it against a
 brute-force numerical estimate.
 
+**In code:** `info_nce_loss` computes L for a batch, treating any rows of P
+beyond B as extra hard negatives. `BagOfWords` turns text into word counts,
+`BiEncoder` holds the learned matrix W, and `BiEncoder.encode` maps texts to
+unit vectors.
+
 **Why it matters:** the embedding models behind search and RAG (Sentence-BERT,
 DPR, E5 and their successors) are trained with exactly this loss on millions
 of (question, answer) pairs. When a retrieval system confuses "reset my
@@ -170,6 +175,9 @@ keeps complaining about pairs that are already ranked correctly. Around
 τ = 0.05 the same lead earns about 95%. Cosines live in a narrow range (−1 to
 1), so embedding models use small temperatures (commonly 0.01 to 0.1) to
 make those small differences count.
+
+**In code:** `positive_probability` computes share₊ for given cosines and τ;
+this curve is that function swept across τ.
 
 **Why it matters:** too high a temperature and the model can't become
 confident; too low and a few hard pairs dominate training and it becomes
@@ -241,6 +249,10 @@ sees "password" and can't tell the cards apart. On the right, the how-to
 rows light up the reset card and the policy rows light up the policy card:
 the diagonal blocks are exactly the right answers.
 
+**In code:** `make_pairs` builds the (question, right card, look-alike)
+triples; `look_alike_accuracy` runs the exam on unseen topics, and
+`training_curve` records that score at checkpoints during training.
+
 **Why it matters:** hard negatives are the biggest single driver of
 retrieval quality. In practice you **mine** them: search your corpus with
 BM25 or the current model, and take high-ranking results that are *not*
@@ -301,6 +313,9 @@ its image.
 
 **On the example:** ½(0.313 + 0.313) = 0.313 correctly paired; ½(1.313 + 1.313) =
 1.313 with the captions swapped.
+
+**In code:** `clip_loss` computes L_CLIP by averaging `info_nce_loss` over the
+rows (images pick captions) and the columns (captions pick images).
 
 ```mermaid
 flowchart LR

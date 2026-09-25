@@ -116,12 +116,18 @@ with the query number by number and adding the results.
 **On the example:** with unit vectors q = (0.8, 0.6) and x = (0.6, 0.8):
 s = 0.8·0.6 + 0.6·0.8 = 0.48 + 0.48 = **0.96**, very similar.
 
+**In code:** `FlatIndex.search` scores the query against every stored vector
+and keeps the best k with `top_k`; `normalize` rescales vectors to length 1
+first, so the dot product is the cosine.
+
 **Why it matters:** flat search costs N·d multiply-adds per query. At 10
 million vectors of 1,536 dimensions that's about 15 billion, far too many
 for an interactive search, and the raw vectors alone take
 10,000,000 × 1,536 × 4 bytes ≈ **61 GB** of memory. Below about a million
 vectors, flat search is often the right answer: simple, exact, and fast
 enough.
+
+**In code:** `storage_estimate` does that memory sum for any n and d.
 
 ## 2. IVF: search only the nearest sections of the library
 
@@ -198,6 +204,11 @@ the collection that lives in the clusters you open.
 **On the example:** 2 + 8 · 1/2 = **6** comparisons (versus 8). At
 N = 1,000,000, n_list = 1,000, n_probe = 10: 1,000 + 10,000 = **11,000**,
 about 1% of a flat scan.
+
+**In code:** `IVFIndex.train` finds the centroids with `kmeans`,
+`IVFIndex.add` files each vector on its nearest centroid's list, and
+`IVFIndex.search` scans only the nprobe nearest lists. `tiny_ivf_search`
+replays the eight-point example.
 
 **Why it matters:** IVF is cheap to build and light on memory, and
 `nprobe = nlist` gives you back an exact flat search, which is a handy
@@ -281,6 +292,12 @@ rounded to.
 **On the example:** ŝ = T₁[c₁] + T₂[c₂] = T₁[0] + T₂[1] = 1 + 1 = **2**
 (exact: 1.7).
 
+**In code:** `ProductQuantizer` learns the codebooks (`ProductQuantizer.train`),
+rounds vectors to codes (`ProductQuantizer.encode`), builds the Tⱼ tables
+(`ProductQuantizer.lookup_table`) and sums the lookups
+(`ProductQuantizer.adc_scores`). `tiny_pq_example` replays the 4-number
+example by hand-setting the compass codebooks.
+
 **Why it matters:** a 768-dimension float32 vector is 3,072 bytes; with
 m = 96 it's 96 bytes, 32× smaller, so a billion vectors fit in about 100 GB
 instead of 3 TB. The lost accuracy is recovered by **re-scoring**: take the
@@ -297,6 +314,10 @@ compression). The orange line uses PQ scores alone: at 8 bytes per vector
 The blue line re-scores PQ's top 100 with the exact vectors and is near
 perfect from 8 bytes up. The lesson: PQ is excellent at *shortlisting* and
 poor at *final ranking*, so production systems always re-score.
+
+**In code:** `PQIndex` scans every PQ code and can re-score its top
+candidates with the exact vectors; `IVFPQIndex` combines IVF lists with
+PQ-encoded residuals.
 
 ## 4. HNSW: highway, main roads, side streets
 
@@ -341,6 +362,10 @@ in a few long jumps (A to D), then follows a dotted arrow down and continues
 from the same node with finer steps, until the bottom layer, where every
 vector lives.
 
+**In code:** `tiny_hnsw_search` replays the greedy walk from the table above
+on the eight-point map and returns every stop; `HNSWIndex` is the full index
+used on real vectors.
+
 ### The search, step by step
 
 ```mermaid
@@ -370,6 +395,10 @@ below; the red circle marks where the search entered each layer. On the left
 it covers most of the map in a couple of long hops. By the bottom layer it
 is already next to the star, and it only explores a small neighborhood. Out
 of 300 points, it looked at a few dozen.
+
+**In code:** `HNSWIndex.search` runs the greedy descent and the bottom-layer
+beam search; `HNSWIndex.search_trace` does the same and returns every node it
+expanded, which is what this figure draws.
 
 ### How the layers are built
 
@@ -437,6 +466,11 @@ upper layers "highways".
 | `efConstruction` | build | a better-quality graph, a slower build |
 | `efSearch` | **query time** | a wider beam: better recall, slower queries |
 
+**In code:** `HNSWIndex.add` inserts each vector this way: draw its layer,
+beam-search each layer with efConstruction, keep up to M diverse neighbors
+and link both ways. `HNSWIndex.layer_sizes` counts the nodes on each layer,
+and `HNSWIndex.memory_bytes` adds up the vectors plus their links.
+
 **Why it matters:** HNSW is the default index in most vector databases
 because it gives high recall at low latency with no training step. Its costs
 are memory (every vector *plus* its links must sit in RAM) and slow builds
@@ -477,6 +511,10 @@ actually returned.
 **On the example:** if the true top 10 is documents 1 to 10 and the index
 returns 1 to 9 plus document 42, the overlap is 9, so recall@10 = 9/10 =
 **0.9**.
+
+**In code:** `recall_at_k` computes this share; `ground_truth` runs the exact
+flat search that supplies the true top k, and `evaluate` reports recall,
+latency and distance computations per query for any index.
 
 **Why it matters:** recall and latency are traded against each other on
 every index. The only reliable way to pick a setting is to measure recall@k

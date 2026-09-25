@@ -87,6 +87,8 @@ bar below 1: the sentences now look different. The causal-mask bar is below 1
 too, because a mask that lets token i see only i+1 tokens already leaks some
 order.
 
+**In code:** `word_vector` gives each word a fixed random embedding, and `order_similarity` pools each sentence's outputs and compares them, which gives the bars in the figure.
+
 **Why it matters.** Almost all meaning in language is carried by order:
 negation scope, who did what to whom, code. So position must be **injected**.
 There are three families, below.
@@ -348,6 +350,8 @@ local order. The last pairs barely turn across the whole range, giving
 coarse long-range position. It's the many-handed clock again, now applied
 inside attention.
 
+**In code:** `rope_frequencies` returns each pair's turning speed θ_i, which `apply_rope` multiplies by the position to get every angle.
+
 **Why it matters.** Relative distance is what language actually uses ("the
 word two back"), rotation keeps vector lengths unchanged, and because
 position lives in angles, you can stretch it after training. That last
@@ -443,6 +447,8 @@ scratch.
 In a decoder, token i sees exactly i+1 tokens, so even with no position
 encoding ("NoPE") the model can partly infer where it is. Bidirectional
 attention (BERT-style) has no such crutch and is fully order-blind.
+
+**In code:** `encode_sentence` with its causal flag set runs the same layer under `primer.ml.attention.causal_mask`; its pooled similarity is the "causal mask only" bar in the first figure.
 
 ## In 20 seconds
 - Attention is permutation-invariant: without position information, "dog

@@ -278,6 +278,8 @@ accuracy). On the right, one hidden tanh layer bends the boundary to follow
 the gap between the moons (100%). Same data, same optimizer: the only
 difference is a nonlinearity between two layers.
 
+**In code:** `make_moons` builds the two interleaving half-moons (and `make_xor` the four-point XOR puzzle); `train_logistic_regression` fits the straight-line baseline in the left panel.
+
 **Why it matters:** "depth" is only worth anything because of the
 activations between layers. `linear_stack_collapses` shows five stacked
 linear layers matching their single-matrix product to 1e-16.
@@ -326,6 +328,8 @@ into shares that are all positive and add up to 1: raise *e* to each score,
 then divide each by the total (Σ means "add them all up"). See
 `primer.notation` for each symbol, and `primer.ml.attention` for softmax
 worked through by hand.
+
+**In code:** `relu`, `sigmoid`, `tanh` and `gelu` compute each rule, and `relu_grad`, `sigmoid_grad`, `tanh_grad` and `gelu_grad` compute its slope; `gelu_tanh` is the cheaper approximation GPT-2 uses, and `softmax` subtracts the largest score first so nothing overflows.
 
 **Why it matters:** activation choice decides whether gradients survive a
 deep stack. Sigmoid everywhere is why deep networks were hard to train
@@ -421,6 +425,8 @@ The hand-written gradients are checked two ways: a **numerical gradient
 check** (nudge each weight by ±ε and measure the loss change; see
 `gradient_check`) and, in the tests, PyTorch autograd.
 
+**In code:** `tiny_two_layer_example` computes every row of the worked table; `MLP` holds both layers' weights and biases, `MLP.loss` scores a batch with `binary_cross_entropy`, and `numerical_gradient` is the slow nudge-every-weight answer that `gradient_check` compares against.
+
 **Why it matters:** the factor (1 − h²) is where gradients shrink. Chain
 fifty of them and the first layers hear almost nothing: the vanishing
 gradient problem. The cached activations are why training a model needs
@@ -476,6 +482,8 @@ cover N examples, rounding up."
 
 **With the numbers:** $\lceil 400 / 32 \rceil = \lceil 12.5 \rceil = 13$ steps
 per epoch; 2 epochs = 26 steps.
+
+**In code:** `train` reshuffles the data every epoch, takes one plain gradient step per batch and records the loss after each epoch; `MLP.accuracy` reports the fraction of examples classified correctly.
 
 **Why it matters:** larger batches give smoother gradient estimates and keep
 GPUs busy, but need more memory. Pretraining a language model runs roughly

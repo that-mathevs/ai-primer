@@ -68,6 +68,10 @@ random words as negatives ("bank" should *not* predict "throne"). The update
 pulls true pairs together and pushes noise pairs apart, then moves on to the
 next pair. The loop at the right is the whole training process.
 
+**In code:** `skipgram_pairs` slides the window over a sentence and returns
+every (center, context) pair; `build_corpus` writes the lesson's synthetic
+sentences for it to slide over.
+
 ## The math: skip-gram with negative sampling (SGNS)
 
 Every word has two vectors: vᵥ when it's the center and uᵥ when it's a
@@ -148,6 +152,12 @@ gives rare words a boost.
 **On an example:** counts 1 and 16 become 1^0.75 = 1 and 16^0.75 = 8, so the
 shares are 1/9 and 8/9 instead of 1/17 and 16/17.
 
+**In code:** `sgns_loss` computes L for one center, one context and k noise
+words, `sgns_update` takes one step against the gradient, and
+`noise_distribution` builds P(w). `train_sgns` runs the whole loop in
+mini-batches and returns a `WordVectors` table; `gradient_check` confirms the
+hand-derived gradients against a numerical estimate.
+
 **Why it matters:** a full softmax over the vocabulary (`primer.ml.attention`
 explains softmax) would score every word, 100,000 or more, for every
 training pair. Negative sampling scores k + 1. That trick is what made
@@ -201,6 +211,10 @@ boy→girl. The arrows are roughly parallel and about the same length. That
 parallelism *is* the analogy: add the man→woman arrow to king and you land
 near queen. The squashing loses some structure, so treat the picture as
 intuition, not measurement.
+
+**In code:** `analogy` returns the word nearest v_a − v_b + v_c, skipping the
+three inputs; `nearest` lists a word's closest neighbours by cosine, and
+`nearest_to_vector` does the same for any vector.
 
 **Why it matters:** this was the first clear evidence that learned vectors
 capture meaning as geometry. It's why "embedding" became the default way to
@@ -260,6 +274,10 @@ flowchart LR
 training loop there are three bulk steps: count, rescale by chance, compress.
 Levy and Goldberg (2014) showed that word2vec's guessing game is secretly
 doing the same thing: its vectors factorize a shifted PMI table.
+
+**In code:** `cooccurrence` counts the pairs in a window, `ppmi` rescales the
+table by chance and clips negatives to 0, and `ppmi_svd_embeddings` runs all
+three steps and keeps d columns of the SVD.
 
 **GloVe** (Pennington et al., 2014) is the best-known counting method. It
 fits vectors so that each dot product predicts the log of the co-occurrence

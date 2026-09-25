@@ -78,6 +78,11 @@ never seen."
 Cubic: every miss is 0, so training error is 0; its validation error on any
 point beyond x = 3 is enormous.
 
+**In code:** `zigzag_fit_error` and `zigzag_predict` fit a polynomial of any
+degree to the four zig-zag points and report its training error and its
+prediction; `true_function` and `make_curve_data` draw the noisy sine
+samples in the figure.
+
 **Why it matters:** training error alone always rewards memorisation. The
 gap between training and validation error is the single most useful
 diagnostic in machine learning.
@@ -107,7 +112,7 @@ validation curve (orange) falls, bottoms out around degree 3 to 5, then shoots
 up. The left side of that valley is underfitting, the right side
 overfitting; the bottom is the model you want.
 
-In code, `polynomial_errors(degree)` fits by least squares (choosing the
+**In code:** `polynomial_errors` fits by least squares (choosing the
 coefficients that minimise training MSE) and reports both errors.
 
 **Why it matters:** "both errors high" and "training low, validation high"
@@ -175,6 +180,10 @@ once you've gone `patience` epochs past it without doing better."
 
 **With the numbers:** $t^\star = 3$; at $t = 5$, $5 - 3 = 2 \ge 2$, so stop.
 
+**In code:** `early_stopping` replays a run's validation losses and returns
+the best epoch and the epoch where training stops; `train_flexible_model`
+trains the over-sized network in the figure and records both losses.
+
 **Why it matters:** it's the cheapest regularizer there is: no change to the
 model, just a rule for when to stop. It's used almost everywhere a model is
 trained for multiple epochs, including fine-tuning language models.
@@ -230,6 +239,9 @@ nobody can predict."
 **With the numbers:** degree 1: $0.174 + 0.022 + 0.09 \approx 0.29$;
 degree 3: $0.0035 + 0.015 + 0.09 \approx 0.11$; degree 9:
 $0.0038 + 4.5 + 0.09 \approx 4.6$. Degree 3 has the best total.
+
+**In code:** `bias_variance` fits one polynomial to each of many random
+training sets and splits their error into bias², variance and noise.
 
 **Why it matters:** it names the two failure modes and explains why more
 data helps flexible models (averaging tames variance) but not rigid ones
@@ -294,6 +306,9 @@ lose, and divide the survivors by the keep probability."
 
 **With the numbers:** $(0\cdot1, 0\cdot1, 1\cdot1, 1\cdot1) / 0.5 = (0, 0, 2, 2)$.
 
+**In code:** `dropout` draws the mask and scales the survivors during
+training, and passes activations through unchanged at evaluation time.
+
 **Why it matters:** dropout was a key ingredient of the deep-learning
 revival and is still used in many models (the original transformer used
 p = 0.1). Forgetting to switch it off at evaluation (`model.eval()` in
@@ -352,6 +367,10 @@ $w_{\text{L2}} = w / (1 + \lambda) = (1.5, 0.25, -1)$ and
 $w_{\text{L1}} = \text{sign}(w)\max(\lvert w \rvert - \lambda, 0) = (2, 0, -1)$,
 the "soft threshold" in `soft_threshold`.
 
+**In code:** `penalised_weights` gives both closed forms from the table, and
+`fit_sparse_problem` fits the ten-feature problem in the figure (L1 by
+alternating gradient steps with `soft_threshold`).
+
 **Why it matters:** L2 (as weight decay; see AdamW in
 `primer.ml.optimizers`) is on by default when training transformers. L1
 is the tool when you want a sparse, interpretable model that uses only a
@@ -407,6 +426,10 @@ their scores on the fold each one didn't see."
 **With the numbers:** 10 examples, $k = 5$: five models, each trained on 8
 and scored on 2; if they score 1.0, 0.5, 1.0, 1.0, 0.5, the CV score is 0.8.
 
+**In code:** `train_val_test_split` shuffles and cuts the indices into three
+disjoint sets, and `k_fold` yields the training and validation indices for
+each fold in turn.
+
 **Why it matters:** with small datasets a single split is noisy, and
 cross-validation gives a more reliable estimate. With large datasets (or
 expensive models) one fixed validation set is enough.
@@ -448,8 +471,8 @@ outcome is known. In a historical training table every column sits side by
 side, so nothing stops the model from using a column that, in real time, it
 could never have had. The dotted arrow is the leak.
 
-The code for both is in `duplicate_leakage_demo` and `future_feature_demo`;
-the "model" in the first is a one-nearest-neighbour lookup (copy the label
+**In code:** `duplicate_leakage_demo` and `future_feature_demo` run both
+examples; the "model" in the first is a one-nearest-neighbour lookup (copy the label
 of the closest training row), the purest memoriser there is.
 
 **Why it matters:** leakage is the most common reason a model that looked

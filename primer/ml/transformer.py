@@ -72,6 +72,8 @@ what each token worked out alone."
 (−0.2, 0.4) = **(0.9, 2.1)**. `TransformerBlock.__call__` is exactly these
 two lines.
 
+**In code:** `TransformerBlock` holds one `primer.ml.attention.MultiHeadAttention`, one `FeedForward` and the two norms' learned gains and biases.
+
 **Why it matters.** The block's output has the same shape as its input, so
 blocks stack like Lego. And because the input is never overwritten, switching
 both sub-layers off gives back the input unchanged (a scenario in the spec),
@@ -264,6 +266,8 @@ lines up with the model's final vector."
 softmax turns them into next-token probabilities (see
 `primer.ml.big_picture`). `TinyGPT.__call__` is this pipeline.
 
+**In code:** `TinyGPT.hidden` runs everything up to the final norm, and `TinyGPT.n_params` counts the 27,328 weights.
+
 **Why it matters.** This is the whole forward pass of GPT-2, Llama and
 Claude-style models in miniature. Real models differ in size, not in kind.
 
@@ -312,6 +316,8 @@ at, darker is more weight. On the left (encoder) weight is spread over the
 whole grid. On the right (decoder) the upper-right triangle is empty, so
 nothing reads the future. The bottom rows are identical in both panels: the
 last token sees everything either way.
+
+**In code:** `TransformerBlock` with its causal flag on is a decoder block and with it off an encoder block; `mask_patterns` runs one of each on the same input to draw the figure.
 
 **Why it matters.** Embedding models (`primer.ml.embeddings`) are usually
 encoders; chat models and agents are decoders.
@@ -374,6 +380,8 @@ small model, embeddings (grey) are almost a third of everything, because a
 50k-row table is big next to 12 narrow layers. As models grow, the
 embeddings stay fixed while layers multiply, so their share shrinks to about
 5% in XL, and the 12·L·d² term dominates.
+
+**In code:** `param_breakdown` splits a GPT-2-shaped model's count into embeddings, attention, feed-forward and norms for the figure, and `TransformerBlock.n_params` counts one real block's weights.
 
 **Why it matters.** Parameters × bytes per parameter is the memory a model
 needs just to load (see `primer.ml.inference` for the arithmetic).
@@ -470,6 +478,8 @@ perfectly even 64. Expert 3 gets 99 tokens while others get about 55: even
 random routing is lopsided, and in training the imbalance compounds because
 favoured experts improve and attract more traffic. The balancing loss pushes
 the bars back towards the line.
+
+**In code:** `MixtureOfExperts.n_params` and `MixtureOfExperts.active_params` give the 17,152 and 4,384 above, and `MixtureOfExperts.tokens_per_expert` counts the bars in the figure.
 
 **Why it matters.** MoE lets a model hold far more knowledge (parameters)
 for the same compute per token, which is why many frontier models use it. The

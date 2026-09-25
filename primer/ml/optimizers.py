@@ -113,6 +113,8 @@ instead of shrinking."
 **With the numbers:** $\eta = 1.1$: $1 - 2.2 = -1.2$, so
 $1 \to -1.2 \to 1.44 \to -1.728$.
 
+**In code:** `descend_bowl` is the same loop with the learning rate as an argument; call it with each rate in the table to reproduce every row.
+
 **Why it matters:** the learning rate is the single most important
 hyperparameter. Too high and training diverges or bounces (loss spikes,
 NaNs); too low and it takes forever or settles somewhere poor. The steepest
@@ -180,6 +182,8 @@ slope, and the weights move by the learning rate times the velocity."
 **With the numbers:** $v_2 = 0.9 \times 2.0 + 1.6 = 3.4$;
 $w_2 = 0.8 - 0.1 \times 3.4 = 0.46$.
 
+**In code:** `momentum_on_bowl` runs the two-row table; `SGD` with a nonzero momentum keeps its velocity between calls to `SGD.step`. `narrow_valley` is the valley in the figure (`rosenbrock` is a harder, banana-shaped one), and `run` walks any optimizer across a landscape and records its path.
+
 **Why it matters:** real loss surfaces are full of narrow valleys. On the
 valley above, 100 steps of momentum reach a loss over 10,000× lower than 100
 steps of plain SGD at the same learning rate. Momentum is still the default
@@ -246,6 +250,8 @@ average gradient divided by its typical size."
 **With the numbers:** $\hat{m}_1 = 100 / 0.1 = 1000$, $\hat{v}_1 = 1000 / 0.001 = 10^6$,
 step $= 0.01 \times 1000 / (1000 + 10^{-8}) = 0.01$.
 
+**In code:** `Adam` keeps the two running averages and the step count for every weight and applies the five formulas in `Adam.step`; `adam_first_step` shows the first step is always the learning rate.
+
 **Why it matters:** Adam is forgiving: one learning rate works across
 weights whose gradients differ by orders of magnitude, which is the norm in
 transformers (embeddings, attention, layer norms all behave differently).
@@ -307,6 +313,8 @@ weight by learning rate times decay times the weight."
 
 **With the numbers:** $1 - 0 - 0.1 \times 0.1 \times 1 = 0.99$.
 
+**In code:** `Adam` implements both recipes: with decoupled decay it is AdamW, otherwise it adds the L2 penalty to the gradient. `one_decay_step` runs the table.
+
 **Why it matters:** AdamW is the default optimizer for transformers. The
 fix was a one-line change that made weight decay behave predictably and
 improved generalization.
@@ -363,6 +371,8 @@ after that it follows half a cosine wave from the peak down to the floor."
 **With the numbers:** step 550: progress 0.5, $\cos(0.5\pi) = 0$, so
 $0 + 0.001 \times (1 + 0)/2 = 0.0005$.
 
+**In code:** `warmup_cosine` returns the learning rate for any step: the straight ramp during warmup, then the half cosine down to the floor.
+
 **Why it matters:** at the very start, Adam's averages are unreliable and
 the weights are random, so a full-size step can wreck them; warmup avoids
 early divergence. The slow finish lets the model settle into a good minimum
@@ -412,6 +422,8 @@ $$
 its length equals the limit; otherwise leave it alone."
 
 **With the numbers:** $(3, 4) \times \min(1, 1/5) = (0.6, 0.8)$.
+
+**In code:** `clip_by_global_norm` measures the length of all gradients together and scales every one by the same factor when it exceeds the limit.
 
 **Why it matters:** large-model training runs almost always clip (a limit of
 1.0 is common). It turns rare loss spikes from run-ending disasters into

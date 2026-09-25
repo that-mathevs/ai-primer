@@ -49,6 +49,9 @@ x-axis and read up to the 95% curve: about 0.6. That's why a demo of a
 three-step task looks great and the same agent on a real twenty-step job
 disappoints.
 
+**In code:** `end_to_end_success` multiplies the per-step rate by itself once
+per step, which is the whole formula above.
+
 **Why it matters.** The remedies all attack $p$ or $n$: fewer steps
 (higher-level tools, see `primer.agents.tools`), checks that catch failures,
 retries of just the failed step, and human review at critical points.
@@ -99,6 +102,9 @@ diamond stops a planner that can't adapt from looping forever.
 each action, records outputs in `state`, and on `StepFailed` asks for a
 revised plan. Steps already in `state` are skipped.
 
+**In code:** `PlanRun` is what `plan_and_execute` returns: every plan the
+planner wrote, each executed step with "ok" or its failure, and the replan count.
+
 **Why it matters.** Deciding one step at a time (a pure ReAct loop, see
 `primer.agents.agent_loop`) drifts on long tasks. An upfront plan keeps the
 agent on track and lets a person see its intent before it acts. The risk is
@@ -136,6 +142,11 @@ flowchart LR
 **Reading it:** arrows show which outputs feed which step. The dotted
 self-loop on `fetch_payments` is a retry. Because every step's output is
 kept (a *checkpoint*), the retry doesn't redo `fetch_invoices`.
+
+**In code:** `Subtask` pairs a step's work with its check (the definition of
+done); `run_subtasks` runs them in order, retries only the step whose check
+failed, and returns a `RunReport` of outputs and attempts. `reconcile_q3`
+builds the five subtasks in the table.
 
 ### Checkpoints: how much work a failure costs
 
@@ -175,6 +186,9 @@ unreliable; they're expensive. **Durable execution** is the engineering name
 for this: a workflow engine that saves each step's result so a crashed run
 resumes where it stopped.
 
+**In code:** `expected_step_runs` evaluates both formulas: $n/p$ with
+checkpoints, the restart formula without.
+
 ## 4. Reflection vs. external verification
 
 **Everyday picture.** Proofreading your own essay versus having someone run the
@@ -208,6 +222,11 @@ the model and ends at "approved, still wrong". The bottom path goes through
 something outside the model (tests, a schema validator, a database query),
 and that something produces a concrete, checkable failure the model can fix.
 
+**In code:** `self_review` is the top path (a model reads the code and
+approves or not); `run_checks` is the bottom path (it runs the code against
+known answers); `generate_until_checks_pass` loops the bottom path, feeding
+each failure back to the model until the checks pass.
+
 With verification and retries, the per-step success rate rises:
 
 $$
@@ -237,6 +256,9 @@ no checks. The middle ones add a retry after a failure is caught, with a
 check that catches half or all failures. The top curve allows two retries.
 The gap between "half" and "all" is the lesson: retries are only as good
 as the check that triggers them. Invest in the check.
+
+**In code:** `step_success` computes $p_{\text{step}}$ from $p$, $d$ and $r$;
+feed its result into `end_to_end_success` to get the ten-step curves.
 
 ## In 20 seconds
 - Success compounds: $p^n$. 95% per step is 60% over ten steps.

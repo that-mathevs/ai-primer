@@ -6,6 +6,10 @@ Every idea is **built in plain Python you can read**, **drawn** as a
 diagram, **decoded** symbol by symbol, and **checked** by a test that states
 what it proves. Nothing depends on already knowing the jargon.
 
+**Read it online: https://that-mathevs.github.io/ai-primer/** (every lesson,
+diagram and annotated paper, with links from each explanation to the code
+that implements it and the tests that specify it).
+
 It covers two things:
 
 1. **How the model works inside:** neurons and backpropagation, attention
@@ -24,16 +28,19 @@ explanation.
 **1. Set up** (Python 3.10+; the lessons need only NumPy):
 
 ```bash
-git clone <this repo> && cd primer
+git clone https://github.com/that-mathevs/ai-primer && cd ai-primer
 python -m pip install -e ".[dev,docs]"
 make docs            # builds the site; open docs/html/index.html in a browser
 ```
 
 **2. Pick how you read.** Each lesson works three ways, so use whichever suits you:
 
-- **In the browser** (recommended): `docs/html/index.html` is the home page, with
-  every lesson in order, diagrams and figures, and a plain-English definition when
-  you hover over any underlined term. Every page has previous/next links.
+- **In the browser** (recommended): [the live site](https://that-mathevs.github.io/ai-primer/),
+  or `docs/html/index.html` after `make docs`. It has every lesson in order,
+  diagrams and figures, and a plain-English definition when you hover over any
+  underlined term. Every page has previous/next links, and every **In code:**
+  line links to the function it names, with its source one click away (View
+  Source on the page, or its exact lines on GitHub).
 - **In your editor**: each lesson is one file, such as `primer/ml/attention.py`.
   The explanation is the docstring at the top and the code follows it.
 - **In the terminal**: `python -m primer.ml.attention` runs a lesson as a
@@ -126,67 +133,67 @@ Generated from [`primer/curriculum.py`](primer/curriculum.py), so it is always c
 
 The notation every formula in this primer uses, decoded as short loops.
 
-| # | Lesson | What you'll be able to explain |
-|---|---|---|
-| 0 | [Math notation, from zero](primer/notation.py) | Every symbol in an ML formula, as a short loop |
+| # | Lesson | What you'll be able to explain | Read |
+|---|---|---|---|
+| 0 | [Math notation, from zero](primer/notation.py) | Every symbol in an ML formula, as a short loop | [page](https://that-mathevs.github.io/ai-primer/primer/notation.html) · [tests](tests/test_notation.py) |
 
 ### Part 1: how the model works inside
 
 From a single neuron to a working transformer, and how models are trained and served.
 
-| # | Lesson | What you'll be able to explain |
-|---|---|---|
-| 1 | [The big picture](primer/ml/big_picture.py) | What happens, end to end, when you send a prompt |
-| 2 | [Neural networks](primer/ml/neural_net.py) | Neurons, activations, the forward pass, backprop by hand |
-| 3 | [Optimizers](primer/ml/optimizers.py) | SGD, momentum, Adam/AdamW, learning-rate warmup and decay |
-| 4 | [Training deep networks](primer/ml/deep_nets.py) | Vanishing/exploding gradients, residuals, normalization, initialization |
-| 5 | [Attention](primer/ml/attention.py) | Queries, keys, values, softmax, masking, multi-head, GQA, O(n²) |
-| 6 | [Positional information](primer/ml/positional.py) | Why order must be added, sinusoids and RoPE |
-| 7 | [The transformer](primer/ml/transformer.py) | The block, a tiny GPT, parameter counts, mixture of experts |
-| 8 | [Tokenization](primer/ml/tokenization.py) | BPE from scratch, byte-level tokens, why models miscount letters |
-| 9 | [Training stages](primer/ml/training_stages.py) | Pretraining, SFT, RLHF and DPO, LoRA, fine-tuning vs. RAG |
-| 10 | [Inference](primer/ml/inference.py) | Prefill vs. decode, the KV cache, sampling, speculative decoding, memory math |
-| 11 | [Loss functions](primer/ml/losses.py) | Cross-entropy, perplexity, MSE/MAE, contrastive losses |
-| 12 | [Metrics](primer/ml/metrics.py) | Precision/recall/F1, ROC-AUC, recall@k, MRR, nDCG, BLEU/ROUGE |
-| 13 | [Overfitting and regularization](primer/ml/regularization.py) | Overfitting, early stopping, dropout, L1/L2, leakage |
-| 14 | [CNNs and RNNs](primer/ml/cnn_rnn.py) | How convolutions see and recurrent nets remember, and why transformers won |
+| # | Lesson | What you'll be able to explain | Read |
+|---|---|---|---|
+| 1 | [The big picture](primer/ml/big_picture.py) | What happens, end to end, when you send a prompt | [page](https://that-mathevs.github.io/ai-primer/primer/ml/big_picture.html) · [tests](tests/test_big_picture.py) |
+| 2 | [Neural networks](primer/ml/neural_net.py) | Neurons, activations, the forward pass, backprop by hand | [page](https://that-mathevs.github.io/ai-primer/primer/ml/neural_net.html) · [tests](tests/test_neural_net.py) |
+| 3 | [Optimizers](primer/ml/optimizers.py) | SGD, momentum, Adam/AdamW, learning-rate warmup and decay | [page](https://that-mathevs.github.io/ai-primer/primer/ml/optimizers.html) · [tests](tests/test_optimizers.py) |
+| 4 | [Training deep networks](primer/ml/deep_nets.py) | Vanishing/exploding gradients, residuals, normalization, initialization | [page](https://that-mathevs.github.io/ai-primer/primer/ml/deep_nets.html) · [tests](tests/test_deep_nets.py) |
+| 5 | [Attention](primer/ml/attention.py) | Queries, keys, values, softmax, masking, multi-head, GQA, O(n²) | [page](https://that-mathevs.github.io/ai-primer/primer/ml/attention.html) · [tests](tests/test_attention.py) |
+| 6 | [Positional information](primer/ml/positional.py) | Why order must be added, sinusoids and RoPE | [page](https://that-mathevs.github.io/ai-primer/primer/ml/positional.html) · [tests](tests/test_positional.py) |
+| 7 | [The transformer](primer/ml/transformer.py) | The block, a tiny GPT, parameter counts, mixture of experts | [page](https://that-mathevs.github.io/ai-primer/primer/ml/transformer.html) · [tests](tests/test_transformer.py) |
+| 8 | [Tokenization](primer/ml/tokenization.py) | BPE from scratch, byte-level tokens, why models miscount letters | [page](https://that-mathevs.github.io/ai-primer/primer/ml/tokenization.html) · [tests](tests/test_tokenization.py) |
+| 9 | [Training stages](primer/ml/training_stages.py) | Pretraining, SFT, RLHF and DPO, LoRA, fine-tuning vs. RAG | [page](https://that-mathevs.github.io/ai-primer/primer/ml/training_stages.html) · [tests](tests/test_training_stages.py) |
+| 10 | [Inference](primer/ml/inference.py) | Prefill vs. decode, the KV cache, sampling, speculative decoding, memory math | [page](https://that-mathevs.github.io/ai-primer/primer/ml/inference.html) · [tests](tests/test_inference.py) |
+| 11 | [Loss functions](primer/ml/losses.py) | Cross-entropy, perplexity, MSE/MAE, contrastive losses | [page](https://that-mathevs.github.io/ai-primer/primer/ml/losses.html) · [tests](tests/test_losses.py) |
+| 12 | [Metrics](primer/ml/metrics.py) | Precision/recall/F1, ROC-AUC, recall@k, MRR, nDCG, BLEU/ROUGE | [page](https://that-mathevs.github.io/ai-primer/primer/ml/metrics.html) · [tests](tests/test_metrics.py) |
+| 13 | [Overfitting and regularization](primer/ml/regularization.py) | Overfitting, early stopping, dropout, L1/L2, leakage | [page](https://that-mathevs.github.io/ai-primer/primer/ml/regularization.html) · [tests](tests/test_regularization.py) |
+| 14 | [CNNs and RNNs](primer/ml/cnn_rnn.py) | How convolutions see and recurrent nets remember, and why transformers won | [page](https://that-mathevs.github.io/ai-primer/primer/ml/cnn_rnn.html) · [tests](tests/test_cnn_rnn.py) |
 
 ### Embeddings, the centerpiece
 
 Vectors that capture meaning, and the search systems built on them.
 
-| # | Lesson | What you'll be able to explain |
-|---|---|---|
-| 15 | [Word embeddings](primer/ml/embeddings/word2vec.py) | Where embeddings came from, analogies, the "bank" problem |
-| 16 | [Similarity](primer/ml/embeddings/similarity.py) | Cosine vs. dot vs. distance, normalization, anisotropy, thresholds |
-| 17 | [Training embedding models](primer/ml/embeddings/contrastive.py) | Contrastive learning, hard negatives, CLIP |
-| 18 | [Dimensions and compression](primer/ml/embeddings/compression.py) | Storage math, Matryoshka truncation, int8 and binary quantization |
-| 19 | [Vector indexes](primer/ml/embeddings/ann.py) | Flat, IVF, PQ and HNSW from scratch, recall vs. latency |
-| 20 | [Retrieval](primer/ml/embeddings/retrieval.py) | BM25, hybrid search with RRF, rerankers, ColBERT, chunking |
-| 21 | [Clustering and matching](primer/ml/embeddings/clustering.py) | k-means, density clustering, dedup, routing, semantic caching |
-| 22 | [Embeddings in production](primer/ml/embeddings/operations.py) | Model migrations, domain mismatch, measuring retrieval on its own |
+| # | Lesson | What you'll be able to explain | Read |
+|---|---|---|---|
+| 15 | [Word embeddings](primer/ml/embeddings/word2vec.py) | Where embeddings came from, analogies, the "bank" problem | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/word2vec.html) · [tests](tests/test_emb_word2vec.py) |
+| 16 | [Similarity](primer/ml/embeddings/similarity.py) | Cosine vs. dot vs. distance, normalization, anisotropy, thresholds | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/similarity.html) · [tests](tests/test_emb_similarity.py) |
+| 17 | [Training embedding models](primer/ml/embeddings/contrastive.py) | Contrastive learning, hard negatives, CLIP | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/contrastive.html) · [tests](tests/test_emb_contrastive.py) |
+| 18 | [Dimensions and compression](primer/ml/embeddings/compression.py) | Storage math, Matryoshka truncation, int8 and binary quantization | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/compression.html) · [tests](tests/test_emb_compression.py) |
+| 19 | [Vector indexes](primer/ml/embeddings/ann.py) | Flat, IVF, PQ and HNSW from scratch, recall vs. latency | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/ann.html) · [tests](tests/test_emb_ann.py) |
+| 20 | [Retrieval](primer/ml/embeddings/retrieval.py) | BM25, hybrid search with RRF, rerankers, ColBERT, chunking | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/retrieval.html) · [tests](tests/test_emb_retrieval.py) |
+| 21 | [Clustering and matching](primer/ml/embeddings/clustering.py) | k-means, density clustering, dedup, routing, semantic caching | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/clustering.html) · [tests](tests/test_emb_clustering.py) |
+| 22 | [Embeddings in production](primer/ml/embeddings/operations.py) | Model migrations, domain mismatch, measuring retrieval on its own | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/operations.html) · [tests](tests/test_emb_operations.py) |
 
 ### Part 2: building systems people rely on
 
 Agents, tools, retrieval, memory, evaluation, safety, cost and deployment.
 
-| # | Lesson | What you'll be able to explain |
-|---|---|---|
-| 23 | [Talking to a model](primer/agents/llm.py) | The message format, and what tool calling really is |
-| 24 | [Orchestration](primer/agents/orchestration.py) | Workflows vs. agents, and the named patterns |
-| 25 | [The agent loop](primer/agents/agent_loop.py) | A production agent loop: budgets, loop detection, recovery |
-| 26 | [Tools](primer/agents/tools.py) | Tool design, validation, idempotency, approvals, least privilege |
-| 27 | [Model Context Protocol](primer/agents/mcp.py) | MCP on the wire, and its security risks |
-| 28 | [Retrieval-augmented generation](primer/agents/rag.py) | RAG end to end, with citations and access control |
-| 29 | [Context engineering](primer/agents/context.py) | What goes in the window, compression, cache-friendly layout |
-| 30 | [Memory](primer/agents/memory.py) | Short- and long-term memory, tenant isolation, forgetting |
-| 31 | [Planning](primer/agents/planning.py) | Plan-and-execute, decomposition, reflection, compounding error |
-| 32 | [Evaluation](primer/agents/evals.py) | Golden sets, graders, LLM-as-judge calibration |
-| 33 | [Guardrails](primer/agents/guardrails.py) | Prompt injection and privilege separation, PII, output checks |
-| 34 | [Cost and latency](primer/agents/cost.py) | Routing, caching, batching, budgets, cost per successful task |
-| 35 | [Observability](primer/agents/observability.py) | Traces, OpenTelemetry GenAI attributes, the improvement loop |
-| 36 | [Safe deployment](primer/agents/deployment.py) | Shadow mode, graduated autonomy, canaries, kill switches, audit logs |
-| 37 | [Why the hard ones fail](primer/agents/failures.py) | The common failure modes, and the fix for each |
+| # | Lesson | What you'll be able to explain | Read |
+|---|---|---|---|
+| 23 | [Talking to a model](primer/agents/llm.py) | The message format, and what tool calling really is | [page](https://that-mathevs.github.io/ai-primer/primer/agents/llm.html) · [tests](tests/test_agents_llm.py) |
+| 24 | [Orchestration](primer/agents/orchestration.py) | Workflows vs. agents, and the named patterns | [page](https://that-mathevs.github.io/ai-primer/primer/agents/orchestration.html) · [tests](tests/test_agents_orchestration.py) |
+| 25 | [The agent loop](primer/agents/agent_loop.py) | A production agent loop: budgets, loop detection, recovery | [page](https://that-mathevs.github.io/ai-primer/primer/agents/agent_loop.html) · [tests](tests/test_agents_agent_loop.py) |
+| 26 | [Tools](primer/agents/tools.py) | Tool design, validation, idempotency, approvals, least privilege | [page](https://that-mathevs.github.io/ai-primer/primer/agents/tools.html) · [tests](tests/test_agents_tools.py) |
+| 27 | [Model Context Protocol](primer/agents/mcp.py) | MCP on the wire, and its security risks | [page](https://that-mathevs.github.io/ai-primer/primer/agents/mcp.html) · [tests](tests/test_agents_mcp.py) |
+| 28 | [Retrieval-augmented generation](primer/agents/rag.py) | RAG end to end, with citations and access control | [page](https://that-mathevs.github.io/ai-primer/primer/agents/rag.html) · [tests](tests/test_agents_rag.py) |
+| 29 | [Context engineering](primer/agents/context.py) | What goes in the window, compression, cache-friendly layout | [page](https://that-mathevs.github.io/ai-primer/primer/agents/context.html) · [tests](tests/test_agents_context.py) |
+| 30 | [Memory](primer/agents/memory.py) | Short- and long-term memory, tenant isolation, forgetting | [page](https://that-mathevs.github.io/ai-primer/primer/agents/memory.html) · [tests](tests/test_agents_memory.py) |
+| 31 | [Planning](primer/agents/planning.py) | Plan-and-execute, decomposition, reflection, compounding error | [page](https://that-mathevs.github.io/ai-primer/primer/agents/planning.html) · [tests](tests/test_agents_planning.py) |
+| 32 | [Evaluation](primer/agents/evals.py) | Golden sets, graders, LLM-as-judge calibration | [page](https://that-mathevs.github.io/ai-primer/primer/agents/evals.html) · [tests](tests/test_agents_evals.py) |
+| 33 | [Guardrails](primer/agents/guardrails.py) | Prompt injection and privilege separation, PII, output checks | [page](https://that-mathevs.github.io/ai-primer/primer/agents/guardrails.html) · [tests](tests/test_agents_guardrails.py) |
+| 34 | [Cost and latency](primer/agents/cost.py) | Routing, caching, batching, budgets, cost per successful task | [page](https://that-mathevs.github.io/ai-primer/primer/agents/cost.html) · [tests](tests/test_agents_cost.py) |
+| 35 | [Observability](primer/agents/observability.py) | Traces, OpenTelemetry GenAI attributes, the improvement loop | [page](https://that-mathevs.github.io/ai-primer/primer/agents/observability.html) · [tests](tests/test_agents_observability.py) |
+| 36 | [Safe deployment](primer/agents/deployment.py) | Shadow mode, graduated autonomy, canaries, kill switches, audit logs | [page](https://that-mathevs.github.io/ai-primer/primer/agents/deployment.html) · [tests](tests/test_agents_deployment.py) |
+| 37 | [Why the hard ones fail](primer/agents/failures.py) | The common failure modes, and the fix for each | [page](https://that-mathevs.github.io/ai-primer/primer/agents/failures.html) · [tests](tests/test_agents_failures.py) |
 
 <!-- END curriculum -->
 

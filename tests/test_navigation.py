@@ -168,3 +168,134 @@ class TestBigQuestions:
         readme = (ROOT / "README.md").read_text()
         current = re.search(r"<!-- BEGIN big-questions -->\n(.*?)<!-- END big-questions -->", readme, re.S)
         assert current and current.group(1) == big_questions_table(), "stale: run `make readme`"
+
+
+def _resolve(module, name: str):
+    """The object a backticked name in `module`'s docstring points at, or None."""
+    if name.startswith("primer."):
+        parts = name.split(".")
+        for i in range(len(parts), 0, -1):
+            try:
+                obj = importlib.import_module(".".join(parts[:i]))
+            except ImportError:
+                continue
+            for p in parts[i:]:
+                obj = getattr(obj, p, None)
+            return obj
+        return None
+    obj = module
+    for p in name.split("."):
+        obj = getattr(obj, p, None)
+    return obj
+
+
+class TestLinksIntoTheCode:
+    def test_given_every_lesson_exactly_one_test_file_specifies_it(self):
+        from primer.curriculum import tests_for
+
+        assert [l.module for l in CURRICULUM if not (ROOT / tests_for(l.module)).exists()] == []
+
+    def test_given_a_lesson_its_nav_links_its_source_file_on_github(self):
+        from primer.curriculum import REPO_URL
+        from tools.docsite import lesson_nav
+
+        assert f'href="{REPO_URL}/blob/main/primer/ml/attention.py"' in lesson_nav("primer.ml.attention")
+
+    def test_given_a_lesson_its_nav_links_the_tests_that_specify_it(self):
+        from primer.curriculum import REPO_URL
+        from tools.docsite import lesson_nav
+
+        assert f'href="{REPO_URL}/blob/main/tests/test_emb_ann.py"' in lesson_nav("primer.ml.embeddings.ann")
+
+    @pytest.mark.parametrize("lesson", [l.module for l in CURRICULUM])
+    def test_given_the_lesson_every_name_its_in_code_lines_cite_is_public_code_that_exists(self, lesson):
+        module = importlib.import_module(lesson)
+        # A paragraph runs until the blank line, so names on wrapped lines count too.
+        paragraphs = re.findall(r"\*\*In code:\*\*(.*?)(?:\n\s*\n|\Z)", module.__doc__, re.S)
+        cited = [n for p in paragraphs for n in re.findall(r"`([A-Za-z_][\w.]*)(?:\(\))?`", p)]
+        # pdoc links a short name only when this module defines it; anything else must be written dotted.
+        # It never links private names, so those would be dead ends too.
+        source = Path(module.__file__).read_text()
+
+        def defined_here(name: str) -> bool:
+            top = name.split(".")[0]
+            owner = getattr(getattr(module, top, None), "__module__", None)
+            # Plain data (a dict, a list) has no __module__; it is ours if the module assigns it at top level.
+            return owner == lesson if owner else re.search(rf"^{re.escape(top)}\s*[:=]", source, re.M) is not None
+
+        broken = [n for n in cited if n.split(".")[-1].startswith("_") or _resolve(module, n) is None
+                  or not (n.startswith("primer.") or defined_here(n))]
+        assert broken == []
+
+    def test_given_a_rendered_function_it_gains_a_link_to_its_exact_lines_on_github(self):
+        from primer.curriculum import REPO_URL
+        from tools.docsite import link_members_to_github
+
+        # The shape pdoc writes: a section per member, its source lines numbered in span ids.
+        page = '<section id="run_chain"><label class="view-source-button" for="run_chain-view-source"><span>View Source</span></label></section>'
+        linked = link_members_to_github(page, "primer.agents.orchestration")
+        # Found by reading the file, independently of how the site builder locates it.
+        lines = (ROOT / "primer/agents/orchestration.py").read_text().splitlines()
+        first = next(i for i, line in enumerate(lines, 1) if line.startswith("def run_chain("))
+        assert f'href="{REPO_URL}/blob/main/primer/agents/orchestration.py#L{first}-L' in linked
+
+    def test_given_a_member_inherited_from_outside_the_repository_it_gets_no_github_link(self):
+        from tools.docsite import link_members_to_github
+
+        # LLM is a typing.Protocol; its __init__ lives in the standard library, not in this repository.
+        page = '<div id="LLM.__init__"><label class="view-source-button" for="LLM.__init__-view-source"><span>View Source</span></label></div>'
+        assert "gh-source" not in link_members_to_github(page, "primer.agents.llm")
+
+    def test_given_the_home_page_it_links_the_repository_and_the_license(self):
+        from primer.curriculum import REPO_URL
+        from tools.docsite import render_home
+
+        home = render_home()
+        assert f'href="{REPO_URL}"' in home and f'href="{REPO_URL}/blob/main/LICENSE"' in home
+
+    def test_given_the_readme_each_lesson_row_links_its_page_on_the_live_site(self):
+        from primer.curriculum import SITE_URL
+
+        assert f"({SITE_URL}primer/ml/attention.html)" in readme_section()
+
+    def test_given_the_readme_it_says_how_to_clone_the_real_repository(self):
+        from primer.curriculum import REPO_URL
+
+        assert f"git clone {REPO_URL}" in (ROOT / "README.md").read_text()
+
+
+class TestCheckingLinksIntoThisRepository:
+    # Links to our own GitHub files are checked against the working tree, so they are verified offline.
+    def test_given_a_link_to_lines_that_exist_it_passes(self):
+        from primer.curriculum import REPO_URL
+        from tools.sitecheck import own_repo_problem
+
+        assert own_repo_problem(f"{REPO_URL}/blob/main/primer/ml/attention.py#L1-L3") is None
+
+    def test_given_a_link_to_a_file_that_does_not_exist_it_is_reported(self):
+        from primer.curriculum import REPO_URL
+        from tools.sitecheck import own_repo_problem
+
+        assert own_repo_problem(f"{REPO_URL}/blob/main/primer/ml/nope.py") == "no such file: primer/ml/nope.py"
+
+    def test_given_a_link_past_the_end_of_a_file_it_is_reported(self):
+        from primer.curriculum import REPO_URL
+        from tools.sitecheck import own_repo_problem
+
+        assert own_repo_problem(f"{REPO_URL}/blob/main/LICENSE#L5-L999") == "LICENSE has 21 lines, link asks for L5-L999"
+
+    def test_given_an_in_code_line_whose_names_did_not_become_links_it_is_reported(self):
+        from tools.sitecheck import unlinked_code_names
+
+        # pdoc puts the link inside the code element.
+        page = '<p><strong>In code:</strong> <code><a href="#run">run</a></code> and <code>_helper</code> do it.</p>'
+        assert unlinked_code_names(page) == ["_helper"]
+
+
+class TestPagesThatAreNotLessons:
+    def test_given_a_page_that_is_not_a_lesson_its_bar_leads_home_and_to_github(self):
+        from primer.curriculum import REPO_URL
+        from tools.docsite import site_nav
+
+        nav = site_nav("primer/glossary.html")
+        assert 'href="../index.html"' in nav and f'href="{REPO_URL}"' in nav

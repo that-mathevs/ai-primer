@@ -96,6 +96,12 @@ F1 = 2 × 0.75 × 0.60 / 1.35 = 0.667; accuracy = (6 + 88)/100 = 0.94. The
 harmonic mean punishes imbalance: P = 1.0 with R = 0.1 gives F1 = 0.18, not
 the ordinary average of 0.55.
 
+**In code:** `confusion` sorts labels and decisions into a `Confusion`,
+whose `Confusion.precision`, `Confusion.recall`, `Confusion.f1` and
+`Confusion.accuracy` are the four formulas. `fraud_example` rebuilds the
+100 transactions above, and `flag_nothing_trap` builds the model below that
+never flags anything.
+
 **Why it matters in practice: the accuracy trap.** If 1% of transactions are
 fraud, a model that flags *nothing* is 99% accurate and completely useless
 (recall 0). On imbalanced data, never lead with accuracy.
@@ -179,6 +185,11 @@ rate (10% positives), i.e. what flagging at random achieves. On rare-event
 problems this plot tells the truth that ROC's tiny false-positive *rates*
 hide: at 80% recall only about a third of the flags are real.
 
+**In code:** `roc_curve` takes the walk, `roc_auc` measures the area under
+it with `auc_trapezoid`, and `roc_auc_rank` counts correctly ordered pairs
+instead; `Confusion.fpr` is FPR, and `pr_curve` gives the precision-recall
+points.
+
 **Why it matters in practice.** AUC compares models independently of any
 threshold. On heavily imbalanced data, look at the precision-recall curve
 too, because FPR stays tiny even when false alarms swamp the true positives.
@@ -226,6 +237,9 @@ minimum. When a miss costs 10× a false alarm, the best threshold slides left
 (flag more, higher recall); when a false alarm costs 10×, it slides right
 (flag less, higher precision). The model is the same in all three lines;
 only the business decides where to cut.
+
+**In code:** `best_threshold_by_cost` tries every distinct score as t
+(plus "flag nothing") and keeps the cheapest.
 
 ## 4. Retrieval metrics: judging a search result list
 
@@ -298,6 +312,11 @@ only 29%. That gentle logarithmic decay says "position matters, but a good
 result at rank 5 is still worth a lot", which matches how people and
 language models actually use a result list.
 
+**In code:** `recall_at_k` and `precision_at_k` score one ranked list,
+`reciprocal_rank` finds its first hit and `mean_reciprocal_rank` averages
+that over queries; `dcg_at_k` adds the discounted grades and `ndcg_at_k`
+divides by the ideal ordering's DCG.
+
 **Why it matters in practice.** For RAG, recall@k (with k = the number of
 chunks you pass to the model) usually matters most: the model can't use a
 passage that wasn't retrieved, and no prompt fixes that.
@@ -354,6 +373,10 @@ was moved to Friday because the manager is sick"). The correct paraphrase
 scores nearly as high as an exact copy (right). Overlap metrics reward
 wording, not truth.
 
+**In code:** `bleu` clips each n-gram count, takes the geometric mean and
+applies the brevity penalty; `rouge_l` finds the longest common subsequence
+and returns its F1.
+
 **Why it matters in practice.** Teams grade open-ended output with an **LLM
 as a judge**, a model following an explicit rubric, and embedding-based
 scores like BERTScore do somewhat better than overlap. But a judge must earn
@@ -409,6 +432,9 @@ not raw agreement, is the gate, because on a sample that is mostly "pass" a
 lazy judge agrees by accident. Only once the judge clears the bar do you let
 it grade thousands of outputs, and you repeat the check whenever the judge
 model or rubric changes.
+
+**In code:** `cohens_kappa` computes p_o and p_e from two lists of labels
+and returns κ.
 
 **Why it matters in practice.** Kappa above about 0.6 is usually considered
 substantial agreement. Re-check it whenever the judge model or rubric

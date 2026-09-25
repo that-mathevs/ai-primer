@@ -173,6 +173,10 @@ if it's the right answer."
 **With the numbers:** logits (0, ln 3) give softmax (1/4, 3/4); with class 1
 correct, the gradient is (0.25 − 0, 0.75 − 1) = (0.25, −0.25).
 
+**In code:** `log_sum_exp` pulls the largest logit out front, `log_softmax`
+subtracts that total from every logit, and `softmax_cross_entropy` returns
+the batch's mean loss together with its softmax − onehot gradient.
+
 **Why it matters:** this is why every framework fuses softmax and
 cross-entropy into one operation that takes logits
 (`torch.nn.functional.cross_entropy`). Computing softmax first and then the
@@ -222,6 +226,9 @@ token."
 
 **With the numbers:** $\exp\left(\frac{1}{3}(0.69 \times 3)\right) = e^{0.69} = 2.0$.
 
+**In code:** `perplexity` averages `cross_entropy_from_prob` over the tokens
+and raises e to the result.
+
 **Why it matters:** perplexity is the standard training metric for language
 models. It's comparable only between models that use the same tokenizer on
 the same text, and it says nothing direct about whether answers are
@@ -269,6 +276,10 @@ $$
 of the errors ignoring their sign."
 
 **With the numbers:** MSE $= (1+1+1+1+100)/5 = 20.8$; MAE $= (1+1+1+1+10)/5 = 2.8$.
+
+**In code:** `mse` and `mae` are the two averages, and `outlier_share`
+measures how much of each total the single largest error contributes (the
+96% and 71% above).
 
 **Why it matters:** pick the loss whose valley is where you want your
 predictions. MSE chases outliers (its best constant is the mean); MAE
@@ -348,6 +359,11 @@ It's just cross-entropy where the "classes" are the passages in the batch,
 so the gradient is the same softmax − onehot, pushed back through the dot
 products into both sets of vectors.
 
+**In code:** `info_nce` builds the score grid, hands it to
+`softmax_cross_entropy` with the diagonal as the right answers, and returns
+the gradients for both sets of vectors; `info_nce_gradient_check` confirms
+those gradients against small nudges of every number.
+
 **Why it matters:** this is how search and RAG embedding models are trained
 (see `primer.ml.embeddings.contrastive`). Bigger batches mean more free
 negatives. Easy negatives are already far away and contribute almost no
@@ -403,6 +419,9 @@ target."
 **With the numbers:** $(1 - 0.1) \cdot 1 + 0.1/4 = 0.925$ on the right class
 and $0.025$ elsewhere; with logits (50, 0, 0, 0) the three wrong classes each
 have $\ln \text{softmax} \approx -50$, so $\mathcal{L} \approx 3 \times 0.025 \times 50 = 3.75$.
+
+**In code:** `smoothed_targets` builds the soft target t, and
+`smoothed_cross_entropy` scores the logits against it.
 
 **Why it matters:** it curbs over-confidence and often improves calibration
 (how well the model's stated confidence matches how often it's right). It

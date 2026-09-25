@@ -36,6 +36,10 @@ everything instantly; the rate limit bounds how much damage even a
 misbehaving agent can do per minute; the autonomy level decides whether a
 person must approve. Whatever executes is written to the audit log.
 
+**In code:** each gate is one call: `KillSwitch.allowed`, then
+`TokenBucket.allow`, then `AutonomyController.may_act_alone`, and finally
+`AuditLog.append` for whatever executes.
+
 ## Graduated autonomy: shadow mode, approval, then autonomy
 
 **Everyday picture.** The trainee pilot again: call out moves (shadow), fly
@@ -111,6 +115,12 @@ bar. Early on the window is too short to judge (grey region); the marker
 shows where the rolling agreement first clears the bar and the agent is
 promoted to proposing actions for approval.
 
+**In code:** `shadow_agreement` computes agreement overall and per proposed
+action. `AutonomyController` is the state diagram: `AutonomyController.record_shadow`
+and `AutonomyController.record_approval` promote once a full window clears
+the bar, while `AutonomyController.record_incident` and
+`AutonomyController.record_quality` demote at once.
+
 ## Prompts are code
 
 **Everyday picture.** A restaurant's recipe binder where every recipe
@@ -130,6 +140,10 @@ character, gives a completely different one.
 version; `"Be concise and friendly."` gets a new one. Every trace records
 which version produced each model call (`primer.agents.observability`), so
 a behaviour change can be tied to the exact prompt edit that caused it.
+
+**In code:** `PromptRegistry.register` hashes the text into a version name
+and makes it active; `PromptRegistry.rollback` steps back one version;
+`PromptRegistry.active_text` returns the prompt currently in use.
 
 ## Canary releases: try it on a few users first
 
@@ -200,6 +214,12 @@ on the 100 tasks of the 1% step and advances, then falls below the tolerance
 band at 5% and is rolled back to 0%, marked by the red cross. Small steps
 are cheap to get wrong; that's why there are several.
 
+**In code:** `in_canary` hashes a user id into one of 100 buckets.
+`CanaryController.observe` accumulates success counts, and
+`CanaryController.step` applies the rollback rule above: advance, wait for
+more samples, or roll back. `simulate_rollout` drives a whole rollout for the
+figure.
+
 A **feature flag** is the same idea as an on/off switch in configuration:
 it turns a capability on for chosen tenants or users without redeploying,
 and off again just as fast.
@@ -249,6 +269,10 @@ more actions are allowed.
 green dots are allowed actions and red crosses refused ones. The opening
 burst drains the jar, refusals follow, and then actions trickle through at
 the refill rate: bursts are allowed, sustained floods are not.
+
+**In code:** `KillSwitch` holds the global and per-tenant off switches.
+`TokenBucket.level` is the formula for $b(t)$, and `TokenBucket.allow`
+spends a token or refuses.
 
 ## A tamper-evident audit log
 
@@ -303,6 +327,10 @@ the link to the next box, so verification walks the chain and stops at the
 first broken link. In production, also write the log to storage that can't
 be modified afterwards (write-once storage) and link each entry to its full
 trace.
+
+**In code:** `AuditLog.append` stores the previous entry's hash in the new
+entry and seals it with its own; `AuditLog.verify` walks the chain and
+returns the position of the first broken link, or None.
 
 ## Change management: adoption is part of the job
 

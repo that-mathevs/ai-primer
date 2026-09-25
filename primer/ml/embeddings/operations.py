@@ -71,6 +71,11 @@ line, which is what random ranking would score. A model with a *different*
 number of dimensions would at least crash (you can't dot a 128-number vector
 with a 64-number one); a same-size model fails silently, which is worse.
 
+**In code:** `golden_recall` embeds the documents with one model and the
+questions with another and returns hit@k. `VectorIndex` is a flat index tied
+to one model version: `VectorIndex.search` embeds a text query, and
+`VectorIndex.search_vector` takes a vector that is already made.
+
 **Why it matters:** "we upgraded the embedding model and search got weird"
 is a classic incident. The cause is almost always documents and queries
 embedded by different models, typically because only new documents were
@@ -106,6 +111,11 @@ rollback is flipping one pointer, not a multi-hour rebuild.
 The "live alias" is a pointer: the search service asks for "the live
 index", and cutover or rollback just repoints it. Many vector databases
 support aliases for exactly this.
+
+**In code:** each arrow of the diagram is one method: `BlueGreenMigration.start`,
+`BlueGreenMigration.add` (the dual write), `BlueGreenMigration.backfill`,
+`BlueGreenMigration.shadow_compare`, `BlueGreenMigration.cutover` and
+`BlueGreenMigration.rollback`.
 
 **Tiny worked example: what will re-embedding cost?** 50 million documents of
 about 500 tokens each, an embedding throughput of 1 million tokens per second
@@ -143,6 +153,9 @@ documents, ten times the time and money. The money is usually modest; the
 time, the rate limits and the double storage during the migration are what
 need planning.
 
+**In code:** `reembed_estimate` computes the tokens, hours and dollars for
+your own n, t, r and p.
+
 **Why it matters:** re-embedding is routine: new models, fine-tunes,
 chunking changes and bug fixes all require it. Versioned indexes, dual
 writes, a golden-set gate and a rollback path turn it from a risky event
@@ -169,6 +182,9 @@ the right document ranked (1 is best, shorter is better). The general model
 buries three of the four answers; the tuned model puts every one first. The
 one the general model gets right, "sso lockout", is saved by a word it does
 know ("lockout").
+
+**In code:** `rank_of_first_relevant` finds where the right document lands
+for one question under one model: the height of each bar.
 
 ```mermaid
 flowchart LR
@@ -234,6 +250,10 @@ opened the wrong one. Watch the error-code question ("what does ERR-4012
 mean"): its answer ranks only fourth, so it's a retrieval failure until k = 5,
 and even then the top document is the wrong one. Dense vectors blur exact
 identifiers; keyword search would put that page first.
+
+**In code:** `triage` gives the verdict for one answered question, following
+the flowchart above; `triage_golden_set` runs every golden question through
+retrieval and a toy generator that answers from the top document.
 
 **Why it matters:** teams burn weeks tuning prompts for failures that were
 retrieval all along. Triage first, then fix the half that's broken.

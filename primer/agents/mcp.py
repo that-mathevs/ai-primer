@@ -47,6 +47,9 @@ lines is a different number of apps. Direct integrations (solid) fan out
 upward as a product; with MCP (dashed) they grow by addition. The gap is the
 whole business case: build a connector once, use it everywhere.
 
+**In code:** `integrations_needed` returns both counts, $A \times T$ and
+$A + T$, for any number of apps and services.
+
 ## 2. The three roles, and what a server offers
 
 ```mermaid
@@ -75,6 +78,11 @@ A server can offer three kinds of thing:
 | **Tools** | the model (it asks to call them) | `get_ticket(ticket_id)` |
 | **Resources** | the application (reads them into context) | `kb://policies/pto` |
 | **Prompts** | the user (picks a template) | "summarize this ticket" |
+
+**In code:** `MCPServer` is a server: `MCPServer.tool` and
+`MCPServer.resource` register its tools and resources (prompts are left
+out here). `MCPClient` is one client holding one connection, and
+`demo_server` builds the help-desk server with two tools and one resource.
 
 ## 3. The wire format: JSON-RPC 2.0
 
@@ -137,6 +145,12 @@ model can read the message and adapt.
 `method`. `MCPClient` sends one JSON line per message and records the wire.
 `to_anthropic_tools()` renames `inputSchema` to `input_schema` for the
 Messages API. Real projects use the official SDKs (links below).
+
+**In code:** `MCPClient.initialize` is the handshake, and
+`MCPClient.list_tools`, `MCPClient.call_tool` and `MCPClient.read_resource`
+are discovery and use. `MCPServer.handle_line` is the stdio transport, one
+JSON line in and one out. A tool raises `ToolFailure` to send back a normal
+result marked as an error instead of a protocol error.
 
 ## 4. Security: plugging in strangers' tools
 
@@ -207,6 +221,10 @@ sequenceDiagram
 **Reading it:** same request, two outcomes. The only difference is *whose*
 identity reaches the ticket system. Authorization must be decided with the
 end user's identity, at the system that owns the data.
+
+**In code:** `TicketBackend` is the ticket system, checking who may delete.
+`deputy_server` builds the server with a delete tool that acts either as the
+session's user (delegated) or as its own powerful account.
 
 ## In 20 seconds
 - MCP is a standard socket between AI apps (hosts, with one client per server) and tool services (servers).

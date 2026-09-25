@@ -33,6 +33,9 @@ agent version changes. Each run leaves a full trajectory, and graders turn
 it into numbers. The diamond is the release gate: a new version ships only
 if it's at least as good as the current one on the same test.
 
+**In code:** `evaluate` is one lap of this diagram: it runs every golden task
+through `run_task`, grades each run and returns the scorecard.
+
 ## The golden set: a fixed route with known answers
 
 **Everyday picture.** A teacher's answer key, built from past exam papers
@@ -51,6 +54,11 @@ A300 delivered, total 900; refunds above 500 must be escalated to a person):
 
 Start with even 50 cases taken from real traffic, and grow the set by adding
 every production failure you find (see "Closing the loop").
+
+**In code:** `Task` holds one golden case (the prompt, the expected end state,
+required and forbidden tools, a step limit), and `GOLDEN_TASKS` is the table
+above. `Run` holds everything one attempt left behind: answer, tool calls,
+end state, tokens, time and cost.
 
 ## Grade outcomes, not paths
 
@@ -111,6 +119,10 @@ used.
 
 **On a worked example:** a refund needs {lookup_order, refund}; an agent that
 only looked the order up scores |{lookup_order}| / 2 = 0.5.
+
+**In code:** `grade_run` walks the diamonds in the diagram and returns a
+`Grade` with every reason a run failed; `exact_match` is the simplest code
+grader; `tool_selection_accuracy` is the formula above.
 
 ## LLM-as-judge, and checking the judge
 
@@ -183,6 +195,11 @@ human labels. Grey is raw agreement, blue is kappa. The always-pass judge
 looks respectable on agreement (60%) and scores exactly zero on kappa. The
 gap between the bars is the agreement that's just luck.
 
+**In code:** `rubric_judge` asks a judge model to grade an answer against the
+rubric; `cohens_kappa` computes $\kappa$ from two lists of labels;
+`calibrate_judge` reports agreement and kappa and decides whether the judge is
+trusted. `always_pass_judge` is the useless judge from the example.
+
 ## Metrics for retrieval-augmented answers
 
 For RAG (retrieval-augmented generation; see `primer.agents.rag`), measure
@@ -192,6 +209,9 @@ claims are supported by the retrieved sources (computed here with
 `primer.agents.guardrails.groundedness`)? If recall is low, fix search; if
 recall is high but faithfulness is low, fix generation.
 
+**In code:** `recall_at_k` scores the retrieval half; `faithfulness` scores
+the generation half as the share of supported claims.
+
 ## Quality next to cost and speed
 
 Always report cost and latency beside quality: a change that adds 2% success
@@ -200,6 +220,10 @@ but doubles cost may not be worth it. Latency is reported as **p95**, the
 requests beat. Averages hide the slow tail that users notice. The key cost
 number is **cost per successful task** (total cost ÷ number of successes),
 because a cheap run that fails still has to be paid for.
+
+**In code:** `percentile` computes p95 by the sort-and-count rule above;
+`evaluate` puts p95 latency and cost per successful task on the scorecard
+beside the success rate.
 
 ## The release gate: catching regressions
 
@@ -251,6 +275,10 @@ catch a broken rule, because the broken version is often the cheaper one.
 Quality gates come first, and the price of this "saving" is a 900 refund
 per incident that no token bill shows.
 
+**In code:** `run_task` runs either version against a fresh copy of the order
+database; `compare_versions` is the gate: it lists the regressed tasks and
+blocks the release on any regression or success-rate drop.
+
 ## Online evaluation: closing the loop
 
 Offline sets miss what real users do. In production, collect **explicit**
@@ -274,6 +302,10 @@ flowchart LR
 
 **Reading it:** the loop never ends, and that's the point: each lap adds a
 real failure to the test, so the same bug can never ship twice.
+
+**In code:** a `Signal` is one piece of user feedback;
+`implicit_dissatisfaction_rate` is the share of sessions with any unhappy
+signal; `promote_to_golden` turns a confirmed failure into a new `Task`.
 
 ## In 20 seconds
 - An eval is a fixed set of real tasks plus graders; rerun it on every

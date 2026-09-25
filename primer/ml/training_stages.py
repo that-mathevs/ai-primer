@@ -85,6 +85,10 @@ log of the probability the model gave to the token that actually came next.
 0.5, 0.5, so the loss is −(ln 0.25 + ln 0.25 + ln 0.5 + ln 0.5) / 4 =
 (1.386 + 1.386 + 0.693 + 0.693) / 4 = 1.040.
 
+**In code:** `per_position_losses` computes −ln p for every next-token guess
+(with a stable `log_softmax`), and `next_token_loss` averages them into the
+pretraining loss.
+
 **Why it matters in practice.** Pretraining is where knowledge comes from,
 and it is frozen at a date (the "knowledge cutoff"). A base model continues
 text instead of answering questions: ask "What is the capital of France?"
@@ -146,6 +150,10 @@ example, and its height is the penalty −ln p. Grey bars predict prompt
 tokens and are masked out of the SFT loss; blue bars predict reply tokens
 and are the only ones that count. The dashed lines mark the two averages:
 1.040 over everything (pretraining) and 0.693 over the reply (SFT).
+
+**In code:** `response_mask` builds the true/false list of graded
+predictions, and `sft_loss` averages `per_position_losses` over only the
+positions it marks.
 
 **Why it matters in practice.** SFT needs far less data than pretraining
 (thousands to hundreds of thousands of examples) and quality beats quantity:
@@ -213,6 +221,10 @@ probability it gave to the choice people actually made.
 
 **On the worked example:** r(y_w) = 3, r(y_l) = 1, gap 2, σ(2) = 0.881,
 loss −ln 0.881 = 0.127.
+
+**In code:** `sigmoid` squashes a score gap into a probability,
+`preference_probability` applies it to two rewards (the Bradley-Terry
+model), and `reward_model_loss` is minus the log of that probability.
 
 ### 3b. DPO: skip the critic
 
@@ -287,6 +299,11 @@ others and "correct but rambling" beats "rude". As training steps pass
 (x-axis), probability (y-axis) flows to the top answer, the rude answer is
 pushed down fastest, and the rambling answer settles in between: exactly
 the ordering people expressed.
+
+**In code:** `dpo_margin` computes the β-scaled gap between implicit
+rewards, `dpo_loss` turns it into −log σ(margin), and `dpo_update_strength`
+gives the push β × (1 − σ(margin)) plotted in the first figure;
+`train_toy_dpo` trains the three-answer toy policy of the second.
 
 **Why it matters in practice.** DPO is simpler and more stable than RLHF,
 which is why it is widely used in open-model fine-tuning. Constitutional
@@ -368,6 +385,11 @@ the change. Ranks 2 and 4 drive the error to essentially zero. This is the
 LoRA bet: the *change* a fine-tune needs is low-rank even though the
 weights themselves are not.
 
+**In code:** `LoRALinear` holds the frozen W beside the trainable A and B,
+and `LoRALinear.merged_weight` folds the adapter into W for serving.
+`lora_trainable_params` and `full_trainable_params` count the table's
+parameters, and `train_toy_lora` trains the adapters in the figure.
+
 **QLoRA** goes further: it stores the frozen base weights in 4 bits (a
 format called NF4) and trains LoRA adapters in 16-bit on top, which lets a
 65-billion-parameter model be fine-tuned on a single 48 GB GPU.
@@ -407,6 +429,9 @@ they must: prompt first, a LoRA adapter if the prompt can't make the
 behaviour consistent (or the prompt is too long and costly to send every
 time), and a full fine-tune only for a genuine domain shift with lots of
 data.
+
+**In code:** `choose_adaptation` walks this flowchart, cheapest option
+first, and returns the approach it lands on.
 
 **The key line: fine-tuning teaches behaviour; RAG supplies knowledge.**
 Most production systems end up as retrieval plus a well-built prompt.
@@ -477,6 +502,11 @@ temperatures. At T = 1 (left group) the top answer dominates. At T = 2 and
 T = 5 the bars even out and the *ranking* of the wrong answers becomes
 visible to the student. Too high a temperature and everything flattens to
 a uniform guess, so T is tuned (2 to 5 is common).
+
+**In code:** `soft_targets` divides logits by T and applies softmax,
+`kl_divergence` measures how far apart two spreads are, and
+`distillation_loss` combines them with the T² scale and the optional
+cross-entropy on the true label.
 
 **Why it matters in practice.** Distillation is often the biggest cost
 lever in production: a small student trained on a big model's outputs for

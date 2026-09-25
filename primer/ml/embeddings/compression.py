@@ -65,6 +65,9 @@ binary storage for ten million vectors, on a log scale (each gridline is 10×).
 A 3,072-dimension float32 index needs over 120 GB of memory; the same
 vectors as bits fit in under 4 GB.
 
+**In code:** `storage_bytes` computes n × d × b/8 exactly, and
+`hnsw_link_bytes` adds the 2·M neighbour ids an HNSW graph keeps per vector.
+
 **Why it matters:** fast vector indexes like HNSW want every vector in RAM,
 so storage *is* the server bill. Being able to do this sum in your head
 tells you in seconds whether a design fits on one machine.
@@ -142,6 +145,12 @@ about 44%. The star is the two-stage design: search with the first 32
 numbers to shortlist 100 candidates, then re-rank those 100 with the full
 vectors. It finds all of them.
 
+**In code:** `matryoshka_order` rotates vectors onto their principal
+directions, most informative first, and `random_order` is the control.
+`search_truncated` searches with the first m numbers only;
+`search_truncated_then_rescore` shortlists that way, then re-ranks the
+shortlist with the full vectors.
+
 ## Measuring what compression costs: recall@k
 
 $$
@@ -163,6 +172,11 @@ found.
 
 **On an example:** true (1, 2, 3), found (3, 4, 1): two of the three appear,
 so recall@3 = 2/3.
+
+**In code:** `recall_at_k` averages this share over every query. `top_k`
+runs the exact full-precision search that supplies trueₖ, and `make_corpus`
+builds the documents, queries and true neighbours every experiment here
+uses.
 
 ## Scalar quantization: 256 levels per number
 
@@ -207,6 +221,10 @@ this lesson's corpus; the steps show the same numbers after rounding to
 256 levels and decoding. The two are almost indistinguishable: the rounding
 error (the bottom panel) never exceeds half a mark. That's why int8 search
 here still finds about 98% of the true neighbours.
+
+**In code:** `scalar_quantize_int8` turns each number into its code,
+`dequantize_int8` walks back to x̂, and `search_int8` calibrates lo and hi
+on the documents and searches the decoded vectors.
 
 ## Binary quantization: one bit per number
 
@@ -266,6 +284,11 @@ recall@10 against exact float32 search. int8 alone keeps about 98%. Binary
 alone keeps only about half: signs lose a lot. But binary as a *shortlist*,
 re-scored with full vectors, climbs back to about 97%, and 32-dimension
 Matryoshka shortlists to 100%. Crude-then-exact is the pattern to remember.
+
+**In code:** `binary_quantize` keeps each number's sign and packs 8 bits per
+byte, and `hamming_distances` counts differing bits with XOR and a popcount
+table. `search_binary` ranks by bits alone; `search_binary_then_rescore`
+re-ranks the bit-based shortlist with the full float vectors.
 
 **Why it matters:** these knobs move real money. Many vector databases ship
 int8 and binary quantization with re-scoring built in, and embedding

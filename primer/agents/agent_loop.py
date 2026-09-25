@@ -49,6 +49,10 @@ code. The diamond is the only exit, and it has three ways out: the model
 says it's done, a limit trips, or the agent hands the task to a person. An
 agent without that diamond is a loop you can't stop.
 
+**In code:** `run_agent` is this loop, and it returns an `AgentResult`
+holding the final text, the stop cause, every step, the usage and the cost.
+`search_kb` and `get_pto_balance` are the two tools in the example.
+
 ## One round trip, message by message
 
 ```mermaid
@@ -74,6 +78,11 @@ call to the model happens in your loop, which is where every control in
 this file lives: validation, budgets, loop detection, concurrency. Notice
 the model is called twice for one question. Each call re-sends the whole
 history, and that's where the cost comes from.
+
+**In code:** each pass through `run_agent` appends the model's full
+assistant content, runs the requested tools, and appends every result in one
+user message; a `Step` records that one model call and the `ToolExecution`s
+it triggered.
 
 ## The controls, in the order the loop checks them
 
@@ -123,6 +132,11 @@ because a call cut off mid-argument must never execute.
 "It stopped" is not an outcome you can monitor; "it stopped because of
 loop_detected at step 3" is.
 
+**In code:** `AgentConfig` holds every limit (steps, tokens, dollars, the
+loop threshold) and the prices `AgentConfig.cost` uses to turn `primer.agents.llm.Usage` into
+dollars. A tool raises `ToolError` to send the model an actionable error
+result, and `HANDOFF_TOOL_DEF` is the hand-off tool's definition.
+
 ## Parallel tool calls: fan out, fan in
 
 **Everyday picture.** Three errands in three different shops. You can do them
@@ -145,6 +159,10 @@ them at once. Wall-clock time becomes the *slowest* call instead of the
 *sum*. On the way back, all three results go in a single user message. The
 API pairs each result with its request by id, and splitting them teaches the
 model to stop asking for parallel calls.
+
+**In code:** `execute_tools` runs one turn's calls on a thread pool and
+returns their results in the order they were asked for, turning an unknown
+tool name or a raised exception into an error result instead of a crash.
 
 ## Why cost grows quadratically
 
@@ -195,6 +213,9 @@ each with a realistic latency between 0.2 s and 1.2 s. Run one after another,
 the time is the *sum* and climbs with every tool. Run concurrently, it's
 the *max*, which flattens out near the slowest single call. Parallel tool
 calls are among the cheapest latency wins in agent systems.
+
+**In code:** `cumulative_input_tokens` evaluates the formula above, $t$
+times $n(n+1)/2$, for any run length.
 
 ## Running it against a real model
 

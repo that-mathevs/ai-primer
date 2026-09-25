@@ -343,3 +343,4 @@ window.PRIMER_PAPERS = [
   "exists": true
  }
 ];
+window.PRIMER_REPO = "https://github.com/that-mathevs/ai-primer";

@@ -167,6 +167,58 @@ TOOLTIP_ASSETS = """
 """
 
 
+_SOURCE_BUTTON = re.compile(r'(<label class="view-source-button" for="([^"]+)-view-source">.*?</label>)', re.S)
+
+
+def _member_lines(module, ident: str) -> tuple[int, int] | None:
+    """First and last line of `ident` (like "run_chain" or "Tool.call") in the module's own file.
+
+    None when the member is defined in another file, such as a method inherited
+    from the standard library, since a line range in this file would be wrong.
+    """
+    import inspect
+
+    obj = module
+    for part in ident.split("."):
+        obj = getattr(obj, part, None)
+    obj = getattr(obj, "fget", obj)  # a property's lines are its getter's
+    obj = inspect.unwrap(obj) if callable(obj) else obj
+    try:
+        if Path(inspect.getsourcefile(obj) or "").resolve() != Path(module.__file__).resolve():
+            return None
+        lines, first = inspect.getsourcelines(obj)
+    except (TypeError, OSError):
+        return None
+    return first, first + len(lines) - 1
+
+
+def link_members_to_github(page_html: str, module_name: str) -> str:
+    """Put a link to each member's exact lines on GitHub beside pdoc's View Source button.
+
+    Args:
+        page_html: the page pdoc rendered for one module.
+        module_name: that module's dotted name, such as "primer.agents.orchestration".
+    """
+    import importlib
+
+    from primer.curriculum import source_url
+
+    module = importlib.import_module(module_name)
+    source = Path(module.__file__).resolve().relative_to(ROOT).as_posix()
+
+    def add(m: re.Match) -> str:
+        ident = m.group(2)
+        if ident.startswith("mod-"):
+            # The module's own button: its source is the whole file.
+            return m.group(1) + f'<a class="gh-source" href="{source_url(source)}">on GitHub</a>'
+        span = _member_lines(module, ident)
+        if span is None:
+            return m.group(1)
+        return m.group(1) + f'<a class="gh-source" href="{source_url(source, *span)}">on GitHub</a>'
+
+    return _SOURCE_BUTTON.sub(add, page_html)
+
+
 # ---------------------------------------------------------------------------
 # Navigation: generated from primer/curriculum.py and docs/papers/CATALOG.md,
 # so it can never drift from the lessons and papers that actually exist.
@@ -203,7 +255,7 @@ def catalog() -> list[dict]:
 
 def lesson_nav(module: str) -> str:
     """Breadcrumb plus previous/next links for one lesson page."""
-    from primer.curriculum import CURRICULUM, PARTS, neighbours
+    from primer.curriculum import CURRICULUM, PARTS, REPO_URL, neighbours, source_path, source_url, tests_for
 
     page = _page(module)
     index = next(i for i, l in enumerate(CURRICULUM) if l.module == module)
@@ -229,9 +281,28 @@ def lesson_nav(module: str) -> str:
         f'<span class="pn-links"><a href="{home}#lessons">All lessons</a> · '
         f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
         f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
-        f'<a href="{_rel("primer/notation.html", page)}">Notation</a></span></div>'
+        f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
+        f'<a href="{REPO_URL}">GitHub</a></span></div>'
+        f'<div class="pn-code">Code: <a href="{source_url(source_path(module))}">{source_path(module)}</a> · '
+        f'Specified by: <a href="{source_url(tests_for(module))}">{tests_for(module)}</a> · '
+        f"Run: <code>python -m {module}</code></div>"
         f'<div class="pn-steps">{link(before, True)}{link(after, False)}</div>'
         "</div>"
+    )
+
+
+def site_nav(page: str) -> str:
+    """The bar at the top of pages that aren't lessons: glossary, packages, shared code."""
+    from primer.curriculum import REPO_URL
+
+    home = _rel("index.html", page)
+    return (
+        '<div class="primer-nav" role="navigation" aria-label="Site navigation"><div class="pn-crumbs">'
+        f'<a href="{home}">primer</a><span class="pn-links"><a href="{home}#lessons">All lessons</a> · '
+        f'<a href="{_rel("papers/index.html", page)}">Papers</a> · '
+        f'<a href="{_rel("primer/glossary.html", page)}">Glossary</a> · '
+        f'<a href="{_rel("primer/notation.html", page)}">Notation</a> · '
+        f'<a href="{REPO_URL}">GitHub</a></span></div></div>'
     )
 
 
@@ -241,6 +312,9 @@ NAV_CSS = """
 .primer-nav a{text-decoration:none}
 .pn-crumbs{display:flex;flex-wrap:wrap;gap:.25rem .4rem;align-items:baseline;color:#4b5563}
 .pn-links{margin-left:auto}
+.pn-code{color:#4b5563;margin-top:.25rem;font-size:13px}
+.pn-code code{font-size:12px}
+.gh-source{float:right;font-size:.75rem;line-height:1.5rem;padding:0 .6rem}
 .pn-steps{display:flex;justify-content:space-between;gap:1rem;margin-top:.4rem;font-weight:600}
 .pn-next{text-align:right;margin-left:auto}
 .primer-nav.pn-bottom{margin:2.5rem 0 0}
@@ -281,7 +355,9 @@ def render_home() -> str:
         + "</span></li>"
         for p in catalog()
     )
-    return HOME_TEMPLATE.replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
+    from primer.curriculum import REPO_URL
+
+    return HOME_TEMPLATE.replace("{{REPO}}", REPO_URL).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
         "{{COUNT}}", str(len(CURRICULUM))
     )
 
@@ -305,6 +381,8 @@ h2{margin-top:2.5rem;border-bottom:1px solid var(--line);padding-bottom:.3rem}.b
 .tag.soon{background:var(--line);color:var(--muted)}
 details{border:1px solid var(--line);border-radius:.6rem;padding:.6rem .9rem;margin:.5rem 0;background:var(--card)}
 summary{cursor:pointer;font-weight:600}details[open] summary{margin-bottom:.4rem}
+footer{margin-top:3rem;border-top:1px solid var(--line);color:var(--muted)}
+pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padding:.8rem;overflow-x:auto}
 .route{color:var(--muted);font-size:.92rem;margin:.3rem 0}details ol{margin:.3rem 0 .2rem;padding-left:1.3rem}
 </style></head>
 <body><main>
@@ -313,7 +391,8 @@ summary{cursor:pointer;font-weight:600}details[open] summary{margin-bottom:.4rem
 Hover over any underlined term for a plain-English definition.</p></header>
 <nav class="jump" aria-label="Jump to">
 <a href="#big">Big questions</a><a href="#lessons">Lessons</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
-<a href="#papers">Annotated papers</a><a href="primer.html">Browse the code</a></nav>
+<a href="#papers">Annotated papers</a><a href="primer.html">Browse the code</a>
+<a href="{{REPO}}">Source on GitHub</a></nav>
 <section id="big"><h2>Big questions</h2>
 <p class="blurb">The lessons build the field from the bottom up. Start here for the top-down view: open a question to see the
 points a complete answer covers, and the lessons that teach them, in order.</p>{{BIG}}</section>
@@ -321,6 +400,12 @@ points a complete answer covers, and the lessons that teach them, in order.</p>{
 <section id="papers"><h2>The papers behind the lessons</h2>
 <p class="blurb">Annotated, interactive companions: hover over any term or equation symbol. <a href="papers/index.html">All papers</a>.</p>
 <ul class="papers">{{PAPERS}}</ul></section>
+<footer><p>Every lesson is one Python file: the explanation is its docstring, the code follows it, and a test file
+specifies it. Clone it and run any lesson offline with only NumPy:</p>
+<pre><code>git clone {{REPO}}
+cd ai-primer &amp;&amp; python -m pip install -e ".[dev]"
+python -m primer.ml.attention</code></pre>
+<p><a href="{{REPO}}">github.com/that-mathevs/ai-primer</a> · <a href="{{REPO}}/blob/main/LICENSE">MIT license</a></p></footer>
 </main></body></html>
 """
 
@@ -328,7 +413,12 @@ points a complete answer covers, and the lessons that teach them, in order.</p>{
 def catalog_js() -> str:
     import json
 
-    return "window.PRIMER_PAPERS = " + json.dumps(catalog(), ensure_ascii=False, indent=1) + ";\n"
+    from primer.curriculum import REPO_URL
+
+    return (
+        "window.PRIMER_PAPERS = " + json.dumps(catalog(), ensure_ascii=False, indent=1) + ";\n"
+        + f"window.PRIMER_REPO = {json.dumps(REPO_URL)};\n"
+    )
 
 
 def _postprocess(path: Path, terms: dict[str, tuple]) -> None:
@@ -349,6 +439,9 @@ def _postprocess(path: Path, terms: dict[str, tuple]) -> None:
         nav = lesson_nav(module)
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + nav, text, count=1)
         text = text.replace("</main>", nav.replace('class="primer-nav"', 'class="primer-nav pn-bottom"') + "</main>", 1)
+    else:
+        text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + site_nav(page), text, count=1)
+    text = link_members_to_github(text, module)
     text = text.replace("</head>", NAV_CSS + "</head>", 1)
     text = text.replace("</body>", TOOLTIP_ASSETS + "</body>", 1)
     path.write_text(text, encoding="utf-8")

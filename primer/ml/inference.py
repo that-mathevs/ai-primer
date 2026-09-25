@@ -102,6 +102,10 @@ GPU's arithmetic. Batching many users together moves decode to the right,
 because one read of the weights then serves every user in the batch. That is
 the economic reason inference servers batch aggressively.
 
+**In code:** `arithmetic_intensity` computes I, `ridge_point` finds the
+break-even, and `bottleneck` says which side a pass falls on;
+`decode_seconds_per_token` and `prefill_seconds` give the two time bounds.
+
 **Why it matters in practice.** When a system feels slow, ask which phase
 dominates. Slow first token: the prompt is long (trim it, or cache it).
 Slow streaming: decode is memory-bound (quantize, batch, speculate).
@@ -151,6 +155,12 @@ the cost differs.
 `TinyDecoder`. Without a cache the curve bends upward (each step costs more
 than the last); with a cache it is a straight line (each step costs about the
 same). The gap between them is pure waste the cache removes.
+
+**In code:** `TinyDecoder.forward_full` processes a whole sequence (and
+fills a cache during prefill), `TinyDecoder.forward_step` processes one new
+token against the cache from `TinyDecoder.new_cache`, and
+`TinyDecoder.generate` runs either way, returning a `Generation` that holds
+the tokens and the work counted.
 
 **Why it matters in practice.** The cache trades memory for speed, and that
 memory is what limits how many users one GPU can serve. Section 3 does the
@@ -206,6 +216,11 @@ attention, like Llama 3). The dashed line is the 64 GB left on an 80 GB GPU
 after 16 GB of weights. With 32 KV heads a single 128k-token request would
 not fit; with 8 it fits three times over. Doing this arithmetic out
 loud is the fastest way to size a deployment.
+
+**In code:** `weight_bytes` and `kv_cache_bytes_per_token` are the two
+formulas, `kv_cache_bytes` scales the cache to a context and batch, and
+`max_concurrent_requests` counts how many conversations fit beside the
+weights.
 
 ## 4. Sampling: from scores to one token
 
@@ -277,6 +292,11 @@ On a GPU the order of additions can depend on the kernel chosen and on what
 else is in the batch, so two nearly tied tokens can swap places between
 otherwise identical requests.
 
+**In code:** `temperature_probs` applies the formula, `top_k_filter` and
+`top_p_filter` cut the tail, and `sample_next` chains them into one draw.
+`float32_sum` and `greedy_pick_with_summation_order` show a near tie flipping
+with the order of additions.
+
 **Why it matters in practice.** Use low temperature for extraction,
 classification and tool calls; higher for brainstorming and creative text.
 
@@ -339,6 +359,10 @@ big-model pass is a geometric series in the acceptance rate.
 **On the worked example:** α = 0.8, γ = 4: (1 − 0.8⁵)/(1 − 0.8) =
 (1 − 0.328)/0.2 = 3.36.
 
+**In code:** `acceptance_rate` computes α and `expected_tokens_per_round` the
+geometric series; `speculative_round` runs the draft, verify and replace
+loop once, and `speculative_generate` repeats it until enough tokens exist.
+
 ## 6. Quantization: fewer bits per weight
 
 **Everyday picture.** Writing prices to the nearest dollar instead of the
@@ -377,6 +401,10 @@ back at run time.
 
 **On the worked example:** int4: s = 1.27/7 = 0.181; 0.5/0.181 = 2.76 → 3;
 3 × 0.181 = 0.544.
+
+**In code:** `quantize` returns the integer codes and one scale per row,
+`dequantize` multiplies them back, and `quantization_error` measures how far
+the round trip lands from the original weights.
 
 **Why it matters in practice.** 8-bit weights are nearly lossless; 4-bit
 methods with smarter rounding (GPTQ, AWQ) keep most quality at a quarter
@@ -422,6 +450,10 @@ work capacity the server spent serving them.
 **On the worked example:** 7 useful slot-steps; static 7/(5×2) = 0.70,
 continuous 7/(4×2) = 0.875.
 
+**In code:** `simulate_static_batching` and `simulate_continuous_batching`
+play out the two policies step by step, each returning a `ServingRun` that
+holds the slot timeline and its utilisation U.
+
 **Why it matters in practice.** Continuous batching (together with paged
 KV-cache memory, as in vLLM) is a large part of why modern inference servers
 reach high throughput.
@@ -461,6 +493,10 @@ only an unbroken run from the very start. Stable parts go first so that
 every request shares the longest possible prefix; the part that changes on
 every call goes last. A timestamp or request ID placed at the top would
 break the match on the first token and silently disable caching.
+
+**In code:** `reusable_prefix_tokens` counts how many leading tokens two
+prompts share, and `prompt_cache_cost` prices a run of requests with and
+without the cache.
 
 ## In 20 seconds
 - Prefill reads the prompt in parallel (compute-bound, sets time to first

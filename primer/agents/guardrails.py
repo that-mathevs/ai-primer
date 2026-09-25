@@ -39,6 +39,9 @@ output layer, and *actions* going to tools pass the action layer. The action
 layer matters most, because a wrong sentence can be corrected later, while
 a sent email or a payment can't be taken back.
 
+**In code:** `guarded_answer` stacks the output checks (plus a personal-data
+scan) and returns one verdict with every reason it failed.
+
 Why it matters in practice: models make mistakes and can be manipulated.
 Guardrails turn "the model is usually right" into "the system is safe even
 when the model is wrong".
@@ -69,6 +72,10 @@ an *instruction*.
 
 The third email makes the same demand in different words and slips past
 every pattern.
+
+**In code:** `detect_injection` tries each pattern in `INJECTION_PATTERNS`
+and returns an `InjectionFinding` (rule name and matched text) for each one
+that fires.
 
 **Why it matters.** Pattern detectors are smoke alarms: useful for flagging
 and logging suspicious content, useless as the only thing standing between
@@ -147,6 +154,11 @@ sense to the model.
 redact. The regex alone flags all of them. With the Luhn check only about
 10% survive, the checksum's 1-in-10 chance for random digits, while real
 card numbers still pass every time.
+
+**In code:** `luhn_valid` is the checksum above; `find_pii` runs the regexes,
+keeps only Luhn-valid card candidates and returns a `PIIMatch` for each hit;
+`redact_pii` swaps each match for its typed placeholder.
+`luhn_false_positive_rate` measures the 1-in-10 rate in the figure.
 
 **Why it matters.** A filter that redacts every ID makes logs useless, and
 people switch it off. Validation is what makes a PII filter precise enough
@@ -235,6 +247,11 @@ of its content words found in a single source. The dashed line is the 0.6
 threshold. The two claims copied from the PTO policy clear it easily; the
 invented claim about managers scores near zero and is flagged.
 
+**In code:** `policy_violations` returns the name of every text rule an answer
+breaks. `split_claims` cuts an answer into claims, `claim_support` is
+$\text{support}(c)$, and `groundedness` applies the threshold and lists the
+unsupported claims.
+
 **Why it matters.** Word overlap is the cheap first pass, and it can't see a
 claim that reuses the source's words with the meaning flipped ("PTO does
 *not* roll over"). Production systems use an **entailment model** (also
@@ -281,6 +298,11 @@ and ends in one of three outcomes: allow, deny, or ask a person. The order
 encodes priorities. **Least privilege** comes first (an agent only holds the
 tools its job needs, so a tool it was never given is denied outright), then
 irreversibility, then money, then who receives data.
+
+**In code:** `ActionPolicy` holds the rules and the running spend;
+`ActionPolicy.check` walks the diagram and returns a `Decision` (allow, deny
+or needs approval); `ActionPolicy.record` adds an executed action's amount
+to the spend.
 
 **Why it matters.** None of these rules depends on what the model
 *intended*, so an injected instruction and an honest mistake are stopped the
@@ -342,6 +364,12 @@ the blunt version trips it. The red bar shows whether the single agent
 holding both `read_inbox` and `send_email` leaked the invoices: it leaks
 every time. The blue bar is the separated design: no leaks for any phrasing,
 without needing to detect anything.
+
+**In code:** `run_naive_agent` is the single agent from the sequence diagram.
+`run_separated_agent` is the flowchart: `reader_agent` turns each email into
+data matching `EMAIL_SUMMARY_SCHEMA`, and `policy_gate` approves only actions
+the user asked for that `ActionPolicy` allows. `attack_outcomes` runs every
+phrasing against all three defences to draw the figure.
 
 **Why it matters.** The dangerous combination is sometimes called the
 *lethal trifecta*: an agent with access to private data, exposure to
