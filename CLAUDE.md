@@ -191,6 +191,18 @@ Every lesson is diagram-first. Two kinds, both rendered in the HTML site:
 are, where to look first, and what the picture proves. A picture without its
 explanation is unfinished.
 
+**Interactive visualizations** go only where dragging a slider teaches more
+than a static picture, in a handful of lessons. A lesson places
+`<div class="viz" data-viz="NAME" aria-label="..."></div>` after a
+`**Try it:**` paragraph that says what to change and what to watch. Its
+numbers come from the lesson's `viz_data() -> {"NAME": ...}` (plain JSON);
+`docs/assets/viz/NAME.js` calls `Viz.register(NAME, draw)` and builds its
+controls with the helpers in `viz.js` (native inputs, a live readout), so it
+works from the keyboard and with a screen reader. Any arithmetic the widget
+does is exported through `module.exports` and checked against the lesson's
+Python in `tests/test_viz.py`. `make browsercheck` fails a widget that
+doesn't draw, isn't labelled, or overflows a phone.
+
 ## Tests are the spec
 
 Test files mirror modules: `tests/test_<module>.py`,

@@ -15,6 +15,8 @@ frame in headless Chrome, after its scripts have run, then checks:
 4. Every diagram is named, and described by its "Reading it" paragraph.
 5. A focused glossary term is described by its definition, and the
    definition sits right after it, so Tab reaches its "Learn it" link.
+6. Every interactive visualization drew itself, is a named group, and every
+   control in it has a label, so it works from the keyboard and is announced.
 
 Needs Chrome or Chromium. Without one it says so and exits cleanly, since the
 rest of the checks run without a browser.
@@ -70,6 +72,15 @@ function next() {
       const described = svg.getAttribute("aria-describedby");
       if (svg.getAttribute("role") !== "img" || !svg.getAttribute("aria-label")) a11y.push("diagram " + (n + 1) + " has no name");
       else if (!described || !doc.getElementById(described)) a11y.push("diagram " + (n + 1) + " has no description");
+    });
+    doc.querySelectorAll(".viz[data-viz]").forEach((viz) => {
+      const name = viz.dataset.viz;
+      if (!viz.dataset.ready || !viz.children.length) a11y.push("visualization " + name + " did not draw");
+      if (viz.getAttribute("role") !== "group" || !viz.getAttribute("aria-label")) a11y.push("visualization " + name + " is not a named group");
+      viz.querySelectorAll("input, select, button").forEach((control) => {
+        if (!control.labels?.length && !control.getAttribute("aria-label")) a11y.push("visualization " + name + " has an unlabelled " + control.tagName.toLowerCase());
+      });
+      if (!viz.querySelector('[role="status"]')) a11y.push("visualization " + name + " never announces its result");
     });
     const term = doc.querySelector(".gl-term[data-lesson]");
     if (term && doc.getElementById("gl-tip")) {

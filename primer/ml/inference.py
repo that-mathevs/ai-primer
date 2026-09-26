@@ -250,6 +250,13 @@ after 16 GB of weights. With 32 KV heads a single 128k-token request would
 not fit; with 8 it fits three times over. Doing this arithmetic out
 loud is the fastest way to size a deployment.
 
+**Try it:** pick a model shape, then drag the context length and the number
+of requests. The bar is one GPU's memory: the grey part is the weights, the
+coloured part the KV cache. Watch how quickly a long context pushes the cache
+past the weights, and how much further 8 KV heads go than 32.
+
+<div class="viz" data-viz="kv-cache" aria-label="KV cache memory calculator"></div>
+
 **In code:** `weight_bytes` and `kv_cache_bytes_per_token` are the two
 formulas, `kv_cache_bytes` scales the cache to a context and batch, and
 `max_concurrent_requests` counts how many conversations fit beside the
@@ -1150,6 +1157,22 @@ def _cumulative_flops(use_cache: bool, n_new: int = 32) -> list[int]:
 
 def _realistic_lengths(n: int = 32, seed: int = 0) -> list[int]:
     return [int(x) for x in np.random.default_rng(seed).integers(5, 120, n)]
+
+
+def viz_data() -> dict:
+    """The numbers the site's interactive KV-cache calculator starts from."""
+    # Shapes of openly published models; the widget recomputes everything
+    # else with the same formulas as kv_cache_bytes and weight_bytes.
+    return {
+        "kv-cache": {
+            "gpu_bytes": 80e9,
+            "presets": [
+                {"name": "8B, 8 KV heads (Llama 3 8B shape)", "params": 8e9, "layers": 32, "kv_heads": 8, "head_dim": 128},
+                {"name": "7B, 32 KV heads (no grouped-query attention)", "params": 7e9, "layers": 32, "kv_heads": 32, "head_dim": 128},
+                {"name": "70B, 8 KV heads (Llama 3 70B shape)", "params": 70e9, "layers": 80, "kv_heads": 8, "head_dim": 128},
+            ],
+        }
+    }
 
 
 def figures() -> dict:

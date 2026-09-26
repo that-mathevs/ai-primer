@@ -800,6 +800,35 @@ def label_sections(page_html: str) -> str:
     return re.sub(r"<h([56])\b([^>]*)>(.*?)</h\1>", r'<p class="doc-label"\2><strong>\3</strong></p>', page_html, flags=re.S)
 
 
+def add_viz_assets(page_html: str, page: str) -> str:
+    """Load the interactive visualizations a page uses: shared styles, the lessons' data, the helpers, each widget.
+
+    The data and helpers load first (in order, deferred), so every widget script finds them.
+    """
+    names = list(dict.fromkeys(re.findall(r'<div class="viz" data-viz="([a-z0-9-]+)"', page_html)))
+    if not names:
+        return page_html
+    root = _rel("assets/viz", page)
+    scripts = "".join(f'<script defer src="{root}/{f}"></script>' for f in ["data.js", "viz.js", *[f"{n}.js" for n in names]])
+    page_html = page_html.replace("</head>", f'<link rel="stylesheet" href="{root}/viz.css">\n</head>', 1)
+    return page_html.replace("</body>", scripts + "\n</body>", 1)
+
+
+def viz_data_js() -> str:
+    """Every lesson's viz_data(), as the script the widgets read their numbers from."""
+    import importlib
+    import json
+
+    from primer.curriculum import CURRICULUM
+
+    data = {}
+    for lesson in CURRICULUM:
+        module = importlib.import_module(lesson.module)
+        if hasattr(module, "viz_data"):
+            data.update(module.viz_data())
+    return "window.PRIMER_VIZ_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n"
+
+
 def add_theme(page_html: str, page: str) -> str:
     """Load the shared theme at the end of <head>: after pdoc's styles so it wins,
     and before the body so a dark choice never flashes light."""
@@ -1089,6 +1118,7 @@ def _postprocess(path: Path, terms: dict[str, tuple], counts: dict[str, int] | N
     text = skip_forwarded_pages(text, page)
     text = text.replace("</head>", NAV_CSS + "</head>", 1)
     text = add_theme(text, page)
+    text = add_viz_assets(text, page)
     text = text.replace("</body>", TOOLTIP_ASSETS + "</body>", 1)
     path.write_text(text, encoding="utf-8")
 
@@ -1117,6 +1147,9 @@ def build() -> int:
     for sub in ("assets", "figures", "papers"):
         if (ROOT / "docs" / sub).exists():
             shutil.copytree(ROOT / "docs" / sub, SITE / sub)
+    # The widgets' numbers come from the lessons' own code, computed fresh at every build.
+    (SITE / "assets" / "viz").mkdir(parents=True, exist_ok=True)
+    (SITE / "assets" / "viz" / "data.js").write_text(viz_data_js(), encoding="utf-8")
     for name, js in (("glossary.js", glossary_js()), ("catalog.js", catalog_js())):
         for target in (ROOT / "docs" / "papers" / "assets" / name, SITE / "papers" / "assets" / name):
             target.parent.mkdir(parents=True, exist_ok=True)
