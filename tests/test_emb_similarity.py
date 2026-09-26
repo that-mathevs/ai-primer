@@ -1,5 +1,11 @@
 """Specification for primer.ml.embeddings.similarity: how "close" two embeddings are, and what a score means."""
 
+import json
+import re
+import shutil
+import subprocess
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -15,7 +21,11 @@ from primer.ml.embeddings.similarity import (
     pair_cosines,
     popularity_in_the_norm,
     rank,
+    viz_data,
 )
+
+ROOT = Path(__file__).resolve().parent.parent
+NODE = shutil.which("node")
 
 A, B, C = np.array([1.0, 2.0, 2.0]), np.array([2.0, 1.0, 2.0]), np.array([2.0, -1.0, -2.0])
 
@@ -108,3 +118,95 @@ class TestThresholdCalibration:
         guessed = scores >= 0.8
         guessed_f1 = 2 * np.sum(guessed & related) / (guessed.sum() + related.sum())
         assert best_threshold(scores, related)["f1"] > guessed_f1 + 0.05
+
+
+def _node(script: str) -> str:
+    return subprocess.run([NODE, "-e", script], capture_output=True, text=True, check=True, cwd=ROOT).stdout
+
+
+def _widget(expression: str):
+    """Evaluate one expression against the cosine widget's exported arithmetic, in Node."""
+    return json.loads(_node(f"const m = require('./docs/assets/viz/cosine-similarity.js'); console.log(JSON.stringify({expression}));"))
+
+
+# Pairs of 2-D vectors: the worked-example shapes, a scaled copy, right angles, opposites, a zero vector.
+WIDGET_PAIRS = [
+    ([1.0, 2.0], [2.0, 1.0]),
+    ([1.0, 0.0], [0.6, 0.8]),
+    ([0.5, 0.5], [1.5, 1.5]),
+    ([2.0, 0.0], [0.0, 2.0]),
+    ([1.2, -0.7], [-1.2, 0.7]),
+    ([-2.5, 1.1], [0.3, -2.9]),
+]
+ZERO_PAIR = ([0.0, 0.0], [1.0, 2.0])
+
+
+@pytest.mark.skipif(NODE is None, reason="needs Node to run the widget's arithmetic")
+class TestTheCosineWidgetAgreesWithTheLesson:
+    def test_given_pairs_of_arrows_the_widget_computes_the_lessons_dot_products(self):
+        pairs = [*WIDGET_PAIRS, ZERO_PAIR]
+        got = _widget(f"{json.dumps(pairs)}.map(([a, b]) => m.dot(a, b))")
+        assert got == pytest.approx([dot(np.array(a), np.array(b)) for a, b in pairs], abs=1e-12)
+
+    def test_given_pairs_of_arrows_the_widget_computes_the_lessons_cosines(self):
+        got = _widget(f"{json.dumps(WIDGET_PAIRS)}.map(([a, b]) => m.cosine(a, b))")
+        assert got == pytest.approx([cosine(np.array(a), np.array(b)) for a, b in WIDGET_PAIRS], abs=1e-12)
+
+    def test_given_pairs_of_arrows_the_widget_computes_the_lessons_euclidean_distances(self):
+        pairs = [*WIDGET_PAIRS, ZERO_PAIR]
+        got = _widget(f"{json.dumps(pairs)}.map(([a, b]) => m.euclidean(a, b))")
+        assert got == pytest.approx([euclidean(np.array(a), np.array(b)) for a, b in pairs], abs=1e-12)
+
+    def test_given_an_arrow_normalizing_it_in_the_widget_matches_the_lessons_l2_normalize(self):
+        arrows = [a for pair in WIDGET_PAIRS for a in pair]
+        got = _widget(f"{json.dumps(arrows)}.map((a) => m.l2Normalize(a))")
+        assert np.allclose(got, l2_normalize(np.array(arrows)), rtol=0, atol=1e-12)
+
+    def test_given_a_zero_length_arrow_normalizing_it_leaves_it_at_zero_as_the_lesson_does(self):
+        # The lesson's eps guard means an empty vector stays empty instead of becoming NaN.
+        assert _widget("m.l2Normalize([0, 0])") == [0.0, 0.0]
+        assert l2_normalize(np.array([0.0, 0.0])).tolist() == [0.0, 0.0]
+
+    def test_given_an_angle_and_a_length_the_widget_places_the_arrow_tip_by_hand_trigonometry(self):
+        # 90 degrees at length 2 points straight up; 180 degrees at length 0.5 points left.
+        got = _widget("[m.fromPolar(90, 2), m.fromPolar(180, 0.5), m.fromPolar(0, 3)]")
+        assert np.allclose(got, [[0.0, 2.0], [-0.5, 0.0], [3.0, 0.0]], rtol=0, atol=1e-12)
+
+
+class TestTheCosineWidgetPresets:
+    def _preset(self, name):
+        (preset,) = [p for p in viz_data()["cosine-similarity"]["presets"] if p["name"] == name]
+        return preset
+
+    @staticmethod
+    def _arrow(angle, length):
+        return length * np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle))])
+
+    def test_given_the_same_direction_preset_the_cosine_is_one_although_the_lengths_differ(self):
+        p = self._preset("Same direction, different lengths")
+        assert p["a"]["length"] != p["b"]["length"]
+        assert cosine(self._arrow(**p["a"]), self._arrow(**p["b"])) == pytest.approx(1.0)
+
+    def test_given_the_right_angles_preset_the_cosine_is_zero(self):
+        p = self._preset("At right angles")
+        assert cosine(self._arrow(**p["a"]), self._arrow(**p["b"])) == pytest.approx(0.0, abs=1e-12)
+
+    def test_given_the_opposite_preset_the_cosine_is_minus_one(self):
+        p = self._preset("Opposite")
+        assert cosine(self._arrow(**p["a"]), self._arrow(**p["b"])) == pytest.approx(-1.0)
+
+    def test_given_the_visualization_data_it_is_plain_json(self):
+        json.dumps(viz_data())  # raises if anything isn't plain JSON
+
+
+class TestTheLessonPlacesTheCosineWidget:
+    def test_given_the_similarity_lesson_it_places_the_cosine_similarity_widget(self):
+        import primer.ml.embeddings.similarity as lesson
+
+        assert re.search(r'<div class="viz" data-viz="cosine-similarity" aria-label="[^"]+"></div>', lesson.__doc__)
+
+    def test_given_the_cosine_similarity_widget_a_try_it_paragraph_introduces_it(self):
+        import primer.ml.embeddings.similarity as lesson
+
+        before = lesson.__doc__.split('<div class="viz" data-viz="cosine-similarity"')[0]
+        assert "**Try it:**" in before.split("\n\n")[-2]
