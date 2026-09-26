@@ -298,11 +298,20 @@ weights come from random projections here, so the pattern itself means
 nothing; the triangle is what matters. In a trained model, rows light up on
 the tokens that actually help, such as "it" lighting up "animal".
 
+**Try it:** here is the same sentence with hand-picked queries and keys, so
+the pattern does mean something; "it" keeps the worked example's scores for
+"animal", "tired" and "street". Pick the row for "it", then turn the causal
+mask on: "tired" comes later, so its weight drops to exactly 0 and "animal"
+takes a bigger share. Drag the temperature below 1 to watch each row sharpen
+towards one word, and above 1 to watch it flatten towards an even spread.
+
+<div class="viz" data-viz="attention-matrix" aria-label="Attention heatmap for the sentence, with a causal mask and a temperature"></div>
+
 Masking only the future is also what makes generation cheap: a token's
 output never changes when later tokens arrive, so it can be computed once
 and cached. See `primer.ml.inference` for the KV cache.
 
-**In code:** `causal_mask` builds the lower triangle of allowed positions, and `scaled_dot_product_attention` sets every score outside it to −∞ before softmax.
+**In code:** `causal_mask` builds the lower triangle of allowed positions, and `scaled_dot_product_attention` sets every score outside it to −∞ before softmax. `worked_example_sentence` holds the hand-picked queries and keys the heatmap above draws.
 
 ## Why divide by √d_k?
 
@@ -726,6 +735,48 @@ def worked_example_it() -> dict[str, float]:
     """
     w = softmax(IT_EXAMPLE_SCORES)
     return dict(zip(IT_EXAMPLE_TOKENS, w.tolist()))
+
+
+SENTENCE = "The animal didn't cross the street because it was tired".split()
+
+# Hand-picked, not learned, so the pattern means something. The query of "it"
+# and the keys of "animal", "tired" and "street" are the worked example's, so
+# the "it" row still scores them 2.0, 1.0 and 0.5. The other rows are chosen so
+# each word looks for a sensible partner: "cross" for its subject, "street"
+# for the verb it belongs to, "was" for "it". The two "the"s share a key,
+# because without word positions identical words look identical.
+_SENTENCE_QK = {
+    #          query            key
+    "The": ([0, 2, 2, 2], [0, 0, 0, -1]),
+    "animal": ([0, -1, 0, -3], [1, 1, 1, 1]),
+    "didn't": ([0, 0, 3, 0], [0, 0, -1, 0]),
+    "cross": ([2, 0, 0, 2], [0, -1, 2, 0]),
+    "the": ([3, -1, -1, 1], [0, 0, 0, -1]),
+    "street": ([0, -1, 3, 0], [1, 0, 0, 0]),
+    "because": ([0, 0, -3, 0], [-1, 0, 0, 0]),
+    "it": ([1, 1, 1, 1], [0, 1, 0, -1]),
+    "was": ([0, 3, 0, -1], [0, -1, 0, 0]),
+    "tired": ([1, 2, 0, 1], [1, 1, 0, 0]),
+}
+
+
+def worked_example_sentence() -> tuple[np.ndarray, np.ndarray]:
+    """The whole sentence's queries and keys, each (10, 4): one row per word of `SENTENCE`.
+
+    `scaled_dot_product_attention(Q, K, K)` turns them into the 10 × 10
+    attention weights the site's interactive heatmap draws.
+    """
+    Q = np.array([_SENTENCE_QK[w][0] for w in SENTENCE], dtype=float)
+    K = np.array([_SENTENCE_QK[w][1] for w in SENTENCE], dtype=float)
+    return Q, K
+
+
+def viz_data() -> dict:
+    """The numbers the site's interactive attention heatmap starts from."""
+    # Only Q and K: the widget recomputes softmax(QKᵀ / √d_k) itself, and
+    # tests/test_attention.py checks it against scaled_dot_product_attention.
+    Q, K = worked_example_sentence()
+    return {"attention-matrix": {"tokens": SENTENCE, "Q": Q.tolist(), "K": K.tolist()}}
 
 
 def sqrt_dk_experiment(d_ks=(4, 64, 512), n_keys: int = 16, trials: int = 2000, seed: int = 0) -> list[dict]:
