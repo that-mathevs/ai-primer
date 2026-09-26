@@ -212,6 +212,15 @@ larger embedding table and output layer.
 `ByteBPE.decode` make the round trip, and `compression_curve` trains
 tokenizers of growing size and measures each one for the figure above.
 
+**Try it:** the tokenizer below is this lesson's own, with its 144 learned
+merges. Drag the merges down to 0 and every byte is its own token; drag them
+back up and watch frequent pieces such as " the" and " password" fuse, one
+merge at a time, while characters per token climbs like the curve above. Then
+type a word the corpus never saw, or an accent or an emoji, and watch it stay
+in small pieces.
+
+<div class="viz" data-viz="tokenizer" aria-label="Byte-level BPE tokenizer: type text and choose how many merges apply"></div>
+
 **Why it matters.** No "unknown token" failures, ever, for any input. The
 price is that unfamiliar scripts fall back to near-byte level and cost many
 more tokens.
@@ -762,6 +771,21 @@ CONTENT_SAMPLES = {
 def compression_curve(vocab_sizes=(256, 270, 300, 350, 400, 450, 500)) -> list[tuple[int, float]]:
     """(vocab size, characters per token on held-out English) for tokenizers of growing size."""
     return [(v, chars_per_token(ByteBPE().train(TRAINING_TEXT, v), HELD_OUT_ENGLISH)) for v in vocab_sizes]
+
+
+def viz_data() -> dict:
+    """What the site's interactive tokenizer starts from: this lesson's merges and a sentence."""
+    tok = trained_tokenizer()
+    return {
+        "tokenizer": {
+            # Byte pairs in learned order: merge i makes id 256 + i. The widget
+            # rebuilds each token's bytes from these and replays them like
+            # ByteBPE.encode, so the slider's n is "the first n merges".
+            "merges": [list(pair) for pair in tok.merges],
+            # The first held-out sentence: English the merges were not learned from.
+            "example": HELD_OUT_ENGLISH[: HELD_OUT_ENGLISH.index(".") + 1],
+        }
+    }
 
 
 def figures() -> dict:
