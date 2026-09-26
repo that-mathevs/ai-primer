@@ -1,8 +1,15 @@
 """Specification for primer.ml.tokenization: how text becomes the integers a model reads."""
 
+import importlib
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from primer.ml.tokenization import (
+    TRAINING_TEXT,
     ByteBPE,
     encode_char_bpe,
     estimate_cost,
@@ -12,6 +19,9 @@ from primer.ml.tokenization import (
     trained_tokenizer,
     wordpiece_scores,
 )
+
+ROOT = Path(__file__).resolve().parent.parent
+NODE = shutil.which("node")
 
 
 @pytest.fixture(scope="module")
@@ -138,3 +148,69 @@ class TestAgreementWithTiktoken:
         except Exception:
             pytest.skip("cl100k_base not cached locally")
         assert enc.encode(" hello") != enc.encode("hello")
+
+
+def _widget(expression: str) -> object:
+    """Evaluate `expression` in Node with the widget's module as `m` and the lesson's data as `data`."""
+    from primer.ml.tokenization import viz_data
+
+    script = (
+        "const m = require('./docs/assets/viz/tokenizer.js');"
+        f"const data = {json.dumps(viz_data()['tokenizer'])};"
+        f"console.log(JSON.stringify({expression}));"
+    )
+    return json.loads(subprocess.run([NODE, "-e", script], capture_output=True, text=True, check=True, cwd=ROOT).stdout)
+
+
+# Seen and unseen English, contractions, digits, runs of spaces, accents, emoji,
+# another script, whitespace Python and JavaScript disagree about (\x1f, \ufeff),
+# and nothing at all.
+WIDGET_TEXTS = [
+    "The user asked the model to reset the password.",
+    "Reset your password in the portal.",
+    " strawberry",
+    "Zyxwvut qwerty!! It's 12345 o'clock   now \t",
+    "naïve café 🙂",
+    "東京タワー",
+    "\ufeffzero\x1fwidth\x85gap",
+    "",
+]
+
+
+@pytest.mark.skipif(NODE is None, reason="needs Node to run the widget's tokenizer")
+class TestTheTokenizerWidgetAgreesWithTheLesson:
+    @pytest.mark.parametrize("merges", [0, 1, 10, 60, 144])
+    def test_given_the_first_merges_the_widget_splits_text_into_the_pieces_a_tokenizer_trained_that_far_gives(self, merges):
+        # BPE training is greedy, so a tokenizer trained to 256 + n entries knows
+        # exactly the lesson's first n merges: the widget's slider, in Python.
+        expected = [ByteBPE().train(TRAINING_TEXT, 256 + merges).tokens(t) for t in WIDGET_TEXTS]
+        got = _widget(f"{json.dumps(WIDGET_TEXTS)}.map(t => m.tokenize(t, data.merges.slice(0, {merges})))")
+        assert got == expected
+
+    def test_given_no_merges_every_character_of_plain_english_is_its_own_token(self):
+        assert _widget("m.tokenize(' the cat', [])") == [" ", "t", "h", "e", " ", "c", "a", "t"]
+
+    def test_given_every_merge_the_lesson_learns_the_password_is_one_token(self):
+        assert _widget("m.tokenize(' password', data.merges)") == [" password"]
+
+    def test_given_an_emoji_the_widget_counts_characters_per_token_as_the_lesson_does(self):
+        # Two emoji are two characters but eight UTF-8 bytes; JavaScript's .length would say four.
+        assert _widget("m.charsPerToken('🙂🙃', data.merges)") == pytest.approx(2 / 8)
+
+
+class TestTheTokenizerWidgetData:
+    def test_given_the_lesson_its_widget_data_holds_every_learned_merge_in_order(self):
+        from primer.ml.tokenization import viz_data
+
+        merges = viz_data()["tokenizer"]["merges"]
+        # 400 entries = 256 bytes + 144 merges; the first merge glues "h" (104) and "e" (101).
+        assert (len(merges), merges[0]) == (144, [104, 101])
+
+    def test_given_the_lesson_its_widget_data_is_small_plain_json(self):
+        from primer.ml.tokenization import viz_data
+
+        assert len(json.dumps(viz_data())) < 50_000
+
+    def test_given_the_lesson_its_docstring_places_the_tokenizer_widget(self):
+        doc = importlib.import_module("primer.ml.tokenization").__doc__
+        assert '<div class="viz" data-viz="tokenizer" aria-label="' in doc
