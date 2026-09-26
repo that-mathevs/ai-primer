@@ -1,5 +1,7 @@
 # AI Primer
 
+**Modern AI from first principles: every concept explained, implemented and tested.**
+
 This is an effort to explain how modern AI works, from the ground up, in a way that is 
 accessible to anyone with a basic understanding of programming and math. It is not a course, 
 but a reference that you can read in any order, with each lesson building on the previous ones. 
@@ -39,6 +41,22 @@ It covers two things:
 The landmark papers behind each idea come with **annotated interactive
 companions**: hover over any term or equation symbol for a plain-English
 explanation.
+
+## Where to start
+
+That's a lot of lessons, so pick the path that fits you. Numbers are lesson
+numbers; each path skips lessons but never jumps backwards.
+
+<!-- BEGIN paths -->
+| If you are… | You'll learn | Lessons, in order |
+|---|---|---|
+| **Software engineer new to AI** | How a language model works, then how to build on one. | [0](primer/notation.py) → [1](primer/ml/big_picture.py) → [2](primer/ml/neural_net.py) → [5](primer/ml/attention.py) → [7](primer/ml/transformer.py) → [8](primer/ml/tokenization.py) → [16](primer/ml/inference.py) → [27](primer/ml/embeddings/similarity.py) → [31](primer/ml/embeddings/retrieval.py) → [38](primer/agents/llm.py) → [40](primer/agents/agent_loop.py) → [44](primer/agents/rag.py) → [48](primer/agents/evals.py) |
+| **AI application engineer** | Agents, retrieval and tools, and keeping them reliable, safe and affordable. | [17](primer/ml/structured_output.py) → [31](primer/ml/embeddings/retrieval.py) → [38](primer/agents/llm.py) → [39](primer/agents/orchestration.py) → [40](primer/agents/agent_loop.py) → [41](primer/agents/tools.py) → [42](primer/agents/coding_agents.py) → [43](primer/agents/mcp.py) → [44](primer/agents/rag.py) → [45](primer/agents/context.py) → [46](primer/agents/memory.py) → [48](primer/agents/evals.py) → [49](primer/agents/guardrails.py) → [50](primer/agents/cost.py) → [51](primer/agents/observability.py) → [52](primer/agents/deployment.py) → [53](primer/agents/failures.py) |
+| **ML engineer** | The model itself: training, scaling, serving and looking inside. | [0](primer/notation.py) → [2](primer/ml/neural_net.py) → [3](primer/ml/optimizers.py) → [4](primer/ml/deep_nets.py) → [5](primer/ml/attention.py) → [6](primer/ml/positional.py) → [7](primer/ml/transformer.py) → [9](primer/ml/training_stages.py) → [10](primer/ml/pretraining.py) → [11](primer/ml/fine_tuning.py) → [12](primer/ml/reinforcement.py) → [15](primer/ml/hardware.py) → [16](primer/ml/inference.py) → [18](primer/ml/efficient_architectures.py) → [19](primer/ml/losses.py) → [20](primer/ml/metrics.py) → [21](primer/ml/benchmarks.py) → [22](primer/ml/regularization.py) → [25](primer/ml/interpretability.py) |
+| **Engineering manager or architect** | What these systems can do, what they cost, and how they fail. | [1](primer/ml/big_picture.py) → [9](primer/ml/training_stages.py) → [13](primer/ml/reasoning.py) → [14](primer/ml/alignment.py) → [16](primer/ml/inference.py) → [21](primer/ml/benchmarks.py) → [39](primer/agents/orchestration.py) → [44](primer/agents/rag.py) → [48](primer/agents/evals.py) → [50](primer/agents/cost.py) → [52](primer/agents/deployment.py) → [53](primer/agents/failures.py) |
+| **Just explain LLMs to me** | The shortest route to understanding what happens when you send a prompt. | [1](primer/ml/big_picture.py) → [5](primer/ml/attention.py) → [7](primer/ml/transformer.py) → [8](primer/ml/tokenization.py) → [9](primer/ml/training_stages.py) → [13](primer/ml/reasoning.py) → [16](primer/ml/inference.py) |
+| **Curious about images, audio and video** | How models generate pictures and sound, and how they see and hear. | [2](primer/ml/neural_net.py) → [24](primer/ml/cnn_rnn.py) → [28](primer/ml/embeddings/contrastive.py) → [34](primer/ml/generative/autoencoders.py) → [35](primer/ml/generative/gans.py) → [36](primer/ml/generative/diffusion.py) → [37](primer/ml/generative/multimodal.py) |
+<!-- END paths -->
 
 ## Start here
 

@@ -1102,3 +1102,41 @@ class TestTheCatalogReadsItsLessons:
 
         known = {l.module for l in CURRICULUM}
         assert [(p["slug"], m) for p in catalog() for m in p["lessons"] if m not in known] == []
+
+
+class TestLearningPaths:
+    # Paths for different readers, defined once in the curriculum and generated everywhere they appear.
+
+    def test_given_every_learning_path_each_lesson_on_it_exists(self):
+        from primer.curriculum import LEARNING_PATHS
+
+        known = {l.module for l in CURRICULUM}
+        assert [(p.who, m) for p in LEARNING_PATHS for m in p.route if m not in known] == []
+
+    def test_given_every_learning_path_its_lessons_follow_the_reading_order(self):
+        from primer.curriculum import LEARNING_PATHS
+
+        # A path skips lessons but never jumps backwards, so each lesson's prerequisites come first.
+        order = {l.module: i for i, l in enumerate(CURRICULUM)}
+        assert [p.who for p in LEARNING_PATHS if [order[m] for m in p.route] != sorted(order[m] for m in p.route)] == []
+
+    def test_given_the_home_page_it_offers_every_path_near_the_top(self):
+        from primer.curriculum import LEARNING_PATHS
+        from tools.docsite import render_home
+
+        home = render_home()
+        paths = home.index('id="paths"')
+        assert paths < home.index('id="lessons"') and all(p.who in home for p in LEARNING_PATHS)
+
+    def test_given_the_readme_its_learning_paths_are_current(self):
+        from primer.curriculum import learning_paths_table
+
+        readme = (ROOT / "README.md").read_text()
+        block = readme.split("<!-- BEGIN paths -->\n")[1].split("<!-- END paths -->")[0]
+        assert block == learning_paths_table()
+
+    def test_given_the_home_page_and_readme_they_carry_the_subtitle(self):
+        from tools.docsite import render_home
+
+        subtitle = "Modern AI from first principles: every concept explained, implemented and tested."
+        assert subtitle in render_home() and subtitle in (ROOT / "README.md").read_text()

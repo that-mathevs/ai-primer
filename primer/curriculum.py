@@ -272,6 +272,74 @@ def reading_list(package: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Learning paths: a short route through the lessons for each kind of reader.
+# A path skips lessons but never jumps backwards, so prerequisites come first.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LearningPath:
+    who: str  # the reader it's for
+    why: str  # what they get out of it
+    route: tuple[str, ...]  # lesson modules, in reading order
+
+
+_M, _E, _G, _A = "primer.ml.", "primer.ml.embeddings.", "primer.ml.generative.", "primer.agents."
+
+LEARNING_PATHS: list[LearningPath] = [
+    LearningPath(
+        "Software engineer new to AI",
+        "How a language model works, then how to build on one.",
+        ("primer.notation", _M + "big_picture", _M + "neural_net", _M + "attention", _M + "transformer", _M + "tokenization",
+         _M + "inference", _E + "similarity", _E + "retrieval", _A + "llm", _A + "agent_loop", _A + "rag", _A + "evals"),
+    ),
+    LearningPath(
+        "AI application engineer",
+        "Agents, retrieval and tools, and keeping them reliable, safe and affordable.",
+        (_M + "structured_output", _E + "retrieval", _A + "llm", _A + "orchestration", _A + "agent_loop", _A + "tools",
+         _A + "coding_agents", _A + "mcp", _A + "rag", _A + "context", _A + "memory", _A + "evals", _A + "guardrails",
+         _A + "cost", _A + "observability", _A + "deployment", _A + "failures"),
+    ),
+    LearningPath(
+        "ML engineer",
+        "The model itself: training, scaling, serving and looking inside.",
+        ("primer.notation", _M + "neural_net", _M + "optimizers", _M + "deep_nets", _M + "attention", _M + "positional",
+         _M + "transformer", _M + "training_stages", _M + "pretraining", _M + "fine_tuning", _M + "reinforcement",
+         _M + "hardware", _M + "inference", _M + "efficient_architectures", _M + "losses", _M + "metrics",
+         _M + "benchmarks", _M + "regularization", _M + "interpretability"),
+    ),
+    LearningPath(
+        "Engineering manager or architect",
+        "What these systems can do, what they cost, and how they fail.",
+        (_M + "big_picture", _M + "training_stages", _M + "reasoning", _M + "alignment", _M + "inference",
+         _M + "benchmarks", _A + "orchestration", _A + "rag", _A + "evals", _A + "cost", _A + "deployment", _A + "failures"),
+    ),
+    LearningPath(
+        "Just explain LLMs to me",
+        "The shortest route to understanding what happens when you send a prompt.",
+        (_M + "big_picture", _M + "attention", _M + "transformer", _M + "tokenization", _M + "training_stages",
+         _M + "reasoning", _M + "inference"),
+    ),
+    LearningPath(
+        "Curious about images, audio and video",
+        "How models generate pictures and sound, and how they see and hear.",
+        (_M + "neural_net", _M + "cnn_rnn", _E + "contrastive", _G + "autoencoders", _G + "gans", _G + "diffusion",
+         _G + "multimodal"),
+    ),
+]
+
+
+def learning_paths_table() -> str:
+    """The README's learning paths. Regenerate with `make readme`."""
+    number = {l.module: i for i, l in enumerate(CURRICULUM)}
+    rows = ["| If you are… | You'll learn | Lessons, in order |", "|---|---|---|"]
+    for p in LEARNING_PATHS:
+        lessons = " → ".join(f"[{number[m]}]({source_path(m)})" for m in p.route)
+        rows.append(f"| **{p.who}** | {p.why} | {lessons} |")
+    return "\n".join(rows) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Big questions: the macro map. Lessons are organized bottom-up; real
 # conversations about AI systems start top-down with questions like these.
 # Each one lists the lessons that answer it, in order, and the short version:
@@ -642,6 +710,14 @@ if __name__ == "__main__":
     )
     if n != 1:
         sys.exit("README.md needs exactly one <!-- BEGIN big-questions --> ... <!-- END big-questions --> block")
+    new, n = re.subn(
+        r"(<!-- BEGIN paths -->\n).*?(<!-- END paths -->)",
+        lambda m: m.group(1) + learning_paths_table() + m.group(2),
+        new,
+        flags=re.S,
+    )
+    if n != 1:
+        sys.exit("README.md needs exactly one <!-- BEGIN paths --> ... <!-- END paths --> block")
     readme.write_text(new)
     (readme.parent / "docs" / "SELF_TEST.md").write_text(self_test_book())
     (readme.parent / "docs" / "BIG_QUESTIONS.md").write_text(big_questions_page())

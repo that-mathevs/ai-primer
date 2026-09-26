@@ -964,8 +964,17 @@ def render_home(tests: int | None = None) -> str:
     )
     from primer.curriculum import REPO_URL
 
+    from primer.curriculum import LEARNING_PATHS
+
+    number = {l.module: i for i, l in enumerate(CURRICULUM)}
+    paths = "".join(
+        f'<div class="path"><h3>{htmllib.escape(p.who)}</h3><p class="o">{htmllib.escape(p.why)}</p><ol class="steps">'
+        + "".join(f'<li><a href="{_page(m)}"><span class="n">{number[m]}</span>{htmllib.escape(lesson_titles[m])}</a></li>' for m in p.route)
+        + "</ol></div>"
+        for p in LEARNING_PATHS
+    )
     repo = repo_url()
-    return HOME_TEMPLATE.replace("{{EXAMPLE_TESTS}}", code_link("tests/test_attention.py", "index.html")).replace(
+    return HOME_TEMPLATE.replace("{{PATHS}}", paths).replace("{{EXAMPLE_TESTS}}", code_link("tests/test_attention.py", "index.html")).replace(
         "{{EXAMPLE_CODE}}", code_link("primer/ml/attention.py", "index.html")).replace(
         "{{HOME_REPO}}", REPO_URL).replace("{{REPO}}", repo).replace("{{REPO_NAME}}", repo.rsplit("/", 1)[-1]).replace(
         "{{REPO_LABEL}}", repo.split("://", 1)[-1]).replace("{{LICENSE}}", code_link("LICENSE", "index.html")).replace("{{BIG}}", big).replace("{{PARTS}}", parts).replace("{{PAPERS}}", paper_rows).replace(
@@ -979,7 +988,7 @@ HOME_TEMPLATE = """<!doctype html>
 <link rel="stylesheet" href="assets/theme.css"><script src="assets/theme.js"></script>
 <style>
 :root{--bg:var(--p-bg);--fg:var(--p-fg);--muted:var(--p-muted);--line:var(--p-border);--card:var(--p-card);--accent:var(--p-accent)}
-.repo{font-weight:600}.origin{font-size:1.1rem;color:var(--fg)}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
+.repo{font-weight:600}.subtitle{font-size:1.15rem;font-weight:600;margin:.1rem 0 .4rem;color:var(--fg)}.path{border:1px solid var(--line);border-radius:.6rem;padding:.7rem .9rem;margin:.6rem 0;background:var(--card)}.path h3{margin:.1rem 0}.steps{display:flex;flex-wrap:wrap;gap:.3rem .5rem;list-style:none;padding:0;margin:.4rem 0 .1rem}.steps li{margin:0}.steps li+li::before{content:'\\2192';margin-right:.5rem;color:var(--muted)}.steps a{text-decoration:none}.steps .n{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:.25rem}.origin{font-size:1.1rem;color:var(--fg)}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,sans-serif}
 main{max-width:980px;margin:0 auto;padding:2rem 16px 4rem}
 a{color:var(--accent)}header h1{font-size:2.2rem;margin:.2rem 0}header p{color:var(--muted);max-width:44rem}
@@ -998,12 +1007,13 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 .route{color:var(--muted);font-size:.92rem;margin:.3rem 0}details ol{margin:.3rem 0 .2rem;padding-left:1.3rem}
 </style></head>
 <body><main>
-<header><div class="top"><h1>AI Primer</h1><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
-<p class="origin">I made this because the people I work with kept asking me how modern AI works. This is the full answer: every idea built from scratch in plain Python, drawn, and explained until nothing is left as magic.</p>
+<header><div class="top"><div><h1>AI Primer</h1><p class="subtitle">Modern AI from first principles: every concept explained, implemented and tested.</p></div><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
+<p class="origin">I made this because the people I work with kept asking me how modern AI works.</p>
 <p>{{COUNT}} lessons, numbered 0 to {{LAST}}, with every formula decoded symbol by symbol and worked through in Python.
 Hover over any underlined term for a plain-English definition.</p>
-<p>All of it is pinned down by {{TESTS}}: small programs that run the lessons' code and check it does what the
-lessons claim. They were written before the code (test-driven), and each is named as a plain sentence in the
+<p>Every lesson is also an executable specification: don't take its word for how attention, retrieval or tool
+calling works, run it. All of it is pinned down by {{TESTS}}: small programs that run the lessons' code and check it
+does what the lessons claim. They were written before the code (test-driven), and each is named as a plain sentence in the
 form <em>given</em> a situation, <em>then</em> a result (behaviour-driven), such as
 <em>given a causal mask, future tokens receive zero attention</em> (<a href="{{EXAMPLE_TESTS}}">the attention lesson's tests</a>). Read together,
 they are a precise specification of what every lesson teaches: <a href="spec.html">read the specification</a>.</p>
@@ -1014,9 +1024,12 @@ and ends with links to the primary sources. The shared toy data and stand-in emb
 <p>Every map on this site (this page, the reading order, each lesson's previous and next) is generated from one file,
 <a href="primer/curriculum.html"><code>primer.curriculum</code></a>, so none of them can go stale.</p></header>
 <nav class="jump" aria-label="Jump to">
-<a href="#lessons">Lessons</a><a href="#big">Big questions</a><a href="spec.html">Specification</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
+<a href="#paths">Where to start</a><a href="#lessons">Lessons</a><a href="#big">Big questions</a><a href="spec.html">Specification</a><a href="primer/notation.html">Math notation</a><a href="primer/glossary.html">Glossary</a>
 <a href="#papers">Annotated papers</a>
 <a href="{{REPO}}">Code on GitHub</a></nav>
+<section id="paths"><h2>Where to start</h2>
+<p class="blurb">That's a lot of lessons, so pick the path that fits you. Each skips lessons but never jumps backwards.</p>
+{{PATHS}}</section>
 <div id="lessons">{{PARTS}}</div>
 <section id="big"><h2>Big questions</h2>
 <p class="blurb">The lessons build the field from the bottom up. These questions give the top-down view: open one to see the
