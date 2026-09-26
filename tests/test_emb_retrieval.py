@@ -1,5 +1,10 @@
 """Specification for primer.ml.embeddings.retrieval: keyword search, meaning search, and combining them."""
 
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from primer.common.corpus import DOCS
@@ -279,3 +284,120 @@ class TestQueryAndPassagePrefixes:
         engine = SearchEngine(DOCS, embedder=PrefixedEmbedder(), passage_prefix="", query_prefix="query: ")
         # With both prefixes, 11 of 12 questions find their answer (the scenario above).
         assert evaluate(engine.dense, LABELED_QUERIES, k=3)["recall"] < 11 / 12
+
+
+NODE = shutil.which("node")
+ROOT = Path(__file__).resolve().parent.parent
+needs_node = pytest.mark.skipif(NODE is None, reason="needs Node to run the widget's JavaScript")
+
+
+def _widget(expression: str, payload) -> object:
+    """Evaluate `expression` against the rag-pipeline widget's exports, with `payload` as `input`."""
+    script = (
+        "const m = require('./docs/assets/viz/rag-pipeline.js');"
+        "const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+        f"console.log(JSON.stringify({expression}));"
+    )
+    out = subprocess.run([NODE, "-e", script], input=json.dumps(payload), capture_output=True, text=True, check=True, cwd=ROOT)
+    return json.loads(out.stdout)
+
+
+@pytest.fixture(scope="module")
+def widget_data():
+    from primer.ml.embeddings.retrieval import viz_data
+
+    return viz_data()["rag-pipeline"]
+
+
+class TestTheRAGWidgetAgreesWithTheLesson:
+    """The chunking, retrieval and reranking widget: its numbers must be the lesson's own."""
+
+    @needs_node
+    def test_given_several_sizes_and_overlaps_the_widgets_chunker_cuts_exactly_the_lessons_chunks(self):
+        from primer.ml.embeddings.retrieval import HANDBOOK, fixed_size_chunks
+
+        cases = [(HANDBOOK, s, o) for s in (20, 30, 40, 60) for o in (0, 5, 10)]
+        # The 130-word worked example, a text shorter than one chunk, and an empty one.
+        cases += [(" ".join(f"w{i}" for i in range(130)), 50, 10), ("just three words", 20, 5), ("", 10, 0)]
+        js = _widget("input.map(([t, s, o]) => m.fixedSizeChunks(t, s, o))", cases)
+        assert js == [fixed_size_chunks(t, s, o) for t, s, o in cases]
+
+    @needs_node
+    def test_given_each_question_and_chunking_the_widget_marks_exactly_the_chunks_that_hold_the_whole_answer(self, widget_data):
+        from primer.ml.embeddings.retrieval import CHUNKING_QUESTIONS, HANDBOOK, fixed_size_chunks
+
+        cases = [(s, o, a) for s in widget_data["sizes"] for o in widget_data["overlaps"] for _, a in CHUNKING_QUESTIONS]
+        js = _widget("input.cases.map(([s, o, a]) => m.answerChunks(input.text, s, o, a).whole)", {"text": HANDBOOK, "cases": cases})
+        assert js == [[i for i, c in enumerate(fixed_size_chunks(HANDBOOK, s, o)) if a in c] for s, o, a in cases]
+
+    def test_given_each_question_and_chunking_the_widgets_first_stage_order_is_the_lessons_hybrid_search(self, widget_data):
+        from primer.ml.embeddings.retrieval import HANDBOOK, chunk_engine, fixed_size_chunks
+
+        for key, runs in widget_data["runs"].items():
+            engine = chunk_engine(fixed_size_chunks(HANDBOOK, *map(int, key.split("/"))))
+            for q, run in zip(widget_data["questions"], runs):
+                shown = [engine.ids[c] for c, _ in run["retrieval"]]
+                assert shown == engine.hybrid(q["question"], k=len(engine.ids)), (key, q["question"])
+
+    def test_given_each_question_and_chunking_the_widgets_reranker_scores_are_the_lessons_cross_encoder(self, widget_data):
+        from primer.ml.embeddings.retrieval import HANDBOOK, CrossEncoder, chunk_engine, fixed_size_chunks
+
+        judge = CrossEncoder()
+        for key, runs in widget_data["runs"].items():
+            engine = chunk_engine(fixed_size_chunks(HANDBOOK, *map(int, key.split("/"))))
+            for q, run in zip(widget_data["questions"], runs):
+                expected = [judge.score(q["question"], d) for d in engine.docs]
+                assert run["rerank"] == pytest.approx(expected, abs=1e-4), (key, q["question"])
+
+    @needs_node
+    def test_given_every_top_k_the_widgets_reranked_list_is_the_lessons_retrieve_then_rerank(self, widget_data):
+        from primer.ml.embeddings.retrieval import HANDBOOK, chunk_engine, fixed_size_chunks, retrieve_then_rerank
+
+        cases, expected = [], []
+        for key, runs in widget_data["runs"].items():
+            engine = chunk_engine(fixed_size_chunks(HANDBOOK, *map(int, key.split("/"))))
+            for q, run in zip(widget_data["questions"], runs):
+                for k in range(1, widget_data["max_k"] + 1):
+                    cases.append((run, k))
+                    ids = retrieve_then_rerank(engine, q["question"], k=k, shortlist=k)
+                    expected.append([engine.ids.index(i) for i in ids])
+        assert _widget("input.map(([run, k]) => m.rerank(run, k))", cases) == expected
+
+    def test_given_30_word_chunks_without_overlap_no_chunk_holds_the_whole_vpn_answer(self):
+        from primer.ml.embeddings.retrieval import CHUNKING_QUESTIONS, HANDBOOK, fixed_size_chunks
+
+        vpn = next(a for q, a in CHUNKING_QUESTIONS if "VPN" in q)
+        assert not any(vpn in c for c in fixed_size_chunks(HANDBOOK, size=30, overlap=0))
+
+    def test_given_30_word_chunks_with_10_words_of_overlap_one_chunk_holds_the_whole_vpn_answer(self):
+        from primer.ml.embeddings.retrieval import CHUNKING_QUESTIONS, HANDBOOK, fixed_size_chunks
+
+        # The same size as above, but the overlap repeats the sentence's start at the head of the next chunk.
+        vpn = next(a for q, a in CHUNKING_QUESTIONS if "VPN" in q)
+        assert sum(vpn in c for c in fixed_size_chunks(HANDBOOK, size=30, overlap=10)) == 1
+
+    def test_given_the_stipend_amount_question_hybrid_search_ranks_a_chunk_without_the_amount_first(self):
+        from primer.ml.embeddings.retrieval import CHUNKING_QUESTIONS, HANDBOOK, chunk_engine, fixed_size_chunks
+
+        engine = chunk_engine(fixed_size_chunks(HANDBOOK, size=40, overlap=0))
+        question = next(q for q, _ in CHUNKING_QUESTIONS if "stipend" in q)
+        top = engine.hybrid(question, k=1)[0]
+        # The heading chunk repeats "home internet stipend"; the amount sits further on.
+        assert "50 dollars" not in engine.docs[engine.ids.index(top)].text
+
+    def test_when_the_stipend_shortlist_is_reranked_the_chunk_with_the_amount_ranks_first(self):
+        from primer.ml.embeddings.retrieval import CHUNKING_QUESTIONS, HANDBOOK, chunk_engine, fixed_size_chunks, retrieve_then_rerank
+
+        engine = chunk_engine(fixed_size_chunks(HANDBOOK, size=40, overlap=0))
+        question = next(q for q, _ in CHUNKING_QUESTIONS if "stipend" in q)
+        top = retrieve_then_rerank(engine, question, k=5, shortlist=5)[0]
+        assert "50 dollars" in engine.docs[engine.ids.index(top)].text
+
+    def test_given_every_setting_the_widgets_data_stays_small_enough_to_load_with_the_page(self, widget_data):
+        # Every page with a widget loads the whole site's widget data, so each widget's share stays small.
+        assert len(json.dumps(widget_data)) < 50_000
+
+    def test_given_the_retrieval_lesson_it_places_the_rag_pipeline_widget(self):
+        import primer.ml.embeddings.retrieval as lesson
+
+        assert '<div class="viz" data-viz="rag-pipeline" aria-label="' in lesson.__doc__

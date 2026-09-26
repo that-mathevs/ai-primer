@@ -517,6 +517,17 @@ red marker is the "Home internet stipend" heading and the green marker the
 it, one chunk spans both. Notice also that the fixed windows cut straight
 through section boundaries.
 
+**Try it:** the handbook below is cut by `fixed_size_chunks`, then searched
+with hybrid search and reranked with the cross-encoder from section 4. With
+the stipend question and 40-word chunks, retrieval ranks chunk 2 (the
+heading) first, and reranking lifts chunk 3, which holds the amount. Now pick
+the VPN question at 30 words with no overlap: the answer sentence is cut
+across chunks 6 and 7; raise the overlap to 10 words and one chunk holds it
+whole again. Drag top k down to 1 and watch the reranker lose its chance to
+help.
+
+<div class="viz" data-viz="rag-pipeline" aria-label="Chunking, retrieval and reranking explorer"></div>
+
 **Parent-child retrieval.** Small chunks match precisely; big chunks give the
 model enough context. Get both: index small *children* (single sentences),
 and when one matches, hand the model its *parent* (the whole section).
@@ -567,7 +578,8 @@ math.ceil((n - o) / (s - o))  # → 3
 `structure_aware_chunks` cuts at headings and paragraphs and returns `Chunk`
 records that carry their heading and metadata. `best_chunk` picks the chunk
 BM25 ranks highest, and `parent_child_search` matches a sentence and returns
-its whole section.
+its whole section. `chunk_engine` indexes one document's chunks so that
+`retrieve_then_rerank` runs on them, as in the widget above.
 
 **Why it matters:** chunking choices often matter more than the choice of
 embedding model. Split on structure, keep headings with their content, add
@@ -1142,6 +1154,65 @@ def parent_child_search(query: str, text: str) -> str:
         for sentence in re.split(r"(?<=\.)\s+", body.replace("\n", " ")):
             children.append((sentence, parent))
     return dict(children)[best_chunk(query, [s for s, _ in children])]
+
+
+# Questions about the handbook, each with the one sentence that answers it.
+# Chosen so the interactive widget shows both failures: a boundary that cuts
+# the answer sentence in two, and a first-stage ranking the reranker corrects.
+CHUNKING_QUESTIONS: list[tuple[str, str]] = [
+    ("What is the stipend amount in dollars?", "The stipend is 50 dollars per month."),
+    ("Do I need the VPN on shared Wi-Fi?", "Use the VPN on any network you do not control, including home Wi-Fi shared with others."),
+    ("What time are core hours?", "Core hours are 10:00 to 15:00 in your local time zone."),
+    ("Can I get a second monitor?", "A second monitor can be requested for design and engineering roles."),
+]
+
+
+def chunk_engine(chunks: Sequence[str]) -> SearchEngine:
+    """A search engine over one document's chunks, deep enough that every chunk gets a rank.
+
+    Each chunk becomes a titleless `Doc` with id "chunk-<position>", so the
+    whole retrieve-then-rerank pipeline runs on chunks exactly as it runs on
+    articles.
+    """
+    docs = [Doc(f"chunk-{i}", "", c, "", "") for i, c in enumerate(chunks)]
+    return SearchEngine(docs, depth=len(docs))
+
+
+def viz_data() -> dict:
+    """The numbers the site's chunking, retrieval and reranking widget shows.
+
+    The widget cuts the chunks itself (its chunker mirrors
+    `fixed_size_chunks`), but it can't embed text, so for every chunk size,
+    overlap and question the slider can reach, this precomputes the hybrid
+    ranking with its fused scores and the cross-encoder's score for every
+    chunk. The widget reranks any top k from those.
+    """
+    sizes, overlaps = [20, 30, 40, 60], [0, 5, 10]
+    judge = CrossEncoder()
+    runs = {}
+    for size in sizes:
+        for overlap in overlaps:
+            engine = chunk_engine(fixed_size_chunks(HANDBOOK, size, overlap))
+            position = {doc_id: i for i, doc_id in enumerate(engine.ids)}
+            runs[f"{size}/{overlap}"] = [
+                {
+                    # Exactly what engine.hybrid fuses, kept with its scores so the widget can show them.
+                    "retrieval": [[position[d], round(s, 5)] for d, s in reciprocal_rank_fusion(
+                        [engine.bm25(q, engine.depth), engine.dense(q, engine.depth)])],
+                    "rerank": [round(judge.score(q, d), 4) for d in engine.docs],
+                }
+                for q, _ in CHUNKING_QUESTIONS
+            ]
+    return {
+        "rag-pipeline": {
+            "text": HANDBOOK,
+            "sizes": sizes,
+            "overlaps": overlaps,
+            "max_k": 8,
+            "questions": [{"question": q, "answer": a} for q, a in CHUNKING_QUESTIONS],
+            "runs": runs,
+        }
+    }
 
 
 # ---------------------------------------------------------------------------
