@@ -83,6 +83,61 @@ saying whether it is stable. `assemble` admits sections most-important-first wit
 orders the survivors stable-first, and returns an `AssembledContext` listing
 what was kept, what was dropped and what each cost.
 
+### Piece by piece: which turn, which document
+
+**Everyday picture.** The carry-on bag again, now packed with many small
+items. When it's over the limit you take out the least needed item, weigh it
+again, and repeat until the scale says yes. The passport never comes out; if
+the passport alone were too heavy, no amount of unpacking would help.
+
+**Worked example.** A real request holds many turns and many documents, so
+the cut is finer than whole sections. The **must-haves** are the system
+prompt (1,000 tokens), the tool definitions (1,000), the user's message (100)
+and the room reserved for the answer (1,000), because the model writes its
+answer into the same window: 3,100 tokens. On top come three retrieved
+documents of 1,000 tokens (ranked best first) and four turns of 500 (oldest
+first): 8,100 wanted in all.
+
+| Window | Cut, in order | Sent |
+|---|---|---|
+| 10,000 | nothing | 8,100 |
+| 8,000 | the oldest turn | 7,600 |
+| 6,000 | both older turns, then the two lowest-ranked documents | 5,100 |
+| 4,500 | both older turns and all three documents; the last two turns stay | 4,100 |
+| 3,000 | everything that can go, and 3,100 still doesn't fit | too big |
+
+```mermaid
+flowchart LR
+  L[Pieces, most important first:<br/>must-haves, last 2 turns,<br/>documents best first,<br/>older turns newest first] --> C{Total over<br/>the window?}
+  C -->|no| S[Send what's left]
+  C -->|yes| O{Anything left<br/>besides must-haves?}
+  O -->|yes| X[Cut the last piece<br/>on the list] --> C
+  O -->|no| F[Too big: shrink the must-haves<br/>or choose a bigger window]
+```
+
+**Reading it:** the list on the left is the order of importance, the same
+priorities as the figure above (recent turns rank above retrieved facts, old
+turns rank last). The loop cuts from the far end of that list, one piece at
+a time, and checks again. So the oldest turn is always the first to go, then
+the lowest-ranked document, and the last two turns go only after every
+document has. The must-haves never enter the loop: if they alone overflow,
+the answer is a smaller system prompt, fewer tools or a bigger window, not
+a smarter cut.
+
+**Try it:** start at 16,000 tokens and watch the hatched pieces past the
+line: those are the oldest turns being cut. Add retrieved documents or more
+room for the answer, and once every older turn is gone the lowest-ranked
+documents start to go too. Drop the window to 8,000 and raise the answer
+room to see the must-haves alone overflow.
+
+<div class="viz" data-viz="context-budget" aria-label="Context window budget: what fits and what gets cut"></div>
+
+**In code:** `fit_to_window` lists the pieces most-important-first and cuts
+from the end until the rest fits, and `WindowFit` reports which documents and
+turns were kept, the tokens used and whether the request fits at all. In
+practice the cut turns are not simply lost: they are folded into a summary,
+which the next section builds.
+
 **Why it matters.** Without a budget, a long document or a chatty tool result
 silently pushes the instructions or the user's latest message out of the
 window, and the model starts ignoring rules for no visible reason.
@@ -453,6 +508,52 @@ def assemble(sections: list[Section], budget_tokens: int) -> AssembledContext:
     )
 
 
+@dataclass
+class WindowFit:
+    """What `fit_to_window` keeps.
+
+    Attributes:
+        kept_documents: indices of the documents kept, in rank order (0 = best).
+        kept_turns: indices of the turns kept, oldest first.
+        used: tokens the kept pieces take, including the must-haves.
+        fits: False when the must-haves alone are larger than the window.
+    """
+
+    kept_documents: list[int]
+    kept_turns: list[int]
+    used: int
+    fits: bool
+
+
+def fit_to_window(window: int, *, system: int, tools: int, message: int, reserve: int,
+                  documents: list[int], turns: list[int], keep_recent: int = 2) -> WindowFit:
+    """Cut the least important piece, then the next, until the rest fits the window.
+
+    Sizes are in tokens. `documents` are ranked best first; `turns` run oldest
+    first. The order of importance is the one the lesson's priorities encode:
+    the must-haves (system prompt, tool definitions, the user's message and
+    the room reserved for the answer) are never cut, then the last
+    `keep_recent` turns, then documents best first, then older turns newest
+    first. So the oldest turns go first, then the lowest-ranked documents.
+    """
+    must = system + tools + message + reserve
+    t = len(turns)
+    recent = list(range(t - 1, max(t - keep_recent, 0) - 1, -1))
+    older = list(range(max(t - keep_recent, 0) - 1, -1, -1))
+    # Most important first, so cutting from the end removes the least important.
+    pieces = ([("turn", i, turns[i]) for i in recent] + [("doc", i, d) for i, d in enumerate(documents)]
+              + [("turn", i, turns[i]) for i in older])
+    used = must + sum(size for _, _, size in pieces)
+    while used > window and pieces:
+        used -= pieces.pop()[2]
+    return WindowFit(
+        kept_documents=sorted(i for kind, i, _ in pieces if kind == "doc"),
+        kept_turns=sorted(i for kind, i, _ in pieces if kind == "turn"),
+        used=used,
+        fits=used <= window,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 2. Summarizing old turns
 # ---------------------------------------------------------------------------
@@ -679,6 +780,30 @@ def figures() -> dict[str, Any]:
     return figs
 
 
+def viz_data() -> dict:
+    """The sizes the site's interactive context-window widget starts from."""
+    # Round, typical sizes for a small agent, in tokens; the widget applies
+    # fit_to_window's policy to them as the reader moves the sliders.
+    return {
+        "context-budget": {
+            "windows": [8000, 16000, 32000, 128000],
+            "window": 16000,
+            "system": 1500,
+            "tools": 2500,
+            "message": 150,
+            "document": 1200,
+            "documents": 6,
+            "max_documents": 12,
+            "turn": 400,
+            "turns": 20,
+            "max_turns": 40,
+            "reserve": 2000,
+            "max_reserve": 8000,
+            "keep_recent": 2,
+        }
+    }
+
+
 def demo() -> None:
     banner("1. Budgeted assembly: priorities decide what survives")
     for budget in (400, 250):
@@ -688,6 +813,14 @@ def demo() -> None:
     say("""Old turns (priority 5) go first, then retrieved extras. System rules and
         tools are priority 0 and stable, so they're always kept and always
         placed first.""")
+    print()
+    parts = dict(system=1000, tools=1000, message=100, reserve=1000, documents=[1000] * 3, turns=[500] * 4)
+    table(["window", "documents kept", "turns kept", "tokens sent", "fits"],
+          [(w, f.kept_documents, f.kept_turns, f.used, f.fits)
+           for w in (10_000, 8000, 6000, 4500, 3000) for f in [fit_to_window(w, **parts)]])
+    say("""Piece by piece: the oldest turns go first, then the lowest-ranked
+        documents. The must-haves are never cut, so at 3,000 tokens the
+        request can't be sent at all.""")
 
     banner("2. Rolling summarization")
     g = conversation_growth()
