@@ -1,5 +1,11 @@
 """Specification for primer.ml.embeddings.ann: finding nearest vectors without scanning them all."""
 
+import json
+import re
+import shutil
+import subprocess
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -216,3 +222,120 @@ class TestEightPointMap:
         result = tiny_pq_example()
         assert result["approx_score"] == pytest.approx(2.0)
         assert result["exact_score"] == pytest.approx(1.7)
+
+
+class TestTheSmallHNSWMap:
+    """The 60-point graph the lesson's interactive widget steps through."""
+
+    def test_given_60_points_and_m_of_4_the_map_has_layers_of_60_15_3_and_2_nodes(self):
+        from primer.ml.embeddings.ann import small_hnsw_map
+
+        # Few enough to draw and label; roughly a quarter of each layer climbs to the next (1/M with M = 4).
+        index, _, _ = small_hnsw_map()
+        assert index.layer_sizes() == [60, 15, 3, 2]
+
+    def test_given_a_beam_of_one_query_d_stops_short_of_its_true_nearest_point(self):
+        from primer.ml.embeddings.ann import small_hnsw_map
+
+        # Pure greedy search halts at a point with no closer neighbour, which is not the closest point overall.
+        index, _, queries = small_hnsw_map()
+        index.ef_search = 1
+        assert index.search(queries["D"], k=1)[0][0] != int(np.argmax(index.X @ queries["D"]))
+
+    def test_given_a_beam_of_four_query_d_finds_its_true_nearest_point(self):
+        from primer.ml.embeddings.ann import small_hnsw_map
+
+        # Keeping four candidates instead of one lets the search step past the local dead end.
+        index, _, queries = small_hnsw_map()
+        index.ef_search = 4
+        assert index.search(queries["D"], k=1)[0][0] == int(np.argmax(index.X @ queries["D"]))
+
+    def test_given_the_exported_widget_data_it_is_plain_json_under_50_kb(self):
+        from primer.ml.embeddings.ann import viz_data
+
+        # The site ships it on every page load, so it stays small.
+        assert len(json.dumps(viz_data())) < 50_000
+
+
+NODE = shutil.which("node")
+ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="module")
+def widget_runs():
+    """The widget's own JavaScript search, run once for every query and beam width on the exported graph."""
+    from primer.ml.embeddings.ann import viz_data
+
+    data = viz_data()["hnsw-search"]
+    script = (
+        "const m = require('./docs/assets/viz/hnsw-search.js');"
+        f"const d = {json.dumps(data)};"
+        "const out = {};"
+        "d.queries.forEach((q) => d.ef_options.forEach((ef) => {"
+        "  const r = m.hnswSearch(d, q.vector, ef, 1);"
+        "  out[q.name + '/' + ef] = {path: r.events.map((e) => [e.layer, e.node]), found: r.found,"
+        "    ndist: r.ndist, brute: m.bruteForce(d.vectors, q.vector).id};"
+        "}));"
+        "console.log(JSON.stringify(out));"
+    )
+    stdout = subprocess.run([NODE, "-e", script], capture_output=True, text=True, check=True, cwd=ROOT).stdout
+    return data, json.loads(stdout)
+
+
+def _lesson_index_and_exported_queries():
+    """The lesson's own index, and each exported query as the float32 vector the widget reads too."""
+    from primer.ml.embeddings.ann import small_hnsw_map, viz_data
+
+    index, _, _ = small_hnsw_map()
+    queries = {q["name"]: np.array(q["vector"], dtype=np.float32) for q in viz_data()["hnsw-search"]["queries"]}
+    return index, queries
+
+
+@pytest.mark.skipif(NODE is None, reason="needs Node to run the widget's search")
+class TestTheHNSWWidgetAgreesWithTheLesson:
+    """The widget re-runs HNSW search in the browser; it takes exactly the lesson's steps."""
+
+    def test_given_each_query_and_beam_width_the_widget_expands_the_same_nodes_in_the_same_order(self, widget_runs):
+        data, runs = widget_runs
+        index, queries = _lesson_index_and_exported_queries()
+        for name, q in queries.items():
+            for ef in data["ef_options"]:
+                index.ef_search = ef
+                expected = [[layer, node] for layer, node, _ in index.search_trace(q, k=1)]
+                assert runs[f"{name}/{ef}"]["path"] == expected, (name, ef)
+
+    def test_given_each_query_and_beam_width_the_widget_returns_the_lessons_nearest_point(self, widget_runs):
+        data, runs = widget_runs
+        index, queries = _lesson_index_and_exported_queries()
+        for name, q in queries.items():
+            for ef in data["ef_options"]:
+                index.ef_search = ef
+                assert runs[f"{name}/{ef}"]["found"] == index.search(q, k=1)[0].tolist(), (name, ef)
+
+    def test_given_each_query_and_beam_width_the_widget_counts_the_indexs_distance_computations(self, widget_runs):
+        data, runs = widget_runs
+        index, queries = _lesson_index_and_exported_queries()
+        for name, q in queries.items():
+            for ef in data["ef_options"]:
+                index.ef_search, index.ndist = ef, 0
+                index.search(q, k=1)
+                assert runs[f"{name}/{ef}"]["ndist"] == index.ndist, (name, ef)
+
+    def test_given_each_query_the_widgets_brute_force_agrees_with_the_flat_index(self, widget_runs):
+        _, runs = widget_runs
+        index, queries = _lesson_index_and_exported_queries()
+        flat = FlatIndex(3)
+        flat.add(index.X)
+        for name, q in queries.items():
+            assert runs[f"{name}/1"]["brute"] == int(flat.search(q, k=1)[0][0]), name
+
+    def test_given_the_exported_graph_it_is_the_lessons_index_link_for_link(self, widget_runs):
+        data, _ = widget_runs
+        index, _ = _lesson_index_and_exported_queries()
+        assert (data["links"], data["entry"]) == (index.links, index.entry)
+
+    def test_given_the_ann_lesson_it_places_the_hnsw_search_widget_after_a_try_it_paragraph(self):
+        from primer.ml.embeddings import ann
+
+        placed = r'\*\*Try it:\*\*[^<]+<div class="viz" data-viz="hnsw-search" aria-label="[^"]+"></div>'
+        assert re.search(placed, ann.__doc__)

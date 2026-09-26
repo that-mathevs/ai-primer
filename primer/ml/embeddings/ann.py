@@ -455,9 +455,19 @@ the left it covers most of the map in a couple of long hops. By the bottom
 layer it is already next to the star, and it only explores a small
 neighborhood. Out of 300 points, it compared the query with 51, a few dozen.
 
+**Try it:** the map below has 60 points on four layers. Pick a query and
+drag Step: watch the walk cross the map in long hops on the sparse upper
+layers, drop a layer whenever no neighbor is closer, and finish with a short
+local search on the bottom layer. Then choose query D with a beam of 1 (pure
+greedy): it stops at a point with no closer neighbor, yet brute force finds a
+closer one. Widen the beam to 4 and step through again.
+
+<div class="viz" data-viz="hnsw-search" aria-label="HNSW search, step by step, on a 60-point map"></div>
+
 **In code:** `HNSWIndex.search` runs the greedy descent and the bottom-layer
 beam search; `HNSWIndex.search_trace` does the same and returns every node it
-expanded, which is what this figure draws.
+expanded, which is what this figure draws. `small_hnsw_map` builds the
+60-point graph the widget searches, and `viz_data` hands it to the page.
 
 ### How the layers are built
 
@@ -1341,6 +1351,29 @@ def planar_vectors(n: int, width: float = 0.6, seed: int = 0) -> tuple[np.ndarra
     return normalize(np.hstack([xy, np.ones((n, 1))])), xy
 
 
+# Four places to drop a query on the small map, as (x, y). A and B sit where
+# greedy search always succeeds; C and D sit behind a local dead end, where a
+# beam of one stops short and a wider beam gets through.
+HNSW_MAP_QUERIES = {"A": (-0.2, -0.2), "B": (0.2, 0.2), "C": (0.1, -0.1), "D": (-0.1, 0.2)}
+
+
+def small_hnsw_map() -> tuple[HNSWIndex, np.ndarray, dict[str, np.ndarray]]:
+    """A 60-point HNSW graph on the plane, small enough to draw every link.
+
+    Returns (index, xy of each point, {query name: float32 unit vector}).
+    M = 4 keeps each point to a handful of links, so the picture stays
+    legible; this seed happens to give four layers (60, 15, 3 and 2 nodes),
+    so a search takes a real hop on every layer before the bottom.
+    """
+    vectors, xy = planar_vectors(60, seed=0)
+    index = HNSWIndex(3, M=4, ef_construction=20, ef_search=1, seed=7)
+    index.add(vectors)
+    queries = {
+        name: normalize(np.array([[x, y, 1.0]]))[0].astype(np.float32) for name, (x, y) in HNSW_MAP_QUERIES.items()
+    }
+    return index, xy, queries
+
+
 def recall_at_k(found: np.ndarray, truth: np.ndarray) -> float:
     """Fraction of the true top-k that the index returned."""
     return len(set(found.tolist()) & set(truth.tolist())) / max(1, len(truth))
@@ -1364,6 +1397,28 @@ def ground_truth(X: np.ndarray, queries: np.ndarray, k: int = 10) -> list[np.nda
 def storage_estimate(n: int, dim: int, bytes_per_value: int = 4) -> float:
     """Raw vector storage in GB: n · dim · bytes. (10M × 1536 × 4 ≈ 61 GB.)"""
     return n * dim * bytes_per_value / 1e9
+
+
+def viz_data() -> dict:
+    """The graph the site's interactive HNSW widget searches, step by step."""
+    index, xy, queries = small_hnsw_map()
+    # float() of a float32 is exact, so the widget searches the very numbers
+    # the index stores and its sims agree with the lesson's to the last digit
+    # that matters; the (x, y) positions are only for drawing, so they round.
+    return {
+        "hnsw-search": {
+            "points": [[round(float(x), 4), round(float(y), 4)] for x, y in xy],
+            "vectors": [[float(v) for v in row] for row in index.X],
+            "links": index.links,
+            "entry": index.entry,
+            "max_level": index.max_level,
+            "queries": [
+                {"name": name, "xy": list(HNSW_MAP_QUERIES[name]), "vector": [float(v) for v in q]}
+                for name, q in queries.items()
+            ],
+            "ef_options": [1, 2, 4, 8],
+        }
+    }
 
 
 # ---------------------------------------------------------------------------
