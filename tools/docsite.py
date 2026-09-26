@@ -1017,7 +1017,7 @@ HOME_TEMPLATE = """<!doctype html>
 <link rel="stylesheet" href="assets/theme.css"><script src="assets/theme.js"></script>
 <style>
 :root{--bg:var(--p-bg);--fg:var(--p-fg);--muted:var(--p-muted);--line:var(--p-border);--card:var(--p-card);--accent:var(--p-accent)}
-.repo{font-weight:600}.subtitle{font-size:1.15rem;font-weight:600;margin:.1rem 0 .4rem;color:var(--fg)}.path{border:1px solid var(--line);border-radius:.6rem;padding:.7rem .9rem;margin:.6rem 0;background:var(--card)}.path h3{margin:.1rem 0}.steps{display:flex;flex-wrap:wrap;gap:.3rem .5rem;list-style:none;padding:0;margin:.4rem 0 .1rem}.steps li{margin:0}.steps li+li::before{content:'\\2192';margin-right:.5rem;color:var(--muted)}.steps a{text-decoration:none}.steps .n{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:.25rem}.origin{font-size:1.1rem;color:var(--fg)}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
+.repo{font-weight:600}.subtitle{font-size:1.15rem;font-weight:600;margin:.1rem 0 .4rem;color:var(--fg)}.path{border:1px solid var(--line);border-radius:.6rem;padding:.7rem .9rem;margin:.6rem 0;background:var(--card)}.path h3{margin:.1rem 0}.steps{display:flex;flex-wrap:wrap;gap:.3rem .5rem;list-style:none;padding:0;margin:.4rem 0 .1rem}.steps li{margin:0}.steps li+li::before{content:'\\2192';margin-right:.5rem;color:var(--muted)}.steps a{text-decoration:none}.steps .n{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:.25rem}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.top .theme-toggle{margin-top:.9rem}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,sans-serif}
 main{max-width:980px;margin:0 auto;padding:2rem 16px 4rem}
 a{color:var(--accent)}header h1{font-size:2.2rem;margin:.2rem 0}header p{color:var(--muted);max-width:44rem}
@@ -1037,7 +1037,6 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 </style></head>
 <body><main>
 <header><div class="top"><div><h1>AI Primer</h1><p class="subtitle">Modern AI from first principles: every concept explained, implemented and tested.</p></div><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
-<p class="origin">I made this because the people I work with kept asking me how modern AI works.</p>
 <p>{{COUNT}} lessons, numbered 0 to {{LAST}}, with every formula decoded symbol by symbol and worked through in Python.
 Hover over any underlined term for a plain-English definition.</p>
 <p>Every lesson is also an executable specification: don't take its word for how attention, retrieval or tool
