@@ -182,6 +182,15 @@ arrow to length 1. After it, the dot product *is* the cosine, and distance is
 a decreasing function of the cosine. So **once vectors are L2-normalized,
 cosine, dot product and Euclidean distance give the same ranking.**
 
+**Try it:** pick "Same direction, different lengths", then drag B's length.
+The dot product and the distance change, but the cosine stays at 1, because
+it only sees the angle. Drag an angle instead and watch the cosine slide from
+1 through 0 to −1. Then switch on "Normalize to length 1": both arrows shrink
+to the unit circle, the dot product becomes the cosine, and the squared
+distance becomes 2 − 2 × cosine.
+
+<div class="viz" data-viz="cosine-similarity" aria-label="Cosine similarity of two arrows"></div>
+
 ![All 400 random unit-vector pairs fall exactly on the line squared distance = 2 - 2 x cosine, so higher cosine always means smaller distance](figures/primer.ml.embeddings.similarity.identity.svg)
 
 **Reading it:** each dot is one pair of random unit vectors. The horizontal
@@ -742,8 +751,25 @@ def f1_curve(scores: np.ndarray, labels: np.ndarray, thresholds: np.ndarray) -> 
 
 
 # ---------------------------------------------------------------------------
-# 6. Figures (rendered into docs/figures by `make figures`)
+# 6. Figures (rendered into docs/figures by `make figures`) and the widget's data
 # ---------------------------------------------------------------------------
+
+
+def viz_data() -> dict:
+    """The starting arrows for the site's interactive cosine-similarity widget."""
+    # Each arrow is an angle in degrees (0 points right, 90 up) and a length.
+    # The widget recomputes dot, cosine and distance with the same formulas as
+    # dot, cosine and euclidean above; tests check the two agree.
+    return {
+        "cosine-similarity": {
+            "presets": [
+                {"name": "Same direction, different lengths", "a": {"angle": 30, "length": 1.0}, "b": {"angle": 30, "length": 3.0}},
+                {"name": "Close in direction", "a": {"angle": 20, "length": 2.0}, "b": {"angle": 50, "length": 1.5}},
+                {"name": "At right angles", "a": {"angle": 0, "length": 2.0}, "b": {"angle": 90, "length": 2.0}},
+                {"name": "Opposite", "a": {"angle": 30, "length": 1.5}, "b": {"angle": 210, "length": 1.5}},
+            ],
+        }
+    }
 
 
 def figures() -> dict:
