@@ -48,7 +48,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 ## 4. How are large language models trained, and when should I fine-tune instead of using RAG?
 
-**Route:** [Training stages](../primer/ml/training_stages.py) → [Tokenization](../primer/ml/tokenization.py) → [Loss functions](../primer/ml/losses.py) → [Embeddings in production](../primer/ml/embeddings/operations.py) → [Retrieval-augmented generation](../primer/agents/rag.py)
+**Route:** [Training stages](../primer/ml/training_stages.py) → [Fine-tuning in practice](../primer/ml/fine_tuning.py) → [Tokenization](../primer/ml/tokenization.py) → [Loss functions](../primer/ml/losses.py) → [Embeddings in production](../primer/ml/embeddings/operations.py) → [Retrieval-augmented generation](../primer/agents/rag.py)
 
 **In brief:**
 
@@ -61,7 +61,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 ## 5. What makes serving a model fast and affordable?
 
-**Route:** [Inference](../primer/ml/inference.py) → [Attention](../primer/ml/attention.py) → [Cost and latency](../primer/agents/cost.py) → [Context engineering](../primer/agents/context.py)
+**Route:** [The hardware underneath](../primer/ml/hardware.py) → [Inference](../primer/ml/inference.py) → [Long context and efficient architectures](../primer/ml/efficient_architectures.py) → [Attention](../primer/ml/attention.py) → [Cost and latency](../primer/agents/cost.py) → [Context engineering](../primer/agents/context.py)
 
 **In brief:**
 
@@ -115,7 +115,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 ## 9. How do you know if a model or an agent is any good?
 
-**Route:** [Metrics](../primer/ml/metrics.py) → [Loss functions](../primer/ml/losses.py) → [Overfitting and regularization](../primer/ml/regularization.py) → [Evaluation](../primer/agents/evals.py)
+**Route:** [Metrics](../primer/ml/metrics.py) → [Reading benchmarks](../primer/ml/benchmarks.py) → [Loss functions](../primer/ml/losses.py) → [Overfitting and regularization](../primer/ml/regularization.py) → [Evaluation](../primer/agents/evals.py)
 
 **In brief:**
 
@@ -128,7 +128,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 ## 10. When should you build an agent, and how does one work?
 
-**Route:** [Talking to a model](../primer/agents/llm.py) → [Orchestration](../primer/agents/orchestration.py) → [The agent loop](../primer/agents/agent_loop.py) → [Tools](../primer/agents/tools.py) → [Model Context Protocol](../primer/agents/mcp.py) → [Planning](../primer/agents/planning.py)
+**Route:** [Talking to a model](../primer/agents/llm.py) → [Orchestration](../primer/agents/orchestration.py) → [The agent loop](../primer/agents/agent_loop.py) → [Tools](../primer/agents/tools.py) → [Coding and computer-use agents](../primer/agents/coding_agents.py) → [Model Context Protocol](../primer/agents/mcp.py) → [Planning](../primer/agents/planning.py)
 
 **In brief:**
 
@@ -155,7 +155,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 ## 12. How do you make an AI system safe to put in front of real users?
 
-**Route:** [Guardrails](../primer/agents/guardrails.py) → [Tools](../primer/agents/tools.py) → [Safe deployment](../primer/agents/deployment.py) → [Observability](../primer/agents/observability.py)
+**Route:** [Alignment and safety](../primer/ml/alignment.py) → [Guardrails](../primer/agents/guardrails.py) → [Tools](../primer/agents/tools.py) → [Safe deployment](../primer/agents/deployment.py) → [Observability](../primer/agents/observability.py)
 
 **In brief:**
 
@@ -182,7 +182,7 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 
 ## 14. Why do AI systems fail in production, and how do you fix them?
 
-**Route:** [Why the hard ones fail](../primer/agents/failures.py) → [Planning](../primer/agents/planning.py) → [Retrieval-augmented generation](../primer/agents/rag.py) → [Evaluation](../primer/agents/evals.py) → [Observability](../primer/agents/observability.py)
+**Route:** [Why the hard ones fail](../primer/agents/failures.py) → [Structured output](../primer/ml/structured_output.py) → [Planning](../primer/agents/planning.py) → [Retrieval-augmented generation](../primer/agents/rag.py) → [Evaluation](../primer/agents/evals.py) → [Observability](../primer/agents/observability.py)
 
 **In brief:**
 
@@ -191,3 +191,113 @@ Generated from [`primer/curriculum.py`](../primer/curriculum.py) by `make readme
 3. Ambiguous tools, loops and runaway cost: better tool design, budgets, loop detection.
 4. Prompt injection and messy enterprise data: untrusted-content boundaries, permission-aware retrieval, investment in parsing.
 5. No evals and no traces: regressions ship silently; build the loop from production failure to trace to test case to fix.
+
+
+## 15. What does it take to pretrain a large model?
+
+**Route:** [Training stages](../primer/ml/training_stages.py) → [Tokenization](../primer/ml/tokenization.py) → [Pretraining at scale](../primer/ml/pretraining.py) → [Optimizers](../primer/ml/optimizers.py) → [The hardware underneath](../primer/ml/hardware.py)
+
+**In brief:**
+
+1. Most of a web crawl is thrown away: language ID, quality rules and classifiers, and exact and near-duplicate removal.
+2. Sources are mixed by weight, not size; about 20 tokens per parameter is compute-optimal, but models meant for heavy use train far longer.
+3. Adam in mixed precision needs about 16 bytes per parameter before activations, so one GPU can't hold a large model.
+4. Data parallelism shares gradients, ZeRO/FSDP shards the training state, tensor parallelism splits each matrix multiply, and pipeline parallelism splits the layers.
+5. The maths runs in bf16 or fp8 with scaling, while the master weights stay in fp32.
+6. Warmup, gradient clipping, spike rollback and regular checkpoints keep a months-long run alive.
+
+
+## 16. How does a model learn from rewards instead of examples?
+
+**Route:** [Reinforcement learning](../primer/ml/reinforcement.py) → [Training stages](../primer/ml/training_stages.py) → [Reasoning models](../primer/ml/reasoning.py) → [Alignment and safety](../primer/ml/alignment.py)
+
+**In brief:**
+
+1. Reinforcement learning samples an action, scores it, and makes high-scoring actions more likely.
+2. A baseline turns rewards into advantages (better or worse than usual), which cuts noise without bias.
+3. PPO reuses each batch for several steps, clips how far the policy moves, and leashes it to a reference with a KL penalty.
+4. GRPO drops the value network by comparing rewards within a group of answers to the same prompt.
+5. A checker as the reward (the right answer, passing tests) is how reasoning models are trained.
+6. The policy optimises the reward you wrote, not the goal you meant; verifiable rewards, a KL leash and held-out checks defend against that.
+
+
+## 17. How do reasoning models think, and when is extra thinking worth it?
+
+**Route:** [Inference](../primer/ml/inference.py) → [Reinforcement learning](../primer/ml/reinforcement.py) → [Reasoning models](../primer/ml/reasoning.py) → [Planning](../primer/agents/planning.py) → [Cost and latency](../primer/agents/cost.py)
+
+**In brief:**
+
+1. Every written token is another forward pass, so a chain of thought buys serial computation, and the text is the model's working memory.
+2. Test-time compute can go into one longer chain, or into many chains with a vote or a verifier picking one answer.
+3. Voting helps only when the right answer is the most common one and the samples' mistakes are independent.
+4. Checking each step catches errors that checking only the final answer misses.
+5. Training with verifiable rewards makes longer, self-checking reasoning emerge.
+6. Thinking is paid for per token and slips compound over long chains, so route easy tasks to little thinking and measure cost per successful task.
+
+
+## 18. How do models handle very long contexts?
+
+**Route:** [Attention](../primer/ml/attention.py) → [Positional information](../primer/ml/positional.py) → [Inference](../primer/ml/inference.py) → [Long context and efficient architectures](../primer/ml/efficient_architectures.py)
+
+**In brief:**
+
+1. Attention scores every pair of tokens, and the KV cache grows with every token, per layer, per conversation.
+2. Sliding windows and sparse patterns score fewer pairs; stacked layers still carry information far.
+3. Linear attention and state-space models keep a fixed-size summary: linear time and constant memory, but blurrier recall.
+4. Mamba makes the summary selective: each token decides how much to keep and how much to write.
+5. Hybrids keep a few attention layers for exact lookup.
+6. The cache shrinks by sharing key/value heads, caching a small latent, or storing fewer bits.
+
+
+## 19. What is going on inside a trained model, and how can we tell?
+
+**Route:** [The transformer](../primer/ml/transformer.py) → [Word embeddings](../primer/ml/embeddings/word2vec.py) → [Looking inside the model](../primer/ml/interpretability.py) → [Alignment and safety](../primer/ml/alignment.py)
+
+**In brief:**
+
+1. Models store features as directions across many neurons, not one feature per neuron.
+2. Probes and the logit lens read what is present; they show correlation, not use.
+3. Activation patching changes one activation and watches the output: the causal test.
+4. Sparse features get packed in superposition, which makes individual neurons respond to several things.
+5. Sparse autoencoders unpack superposition into interpretable features, at the cost of some unexplained activity.
+6. These tools give evidence, not proof; full explanations exist only for narrow behaviours.
+
+
+## 20. When is a neural network the wrong tool?
+
+**Route:** [Trees and boosting](../primer/ml/classical.py) → [Neural networks](../primer/ml/neural_net.py) → [Overfitting and regularization](../primer/ml/regularization.py) → [Metrics](../primer/ml/metrics.py)
+
+**In brief:**
+
+1. On tables whose columns each mean something alone, gradient-boosted trees or a random forest are the model to beat.
+2. A tree asks one column at a time whether it's above a threshold, so it needs no feature scaling and handles categories natively.
+3. A single deep tree overfits; forests average many decorrelated trees, and boosting adds small trees fit to the remaining errors.
+4. Neural networks win when meaning lives in arrangements of raw values (images, audio, text), when data is huge, or when a pretrained model can be reused.
+5. Trees can't extrapolate beyond the values they trained on, and impurity importances credit noise, so check importances on held-out data.
+
+
+## 21. How do AI models generate images, audio and video?
+
+**Route:** [Autoencoders and VAEs](../primer/ml/generative/autoencoders.py) → [GANs](../primer/ml/generative/gans.py) → [Diffusion and flow matching](../primer/ml/generative/diffusion.py) → [Multimodal models](../primer/ml/generative/multimodal.py)
+
+**In brief:**
+
+1. A generator learns a whole distribution, so it can sample new examples; predicting the average gives blur.
+2. An autoencoder squeezes data into a small code and back; a VAE shapes that code so random codes decode to new data.
+3. A GAN trains a generator against a discriminator: sharp, one-pass samples, but unstable training and mode collapse.
+4. Diffusion adds noise on purpose and learns to remove it, generating from pure noise in many small steps.
+5. Flow matching learns straight paths from noise to data, so it needs fewer steps; guidance trades variety for following the prompt.
+6. Real systems denoise an autoencoder's latent with a transformer that reads the prompt; video and audio are the same idea with more tokens.
+
+
+## 22. How do AI models see images and hear audio?
+
+**Route:** [CNNs and RNNs](../primer/ml/cnn_rnn.py) → [Training embedding models](../primer/ml/embeddings/contrastive.py) → [Multimodal models](../primer/ml/generative/multimodal.py)
+
+**In brief:**
+
+1. Every modality becomes a sequence of vectors a transformer attends over.
+2. Images become patch tokens, (H/P)·(W/P) of them, so cost grows with the square of the resolution.
+3. A small projector connects a vision or audio encoder to a language model; it is trained first, with both models frozen.
+4. Audio becomes a log-mel spectrogram, then about 50 tokens a second.
+5. Video multiplies image tokens by time, so frames are sampled; text stays the densest input.

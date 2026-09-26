@@ -368,7 +368,381 @@ relative preferences among wrong answers, not just its top pick; the T²
 factor keeps gradient sizes comparable.
 
 
-### 10. Inference
+### 10. Pretraining at scale
+
+From [`primer.ml.pretraining`](../primer/ml/pretraining.py).
+
+**Why does a pretraining pipeline run deduplication after the quality
+filters, not before?**
+Language ID and quality rules look at one page at a time, so they are cheap
+per page. Near-duplicate detection compares pages with one another, which is
+the expensive step. Running the cheap filters first means the expensive one
+sees far fewer pages.
+
+**How can MinHash estimate the overlap of two documents without comparing
+their contents?**
+Under a random ordering of all shingles, two sets have the same first
+member with probability equal to their Jaccard similarity. A signature
+records each document's first member under k random hash functions, so the
+fraction of matching slots estimates the Jaccard. LSH then groups
+signatures by bands so only likely pairs are ever compared.
+
+**Why do duplicated documents hurt a model, when more data usually helps?**
+A repeated document gets many times the training signal of any other, so
+the model memorizes it and tends to regurgitate it; the repeats also spend
+compute that would have taught something new, and copies of benchmark
+questions contaminate evaluations.
+
+**Where do the 16 bytes per parameter come from, and what do they mean for
+a 7B model?**
+2 bytes for the bf16 weight, 2 for its gradient, and 12 for fp32 state: the
+master weight and Adam's two running averages. 16 × 7 × 10⁹ = 112 GB, more
+than one 80 GB GPU holds, before any activations.
+
+**What does each ZeRO stage shard, and what does it cost?**
+Stage 1 shards the optimizer state, stage 2 also the gradients, stage 3
+(FSDP) also the weights, dividing each by the number of GPUs. Stages 1 and 2
+cost no more communication than plain data parallelism; stage 3 adds
+all-gathers of each layer's weights in both passes, about 1.5 times the
+traffic.
+
+**Why is tensor parallelism kept inside one server while pipeline
+parallelism spans servers?**
+Tensor parallelism exchanges partial results inside every layer, so it
+needs the fastest links, which exist only between GPUs in the same server.
+Pipeline parallelism only passes activations at stage boundaries, a small
+and infrequent exchange that slower links between servers can carry.
+
+**What is the pipeline bubble, and how do you shrink it?**
+The time stages sit idle while the pipeline fills and drains: (p − 1)/(m +
+p − 1) of the schedule for p stages and m micro-batches. More micro-batches
+shrink it (4 stages: 75% with 1, 8.6% with 32), as do schedules that
+interleave forward and backward passes.
+
+**Why does fp16 training need loss scaling while bf16 usually does not?**
+fp16 has 5 exponent bits, so its smallest value is about 6 × 10⁻⁸ and many
+gradients underflow to zero; multiplying the loss by a large scale lifts
+them into range. bf16 keeps fp32's 8 exponent bits and therefore its range,
+giving up precision instead.
+
+**Why keep an fp32 copy of the weights if the maths runs in 16 bits?**
+Late in training, updates are tiny compared with the weights. Next to 1.0
+the bf16 grid spacing is about 0.008, so an update of 0.0001 rounds away
+completely, every step. Applying updates to an fp32 master copy keeps them.
+
+**How often should a large run write checkpoints?**
+Roughly every √(2·C·M), where C is the time to save and M the mean time
+between failures: saving more often wastes time saving, less often wastes
+work redone after failures. Faster, asynchronous saves allow more frequent
+checkpoints and less waste.
+
+
+### 11. Fine-tuning in practice
+
+From [`primer.ml.fine_tuning`](../primer/ml/fine_tuning.py).
+
+**When is fine-tuning the wrong tool, and what should you try first?**
+When the model lacks facts, or the facts change: retrieval supplies them and
+is easy to update. When a clearer prompt with a few examples fixes the
+behaviour: that is cheaper and survives a base-model upgrade. Fine-tuning
+earns its cost when behaviour stays inconsistent under the best prompt, or
+when a long prompt sent millions of times costs more than the fine-tune.
+
+**Why build the held-out set before training, and why check it against the training set?**
+So that no choice (prompt, learning rate, checkpoint) is made by looking at
+it, and it stays an honest measure. A training example that nearly copies a
+held-out one lets the model recite the answer, turning the eval into a
+memory test; deduplicating across the split prevents it.
+
+**A held-out set has 100 examples and the fine-tune scores 83% against the prompt's 80%. Has it won?**
+Not yet. At 80% on 100 examples the 95% margin is about ±7.8 points, so a
+3-point difference is well inside the noise. You need a larger held-out set
+(400 examples halve the margin) or a bigger difference.
+
+**If 10% of the eval's labels are wrong, what is the best score a perfect model can get?**
+90%, because it is marked wrong on every mislabelled item. A 90%-accurate
+model would score 0.9 × 0.9 + 0.1 × 0.1 = 82%. Noisy labels shrink and blur
+the differences you are trying to measure.
+
+**What is catastrophic forgetting, and why does it happen?**
+Training on a new task alone erodes, or wipes out, skills the model had.
+Every weight is shared between tasks, and only the new task's examples
+produce gradients, so nothing pushes back when a change that helps the new
+task hurts an old one. It grows with how far the weights move and with how
+much the new task conflicts with the old.
+
+**Lowering the learning rate did not stop task A being forgotten. Why not, and what works?**
+Task B contradicts A on the same inputs, so any progress on B costs A;
+a lower rate only walks the same trade-off more slowly. Replay works: mixing
+even 5% of A's examples into B's data gives the model a reason to keep A,
+and those few examples carry most of the loss exactly when A is slipping.
+
+**Training loss keeps falling, but validation loss has risen since epoch 70. What is happening, and which checkpoint do you ship?**
+The model has stopped learning the general rule and is memorising the
+training set, including its mislabelled examples. Ship the checkpoint from
+epoch 70, the best on the held-out set; early stopping automates exactly
+this.
+
+**What is a task vector, and why is averaging two fine-tunes the same as task arithmetic with λ = 1/2?**
+A task vector is everything a fine-tune changed: θ_ft − θ_base. The average
+of two fine-tunes is (θ_base + τ_1 + θ_base + τ_2) / 2 = θ_base + ½(τ_1 + τ_2),
+which is task arithmetic with λ = 1/2, so each skill arrives at half
+strength.
+
+**When does merging fail, and how can you see it coming?**
+When the task vectors change the same weights in opposite directions, so
+adding them cancels both skills. A clearly negative cosine between task
+vectors is the warning; the remedy is joint training or replay, or a
+conflict-resolving merge such as TIES, and a held-out check on every task
+either way.
+
+
+### 12. Reinforcement learning
+
+From [`primer.ml.reinforcement`](../primer/ml/reinforcement.py).
+
+**How does reinforcement learning differ from supervised learning?**
+Supervised learning is given the correct output for every input and
+learns to copy it. Reinforcement learning is given only a score for the
+output it produced, so it must try things, see how they score and shift
+probability towards what scored well. It fits tasks where judging an
+answer is easy but writing the perfect one is not.
+
+**What is the log-probability trick, and why is it needed?**
+The gradient of expected reward, Σ ∇π(a) R(a), can't be computed without
+knowing every action's reward. Rewriting ∇π = π ∇log π turns it into an
+average over actions sampled from the policy, E[R ∇log π(a)], so each
+sampled action and its reward give an unbiased estimate of the gradient.
+
+**Why does subtracting a baseline not change the expected gradient?**
+Because E[b ∇log π(a)] = b ∇ Σ π(a) = b ∇ 1 = 0: probabilities always add to
+1, so the baseline's push averages to nothing. It only removes the noise
+that comes from rewards being large or all the same sign.
+
+**In PPO, what is the probability ratio, and what does clipping it do?**
+The ratio is the current policy's probability of a sampled action divided
+by the probability under the policy that sampled it; it measures how far
+the policy has moved on that sample. Clipping stops counting movement
+beyond 1 ± ε in the direction the advantage favours, so reusing a batch for
+several steps can't push the policy far from where the data came from.
+
+**Why does PPO's objective take the minimum of the clipped and unclipped terms?**
+To stay pessimistic. Gains are capped once the ratio leaves the band, but
+if a step made a bad action more likely, the full penalty still applies, so
+the objective never rewards a harmful move.
+
+**How does GRPO get a baseline without a value network?**
+It samples several answers to the same prompt and uses their mean reward
+as the baseline, dividing by their standard deviation to set the scale.
+Each answer is judged against its siblings, which saves training and
+serving a second model the size of the policy.
+
+**What happens in GRPO when every answer in a group gets the same reward?**
+Every advantage is zero, so that prompt contributes no gradient. Prompts
+that are always solved or never solved teach nothing; learning comes from
+prompts at the edge of the model's ability.
+
+**What is reward hacking, and why does a KL penalty help against it?**
+Reward hacking is the policy maximising the reward as written while the
+real goal gets worse, usually by finding inputs where a learned reward
+model is wrong. The KL penalty charges the policy for drifting from the
+reference model, which keeps it near the kind of outputs the reward model
+was trained on, where the reward is still trustworthy.
+
+**Why are verifiable rewards attractive for training reasoning?**
+A program that checks the final answer (or runs the tests) has no learned
+blind spots to exploit and costs nothing to label, so RL can run for a long
+time against it without the reward drifting away from correctness.
+
+
+### 13. Reasoning models
+
+From [`primer.ml.reasoning`](../primer/ml/reasoning.py).
+
+**How can writing its reasoning out make a model more accurate, when its
+weights don't change?**
+Each token is one forward pass with a fixed amount of serial computation.
+A problem that needs more sequential steps than one pass can do can't be
+solved in a single token. Writing intermediate results spreads the work over
+many passes, and the written text carries each result to the next pass: it
+is the model's working memory.
+
+**What is test-time compute, and what are the two basic ways to spend it?**
+Computation spent while answering rather than while training. Think longer
+(one chain with a bigger thinking budget, which costs time and money) or
+think wider (many chains in parallel, then vote or verify, which costs money
+but no extra waiting when run side by side).
+
+**Why does majority voting over samples help, and when does it stop
+helping?**
+If each sample is independently right more often than any single wrong
+answer appears, the right answer becomes the biggest pile as samples grow.
+It stops helping when samples share the same mistakes (they are one opinion
+repeated), when the model is usually wrong in one consistent way, or when
+answers can't be compared exactly.
+
+**What is the difference between an outcome reward model and a process
+reward model?**
+An outcome reward model scores only the final answer, so it can't tell a
+lucky answer from a sound one and can't say where a wrong chain went wrong.
+A process reward model scores each step, catching errors that cancel out and
+pointing at the first bad step.
+
+**What is pass@n, and why is it a ceiling for best-of-n?**
+The chance that at least one of n samples is right, 1 − (1 − p)ⁿ. A
+best-of-n picker can only choose among the samples it has, so even a
+perfect verifier can't do better than "some sample was right".
+
+**How does reinforcement learning with verifiable rewards teach a model to
+reason, if nobody grades the reasoning?**
+Each problem gets a group of sampled attempts, each rewarded 1 or 0 by a
+program that checks the final answer. Attempts better than their group's
+average are made more likely, worse ones less likely. Whatever the right
+attempts had in common, including longer chains and rechecking, is
+reinforced. A group where every attempt scores the same teaches nothing, so
+the useful problems are ones the model solves only sometimes.
+
+**Why do reasoning models sometimes spend thousands of tokens on easy
+questions, and what reins that in?**
+A reward for correctness alone never says stop: any extra length that helps
+slightly is reinforced. A per-token penalty in training, a thinking budget
+at answer time, and routing easy tasks to little or no thinking all rein it
+in. The exact shape of the reward matters: dividing by the group's spread,
+as GRPO does, can magnify a tiny length penalty.
+
+**Is a model's chain of thought an accurate account of why it answered?**
+Not necessarily. Experiments that plant a hidden bias in a prompt show
+answers following the bias while the written reasoning never mentions it.
+The chain is useful evidence and often helpful, but it is not a guaranteed
+record of the computation.
+
+
+### 14. Alignment and safety
+
+From [`primer.ml.alignment`](../primer/ml/alignment.py).
+
+**What does Goodhart's law have to do with training a model on a reward
+model?**
+The reward model is a measurement of what we want, not the thing itself.
+Tuning a model hard against it finds the places where the measurement and
+the goal disagree, so the score keeps rising while real quality stalls or
+falls. Drift penalties, early stopping and refreshed reward models are the
+standard ways to limit it.
+
+**In Constitutional AI, what do the written principles replace, and what do
+they not replace?**
+They replace most of the human preference labels: a model applies the
+principles to critique, revise and compare answers, and those AI labels
+train the reward model. They do not replace human judgement about which
+principles to write, or human spot-checks of the AI labels, since the
+labeler's mistakes are learned just as faithfully as its good calls.
+
+**Why is a tie between two candidates dropped instead of labelled?**
+A tie says neither answer is better, so it gives the reward model no
+direction to learn. Labelling it either way would teach a preference that
+doesn't exist, which is noise.
+
+**A safety filter passes every test its authors wrote. Why is that weak
+evidence?**
+The tests share the authors' blind spots: they probe the cases the authors
+already guarded against. An automated search that varies inputs without
+those assumptions finds failures the hand-written tests cannot, and gives
+an attack success rate that means something.
+
+**After patching a filter with what red-teaming found, how should the patch
+be judged?**
+By searching again with fresh randomness (or new red-teamers), not by
+re-running the attempts the patch was built from. Those will pass by
+construction, the same way a model scores well on its own training data.
+
+**How do you measure sycophancy, and why use questions with known
+answers?**
+Ask the same question plainly and after the user asserts a wrong answer,
+and count how often the answer changes. Known answers let you tell a
+sycophantic flip (towards the wrong claim) apart from a legitimate
+correction.
+
+**How can preference training make a model more sycophantic?**
+If raters give a small bonus to answers that agree with them, then by the
+Bradley-Terry model an agreeing but wrong answer beats a correct one
+whenever the bonus exceeds the quality gap. The reward model learns that
+bonus and preference tuning amplifies it.
+
+**Why can't a threshold fix both harmful compliance and over-refusal?**
+Moving the threshold only moves requests from "answer" to "refuse" or back;
+every request that stops being one error risks becoming the other. Only a
+classifier that separates the two kinds of request better moves both rates
+down together.
+
+**Why set release limits before measuring?**
+Limits chosen after seeing the results tend to be set wherever the results
+landed, which makes the gate a formality. Fixed limits turn noisy
+measurements into a decision made in advance.
+
+
+### 15. The hardware underneath
+
+From [`primer.ml.hardware`](../primer/ml/hardware.py).
+
+**Why are GPUs, rather than CPUs, used to train and run neural networks?**
+Nearly all of a network's work is matrix multiplication, where every output
+cell is an independent dot product. A GPU spends its silicon on thousands
+of simple arithmetic units (plus matrix units) that apply the same
+instruction to different numbers, so it can compute thousands of cells at
+once. A CPU spends its silicon on a few flexible cores that are better at
+branchy, sequential code.
+
+**How many FLOPs does multiplying a 1,000 × 2,000 matrix by a 2,000 × 500 matrix take, and why that formula?**
+2 × 1,000 × 500 × 2,000 = 2 × 10⁹. There are m·n = 500,000 output cells,
+each a dot product of length k = 2,000, and each step of a dot product is
+one multiply and one add.
+
+**The chip can do 10¹⁵ FLOPs per second but a model runs far slower. What is usually the bottleneck, and how do you tell?**
+Memory bandwidth. Compare the work's arithmetic intensity (FLOPs per byte
+moved from HBM) with the chip's break-even ratio, peak FLOPs divided by
+bandwidth (about 299 here). Below it, the arithmetic units wait on memory;
+generating one token for one user has an intensity near 1, so it is
+deeply memory-bound.
+
+**How does tiling a matrix multiply reduce memory traffic, and what limits it?**
+Each block of numbers is loaded into fast on-chip memory once and used for
+every multiplication it takes part in, T times, instead of being fetched
+again for each one. Reads fall from 2n³ to 2n³/T. The limit is fast-memory
+size: three T × T tiles must fit at once, so real kernels tile at several
+levels of the hierarchy.
+
+**What is the difference between bf16 and fp16, and why do many training runs prefer bf16?**
+Both have 16 bits. bf16 has fp32's 8 exponent bits and 7 mantissa bits:
+the same range as fp32, less precision. fp16 has 5 exponent bits and 10
+mantissa bits: more precision, but a range that tops out at 65,504 and
+rounds gradients smaller than about 3 × 10⁻⁸ to zero. bf16 avoids the need for
+loss scaling; its coarse precision is handled by keeping fp32 master
+weights and fp32 sums.
+
+**Why does halving the bits per number roughly double throughput?**
+Three reasons: half the bytes to move, so memory-bound work runs twice as
+fast and twice the parameters fit; twice the FLOPs per byte for the same
+tile, so more work clears the break-even point; and multipliers whose area
+grows with the square of the significand bits, so many more small
+multipliers fit in the same silicon.
+
+**Why is tensor parallelism usually kept inside one machine while data parallelism spans many?**
+Tensor parallelism splits every matrix multiply, so GPUs must exchange
+partial results inside every layer, many times per step: it needs the fast
+in-machine links. Data parallelism communicates once per step (an
+all-reduce of the gradients), which a ring spreads so each GPU sends only
+about twice its gradient, and which can overlap with the backward pass, so
+it tolerates the slower network.
+
+**Will a 70-billion-parameter model serve from one 80 GB GPU?**
+Not in 16-bit: the weights alone are 140 GB. In 8-bit the weights take 70
+GB, leaving about 10 GB, around 30,000 tokens of 16-bit KV cache for a
+model with 80 layers and 8 KV heads of 128 dimensions. In 4-bit, 45 GB is
+left, about 137,000 tokens. Leave headroom for activations and the serving
+software.
+
+
+### 16. Inference
 
 From [`primer.ml.inference`](../primer/ml/inference.py).
 
@@ -415,7 +789,118 @@ first and anything that varies (the question, timestamps, IDs) last, because
 a cache is valid only up to the first differing token.
 
 
-### 11. Loss functions
+### 17. Structured output
+
+From [`primer.ml.structured_output`](../primer/ml/structured_output.py).
+
+**Why does asking a model for JSON in the prompt fail some of the time, and why do longer outputs fail more?**
+Each token is a separate draw with some small chance of being wrong, and a
+single wrong token breaks the parse. The chance that all n tokens are right
+is about $p^n$, which shrinks as n grows: 98% per token gives 82% at 10 tokens
+and 13% at 100.
+
+**What exactly does constrained decoding change in the model?**
+Nothing in the weights. At each step it sets the logits of forbidden tokens to
+minus infinity (probability zero) before sampling. The allowed tokens keep
+their relative odds, and temperature and top-p still apply to them.
+
+**Why is the output valid "by construction", and what can still go wrong with the shape?**
+Every prefix is kept completable, and the end token is allowed only when the
+answer is complete, so any answer that ends is valid. It can still be cut off
+by the token budget, leaving a valid but unfinished prefix.
+
+**How do you decide whether a multi-character token is allowed in a given state?**
+Walk its characters through the state machine one at a time from the current
+state. It is allowed if the walk never gets stuck. `cat` is allowed at the
+start of `cat|car|dog`; `at` is not, because the start has no "a" line.
+
+**Why can't a finite-state machine check arbitrary JSON?**
+JSON nests without limit, and closing correctly requires remembering every
+open bracket in order. A machine with a fixed number of states can't count
+without limit. A stack, which a pushdown automaton adds, can.
+
+**Why can masks be precomputed for a pattern but not fully for a JSON Schema?**
+A pattern's machine has a fixed number of states, so the allowed tokens for
+each can be tabled once. With nesting the stack can take unboundedly many
+forms. Engines precompute the tokens whose fate depends only on the current
+position and check the rest against the stack at run time.
+
+**How can constrained decoding make answers worse?**
+It forces the model's choices into the allowed set even when the model
+believed something else: an integer field makes it invent a number when the
+honest answer was null, and token-by-token masking can commit early to a
+path the model thought unlikely overall. Allowing null, or letting the model
+reason before the structured part, helps.
+
+**When is validating and retrying good enough?**
+When the model is valid almost every time (95% needs about 1.05 calls on
+average), when you can't change the decoder, or when the rule can't be
+written as a grammar. It gets expensive fast as the valid rate falls: 1/p
+calls on average.
+
+**What does a strict schema guarantee about tool arguments, and what doesn't it?**
+It guarantees the shape: field names, types, required fields, enum values.
+It does not guarantee the values are true or allowed: a customer ID can be
+well formed and not exist, and an amount can fit the type while breaking a
+minimum. Your code still validates business rules.
+
+
+### 18. Long context and efficient architectures
+
+From [`primer.ml.efficient_architectures`](../primer/ml/efficient_architectures.py).
+
+**Why does doubling the context quadruple attention's compute but only
+double its cache?**
+Every token's query is scored against every key, so the scores form an
+n × n table: doubling n quadruples it. The cache stores one key and one value
+per token per layer, a list that grows by one entry per token, so doubling n
+doubles it.
+
+**A model uses a 4,096-token sliding window in all 32 layers. Can token
+100,000 be influenced by token 1?**
+Yes, in principle: information moves up to w − 1 = 4,095 positions per
+layer, so 32 layers reach 131,040 positions back. In practice it must be
+relayed through about 25 intermediate tokens and layers, so it arrives
+weakened; direct, exact lookup only works within the window.
+
+**What does a global token do in a sparse pattern, and why is it cheap?**
+Every token reads it and it reads every token, so any two tokens are at most
+two hops apart. It adds only about one column and one row of scores, a cost
+that grows with n rather than n².
+
+**Why can linear attention run as a recurrence but softmax attention cannot?**
+Linear attention's weight φ(q)·φ(k) splits into a query part and a key part,
+so the key-and-value parts can be summed ahead of time into a fixed-size
+state that any later query can read. The softmax weight e^(q·k) does not
+split that way, so each new query must revisit every stored key.
+
+**What does "selective" mean in Mamba, and what problem does it fix?**
+The step size Δ, and with it how much of the old state is kept and how much
+of the new token is written, is computed from each token. A fixed SSM applies
+the same keep and write amounts to every token, so it cannot both absorb one
+important token and ignore the filler around it.
+
+**If a selective SSM's parameters change every step, how does it train in
+parallel?**
+The update "multiply by a, add b" can be merged: two consecutive steps form
+one step of the same kind. A parallel scan merges pairs, then pairs of
+pairs, and finishes in about log₂ n rounds.
+
+**How does latent KV caching save memory without changing the attention
+outputs?**
+Keys and values are computed as a small cached latent times fixed
+up-projection matrices, so storing the latent is enough to rebuild them
+exactly. The up-projection can even be folded into the query and output
+side, so the full keys and values are never built.
+
+**Why do hybrid models keep a few attention layers instead of going all-SSM?**
+A fixed-size state is a lossy summary, which hurts copying and exact recall
+over long contexts. A handful of attention layers restores exact lookup
+while most layers keep constant memory, so the cache shrinks roughly by the
+fraction of layers that are SSMs.
+
+
+### 19. Loss functions
 
 From [`primer.ml.losses`](../primer/ml/losses.py).
 
@@ -446,7 +931,7 @@ negatives score high and produce most of the learning signal, teaching the
 model to separate "on topic" from "actually answers the question".
 
 
-### 12. Metrics
+### 20. Metrics
 
 From [`primer.ml.metrics`](../primer/ml/metrics.py).
 
@@ -483,7 +968,70 @@ A: Not necessarily. If 90% of answers are "pass", a judge that always says
 agreement.
 
 
-### 13. Overfitting and regularization
+### 21. Reading benchmarks
+
+From [`primer.ml.benchmarks`](../primer/ml/benchmarks.py).
+
+**If a model scores 80% on a benchmark, what does that actually mean?**
+It answered 80% of that benchmark's questions correctly under that
+harness's scoring rule. It is an estimate of the model's solve rate on
+questions like those, with a margin that depends on how many questions
+there were (±7.8 points on 100 questions, ±0.7 on 14,000), and it says
+nothing directly about tasks unlike the benchmark's.
+
+**How can the same model get different scores on the same multiple-choice
+questions?**
+By changing the scoring rule. Summing the log-probabilities of each option's
+tokens penalises long options, so a per-token average can pick a different
+option. Letting the model generate an answer instead depends on a parser
+that may reject correct answers in an unexpected format. The number of
+worked examples in the prompt and room to reason first also move the score.
+
+**What does pass@k measure, and why not compute it as 1 − (1 − c/n)^k?**
+The chance that at least one of k attempts passes the unit tests. The
+unbiased estimate counts, among all ways to pick k of the n samples, the
+share that contain no passing sample, and subtracts it from 1. The plug-in
+formula is biased low because (1 − p)^k curves upward, so averaging it over
+noisy estimates of p gives too large a failure chance.
+
+**Model A scores 82% and model B 79% on 200 questions. Is A better?**
+Not shown by this data. The gap's standard error is about 4 points, so the
+95% margin is about ±7.8. Even pairing the questions, which removes the noise
+from questions both get right or both miss, leaves an interval from about
+−1.5 to +7.5 points. It takes thousands of questions to resolve a 3-point
+gap.
+
+**What is benchmark contamination, and how can you detect it?**
+Test questions (often with answers) ending up in the training data, so the
+model can recall rather than solve. If you have the training data, look for
+long shared word runs (n-gram overlap) between each test item and the
+corpus, and compare scores on overlapping and clean items. Without it, look
+for a drop on freshly written questions of the same difficulty. n-gram
+checks miss paraphrases and translations.
+
+**Why do benchmarks stop being useful even without contamination?**
+Saturation: once models score near the top, their scores bunch together and
+the gaps are smaller than the noise, and wrong answer keys cap the maximum.
+And Goodhart's law: once a benchmark is the target, labs tune toward it
+(choosing checkpoints, prompts and data by it), so its score rises faster
+than the skill it was meant to measure.
+
+**How does an arena turn votes into a leaderboard, and why not just use
+chess-style Elo updates?**
+It fits the Bradley-Terry model, P(i beats j) = σ(β_i − β_j), to all the
+votes at once by maximum likelihood, and reports the strengths on the Elo
+scale. Online Elo updates depend on the order the votes arrive, and weight
+recent votes more; that suits players who improve over time, but a fixed
+model's rating shouldn't depend on when people happened to vote.
+
+**Why might a verbose model rank too high in an arena, and what fixes it?**
+Voters tend to prefer longer, more formatted answers regardless of
+correctness, so a wordy model wins votes it didn't earn on quality. Adding
+the length (and other style features) difference as extra factors in the
+Bradley-Terry fit separates the style preference from the model's strength.
+
+
+### 22. Overfitting and regularization
 
 From [`primer.ml.regularization`](../primer/ml/regularization.py).
 
@@ -520,7 +1068,84 @@ in a fraud model). For LLM evaluation: benchmark questions present in the
 pretraining data.
 
 
-### 14. CNNs and RNNs
+### 23. Trees and boosting
+
+From [`primer.ml.classical`](../primer/ml/classical.py).
+
+**Why is Gini impurity 0.5 for a pile that is half spam and half not?**
+It is the chance that two emails drawn at random (with replacement) carry
+different labels: $1 - (0.5^2 + 0.5^2) = 0.5$. For two labels that is the
+most mixed a pile can be.
+
+**Why weight each child pile by its size when scoring a split?**
+Otherwise a question that peels off one example into a tiny pure pile
+would look as good as one that sorts half the data cleanly. Weighting by
+size measures how much of the data the question actually tidied.
+
+**Why does a tree need no feature scaling, when a neural network does?**
+A tree only compares one column against a threshold, so any change that
+keeps the order of values (rescaling, logarithms) produces the same splits
+and the same predictions. A network multiplies and adds columns together,
+so a column measured in tens of thousands drowns the others and saturates
+its neurons.
+
+**A tree scores 100% on training data and 80% on validation. What happened,
+and what are two fixes?**
+It overfitted: it kept splitting until each leaf fenced off individual
+noisy examples. Limit its depth (or require a minimum number of examples per
+leaf, or prune), or replace it with a random forest that averages many such
+trees.
+
+**Why does a random forest use random feature subsets, not just bootstrap
+samples?**
+The forest's variance is $\rho\sigma^2 + (1 - \rho)\sigma^2/B$. More trees
+only shrink the second term; the floor is set by the correlation $\rho$
+between trees. With bagging alone every tree tends to pick the same strong
+feature first and they stay correlated. Random subsets force different
+trees down different paths, lowering $\rho$.
+
+**Does adding more trees overfit a random forest? Does adding more rounds
+overfit gradient boosting?**
+More trees in a forest does not: accuracy rises and then levels off, only
+costing time. More rounds of boosting does: each round fits the training
+residuals more closely, so validation error reaches a minimum and then
+climbs. Boosting needs early stopping; forests don't.
+
+**Why is the residual the right target for each boosting tree?**
+For squared-error loss $\frac{1}{2}(y - F)^2$, the negative derivative with
+respect to the prediction $F$ is $y - F$, the residual. Fitting a tree to it
+and taking a step is gradient descent on the predictions. With another
+loss, the tree fits that loss's negative gradient instead, such as $y - p$
+for log loss.
+
+**What does a smaller learning rate buy in gradient boosting, and what does
+it cost?**
+Each tree contributes only a fraction of its correction, so no single noisy
+tree can move the model far and many trees must agree. That usually
+generalizes better (0.110 against 0.122 in this lesson's sweep). It costs
+more rounds, so more training and prediction time.
+
+**Why can't a boosted-tree model predict a house price above the highest
+price it trained on?**
+Every leaf predicts an average of training values, and the model is a sum of
+such leaves anchored at the training mean. Beyond the edge of the training
+data every question gives the same answer as at the edge, so the prediction
+stays flat.
+
+**What is wrong with trusting impurity-based feature importance?**
+It is measured on training data, where splits on noise still tidy up piles.
+It favours columns with many distinct values and splits credit between
+correlated columns. Permutation importance on held-out data is more honest,
+and neither measures cause and effect.
+
+**When would you choose a neural network over gradient-boosted trees?**
+When one input is an image, audio clip, text or other sequence whose
+meaning lies in the arrangement of raw values; when the data is huge or a
+pretrained model can be reused; when predictions must extrapolate smoothly;
+or when the model must be trained end to end with other neural parts.
+
+
+### 24. CNNs and RNNs
 
 From [`primer.ml.cnn_rnn`](../primer/ml/cnn_rnn.py).
 
@@ -568,10 +1193,56 @@ trainable and are in every transformer block, plus the general lesson that
 built-in assumptions help when data is limited.
 
 
+### 25. Looking inside the model
+
+From [`primer.ml.interpretability`](../primer/ml/interpretability.py).
+
+**What does it mean to say a feature is a "direction" rather than a neuron?**
+The feature's presence is stored as a pattern across many neurons: the
+hidden state moves along a particular direction in proportion to how
+strongly the feature is present. You read it with a dot product against
+that direction. Any single neuron is typically a mix of several features.
+
+**A linear probe reads a property from layer 12 at 95% accuracy. What can you conclude, and what can't you?**
+You can conclude the property is linearly decodable from layer 12, as long
+as the 95% was on held-out examples and clearly beats a control task with
+random labels. You can't conclude the model uses it. For that you need an
+intervention: remove or change that information and see whether the
+output changes.
+
+**How does the logit lens work, and why does it agree with the model at the last layer?**
+It takes the residual stream after some layer and applies the model's own
+final normalization and unembedding, turning it into next-token
+probabilities. At the last layer that is exactly the computation the model
+itself performs, so the two must match. Earlier layers are read "as if
+the model stopped there".
+
+**Describe an activation patching experiment, and what the "fraction restored" means.**
+Run a clean prompt and save its activations; run a corrupted prompt that
+changes one fact; then rerun the corrupted prompt with one activation
+replaced by its clean value. The fraction restored is how much of the
+clean-minus-corrupted logit difference the patch brings back: 1 means that
+activation alone carries the fact, 0 means it carries none of it.
+
+**Why do models use superposition, and why does it make neurons hard to interpret?**
+There are more useful features than neurons. When features are rarely
+active at the same time, the model can store them as nearly perpendicular
+directions and filter the small interference with a bias and ReLU. The
+directions can't line up with the neurons, so each neuron responds to
+several unrelated features: it is polysemantic.
+
+**Why does a sparse autoencoder need the L1 penalty? What goes wrong if λ is too small or too large?**
+Many dictionaries rebuild the data equally well; the penalty picks the one
+where each input uses few latents, which pushes latents onto the real
+features. Too small and the SAE rebuilds perfectly with meaningless
+directions; too large and it shrinks activations and leaves much of the
+model's activity unexplained.
+
+
 ## Embeddings, the centerpiece
 
 
-### 15. Word embeddings
+### 26. Word embeddings
 
 From [`primer.ml.embeddings.word2vec`](../primer/ml/embeddings/word2vec.py).
 
@@ -602,7 +1273,7 @@ Contextual embeddings from transformers compute a vector per word *in
 context*, so each sense gets its own representation.
 
 
-### 16. Similarity
+### 27. Similarity
 
 From [`primer.ml.embeddings.similarity`](../primer/ml/embeddings/similarity.py).
 
@@ -630,7 +1301,7 @@ search gets expensive. Real embeddings have structure, and approximate
 indexes trade a little recall for large speedups.
 
 
-### 17. Training embedding models
+### 28. Training embedding models
 
 From [`primer.ml.embeddings.contrastive`](../primer/ml/embeddings/contrastive.py).
 
@@ -665,7 +1336,7 @@ evaluate recall@k on a held-out set against the base model, then re-embed
 the corpus with the new model.
 
 
-### 18. Dimensions and compression
+### 29. Dimensions and compression
 
 From [`primer.ml.embeddings.compression`](../primer/ml/embeddings/compression.py).
 
@@ -690,7 +1361,7 @@ A smaller model trained for your domain often beats a bigger generic one,
 so benchmark on your own queries.
 
 
-### 19. Vector indexes
+### 30. Vector indexes
 
 From [`primer.ml.embeddings.ann`](../primer/ml/embeddings/ann.py).
 
@@ -750,7 +1421,7 @@ while real embeddings are clustered. A benchmark with different structure,
 dimension or size predicts little. Always measure on your own vectors.
 
 
-### 20. Retrieval
+### 31. Retrieval
 
 From [`primer.ml.embeddings.retrieval`](../primer/ml/embeddings/retrieval.py).
 
@@ -835,7 +1506,7 @@ chunking, prefixes, domain fine-tuning). If it is there, the problem is in
 generation.
 
 
-### 21. Clustering and matching
+### 32. Clustering and matching
 
 From [`primer.ml.embeddings.clustering`](../primer/ml/embeddings/clustering.py).
 
@@ -866,7 +1537,7 @@ serves stale facts. Filter by context first, then match strictly, and
 expire entries.
 
 
-### 22. Embeddings in production
+### 33. Embeddings in production
 
 From [`primer.ml.embeddings.operations`](../primer/ml/embeddings/operations.py).
 
@@ -896,10 +1567,255 @@ search); if yes, it's generation (fix prompt and context). Track recall@k on
 a labeled set continuously.
 
 
+## Generating images, audio and video
+
+
+### 34. Autoencoders and VAEs
+
+From [`primer.ml.generative.autoencoders`](../primer/ml/generative/autoencoders.py).
+
+**What is the bottleneck for? What goes wrong if the code is as wide as the
+input?**
+It forces the network to keep only what matters: with 2 numbers for 64
+pixels, it must find the few facts that actually vary. If the code is as
+wide as the input, the network can learn to copy the pixels straight through,
+rebuild perfectly and learn nothing useful, unless something else (noise on
+the input, a penalty on the code) stops it.
+
+**Why can't you generate new pictures by decoding random codes from a plain
+autoencoder?**
+Its loss only ever sees the codes of real pictures, so it says nothing about
+where codes should live or what lies between them. The codes end up in an
+arbitrary range with holes between clusters, and a random code usually lands
+in a hole, where the decoder's output is junk.
+
+**What problem does the reparameterization trick solve?**
+Backpropagation needs every step between the weights and the loss to be
+something you can differentiate, and a random draw is not. Writing the draw
+as z = μ + σ·ε with the noise ε as a separate input turns sampling into
+arithmetic, so gradients reach μ and σ, and through them the encoder.
+
+**What do the two terms of the VAE loss each want, and why do you need
+both?**
+The rebuild term wants regions small and far apart so every picture is
+decoded precisely. The KL term wants every region to be the standard bell
+curve. Without KL you get a plain autoencoder with holes; without the
+rebuild term every region collapses onto the bell curve and the code carries
+nothing. The balance gives a packed, smooth code space that still tells
+pictures apart.
+
+**Work out the KL penalty for one code number with μ = 0 and σ = 2.**
+½ (0 + 4 − log 4 − 1) = ½ (3 − 1.386) = 0.807. A region that is too big pays
+rent too, though less steeply than one that is too small.
+
+**Why are VAE samples blurry?**
+Regions overlap, so one code can stand for several pictures, and under
+squared error the best single answer is their average. Averaged pictures are
+blurred pictures. Raising β increases the overlap and the blur.
+
+**What is posterior collapse?**
+When the KL rent outweighs what the code saves in rebuild error, the encoder
+makes every region the standard bell curve, the code carries no information,
+and the decoder outputs the same average picture for every code. In this
+lesson that happens at β = 3.
+
+**Why does latent diffusion run inside an autoencoder's code space instead of
+on pixels?**
+The code is many times smaller (48 times for Stable Diffusion's 512 × 512
+images) and keeps what matters to the eye, so the expensive, many-step
+generator is far cheaper to train and run. The decoder turns the result back
+into full-size pixels once, at the end.
+
+
+### 35. GANs
+
+From [`primer.ml.generative.gans`](../primer/ml/generative/gans.py).
+
+**Explain a GAN to a non-engineer in 30 seconds.**
+Two programs play a game. One makes fake pictures; the other looks at real
+and fake pictures and guesses which is which. Every time the guesser catches
+a fake, the faker learns what gave it away and improves. After enough
+rounds the fakes are good enough that the guesser is reduced to guessing,
+and the faker has learned to make realistic pictures without anyone ever
+describing what a picture should look like.
+
+**Why does the generator never need to see real data?**
+It learns only from the discriminator's gradient with respect to its own
+outputs: which way to move each fake so the discriminator finds it more
+real. The discriminator has seen real data, so its verdicts carry that
+information to the generator.
+
+**What does the optimal discriminator compute, and what does it say at equilibrium?**
+D*(x) = p_data(x) / (p_data(x) + p_g(x)): the share of points found at x
+that are real. When the generator matches the data, p_g = p_data and D* is
+1/2 everywhere, the value is −log 4, and the discriminator can do no better
+than a coin flip.
+
+**Why do almost all GANs use the non-saturating generator loss?**
+The original loss log(1 − D(G(z))) has a slope of −D with respect to the
+discriminator's score, which is near zero when the discriminator confidently
+rejects fakes, as it does early in training. The non-saturating loss
+−log D(G(z)) has slope −(1 − D), largest exactly then. Both have the same
+equilibrium.
+
+**What is mode collapse, and how would you detect it?**
+The generator covers only some of the distinct kinds of data (modes), often
+hopping between them as the discriminator catches up. Per-sample quality can
+look excellent, so you detect it by measuring coverage: how many modes or
+classes receive samples, or a distribution-level metric such as FID on real
+data.
+
+**Why doesn't plain gradient descent find the GAN equilibrium?**
+The game has no shared downhill direction. Near the equilibrium the two
+players' updates form a rotation, so simultaneous steps spiral outward and
+alternating steps orbit forever, as the two-number Dirac GAN shows. Damping
+the discriminator with a gradient penalty turns the spiral inward.
+
+**Why is the Wasserstein distance a better training signal than Jensen-Shannon divergence?**
+When the real and generated distributions don't overlap, Jensen-Shannon is
+stuck at log 2 however far apart they are, so it gives no direction.
+Wasserstein measures how far the mass must move, so it shrinks steadily as
+the generator approaches the data. Estimating it needs a critic whose slope
+is capped, which is what weight clipping, gradient penalties and spectral
+normalization provide.
+
+**If diffusion models won, why learn GANs?**
+Adversarial losses are still how many image and audio decoders get sharp
+output, and how some diffusion models are distilled into one-step
+generators. And the instabilities here, moving targets and collapsing
+variety, show up wherever two models are trained against each other.
+
+
+### 36. Diffusion and flow matching
+
+From [`primer.ml.generative.diffusion`](../primer/ml/generative/diffusion.py).
+
+**Why does the network learn to guess the noise, rather than the clean
+picture?**
+The two carry the same information: given the noisy point, the step and the
+noise, the clean point follows by undoing the shortcut. Guessing the noise
+works better in practice because the target is always the same size (a
+standard-normal draw) at every step, which makes one network easy to train
+across all noise levels. The noise guess, flipped and rescaled, is also the
+score: the direction toward the data.
+
+**Training only ever takes one jump from clean to noisy. Why does
+generation need many steps back?**
+The noise guess is an average over every clean point that could have
+produced the noisy one. From heavy noise that average is vague, pointing at
+the middle of the data, so one big step lands on a blur (or, in our blobs,
+the empty middle). Small steps let the guess sharpen as the sample commits
+to one specific region, and the network is asked again at every stage.
+
+**Why does DDPM add fresh noise at each step, when the goal is to remove
+noise?**
+Without it, every step moves toward the network's averaged guess and
+samples drift toward safe, typical, blurry results. The small fresh wobble
+keeps each sample exploring one specific possibility, so the samples cover
+all of the data. DDIM drops the wobble on purpose, trading that randomness
+for determinism and big jumps.
+
+**What does flow matching change, and why can it get away with fewer
+steps?**
+It replaces the noise schedule with straight lines from noise to data and
+trains the network to output the velocity along them. Following a velocity
+with Euler steps is only exact on straight paths; the learned paths are
+straighter than diffusion's, so fewer steps cut fewer corners. They are not
+perfectly straight, because paths can't cross, which is what rectified
+flow's retraining fixes.
+
+**What does the guidance weight do, and what goes wrong if it is too
+large?**
+It sets how far past the labelled guess to go, along the direction from the
+unlabelled guess to the labelled one. 0 ignores the prompt, 1 follows it
+plainly, above 1 exaggerates it, so samples match the prompt more reliably.
+Too large and samples become samey, over-saturated caricatures of the
+prompt, bunched into the most extreme examples.
+
+**Why do real image generators denoise in a latent space instead of on
+pixels?**
+Most of an image's pixel values are fine texture that a decoder can fill in.
+An autoencoder shrinks a 512 × 512 image 48-fold into a latent that keeps
+the meaningful structure, and since sampling runs the denoiser dozens of
+times, every step becomes that much cheaper. The decoder runs just once, at
+the end.
+
+**When would you choose a GAN over a diffusion model?**
+When one-shot speed matters most: a GAN makes a sample in a single network
+call, where diffusion needs several to dozens. Diffusion wins on training
+stability and on covering all of the data (GANs can mode-collapse), which is
+why it took over image generation; distillation is now closing its speed
+gap.
+
+
+### 37. Multimodal models
+
+From [`primer.ml.generative.multimodal`](../primer/ml/generative/multimodal.py).
+
+**How can a chatbot "see" a photo, explained without jargon?**
+The photo is cut into a grid of small squares, and each square is described
+by a list of numbers in the same format the model uses for words. The model
+then reads the squares and the words of your question together, paying
+attention to whichever squares help answer it. It never sees the picture
+as a picture: it reads it as a few hundred extra "words".
+
+**How many tokens is a 448×448 image with 14-pixel patches? And if each
+2×2 block of neighbours is merged?**
+448 / 14 = 32 patches a side, so 32 × 32 = 1,024 tokens. Merging 2×2
+blocks divides by 4: 256 tokens. Doubling the side from 224 would have
+quadrupled the count.
+
+**Why does a Vision Transformer need position vectors, and why is its
+attention not causal?**
+Attention ignores order, so without positions the model sees an unordered
+bag of patches and cannot tell the sky from the ground. It is not causal
+because a picture has no "future": every patch may use every other, and
+hiding half the image would only throw information away.
+
+**What does the projector do, and why train it first with both big models
+frozen?**
+It maps each image vector into the language model's embedding space, so
+image tokens look like something the language model can use. Training it
+alone first is cheap (it is tiny) and safe (the frozen models keep all
+they know). Only once the two sides understand each other is the language
+model tuned on image instructions.
+
+**In a prompt, why does it matter whether the image comes before or after
+the question?**
+The language model is causal: a token can only attend to tokens before it.
+Question tokens placed after the image can look at it while being
+processed; question tokens placed before it cannot. The answer comes after
+both either way, but putting the image first lets the whole question be read
+in light of the picture.
+
+**Why does a speech model read a log-mel spectrogram rather than raw
+samples?**
+Raw audio is 16,000 numbers a second with pitch hidden in the wiggles. The
+spectrogram makes pitch explicit (which frequencies sound at each moment),
+the mel bands spend detail where ears and speech need it, the log matches
+how loudness is heard, and 100 frames a second is far fewer positions to
+attend over.
+
+**How can a model that only predicts tokens produce an image or a voice?**
+Encode pictures or sounds into vectors, snap each vector to its nearest
+entry in a learned codebook, and use the entry numbers as extra vocabulary.
+The model learns to predict those ids after a caption, and a decoder turns
+generated ids back into pixels or a waveform. The alternative is to have
+the model condition a diffusion model that paints the image.
+
+**A 20-minute video goes to a model with a 128,000-token window. What goes
+wrong, and what can be done?**
+At one frame a second and 256 tokens a frame it is 1,200 × 256 = 307,200
+tokens, more than twice the window, before any question. Options: sample
+far fewer frames (one every 5 seconds gives 61,440), merge neighbouring
+patch tokens, lower the resolution, transcribe the soundtrack to text, or
+split the video and summarise the parts.
+
+
 ## Part 2: building systems people rely on
 
 
-### 23. Talking to a model
+### 38. Talking to a model
 
 From [`primer.agents.llm`](../primer/agents/llm.py).
 
@@ -932,7 +1848,7 @@ model reproduces loops, bad arguments and injected instructions exactly, so
 the code that must handle them can be tested every time.
 
 
-### 24. Orchestration
+### 39. Orchestration
 
 From [`primer.agents.orchestration`](../primer/agents/orchestration.py).
 
@@ -966,7 +1882,7 @@ A: So a crash costs one step, not the run. Resuming reuses completed work
 idempotency keys) and avoids getting a different answer on the rerun.
 
 
-### 25. The agent loop
+### 40. The agent loop
 
 From [`primer.agents.agent_loop`](../primer/agents/agent_loop.py).
 
@@ -993,7 +1909,7 @@ reasonable search, detects conflicting sources, or hits a budget. Make hand-off 
 tool, so it is an explicit, logged outcome rather than a vague final answer.
 
 
-### 26. Tools
+### 41. Tools
 
 From [`primer.agents.tools`](../primer/agents/tools.py).
 
@@ -1021,7 +1937,63 @@ credentials per tool and per agent, and put irreversible actions behind human
 approval.
 
 
-### 27. Model Context Protocol
+### 42. Coding and computer-use agents
+
+From [`primer.agents.coding_agents`](../primer/agents/coding_agents.py).
+
+**Why have coding agents become dependable sooner than agents for most other
+kinds of work?**
+Because code comes with a cheap, exact checker. Tests say which input failed,
+what came out and what was expected, so the agent can verify each attempt,
+retry, and learn from the failure message. Tasks without a checker give the
+agent no way to know when it's right.
+
+**An agent reported "fixed", but the continuous-integration run failed. What
+was missing from its loop?**
+The loop trusted the model's claim. "Done" should be decided by a real test
+run the harness performs itself; a claim of success with red tests should go
+back to the model as the failing test output, and the run should end only on
+green or when the budget is spent.
+
+**Why not paste the whole repository into the prompt?**
+A real repository is far bigger than a context window, every call re-sends
+whatever is in the prompt, and models use details buried in a long prompt
+less reliably. Searching for a symbol and reading only the matching files
+costs a few hundred tokens instead of hundreds of thousands.
+
+**What does a sandbox for model-written code need, and why isn't a
+restricted Python namespace enough?**
+No network, no credentials, a throwaway file system, and limits on CPU time,
+wall-clock time and memory, all enforced from outside the code: a separate
+process in a container or micro-VM. Inside one Python process, introspection
+reaches every loaded class and a bare `except:` can catch the stop signal,
+so in-process restrictions are useful limits but not a security boundary.
+
+**A benchmark reports that an agent resolves 60% of tasks. What exactly was
+measured, and what could inflate the number?**
+For each task, the agent's patch was applied to a fresh copy of the
+repository, and the task counted only if every hidden fail-to-pass test now
+passes and every pass-to-pass test still does. The number is inflated by weak
+hidden tests (wrong patches slip through), by tasks that leaked into the
+model's training data, and by the agent seeing the grading tests.
+
+**An agent's pass@10 is 0.9 but its pass@1 is 0.3. Which number does a
+user feel?**
+Pass@1, unless something reliable picks the right answer among ten. Pass@10
+assumes an oracle that recognises the correct sample; a user running the
+agent once gets a 30% chance.
+
+**When would you drive a graphical interface instead of calling an API, and
+what extra risks come with it?**
+Only when no API or tool exists, such as a legacy desktop application. It
+costs a model call and a screenshot per action, it breaks when layouts shift
+or pages load slowly, a mis-click fails silently, and text on the screen can
+carry injected instructions. Look after every action, locate controls by
+their labels, verify the end state, and require approval for irreversible
+actions.
+
+
+### 43. Model Context Protocol
 
 From [`primer.agents.mcp`](../primer/agents/mcp.py).
 
@@ -1046,7 +2018,7 @@ user isn't allowed to do (a confused deputy). With the user's token, the
 system of record enforces the user's real permissions.
 
 
-### 28. Retrieval-augmented generation
+### 44. Retrieval-augmented generation
 
 From [`primer.agents.rag`](../primer/agents/rag.py).
 
@@ -1085,7 +2057,7 @@ change. Most systems are RAG plus a good prompt (see
 [`primer.ml.training_stages`](../primer/ml/training_stages.py)).
 
 
-### 29. Context engineering
+### 45. Context engineering
 
 From [`primer.agents.context`](../primer/agents/context.py).
 
@@ -1117,7 +2089,7 @@ the documents and to cite ids. The structure makes citations checkable and
 makes it harder for document text to pose as instructions.
 
 
-### 30. Memory
+### 46. Memory
 
 From [`primer.agents.memory`](../primer/agents/memory.py).
 
@@ -1149,7 +2121,7 @@ people and monitoring, and lets code enforce rules (no skipping steps)
 that a prompt can only request.
 
 
-### 31. Planning
+### 47. Planning
 
 From [`primer.agents.planning`](../primer/agents/planning.py).
 
@@ -1176,7 +2148,7 @@ A: It's small, concrete and verifiable. It has a definition of done that code
 can check, and its output is saved so a later failure doesn't redo it.
 
 
-### 32. Evaluation
+### 48. Evaluation
 
 From [`primer.agents.evals`](../primer/agents/evals.py).
 
@@ -1214,7 +2186,7 @@ successful task, p95 latency, tool error rates, and drift in any of these
 after a deploy.
 
 
-### 33. Guardrails
+### 49. Guardrails
 
 From [`primer.agents.guardrails`](../primer/agents/guardrails.py).
 
@@ -1260,7 +2232,7 @@ Every real card number passes Luhn and only about 10% of random digit
 strings do, so validation removes roughly 90% of false alarms at no cost.
 
 
-### 34. Cost and latency
+### 50. Cost and latency
 
 From [`primer.agents.cost`](../primer/agents/cost.py).
 
@@ -1295,7 +2267,7 @@ the same arguments), and whether the prompt cache hit rate dropped
 than a guess ([`primer.agents.observability`](../primer/agents/observability.py)).
 
 
-### 35. Observability
+### 51. Observability
 
 From [`primer.agents.observability`](../primer/agents/observability.py).
 
@@ -1325,7 +2297,7 @@ They contain user data. Redact personal data before export, restrict who
 can read traces, set retention limits, and keep tenants' traces separated.
 
 
-### 36. Safe deployment
+### 52. Safe deployment
 
 From [`primer.agents.deployment`](../primer/agents/deployment.py).
 
@@ -1361,7 +2333,7 @@ detectable, and anchoring the latest hash somewhere separate (or using
 write-once storage) makes it provable.
 
 
-### 37. Why the hard ones fail
+### 53. Why the hard ones fail
 
 From [`primer.agents.failures`](../primer/agents/failures.py).
 

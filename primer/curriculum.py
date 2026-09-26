@@ -172,6 +172,7 @@ PARTS: list[Part] = [
     Part("start", "Before you begin", "The notation every formula in this primer uses, decoded as short loops."),
     Part("ml", "Part 1: how the model works inside", "From a single neuron to a working transformer, and how models are trained and served."),
     Part("embeddings", "Embeddings, the centerpiece", "Vectors that capture meaning, and the search systems built on them."),
+    Part("generative", "Generating images, audio and video", "Autoencoders, GANs, diffusion, and the multimodal models that connect them to language."),
     Part("agents", "Part 2: building systems people rely on", "Agents, tools, retrieval, memory, evaluation, safety, cost and deployment."),
 ]
 
@@ -186,11 +187,22 @@ CURRICULUM: list[Lesson] = [
     Lesson("primer.ml.transformer", "The transformer", "The block, a tiny GPT, parameter counts, mixture of experts", "ml"),
     Lesson("primer.ml.tokenization", "Tokenization", "BPE from scratch, byte-level tokens, why models miscount letters", "ml"),
     Lesson("primer.ml.training_stages", "Training stages", "Pretraining, SFT, RLHF and DPO, LoRA, fine-tuning vs. RAG", "ml"),
+    Lesson("primer.ml.pretraining", "Pretraining at scale", "Data curation and deduplication, parallelism across GPUs, mixed precision", "ml"),
+    Lesson("primer.ml.fine_tuning", "Fine-tuning in practice", "Preparing data, forgetting old skills, merging models", "ml"),
+    Lesson("primer.ml.reinforcement", "Reinforcement learning", "Policy gradients from scratch, PPO, GRPO, reward hacking", "ml"),
+    Lesson("primer.ml.reasoning", "Reasoning models", "Chain of thought, test-time compute, verifiers, learning to reason with RL", "ml"),
+    Lesson("primer.ml.alignment", "Alignment and safety", "Constitutional AI, red-teaming, sycophancy, refusals", "ml"),
+    Lesson("primer.ml.hardware", "The hardware underneath", "GPUs, the memory hierarchy, FLOPs vs. bandwidth, number formats", "ml"),
     Lesson("primer.ml.inference", "Inference", "Prefill vs. decode, the KV cache, sampling, speculative decoding, memory math", "ml"),
+    Lesson("primer.ml.structured_output", "Structured output", "Constrained decoding: grammars and JSON schemas that guarantee valid output", "ml"),
+    Lesson("primer.ml.efficient_architectures", "Long context and efficient architectures", "Sliding-window and sparse attention, state-space models, KV-cache compression", "ml"),
     Lesson("primer.ml.losses", "Loss functions", "Cross-entropy, perplexity, MSE/MAE, contrastive losses", "ml"),
     Lesson("primer.ml.metrics", "Metrics", "Precision/recall/F1, ROC-AUC, recall@k, MRR, nDCG, BLEU/ROUGE", "ml"),
+    Lesson("primer.ml.benchmarks", "Reading benchmarks", "What benchmarks measure, contamination, leaderboards and arenas", "ml"),
     Lesson("primer.ml.regularization", "Overfitting and regularization", "Overfitting, early stopping, dropout, L1/L2, leakage", "ml"),
+    Lesson("primer.ml.classical", "Trees and boosting", "Decision trees, random forests, gradient boosting, and when they still win", "ml"),
     Lesson("primer.ml.cnn_rnn", "CNNs and RNNs", "How convolutions see and recurrent nets remember, and why transformers won", "ml"),
+    Lesson("primer.ml.interpretability", "Looking inside the model", "Probes, the logit lens, activation patching, superposition, sparse autoencoders", "ml"),
     Lesson("primer.ml.embeddings.word2vec", "Word embeddings", "Where embeddings came from, analogies, the \"bank\" problem", "embeddings"),
     Lesson("primer.ml.embeddings.similarity", "Similarity", "Cosine vs. dot vs. distance, normalization, anisotropy, thresholds", "embeddings"),
     Lesson("primer.ml.embeddings.contrastive", "Training embedding models", "Contrastive learning, hard negatives, CLIP", "embeddings"),
@@ -199,10 +211,15 @@ CURRICULUM: list[Lesson] = [
     Lesson("primer.ml.embeddings.retrieval", "Retrieval", "BM25, hybrid search with RRF, rerankers, ColBERT, chunking", "embeddings"),
     Lesson("primer.ml.embeddings.clustering", "Clustering and matching", "k-means, density clustering, dedup, routing, semantic caching", "embeddings"),
     Lesson("primer.ml.embeddings.operations", "Embeddings in production", "Model migrations, domain mismatch, measuring retrieval on its own", "embeddings"),
+    Lesson("primer.ml.generative.autoencoders", "Autoencoders and VAEs", "Squeezing data into a code and back, and sampling new data from it", "generative"),
+    Lesson("primer.ml.generative.gans", "GANs", "A forger against a detective: adversarial training, and why it is unstable", "generative"),
+    Lesson("primer.ml.generative.diffusion", "Diffusion and flow matching", "Turning noise into images one small step at a time", "generative"),
+    Lesson("primer.ml.generative.multimodal", "Multimodal models", "Images, audio and video into a language model", "generative"),
     Lesson("primer.agents.llm", "Talking to a model", "The message format, and what tool calling really is", "agents"),
     Lesson("primer.agents.orchestration", "Orchestration", "Workflows vs. agents, and the named patterns", "agents"),
     Lesson("primer.agents.agent_loop", "The agent loop", "A production agent loop: budgets, loop detection, recovery", "agents"),
     Lesson("primer.agents.tools", "Tools", "Tool design, validation, idempotency, approvals, least privilege", "agents"),
+    Lesson("primer.agents.coding_agents", "Coding and computer-use agents", "Edit, run, test, repeat; sandboxes; driving a screen", "agents"),
     Lesson("primer.agents.mcp", "Model Context Protocol", "MCP on the wire, and its security risks", "agents"),
     Lesson("primer.agents.rag", "Retrieval-augmented generation", "RAG end to end, with citations and access control", "agents"),
     Lesson("primer.agents.context", "Context engineering", "What goes in the window, compression, cache-friendly layout", "agents"),
@@ -270,6 +287,7 @@ class BigQuestion:
 
 
 _ML, _EMB, _AG = "primer.ml.", "primer.ml.embeddings.", "primer.agents."
+_GEN = "primer.ml.generative."
 
 BIG_QUESTIONS: list[BigQuestion] = [
     BigQuestion(
@@ -309,7 +327,7 @@ BIG_QUESTIONS: list[BigQuestion] = [
     ),
     BigQuestion(
         "How are large language models trained, and when should I fine-tune instead of using RAG?",
-        (_ML + "training_stages", _ML + "tokenization", _ML + "losses", _EMB + "operations", _AG + "rag"),
+        (_ML + "training_stages", _ML + "fine_tuning", _ML + "tokenization", _ML + "losses", _EMB + "operations", _AG + "rag"),
         (
             "Pretraining: next-token prediction over trillions of tokens produces a knowledgeable base model.",
             "Supervised fine-tuning teaches the assistant format; preference tuning (RLHF or DPO) shapes helpfulness and safety.",
@@ -320,7 +338,7 @@ BIG_QUESTIONS: list[BigQuestion] = [
     ),
     BigQuestion(
         "What makes serving a model fast and affordable?",
-        (_ML + "inference", _ML + "attention", _AG + "cost", _AG + "context"),
+        (_ML + "hardware", _ML + "inference", _ML + "efficient_architectures", _ML + "attention", _AG + "cost", _AG + "context"),
         (
             "Prefill is compute-bound and sets time to first token; decode is memory-bound and sets tokens per second.",
             "The KV cache trades GPU memory for speed; its size is 2 × layers × KV heads × head dimension × bytes, per token.",
@@ -366,7 +384,7 @@ BIG_QUESTIONS: list[BigQuestion] = [
     ),
     BigQuestion(
         "How do you know if a model or an agent is any good?",
-        (_ML + "metrics", _ML + "losses", _ML + "regularization", _AG + "evals"),
+        (_ML + "metrics", _ML + "benchmarks", _ML + "losses", _ML + "regularization", _AG + "evals"),
         (
             "Pick metrics by the cost of each error: precision vs. recall; accuracy misleads on imbalanced data.",
             "Keep training, validation and test data apart, and watch for leakage and benchmark contamination.",
@@ -377,7 +395,7 @@ BIG_QUESTIONS: list[BigQuestion] = [
     ),
     BigQuestion(
         "When should you build an agent, and how does one work?",
-        (_AG + "llm", _AG + "orchestration", _AG + "agent_loop", _AG + "tools", _AG + "mcp", _AG + "planning"),
+        (_AG + "llm", _AG + "orchestration", _AG + "agent_loop", _AG + "tools", _AG + "coding_agents", _AG + "mcp", _AG + "planning"),
         (
             "Use the least autonomy that solves the problem: fixed workflow, then router, then agent loop, then multiple agents.",
             "Tool calling: the model emits a structured request; your code validates it, runs it and returns the result. The model executes nothing.",
@@ -400,7 +418,7 @@ BIG_QUESTIONS: list[BigQuestion] = [
     ),
     BigQuestion(
         "How do you make an AI system safe to put in front of real users?",
-        (_AG + "guardrails", _AG + "tools", _AG + "deployment", _AG + "observability"),
+        (_ML + "alignment", _AG + "guardrails", _AG + "tools", _AG + "deployment", _AG + "observability"),
         (
             "Layer guardrails on inputs, outputs and actions; no single check is reliable alone.",
             "Treat retrieved content, emails and tool outputs as untrusted: no prompt wording fully prevents injection.",
@@ -423,13 +441,107 @@ BIG_QUESTIONS: list[BigQuestion] = [
     ),
     BigQuestion(
         "Why do AI systems fail in production, and how do you fix them?",
-        (_AG + "failures", _AG + "planning", _AG + "rag", _AG + "evals", _AG + "observability"),
+        (_AG + "failures", _ML + "structured_output", _AG + "planning", _AG + "rag", _AG + "evals", _AG + "observability"),
         (
             "Compounding error over long tasks: shorten paths, verify steps, checkpoint.",
             "Bad retrieval behind confident wrong answers: hybrid search, reranking, retrieval evals.",
             "Ambiguous tools, loops and runaway cost: better tool design, budgets, loop detection.",
             "Prompt injection and messy enterprise data: untrusted-content boundaries, permission-aware retrieval, investment in parsing.",
             "No evals and no traces: regressions ship silently; build the loop from production failure to trace to test case to fix.",
+        ),
+    ),
+    BigQuestion(
+        "What does it take to pretrain a large model?",
+        (_ML + "training_stages", _ML + "tokenization", _ML + "pretraining", _ML + "optimizers", _ML + "hardware"),
+        (
+            "Most of a web crawl is thrown away: language ID, quality rules and classifiers, and exact and near-duplicate removal.",
+            "Sources are mixed by weight, not size; about 20 tokens per parameter is compute-optimal, but models meant for heavy use train far longer.",
+            "Adam in mixed precision needs about 16 bytes per parameter before activations, so one GPU can't hold a large model.",
+            "Data parallelism shares gradients, ZeRO/FSDP shards the training state, tensor parallelism splits each matrix multiply, and pipeline parallelism splits the layers.",
+            "The maths runs in bf16 or fp8 with scaling, while the master weights stay in fp32.",
+            "Warmup, gradient clipping, spike rollback and regular checkpoints keep a months-long run alive.",
+        ),
+    ),
+    BigQuestion(
+        "How does a model learn from rewards instead of examples?",
+        (_ML + "reinforcement", _ML + "training_stages", _ML + "reasoning", _ML + "alignment"),
+        (
+            "Reinforcement learning samples an action, scores it, and makes high-scoring actions more likely.",
+            "A baseline turns rewards into advantages (better or worse than usual), which cuts noise without bias.",
+            "PPO reuses each batch for several steps, clips how far the policy moves, and leashes it to a reference with a KL penalty.",
+            "GRPO drops the value network by comparing rewards within a group of answers to the same prompt.",
+            "A checker as the reward (the right answer, passing tests) is how reasoning models are trained.",
+            "The policy optimises the reward you wrote, not the goal you meant; verifiable rewards, a KL leash and held-out checks defend against that.",
+        ),
+    ),
+    BigQuestion(
+        "How do reasoning models think, and when is extra thinking worth it?",
+        (_ML + "inference", _ML + "reinforcement", _ML + "reasoning", _AG + "planning", _AG + "cost"),
+        (
+            "Every written token is another forward pass, so a chain of thought buys serial computation, and the text is the model's working memory.",
+            "Test-time compute can go into one longer chain, or into many chains with a vote or a verifier picking one answer.",
+            "Voting helps only when the right answer is the most common one and the samples' mistakes are independent.",
+            "Checking each step catches errors that checking only the final answer misses.",
+            "Training with verifiable rewards makes longer, self-checking reasoning emerge.",
+            "Thinking is paid for per token and slips compound over long chains, so route easy tasks to little thinking and measure cost per successful task.",
+        ),
+    ),
+    BigQuestion(
+        "How do models handle very long contexts?",
+        (_ML + "attention", _ML + "positional", _ML + "inference", _ML + "efficient_architectures"),
+        (
+            "Attention scores every pair of tokens, and the KV cache grows with every token, per layer, per conversation.",
+            "Sliding windows and sparse patterns score fewer pairs; stacked layers still carry information far.",
+            "Linear attention and state-space models keep a fixed-size summary: linear time and constant memory, but blurrier recall.",
+            "Mamba makes the summary selective: each token decides how much to keep and how much to write.",
+            "Hybrids keep a few attention layers for exact lookup.",
+            "The cache shrinks by sharing key/value heads, caching a small latent, or storing fewer bits.",
+        ),
+    ),
+    BigQuestion(
+        "What is going on inside a trained model, and how can we tell?",
+        (_ML + "transformer", _EMB + "word2vec", _ML + "interpretability", _ML + "alignment"),
+        (
+            "Models store features as directions across many neurons, not one feature per neuron.",
+            "Probes and the logit lens read what is present; they show correlation, not use.",
+            "Activation patching changes one activation and watches the output: the causal test.",
+            "Sparse features get packed in superposition, which makes individual neurons respond to several things.",
+            "Sparse autoencoders unpack superposition into interpretable features, at the cost of some unexplained activity.",
+            "These tools give evidence, not proof; full explanations exist only for narrow behaviours.",
+        ),
+    ),
+    BigQuestion(
+        "When is a neural network the wrong tool?",
+        (_ML + "classical", _ML + "neural_net", _ML + "regularization", _ML + "metrics"),
+        (
+            "On tables whose columns each mean something alone, gradient-boosted trees or a random forest are the model to beat.",
+            "A tree asks one column at a time whether it's above a threshold, so it needs no feature scaling and handles categories natively.",
+            "A single deep tree overfits; forests average many decorrelated trees, and boosting adds small trees fit to the remaining errors.",
+            "Neural networks win when meaning lives in arrangements of raw values (images, audio, text), when data is huge, or when a pretrained model can be reused.",
+            "Trees can't extrapolate beyond the values they trained on, and impurity importances credit noise, so check importances on held-out data.",
+        ),
+    ),
+    BigQuestion(
+        "How do AI models generate images, audio and video?",
+        (_GEN + "autoencoders", _GEN + "gans", _GEN + "diffusion", _GEN + "multimodal"),
+        (
+            "A generator learns a whole distribution, so it can sample new examples; predicting the average gives blur.",
+            "An autoencoder squeezes data into a small code and back; a VAE shapes that code so random codes decode to new data.",
+            "A GAN trains a generator against a discriminator: sharp, one-pass samples, but unstable training and mode collapse.",
+            "Diffusion adds noise on purpose and learns to remove it, generating from pure noise in many small steps.",
+            "Flow matching learns straight paths from noise to data, so it needs fewer steps; guidance trades variety for following the prompt.",
+            "Real systems denoise an autoencoder's latent with a transformer that reads the prompt; video and audio are the same idea with more tokens.",
+        ),
+    ),
+    BigQuestion(
+        "How do AI models see images and hear audio?",
+        (_ML + "cnn_rnn", _EMB + "contrastive", _GEN + "multimodal"),
+        (
+            "Every modality becomes a sequence of vectors a transformer attends over.",
+            "Images become patch tokens, (H/P)·(W/P) of them, so cost grows with the square of the resolution.",
+            "A small projector connects a vision or audio encoder to a language model; it is trained first, with both models frozen.",
+            "Audio becomes a log-mel spectrogram, then about 50 tokens a second.",
+            "Video multiplies image tokens by time, so frames are sampled; text stays the densest input.",
         ),
     ),
 ]

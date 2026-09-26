@@ -94,7 +94,8 @@ def unlinked_code_names(page_html: str) -> list[str]:
     names = []
     for para in re.findall(r"<p><strong>In code:</strong>(.*?)</p>", page_html, re.S):
         bare = re.sub(r"<code>\s*<a\b[^>]*>.*?</a>\s*</code>|<a\b[^>]*>\s*<code>.*?</code>\s*</a>", "", para, flags=re.S)
-        names += re.findall(r"<code>(.*?)</code>", bare, re.S)
+        # Only names can link; a keyword argument or a literal shows how to call something.
+        names += [c for c in re.findall(r"<code>(.*?)</code>", bare, re.S) if re.fullmatch(r"[A-Za-z_][\w.]*(\(\))?", c)]
     return names
 
 

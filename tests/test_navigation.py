@@ -346,6 +346,13 @@ class TestCheckingLinksIntoThisRepository:
 
         assert own_repo_problem(f"{REPO_URL}/blob/main/LICENSE#L5-L999") == "LICENSE has 94 lines, link asks for L5-L999"
 
+    def test_given_an_in_code_line_showing_arguments_or_literals_only_names_are_checked(self):
+        from tools.sitecheck import unlinked_code_names
+
+        # criterion="entropy" and {} show how to call something; they aren't names that could link.
+        page = '<p><strong>In code:</strong> <code><a href="#tree">tree</a></code> with <code>criterion="entropy"</code> and <code>{}</code>.</p>'
+        assert unlinked_code_names(page) == []
+
     def test_given_an_in_code_line_whose_names_did_not_become_links_it_is_reported(self):
         from tools.sitecheck import unlinked_code_names
 
@@ -423,6 +430,7 @@ class TestNoPageRepeatsTheHomePage:
             "primer.html": "index.html#lessons",
             "primer/ml.html": "../index.html#ml",
             "primer/ml/embeddings.html": "../../index.html#embeddings",
+            "primer/ml/generative.html": "../../index.html#generative",
             "primer/agents.html": "../index.html#agents",
         }
 
@@ -979,9 +987,12 @@ class TestTheHomePageHeader:
     def test_given_lessons_numbered_from_zero_the_home_page_and_breadcrumbs_agree(self):
         from tools.docsite import lesson_nav, render_home
 
-        # 38 lessons, numbered 0 to 37: say both, so "Lesson 5 of 37" and "38 lessons" can't look contradictory.
-        assert "38 lessons, numbered 0 to 37" in render_home()
-        assert "Lesson 5 of 0 to 37" in lesson_nav("primer.ml.attention")
+        # Numbered from 0: say both the count and the range, so "Lesson 5 of 0 to 53" and "54 lessons" agree.
+        from primer.curriculum import CURRICULUM
+
+        n = len(CURRICULUM)
+        assert f"{n} lessons, numbered 0 to {n - 1}" in render_home()
+        assert f"Lesson 5 of 0 to {n - 1}" in lesson_nav("primer.ml.attention")
 
 
 class TestDiagramsDrawOnce:
@@ -1066,7 +1077,7 @@ class TestTheTitle:
 
     def test_given_the_readme_it_opens_with_the_title_and_why_it_was_made(self):
         opening = (ROOT / "README.md").read_text().split("## ")[0]
-        assert opening.startswith("# AI Primer\n") and self.ORIGIN in opening
+        assert opening.startswith("# AI Primer\n") and "kept asking me how modern AI works" in opening
 
     def test_given_every_bar_and_footer_the_old_title_is_gone(self):
         from tools.docsite import lesson_nav, site_nav
@@ -1075,3 +1086,19 @@ class TestTheTitle:
                  (ROOT / "tools" / "docsite.py").read_text(), (ROOT / "docs" / "papers" / "assets" / "papers.js").read_text()]
         assert all("how modern AI works, built from scratch" not in t for t in texts)
         assert '">AI Primer</a>' in texts[0] and '">AI Primer</a>' in texts[1]
+
+
+class TestTheCatalogReadsItsLessons:
+    def test_given_a_lesson_whose_file_name_contains_a_part_name_only_the_link_text_is_read(self):
+        from tools.docsite import lessons_in_catalog_row
+
+        # "coding_agents.py" contains "agents.py", which isn't a lesson.
+        cell = "[agents.llm](../../primer/agents/llm.py), [agents.coding_agents](../../primer/agents/coding_agents.py)"
+        assert lessons_in_catalog_row(cell) == ["primer.agents.llm", "primer.agents.coding_agents"]
+
+    def test_given_every_catalog_row_each_lesson_it_names_exists(self):
+        from primer.curriculum import CURRICULUM
+        from tools.docsite import catalog
+
+        known = {l.module for l in CURRICULUM}
+        assert [(p["slug"], m) for p in catalog() for m in p["lessons"] if m not in known] == []

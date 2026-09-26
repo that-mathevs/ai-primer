@@ -569,6 +569,12 @@ def _rel(target: str, from_page: str) -> str:
     return os.path.relpath(target, os.path.dirname(from_page) or ".").replace(os.sep, "/")
 
 
+def lessons_in_catalog_row(cell: str) -> list[str]:
+    """The lessons a catalog row names. Each is written as a link, [ml.attention](../../primer/ml/attention.py);
+    only the link text counts, since a file path like coding_agents.py contains what looks like a name."""
+    return ["primer." + name for name in re.findall(r"(?<![\w/.])((?:ml|agents|common)(?:\.\w+)+)(?=\])", cell)]
+
+
 def catalog() -> list[dict]:
     """Parse docs/papers/CATALOG.md into one dict per paper, marking which companions exist."""
     papers = []
@@ -582,8 +588,7 @@ def catalog() -> list[dict]:
                 "slug": slug,
                 "title": paper,
                 "sources": re.findall(r"https?://\S+", sources),
-                # Each lesson is written as a link to its file: [ml.attention](../../primer/ml/attention.py).
-                "lessons": ["primer." + name for name in re.findall(r"\[?((?:ml|agents|common)(?:\.\w+)+)\]?", lessons)],
+                "lessons": lessons_in_catalog_row(lessons),
                 "exists": (ROOT / "docs" / "papers" / f"{slug}.html").exists(),
             }
         )
