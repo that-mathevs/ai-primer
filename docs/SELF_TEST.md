@@ -309,8 +309,8 @@ and less text per context window. Measure with the actual tokenizer.
 They see token ids, not characters, and numbers split into chunks that don't
 line up with place value.
 
-**What does a call with 2,000 input and 500 output tokens cost at $3/$15 per million?**
-0.006 + 0.0075 = $0.0135. And 1,000 tokens is about 750 English words.
+**What does a call with 2,000 input and 500 output tokens cost at \$3/\$15 per million?**
+0.006 + 0.0075 = \$0.0135. And 1,000 tokens is about 750 English words.
 
 
 ### 9. Training stages

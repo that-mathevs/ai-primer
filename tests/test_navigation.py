@@ -800,6 +800,14 @@ class TestNothingRendersBroken:
         page = "<li>Vaswani et al., *Attention Is All You Need* (2017)</li><p>fine: 2 * 3 * 4</p><code>*args</code>"
         assert raw_markdown(page) == ["*Attention Is All You Need*"]
 
+    def test_given_two_prices_in_one_paragraph_the_site_check_reports_them_typeset_as_math(self):
+        from tools.sitecheck import prices_typeset_as_math
+
+        # MathJax pairs the two dollar signs and runs "per million input tokens" together in italics.
+        page = ("<p>at $2 per million input tokens and $4 for the tuned one</p>"
+                "<p>fine: \\$2 and \\$4, and $x_i$ and $2^{10}$</p><td>$0.02 =\n<strong>$500</strong></td>")
+        assert prices_typeset_as_math(page) == ["$2 per million input tokens and $", "$0.02 =\n$"]
+
     def test_given_the_home_page_paper_titles_render_their_emphasis(self):
         from tools.docsite import render_home
 

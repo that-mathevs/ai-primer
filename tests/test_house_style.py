@@ -49,3 +49,49 @@ class TestTone:
             if found:
                 offenders[rel] = found
         assert offenders == {}, f"coaching language found: {offenders}"
+
+
+def _inline_math_spans(doc: str) -> list[str]:
+    """What MathJax would typeset between single $ signs, paragraph by paragraph and table cell by table cell."""
+    import re
+
+    doc = re.sub(r"```[\s\S]*?```", "\n\n", doc)  # code blocks are never typeset
+    doc = re.sub(r"\$\$[\s\S]*?\$\$", " ", doc)  # display math is fine as it is
+    doc = re.sub(r"`[^`\n]*`", " ", doc)
+    doc = doc.replace("\\$", " ")  # an escaped dollar is a plain dollar sign
+    doc = doc.replace("**", "")  # bold becomes a tag, so "$0.02 = **$500**" pairs as "0.02 = "
+    spans = []
+    for block in re.split(r"\n\s*\n", doc):
+        for unit in block.split("|"):
+            spans += re.findall(r"\$([^$]+)\$", unit)
+    return spans
+
+
+def _reads_as_prose(tex: str) -> bool:
+    import re
+
+    # When two prices pair up, the closing "$" is really the next price's sign, so it follows a space.
+    if tex[0].isspace() or tex[-1].isspace():
+        return True
+    tex = re.sub(r"\\(?:text|mathrm|operatorname|textbf|mathit)\{[^}]*\}", " ", tex)
+    tex = re.sub(r"\\[A-Za-z]+", " ", tex)
+    # Two ordinary words in a row don't happen in a formula.
+    return re.search(r"[A-Za-z]{3,}\s+[A-Za-z]{3,}", tex) is not None
+
+
+class TestDollarSigns:
+    def test_given_prices_in_a_lesson_they_are_never_typeset_as_math(self):
+        # MathJax reads "$2 per million ... $4" as one formula and runs the words together.
+        # Write a price as \$2 so it stays a dollar sign.
+        import importlib
+
+        from primer.curriculum import CURRICULUM
+
+        modules = ["primer", "primer.notation", *(lesson.module for lesson in CURRICULUM)]
+        offenders = {}
+        for module in modules:
+            doc = importlib.import_module(module).__doc__ or ""
+            prose = [span[:60] for span in _inline_math_spans(doc) if _reads_as_prose(span)]
+            if prose:
+                offenders[module] = prose
+        assert offenders == {}

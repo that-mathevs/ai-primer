@@ -569,13 +569,13 @@ first differing token, because every token's keys depend on everything
 before it, so **put stable content first and volatile content last**.
 
 **Tiny worked example.** 100 requests, each a 10,000-token shared prefix
-plus a 500-token question, at $3 per million input tokens, with cache
+plus a 500-token question, at \$3 per million input tokens, with cache
 writes at 1.25× and cache reads at 0.1× (typical of providers; check
 current pricing):
 
-* Without caching: 100 × 10,500 × $3/10⁶ = **$3.15**.
-* With caching: the first call writes the cache ($0.039); each of the other
-  99 costs $0.0045. Total **$0.48**, an 85% saving, and each cached call
+* Without caching: 100 × 10,500 × \$3/10⁶ = **\$3.15**.
+* With caching: the first call writes the cache (\$0.039); each of the other
+  99 costs \$0.0045. Total **\$0.48**, an 85% saving, and each cached call
   also skips 10,000 tokens of prefill, so its first token arrives sooner.
 
 ```mermaid

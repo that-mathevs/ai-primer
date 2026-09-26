@@ -16,7 +16,7 @@ Three checks, all offline:
 8. No link has an empty address (it would only reload the page).
 9. The specification page lists the whole suite, and every count the site states matches it.
 10. Nothing renders broken: no indented lines collapsed into one paragraph, no raw Markdown,
-    no heading that skips a level.
+    no heading that skips a level, no two prices typeset as one formula.
 11. Every page can be reached: some other page links to it.
 12. Every page with diagrams draws each one once, under its own name.
 
@@ -312,6 +312,21 @@ def raw_markdown(page_html: str) -> list[str]:
     return [m for p in patterns for m in re.findall(p, text)]
 
 
+def prices_typeset_as_math(page_html: str) -> list[str]:
+    """Dollar signs MathJax pairs into a formula that is really prose: "$2 per million ... $4".
+
+    A price is written \\$2. When two unescaped prices share a paragraph, the closing sign is
+    really the second price's, which follows a space; a real formula never ends in one.
+    """
+    html = re.sub(r"<(script|style|pre|code|textarea)\b.*?</\1>", " ", page_html, flags=re.S | re.I)
+    found = []
+    for block in re.findall(r"<(p|li|td|th|dd|h[1-6])\b[^>]*>(.*?)</\1>", html, re.S):
+        text = htmllib.unescape(re.sub(r"<[^>]+>", "", block[1])).replace("\\$", " ")
+        text = re.sub(r"\$\$.*?\$\$", " ", text, flags=re.S)
+        found += [f"${span}$" for span in re.findall(r"\$([^$]+)\$", text) if span[0].isspace() or span[-1].isspace()]
+    return found
+
+
 def main() -> int:
     if not SITE.exists():
         print("docs/html doesn't exist yet: run `make docs` first")
@@ -394,9 +409,9 @@ def main() -> int:
     rendering: dict[str, list[str]] = {}
     for page in sorted(SITE.rglob("*.html")):
         html = page.read_text(errors="ignore")
-        if problems := collapsed_blocks(html) + raw_markdown(html) + heading_skips(html):
+        if problems := collapsed_blocks(html) + raw_markdown(html) + heading_skips(html) + prices_typeset_as_math(html):
             rendering[page.relative_to(SITE).as_posix()] = problems
-    print(f"broken rendering (collapsed lists or diagrams, raw Markdown): {sum(map(len, rendering.values()))}")
+    print(f"broken rendering (collapsed lists or diagrams, raw Markdown, prices as math): {sum(map(len, rendering.values()))}")
     for page, problems in rendering.items():
         for problem in problems[:5]:
             print(f"  ✗ {page}: {problem[:110]}")

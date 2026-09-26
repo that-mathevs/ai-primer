@@ -136,7 +136,7 @@ support aliases for exactly this.
 
 **Tiny worked example: what will re-embedding cost?** 50 million documents of
 about 500 tokens each, an embedding throughput of 1 million tokens per second
-across your workers, and a price of $0.02 per million tokens (all three are
+across your workers, and a price of \$0.02 per million tokens (all three are
 inputs you replace with your own numbers):
 
 $$
@@ -153,13 +153,13 @@ $$
 | n · t | total tokens to embed | 25,000,000,000 |
 | r | throughput, tokens per second | 1,000,000 |
 | 3600 | seconds per hour | |
-| p | price per million tokens | $0.02 |
+| p | price per million tokens | \$0.02 |
 
 **In words:** total tokens divided by throughput gives the time; total
 tokens in millions times the price gives the cost.
 
-**On the example:** 25 × 10⁹ / (10⁶ × 3600) = **6.94 hours**; 25,000 × $0.02 =
-**$500**.
+**On the example:** 25 × 10⁹ / (10⁶ × 3600) = **6.94 hours**; 25,000 × \$0.02 =
+**\$500**.
 
 **In Python:**
 

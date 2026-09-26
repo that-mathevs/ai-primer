@@ -89,6 +89,8 @@ notation is a bug.
    checks for this.
 2. **No em dashes, anywhere**: code, comments, docstrings, markdown, HTML.
    Use a colon, a comma, parentheses or a new sentence.
+   Write a price in a docstring as `\$2`: the site typesets `$...$` as math,
+   so two bare prices in one paragraph become one italic formula.
    [`tests/test_house_style.py`](tests/test_house_style.py) enforces it.
 3. **Every module is a lesson.** It has a markdown docstring (pdoc renders it)
    with, in order: `# Title`, `Run: python -m <module>`, the idea in plain

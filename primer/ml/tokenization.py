@@ -293,8 +293,8 @@ a pricier meter for the return trip: output tokens usually cost several
 times more than input tokens.
 
 **Tiny worked example.** A prompt of 2,000 tokens with a 500-token answer, at
-example prices of $3 per million input tokens and $15 per million output
-tokens: 0.006 + 0.0075 = **$0.0135**. A million such calls cost $13,500.
+example prices of \$3 per million input tokens and \$15 per million output
+tokens: 0.006 + 0.0075 = **\$0.0135**. A million such calls cost \$13,500.
 
 ```mermaid
 flowchart LR
@@ -330,7 +330,7 @@ $$
 tokens in millions times the output price."
 
 **With the numbers:** 2,000/1,000,000 × 3 + 500/1,000,000 × 15 = 0.006 +
-0.0075 = **$0.0135** (`estimate_cost`).
+0.0075 = **\$0.0135** (`estimate_cost`).
 
 **In Python:**
 
@@ -435,8 +435,8 @@ and less text per context window. Measure with the actual tokenizer.
 They see token ids, not characters, and numbers split into chunks that don't
 line up with place value.
 
-**What does a call with 2,000 input and 500 output tokens cost at $3/$15 per million?**
-0.006 + 0.0075 = $0.0135. And 1,000 tokens is about 750 English words.
+**What does a call with 2,000 input and 500 output tokens cost at \$3/\$15 per million?**
+0.006 + 0.0075 = \$0.0135. And 1,000 tokens is about 750 English words.
 
 ## The papers behind this lesson
 

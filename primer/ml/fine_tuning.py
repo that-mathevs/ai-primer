@@ -38,17 +38,17 @@ simply not enough to make the cook consistent.
 **Tiny worked example.** A support bot sends a 3,000-token prompt full of
 instructions and examples on every request. A fine-tuned model has learned
 that behaviour and needs only 300 tokens of prompt. Take these illustrative
-prices (real ones vary by provider and change often): $2 per million input
-tokens for the general model, $4 per million for the tuned one, because
+prices (real ones vary by provider and change often): \$2 per million input
+tokens for the general model, \$4 per million for the tuned one, because
 hosting a custom model usually costs more per token.
 
 | | Tokens per request | Price per million | Cost per request |
 |---|---|---|---|
-| prompted | 3,000 | $2 | 3,000 × 2 / 1,000,000 = **$0.0060** |
-| fine-tuned | 300 | $4 | 300 × 4 / 1,000,000 = **$0.0012** |
+| prompted | 3,000 | \$2 | 3,000 × 2 / 1,000,000 = **\$0.0060** |
+| fine-tuned | 300 | \$4 | 300 × 4 / 1,000,000 = **\$0.0012** |
 
-Each request saves $0.0048. Writing and checking 1,000 training examples
-plus the training run costs, say, $600 once. After 600 / 0.0048 = **125,000
+Each request saves \$0.0048. Writing and checking 1,000 training examples
+plus the training run costs, say, \$600 once. After 600 / 0.0048 = **125,000
 requests** the course has paid for itself: 25 days at 5,000 requests a day.
 
 ```mermaid
@@ -85,11 +85,11 @@ $$
 | Symbol | Meaning here | In the example |
 |---|---|---|
 | $N^\star$ | "N-star": the break-even number of requests | 125,000 |
-| $C_{\text{once}}$ | one-off cost: writing and checking data, the training run | $600 |
+| $C_{\text{once}}$ | one-off cost: writing and checking data, the training run | \$600 |
 | $c$ | cost of one request | |
-| $c_{\text{prompt}}, c_{\text{tuned}}$ | cost of one request with the long prompt, and with the fine-tuned model | $0.0060, $0.0012 |
+| $c_{\text{prompt}}, c_{\text{tuned}}$ | cost of one request with the long prompt, and with the fine-tuned model | \$0.0060, \$0.0012 |
 | $t$ | input tokens sent per request | 3,000 and 300 |
-| $p$ | price in dollars per million input tokens | $2 and $4 |
+| $p$ | price in dollars per million input tokens | \$2 and \$4 |
 | $10^6$ | one million: prices are quoted per million tokens | |
 
 **In words:** "divide what the course costs once by what it saves on each
@@ -119,7 +119,7 @@ round(N_star / 5000, 1)  # → 25.0
 **Reading it:** the x-axis counts requests served and the y-axis is the
 total money spent so far. The prompted line starts at zero but climbs
 steeply, because every request pays for 3,000 tokens. The fine-tuned line
-starts at $600 (the one-off cost) and climbs slowly. Left of the dashed
+starts at \$600 (the one-off cost) and climbs slowly. Left of the dashed
 line, prompting is cheaper; right of it, the fine-tune is. If the tuned
 model cost as much per request as the prompt, the two lines would never
 cross, and the only reason left to fine-tune would be quality.
