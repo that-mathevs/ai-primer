@@ -1,16 +1,29 @@
 """Specification for primer.ml.attention: how a token decides what to listen to."""
 
+import importlib
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from primer.ml.attention import (
+    SENTENCE,
     MultiHeadAttention,
     causal_mask,
     scaled_dot_product_attention,
     softmax,
     sqrt_dk_experiment,
+    viz_data,
     worked_example_it,
+    worked_example_sentence,
 )
+
+ROOT = Path(__file__).resolve().parent.parent
+NODE = shutil.which("node")
+IT, ANIMAL, TIRED, STREET = (SENTENCE.index(w) for w in ("it", "animal", "tired", "street"))
 
 
 class TestSoftmax:
@@ -91,3 +104,67 @@ class TestAgreementWithPyTorch:
             *(torch.tensor(a) for a in (Q, K, V)), is_causal=True
         ).numpy()
         assert np.allclose(ours, theirs, atol=1e-6)
+
+
+class TestTheWorkedSentence:
+    def test_given_the_whole_sentence_it_still_scores_animal_tired_and_street_2_1_and_half(self):
+        # The sentence reuses the worked example's query for "it" and keys for these three words.
+        Q, K = worked_example_sentence()
+        scores = Q[IT] @ K[[ANIMAL, TIRED, STREET]].T / np.sqrt(K.shape[1])
+        assert scores.tolist() == [2.0, 1.0, 0.5]
+
+    def test_given_no_mask_it_attends_most_to_animal(self):
+        Q, K = worked_example_sentence()
+        _, weights = scaled_dot_product_attention(Q, K, K)
+        assert SENTENCE[int(weights[IT].argmax())] == "animal"
+
+    def test_given_a_causal_mask_it_cannot_see_tired_because_tired_comes_later(self):
+        Q, K = worked_example_sentence()
+        _, weights = scaled_dot_product_attention(Q, K, K, mask=causal_mask(len(SENTENCE)))
+        assert weights[IT, TIRED] == 0.0
+
+
+def _widget_weights(Q, K, causal: bool, temperature: float = 1.0) -> np.ndarray:
+    """Run the widget's own JavaScript on these queries and keys and return its weights."""
+    options = json.dumps({"causal": causal, "temperature": temperature})
+    script = (
+        "const m = require('./docs/assets/viz/attention-matrix.js');"
+        f"console.log(JSON.stringify(m.attentionWeights({json.dumps(Q)}, {json.dumps(K)}, {options})));"
+    )
+    out = subprocess.run([NODE, "-e", script], capture_output=True, text=True, check=True, cwd=ROOT).stdout
+    return np.array(json.loads(out))
+
+
+@pytest.mark.skipif(NODE is None, reason="needs Node to run the widget's arithmetic")
+class TestTheAttentionWidgetAgreesWithTheLesson:
+    def test_given_the_sentence_without_a_mask_the_widget_computes_the_lessons_weights(self):
+        data = viz_data()["attention-matrix"]
+        Q, K = np.array(data["Q"]), np.array(data["K"])
+        _, expected = scaled_dot_product_attention(Q, K, K)
+        assert np.allclose(_widget_weights(data["Q"], data["K"], causal=False), expected, rtol=0, atol=1e-9)
+
+    def test_given_the_sentence_with_a_causal_mask_the_widget_computes_the_lessons_weights(self):
+        data = viz_data()["attention-matrix"]
+        Q, K = np.array(data["Q"]), np.array(data["K"])
+        _, expected = scaled_dot_product_attention(Q, K, K, mask=causal_mask(len(data["tokens"])))
+        assert np.allclose(_widget_weights(data["Q"], data["K"], causal=True), expected, rtol=0, atol=1e-9)
+
+    def test_given_temperature_one_half_the_widget_undoes_the_division_by_sqrt_dk(self):
+        # The head width is 4, so √d_k = 2, and dividing by 2 · 0.5 is dividing by 1: no scaling at all.
+        data = viz_data()["attention-matrix"]
+        Q, K = np.array(data["Q"]), np.array(data["K"])
+        _, unscaled = scaled_dot_product_attention(Q, K, K, scale=False)
+        assert np.allclose(_widget_weights(data["Q"], data["K"], causal=False, temperature=0.5), unscaled, rtol=0, atol=1e-9)
+
+
+class TestTheLessonPlacesTheAttentionWidget:
+    def test_given_the_attention_lesson_it_places_the_widget_right_after_a_try_it_paragraph(self):
+        doc = importlib.import_module("primer.ml.attention").__doc__
+        placeholder = doc.index('<div class="viz" data-viz="attention-matrix" aria-label="')
+        paragraph_before = doc[doc.rindex("\n\n", 0, placeholder - 2) : placeholder]
+        assert paragraph_before.strip().startswith("**Try it:**")
+
+    def test_given_the_widget_data_it_is_the_lessons_own_sentence_queries_and_keys(self):
+        Q, K = worked_example_sentence()
+        data = viz_data()["attention-matrix"]
+        assert (data["tokens"], data["Q"], data["K"]) == (SENTENCE, Q.tolist(), K.tolist())
