@@ -1,0 +1,1049 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generative Adversarial Nets, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Goodfellow et al. (2014), the paper that pitted a generator against a discriminator and started the GAN era.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="generative-adversarial-nets">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Adversarial nets</a>
+        <ol>
+          <li><a href="#s3-game">The game (equation 1)</a></li>
+          <li><a href="#s3-fig1">Figure 1 in one dimension</a></li>
+          <li><a href="#s3-alg">Algorithm 1: taking turns</a></li>
+          <li><a href="#s3-sat">The saturation fix</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Theoretical results</a>
+        <ol>
+          <li><a href="#s4-1">4.1 The best detective</a></li>
+          <li><a href="#s4-1b">4.1 Theorem 1: the game's minimum</a></li>
+          <li><a href="#s4-2">4.2 Convergence of Algorithm 1</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Experiments</a></li>
+      <li><a href="#s6">6 Advantages and disadvantages</a></li>
+      <li><a href="#s7">7 Conclusions and future work</a></li>
+      <li><a href="#today">What changed since 2014</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Generative Adversarial Nets, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Goodfellow, Pouget-Abadie, Mirza, Xu, Warde-Farley, Ozair, Courville and Bengio (2014), the paper that trained a forger against a detective and started the GAN era.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1406.2661">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1406.2661">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1406.2661">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. Equations are reproduced with every symbol decoded. The paper's figures are not reproduced: Figure 1 and Table 2 are redrawn from scratch as interactive pictures, the sample images of Figures 2 and 3 are described in words, and three rows of Table 1 are quoted with attribution. Worked numbers are our own, and made-up ones are labelled illustrative. Read the original alongside: every section heading links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon.</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and every equation is followed by a table of its symbols, a sentence reading it aloud, the numbers from a tiny example, and the same numbers in plain Python.</li>
+  <li>The pictures are live. The redrawn Figure 1 in §3 is the fastest way to see the whole idea: drag the generator and watch the detective react.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it matters today</strong>. The <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a> builds both networks from scratch in NumPy, trains them on a ring of eight little clouds, and shows every way the game goes wrong.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661">original</a></span></h2>
+<blockquote class="quote">“The training procedure for G is to maximize the probability of D making a mistake.”<cite>Goodfellow et al. (2014), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A forger prints banknotes and a detective inspects them. Every time the detective catches a fake, the forger learns what gave it away. Every time the forger improves, the detective has to look harder. Nobody ever writes down what a real banknote looks like, yet after enough rounds the forger prints notes the detective cannot tell from the real thing. The forger is the <span class="t" data-t="generator">generator</span> G, the detective is the <span class="t" data-t="discriminator">discriminator</span> D, and the pair is a <span class="t" data-t="gan">generative adversarial network</span>.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A new way to train a <span class="t" data-t="generative model">generative model</span>: two networks play a <span class="t" data-t="minimax">minimax</span> game, one trying to make a single number big and the other trying to make it small.</li>
+  <li>If both players could be any function at all, the game has exactly one solution: G reproduces the data's distribution and D says ½ everywhere.</li>
+  <li>When both players are <span class="t" data-t="multilayer perceptron">multilayer perceptrons</span>, everything trains with plain <span class="t" data-t="backpropagation">backpropagation</span>. No <span class="t" data-tip-title="Markov chain" data-tip="A random process that takes many small steps, each depending only on where it is now. Older generative models needed thousands of such steps to produce one sample or to estimate one gradient.">Markov chains</span> and no approximate <span class="t" data-tip-title="Inference (in a generative model)" data-tip="Working backwards from a data point to the hidden causes (latent variables) that could have produced it. For many older models this was intractable and had to be approximated during training.">inference</span> are needed, either to train or to draw samples.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>For several years, GANs made the sharpest synthetic images anyone had seen. <span class="t" data-t="diffusion model">Diffusion models</span> have since taken over most image generation, but the adversarial idea lives on inside image and audio decoders and in fast distilled samplers, and the instabilities this paper first met show up wherever two models are trained against each other.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S1">original</a></span></h2>
+<blockquote class="quote">“The generative model can be thought of as analogous to a team of counterfeiters, trying to produce fake currency and use it without detection, while the discriminative model is analogous to the police, trying to detect the counterfeit currency.”<cite>Goodfellow et al. (2014), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Telling cats from dogs is a sorting job: look at a picture, give a label. By 2014 deep networks were superb at sorting jobs, which the paper calls <span class="t" data-tip-title="Discriminative model" data-tip="A model that looks at an input and outputs a label or a probability about it: cat or dog, real or fake. It never has to produce an input itself.">discriminative models</span>. Drawing a new cat is much harder, because the model must know what every pixel of a plausible cat looks like at once. The older ways of doing it needed sums over every possible image, which nobody can compute. The paper's trick is to turn drawing into sorting: train a sorter (the detective) and use its verdicts to teach a drawer (the forger).</p>
+<h3 class="rung">Tiny example</h3>
+<p>The detective only ever has to answer one yes-or-no question: is this real? That is the same job as a spam filter. If it says 0.9 for a real photo and 0.2 for a fake, it is doing well. The forger never sees a real photo at all. All it gets is the detective's answer on its own fakes, and the direction that would have made that answer higher.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The paper's bet is that the machinery that made classifiers work, backpropagation, <span class="t" data-t="dropout">dropout</span> and <span class="t" data-t="relu">piecewise linear units</span>, can be reused unchanged to build a generator. That bet is why GANs scaled so quickly: anything you could train as a classifier, you could now turn into a detective. The <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a>'s first section builds both players as tiny networks.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S2">original</a></span></h2>
+<blockquote class="quote">“Compared to GSNs, the adversarial nets framework does not require a Markov chain for sampling.”<cite>Goodfellow et al. (2014), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Imagine judging how likely one particular photo is by comparing it against every photo that could ever exist. Many generative models of the time, such as <span class="t" data-tip-title="Boltzmann machine" data-tip="An older generative network (restricted and deep Boltzmann machines) that gives every possible input an unnormalised score. Turning scores into probabilities needs a sum over every possible input, the partition function.">Boltzmann machines</span>, worked like that: they give each image a score, and to turn scores into probabilities they must divide by the total score of all images, the <span class="t" data-tip-title="Partition function" data-tip="The total unnormalised score summed over every possible input. Dividing by it turns scores into probabilities, but for images the sum has astronomically many terms.">partition function</span>. That total is impossible to compute exactly, so it was estimated with long random walks called <span class="t" data-tip-title="MCMC (Markov chain Monte Carlo)" data-tip="Estimating an average by taking a long random walk whose steps visit states in proportion to their probability. It works, but it can take very many steps to move between separate peaks (the walk mixes slowly).">Markov chain Monte Carlo</span>, which get stuck when the data has several separate peaks.</p>
+<h3 class="rung">Tiny example</h3>
+<p>A tiny black-and-white image of 28 × 28 pixels has 784 pixels, each on or off, so there are 2<sup>784</sup> possible images. That number has 237 digits. A partition function over such images is a sum of 2<sup>784</sup> terms. A GAN never needs it: its generator makes a sample in one forward pass, and its detective only compares.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># every 28 × 28 black-and-white image: 2 choices for each of 784 pixels
+images = 2 ** (28 * 28)
+# how many digits that count has
+len(str(images))  # → 237</code></pre>
+<figure class="ix" id="fig-families">
+  <div class="ixgrid">
+  <svg viewBox="0 0 370 232" role="img" aria-label="Four families of generative models and what each finds hard: training, sampling and evaluating the probability of an image">
+    <text x="169" y="22" text-anchor="middle" class="lbl">training</text>
+    <text x="247" y="22" text-anchor="middle" class="lbl">sampling</text>
+    <text x="325" y="22" text-anchor="middle" class="lbl">p(x)</text>
+    <text x="4" y="58">Directed models</text>
+    <text x="4" y="104">Undirected models</text>
+    <text x="4" y="144">Generative</text>
+    <text x="4" y="158">autoencoders</text>
+    <text x="4" y="196">Adversarial nets</text>
+    <g class="blk attn" data-block="dir_train"><rect x="132" y="36" width="74" height="36" rx="6"/><text x="169" y="58" text-anchor="middle">inference</text></g>
+    <g class="blk soft" data-block="dir_sample"><rect x="210" y="36" width="74" height="36" rx="6"/><text x="247" y="58" text-anchor="middle">easy</text></g>
+    <g class="blk norm" data-block="dir_px"><rect x="288" y="36" width="74" height="36" rx="6"/><text x="325" y="58" text-anchor="middle">estimate</text></g>
+    <g class="blk attn" data-block="und_train"><rect x="132" y="82" width="74" height="36" rx="6"/><text x="169" y="104" text-anchor="middle">MCMC</text></g>
+    <g class="blk attn" data-block="und_sample"><rect x="210" y="82" width="74" height="36" rx="6"/><text x="247" y="104" text-anchor="middle">chain</text></g>
+    <g class="blk norm" data-block="und_px"><rect x="288" y="82" width="74" height="36" rx="6"/><text x="325" y="104" text-anchor="middle">estimate</text></g>
+    <g class="blk attn" data-block="ae_train"><rect x="132" y="128" width="74" height="36" rx="6"/><text x="169" y="150" text-anchor="middle">trade-off</text></g>
+    <g class="blk attn" data-block="ae_sample"><rect x="210" y="128" width="74" height="36" rx="6"/><text x="247" y="150" text-anchor="middle">chain</text></g>
+    <g class="blk norm" data-block="ae_px"><rect x="288" y="128" width="74" height="36" rx="6"/><text x="325" y="150" text-anchor="middle">Parzen</text></g>
+    <g class="blk attn" data-block="adv_train"><rect x="132" y="174" width="74" height="36" rx="6"/><text x="169" y="196" text-anchor="middle">sync D, G</text></g>
+    <g class="blk soft" data-block="adv_sample"><rect x="210" y="174" width="74" height="36" rx="6"/><text x="247" y="196" text-anchor="middle">easy</text></g>
+    <g class="blk norm" data-block="adv_px"><rect x="288" y="174" width="74" height="36" rx="6"/><text x="325" y="196" text-anchor="middle">Parzen</text></g>
+    <text x="4" y="228" class="lbl">green: no difficulty · amber: hard · yellow: only estimated</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a cell. Start with the bottom row, the paper's own method, and compare it with the rows above.</p></div>
+  </div>
+  <figcaption>Table 2 of the paper, redrawn and summarised in our own words: the main difficulties of four families of deep generative models. Based on Goodfellow et al. (2014), Table 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each row is a family of generative models and each column one job you might want from it: training it, drawing a new sample from it, and computing p(x), the probability it gives a particular image. Green means no difficulty, amber a real obstacle, yellow a number that can only be estimated. Read the bottom row last. Adversarial nets turn the sampling column green (one forward pass, no chain), like directed models, and they escape the chains and inference that make the upper rows hard to train. The price is a new amber cell: the two networks must be kept in step. Nobody can compute p(x) for the top rows either, but the last two rows have no formula for it at all, so it has to be estimated from samples (the Parzen method of §5).</p>
+<h3 class="rung">Two close relatives</h3>
+<ul>
+  <li><strong><span class="t" data-tip-title="Noise-contrastive estimation (NCE)" data-tip="Fitting a model by training it to tell real data apart from samples of a fixed, known noise distribution. The model itself does the telling apart.">Noise-contrastive estimation</span></strong> also fits a model by telling real data from fakes. But its fakes come from fixed noise that never improves, so once the model is roughly right the job becomes too easy and learning slows. In a GAN the fakes come from the generator, so they keep getting harder to spot.</li>
+  <li><strong><span class="t" data-t="variational autoencoder">Variational autoencoders</span></strong>, published the same year, also train a generator by backpropagating into it. They need a second network to do inference; a GAN needs a detective instead. The <a data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a> builds one.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The two families that survived are the two that avoid Markov chains during sampling: GANs and VAEs, and later diffusion models, which do take many steps but each one is a plain forward pass through a network rather than a random walk that must mix.</p>
+</section>
+
+<section id="s3">
+<h2>3 Adversarial nets <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The forger starts from a handful of dice rolls, the <span class="t" data-tip-title="Noise z (the prior)" data-tip="The random numbers the generator starts from. The paper calls their distribution the prior on input noise, p_z(z); each fresh draw of z gives a different sample.">noise z</span>, and turns them into a banknote G(z). Different rolls, different note. The detective takes a note and outputs one number, D(x): how likely it thinks the note came from the real pile rather than from the forger.</p>
+</section>
+
+<section id="s3-game">
+<h3>The game (equation 1) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S3.E1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Picture a scoreboard. The detective earns points for confident correct calls and loses a lot for confident mistakes. The detective wants the score as high as possible; the forger wants it as low as possible. One number, two players pulling it opposite ways.</p>
+<h4>Tiny example</h4>
+<p>The detective sees two real notes and two fakes. Scores use the <span class="t" data-t="logarithm">logarithm</span>: log 1 = 0, and the log of a small number is very negative, so a confident mistake costs far more than a hesitant one.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Note</th><th>Real?</th><th class="num">Verdict D</th><th>What is scored</th><th class="num">Value</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>real</td><td class="num">0.9</td><td>log D = log 0.9</td><td class="num">−0.105</td></tr>
+    <tr><td>2</td><td>real</td><td class="num">0.8</td><td>log D = log 0.8</td><td class="num">−0.223</td></tr>
+    <tr><td>3</td><td>fake</td><td class="num">0.2</td><td>log(1 − D) = log 0.8</td><td class="num">−0.223</td></tr>
+    <tr><td>4</td><td>fake</td><td class="num">0.4</td><td>log(1 − D) = log 0.6</td><td class="num">−0.511</td></tr>
+  </tbody>
+</table></div>
+<p>The real notes average −0.164, the fakes −0.367, total <strong>−0.53</strong>. A perfect detective would score 0. A detective reduced to a coin flip, ½ on everything, scores log ½ + log ½ = <strong>−1.386</strong>.</p>
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=minG}{\min_{G}}\,\htmlData{sym=maxD}{\max_{D}}\;\htmlData{sym=V}{V(D,G)} = \htmlData{sym=Ex}{\mathbb{E}_{x\sim p_{\text{data}}(x)}}\big[\htmlData{sym=logsym}{\log} \htmlData{sym=Dx}{D(x)}\big] + \htmlData{sym=Ez}{\mathbb{E}_{z\sim p_{z}(z)}}\big[\htmlData{sym=logsym}{\log}\big(1-\htmlData{sym=DGz}{D(G(z))}\big)\big]" data-fallback="min_G max_D V(D, G) = E_{x ~ p_data(x)}[log D(x)] + E_{z ~ p_z(z)}[log(1 − D(G(z)))]"></div>
+<div class="symtable" data-syms="minG,maxD,V,Ex,Ez,logsym,Dx,Gz,DGz"></div>
+<p class="inwords"><strong>In words:</strong> “average the log of the detective's verdicts on real data, add the average log of one minus its verdicts on fakes; the detective picks its weights to push this up, and the forger picks its weights to push the detective's best score down.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (log 0.9 + log 0.8) / 2 + (log 0.8 + log 0.6) / 2 = −0.164 + (−0.367) = −0.53. The <span class="t" data-t="expectation">expectation</span> 𝔼 is just “the average over many draws”, here over two.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# D(x) on two real notes, D(G(z)) on two fakes
+D_x, D_Gz = [0.9, 0.8], [0.2, 0.4]
+# E over real x of log D(x)
+real_term = sum(math.log(d) for d in D_x) / len(D_x)
+round(real_term, 3)  # → -0.164
+# E over noise z of log(1 − D(G(z)))
+fake_term = sum(math.log(1 - d) for d in D_Gz) / len(D_Gz)
+round(fake_term, 3)  # → -0.367
+# V(D, G)
+round(real_term + fake_term, 2)  # → -0.53
+# a coin-flip detective: D = 1/2 on everything
+round(math.log(0.5) + math.log(0.5), 3)  # → -1.386</code></pre>
+<p>Look closely and −V is the <span class="t" data-t="binary cross-entropy">binary cross-entropy</span> of an ordinary classifier that labels real notes 1 and fakes 0. The detective is a plain classifier. What is new is that its second class keeps changing underneath it.</p>
+<h4>Why it matters today</h4>
+<p>Equation 1 is the whole method in one line, and it is still the starting point of every GAN loss. The <a data-lesson="primer/ml/generative/gans.html#value_function"><code>value_function</code></a> in the lesson computes it from a batch of verdicts.</p>
+</section>
+
+<section id="s3-fig1">
+<h3>Figure 1 in one dimension <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S3.F1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Lay every possible banknote along a ruler. The real notes pile up in one bump on the ruler; the forger's notes pile up in another. The detective's verdict is a curve over the ruler: high where real notes dominate, low where fakes dominate. The forger then slides its pile towards where the curve is high.</p>
+<h4>Tiny example</h4>
+<p>The forger's recipe here is G(z) = μ + σ · (the bell-curve value at position z), with z drawn evenly between 0 and 1, as in the paper's figure. With μ = 0.2 and σ = 0.9, the middle roll z = 0.5 lands on x = 0.2, and rolls near the ends of the z line land far out in the tails. Evenly spaced rolls land close together near the middle of the pile and spread out at its edges: the generator <em>contracts</em> where p<sub>g</sub> is dense and <em>expands</em> where it is sparse, exactly as the paper's caption says.</p>
+<div class="plot" id="fig1">
+  <div class="controls ui">
+    <span>Stage:</span>
+    <button type="button" data-stage="a" aria-pressed="true">(a) near the end</button>
+    <button type="button" data-stage="b" aria-pressed="false">(b) train D</button>
+    <button type="button" data-stage="c" aria-pressed="false">(c) step G</button>
+    <button type="button" data-stage="d" aria-pressed="false">(d) equilibrium</button>
+  </div>
+  <div class="sliders ui">
+    <label for="f1-mu">generator centre μ</label><input type="range" id="f1-mu" min="-1.5" max="3" step="0.05" value="0.2"><output id="f1-mu-v">0.20</output>
+    <label for="f1-sd">generator spread σ</label><input type="range" id="f1-sd" min="0.3" max="1.5" step="0.05" value="0.9"><output id="f1-sd-v">0.90</output>
+  </div>
+  <svg id="f1-svg" viewBox="0 0 440 290" style="max-width:620px;margin:0 auto" role="img" aria-label="The data distribution, the generator's distribution and the discriminator's verdict along one axis, with arrows from evenly spaced noise values to the points the generator maps them to. Arrow keys move a probe along the axis."></svg>
+  <div class="legend"><span><svg class="swatch" viewBox="0 0 28 6" width="28" height="6" aria-hidden="true"><line x1="0" y1="3" x2="28" y2="3" style="stroke:var(--fg)" stroke-width="2.4" stroke-dasharray="2 3"/></svg>real data p<sub>data</sub> (dotted)</span><span><svg class="swatch" viewBox="0 0 28 6" width="28" height="6" aria-hidden="true"><line x1="0" y1="3" x2="28" y2="3" style="stroke:var(--soft-stroke)" stroke-width="2.4"/></svg>generator p<sub>g</sub> (solid)</span><span><svg class="swatch" viewBox="0 0 28 6" width="28" height="6" aria-hidden="true"><line x1="0" y1="3" x2="28" y2="3" style="stroke:var(--ff-stroke)" stroke-width="2.4" stroke-dasharray="8 4"/></svg>detective D(x) (dashed)</span></div>
+  <p class="readout" id="f1-readout">Pick a stage, drag the sliders, or hover the picture to read the three curves at any x.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the bottom line is the noise z, from 0 on the left to 1 on the right, with eleven evenly spaced rolls. Each arrow carries one roll up to the point x = G(z) on the data line above it. The dotted bump is the real data, the solid bump is where the generator's samples pile up, and the dashed curve is the detective's verdict, on a scale from 0 (bottom) to 1 (top). Step through the stages. In (a) the forger is close and the detective only partly right. In (b) the detective has been trained to its best, which is high over the real bump and low where only fakes live. In (c) the forger has taken a step towards where that verdict was high, so the old dashed curve is now out of date. In (d) the bumps coincide and the verdict is flat at ½: the detective can only guess. Drag μ and σ to put the forger anywhere; the dashed curve then shows the best possible detective for that forger. The densities are drawn to their own scale, and the stage settings are illustrative, chosen to match the paper's four panels.</p>
+<h4>Why it matters today</h4>
+<p>This picture is the paper's argument in miniature: the detective's curve tells the forger which way to move its mass, and the game stops only when there is nothing left to tell. The <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a> draws the same idea in two dimensions, with a trained detective's verdict as a coloured background behind the forger's samples.</p>
+</section>
+
+<section id="s3-alg">
+<h3>Algorithm 1: taking turns <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#alg1">original</a></span></h3>
+<blockquote class="quote">“The number of steps to apply to the discriminator, k, is a hyperparameter. We used k = 1, the least expensive option, in our experiments.”<cite>Goodfellow et al. (2014), Algorithm 1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Nobody can solve “min over G of max over D” in one go. So the players take turns: the detective studies for a little while, then the forger practises once against the detective as it now is, and round it goes. Training the detective to perfection before each forger move would be too slow, and on a finite pile of real notes the detective would just memorise them (<span class="t" data-t="overfitting">overfit</span>).</p>
+<h4>Tiny example</h4>
+<p>Take the four notes from the table above as one round with a <span class="t" data-t="batch">minibatch</span> of m = 2. The detective's objective is the same −0.53. Nudging each of its <span class="t" data-t="logits">scores</span> (the number before the <span class="t" data-t="sigmoid">sigmoid</span>) changes the objective at these rates: +0.05 and +0.1 on the two real notes (so it raises them), −0.1 and −0.2 on the fakes (so it lowers them). <span class="t" data-t="backpropagation">Backpropagation</span> passes those rates on to every weight θ<sub>d</sub>. Then the forger takes its turn on two fresh rolls of noise.</p>
+<figure class="ix" id="fig-alg">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 330" role="img" aria-label="Algorithm 1: an outer loop over training iterations containing k discriminator steps and one generator step">
+    <defs><marker id="arr-alg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="iter"><rect x="6" y="6" width="308" height="318" rx="12"/></g>
+    <text x="14" y="24" class="lbl">for each training iteration</text>
+    <g class="blk frame" data-block="kloop"><rect x="18" y="36" width="284" height="152" rx="10"/></g>
+    <text x="26" y="54" class="lbl">k times (k = 1 in the paper)</text>
+    <path class="wire" d="M95,106 V126" marker-end="url(#arr-alg)"/>
+    <path class="wire" d="M225,106 V126" marker-end="url(#arr-alg)"/>
+    <path class="wire" d="M160,172 V206" marker-end="url(#arr-alg)"/>
+    <path class="wire" d="M160,246 V262" marker-end="url(#arr-alg)"/>
+    <path class="wire" d="M262,284 H296 V70 H290" marker-end="url(#arr-alg)"/>
+    <g class="blk plain" data-block="znoise"><rect x="34" y="64" width="122" height="42" rx="7"/><text x="95" y="82" text-anchor="middle">sample m noise z</text><text x="95" y="97" text-anchor="middle">make m fakes</text></g>
+    <g class="blk plain" data-block="xreal"><rect x="164" y="64" width="122" height="42" rx="7"/><text x="225" y="82" text-anchor="middle">sample m real x</text><text x="225" y="97" text-anchor="middle">from the data</text></g>
+    <g class="blk ff" data-block="dstep"><rect x="58" y="128" width="204" height="44" rx="7"/><text x="160" y="147" text-anchor="middle">update D: climb</text><text x="160" y="162" text-anchor="middle">its stochastic gradient</text></g>
+    <g class="blk plain" data-block="znoise2"><rect x="92" y="208" width="136" height="38" rx="7"/><text x="160" y="231" text-anchor="middle">sample m fresh z</text></g>
+    <g class="blk soft" data-block="gstep"><rect x="58" y="264" width="204" height="44" rx="7"/><text x="160" y="283" text-anchor="middle">update G: descend</text><text x="160" y="298" text-anchor="middle">its stochastic gradient</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step. Start at the top left with the noise.</p></div>
+  </div>
+  <figcaption>Algorithm 1 of the paper, redrawn as a flow: minibatch stochastic gradient training of generative adversarial nets. Based on Goodfellow et al. (2014), Algorithm 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the outer dashed box is one training iteration, and the inner one is the detective's turn, repeated k times. In the detective's turn a fresh batch of noise becomes fakes, a batch of real examples arrives, and both feed one step of gradient <em>ascent</em> for D (blue). Then, outside the inner box, the forger draws fresh noise and takes one step of gradient <em>descent</em> (green) against the detective as it is after its step. The long arrow on the right starts the next iteration. With k = 1, as in the paper's experiments, the two players simply alternate.</p>
+<h4>The math</h4>
+<p>The detective's step: climb this, with respect to its own weights θ<sub>d</sub>.</p>
+<div class="eq" data-tex="\htmlData{sym=gradd}{\nabla_{\theta_d}}\,\htmlData{sym=oneoverm}{\frac{1}{m}}\htmlData{sym=summ}{\sum_{i=1}^{m}}\Big[\htmlData{sym=logsym}{\log} D\big(\htmlData{sym=xi}{x^{(i)}}\big) + \htmlData{sym=logsym}{\log}\Big(1 - D\big(G\big(\htmlData{sym=zi}{z^{(i)}}\big)\big)\Big)\Big]" data-fallback="∇_θd (1/m) Σ_{i=1..m} [ log D(x^(i)) + log(1 − D(G(z^(i)))) ]"></div>
+<div class="symtable" data-syms="gradd,oneoverm,summ,xi,zi,logsym"></div>
+<p class="inwords"><strong>In words:</strong> “over a minibatch of m real examples and m fakes, average the log of the verdicts on the reals plus the log of one minus the verdicts on the fakes, and find which way each of the detective's weights should move to raise that average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the average is −0.53, as above. Written as D = σ(a), the log of a real verdict rises at rate 1 − D per unit of score and the log of one minus a fake verdict at rate −D, each divided by m = 2: (1 − 0.9)/2 = 0.05, (1 − 0.8)/2 = 0.1, −0.2/2 = −0.1 and −0.4/2 = −0.2. The chain rule carries these on to every weight in θ<sub>d</sub>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+m = 2
+D_x, D_Gz = [0.9, 0.8], [0.2, 0.4]
+# (1/m) Σ [log D(x^(i)) + log(1 − D(G(z^(i))))]
+objective = sum(math.log(dx) + math.log(1 - dg) for dx, dg in zip(D_x, D_Gz)) / m
+round(objective, 2)  # → -0.53
+# its slope with respect to each real note's score: (1 − D) / m
+[round((1 - d) / m, 2) for d in D_x]  # → [0.05, 0.1]
+# and with respect to each fake's score: −D / m
+[round(-d / m, 2) for d in D_Gz]  # → [-0.1, -0.2]</code></pre>
+<p>The forger's step: descend this, with respect to its own weights θ<sub>g</sub>.</p>
+<div class="eq" data-tex="\htmlData{sym=gradg}{\nabla_{\theta_g}}\,\htmlData{sym=oneoverm}{\frac{1}{m}}\htmlData{sym=summ}{\sum_{i=1}^{m}}\htmlData{sym=logsym}{\log}\Big(1 - \htmlData{sym=DGz}{D\big(G\big(z^{(i)}\big)\big)}\Big)" data-fallback="∇_θg (1/m) Σ_{i=1..m} log(1 − D(G(z^(i))))"></div>
+<div class="symtable" data-syms="gradg,oneoverm,summ,DGz"></div>
+<p class="inwords"><strong>In words:</strong> “average the log of one minus the detective's verdict on each fake, and find which way each of the forger's weights should move to lower that average”, which means raising the verdicts on its fakes.</p>
+<p class="inwords"><strong>With the numbers:</strong> (log 0.8 + log 0.6) / 2 = −0.367. Its slope with respect to each fake's score is −D / m: −0.1 and −0.2. Descending a negative slope means moving the score up, so the forger changes its fakes until the detective finds them more real. That slope reaches the forger's weights by flowing back <em>through</em> the detective into G.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+m = 2
+D_Gz = [0.2, 0.4]
+# (1/m) Σ log(1 − D(G(z^(i))))
+round(sum(math.log(1 - d) for d in D_Gz) / m, 3)  # → -0.367
+# slope with respect to each fake's score: −D / m
+[round(-d / m, 2) for d in D_Gz]  # → [-0.1, -0.2]</code></pre>
+<h4>Why it matters today</h4>
+<p>Alternating single steps is still how GANs train, usually with <span class="t" data-t="adam">Adam</span> in place of the paper's <span class="t" data-t="momentum">momentum</span> (see the <a href="adam.html">Adam companion</a>). The paper's warning, that D stays near its best only “so long as G changes slowly enough”, turned out to be the heart of GAN instability. The lesson's <a data-lesson="primer/ml/generative/gans.html#train_gan"><code>train_gan</code></a> runs this loop on the ring of eight clouds, and shows that the detective's learning rate alone decides whether the forger finds all eight.</p>
+</section>
+
+<section id="s3-sat">
+<h3>The saturation fix <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S3">original</a></span></h3>
+<blockquote class="quote">“In practice, equation 1 may not provide sufficient gradient for G to learn well.”<cite>Goodfellow et al. (2014), §3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Early on, the forger is terrible and the detective is sure every fake is fake. Picture a game of hotter-and-colder where the helper whispers more quietly the further away you are: exactly when you most need a hint, you hear nothing. The original forger loss behaves like that; it <span class="t" data-t="saturation">saturates</span>. The paper's fix is to flip the forger's goal from “make the detective less right” to “make the detective say real”, which shouts loudest when the forger is furthest off.</p>
+<h4>Tiny example</h4>
+<p>The detective is 99% sure a fake is fake: D(G(z)) = 0.01. The original loss, log(1 − D), changes at a rate of only −0.01 per unit of the detective's score. The flipped goal, maximise log D, written as the loss −log D, changes at −0.99: ninety-nine times more push. When the detective is undecided, D = 0.5, both rates are −0.5.</p>
+<div class="eq" data-tex="\htmlData{sym=dda}{\frac{\partial}{\partial a}}\,\htmlData{sym=logsym}{\log}\big(1-\htmlData{sym=sig}{\sigma}(\htmlData{sym=ascore}{a})\big) = -\htmlData{sym=Dfake}{D} \qquad\qquad \htmlData{sym=dda}{\frac{\partial}{\partial a}}\big(-\htmlData{sym=logsym}{\log}\,\htmlData{sym=sig}{\sigma}(\htmlData{sym=ascore}{a})\big) = -\big(1-\htmlData{sym=Dfake}{D}\big)" data-fallback="∂/∂a log(1 − σ(a)) = −D      ∂/∂a (−log σ(a)) = −(1 − D)"></div>
+<div class="symtable" data-syms="dda,ascore,sig,Dfake,logsym"></div>
+<p class="inwords"><strong>In words:</strong> “the original forger loss moves by only D when the detective's score for a fake moves, so it goes quiet when D is near 0; the flipped loss moves by 1 − D, so it is loudest exactly when the forger is doing worst.” (This pair is our own derivation of the paper's sentence; the paper states the fix in words.)</p>
+<p class="inwords"><strong>With the numbers:</strong> at D = 0.01 the two rates are −0.01 and −0.99; at D = 0.5 both are −0.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def sigma(a):
+    return 1 / (1 + math.exp(-a))
+# a score that makes the detective 99% sure the fake is fake
+a = math.log(0.01 / 0.99)
+round(sigma(a), 2)  # → 0.01
+# measure each slope by nudging the score a tiny bit either way
+h = 1e-6
+def slope(loss, a):
+    return (loss(a + h) - loss(a - h)) / (2 * h)
+def original(a):
+    return math.log(1 - sigma(a))
+def flipped(a):
+    return -math.log(sigma(a))
+round(slope(original, a), 3)  # → -0.01
+round(slope(flipped, a), 3)  # → -0.99
+# an undecided detective, score 0 so D = 0.5
+round(slope(original, 0.0), 3), round(slope(flipped, 0.0), 3)  # → (-0.5, -0.5)</code></pre>
+<div class="plot" id="fig-ns">
+  <div id="ns-chart"></div>
+  <p class="readout" id="ns-readout">Hover the chart, or focus it and use the arrow keys, to compare the two pushes at any verdict.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the detective's verdict on a fake, on a log scale: far left means “certainly fake”, the right edge “certainly real”. The y-axis is how hard each loss pushes the forger, the size of its slope with respect to the detective's score. The solid line, the original loss, shrinks towards zero on the left, exactly where an untrained forger lives. The dashed line, the flipped loss, stays near 1 there. The two cross at D = 0.5 and share the same finishing point. The paper puts it this way: the same fixed point, much stronger gradients early in learning.</p>
+<h4>Why it matters today</h4>
+<p>This footnote-sized paragraph became the default: almost every GAN since uses this <span class="t" data-t="non-saturating loss">non-saturating loss</span> or a Wasserstein-style loss. The lesson's <a data-lesson="primer/ml/generative/gans.html#head_start_experiment"><code>head_start_experiment</code></a> gives the detective a head start on the ring and measures the forger's gradient under both losses: after 800 detective steps the original loss hands the forger 0.09 while the non-saturating one hands it 15.</p>
+</section>
+
+<section id="s4">
+<h2>4 Theoretical results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S4">original</a></span></h2>
+<blockquote class="quote">“The results of this section are done in a non-parametric setting, e.g. we represent a model with infinite capacity by studying convergence in the space of probability density functions.”<cite>Goodfellow et al. (2014), §4</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Before trusting a new game, ask two questions. If both players were perfect, where would the game end? And does taking turns actually get there? Section 4 answers both, for idealised players that can be <em>any</em> function, not just a network of a fixed size. It measures the forger by the <span class="t" data-t="probability density">probability density</span> p<sub>g</sub> it produces: how thickly its samples cover each spot.</p>
+<h3 class="rung">Tiny example</h3>
+<p>For the whole of §4 we use a world with only three spots, A, B and C. The real data lands on them 60%, 30% and 10% of the time. The forger, still learning, lands on them 10%, 30% and 60% of the time. Everything below can be computed on these six numbers.</p>
+<h3 class="rung">Why it matters</h3>
+<p>These results are why anyone believed GANs could work: the game's only perfect ending is a forger that matches the data. The gap between these idealised players and real networks is where every later GAN paper lives.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 The best detective (Proposition 1) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Suppose that at one spot real notes turn up three times as often as fakes. However clever the detective is, two identical notes look the same to it, so the best it can say there is “75% real”. It should match the local mix, no more and no less.</p>
+<h4>Tiny example</h4>
+<p>First the paper rewrites the value as one sum over spots (an <span class="t" data-tip-title="Integral" data-tip="The continuous version of a sum: add up a quantity over every point, each weighted by a tiny width dx. With a handful of spots, it is just a sum.">integral</span>, since real data is continuous): at each spot, the real share times log D plus the fake share times log(1 − D). On our three spots with a coin-flip detective (D = ½ everywhere) that is −1.386. The paper then notes that at each spot the detective is maximising a · log y + b · log(1 − y), with a the real share and b the fake share, and that this peaks at y = a/(a + b). At a spot with a = 0.3 and b = 0.1, the peak is 0.75: the value is −0.2274 at y = 0.7, −0.2249 at 0.75 and −0.2279 at 0.8.</p>
+<div class="eq" data-tex="\htmlData{sym=V}{V(G,D)} = \htmlData{sym=integral}{\int_{x}} \htmlData{sym=pdatax}{p_{\text{data}}(x)}\,\htmlData{sym=logsym}{\log}\big(\htmlData{sym=Dany}{D(x)}\big) + \htmlData{sym=pgx}{p_g(x)}\,\htmlData{sym=logsym}{\log}\big(1-\htmlData{sym=Dany}{D(x)}\big)\,\htmlData{sym=dx}{dx}" data-fallback="V(G, D) = ∫_x p_data(x) log(D(x)) + p_g(x) log(1 − D(x)) dx"></div>
+<div class="symtable" data-syms="V,integral,pdatax,pgx,Dany,dx,logsym"></div>
+<p class="inwords"><strong>In words:</strong> “walk along every possible x; at each, weigh the log of the verdict by how much real data lives there and the log of one minus the verdict by how many fakes live there; add it all up.” The paper gets here from equation 1 by noticing that averaging over noise z and then pushing it through G is the same as averaging over the fakes' own density p<sub>g</sub>.</p>
+<p class="inwords"><strong>With the numbers:</strong> with D = ½ on all three spots, V = (0.6 + 0.3 + 0.1) · log ½ + (0.1 + 0.3 + 0.6) · log ½ = −1.386.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# the three-spot world: real and fake shares at A, B, C
+p_data = [0.6, 0.3, 0.1]
+p_g = [0.1, 0.3, 0.6]
+# a coin-flip detective
+D = [0.5, 0.5, 0.5]
+# ∫ over x becomes a sum over the three spots
+V = sum(pd * math.log(d) + pg * math.log(1 - d) for pd, pg, d in zip(p_data, p_g, D))
+round(V, 3)  # → -1.386</code></pre>
+<p>The step that finishes the proof, for any real share a and fake share b not both zero:</p>
+<div class="eq" data-tex="\htmlData{sym=yvar}{y}\;\htmlData{sym=mapsto}{\rightarrow}\;\htmlData{sym=acoef}{a}\,\htmlData{sym=logsym}{\log}(\htmlData{sym=yvar}{y}) + \htmlData{sym=bcoef}{b}\,\htmlData{sym=logsym}{\log}(1-\htmlData{sym=yvar}{y}) \;\text{ is largest on } [0,1] \text{ at } \htmlData{sym=yvar}{y} = \frac{\htmlData{sym=acoef}{a}}{\htmlData{sym=acoef}{a}+\htmlData{sym=bcoef}{b}}" data-fallback="y → a log(y) + b log(1 − y) is largest on [0, 1] at y = a / (a + b)"></div>
+<div class="symtable" data-syms="yvar,mapsto,acoef,bcoef"></div>
+<p class="inwords"><strong>In words:</strong> “if a point gets real data with weight a and fakes with weight b, the verdict that earns the detective the most there is the real share, a out of a + b.” The slope of a log y + b log(1 − y) is a/y − b/(1 − y), which is zero exactly at y = a/(a + b).</p>
+<p class="inwords"><strong>With the numbers:</strong> a = 0.3, b = 0.1: the peak is at 0.3 / 0.4 = 0.75, where the value is −0.2249; its neighbours 0.7 and 0.8 score lower.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+a, b = 0.3, 0.1
+def score(y):
+    return a * math.log(y) + b * math.log(1 - y)
+# where the peak should be
+peak = a / (a + b)
+round(peak, 4)  # → 0.75
+[round(score(y), 4) for y in (0.7, 0.75, 0.8)]  # → [-0.2274, -0.2249, -0.2279]
+# the slope a/y − b/(1 − y) at the peak
+round(a / peak - b / (1 - peak), 10)  # → 0.0</code></pre>
+<div class="plot" id="fig-best">
+  <div class="sliders ui">
+    <label for="best-a">real share a</label><input type="range" id="best-a" min="0.05" max="1" step="0.05" value="0.3"><output id="best-a-v">0.30</output>
+    <label for="best-b">fake share b</label><input type="range" id="best-b" min="0.05" max="1" step="0.05" value="0.1"><output id="best-b-v">0.10</output>
+  </div>
+  <div id="best-chart"></div>
+  <p class="readout" id="best-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the verdict y the detective could give at one spot, and the curve is what it would earn there, a · log y + b · log(1 − y). It dips steeply at both ends, because a confident mistake is punished by a log that heads to minus infinity, and it has one peak in between. Drag the sliders: the peak always sits at a/(a + b), the readout confirms it, and with a = b it sits at exactly ½. Any detective, however it is built, can do no better at that spot.</p>
+<p>So the best detective against a fixed forger is:</p>
+<div class="eq" data-tex="\htmlData{sym=Dstar}{D^{*}_{G}(x)} = \frac{\htmlData{sym=pdatax}{p_{\text{data}}(x)}}{\htmlData{sym=pdatax}{p_{\text{data}}(x)}+\htmlData{sym=pgx}{p_g(x)}}" data-fallback="D*_G(x) = p_data(x) / (p_data(x) + p_g(x))"></div>
+<div class="symtable" data-syms="Dstar,pdatax,pgx"></div>
+<p class="inwords"><strong>In words:</strong> “the best verdict at each point is the share of everything found there that is real.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at A, 0.6 / (0.6 + 0.1) = 0.857; at B, 0.3 / 0.6 = 0.5; at C, 0.1 / 0.7 = 0.143. The detective can be anything at spots where neither real nor fake data ever appears, since nothing there is scored.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>p_data = [0.6, 0.3, 0.1]
+p_g = [0.1, 0.3, 0.6]
+# D*(x) = p_data(x) / (p_data(x) + p_g(x)) at A, B, C
+D_star = [pd / (pd + pg) for pd, pg in zip(p_data, p_g)]
+[round(d, 3) for d in D_star]  # → [0.857, 0.5, 0.143]</code></pre>
+<h4>Why it matters today</h4>
+<p>The detective never has to model what real data looks like, only a <em>ratio</em> of two densities. That is why GANs could learn sharp images long before anyone could write down a probability for an image. The lesson's <a data-lesson="primer/ml/generative/gans.html#fit_discriminator_table"><code>fit_discriminator_table</code></a> trains the most flexible detective possible and arrives at <a data-lesson="primer/ml/generative/gans.html#optimal_discriminator"><code>optimal_discriminator</code></a>'s verdicts without being told the formula.</p>
+</section>
+
+<section id="s4-1b">
+<h3>4.1 Theorem 1: where the game ends <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S4.E6">original</a></span></h3>
+<blockquote class="quote">“The global minimum of the virtual training criterion C(G) is achieved if and only if p<sub>g</sub> = p<sub>data</sub>. At that point, C(G) achieves the value −log 4.”<cite>Goodfellow et al. (2014), §4.1, Theorem 1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Now let the detective always play its best, and ask what score the forger is left facing. That score, called C(G), turns out to be a fixed number plus a measure of how different the two piles are. The forger's only way to its lowest score is to make the piles identical.</p>
+<h4>Tiny example</h4>
+<p>On the three spots, the best detective says 0.857, 0.5 and 0.143, and scores C(G) = −0.990. The coin-flip score −log 4 = −1.386 is the lowest C(G) can ever be. The gap, 0.396, is twice the <span class="t" data-t="jensen-shannon divergence">Jensen-Shannon divergence</span> between the piles, 2 × 0.198: that is how much the forger still has to improve.</p>
+<div class="eq" data-tex="\htmlData{sym=CG}{C(G)} = \htmlData{sym=maxD}{\max_{D}}\,\htmlData{sym=V}{V(G,D)} = \htmlData{sym=Expd}{\mathbb{E}_{x\sim p_{\text{data}}}}\big[\htmlData{sym=logsym}{\log}\,\htmlData{sym=Dstar}{D^{*}_{G}(x)}\big] + \htmlData{sym=Expg}{\mathbb{E}_{x\sim p_{g}}}\big[\htmlData{sym=logsym}{\log}\big(1-\htmlData{sym=Dstar}{D^{*}_{G}(x)}\big)\big]" data-fallback="C(G) = max_D V(G, D) = E_{x ~ p_data}[log D*_G(x)] + E_{x ~ p_g}[log(1 − D*_G(x))]"></div>
+<div class="symtable" data-syms="CG,maxD,V,Expd,Expg,Dstar,logsym"></div>
+<p class="inwords"><strong>In words:</strong> “the forger's score is the value with the best detective plugged in: the average log verdict on real data plus the average log of one minus the verdict on fakes, both using D*.” Substituting the formula for D* turns each log into the log of a share, p<sub>data</sub>/(p<sub>data</sub> + p<sub>g</sub>) and p<sub>g</sub>/(p<sub>data</sub> + p<sub>g</sub>).</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.6 log 0.857 + 0.3 log 0.5 + 0.1 log 0.143 on the real side, and the mirror image 0.1 log 0.143 + 0.3 log 0.5 + 0.6 log 0.857 on the fake side, total −0.990.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+p_data = [0.6, 0.3, 0.1]
+p_g = [0.1, 0.3, 0.6]
+D_star = [pd / (pd + pg) for pd, pg in zip(p_data, p_g)]
+# E over real x of log D*(x), plus E over fake x of log(1 − D*(x))
+C = sum(pd * math.log(d) for pd, d in zip(p_data, D_star)) + sum(pg * math.log(1 - d) for pg, d in zip(p_g, D_star))
+round(C, 3)  # → -0.99
+# the best C(G) can ever be: log 1/2 + log 1/2
+round(-math.log(4), 3)  # → -1.386</code></pre>
+<p>To read that gap, the paper uses the <span class="t" data-t="kl divergence">Kullback-Leibler (KL) divergence</span>, the extra surprise of expecting q when the truth is p:</p>
+<div class="eq" data-tex="\htmlData{sym=KL}{KL}\big(\htmlData{sym=pdist}{p}\,\htmlData{sym=parallel}{\|}\,\htmlData{sym=qdist}{q}\big) = \htmlData{sym=sumx}{\sum_{x}} \htmlData{sym=pdist}{p(x)}\,\htmlData{sym=logsym}{\log}\frac{\htmlData{sym=pdist}{p(x)}}{\htmlData{sym=qdist}{q(x)}}" data-fallback="KL(p ‖ q) = Σ_x p(x) log(p(x) / q(x))"></div>
+<div class="symtable" data-syms="KL,pdist,parallel,qdist,sumx"></div>
+<p class="inwords"><strong>In words:</strong> “at every x, weigh the log of how much more likely p makes x than q does by how often p produces x, and add up.” It is 0 when p and q agree everywhere and positive otherwise. (The paper uses KL without writing out this definition; we add it so the next line can be checked.)</p>
+<p class="inwords"><strong>With the numbers:</strong> take p = p<sub>data</sub> = (0.6, 0.3, 0.1) and q = the half-and-half mix of the two piles, (0.35, 0.3, 0.35): KL = 0.6 log(0.6/0.35) + 0.3 log 1 + 0.1 log(0.1/0.35) = 0.198.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def KL(p, q):
+    # Σ_x p(x) log(p(x) / q(x))
+    return sum(p_x * math.log(p_x / q_x) for p_x, q_x in zip(p, q) if p_x > 0)
+p_data = [0.6, 0.3, 0.1]
+p_g = [0.1, 0.3, 0.6]
+# the mix (p_data + p_g) / 2
+mix = [(pd + pg) / 2 for pd, pg in zip(p_data, p_g)]
+mix  # → [0.35, 0.3, 0.35]
+round(KL(p_data, mix), 3)  # → 0.198
+# a distribution compared with itself
+KL(p_data, p_data)  # → 0.0</code></pre>
+<p>Subtracting −log 4 from C(G) leaves two KL terms (equation 5), which together are twice the Jensen-Shannon divergence (equation 6):</p>
+<div class="eq" data-tex="\htmlData{sym=CG}{C(G)} = \htmlData{sym=minuslog4}{-\log 4} + \htmlData{sym=KL}{KL}\Big(\htmlData{sym=pdata}{p_{\text{data}}}\,\htmlData{sym=parallel}{\Big\|}\,\htmlData{sym=mix}{\frac{p_{\text{data}}+p_g}{2}}\Big) + \htmlData{sym=KL}{KL}\Big(\htmlData{sym=pg}{p_g}\,\htmlData{sym=parallel}{\Big\|}\,\htmlData{sym=mix}{\frac{p_{\text{data}}+p_g}{2}}\Big) = \htmlData{sym=minuslog4}{-\log 4} + 2\cdot\htmlData{sym=JSD}{JSD}\big(\htmlData{sym=pdata}{p_{\text{data}}}\,\htmlData{sym=parallel}{\|}\,\htmlData{sym=pg}{p_g}\big)" data-fallback="C(G) = −log 4 + KL(p_data ‖ (p_data + p_g)/2) + KL(p_g ‖ (p_data + p_g)/2) = −log 4 + 2 · JSD(p_data ‖ p_g)"></div>
+<div class="symtable" data-syms="CG,minuslog4,pdata,pg,mix,JSD"></div>
+<p class="inwords"><strong>In words:</strong> “the forger's score is the coin-flip floor, −log 4, plus how far the real pile is from the average of the two piles, plus how far the fake pile is from that average; together those two distances are twice the Jensen-Shannon divergence between real and fake.”</p>
+<p class="inwords"><strong>With the numbers:</strong> −1.386 + 0.198 + 0.198 = −0.990, the same C(G) as before. Jensen-Shannon is never negative and is 0 only when the piles are identical, so C(G) is lowest, −1.386, exactly when p<sub>g</sub> = p<sub>data</sub>. At the other extreme, two piles that never overlap have JSD = log 2 and C(G) = 0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def KL(p, q):
+    return sum(p_x * math.log(p_x / q_x) for p_x, q_x in zip(p, q) if p_x > 0)
+def JSD(p, q):
+    # the average of each pile's KL from the half-and-half mix
+    mix = [(a + b) / 2 for a, b in zip(p, q)]
+    return (KL(p, mix) + KL(q, mix)) / 2
+p_data = [0.6, 0.3, 0.1]
+p_g = [0.1, 0.3, 0.6]
+round(JSD(p_data, p_g), 3)  # → 0.198
+# C(G) = −log 4 + 2 · JSD
+round(-math.log(4) + 2 * JSD(p_data, p_g), 3)  # → -0.99
+# a forger that matches the data
+round(-math.log(4) + 2 * JSD(p_data, p_data), 3)  # → -1.386
+# piles with no spot in common
+round(JSD([1, 0], [0, 1]), 3), round(math.log(2), 3)  # → (0.693, 0.693)</code></pre>
+<div class="plot" id="fig-cg">
+  <div class="sliders ui">
+    <label for="cg-sd">width of both piles</label><input type="range" id="cg-sd" min="0.1" max="1.5" step="0.05" value="1"><output id="cg-sd-v">1.00</output>
+  </div>
+  <div id="cg-chart"></div>
+  <p class="readout" id="cg-readout">Hover the chart, or focus it and use the arrow keys, to read C(G) for any position of the forger.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the real pile is a bell curve centred at 0, and the forger's pile is an identical bell curve slid to the position on the x-axis. The solid curve is C(G), what the forger scores against the best detective; the dashed line is the floor, −log 4. At position 0 the piles coincide and C(G) touches the floor, just as Theorem 1 says. Now slide the forger far away: C(G) climbs to 0 and goes <em>flat</em>. Drag the width slider down to make both piles thin, and the flat region spreads almost to the centre. A flat curve has no slope, so a forger out there gets no hint which way to move. The theorem is true, but this flatness is exactly the complaint the <span class="t" data-t="wasserstein distance">Wasserstein</span> GAN paper made three years later.</p>
+<h4>Why it matters today</h4>
+<p>Theorem 1 is the reason a GAN is said to minimise the Jensen-Shannon divergence. It also gives a reference number: a detective that can do no better than guessing has a loss (−V) of log 4 ≈ 1.386. The lesson measures the flatness directly with <a data-lesson="primer/ml/generative/gans.html#js_divergence"><code>js_divergence</code></a> and compares it with <a data-lesson="primer/ml/generative/gans.html#wasserstein_1d"><code>wasserstein_1d</code></a>.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Convergence of Algorithm 1 (Proposition 2) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“However, the excellent performance of multilayer perceptrons in practice suggests that they are a reasonable model to use despite their lack of theoretical guarantees.”<cite>Goodfellow et al. (2014), §4.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Picture a bowl. However you drop a marble in, rolling downhill takes it to the single bottom. The proof shows that, if the detective always plays its best, the forger's score C(G) is a bowl in the space of all possible piles (it is <span class="t" data-t="convex">convex</span>), with its bottom at p<sub>g</sub> = p<sub>data</sub>. So small downhill steps on the pile itself must end at the data.</p>
+<h4>Tiny example</h4>
+<p>The key fact: the largest of several bowls is still a bowl, and its slope at any point is the slope of whichever bowl is on top there. Take two bowls, (x + 1)² and (x − 1)². At x = 2 the first is 9 and the second 1, so the largest is 9, and its slope there is the first bowl's slope, 2 × (2 + 1) = 6. In the proof, each bowl is one detective's score as a function of the pile, and the one on top is the best detective. That is why the forger may simply follow the gradient computed against the best detective.</p>
+<div class="eq" data-tex="\htmlData{sym=fx}{f(x)} = \htmlData{sym=sup}{\sup_{\alpha\in\mathcal{A}}}\,\htmlData{sym=falpha}{f_{\alpha}(x)} \qquad \htmlData{sym=subgrad}{\partial f_{\beta}(x) \in \partial f} \;\text{ if }\; \htmlData{sym=argsup}{\beta = \arg\sup_{\alpha\in\mathcal{A}} f_{\alpha}(x)}" data-fallback="f(x) = sup_{α ∈ A} f_α(x);   ∂f_β(x) ∈ ∂f  if  β = arg sup_α f_α(x)"></div>
+<div class="symtable" data-syms="fx,sup,falpha,subgrad,argsup"></div>
+<p class="inwords"><strong>In words:</strong> “define f as the top of a family of convex functions; then at any x, the slope of the function that is on top there is a valid slope for f.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the family is f<sub>−1</sub>(x) = (x + 1)² and f<sub>+1</sub>(x) = (x − 1)². At x = 2, f(2) = max(9, 1) = 9, the top one is β = −1, and its slope 2(2 + 1) = 6 matches the slope of f measured directly.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># two convex bowls, one for each α in A = {−1, +1}
+def f_alpha(alpha, x):
+    return (x - alpha) ** 2
+def f(x):
+    # f(x) = sup over α of f_α(x)
+    return max(f_alpha(alpha, x) for alpha in (-1, 1))
+x = 2
+f(x)  # → 9
+# β = arg sup: which bowl is on top at x
+beta = max((-1, 1), key=lambda alpha: f_alpha(alpha, x))
+beta  # → -1
+# the slope of f_β at x, from the formula 2(x − β)
+2 * (x - beta)  # → 6
+# the slope of f itself, by nudging x a tiny bit
+h = 1e-6
+round((f(x + h) - f(x - h)) / (2 * h), 4)  # → 6.0</code></pre>
+<div class="plot" id="fig-sup">
+  <div id="sup-chart"></div>
+  <p class="readout" id="sup-readout">Hover the chart, or focus it and use the arrow keys, to read the two bowls and the largest of them.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the dashed curve is the bowl (x + 1)² and the dotted one is (x − 1)²; the solid line is the largest of the two at every x, drawn over whichever bowl is higher. Left of 0 the second bowl is on top, right of 0 the first. The upper curve is still a bowl, with its bottom at x = 0, and at every point its slope is the slope of whichever bowl it is riding. Replace “bowls” by “detectives” and “x” by “the forger's pile” and you have Proposition 2.</p>
+<h4>What the proof does not cover</h4>
+<p>The argument moves the pile p<sub>g</sub> directly and assumes the detective is at its best at every step. A real GAN moves the weights θ<sub>g</sub> of a network, which is not convex, and the detective only takes k steps. The paper says so plainly, as the quote above shows. Later work found exactly where this breaks: simultaneous gradient steps can circle the equilibrium forever instead of reaching it.</p>
+<h4>Why it matters today</h4>
+<p>The gap between Proposition 2 and practice is the story of GAN research. The lesson's <a data-lesson="primer/ml/generative/gans.html#dirac_gan"><code>dirac_gan</code></a> shows it with one number per player: plain alternating steps orbit the equilibrium forever, and a gradient penalty on the detective is what makes them spiral in.</p>
+</section>
+
+<section id="s5">
+<h2>5 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S5">original</a></span></h2>
+<blockquote class="quote">“This method of estimating the likelihood has somewhat high variance and does not perform well in high dimensional spaces but it is the best method available to our knowledge.”<cite>Goodfellow et al. (2014), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>How do you grade a forger that cannot tell you how likely any note is? The paper uses a workaround: drop a small blob of sand on each note the forger makes, then check how much sand lands on real notes it never saw. Lots of sand on the real notes means the forger's output covers the kind of notes that really exist. This is a <span class="t" data-tip-title="Parzen window (kernel density estimate)" data-tip="Estimating a probability density from samples by placing a small bell curve on each sample and averaging them. The width of the bells, σ, controls how smooth the estimate is.">Parzen window</span> estimate.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The forger has made two samples, at 0 and at 2. Put a bell curve of width σ = 1 on each. A held-out real point at x = 1 sits one unit from both, where each bell has height 0.242, so the average is 0.242 and its log is −1.419. Repeat for every real test point and average the logs: that is the paper's score, a <span class="t" data-t="log-likelihood">log-likelihood</span>.</p>
+<div class="eq" data-tex="\htmlData{sym=phat}{\hat p(x)} = \htmlData{sym=oneovern}{\frac{1}{n}}\htmlData{sym=sumn}{\sum_{i=1}^{n}} \htmlData{sym=normal}{\mathcal{N}\big(x;\, s_i,\, \sigma^2\big)}" data-fallback="p̂(x) = (1/n) Σ_{i=1..n} N(x; s_i, σ²)"></div>
+<div class="symtable" data-syms="phat,oneovern,sumn,normal"></div>
+<p class="inwords"><strong>In words:</strong> “the estimated density at x is the average, over the generator's n samples, of the height at x of a bell curve of width σ centred on each sample.” (The paper describes this procedure in words; the formula is the standard one it refers to.)</p>
+<p class="inwords"><strong>With the numbers:</strong> samples s = (0, 2), σ = 1, test point x = 1: both bells have height e<sup>−1/2</sup> / √(2π) = 0.242 there, so p̂(1) = 0.242 and log p̂(1) = −1.419.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def N(x, mean, sigma):
+    # the height of a bell curve of width sigma centred on mean
+    return math.exp(-0.5 * ((x - mean) / sigma) ** 2) / (sigma * math.sqrt(2 * math.pi))
+s, sigma = [0, 2], 1.0
+# p̂(x) = (1/n) Σ_i N(x; s_i, σ²) at the test point x = 1
+p_hat = sum(N(1, s_i, sigma) for s_i in s) / len(s)
+round(p_hat, 3)  # → 0.242
+round(math.log(p_hat), 3)  # → -1.419</code></pre>
+<div class="plot" id="fig-parzen">
+  <div class="sliders ui">
+    <label for="pz-sd">bell width σ</label><input type="range" id="pz-sd" min="0.05" max="2" step="0.05" value="0.5"><output id="pz-sd-v">0.50</output>
+  </div>
+  <div id="pz-chart"></div>
+  <p class="readout" id="pz-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> five illustrative generator samples, at −1.5, −0.3, 0.2, 1.4 and 2.6, each get a bell curve of width σ, and the curve is their average, the Parzen estimate p̂. Two held-out real points sit at 0.8 and 2.0; the readout gives their average log-likelihood. Drag σ down: the estimate becomes a row of spikes, and real points that fall between samples score terribly. Drag it up: the estimate becomes one blur that scores everything alike. The score depends heavily on this one knob, which is why the paper picks σ on a separate <span class="t" data-t="validation set">validation set</span>, and why it warns that the method is noisy. In 784 dimensions it is far worse, because the gaps between samples are enormous.</p>
+<h3 class="rung">What the paper trained and found</h3>
+<ul>
+  <li>Datasets: MNIST (handwritten digits), the Toronto Face Database (TFD) and CIFAR-10 (small colour photos).</li>
+  <li>The generator mixed <span class="t" data-t="relu">rectified linear</span> and <span class="t" data-t="sigmoid">sigmoid</span> units; the detective used <span class="t" data-tip-title="Maxout unit" data-tip="A unit that computes several linear functions of its input and outputs the largest. It is piecewise linear, like ReLU, and was popular with dropout in 2013 and 2014.">maxout</span> units and was trained with <span class="t" data-t="dropout">dropout</span> (see the <a href="dropout.html">dropout companion</a>). Noise entered only at the generator's bottom layer.</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, reproduced with attribution (Goodfellow et al., 2014). Parzen window log-likelihood estimates (higher is better)</caption>
+  <thead><tr><th>Model</th><th class="num">MNIST</th><th class="num">TFD</th></tr></thead>
+  <tbody>
+    <tr><td>Stacked CAE</td><td class="num">121 ± 1.6</td><td class="num">2110 ± 50</td></tr>
+    <tr><td>Deep GSN</td><td class="num">214 ± 1.1</td><td class="num">1890 ± 29</td></tr>
+    <tr class="hl"><td>Adversarial nets</td><td class="num">225 ± 2</td><td class="num">2057 ± 26</td></tr>
+  </tbody>
+</table></div>
+<p>On MNIST the adversarial nets score highest of the models in the table; on faces a stacked contractive autoencoder (CAE) is slightly ahead. The paper's Figures 2 and 3 show samples rather than numbers: digits, faces and small CIFAR-10 images, each row ending with the nearest real training image to show the model is not copying, and digits made by moving z in a straight line between two noise vectors. The authors claim only that the samples are “at least competitive” with the best generative models of the day.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># Table 1: Parzen log-likelihood estimates on MNIST (higher is better)
+mnist = {"Stacked CAE": 121, "Deep GSN": 214, "Adversarial nets": 225}
+max(mnist, key=mnist.get)  # → 'Adversarial nets'
+# how far ahead of the next model, in log-likelihood units
+mnist["Adversarial nets"] - mnist["Deep GSN"]  # → 11</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>Nobody grades GANs with Parzen windows any more; the measurement problem the paper flagged led to scores that compare whole piles of generated and real images inside a trained image network, most famously FID. The lesson makes the same point on its toy data: a sample-by-sample quality check cannot see a forger that covers only some of the clouds, so <a data-lesson="primer/ml/generative/gans.html#mode_coverage"><code>mode_coverage</code></a> counts how many clouds are covered.</p>
+</section>
+
+<section id="s6">
+<h2>6 Advantages and disadvantages <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S6">original</a></span></h2>
+<blockquote class="quote">“… G must not be trained too much without updating D, in order to avoid ‘the Helvetica scenario’ in which G collapses too many values of z to the same value of x to have enough diversity to model p<sub>data</sub> …”<cite>Goodfellow et al. (2014), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A forger who finds one note that always fools today's detective is tempted to print nothing else. Each note is convincing, but a pile of identical notes looks nothing like real money. The paper called this the Helvetica scenario; the field now calls it <span class="t" data-t="mode collapse">mode collapse</span>.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The real data has four separate clusters. Eight noise values go into the forger. A healthy forger sends two to each cluster: 4 of 4 clusters covered. A collapsed forger sends all eight to the same spot: 1 of 4 clusters covered, and all eight samples look the same, even though each one sits on real data.</p>
+<div class="plot" id="fig-helvetica">
+  <div class="controls ui">
+    <button type="button" data-hv="healthy" aria-pressed="true">a healthy generator</button>
+    <button type="button" data-hv="collapsed" aria-pressed="false">the Helvetica scenario</button>
+  </div>
+  <svg id="hv-svg" viewBox="0 0 440 210" style="max-width:620px;margin:0 auto" role="img" aria-label="Eight noise values mapped by the generator onto a data line with four real clusters, either spread over all four or collapsed onto one"></svg>
+  <p class="readout" id="hv-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the lower line holds eight evenly spaced noise values z, and the upper line is the data space, where the four dotted bumps are the real clusters. Each arrow is the generator at work, carrying one z to the sample G(z). Switch to the Helvetica scenario: every arrow converges on one bump. Nothing on the upper line looks wrong in isolation, which is why this failure is easy to miss if you inspect one sample at a time. It happens, as the paper says, when G gets ahead of D: the forger piles onto whatever the current detective likes best, before the detective has learned that this spot is suddenly crowded with fakes.</p>
+<h3 class="rung">The trade the paper describes</h3>
+<ul>
+  <li><strong>Disadvantages:</strong> the model never writes down p<sub>g</sub>(x), so you cannot ask it how likely an image is; and D must be kept in step with G.</li>
+  <li><strong>Advantages:</strong> no Markov chains, only backprop, no inference during learning, and any <span class="t" data-t="derivative">differentiable</span> function can be the generator.</li>
+  <li><strong>A statistical advantage:</strong> the generator is never updated with real examples, only with gradients that come through the detective, so it cannot simply copy pieces of the training data into its weights.</li>
+  <li><strong>Sharpness:</strong> a GAN can represent very sharp distributions, even degenerate ones that squeeze all their mass onto a thin sliver of the space, whereas models sampled by a Markov chain need some blur so the chain can move between peaks.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Both halves of this section held up. Sharp samples were the reason GANs led image generation for years; mode collapse and keeping the players in step were the reasons they were eventually overtaken. The lesson trains the ring of eight clouds three ways and watches the forger hop between alternate clouds when the detective is too slow.</p>
+</section>
+
+<section id="s7">
+<h2>7 Conclusions and future work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1406.2661#S7">original</a></span></h2>
+<blockquote class="quote">“A conditional generative model p(x | c) can be obtained by adding c as input to both G and D.”<cite>Goodfellow et al. (2014), §7</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Give the forger and the detective the same order slip, “a 20-dollar note” or “the digit 7”, and the forger learns to make whatever the slip asks for, while the detective checks both realism and whether the note matches the slip.</p>
+<h3 class="rung">The five directions the paper lists</h3>
+<ol>
+  <li><strong>Conditional models:</strong> feed the same extra input c (a label, say) to both G and D, and the forger learns p(x | c).</li>
+  <li><strong>Learned inference:</strong> train a helper network to predict z from x, even after the generator has finished training.</li>
+  <li><strong>Every conditional at once:</strong> model p(x<sub>S</sub> | the rest of x) for any subset S of the inputs, with networks that share weights.</li>
+  <li><strong>Semi-supervised learning:</strong> reuse the detective's features for a classifier when few labels are available.</li>
+  <li><strong>Efficiency:</strong> better ways to coordinate G and D, or better distributions to draw z from.</li>
+</ol>
+<h3 class="rung">Why it matters today</h3>
+<p>The last item, coordinating G and D, turned out to be the hard one: separate learning rates, gradient penalties, spectral normalization and the Wasserstein loss all attack it. The <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a> runs each of these fixes and shows what it does.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2014</h2>
+<p>The two-player game is unchanged. Nearly everything around it has been replaced:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Choice in the paper</th><th>Common later</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Minimax loss, with the non-saturating version as a practical tip</td><td>Non-saturating or Wasserstein-style losses by default</td><td>A forger that is far off still gets a strong gradient</td></tr>
+    <tr><td>Fully connected networks with maxout (one convolutional CIFAR-10 model)</td><td>Convolutional generators and detectives (<a href="https://arxiv.org/abs/1511.06434">DCGAN</a>), later style-based generators (<a href="https://arxiv.org/abs/1812.04948">StyleGAN</a>)</td><td>Images have local structure that convolutions share across positions</td></tr>
+    <tr><td>SGD with momentum, k = 1</td><td>Adam with low momentum (β<sub>1</sub> = 0.5), separate learning rates per player</td><td>The target keeps moving, so less momentum and a faster detective help</td></tr>
+    <tr><td>Jensen-Shannon, through the log-loss game</td><td>Wasserstein distance, gradient penalties, spectral normalization</td><td>JS goes flat when real and fake don't overlap</td></tr>
+    <tr><td>Parzen window log-likelihood</td><td>Scores that compare whole piles of images, such as FID</td><td>Parzen estimates are unreliable in high dimensions</td></tr>
+    <tr><td>GANs as the image generator</td><td>Diffusion models generate; adversarial losses sharpen decoders and distil fast samplers</td><td>Diffusion trains stably and covers every mode</td></tr>
+  </tbody>
+</table></div>
+<p>The <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> covers what took over, and the closing section of the <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a> shows where adversarial losses live on.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Ian J. Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville and Yoshua Bengio, <em>Generative Adversarial Nets</em>, NeurIPS 2014. <a href="https://arxiv.org/abs/1406.2661">arXiv:1406.2661</a>. Quotations are brief and attributed; three rows of Table 1 are reproduced with attribution, Table 2, Algorithm 1 and Figure 1 are redrawn, and the sample images are described in words. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // equation 1
+    minG: { tex: "\\min_{G}", name: "The generator's move", meaning: "The forger chooses its weights to make what follows as small as possible, knowing the detective will answer with its best.", shape: "a choice of network weights θ_g", example: "the forger lowers −0.53 by making D(G(z)) rise" },
+    maxD: { tex: "\\max_{D}", name: "The discriminator's move", meaning: "The detective chooses its weights to make what follows as large as possible.", shape: "a choice of network weights θ_d", example: "a perfect detective would reach 0" },
+    V: { tex: "V(D,G)", name: "The value function", meaning: "The scoreboard: one number that both players fight over. It is the detective's log-score, which is minus its binary cross-entropy.", shape: "one number, at most 0", example: "−0.53 for the four notes; −1.386 for a coin flip" },
+    Ex: { tex: "\\mathbb{E}_{x\\sim p_{\\text{data}}(x)}", name: "Average over real data", meaning: "𝔼 means expectation, the average over many draws; the subscript says what is drawn: x from the real data's distribution p_data.", shape: "one number", example: "average over notes 1 and 2" },
+    Ez: { tex: "\\mathbb{E}_{z\\sim p_{z}(z)}", name: "Average over noise", meaning: "The average over many draws of the noise z from the generator's starting distribution p_z (the prior), each turned into a fake by G.", shape: "one number", example: "average over the rolls behind notes 3 and 4" },
+    logsym: { tex: "\\log", name: "Natural logarithm", meaning: "log 1 = 0, and the log of a number near 0 is hugely negative. So a confident mistake (a verdict near 0 on the right answer) costs far more than a hesitant one.", shape: "one number", example: "log 0.9 = −0.105, log 0.6 = −0.511" },
+    Dx: { tex: "D(x)", name: "Verdict on a real example", meaning: "The discriminator's output for a real x: its probability that x came from the data rather than from G.", shape: "a number between 0 and 1", example: "0.9 and 0.8" },
+    Gz: { tex: "G(z)", name: "A fake", meaning: "The generator's output for noise z: one sample in the same space as the data.", shape: "same shape as x", example: "notes 3 and 4" },
+    DGz: { tex: "D(G(z))", name: "Verdict on a fake", meaning: "The discriminator's probability that the fake G(z) is real. The detective wants it low; the forger wants it high.", shape: "a number between 0 and 1", example: "0.2 and 0.4" },
+    // Algorithm 1
+    gradd: { tex: "\\nabla_{\\theta_d}", name: "Gradient with respect to the discriminator's weights", meaning: "For every weight in θ_d, how much the quantity after it would change per tiny nudge of that weight. The detective steps along it (ascent), because it wants the quantity higher.", shape: "one number per discriminator weight", example: "at the scores: +0.05, +0.1 (real), −0.1, −0.2 (fake)" },
+    gradg: { tex: "\\nabla_{\\theta_g}", name: "Gradient with respect to the generator's weights", meaning: "For every weight in θ_g, how the quantity after it changes per nudge. The forger steps against it (descent). It is computed by backpropagating through D and then through G.", shape: "one number per generator weight", example: "at the fakes' scores: −0.1, −0.2" },
+    oneoverm: { tex: "\\frac{1}{m}", name: "Divide by the minibatch size", meaning: "Turns the sum over the minibatch into an average. m is how many examples each step uses.", shape: "one number", example: "m = 2, so 1/2" },
+    summ: { tex: "\\sum_{i=1}^{m}", name: "Sum over the minibatch", meaning: "Add what follows for i = 1, 2, …, m: one term per example in the minibatch.", shape: "one number", example: "two terms" },
+    xi: { tex: "x^{(i)}", name: "The i-th real example", meaning: "One real example from the minibatch. The superscript (i) numbers the examples; it is not a power.", shape: "one data point", example: "note 1, note 2" },
+    zi: { tex: "z^{(i)}", name: "The i-th noise draw", meaning: "One draw of noise from the prior p_z; G turns it into the i-th fake.", shape: "one noise vector", example: "the rolls behind notes 3 and 4" },
+    // saturation
+    dda: { tex: "\\frac{\\partial}{\\partial a}", name: "Derivative with respect to the score", meaning: "How much what follows changes when the detective's score a for this fake is nudged up a tiny amount.", shape: "one number", example: "−0.01 or −0.99 at D = 0.01" },
+    ascore: { tex: "a", name: "The detective's score for a fake", meaning: "The raw number (logit) the detective computes before the sigmoid squashes it into a probability.", shape: "any real number", example: "log(0.01 / 0.99) = −4.6" },
+    sig: { tex: "\\sigma", name: "Sigmoid", meaning: "σ(a) = 1 / (1 + e^(−a)) squashes any score into a probability between 0 and 1.", shape: "a number between 0 and 1", example: "σ(−4.6) = 0.01" },
+    Dfake: { tex: "D", name: "The verdict on the fake", meaning: "D = σ(a) = D(G(z)): the detective's probability that this fake is real.", shape: "a number between 0 and 1", example: "0.01 early in training" },
+    // 4.1
+    integral: { tex: "\\int_{x}", name: "Integral over x", meaning: "The continuous version of a sum: add up what follows over every possible x, each weighted by a tiny width dx. With a handful of spots it is just a sum.", shape: "one number", example: "a sum over spots A, B, C" },
+    pdatax: { tex: "p_{\\text{data}}(x)", name: "Real data's density at x", meaning: "How thickly real examples cover the spot x.", shape: "a number ≥ 0", example: "0.6, 0.3, 0.1 at A, B, C" },
+    pgx: { tex: "p_g(x)", name: "The generator's density at x", meaning: "How thickly the generator's samples G(z) cover the spot x. The generator defines it only implicitly, through the samples it makes.", shape: "a number ≥ 0", example: "0.1, 0.3, 0.6 at A, B, C" },
+    Dany: { tex: "D(x)", name: "Verdict at x", meaning: "The discriminator's output at the spot x, whoever made the example there.", shape: "a number between 0 and 1", example: "0.5 everywhere for a coin flip" },
+    dx: { tex: "dx", name: "A tiny width of x", meaning: "Marks the variable being integrated over; in the sum version it becomes the width of each spot.", shape: "a tiny number", example: "one spot each" },
+    yvar: { tex: "y", name: "A candidate verdict", meaning: "The verdict the detective might give at one spot.", shape: "between 0 and 1", example: "0.7, 0.75, 0.8" },
+    mapsto: { tex: "\\rightarrow", name: "“Maps to”", meaning: "Here it names a function: y goes in, a log y + b log(1 − y) comes out.", shape: "notation", example: "0.75 → −0.2249" },
+    acoef: { tex: "a", name: "The real share", meaning: "How much real data lives at this spot, p_data(x). The proof works for any a and b that are not both zero.", shape: "a number ≥ 0", example: "0.3" },
+    bcoef: { tex: "b", name: "The fake share", meaning: "How many fakes live at this spot, p_g(x).", shape: "a number ≥ 0", example: "0.1" },
+    Dstar: { tex: "D^{*}_{G}(x)", name: "The optimal discriminator", meaning: "The best verdict any detective can give at x against the fixed generator G: the share of what lands at x that is real.", shape: "a number between 0 and 1", example: "0.857, 0.5, 0.143 at A, B, C" },
+    // Theorem 1
+    CG: { tex: "C(G)", name: "The generator's criterion", meaning: "The value when the detective plays its best: what the forger is really being scored on. The paper calls it the virtual training criterion.", shape: "a number between −log 4 and 0", example: "−0.990 in the three-spot world" },
+    Expd: { tex: "\\mathbb{E}_{x\\sim p_{\\text{data}}}", name: "Average over real data", meaning: "The average over x drawn from the real data.", shape: "one number", example: "weights 0.6, 0.3, 0.1" },
+    Expg: { tex: "\\mathbb{E}_{x\\sim p_{g}}", name: "Average over the generator's samples", meaning: "The average over x drawn from the generator. Equation 1 averaged over noise z; averaging over G(z) is the same thing written in terms of the fakes.", shape: "one number", example: "weights 0.1, 0.3, 0.6" },
+    KL: { tex: "KL", name: "Kullback-Leibler divergence", meaning: "How different two distributions are: the extra surprise of expecting the second when the truth is the first. Zero only when they match; it is not symmetric.", shape: "a number ≥ 0", example: "KL(p_data ‖ mix) = 0.198" },
+    pdist: { tex: "p", name: "The true distribution", meaning: "The first argument of KL: the distribution x is actually drawn from.", shape: "a list of probabilities", example: "p_data = (0.6, 0.3, 0.1)" },
+    qdist: { tex: "q", name: "The expected distribution", meaning: "The second argument of KL: the distribution you compare against.", shape: "a list of probabilities", example: "the mix (0.35, 0.3, 0.35)" },
+    parallel: { tex: "\\|", name: "“Measured against”", meaning: "Separates the two distributions a divergence compares. Order matters for KL.", shape: "notation", example: "p ‖ q" },
+    sumx: { tex: "\\sum_{x}", name: "Sum over every outcome", meaning: "Add what follows for every possible x (every spot).", shape: "one number", example: "A, B and C" },
+    minuslog4: { tex: "-\\log 4", name: "The floor", meaning: "log ½ + log ½: the value when the detective can do no better than a coin flip. C(G) can never go below it.", shape: "a constant", example: "−1.386" },
+    pdata: { tex: "p_{\\text{data}}", name: "Real data's distribution", meaning: "The whole distribution of real examples, over every x.", shape: "a distribution", example: "(0.6, 0.3, 0.1)" },
+    pg: { tex: "p_g", name: "The generator's distribution", meaning: "The whole distribution of the generator's samples.", shape: "a distribution", example: "(0.1, 0.3, 0.6)" },
+    mix: { tex: "\\frac{p_{\\text{data}}+p_g}{2}", name: "The half-and-half mix", meaning: "What you get by pouring the real and fake piles together in equal amounts: the average of the two distributions.", shape: "a distribution", example: "(0.35, 0.3, 0.35)" },
+    JSD: { tex: "JSD", name: "Jensen-Shannon divergence", meaning: "The average of each pile's KL divergence from their half-and-half mix. Symmetric, never negative, zero only for identical piles, and at most log 2 (reached when the piles share no spot).", shape: "between 0 and log 2 = 0.693", example: "0.198" },
+    // 4.2
+    fx: { tex: "f(x)", name: "The top of the family", meaning: "At each x, the largest value any member of the family reaches. In the proof, x is the generator's distribution and f is C(G).", shape: "one number per x", example: "f(2) = 9" },
+    sup: { tex: "\\sup_{\\alpha\\in\\mathcal{A}}", name: "Supremum over the family", meaning: "“The largest value over every α in the set 𝒜” (strictly, the least upper bound, which matters only when no member actually reaches it). In the proof, α ranges over detectives.", shape: "one number", example: "𝒜 = {−1, +1}" },
+    falpha: { tex: "f_{\\alpha}(x)", name: "One member of the family", meaning: "A convex function, one for each α. In the proof, one detective's score as a function of the generator's distribution.", shape: "one number per x", example: "(x − α)²" },
+    subgrad: { tex: "\\partial f_{\\beta}(x) \\in \\partial f", name: "Borrowed slope", meaning: "∂ here is a subderivative: a valid slope for a function that may have corners. The slope of the member on top is one of the valid slopes of f.", shape: "a slope", example: "6 at x = 2" },
+    argsup: { tex: "\\beta = \\arg\\sup_{\\alpha} f_{\\alpha}(x)", name: "Which member is on top", meaning: "arg sup returns the α that reaches the largest value, not the value itself. In the proof it is the optimal detective D*.", shape: "one member of 𝒜", example: "β = −1 at x = 2" },
+    // 5
+    phat: { tex: "\\hat p(x)", name: "Estimated density", meaning: "The hat means “estimated”: a guess at the generator's density at x, built from its samples.", shape: "a number ≥ 0", example: "0.242 at x = 1" },
+    oneovern: { tex: "\\frac{1}{n}", name: "Divide by the number of samples", meaning: "Averages the bells, so the estimate still has total area 1.", shape: "one number", example: "n = 2" },
+    sumn: { tex: "\\sum_{i=1}^{n}", name: "Sum over the generator's samples", meaning: "One bell curve per generated sample s_i.", shape: "one number", example: "samples at 0 and 2" },
+    normal: { tex: "\\mathcal{N}(x;\\, s_i,\\, \\sigma^2)", name: "A bell curve's height", meaning: "The height at x of a normal (Gaussian) bell centred on sample s_i with width σ (variance σ²). σ is chosen on validation data.", shape: "a number ≥ 0", example: "0.242 at distance 1 with σ = 1" },
+  },
+
+  blocks: {
+    // Table 2, redrawn
+    dir_train: { title: "Directed models: training needs inference", body: "<p>Models that generate top-down from hidden causes need, during training, to work out which hidden causes produced each training example. That inference step is intractable and has to be approximated.</p>" },
+    dir_sample: { title: "Directed models: sampling is easy", body: "<p>Draw the hidden causes, pass them down once, done. No chain of steps.</p>" },
+    dir_px: { title: "Directed models: p(x) only estimated", body: "<p>The exact probability of an image is intractable; it can be approximated with <em>annealed importance sampling</em> (AIS), a slow sampling-based estimate.</p>" },
+    und_train: { title: "Undirected models: training needs MCMC", body: "<p>Boltzmann machines need inference and, worse, the gradient of the partition function, which is estimated with Markov chain Monte Carlo on every step.</p>" },
+    und_sample: { title: "Undirected models: sampling needs a Markov chain", body: "<p>To draw one sample you run a random walk until it forgets where it started. It can get stuck on one peak of the data for a long time.</p>" },
+    und_px: { title: "Undirected models: p(x) only estimated", body: "<p>Intractable because of the partition function; approximated with AIS.</p>" },
+    ae_train: { title: "Generative autoencoders: a trade-off", body: "<p>Denoising and contractive autoencoders used as generators must trade how well the chain mixes between peaks against how well the model reconstructs.</p>" },
+    ae_sample: { title: "Generative autoencoders: sampling needs a Markov chain", body: "<p>They generate by repeatedly corrupting and reconstructing, which is a Markov chain.</p>" },
+    ae_px: { title: "Generative autoencoders: no formula for p(x)", body: "<p>The model never writes down a probability, so it can only be estimated from samples with a Parzen window (§5).</p>" },
+    adv_train: { title: "Adversarial nets: keep D and G in step", body: "<p>The new difficulty. There is no inference and no chain, but the discriminator has to be kept synchronised with the generator. (Table 2 of the paper adds one more word here, “Helvetica”, pointing at the failure described in §6.)</p>", lesson: "primer/ml/generative/gans.html" },
+    adv_sample: { title: "Adversarial nets: sampling is easy", body: "<p>Draw z, run G forward once. Samples are independent of each other, because no chain links them.</p>" },
+    adv_px: { title: "Adversarial nets: no formula for p(x)", body: "<p>The generator defines p<sub>g</sub> only implicitly, through its samples, so the paper estimates it with a Parzen window.</p>" },
+    // Algorithm 1
+    iter: { title: "One training iteration", body: "<p>Everything inside this box happens once per iteration: k detective steps, then one forger step. Training runs for many thousands of iterations.</p>" },
+    kloop: { title: "The detective's turn, k times", body: "<p>The paper treats k as a hyperparameter and uses k = 1, the cheapest choice. A larger k keeps D closer to its best for the current G, which is what the theory assumes.</p>" },
+    znoise: { title: "Sample m noise draws", body: "<p>Draw z<sup>(1)</sup>, …, z<sup>(m)</sup> from the noise prior and pass each through G to make m fakes. G is not updated here.</p>", shape: "m noise vectors → m fakes" },
+    xreal: { title: "Sample m real examples", body: "<p>A minibatch x<sup>(1)</sup>, …, x<sup>(m)</sup> from the training data. Only the detective ever sees these.</p>", shape: "m data points" },
+    dstep: { title: "Update D by ascending", body: "<p>One step up the gradient of (1/m) Σ [log D(x<sup>(i)</sup>) + log(1 − D(G(z<sup>(i)</sup>)))]: raise the verdicts on the reals, lower them on the fakes. This is ordinary classifier training.</p>", shape: "changes θ_d only", lesson: "primer/ml/generative/gans.html" },
+    znoise2: { title: "Sample m fresh noise draws", body: "<p>New noise for the forger's step, so it practises on fresh fakes.</p>", shape: "m noise vectors" },
+    gstep: { title: "Update G by descending", body: "<p>One step down the gradient of (1/m) Σ log(1 − D(G(z<sup>(i)</sup>))), computed by backpropagating through the (frozen) detective into the generator. In practice the non-saturating version, climbing log D(G(z)), is used instead.</p>", shape: "changes θ_g only", lesson: "primer/ml/generative/gans.html" },
+  },
+
+  onReady(P) {
+    figureOne();
+    nonSaturating(P);
+    bestVerdict(P);
+    criterionChart(P);
+    supChart(P);
+    parzenChart(P);
+    helvetica();
+  },
+};
+
+/* ---- shared helpers ---- */
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+const normal = (x, mu, sd) => Math.exp(-0.5 * ((x - mu) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI));
+// erf by Abramowitz and Stegun 7.1.26 (error below 1.5e-7), good enough for a picture.
+function erf(x) {
+  const s = Math.sign(x), t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+const Phi = (x) => 0.5 * (1 + erf(x / Math.SQRT2));
+// The bell-curve value at position u of the z line: the inverse of Phi, by bisection.
+function invPhi(u) {
+  let lo = -8, hi = 8;
+  for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (Phi(mid) < u) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+
+/* ---- Figure 1, redrawn: data, generator, detective along one axis ---- */
+function figureOne() {
+  const svg = document.getElementById("f1-svg");
+  const out = document.getElementById("f1-readout");
+  const muIn = document.getElementById("f1-mu"), sdIn = document.getElementById("f1-sd");
+  const DATA = { mu: 1.2, sd: 0.55 };
+  // Illustrative settings for the paper's four panels; (c) keeps the detective from (b).
+  const STAGES = {
+    a: { mu: 0.2, sd: 0.9, D: "partial" },
+    b: { mu: 0.2, sd: 0.9, D: "best" },
+    c: { mu: 0.7, sd: 0.7, D: "old" },
+    d: { mu: 1.2, sd: 0.55, D: "best" },
+  };
+  let state = { mu: 0.2, sd: 0.9, D: "partial", old: { mu: 0.2, sd: 0.9 }, stage: "a" };
+  let probe = null;
+  const W = 440, x0 = -2.5, x1 = 4, L = 30, R = 430, top = 14, base = 170, xLine = 204, zLine = 262, FS = "font-size:13px";
+  const X = (x) => L + ((x - x0) / (x1 - x0)) * (R - L);
+  const Y = (v) => base - v * (base - top);
+  const Zpx = (u) => L + u * (R - L);
+  const pd = (x) => normal(x, DATA.mu, DATA.sd);
+  const pgAt = (x, g) => normal(x, g.mu, g.sd);
+  const best = (x, g) => pd(x) / (pd(x) + pgAt(x, g) || 1);
+  function D(x) {
+    if (state.D === "best") return best(x, state);
+    if (state.D === "old") return best(x, state.old);
+    return 0.5 + 0.5 * (best(x, state) - 0.5); // halfway between a coin flip and the best detective
+  }
+  function curve(f, cls, style, dash) {
+    let d = "";
+    for (let i = 0; i <= 260; i++) {
+      const x = x0 + (i / 260) * (x1 - x0);
+      d += `${i ? "L" : "M"}${X(x).toFixed(1)},${Y(Math.min(1.05, f(x))).toFixed(1)}`;
+    }
+    const p = el("path", { d, fill: "none", "stroke-width": 2.4, style }, svg);
+    if (dash) p.setAttribute("stroke-dasharray", dash);
+    return p;
+  }
+  function draw() {
+    svg.textContent = "";
+    const defs = el("defs", {}, svg);
+    const mk = el("marker", { id: "f1-arr", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }, defs);
+    el("path", { d: "M0,0 L10,5 L0,10 z", fill: css("--wire") }, mk);
+    // axes: verdict scale on the left, data line, z line
+    el("line", { x1: L, x2: R, y1: Y(0.5), y2: Y(0.5), stroke: css("--border"), "stroke-dasharray": "3 4" }, svg);
+    [[0, "0"], [0.5, "½"], [1, "1"]].forEach(([v, t]) => { const tx = el("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", class: "lbl", style: FS }, svg); tx.textContent = t; });
+    el("line", { x1: L, x2: R, y1: base, y2: base, stroke: css("--wire") }, svg);
+    el("line", { x1: L, x2: R, y1: xLine, y2: xLine, stroke: css("--wire") }, svg);
+    el("line", { x1: L, x2: R, y1: zLine, y2: zLine, stroke: css("--wire") }, svg);
+    for (let x = -2; x <= 4; x++) { const t = el("text", { x: X(x), y: base + 16, "text-anchor": "middle", class: "lbl", style: FS }, svg); t.textContent = String(x); }
+    const lx = el("text", { x: 6, y: xLine + 5, class: "lbl", style: FS }, svg); lx.textContent = "x";
+    const lz = el("text", { x: 6, y: zLine + 5, class: "lbl", style: FS }, svg); lz.textContent = "z";
+    const z0 = el("text", { x: L, y: zLine + 18, "text-anchor": "middle", class: "lbl", style: FS }, svg); z0.textContent = "0";
+    const z1 = el("text", { x: R - 4, y: zLine + 18, "text-anchor": "middle", class: "lbl", style: FS }, svg); z1.textContent = "1";
+    // arrows: evenly spaced z values carried to x = G(z)
+    for (let k = 0; k < 11; k++) {
+      const u = (k + 0.5) / 11;
+      const gx = Math.max(x0, Math.min(x1, state.mu + state.sd * invPhi(u)));
+      el("line", { x1: Zpx(u), y1: zLine - 3, x2: X(gx), y2: xLine + 5, stroke: css("--wire"), "stroke-width": 1.1, "marker-end": "url(#f1-arr)" }, svg);
+      el("circle", { cx: Zpx(u), cy: zLine, r: 2.6, fill: css("--fg") }, svg);
+      el("circle", { cx: X(gx), cy: xLine, r: 2.6, fill: css("--soft-stroke") }, svg);
+    }
+    curve(pd, "", `stroke:${css("--fg")}`, "2 3");
+    curve((x) => pgAt(x, state), "", `stroke:${css("--soft-stroke")}`);
+    curve(D, "", `stroke:${css("--ff-stroke")}`, "8 4");
+    if (probe !== null) el("line", { x1: X(probe), x2: X(probe), y1: top, y2: base, stroke: css("--active"), "stroke-dasharray": "3 3" }, svg);
+  }
+  const fmt = (v) => v.toFixed(2);
+  function summary() {
+    const label = { a: "Stage (a): a partly trained detective.", b: "Stage (b): the detective trained to its best.", c: "Stage (c): the forger has stepped; the detective is still the one from (b).", d: "Stage (d): the forger matches the data and the verdict is ½ everywhere." }[state.stage] || "Your own forger, facing the best detective for it.";
+    let lo = 1, hi = 0;
+    for (let i = 0; i <= 200; i++) { const x = x0 + (i / 200) * (x1 - x0); const v = D(x); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    return `${label} Generator centre μ = ${fmt(state.mu)}, spread σ = ${fmt(state.sd)}. The detective's verdict ranges from ${fmt(lo)} to ${fmt(hi)}.`;
+  }
+  function read(x) {
+    probe = x;
+    draw();
+    out.innerHTML = `At x = <strong>${fmt(x)}</strong>: real density ${fmt(pd(x))}, generator density ${fmt(pgAt(x, state))}, verdict D(x) = <strong>${fmt(D(x))}</strong>.`;
+  }
+  function setStage(s) {
+    const st = STAGES[s];
+    state = { ...state, mu: st.mu, sd: st.sd, D: st.D, stage: s, old: s === "c" ? { mu: STAGES.b.mu, sd: STAGES.b.sd } : state.old };
+    muIn.value = st.mu; sdIn.value = st.sd;
+    document.getElementById("f1-mu-v").textContent = fmt(st.mu);
+    document.getElementById("f1-sd-v").textContent = fmt(st.sd);
+    document.querySelectorAll("[data-stage]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.stage === s)));
+    probe = null; draw(); out.textContent = summary();
+  }
+  document.querySelectorAll("[data-stage]").forEach((b) => b.addEventListener("click", () => setStage(b.dataset.stage)));
+  function slide() {
+    state = { ...state, mu: +muIn.value, sd: +sdIn.value, D: "best", stage: null };
+    document.getElementById("f1-mu-v").textContent = fmt(state.mu);
+    document.getElementById("f1-sd-v").textContent = fmt(state.sd);
+    document.querySelectorAll("[data-stage]").forEach((b) => b.setAttribute("aria-pressed", "false"));
+    probe = null; draw(); out.textContent = summary();
+  }
+  muIn.addEventListener("input", slide);
+  sdIn.addEventListener("input", slide);
+  svg.addEventListener("pointermove", (ev) => {
+    const r = svg.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * W;
+    if (px >= L && px <= R) read(x0 + ((px - L) / (R - L)) * (x1 - x0));
+  });
+  svg.addEventListener("pointerleave", () => { probe = null; draw(); });
+  // From the keyboard, the arrow keys move the same probe.
+  svg.tabIndex = 0;
+  svg.addEventListener("keydown", (e) => {
+    const d = { ArrowLeft: -0.1, ArrowRight: 0.1, ArrowDown: -0.1, ArrowUp: 0.1 }[e.key];
+    if (d === undefined) return;
+    e.preventDefault();
+    read(Math.max(x0, Math.min(x1, (probe === null ? DATA.mu : probe) + d)));
+  });
+  document.addEventListener("papers:theme", draw);
+  setStage("a");
+}
+
+/* ---- how hard each forger loss pushes, against the detective's verdict ---- */
+function nonSaturating(P) {
+  const pts = [];
+  for (let e = -3; e <= Math.log10(0.999) + 1e-9; e += 0.02) pts.push(10 ** e);
+  pts.push(0.999);
+  P.lineChart(document.getElementById("ns-chart"), {
+    series: [
+      { name: "original log(1 − D): push D", points: pts.map((d) => [d, d]) },
+      { name: "flipped −log D: push 1 − D", points: pts.map((d) => [d, 1 - d]) },
+    ],
+    logX: true, yMin: 0, yMax: 1,
+    xLabel: "D(G(z))", yLabel: "push on the forger",
+    xFmt: (v) => (v < 0.01 ? v.toFixed(3) : v < 0.1 ? v.toFixed(2) : v.toFixed(2)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("ns-readout"), ariaLabel: "Size of the forger's gradient under the original and the flipped loss, against the detective's verdict on a fake",
+  });
+}
+
+/* ---- the best verdict at one spot: a log y + b log(1 − y) ---- */
+function bestVerdict(P) {
+  const aIn = document.getElementById("best-a"), bIn = document.getElementById("best-b");
+  const out = document.getElementById("best-readout");
+  const ys = [];
+  for (let y = 0.02; y <= 0.9801; y += 0.01) ys.push(+y.toFixed(2));
+  const series = (a, b) => [{ name: "a · log y + b · log(1 − y)", points: ys.map((y) => [y, a * Math.log(y) + b * Math.log(1 - y)]) }];
+  const chart = P.lineChart(document.getElementById("best-chart"), {
+    series: series(0.3, 0.1), xLabel: "verdict y", yLabel: "detective's score here",
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(2),
+    ariaLabel: "The detective's score at one spot against its verdict",
+  });
+  function update() {
+    const a = +aIn.value, b = +bIn.value;
+    document.getElementById("best-a-v").textContent = a.toFixed(2);
+    document.getElementById("best-b-v").textContent = b.toFixed(2);
+    const y = a / (a + b);
+    const v = a * Math.log(y) + b * Math.log(1 - y);
+    chart.update(series(a, b));
+    out.innerHTML = `Peak at y = a/(a + b) = ${a.toFixed(2)}/${(a + b).toFixed(2)} = <strong>${y.toFixed(3)}</strong>, where the score is ${v.toFixed(4)}. No other verdict scores higher at this spot.`;
+  }
+  aIn.addEventListener("input", update);
+  bIn.addEventListener("input", update);
+  update();
+}
+
+/* ---- C(G) as the forger's pile slides past the real pile ---- */
+function criterionChart(P) {
+  const sdIn = document.getElementById("cg-sd");
+  // C(G) = ∫ p_d log(p_d / (p_d + p_g)) + p_g log(p_g / (p_d + p_g)) dx, by a plain Riemann sum.
+  function C(mu, sd) {
+    const lo = Math.min(0, mu) - 7 * sd, hi = Math.max(0, mu) + 7 * sd, n = 1400, h = (hi - lo) / n;
+    let s = 0;
+    for (let i = 0; i <= n; i++) {
+      const x = lo + i * h, a = normal(x, 0, sd), b = normal(x, mu, sd), t = a + b;
+      if (a > 0) s += a * Math.log(a / t) * h;
+      if (b > 0) s += b * Math.log(b / t) * h;
+    }
+    return s;
+  }
+  const mus = [];
+  for (let m = -6; m <= 6.0001; m += 0.1) mus.push(+m.toFixed(1));
+  const series = (sd) => [
+    { name: "C(G), forger against the best detective", points: mus.map((m) => [m, C(m, sd)]) },
+    { name: "−log 4, the floor", points: mus.map((m) => [m, -Math.log(4)]) },
+  ];
+  const chart = P.lineChart(document.getElementById("cg-chart"), {
+    series: series(1), yMin: -1.45, yMax: 0.05, xLabel: "forger's position (real pile at 0)", yLabel: "C(G)",
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("cg-readout"), ariaLabel: "The generator's criterion C(G) against the position of its pile",
+  });
+  sdIn.addEventListener("input", () => {
+    document.getElementById("cg-sd-v").textContent = (+sdIn.value).toFixed(2);
+    chart.update(series(+sdIn.value));
+  });
+}
+
+/* ---- the top of two convex bowls ---- */
+function supChart(P) {
+  const xs = [];
+  for (let x = -3; x <= 3.0001; x += 0.05) xs.push(+x.toFixed(2));
+  P.lineChart(document.getElementById("sup-chart"), {
+    series: [
+      { name: "largest of the two", points: xs.map((x) => [x, Math.max((x + 1) ** 2, (x - 1) ** 2)]) },
+      { name: "(x + 1)²", points: xs.map((x) => [x, (x + 1) ** 2]) },
+      { name: "(x − 1)²", points: xs.map((x) => [x, (x - 1) ** 2]) },
+    ],
+    yMin: 0, yMax: 16, xLabel: "x", yLabel: "value",
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("sup-readout"), ariaLabel: "Two convex bowls and the largest of them",
+  });
+}
+
+/* ---- a Parzen window estimate from five samples ---- */
+function parzenChart(P) {
+  const S = [-1.5, -0.3, 0.2, 1.4, 2.6], T = [0.8, 2.0];
+  const sdIn = document.getElementById("pz-sd"), out = document.getElementById("pz-readout");
+  const phat = (x, sd) => S.reduce((a, s) => a + normal(x, s, sd), 0) / S.length;
+  const ll = (sd) => T.reduce((a, t) => a + Math.log(phat(t, sd)), 0) / T.length;
+  const xs = [];
+  for (let x = -4; x <= 5.0001; x += 0.02) xs.push(+x.toFixed(2));
+  const series = (sd) => [{ name: "Parzen estimate p̂(x)", points: xs.map((x) => [x, phat(x, sd)]) }];
+  const chart = P.lineChart(document.getElementById("pz-chart"), {
+    series: series(0.5), yMin: 0, xLabel: "x", yLabel: "p̂(x)",
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(2),
+    ariaLabel: "The Parzen window density estimate from five samples",
+  });
+  let bestSd = 0.05, bestLL = -Infinity;
+  for (let sd = 0.05; sd <= 2.0001; sd += 0.05) { const v = ll(sd); if (v > bestLL) { bestLL = v; bestSd = sd; } }
+  function update() {
+    const sd = +sdIn.value;
+    document.getElementById("pz-sd-v").textContent = sd.toFixed(2);
+    chart.update(series(sd));
+    out.innerHTML = `σ = ${sd.toFixed(2)}: average log p̂ at the two real test points (0.8 and 2.0) is <strong>${ll(sd).toFixed(3)}</strong>. On these two points the best σ is about ${bestSd.toFixed(2)} (score ${bestLL.toFixed(3)}).`;
+  }
+  sdIn.addEventListener("input", update);
+  update();
+}
+
+/* ---- the Helvetica scenario: eight noise values, four real clusters ---- */
+function helvetica() {
+  const svg = document.getElementById("hv-svg"), out = document.getElementById("hv-readout");
+  const L = 26, R = 432, xLine = 96, zLine = 186, FS = "font-size:13px", clusters = [0.14, 0.38, 0.62, 0.86];
+  const X = (f) => L + f * (R - L);
+  let mode = "healthy";
+  function targets() {
+    return Array.from({ length: 8 }, (_, k) =>
+      mode === "healthy" ? clusters[Math.floor(k / 2)] + (k % 2 ? 0.025 : -0.025) : clusters[2] + (k - 3.5) * 0.004
+    );
+  }
+  function draw() {
+    svg.textContent = "";
+    const defs = el("defs", {}, svg);
+    const mk = el("marker", { id: "hv-arr", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }, defs);
+    el("path", { d: "M0,0 L10,5 L0,10 z", fill: css("--wire") }, mk);
+    el("line", { x1: L, x2: R, y1: xLine, y2: xLine, stroke: css("--wire") }, svg);
+    el("line", { x1: L, x2: R, y1: zLine, y2: zLine, stroke: css("--wire") }, svg);
+    const lx = el("text", { x: 4, y: xLine + 5, class: "lbl", style: FS }, svg); lx.textContent = "x";
+    const lz = el("text", { x: 4, y: zLine + 5, class: "lbl", style: FS }, svg); lz.textContent = "z";
+    // the four real clusters, as dotted bumps
+    clusters.forEach((c, i) => {
+      let d = "";
+      for (let j = 0; j <= 40; j++) { const f = c - 0.08 + (j / 40) * 0.16; d += `${j ? "L" : "M"}${X(f).toFixed(1)},${(xLine - 70 * Math.exp(-0.5 * ((f - c) / 0.03) ** 2)).toFixed(1)}`; }
+      el("path", { d, fill: "none", stroke: css("--fg"), "stroke-width": 2, "stroke-dasharray": "2 3" }, svg);
+      const t = el("text", { x: X(c), y: 16, "text-anchor": "middle", class: "lbl", style: FS }, svg); t.textContent = `cluster ${i + 1}`;
+    });
+    const tg = targets();
+    tg.forEach((f, k) => {
+      const u = 0.06 + (k / 7) * 0.88;
+      el("line", { x1: X(u), y1: zLine - 3, x2: X(f), y2: xLine + 5, stroke: css("--wire"), "stroke-width": 1.2, "marker-end": "url(#hv-arr)" }, svg);
+      el("circle", { cx: X(u), cy: zLine, r: 3, fill: css("--fg") }, svg);
+      el("circle", { cx: X(f), cy: xLine, r: 3.4, fill: css("--soft-stroke") }, svg);
+    });
+    const hit = new Set(tg.map((f) => clusters.reduce((best, c, i) => (Math.abs(c - f) < Math.abs(clusters[best] - f) ? i : best), 0)));
+    out.innerHTML = mode === "healthy"
+      ? `8 noise values land on <strong>${hit.size} of 4</strong> real clusters: the samples are as varied as the data.`
+      : `8 noise values land on <strong>${hit.size} of 4</strong> real clusters: every sample looks real, and every sample looks the same.`;
+  }
+  document.querySelectorAll("[data-hv]").forEach((b) =>
+    b.addEventListener("click", () => {
+      mode = b.dataset.hv;
+      document.querySelectorAll("[data-hv]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      draw();
+    })
+  );
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+</script>
+</body>
+</html>

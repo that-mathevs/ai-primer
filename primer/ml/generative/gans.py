@@ -1020,6 +1020,7 @@ variety, show up wherever two models are trained against each other.
   https://arxiv.org/abs/1406.2661. Introduced the generator-discriminator
   game, derived the optimal discriminator and the equilibrium where the
   generator matches the data, and suggested the non-saturating loss.
+  [Annotated companion](../../../papers/generative-adversarial-nets.html)
 - **Metz, Poole, Pfau and Sohl-Dickstein, *Unrolled Generative Adversarial
   Networks* (2016)**: https://arxiv.org/abs/1611.02163. Used the ring of
   eight Gaussians to show a generator hopping between modes, and reduced it

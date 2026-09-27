@@ -1362,7 +1362,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.generative.gans"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "unrolled-gans",

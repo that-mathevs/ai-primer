@@ -59,6 +59,7 @@ GLOSSARY: dict[str, Entry] = {
     "argmax": _E("The position of the largest value in a list, rather than the value itself.", N),
     "big-o": _E("A way to say how cost grows with input size, ignoring constant factors. O(n²) means doubling n quadruples the cost.", N),
     "probability distribution": _E("A list of probabilities over all possible outcomes, each between 0 and 1, adding up to 1.", N),
+    "probability density": _E("How thickly a continuous distribution's samples cover each spot: high where they crowd, zero where none ever land. It is the height of the bump, and its area adds up to 1.", 'primer.ml.generative.gans'),
 
     # --- neural network basics ----------------------------------------------
     "neuron": _E("Multiply each input by a weight, add them up with a bias, and pass the result through a nonlinear function.", NN),
@@ -72,6 +73,7 @@ GLOSSARY: dict[str, Entry] = {
     "softmax": _E("Turns a list of scores into shares that are all positive and add up to 1, with bigger scores getting disproportionately more.", ATT),
     "forward pass": _E("Running inputs through the network, layer by layer, to get a prediction.", NN),
     "backpropagation": _E("The chain rule run backwards through the network to find, for every weight, how much nudging it would change the loss.", NN),
+    "multilayer perceptron": _E("A network of fully connected layers, each a matrix multiply followed by a nonlinearity; also called an MLP.", NN),
     "loss": _E("A single number measuring how wrong the model's predictions are. Training tries to make it smaller.", LOSS),
     "loss function": _E("The rule that turns predictions and correct answers into the loss. Choosing it defines what the model learns.", LOSS),
     "gradient descent": _E("Training by repeatedly taking a small step downhill: nudge every weight against its gradient to lower the loss.", OPT),
@@ -618,6 +620,7 @@ GLOSSARY: dict[str, Entry] = {
     'fsdp': _E('Fully sharded data parallel: all training state sharded across GPUs (ZeRO stage 3).', 'primer.ml.pretraining'),
     'fused multiply-add': _E('One instruction that multiplies two numbers and adds the result to a running total.', 'primer.ml.hardware'),
     'gan': _E("A generator and a discriminator trained against each other, so the generator learns to make samples the discriminator can't tell from real data.", 'primer.ml.generative.gans'),
+    'generative model': _E('A model that learns to produce new samples resembling its training data, such as new faces, voices or sentences.', 'primer.ml.generative.autoencoders'),
     'generalization gap': _E('Validation loss minus training loss; when it keeps growing, the model is memorising.', 'primer.ml.fine_tuning'),
     'generator': _E('The network in a GAN that turns random noise into a sample.', 'primer.ml.generative.gans', scope=('primer/ml/generative/gans',)),
     'gini impurity': _E('The chance that two examples drawn at random from a pile carry different labels; 0 means pure.', 'primer.ml.classical'),

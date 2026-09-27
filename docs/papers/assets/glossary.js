@@ -1179,6 +1179,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/operations.html",
   "term": "generation failure"
  },
+ "generative model": {
+  "def": "A model that learns to produce new samples resembling its training data, such as new faces, voices or sentences.",
+  "lesson": "primer/ml/generative/autoencoders.html",
+  "term": "generative model"
+ },
  "generator": {
   "def": "The network in a GAN that turns random noise into a sample.",
   "lesson": "primer/ml/generative/gans.html",
@@ -2064,6 +2069,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/memory.html",
   "term": "multi-tenant"
  },
+ "multilayer perceptron": {
+  "def": "A network of fully connected layers, each a matrix multiply followed by a nonlinearity; also called an MLP.",
+  "lesson": "primer/ml/neural_net.html",
+  "term": "multilayer perceptron"
+ },
  "multimodal model": {
   "def": "A model that takes in more than one kind of input (text, images, audio, video) as one sequence of tokens.",
   "lesson": "primer/ml/generative/multimodal.html",
@@ -2463,6 +2473,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Splitting work so the part that reads untrusted content can't take dangerous actions.",
   "lesson": "primer/agents/guardrails.html",
   "term": "privilege separation"
+ },
+ "probability density": {
+  "def": "How thickly a continuous distribution's samples cover each spot: high where they crowd, zero where none ever land. It is the height of the bump, and its area adds up to 1.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "probability density"
  },
  "probability distribution": {
   "def": "A list of probabilities over all possible outcomes, each between 0 and 1, adding up to 1.",
