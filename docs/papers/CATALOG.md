@@ -63,7 +63,7 @@ lesson` section.
 | `flamingo` | Alayrac et al., *Flamingo* (2022) | https://arxiv.org/abs/2204.14198 | [ml.generative.multimodal](../../primer/ml/generative/multimodal.py) |
 | `llava` | Liu et al., *Visual Instruction Tuning* (LLaVA) (2023) | https://arxiv.org/abs/2304.08485 | [ml.generative.multimodal](../../primer/ml/generative/multimodal.py) |
 | `whisper` | Radford et al., *Robust Speech Recognition via Large-Scale Weak Supervision* (Whisper) (2022) | https://arxiv.org/abs/2212.04356 | [ml.generative.multimodal](../../primer/ml/generative/multimodal.py) |
-| `vq-vae` | van den Oord et al., *Neural Discrete Representation Learning* (VQ-VAE) (2017) | https://arxiv.org/abs/1711.00937 | [ml.generative.multimodal](../../primer/ml/generative/multimodal.py) |
+| `vq-vae` | van den Oord et al., *Neural Discrete Representation Learning* (VQ-VAE) (2017) | https://arxiv.org/abs/1711.00937 | [ml.generative.multimodal](../../primer/ml/generative/multimodal.py), [ml.generative.autoencoders](../../primer/ml/generative/autoencoders.py) |
 | `soundstream` | Zeghidour et al., *SoundStream* (2021) | https://arxiv.org/abs/2107.03312 | [ml.generative.multimodal](../../primer/ml/generative/multimodal.py) |
 | `dall-e` | Ramesh et al., *Zero-Shot Text-to-Image Generation* (DALL·E) (2021) | https://arxiv.org/abs/2102.12092 | [ml.generative.multimodal](../../primer/ml/generative/multimodal.py) |
 | `vivit` | Arnab et al., *ViViT* (2021) | https://arxiv.org/abs/2103.15691 | [ml.generative.multimodal](../../primer/ml/generative/multimodal.py) |

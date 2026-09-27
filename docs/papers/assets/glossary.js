@@ -504,6 +504,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/retrieval.html",
   "term": "chunking"
  },
+ "cider": {
+  "def": "A score for a generated caption: how well its words and short phrases match several human-written captions of the same image, with phrases common to captions of many images counting less. Higher is better; values above 100 are normal.",
+  "lesson": null,
+  "term": "CIDEr"
+ },
  "circuit": {
   "def": "A chain of components that together compute one behaviour.",
   "lesson": "primer/ml/interpretability.html",
@@ -568,6 +573,11 @@ window.PRIMER_GLOSSARY = {
   "def": "In OpenTelemetry, the service that receives spans from apps and forwards them to storage backends.",
   "lesson": "primer/agents/observability.html",
   "term": "collector"
+ },
+ "commitment loss": {
+  "def": "A training term that pulls an encoder's output towards the codebook entry it snapped to, so the encoder commits to its entries instead of drifting away from them.",
+  "lesson": null,
+  "term": "commitment loss"
  },
  "common crawl": {
   "def": "A nonprofit's public archive of the web, released as regular snapshots of billions of pages; the raw material of most pretraining data.",
@@ -1353,6 +1363,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A generator and a discriminator trained against each other, so the generator learns to make samples the discriminator can't tell from real data.",
   "lesson": "primer/ml/generative/gans.html",
   "term": "GAN"
+ },
+ "gated cross-attention": {
+  "def": "Cross-attention layers added inside a frozen language model so its text can look at image features, with each layer's output multiplied by tanh of a learned number that starts at 0, so the model starts out unchanged.",
+  "lesson": "primer/ml/generative/multimodal.html",
+  "term": "gated cross-attention"
  },
  "gaussian": {
   "def": "The bell-curve distribution, set by its mean (where the centre is) and its standard deviation (how wide it is).",
@@ -2719,6 +2734,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/inference.html",
   "term": "per-channel quantization"
  },
+ "perceiver resampler": {
+  "def": "A small transformer whose queries are a fixed set of learned vectors: they cross-attend to any number of image or video features and always return that fixed number of visual tokens.",
+  "lesson": "primer/ml/generative/multimodal.html",
+  "term": "Perceiver Resampler"
+ },
  "percentage point": {
   "def": "The plain difference between two percentages: going from 11% to 18% is a rise of 7 percentage points, which is a 64% relative rise.",
   "lesson": null,
@@ -3624,6 +3644,16 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/agent_loop.html",
   "term": "stop reason"
  },
+ "stop-gradient": {
+  "def": "An operation that passes its input through unchanged but blocks gradients from flowing back into it, so training treats that input as a constant.",
+  "lesson": null,
+  "term": "stop-gradient"
+ },
+ "straight-through estimator": {
+  "def": "A way to train through a step that has no useful gradient, such as rounding or snapping to a codebook: use the step going forward, and pass the gradient back as if the step were not there.",
+  "lesson": null,
+  "term": "straight-through estimator"
+ },
  "strict mode": {
   "def": "A tool or output option that guarantees the model's JSON fits a given schema.",
   "lesson": "primer/ml/structured_output.html",
@@ -4063,6 +4093,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A transformer that treats small image patches as tokens.",
   "lesson": "primer/ml/cnn_rnn.html",
   "term": "Vision Transformer"
+ },
+ "vision-language model": {
+  "def": "A model that reads images (and often video) together with text and writes text; a language model given eyes.",
+  "lesson": "primer/ml/generative/multimodal.html",
+  "term": "vision-language model"
  },
  "visual instruction tuning": {
   "def": "Fine-tuning a vision-language model on images paired with instructions and good answers.",

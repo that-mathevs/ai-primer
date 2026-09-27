@@ -1020,6 +1020,7 @@ split the video and summarise the parts.
   Learning* (2022)**: https://arxiv.org/abs/2204.14198. Connected a frozen
   vision encoder to a frozen language model through new cross-attention
   layers, handling images and video interleaved with text.
+  [Annotated companion](../../../papers/flamingo.html)
 - **Liu et al., *Visual Instruction Tuning* (LLaVA, 2023)**:
   https://arxiv.org/abs/2304.08485. The encode, project and splice recipe,
   trained in two stages: align the projector, then tune on image
@@ -1034,6 +1035,7 @@ split the video and summarise the parts.
   Learning* (VQ-VAE, 2017)**: https://arxiv.org/abs/1711.00937. Learned a
   codebook inside an autoencoder, turning images and audio into discrete
   tokens.
+  [Annotated companion](../../../papers/vq-vae.html)
 - **Zeghidour et al., *SoundStream: An End-to-End Neural Audio Codec*
   (2021)**: https://arxiv.org/abs/2107.03312. Residual vector quantization
   for audio: a stack of codebooks, each encoding the previous one's error.

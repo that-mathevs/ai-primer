@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neural Discrete Representation Learning (VQ-VAE), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to van den Oord, Vinyals and Kavukcuoglu (2017), the paper that snapped an autoencoder's codes to a learned codebook and so turned images, speech and video into tokens.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .space-wrap { max-width: 420px; margin: 0 auto; }
+  .space-wrap svg { width: 100%; height: auto; display: block; touch-action: none; cursor: crosshair; }
+  .space-wrap svg:focus-visible { outline: 2px solid var(--active); outline-offset: 3px; }
+  .bars .share-row { grid-template-columns: 7.5rem minmax(0, 1fr) 3.4rem; }
+  .bars .share-bar.alt { background: var(--hatch) var(--wire); }
+  .idgrid { display: inline-grid; grid-template-columns: repeat(2, 2.4rem); gap: 0.25rem; margin: 0.4rem 0.8rem 0.4rem 0; vertical-align: middle; }
+  .idgrid span { border: 1px solid var(--border); border-radius: 6px; text-align: center; padding: 0.35rem 0; font-family: ui-monospace, monospace; background: var(--card); }
+</style>
+</head>
+<body data-paper="vq-vae">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 VQ-VAE</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Discrete latent variables</a></li>
+          <li><a href="#s3-2">3.2 Learning</a></li>
+          <li><a href="#s3-3">3.3 Prior</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Against continuous codes</a></li>
+          <li><a href="#s4-2">4.2 Images</a></li>
+          <li><a href="#s4-3">4.3 Audio</a></li>
+          <li><a href="#s4-4">4.4 Video</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Conclusion</a></li>
+      <li><a href="#a1">A.1 Moving-average codebook</a></li>
+      <li><a href="#today">What changed since 2017</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Neural Discrete Representation Learning, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to van den Oord, Vinyals and Kavukcuoglu (2017), the paper that introduced the VQ-VAE: an autoencoder whose codes snap to the nearest entry of a learned codebook, so a picture, a voice or a video becomes a short list of whole numbers that a sequence model can read and write.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1711.00937">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1711.00937">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1711.00937">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper (arXiv version 2, May 2018; published at NIPS 2017) section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard non-exclusive licence, so its figures are redrawn from scratch and the few numbers it reports appear here in this page's own tables and charts, each attributed. Worked numbers come from tiny examples built on this page, not from the paper, unless a sentence says otherwise; made-up numbers are labelled illustrative. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the numbers of a tiny example, and the same example in a few lines of Python you can run.</li>
+  <li>The pictures are live: hover or tap the parts of the redrawn architecture, drag the encoder's output around the codebook and watch which entry it snaps to, and slide the averaging knob of the codebook update.</li>
+</ul>
+<p>One tiny example runs through the whole page: a codebook of three entries in a flat, two-number world, e<sub>1</sub> = (0, 0), e<sub>2</sub> = (1, 0) and e<sub>3</sub> = (0, 1), and an encoder output z<sub>e</sub> = (0.9, 0.2). The <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> uses the same three entries and the same vector, and builds the snapping step in code; the <a data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a> builds the autoencoder and the VAE this paper starts from.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Our model, the Vector Quantised-Variational AutoEncoder (VQ-VAE), differs from VAEs in two key ways: the encoder network outputs discrete, rather than continuous, codes; and the prior is learnt rather than static.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/1711.00937">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A paint-by-numbers kit comes with a palette of numbered pots. Any small patch of a picture can be described by the number of the pot closest to its colour, and anyone holding the same palette can repaint it from the numbers alone. A VQ-VAE learns the palette. Its <span class="t" data-t="encoder">encoder</span> looks at a picture and writes a grid of pot numbers; its <span class="t" data-t="decoder">decoder</span> repaints the picture from those numbers. Because the numbers come from a fixed, finite list, a second model can learn to write new grids of them, one number at a time, the way a language model writes words.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>A new model:</strong> a <span class="t" data-t="variational autoencoder">variational autoencoder</span> whose codes are <em>discrete</em>: each code is snapped to the nearest entry of a learned <span class="t" data-t="codebook">codebook</span>, an idea borrowed from <span class="t" data-t="vector quantization">vector quantisation</span>.</li>
+  <li><strong>It trains simply:</strong> no noisy gradient estimates, and no <span class="t" data-t="posterior collapse">posterior collapse</span>, the failure where a powerful decoder learns to ignore the codes.</li>
+  <li><strong>It holds its own:</strong> on CIFAR10 images its likelihood is close to that of a normal VAE with continuous codes, a first for discrete codes.</li>
+  <li><strong>The codes are useful:</strong> with a learned <span class="t" data-t="prior">prior</span> over them, it generates images, video and speech; it swaps one speaker's voice for another's; and its speech codes line up with <span class="t" data-tip-title="Phoneme" data-tip="The smallest unit of sound that tells words apart in a language, such as the b in bat versus the p in pat. English has around 40.">phonemes</span>, though it was never told what a phoneme is.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Turning a picture or a sound into a short list of whole numbers is how many systems let a transformer read and write images and audio with the same next-token machinery it uses for text. This paper is where that recipe, “an autoencoder whose code is a grid of codebook ids”, took its standard form.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S1">original</a></span></h2>
+<blockquote class="quote">“Language is inherently discrete, similarly speech is typically represented as a sequence of symbols.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>When you describe a photo to a friend you do not list the brightness of every pixel. You say “a fox on snow, looking left”. That description is short, made of a few words picked from a vocabulary, and it keeps what matters while dropping the noise. The paper wants a model that learns descriptions like that for itself: <em>discrete</em> (picked from a list) rather than <em>continuous</em> (any real number), and about the big features that span many pixels, not the fine grain.</p>
+<h3 class="rung">Tiny example</h3>
+<p>A continuous code for a patch might be (0.9, 0.2): two real numbers, each of which could be anything. A discrete code for the same patch is “entry 2 of the codebook”: one whole number out of K. With K = 512 entries, that is exactly log<sub>2</sub> 512 = 9 bits, however detailed the patch was. The code cannot waste capacity on noise, because it has only 9 bits to spend.</p>
+<h3 class="rung">The problem it answers</h3>
+<p>Two training goals are common for models of raw data: maximum likelihood (give the real data high probability) and reconstruction (rebuild the input from its code). The paper notes a tension, quoting earlier work: by likelihood alone, the best models have no codes at all, just a powerful <span class="t" data-t="autoregressive generation">autoregressive</span> decoder that predicts each pixel from the ones before it, such as <span class="t" data-tip-title="PixelCNN" data-tip="An image model that predicts each pixel from the pixels above it and to its left, using convolutions masked so they cannot peek at pixels not yet generated. Written one pixel at a time, like text one word at a time.">PixelCNN</span>. Pair such a decoder with a VAE's code and the decoder tends to ignore the code. The paper's contributions:</p>
+<ol>
+  <li>The VQ-VAE: simple, discrete, free of posterior collapse, with no variance problems in its gradients.</li>
+  <li>Evidence that a discrete model matches continuous ones in log-likelihood.</li>
+  <li>With a powerful prior, coherent samples of images, video and speech.</li>
+  <li>Language-like structure learned from raw speech with no labels, and speaker conversion.</li>
+</ol>
+<h3 class="rung">Why it matters</h3>
+<p>The argument that language, speech and even images are naturally described by symbols is the same argument that later put images and audio into the vocabulary of language models. See the “Generating images and speech” section of the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a>.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S2">original</a></span></h2>
+<blockquote class="quote">“In our experiments we were unable to train using the soft-to-hard relaxation approach from scratch as the decoder was always able to invert the continuous relaxation during training, so that no actual quantisation took place.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Training a network means nudging every weight a little in the direction that lowers the error, using the <span class="t" data-t="gradient">gradient</span>. A discrete choice, “pick entry 2”, has no gradient: nudge the input slightly and the choice stays 2, until suddenly it jumps to 3. Earlier discrete VAEs worked around this in two ways, and both hurt:</p>
+<ul>
+  <li><strong>Estimate the gradient by sampling</strong> (NVIL, VIMCO): try random choices and see how the loss changes. It works, but the estimates are noisy, so training is slow.</li>
+  <li><strong>Blur the choice</strong> (Concrete, or Gumbel-softmax): replace “pick 2” by a soft mixture that slowly sharpens into a single pick. Early on the gradients are smooth but wrong; late in training they become right but noisy.</li>
+</ul>
+<h3 class="rung">Tiny example</h3>
+<p>Say a soft version of the choice gives weights (0.1, 0.8, 0.1) to the three entries. The decoder then sees 0.1·e<sub>1</sub> + 0.8·e<sub>2</sub> + 0.1·e<sub>3</sub> = (0.8, 0.1), a point that is none of the entries. A clever decoder can learn to read the exact weights back from such points, so it never has to live with the snap. That is the failure the quote describes.</p>
+<h3 class="rung">Where the paper sits</h3>
+<p>These estimators had mostly been tested on small datasets such as handwritten digits (MNIST), with small latent spaces (below 8 dimensions, for example). The paper uses CIFAR10, ImageNet, DeepMind Lab and the VCTK speech corpus. It also builds on a line of work that puts autoregressive models inside VAEs (as decoder or as prior) and on image compression with quantised codes.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The VQ-VAE's answer, in §3.2, is to keep the snap hard and simply pretend it is not there when passing gradients back. That trick, crude as it sounds, is still how most codebook models are trained.</p>
+</section>
+
+<section id="s3">
+<h2>3 VQ-VAE <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A VAE has three parts: an encoder that turns the input into a code, a <span class="t" data-t="prior">prior</span> that says which codes are likely before seeing any input, and a decoder that turns a code back into data. In the usual VAE the code is a cloud of real numbers shaped like a bell curve (see the <a href="auto-encoding-variational-bayes.html">Auto-Encoding Variational Bayes companion</a>). In a VQ-VAE the code is a choice from a list, and the list itself is learned: an embedding table, exactly like the table of word vectors at the bottom of a language model.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Swap “bell curve” for “pick from a table” and three things change at once: the encoder's output becomes a whole number, the prior becomes a probability for each table entry, and the decoder's input becomes a table row. The three subsections take them in turn.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Discrete latent variables <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S3.SS1">original</a></span></h3>
+<blockquote class="quote">“One can see this forward computation pipeline as a regular autoencoder with a particular non-linearity that maps the latents to 1-of-K embedding vectors.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A plain autoencoder squeezes an image into a small grid of vectors and rebuilds it. A VQ-VAE adds one step in the middle: every vector in the grid is replaced by the closest vector from a fixed set of K, the codebook. What the decoder sees is always one of those K vectors, and what gets stored is just its number.</p>
+<h4>Tiny example</h4>
+<p>The codebook has K = 3 entries, each D = 2 numbers wide: e<sub>1</sub> = (0, 0), e<sub>2</sub> = (1, 0), e<sub>3</sub> = (0, 1). The encoder outputs z<sub>e</sub> = (0.9, 0.2). Its straight-line distances to the three entries are √0.85 = 0.922, √0.05 = 0.224 and √1.45 = 1.204. The smallest is to e<sub>2</sub>, so the code is k = <strong>2</strong>, and the decoder receives z<sub>q</sub> = e<sub>2</sub> = (1, 0). Close to the encoder's output, but not equal.</p>
+
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 520" role="img" aria-label="The VQ-VAE, redrawn from Figure 1 (left): encoder, snap to the codebook, decoder, and the copied gradient">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker>
+    <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--attn-stroke)"/></marker></defs>
+    <path class="wire" d="M150,44 V64" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,104 V124" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,164 V194" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,236 V266" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,306 V336" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,376 V406" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,446 V466" marker-end="url(#arr)"/>
+    <path class="wire" d="M274,166 V215 H222" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="x"><rect x="90" y="14" width="120" height="30" rx="6"/><text x="150" y="34" text-anchor="middle">Input x (image)</text></g>
+    <g class="blk lin" data-block="enc"><rect x="80" y="64" width="140" height="40" rx="7"/><text x="150" y="89" text-anchor="middle">Encoder (CNN)</text></g>
+    <g class="blk emb" data-block="ze"><rect x="80" y="124" width="140" height="40" rx="7"/><text x="150" y="142" text-anchor="middle">z<tspan baseline-shift="sub" font-size="9">e</tspan>(x)</text><text x="150" y="157" text-anchor="middle" class="lbl">a grid of vectors</text></g>
+    <g class="blk norm" data-block="codebook"><rect x="228" y="100" width="92" height="66" rx="7"/><text x="274" y="118" text-anchor="middle">Codebook e</text><text x="274" y="135" text-anchor="middle" class="lbl">e₁, e₂, …, e<tspan baseline-shift="sub" font-size="8">K</tspan></text><text x="274" y="152" text-anchor="middle" class="lbl">K rows, D wide</text></g>
+    <g class="blk soft" data-block="lookup"><rect x="80" y="194" width="140" height="42" rx="7"/><text x="150" y="212" text-anchor="middle">Nearest entry</text><text x="150" y="228" text-anchor="middle" class="lbl">argmin over j</text></g>
+    <g class="blk plain" data-block="ids"><rect x="80" y="266" width="140" height="40" rx="7"/><text x="150" y="284" text-anchor="middle">q(z | x): the ids</text><text x="150" y="299" text-anchor="middle" class="lbl">e.g. 2, 7, 7, 1, …</text></g>
+    <g class="blk emb" data-block="zq"><rect x="80" y="336" width="140" height="40" rx="7"/><text x="150" y="354" text-anchor="middle">z<tspan baseline-shift="sub" font-size="9">q</tspan>(x)</text><text x="150" y="369" text-anchor="middle" class="lbl">the looked-up rows</text></g>
+    <g class="blk lin" data-block="dec"><rect x="80" y="406" width="140" height="40" rx="7"/><text x="150" y="431" text-anchor="middle">Decoder (CNN)</text></g>
+    <g class="blk plain" data-block="out"><rect x="70" y="466" width="160" height="30" rx="6"/><text x="150" y="486" text-anchor="middle">p(x | z<tspan baseline-shift="sub" font-size="9">q</tspan>): the rebuild</text></g>
+    <g class="blk" data-block="grad"><path d="M76,356 C30,356 30,144 70,144" fill="none" stroke="var(--attn-stroke)" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrg)"/><rect x="4" y="232" width="50" height="36" rx="6" fill="var(--card)" stroke="var(--attn-stroke)"/><text x="29" y="247" text-anchor="middle" style="font-size:10.5px">gradient</text><text x="29" y="261" text-anchor="middle" style="font-size:10.5px">copied</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start at the top with <strong>Input x</strong> and follow the arrows down; then look at the dashed <strong>gradient copied</strong> path on the left.</p></div>
+  </div>
+  <figcaption>Figure 1 (left) of the paper, redrawn vertically. Based on van den Oord, Vinyals and Kavukcuoglu (2017), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the top down. The encoder turns the image into a grid of vectors z<sub>e</sub>(x). Each vector goes into “Nearest entry”, which compares it with every row of the codebook on the right and outputs the number of the closest one. Those numbers are the discrete code, q(z | x). Looking the numbers up in the same codebook gives z<sub>q</sub>(x), a grid of codebook rows, and the decoder rebuilds the image from that. The dashed path on the left is the paper's trick for training: going backwards, the gradient that arrives at z<sub>q</sub> is handed straight to z<sub>e</sub>, skipping the snap, which has no gradient of its own (§3.2).</p>
+
+<h4>The math: equation 1, the snap as a probability</h4>
+<p>A VAE's encoder outputs a <span class="t" data-t="posterior">posterior</span>: a probability for every possible code, given the input. Here it is as sharp as a probability can be: all of it on the nearest entry, none anywhere else. That is a <span class="t" data-t="one-hot">one-hot</span> vector.</p>
+<div class="eq" data-tex="\htmlData{sym=qzk}{q(z{=}k\mid x)} = \begin{cases} 1 & \text{for } \htmlData{sym=k}{k} = \htmlData{sym=argminj}{\operatorname{argmin}_j} \htmlData{sym=norm2}{\lVert \htmlData{sym=ze}{z_e(x)} - \htmlData{sym=ej}{e_j} \rVert_2} \\ 0 & \text{otherwise} \end{cases}" data-fallback="q(z = k | x) = 1 for k = argmin_j ‖z_e(x) − e_j‖₂, and 0 otherwise"></div>
+<div class="symtable" data-syms="qzk,k,argminj,norm2,ze,ej"></div>
+<p class="inwords"><strong>In words:</strong> “the encoder puts probability 1 on the codebook entry nearest to its output, and 0 on every other entry.”</p>
+<p class="inwords"><strong>With the numbers:</strong> distances (0.922, 0.224, 1.204); the smallest is the second, so q(z | x) = (0, 1, 0).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+z_e = [0.9, 0.2]
+e = [[0, 0], [1, 0], [0, 1]]
+# ‖z_e(x) − e_j‖₂ for each entry j
+dist = [math.sqrt(sum((a - b) ** 2 for a, b in zip(z_e, e_j))) for e_j in e]
+[round(d, 3) for d in dist]  # → [0.922, 0.224, 1.204]
+# argmin_j, counting entries from 1 as the paper does
+k = dist.index(min(dist)) + 1
+k  # → 2
+# q(z = j | x): 1 at the nearest entry, 0 elsewhere
+[1 if j == k else 0 for j in range(1, len(e) + 1)]  # → [0, 1, 0]</code></pre>
+
+<h4>The math: equation 2, what the decoder receives</h4>
+<div class="eq" data-tex="\htmlData{sym=zq}{z_q(x)} = \htmlData{sym=ek}{e_k}, \quad \text{where} \quad \htmlData{sym=k}{k} = \htmlData{sym=argminj}{\operatorname{argmin}_j} \htmlData{sym=norm2}{\lVert \htmlData{sym=ze}{z_e(x)} - \htmlData{sym=ej}{e_j} \rVert_2}" data-fallback="z_q(x) = e_k, where k = argmin_j ‖z_e(x) − e_j‖₂"></div>
+<div class="symtable" data-syms="zq,ek,k,argminj,ze,ej"></div>
+<p class="inwords"><strong>In words:</strong> “the decoder's input is the codebook entry nearest to the encoder's output.”</p>
+<p class="inwords"><strong>With the numbers:</strong> k = 2, so z<sub>q</sub> = e<sub>2</sub> = (1, 0). The snap moved the vector by (0.1, −0.2), a squared distance of 0.05.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>z_e = [0.9, 0.2]
+e = [[0, 0], [1, 0], [0, 1]]
+# squared distances are enough to find the nearest entry
+d2 = [sum((a - b) ** 2 for a, b in zip(z_e, e_j)) for e_j in e]
+k = d2.index(min(d2)) + 1
+# z_q(x) = e_k: a lookup, like a row of a word-embedding table
+z_q = e[k - 1]
+z_q  # → [1, 0]
+round(d2[k - 1], 2)  # → 0.05</code></pre>
+
+<h4>A consequence: the KL term is a constant</h4>
+<p>A VAE's training objective, the <span class="t" data-t="evidence lower bound">evidence lower bound</span>, has a <span class="t" data-t="kl divergence">KL divergence</span> term that measures how far the encoder's posterior strays from the prior. With a one-hot posterior and a uniform prior (every entry equally likely, 1/K each) the term is the same for every input: log K.</p>
+<div class="eq" data-tex="\htmlData{sym=DKL}{D_{KL}}\big(q \,\Vert\, p\big) = \htmlData{sym=sumk}{\sum_{k=1}^{K}} \htmlData{sym=qzk}{q(z{=}k\mid x)} \htmlData{sym=log}{\log} \frac{\htmlData{sym=qzk}{q(z{=}k\mid x)}}{\htmlData{sym=pzk}{p(z{=}k)}} = 1 \cdot \htmlData{sym=log}{\log} \frac{1}{1/\htmlData{sym=K}{K}} = \htmlData{sym=log}{\log} \htmlData{sym=K}{K}" data-fallback="D_KL(q ‖ p) = Σ_k q(z = k | x) log(q(z = k | x) / p(z = k)) = 1 · log(1 / (1/K)) = log K"></div>
+<div class="symtable" data-syms="DKL,sumk,qzk,log,pzk,K"></div>
+<p class="inwords"><strong>In words:</strong> “only the chosen entry contributes to the sum; its probability 1 against the prior's 1/K costs log K, whatever the input.”</p>
+<p class="inwords"><strong>With the numbers:</strong> K = 3 gives log 3 = 1.0986 nats. The paper's image codebook, K = 512, gives log 512 = 6.238 nats, which is 9 bits per code.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+K = 3
+q = [0, 1, 0]
+p = [1 / K] * K
+# Σ_k q log(q / p); terms with q = 0 contribute nothing
+kl = sum(q_k * math.log(q_k / p_k) for q_k, p_k in zip(q, p) if q_k > 0)
+round(kl, 4)  # → 1.0986
+round(math.log(512), 3), math.log2(512)  # → (6.238, 9.0)</code></pre>
+<p>A constant cannot be lowered by training, so the paper drops it from the loss. So nothing in a VQ-VAE's loss pulls the codes towards a fixed shape, the job the KL term does in an ordinary VAE.</p>
+<p>One detail matters for everything that follows: the code is not one number per image. For speech, images and video the encoder outputs a 1D, 2D or 3D grid of vectors, and each vector is snapped on its own. A 32 × 32 grid is 1,024 ids.</p>
+<h4>Why it matters today</h4>
+<p>This forward pass, encode, snap to the nearest row, look the row up, decode, is exactly what the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> builds: <a data-lesson="primer/ml/generative/multimodal.html#quantize"><code>quantize</code></a> is the argmin of equation 1 and <a data-lesson="primer/ml/generative/multimodal.html#dequantize"><code>dequantize</code></a> the lookup of equation 2.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“To make sure the encoder commits to an embedding and its output does not grow, we add a commitment loss, the third term in equation 3.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Three parties have to learn: the encoder, the decoder and the codebook. Think of a school with a fixed set of uniforms. The decoder is a tailor who learns to make each uniform look like the child wearing it. The codebook is the uniform supplier, who every term adjusts each uniform towards the children who were issued it. The encoder is the children, who are asked to stay close to the uniform they were given rather than growing off in some direction the supplier cannot follow. Each party is trained by a different term of one loss.</p>
+<h4>The gradient that jumps the gap: the straight-through estimator</h4>
+<p>The snap has no useful gradient. The paper's fix is the <span class="t" data-t="straight-through estimator">straight-through estimator</span>: on the way forward, use the snapped vector z<sub>q</sub>; on the way back, pass the decoder's gradient to the encoder unchanged, as if the snap were not there. This works because z<sub>e</sub> and z<sub>q</sub> live in the same D-dimensional space, so “move the decoder's input this way” is also sensible advice for the encoder's output.</p>
+<p><strong>Tiny example (the gradient is illustrative):</strong> forward, z<sub>e</sub> = (0.9, 0.2) snaps to e<sub>2</sub> = (1, 0). Backward, suppose the decoder reports that its loss would fall if its input moved against the gradient g = (1.2, −1.0). The encoder receives the same g. A step with learning rate 0.5 moves z<sub>e</sub> to (0.9 − 0.6, 0.2 + 0.5) = (0.3, 0.7). Its squared distances are now 0.58, 0.98 and 0.18, so next time it snaps to <strong>e<sub>3</sub></strong>. That is Figure 1 (right) of the paper: the gradient can push the encoder across a border into a different entry.</p>
+<pre class="in-python"><code>z_e = [0.9, 0.2]
+e = [[0, 0], [1, 0], [0, 1]]
+# the gradient at z_q, copied unaltered to z_e (illustrative numbers)
+g = [1.2, -1.0]
+lr = 0.5
+z_e = [z - lr * g_i for z, g_i in zip(z_e, g)]
+[round(z, 2) for z in z_e]  # → [0.3, 0.7]
+d2 = [round(sum((a - b) ** 2 for a, b in zip(z_e, e_j)), 2) for e_j in e]
+d2  # → [0.58, 0.98, 0.18]
+# the new nearest entry
+d2.index(min(d2)) + 1  # → 3</code></pre>
+
+<h4>Try it: the embedding space</h4>
+<div class="plot" id="space">
+  <div class="controls ui">
+    <button type="button" id="sp-book">Codebook step (moves e<sub>k</sub>)</button>
+    <button type="button" id="sp-commit">Commitment step (moves z<sub>e</sub>)</button>
+    <button type="button" id="sp-reset">Reset</button>
+  </div>
+  <div class="space-wrap"><svg id="sp-svg" viewBox="0 0 320 320" aria-label="The embedding space: three codebook entries and the encoder's output. Click or drag to move the encoder's output."></svg></div>
+  <div class="legend"><span><i style="background:var(--accent)"></i>codebook entries e<sub>1</sub>, e<sub>2</sub>, e<sub>3</sub> (squares)</span><span><i style="background:var(--attn-stroke)"></i>encoder output z<sub>e</sub> (circle)</span><span>solid line: the snap · dotted lines: the other distances</span></div>
+  <p class="readout" id="sp-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> this is the paper's Figure 1 (right) made live, in the page's two-number world. The three squares are the codebook entries; the circle is the encoder's output z<sub>e</sub>. The solid line joins z<sub>e</sub> to the entry it snaps to, and the readout gives all three distances, the chosen id, and the two loss terms that tie z<sub>e</sub> and its entry together. Drag the circle (or focus the picture and use the arrow keys) across the invisible border halfway between two entries and watch the id change: that border is where a straight-through gradient step can change the code. Now press <strong>Codebook step</strong>: the chosen entry moves halfway to z<sub>e</sub>, which is what the codebook term does. Press <strong>Commitment step</strong>: z<sub>e</sub> moves only an eighth of the way to its entry, because the commitment term is scaled by β = 0.25. Both steps use the same learning rate; the entries chase the encoder hard, and the encoder is only tethered gently.</p>
+
+<h4>The math: equation 3, the whole loss</h4>
+<div class="eq" data-tex="\htmlData{sym=L}{L} = \htmlData{sym=logpxzq}{\log p(x \mid z_q(x))} + \htmlData{sym=sq}{\big\lVert \htmlData{sym=sg}{\mathrm{sg}}[\htmlData{sym=ze}{z_e(x)}] - \htmlData{sym=e}{e} \big\rVert_2^2} + \htmlData{sym=beta}{\beta} \htmlData{sym=sq}{\big\lVert \htmlData{sym=ze}{z_e(x)} - \htmlData{sym=sg}{\mathrm{sg}}[\htmlData{sym=e}{e}] \big\rVert_2^2}" data-fallback="L = log p(x | z_q(x)) + ‖sg[z_e(x)] − e‖²₂ + β ‖z_e(x) − sg[e]‖²₂"></div>
+<div class="symtable" data-syms="L,logpxzq,sq,sg,ze,e,beta"></div>
+<p class="inwords"><strong>In words:</strong> “rebuild the input well from the snapped code; pull each codebook entry towards the encoder outputs that chose it, without moving the encoder; and pull the encoder's output a quarter as hard towards its entry, without moving the entry.”</p>
+<p class="inwords"><strong>A slip in the printed equation:</strong> L is a loss to be made small, and the paper calls the first term “the reconstruction loss”, so it should read <em>minus</em> log p(x | z<sub>q</sub>(x)): lower loss means higher probability of rebuilding x. As printed, with a plus sign, minimising L would make reconstructions worse. The worked numbers below use the minus sign the text describes.</p>
+<p class="inwords"><strong>With the numbers:</strong> suppose the decoder gives the input probability 0.74 (illustrative), so the reconstruction term is −log 0.74 = 0.30. The codebook term is the squared distance from e<sub>2</sub> to z<sub>e</sub>: 0.05. The commitment term is 0.25 × 0.05 = 0.0125. The total is 0.30 + 0.05 + 0.0125 = 0.3625.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+z_e = [0.9, 0.2]
+e_k = [1, 0]
+beta = 0.25
+# −log p(x | z_q(x)), illustrative decoder probability
+recon = -math.log(0.74)
+round(recon, 2)  # → 0.3
+# ‖sg[z_e] − e‖²: sg only changes gradients, not the value
+codebook = sum((a - b) ** 2 for a, b in zip(z_e, e_k))
+round(codebook, 4)  # → 0.05
+# β ‖z_e − sg[e]‖²: the same distance, a quarter of the weight
+commitment = beta * codebook
+round(commitment, 4)  # → 0.0125
+round(0.30 + codebook + commitment, 4)  # → 0.3625</code></pre>
+<p>The two squared distances have the same value; the <span class="t" data-t="stop-gradient">stop-gradient</span> sg[·] decides <em>who moves</em>. Inside sg the quantity counts as a constant, so the codebook term's gradient reaches only the entry and the commitment term's gradient reaches only the encoder:</p>
+<div class="eq" data-tex="\frac{\partial}{\partial \htmlData{sym=e}{e}} \htmlData{sym=sq}{\big\lVert \htmlData{sym=sg}{\mathrm{sg}}[\htmlData{sym=ze}{z_e}] - \htmlData{sym=e}{e} \big\rVert_2^2} = 2(\htmlData{sym=e}{e} - \htmlData{sym=ze}{z_e}), \qquad \frac{\partial}{\partial \htmlData{sym=ze}{z_e}} \htmlData{sym=beta}{\beta}\htmlData{sym=sq}{\big\lVert \htmlData{sym=ze}{z_e} - \htmlData{sym=sg}{\mathrm{sg}}[\htmlData{sym=e}{e}] \big\rVert_2^2} = 2\htmlData{sym=beta}{\beta}(\htmlData{sym=ze}{z_e} - \htmlData{sym=e}{e})" data-fallback="∂/∂e ‖sg[z_e] − e‖² = 2(e − z_e),   ∂/∂z_e β‖z_e − sg[e]‖² = 2β(z_e − e)"></div>
+<div class="symtable" data-syms="e,ze,sg,sq,beta"></div>
+<p class="inwords"><strong>In words:</strong> “the codebook term tells the entry to move towards the encoder output; the commitment term tells the encoder output to move towards the entry, with a quarter of the force.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the entry's gradient is 2((1, 0) − (0.9, 0.2)) = (0.2, −0.4); stepping against it moves e<sub>2</sub> towards (0.9, 0.2). The encoder's gradient is 2 × 0.25 × ((0.9, 0.2) − (1, 0)) = (−0.05, 0.1); stepping against it moves z<sub>e</sub> towards (1, 0), four times more slowly than the entry moves towards z<sub>e</sub>, since the only difference between the two gradients is the factor β = 0.25.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>z_e = [0.9, 0.2]
+e_k = [1, 0]
+beta = 0.25
+# gradient of the codebook term, reaching only the entry
+grad_e = [2 * (b - a) for a, b in zip(z_e, e_k)]
+[round(g, 2) for g in grad_e]  # → [0.2, -0.4]
+# gradient of the commitment term, reaching only the encoder
+grad_z = [2 * beta * (a - b) for a, b in zip(z_e, e_k)]
+[round(g, 2) for g in grad_z]  # → [-0.05, 0.1]
+# the entry is pulled four times as hard: 1 / β
+round(abs(grad_e[0]) / abs(grad_z[0]), 1)  # → 4.0</code></pre>
+
+<h4>Who trains on what</h4>
+<div class="tablewrap"><table>
+  <caption>The three terms of equation 3 and the parts they train, as §3.2 of the paper assigns them</caption>
+  <thead><tr><th>Term</th><th>Trains</th><th>Its job</th></tr></thead>
+  <tbody>
+    <tr><td>reconstruction, −log p(x | z<sub>q</sub>)</td><td>decoder, and the encoder through the copied gradient</td><td>rebuild the input from the code</td></tr>
+    <tr><td>codebook, ‖sg[z<sub>e</sub>] − e‖²</td><td>codebook entries only</td><td>move each entry towards the encoder outputs that chose it: plain <span class="t" data-t="vector quantization">vector quantisation</span>, one of the simplest forms of <span class="t" data-t="dictionary learning">dictionary learning</span></td></tr>
+    <tr><td><span class="t" data-t="commitment loss">commitment</span>, β‖z<sub>e</sub> − sg[e]‖²</td><td>encoder only</td><td>keep the encoder's outputs near their entries, so they cannot drift and grow while the entries lag behind</td></tr>
+  </tbody>
+</table></div>
+<p>The codebook needs its own term because the straight-through trick sends the reconstruction gradient <em>around</em> the snap: the entries receive nothing from it. The paper found training robust to β, with results unchanged from 0.1 to 2.0, and used β = 0.25 throughout, adding that the best value would in general depend on the scale of the reconstruction loss. With a grid of N codes (32 × 32 for ImageNet, 8 × 8 × 10 for CIFAR10), the two distance terms are averaged over the N positions.</p>
+
+<h4>The model's likelihood</h4>
+<p>To compare with other models, the paper needs log p(x), the log-probability of the data. In principle it sums over every possible code; in practice the decoder, trained only on the code the encoder picks, gives almost nothing to any other code, so one term dominates:</p>
+<div class="eq" data-tex="\htmlData{sym=logpx}{\log p(x)} = \htmlData{sym=log}{\log} \htmlData{sym=sumk}{\sum_{k}} \htmlData{sym=pxzk}{p(x \mid z_k)}\, \htmlData{sym=pzkp}{p(z_k)} \;\htmlData{sym=approx}{\approx}\; \htmlData{sym=log}{\log} \htmlData{sym=pxzk}{p(x \mid z_q(x))}\, \htmlData{sym=pzkp}{p(z_q(x))}" data-fallback="log p(x) = log Σ_k p(x | z_k) p(z_k) ≈ log p(x | z_q(x)) p(z_q(x))"></div>
+<div class="symtable" data-syms="logpx,log,sumk,pxzk,pzkp,approx"></div>
+<p class="inwords"><strong>In words:</strong> “the probability of the data is the sum, over every code, of the chance of that code times the chance the decoder rebuilds x from it; once trained, only the encoder's chosen code contributes much, so keep that one term.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> three codes, each with prior 1/3, and decoder probabilities 0.01, 0.74 and 0.002. The full sum gives log(0.752 / 3) = −1.3836; the single term gives log(0.74 / 3) = −1.3997. The one term is slightly lower, as it must be, since the sum includes it: the approximation is also a lower bound, as the paper notes.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+p_x_given_z = [0.01, 0.74, 0.002]
+p_z = [1 / 3] * 3
+# log Σ_k p(x | z_k) p(z_k)
+full = math.log(sum(a * b for a, b in zip(p_x_given_z, p_z)))
+round(full, 4)  # → -1.3836
+# keep only the chosen code, k = 2
+one_term = math.log(p_x_given_z[1] * p_z[1])
+round(one_term, 4)  # → -1.3997
+one_term &lt;= full  # → True</code></pre>
+<h4>Why it matters today</h4>
+<p>Straight-through gradients, a codebook term and a commitment term: this three-part recipe carried over, largely unchanged, to the image and audio tokenizers that followed. The paper mentions one alternative for the codebook, updating it with moving averages instead of the codebook term; its Appendix A.1 (<a href="#a1">below</a>) spells it out.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Prior <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S3.SS3">original</a></span></h3>
+<blockquote class="quote">“Training the prior and the VQ-VAE jointly, which could strengthen our results, is left as future research.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §3.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The VQ-VAE alone is a compressor: give it a picture and it gives back a grid of ids and a rebuild. To <em>invent</em> a picture you need someone who knows which grids of ids look like real pictures. That someone is the prior. While the VQ-VAE trains, the prior is a shrug, every id equally likely. Afterwards, a second model studies the grids of ids that real training images produce and learns to write new ones, one id at a time, the way a language model writes a sentence.</p>
+<h4>Tiny example (illustrative probabilities)</h4>
+<p>A 2 × 2 grid of ids, written left to right, top to bottom:</p>
+<p><span class="idgrid" aria-label="a two by two grid of ids: 17, 17, 403, 5"><span>17</span><span>17</span><span>403</span><span>5</span></span> A uniform prior over K = 512 entries gives each id probability 1/512, so the grid costs 4 × 9 = 36 bits. A learned prior can do far better: say it gives the first id 0.5, the second (given the first) 0.8, the third 0.6 and the fourth 0.9. The grid's probability is 0.5 × 0.8 × 0.6 × 0.9 = 0.216, about 2.2 bits. The learned prior knows that 17 tends to follow 17.</p>
+<div class="eq" data-tex="\htmlData{sym=pz}{p(z)} = \htmlData{sym=prodi}{\prod_{i=1}^{N}} \htmlData{sym=pzi}{p(z_i \mid z_{&lt;i})}" data-fallback="p(z) = Π_i p(z_i | z_&lt;i)"></div>
+<div class="symtable" data-syms="pz,prodi,pzi"></div>
+<p class="inwords"><strong>In words:</strong> “the probability of a whole grid of ids is the chance of the first id, times the chance of the second given the first, and so on to the last.” This is the standard way an autoregressive model factorises a sequence; the paper says the prior “can be made autoregressive” without writing it out.</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.5 × 0.8 × 0.6 × 0.9 = 0.216, which is −log<sub>2</sub> 0.216 = 2.21 bits, against 36 bits under the uniform prior.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# p(z_i | z_&lt;i) for the four ids, in raster order
+steps = [0.5, 0.8, 0.6, 0.9]
+p_z = 1
+for p_i in steps:
+    p_z *= p_i
+round(p_z, 3)  # → 0.216
+round(-math.log2(p_z), 2)  # → 2.21
+# the uniform prior used while training the VQ-VAE
+round(-math.log2((1 / 512) ** 4), 1)  # → 36.0</code></pre>
+
+<figure class="ix" id="fig-prior">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 430" role="img" aria-label="Two stages: train the VQ-VAE, then fit a prior over its ids and sample from it">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="10" y="18" class="lbl">Stage 1: train the VQ-VAE (prior uniform)</text>
+    <path class="wire" d="M100,45 H130" marker-end="url(#arr2)"/>
+    <path class="wire" d="M226,45 H250" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="imgs"><rect x="10" y="28" width="90" height="34" rx="6"/><text x="55" y="49" text-anchor="middle">images</text></g>
+    <g class="blk lin" data-block="vqvae"><rect x="130" y="28" width="96" height="34" rx="7"/><text x="178" y="49" text-anchor="middle">VQ-VAE</text></g>
+    <g class="blk plain" data-block="rebuild"><rect x="250" y="28" width="80" height="34" rx="6"/><text x="290" y="49" text-anchor="middle">rebuilds</text></g>
+    <text x="10" y="112" class="lbl">Stage 2: freeze it, fit the prior on real ids</text>
+    <path class="wire" d="M100,139 H130" marker-end="url(#arr2)"/>
+    <path class="wire" d="M226,139 H250" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="imgs"><rect x="10" y="122" width="90" height="34" rx="6"/><text x="55" y="143" text-anchor="middle">images</text></g>
+    <g class="blk emb" data-block="encfrozen"><rect x="130" y="122" width="96" height="34" rx="7"/><text x="178" y="143" text-anchor="middle">encode + snap</text></g>
+    <g class="blk plain" data-block="idgrids"><rect x="250" y="122" width="80" height="34" rx="6"/><text x="290" y="143" text-anchor="middle">id grids</text></g>
+    <path class="wire" d="M290,156 V186" marker-end="url(#arr2)"/>
+    <g class="blk attn" data-block="pixelcnn"><rect x="200" y="186" width="130" height="40" rx="7"/><text x="265" y="203" text-anchor="middle">PixelCNN prior</text><text x="265" y="218" text-anchor="middle" class="lbl">(WaveNet for audio)</text></g>
+    <text x="10" y="276" class="lbl">Sampling: generate ids, then decode</text>
+    <path class="wire" d="M265,226 V290" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="newids"><rect x="200" y="290" width="130" height="36" rx="6"/><text x="265" y="312" text-anchor="middle">new id grid</text></g>
+    <path class="wire" d="M200,308 H176" marker-end="url(#arr2)"/>
+    <g class="blk norm" data-block="lookup2"><rect x="80" y="290" width="96" height="36" rx="7"/><text x="128" y="312" text-anchor="middle">look up e</text></g>
+    <path class="wire" d="M128,326 V350" marker-end="url(#arr2)"/>
+    <g class="blk lin" data-block="decoder2"><rect x="80" y="350" width="96" height="34" rx="7"/><text x="128" y="371" text-anchor="middle">decoder</text></g>
+    <path class="wire" d="M128,384 V398" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="newimg"><rect x="70" y="398" width="116" height="28" rx="6"/><text x="128" y="416" text-anchor="middle">a new image</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. The picture is read top to bottom: stage 1, stage 2, then sampling.</p></div>
+  </div>
+  <figcaption>The paper's two-stage recipe (§3.3 and §4), drawn for this page; the paper has no figure of it.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> three rows, one after another in time. In stage 1 the VQ-VAE learns to squeeze images into ids and rebuild them; its prior is uniform, so the KL term is a constant and nothing about the prior is learned. In stage 2 the VQ-VAE is frozen and used only as a translator: every training image becomes a grid of ids, and a <span class="t" data-tip-title="PixelCNN" data-tip="An image model that predicts each pixel from the pixels above it and to its left, using convolutions masked so they cannot peek at pixels not yet generated. Written one pixel at a time, like text one word at a time.">PixelCNN</span> (for audio, a <span class="t" data-tip-title="WaveNet" data-tip="A model of raw audio that predicts each sample of a waveform from the samples before it, using stacks of dilated causal convolutions so it can see far back cheaply. By van den Oord and others, 2016.">WaveNet</span>) learns to predict each id from the ids before it. To sample, the prior writes a new grid id by id (ancestral sampling), the codebook turns ids into vectors, and the decoder paints the image. The expensive, pixel-level detail is the decoder's job; the prior only has to get the big structure right, on a grid far smaller than the image.</p>
+<h4>Why it matters today</h4>
+<p>Replace “PixelCNN” with “transformer” and add a caption before the ids, and this is how the first wave of text-to-image models generated pictures: see the multimodal lesson's section on discrete tokens, and the <a href="latent-diffusion.html">latent diffusion companion</a> for the other road, where a diffusion model works in the compressed space instead.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The experiments ask two questions. Does forcing the code to be discrete cost much, compared with ordinary continuous codes? And are the discrete codes <em>good</em>: do they capture the meaningful structure of images, speech and video, so that a prior over them produces coherent samples?</p>
+<h3 class="rung">Why it matters</h3>
+<p>A compressor can score well by keeping everything. The interesting results here are the ones where the code is forced to throw most of the input away, and what survives turns out to be the content: the scene layout, the words spoken.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Comparison with continuous variables <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“Our model is the first among those using discrete latent variables which challenges the performance of continuous VAEs.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A fair race: the same encoder and decoder, the same data, three ways of making the code. A normal VAE with continuous codes, the VQ-VAE, and VIMCO, a discrete VAE trained with the sampling-based gradient estimates of §2. The score is <span class="t" data-t="bits per dimension">bits per dimension</span>: on average, how many bits the model needs to encode each colour value of an image. Lower is better.</p>
+<h4>Tiny example</h4>
+<p>A CIFAR10 image is 32 × 32 pixels with 3 colours: 3,072 numbers. At 4.67 bits per dimension, the VQ-VAE's bound says an image can be stored in 4.67 × 3,072 = 14,346 bits. The continuous VAE needs 13,855 and VIMCO 15,790.</p>
+<pre class="in-python"><code>dims = 32 * 32 * 3
+dims  # → 3072
+# bits per image = bits per dimension × dimensions
+[round(b * dims) for b in (4.51, 4.67, 5.14)]  # → [13855, 14346, 15790]</code></pre>
+<div class="plot">
+  <div class="bars" id="bits-bars"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is one model's score on CIFAR10 in bits per dimension, from §4.1 of the paper; shorter is better, and all three are bounds on the true value, not exact figures. The continuous VAE (4.51) and the VQ-VAE (4.67) are close; VIMCO (5.14) trails by more than the gap between them. The striped bar is a reference the paper quotes from other work, a deep convolutional VAE at 4.54, to show its own continuous baseline is sound. The point is not that discrete codes win: they come close, while giving a compact symbolic code the others do not.</p>
+<h4>The setup</h4>
+<ul>
+  <li><strong>Encoder:</strong> two <span class="t" data-t="convolution">convolutions</span> with stride 2 and a 4 × 4 window (each halves the width and height), then two residual blocks, all 256 units wide.</li>
+  <li><strong>Decoder:</strong> two residual blocks, then two transposed convolutions with stride 2 that double the size back.</li>
+  <li><strong>Training:</strong> <span class="t" data-t="adam">Adam</span> with learning rate 2 × 10<sup>−4</sup>, 250,000 steps, batches of 128. VIMCO used 50 samples per estimate.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>Before this paper, “discrete” meant “worse”. Closing most of that gap is what made discrete codes a practical choice rather than a curiosity.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Images <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“Images contain a lot of redundant information as most of the pixels are correlated and noisy, therefore learning models at the pixel level could be wasteful.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §4.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A 128 × 128 photo becomes a 32 × 32 grid of ids, like reducing a mosaic of 16,384 tiles to a sketch of 1,024 labelled squares. The rebuild comes back only slightly blurrier than the original, and a PixelCNN trained on the sketches produces new ones that decode into recognisable ImageNet classes: a kit fox, a grey whale, a coral reef.</p>
+<h4>Tiny example: how much smaller?</h4>
+<p>The original has 128 × 128 × 3 colour values of 8 bits each. The code has 32 × 32 ids of 9 bits each (K = 512).</p>
+<div class="eq" data-tex="\text{reduction} = \frac{\htmlData{sym=Himg}{128} \times \htmlData{sym=Wimg}{128} \times \htmlData{sym=Cimg}{3} \times \htmlData{sym=bpix}{8}}{\htmlData{sym=hlat}{32} \times \htmlData{sym=wlat}{32} \times \htmlData{sym=bid}{9}} \approx 42.7" data-fallback="reduction = (128 × 128 × 3 × 8) / (32 × 32 × 9) ≈ 42.7"></div>
+<div class="symtable" data-syms="Himg,Wimg,Cimg,bpix,hlat,wlat,bid"></div>
+<p class="inwords"><strong>In words:</strong> “bits in the image divided by bits in the code.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 393,216 bits over 9,216 bits is 42.67; the paper writes ≈ 42.6. The DeepMind Lab frames later in this section, 84 × 84 × 3 into 21 × 21 ids, shrink by the same factor, since both cut each side by 4.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+image_bits = 128 * 128 * 3 * 8
+# each id is one of K = 512 entries: log₂ 512 bits
+code_bits = 32 * 32 * int(math.log2(512))
+image_bits, code_bits  # → (393216, 9216)
+round(image_bits / code_bits, 2)  # → 42.67
+round((84 * 84 * 3 * 8) / (21 * 21 * 9), 2)  # → 42.67</code></pre>
+<h4>Three more results</h4>
+<ul>
+  <li><strong>ImageNet samples.</strong> The PixelCNN over the 32 × 32 codes needs only spatial masking, since each position holds one id rather than three colour channels. Its samples, decoded, show the requested classes. The reconstructions use plain squared error; the paper notes a more perceptual loss, “e.g., a GAN”, could sharpen them, and leaves that as future work.</li>
+  <li><strong>DeepMind Lab.</strong> Frames of 84 × 84 × 3 from a 3D game environment are coded as 21 × 21 ids and rebuilt nearly perfectly; a PixelCNN prior over the codes produces plausible new frames.</li>
+  <li><strong>A second VQ-VAE on top.</strong> A second VQ-VAE, with a PixelCNN as its decoder, compresses the 21 × 21 grid of ids into just <strong>3</strong> ids of K = 512 each: 3 × 9 = 27 bits for a whole frame, less than a single 32-bit floating-point number. A PixelCNN decoder is exactly the kind of powerful decoder that makes ordinary VAEs collapse; here the three codes are still used. The rebuilds keep the room layout and textures without copying the pixels.</li>
+</ul>
+<pre class="in-python"><code>import math
+# the two-stage code for a whole DeepMind Lab frame
+bits = 3 * int(math.log2(512))
+bits, bits &lt; 32  # → (27, True)</code></pre>
+<h4>Why it matters</h4>
+<p>A 42-fold smaller code both speeds up the prior and frees it to model the global structure of a picture instead of the grain of individual pixels. That division of labour, a compressor for detail and a separate model for structure, is the design of most image generators since, whether the second model is autoregressive or a diffusion model.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Audio <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S4.SS3">original</a></span></h3>
+<blockquote class="quote">“This means that the VQ-VAE has, without any form of linguistic supervision, learned a high-level abstract space that is invariant to low-level features and only encodes the content of the speech.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §4.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Transcribe a sentence and give the transcript to a different person to read aloud. The words survive; the voice, the pitch and the rhythm do not. The speech VQ-VAE turns out to do something similar with no transcript and no labels: its codes keep what was said and drop who said it, because the decoder is told who the speaker is and so the code does not need to carry it.</p>
+<h4>Tiny example</h4>
+<p>The encoder has 6 convolutions of stride 2, so each halves the length: 2<sup>6</sup> = 64 audio samples become one code. In the phoneme study, the codes run at 25 per second with a downsampling of 640, which means the audio had 25 × 640 = 16,000 samples per second. With K = 128 entries, each code is log<sub>2</sub> 128 = 7 bits, so a second of speech is 25 × 7 = 175 bits of code.</p>
+<pre class="in-python"><code>import math
+2 ** 6  # → 64
+# codes per second × samples per code = samples per second
+25 * 640  # → 16000
+# bits of code per second of speech, K = 128
+25 * int(math.log2(128))  # → 175
+# the prior's training chunks: 40,960 samples
+40960 / 16000, 40960 // 128  # → (2.56, 320)</code></pre>
+
+<figure class="ix" id="fig-speaker">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 350" role="img" aria-label="Speaker conversion: encode speaker A's recording, decode with speaker B's identity">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M125,50 V74" marker-end="url(#arr3)"/>
+    <path class="wire" d="M125,114 V138" marker-end="url(#arr3)"/>
+    <path class="wire" d="M125,184 V222" marker-end="url(#arr3)"/>
+    <path class="wire" d="M282,184 V222" marker-end="url(#arr3)"/>
+    <path class="wire" d="M170,262 V290" marker-end="url(#arr3)"/>
+    <g class="blk plain" data-block="wavA"><rect x="40" y="14" width="170" height="36" rx="6"/><path d="M52,32 q6,-12 12,0 t12,0 t12,0" fill="none" stroke="var(--accent)" stroke-width="1.6"/><text x="142" y="36" text-anchor="middle">speaker A</text></g>
+    <g class="blk lin" data-block="enc3"><rect x="40" y="74" width="170" height="40" rx="7"/><text x="125" y="92" text-anchor="middle">Encoder</text><text x="125" y="107" text-anchor="middle" class="lbl">6 strided convolutions</text></g>
+    <g class="blk emb" data-block="codes"><rect x="40" y="138" width="170" height="46" rx="7"/><text x="125" y="157" text-anchor="middle">ids, 64× fewer</text><text x="125" y="174" text-anchor="middle" class="lbl">what was said</text></g>
+    <g class="blk norm" data-block="spk"><rect x="230" y="138" width="104" height="46" rx="7"/><text x="282" y="157" text-anchor="middle">speaker id</text><text x="282" y="174" text-anchor="middle" class="lbl">A or B</text></g>
+    <g class="blk attn" data-block="dec3"><rect x="40" y="222" width="294" height="40" rx="7"/><text x="187" y="240" text-anchor="middle">Decoder</text><text x="187" y="255" text-anchor="middle" class="lbl">dilated convolutions, WaveNet-like</text></g>
+    <g class="blk plain" data-block="wavB"><rect x="60" y="290" width="220" height="36" rx="6"/><path d="M72,308 q4,-8 8,0 t8,0 t8,0 t8,0" fill="none" stroke="var(--attn-stroke)" stroke-width="1.6"/><text x="185" y="312" text-anchor="middle">same words, voice B</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part, from the recording at the top to the converted voice at the bottom.</p></div>
+  </div>
+  <figcaption>Speaker conversion (§4.3), drawn for this page; the paper's Figure 6 shows the three waveforms it produces.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> speaker A's recording goes down the left column, through the encoder, into a sequence of ids 64 times shorter than the waveform. The decoder rebuilds audio from two inputs: those ids, and a speaker identity that enters from the right. Give it A's identity and you get a rebuild of the original, with the same words but a different waveform and altered prosody (the melody and rhythm of speech). Give it B's identity and you get the same words in B's voice. That swap only works because the ids do not carry the voice: training rewarded the code for keeping only what the decoder could not get from the speaker id.</p>
+<h4>The four findings</h4>
+<ol>
+  <li><strong>Only the content survives.</strong> On VCTK (109 speakers) with codes 64× shorter than the audio, rebuilds keep the words but not the exact waveform or prosody.</li>
+  <li><strong>The prior babbles in words.</strong> On a 460-speaker corpus, with codes 128× shorter, a prior trained on chunks of 2.56 seconds (320 codes) produces samples with “clear words and part-sentences”, where the original WaveNet's unconditional samples sound like babbling.</li>
+  <li><strong>Speaker conversion</strong> works, as in the diagram.</li>
+  <li><strong>The codes resemble phonemes.</strong> Mapping each of the 128 codes to its most likely phoneme (of 41) classifies phonemes correctly 49.3% of the time, against 7.2% for a random code space. No phoneme labels were used in training.</li>
+</ol>
+<div class="plot"><div class="bars" id="phone-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> the two bars are phoneme accuracy on a 41-way choice, from §4.3 of the paper. The striped bar, 7.2%, is what you get by always guessing the most common phoneme, which is all a meaningless code allows. The solid bar, 49.3%, is the VQ-VAE's codes mapped one to one onto phonemes. The paper adds, in a footnote, that a code might mean different things after different neighbours, like pairs or triples of sounds, so a smarter mapping could score higher.</p>
+<h4>Why it matters today</h4>
+<p>Discrete audio codes are now the usual way to let a language model listen and speak. Neural audio codecs stack several codebooks, each coding what the previous one missed (<span class="t" data-t="residual vector quantization">residual vector quantisation</span>); the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> builds that stack with <a data-lesson="primer/ml/generative/multimodal.html#learn_residual_codebooks"><code>learn_residual_codebooks</code></a> and <a data-lesson="primer/ml/generative/multimodal.html#residual_quantize"><code>residual_quantize</code></a>, and the <a href="whisper.html">Whisper companion</a> shows the other side of the ear, speech read as a spectrogram rather than as codes.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Video <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S4.SS4">original</a></span></h3>
+<blockquote class="quote">“Therefore, VQ-VAE can be used to imagine long sequences purely in latent space without resorting to pixel space.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), §4.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A flip-book artist does not paint each page in full while planning the story. They sketch the whole sequence as stick figures first, then paint. Here the prior plans a video in codes, frame after frame, and only at the end does the decoder paint each frame.</p>
+<h4>Tiny example</h4>
+<p>Give the model 6 real frames from DeepMind Lab, then an action (“move forward”, or “move right”) for each of the next 10. The prior generates the codes z<sub>7</sub> to z<sub>16</sub> from the codes before them and the actions; the decoder turns each into a frame. If each frame is coded like the images above, as 21 × 21 ids, that is 4,410 ids for the 10 new frames, every one written before a single pixel is drawn. (The paper does not give the video model's grid size; the 21 × 21 here is illustrative.)</p>
+<pre class="in-python"><code># ten generated frames, each an illustrative 21 × 21 grid of ids
+10 * 21 * 21  # → 4410</code></pre>
+<h4>What the paper reports</h4>
+<p>Its Figure 7 shows the generated frames turning or moving forward as instructed, keeping the local geometry right with no loss of visual quality. A model trained without actions gave similar results.</p>
+<h4>Why it matters today</h4>
+<p>Planning in a compact code and rendering at the end is how later video and world models keep long generations affordable. The video section of the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> counts what video costs in tokens.</p>
+</section>
+
+<section id="s5">
+<h2>5 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The paper's message fits in a sentence: give an autoencoder a finite vocabulary for its codes, train through the snap by pretending it is not there, and the codes it learns are compact, meaningful, and easy for a second model to write.</p>
+<h3 class="rung">What it showed</h3>
+<ul>
+  <li>Likelihoods on CIFAR10 almost as good as continuous VAEs.</li>
+  <li>Coherent samples of 128 × 128 colour images, action-conditioned video, and speech with recognisable words.</li>
+  <li>Speaker conversion, and speech codes closely related to phonemes, learned with no supervision at all.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>Discrete, learned codes turned out to be a general adapter between raw signals and sequence models. The next section traces where they went.</p>
+</section>
+
+<section id="a1">
+<h2>Appendix A.1: codebook updates with moving averages <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1711.00937#A1.SS1">original</a></span></h2>
+<blockquote class="quote">“This update is typically used in algorithms such as K-Means.”<cite>van den Oord, Vinyals and Kavukcuoglu (2017), Appendix A.1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The codebook term of equation 3 nudges each entry towards the encoder outputs that chose it. If you could see all of them at once, the best place for the entry is simply their average, which is the update step of <span class="t" data-t="k-means">k-means</span> clustering. Training sees only a small <span class="t" data-t="batch">batch</span> at a time, so the appendix keeps a running average instead: an <span class="t" data-t="exponential moving average">exponential moving average</span> that remembers most of the past and mixes in a little of each new batch.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Entry e<sub>2</sub> sits at (1, 0). In this batch, two encoder outputs chose it: (0.9, 0.2) and (0.7, 0.4). Their average is (0.8, 0.3), which is where k-means would put the entry. The moving average instead blends the old position with the new evidence.</p>
+<h3 class="rung">The math</h3>
+<p>The codebook term, for one entry e<sub>i</sub> and the n<sub>i</sub> encoder outputs z<sub>i,1</sub>, …, z<sub>i,n<sub>i</sub></sub> nearest to it:</p>
+<div class="eq" data-tex="\htmlData{sym=sumj}{\sum_{j}^{n_i}} \htmlData{sym=sq}{\lVert \htmlData{sym=zij}{z_{i,j}} - \htmlData{sym=ei}{e_i} \rVert_2^2} \qquad\Longrightarrow\qquad \htmlData{sym=ei}{e_i} = \frac{1}{\htmlData{sym=ni}{n_i}} \htmlData{sym=sumj}{\sum_{j}^{n_i}} \htmlData{sym=zij}{z_{i,j}}" data-fallback="Σ_j ‖z_ij − e_i‖²  is smallest at  e_i = (1/n_i) Σ_j z_ij"></div>
+<div class="symtable" data-syms="sumj,sq,zij,ei,ni"></div>
+<p class="inwords"><strong>In words:</strong> “the total squared distance from one entry to the outputs that chose it is smallest when the entry sits at their average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the average of (0.9, 0.2) and (0.7, 0.4) is (0.8, 0.3), and the total squared distance there is 0.02 + 0.02 = 0.04. At the old position (1, 0) it was 0.05 + 0.25 = 0.30.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>z_i = [[0.9, 0.2], [0.7, 0.4]]
+n_i = len(z_i)
+# e_i = (1/n_i) Σ_j z_ij
+e_i = [sum(z[d] for z in z_i) / n_i for d in range(2)]
+[round(v, 2) for v in e_i]  # → [0.8, 0.3]
+def total(e):
+    return sum(sum((a - b) ** 2 for a, b in zip(z, e)) for z in z_i)
+round(total(e_i), 2), round(total([1, 0]), 2)  # → (0.04, 0.3)</code></pre>
+<p>The online version keeps two running totals per entry, a count N<sub>i</sub> and a sum m<sub>i</sub>, and divides them:</p>
+<div class="eq" data-tex="\htmlData{sym=Nit}{N_i^{(t)}} := \htmlData{sym=Nit}{N_i^{(t-1)}} \cdot \htmlData{sym=gamma}{\gamma} + \htmlData{sym=nit}{n_i^{(t)}}(1 - \htmlData{sym=gamma}{\gamma}), \quad \htmlData{sym=mit}{m_i^{(t)}} := \htmlData{sym=mit}{m_i^{(t-1)}} \cdot \htmlData{sym=gamma}{\gamma} + \htmlData{sym=sumj}{\sum_j} \htmlData{sym=zij}{z_{i,j}^{(t)}}(1 - \htmlData{sym=gamma}{\gamma}), \quad \htmlData{sym=ei}{e_i^{(t)}} := \frac{\htmlData{sym=mit}{m_i^{(t)}}}{\htmlData{sym=Nit}{N_i^{(t)}}}" data-fallback="N_i⁽ᵗ⁾ := N_i⁽ᵗ⁻¹⁾·γ + n_i⁽ᵗ⁾(1 − γ);  m_i⁽ᵗ⁾ := m_i⁽ᵗ⁻¹⁾·γ + Σ_j z_ij⁽ᵗ⁾(1 − γ);  e_i⁽ᵗ⁾ := m_i⁽ᵗ⁾ / N_i⁽ᵗ⁾"></div>
+<div class="symtable" data-syms="Nit,nit,mit,gamma,ei,t"></div>
+<p class="inwords"><strong>In words:</strong> “keep a fading count of how many outputs chose this entry and a fading sum of those outputs; the entry is the sum divided by the count, a smoothed average over recent batches.”</p>
+<p class="inwords"><strong>With the numbers</strong> (γ = 0.5, illustrative, so the change is visible; the paper uses 0.99): start from N = 1 and m = (1, 0), so e = (1, 0). After the batch, N = 1 × 0.5 + 2 × 0.5 = 1.5 and m = (1, 0) × 0.5 + (1.6, 0.6) × 0.5 = (1.3, 0.3), so e = (0.867, 0.2): part of the way from (1, 0) to the batch average (0.8, 0.3). With γ = 0.99 the same batch moves e only to (0.996, 0.006).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def ema_step(N, m, batch, gamma):
+    # N := N·γ + n(1 − γ);  m := m·γ + Σ z (1 − γ);  e := m / N
+    n = len(batch)
+    total = [sum(z[d] for z in batch) for d in range(2)]
+    N = N * gamma + n * (1 - gamma)
+    m = [m_d * gamma + t_d * (1 - gamma) for m_d, t_d in zip(m, total)]
+    return N, m, [m_d / N for m_d in m]
+batch = [[0.9, 0.2], [0.7, 0.4]]
+N, m, e = ema_step(1, [1, 0], batch, gamma=0.5)
+N, [round(v, 2) for v in m], [round(v, 3) for v in e]  # → (1.5, [1.3, 0.3], [0.867, 0.2])
+N, m, e = ema_step(1, [1, 0], batch, gamma=0.99)
+[round(v, 3) for v in e]  # → [0.996, 0.006]</code></pre>
+<div class="plot">
+  <div class="controls ui"><label for="ema-g">γ = <strong id="ema-gv">0.90</strong></label><input type="range" id="ema-g" min="0" max="3" step="1" value="2" aria-describedby="ema-note"><span id="ema-note">(steps: 0.5, 0.8, 0.9, 0.99)</span></div>
+  <div id="ema-chart"></div>
+  <p class="readout" id="ema-readout">Hover or tap the chart, or focus it and use the arrow keys, to read the values after any batch.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis counts batches, the y-axis is the first coordinate of one codebook entry. The entry starts at 1, and every batch its chosen outputs average about 0.8, plus noise (the batch averages are made up for this chart, from a seeded random generator). The jagged line is each batch's own average: where k-means would jump every time. The smooth line is the moving-average entry. Slide γ: at 0.5 it still jumps about with the noise; at 0.99, the paper's value, it barely wobbles but takes well over a hundred batches to arrive. A larger γ trades speed for steadiness.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The paper did not use this update for its own experiments (§3.2 says so), but many later VQ models adopted it. The <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> learns its codebooks with the plain, all-at-once version: <a data-lesson="primer/ml/generative/multimodal.html#kmeans_codebook"><code>kmeans_codebook</code></a> snaps every vector and moves each entry to its vectors' mean.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2017</h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The paint-by-numbers palette became standard equipment. The palette grew, the painters got better at hiding the seams, and the model writing the numbers changed from a PixelCNN to a transformer, but the idea of this paper, a learned codebook in the middle of an autoencoder, stayed.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>What it changed</th><th>Build it or read it</th></tr></thead>
+  <tbody>
+    <tr><td>Sharper rebuilds</td><td>the squared-error reconstruction the paper used gave slightly blurry images; later tokenizers added the perceptual and adversarial (GAN) losses the paper left as future work</td><td><a href="generative-adversarial-nets.html">GAN companion</a></td></tr>
+    <tr><td>Codes as a language model's vocabulary</td><td>a transformer replaced the PixelCNN prior, so image ids could follow a caption in one sequence</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a></td></tr>
+    <tr><td>Stacked codebooks for audio</td><td>residual vector quantisation: each codebook codes what the previous ones missed</td><td><a data-lesson="primer/ml/generative/multimodal.html#residual_quantize"><code>residual_quantize</code></a></td></tr>
+    <tr><td>Diffusion in the compressed space</td><td>a diffusion model instead of an autoregressive prior, working on the autoencoder's grid; VQ-regularised autoencoders were one of the options tested</td><td><a href="latent-diffusion.html">latent diffusion companion</a></td></tr>
+  </tbody>
+</table></div>
+<h3 class="rung">Why it matters</h3>
+<p>Whenever a system says it “tokenizes” an image or a sound, there is very likely a descendant of this paper's encoder, codebook and decoder inside it, trained with some version of equation 3.</p>
+</section>
+
+<section id="glossary"><h2>Glossary</h2><dl class="glossary" id="glossary-list"></dl></section>
+
+<footer>
+  <p>Companion to Aaron van den Oord, Oriol Vinyals and Koray Kavukcuoglu, <em>Neural Discrete Representation Learning</em>, NIPS 2017. <a href="https://arxiv.org/abs/1711.00937">arXiv:1711.00937</a>. Quotations are brief and attributed; the reported numbers appear in this page's own tables and charts, each attributed. Figures are redrawn from scratch; all explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §3.1
+    x: { tex: "x", name: "The input", meaning: "One example of data: an image, a stretch of audio, a video clip.", shape: "e.g. 128 × 128 × 3 numbers", example: "an ImageNet photo" },
+    ze: { tex: "z_e(x)", name: "Encoder output", meaning: "The vector the encoder produces at one position of its output grid, before snapping (e for encoder).", shape: "D numbers per position", example: "(0.9, 0.2)" },
+    ej: { tex: "e_j", name: "Codebook entry j", meaning: "Row j of the learned embedding table e, one of the K vectors every code must snap to.", shape: "D numbers", example: "e₂ = (1, 0)" },
+    ek: { tex: "e_k", name: "The chosen entry", meaning: "The codebook row nearest to the encoder's output, the one the decoder receives.", shape: "D numbers", example: "e₂ = (1, 0)" },
+    k: { tex: "k", name: "The code (an id)", meaning: "The number of the nearest codebook entry: the discrete code that gets stored, counted from 1 to K.", shape: "a whole number from 1 to K", example: "2" },
+    K: { tex: "K", name: "Codebook size", meaning: "How many entries the codebook has: the size of the vocabulary of codes.", shape: "a whole number", example: "3 here; 512 for the paper's images" },
+    qzk: { tex: "q(z{=}k\\mid x)", name: "Encoder's posterior", meaning: "The probability the encoder gives to code k, given ( | ) the input x. In a VQ-VAE it is one-hot: 1 for the nearest entry, 0 for every other.", shape: "K numbers, one of them 1", example: "(0, 1, 0)" },
+    argminj: { tex: "\\operatorname{argmin}_j", name: "Arg min over j", meaning: "“The j that gives the smallest value”: the position of the minimum, not the minimum itself.", shape: "returns an index", example: "2, since 0.224 is the smallest distance" },
+    norm2: { tex: "\\lVert\\cdot\\rVert_2", name: "Straight-line distance", meaning: "The length of a vector: subtract, square each difference, add them up, take the square root (the Euclidean or L2 norm).", shape: "one number ≥ 0", example: "‖(0.9, 0.2) − (1, 0)‖₂ = √0.05 = 0.224" },
+    zq: { tex: "z_q(x)", name: "Quantised code", meaning: "What the decoder receives: the chosen codebook entry, in place of the encoder's output (q for quantised).", shape: "D numbers per position", example: "(1, 0)" },
+    DKL: { tex: "D_{KL}", name: "KL divergence", meaning: "How far one probability distribution is from another, in nats: the extra cost of believing p when the truth is q. Zero only when they match.", shape: "one number ≥ 0", example: "log 3 = 1.0986" },
+    sumk: { tex: "\\sum_{k}", name: "Sum over codes", meaning: "Add up one term for every code k, from 1 to K.", shape: "K terms, one number out", example: "three terms, two of them zero" },
+    log: { tex: "\\log", name: "Natural logarithm", meaning: "The power you raise e ≈ 2.718 to in order to get the number; log of a probability is negative, and 0 for probability 1. Divide by log 2 for bits.", shape: "one number", example: "log 3 = 1.0986" },
+    pzk: { tex: "p(z{=}k)", name: "Uniform prior", meaning: "The prior's probability for code k before seeing any input. While the VQ-VAE trains it is uniform: every entry equally likely.", shape: "a number, 1/K", example: "1/3" },
+    // equation 3
+    L: { tex: "L", name: "The loss", meaning: "The number training makes small: the sum of the reconstruction, codebook and commitment terms.", shape: "one number", example: "0.3625" },
+    logpxzq: { tex: "\\log p(x\\mid z_q(x))", name: "Reconstruction term", meaning: "How probable the decoder finds the real input, given the snapped code. As a loss it should carry a minus sign (see the note below the equation); for squared-error decoders it is the rebuild error.", shape: "one number", example: "−log 0.74 = 0.30 as a loss" },
+    sq: { tex: "\\lVert\\cdot\\rVert_2^2", name: "Squared distance", meaning: "Subtract, square each difference and add them up (the square of the straight-line distance).", shape: "one number ≥ 0", example: "(0.9 − 1)² + (0.2 − 0)² = 0.05" },
+    sg: { tex: "\\mathrm{sg}", name: "Stop-gradient", meaning: "Passes its input through unchanged going forward, but counts it as a constant going backward, so no gradient flows into what is inside it.", shape: "same as its input", example: "sg[z_e] = (0.9, 0.2), but training will not move z_e through this term" },
+    e: { tex: "e", name: "The chosen codebook entry", meaning: "In equation 3 and its gradients, the codebook row the encoder's output snapped to, e_k.", shape: "D numbers", example: "(1, 0)" },
+    beta: { tex: "\\beta", name: "Commitment weight", meaning: "How strongly the encoder is pulled towards its entry, relative to how strongly the entry is pulled towards the encoder. The paper uses 0.25 and found anything from 0.1 to 2.0 worked.", shape: "a number > 0", example: "0.25" },
+    // likelihood
+    logpx: { tex: "\\log p(x)", name: "Log-likelihood of the input", meaning: "The log of the probability the whole model gives to x: the quantity likelihood scores (bits per dimension) are made from.", shape: "one number ≤ 0", example: "−1.3836" },
+    pxzk: { tex: "p(x\\mid z_k)", name: "Decoder's probability", meaning: "How likely the decoder makes the input x when it is given code k.", shape: "a number from 0 to 1", example: "0.74 for the chosen code" },
+    pzkp: { tex: "p(z_k)", name: "Prior probability of a code", meaning: "The prior's probability for code k (uniform here: 1/K).", shape: "a number from 0 to 1", example: "1/3" },
+    approx: { tex: "\\approx", name: "Approximately equals", meaning: "The two sides are close but not identical. Here the right side keeps one term of the sum, so it is never larger than the left.", shape: "", example: "−1.3997 against −1.3836" },
+    // prior factorisation
+    pz: { tex: "p(z)", name: "Prior over a grid of ids", meaning: "The probability the learned prior (a PixelCNN or WaveNet) gives to a whole grid or sequence of codes.", shape: "a number from 0 to 1", example: "0.216" },
+    prodi: { tex: "\\prod_{i=1}^{N}", name: "Product over positions", meaning: "Multiply together one factor for every position i of the grid, from 1 to N, in a fixed order (left to right, top to bottom).", shape: "N factors, one number out", example: "0.5 × 0.8 × 0.6 × 0.9" },
+    pzi: { tex: "p(z_i\\mid z_{<i})", name: "One step of the prior", meaning: "The probability of the id at position i, given ( | ) all the ids before it (z_&lt;i).", shape: "a number from 0 to 1", example: "0.8 for the second 17" },
+    // compression ratio
+    Himg: { tex: "128", name: "Image height", meaning: "Pixels from top to bottom of the ImageNet images the paper compresses.", shape: "pixels", example: "128" },
+    Wimg: { tex: "128", name: "Image width", meaning: "Pixels from left to right.", shape: "pixels", example: "128" },
+    Cimg: { tex: "3", name: "Colour channels", meaning: "Red, green and blue: three numbers per pixel.", shape: "channels", example: "3" },
+    bpix: { tex: "8", name: "Bits per colour value", meaning: "Each colour value is a whole number from 0 to 255, which takes 8 bits.", shape: "bits", example: "8" },
+    hlat: { tex: "32", name: "Code grid height", meaning: "Rows in the grid of ids: the encoder shrinks each side by 4.", shape: "positions", example: "32" },
+    wlat: { tex: "32", name: "Code grid width", meaning: "Columns in the grid of ids.", shape: "positions", example: "32" },
+    bid: { tex: "9", name: "Bits per id", meaning: "Each id picks one of K = 512 entries, which takes log₂ 512 = 9 bits.", shape: "bits", example: "9" },
+    // Appendix A.1
+    sumj: { tex: "\\sum_j", name: "Sum over chosen outputs", meaning: "Add up over the encoder outputs j that snapped to entry i (in the batch).", shape: "n_i terms", example: "two outputs" },
+    zij: { tex: "z_{i,j}", name: "An output that chose entry i", meaning: "The j-th encoder output whose nearest codebook entry is e_i.", shape: "D numbers", example: "(0.9, 0.2) and (0.7, 0.4)" },
+    ei: { tex: "e_i", name: "Codebook entry i", meaning: "The entry being updated. The superscript (t) means its value after batch t.", shape: "D numbers", example: "(1, 0), then (0.867, 0.2)" },
+    ni: { tex: "n_i", name: "How many chose it", meaning: "The number of encoder outputs, in the data or the batch, that snapped to entry i.", shape: "a whole number", example: "2" },
+    Nit: { tex: "N_i^{(t)}", name: "Running count", meaning: "A fading count of how many outputs chose entry i, after batch t.", shape: "one number", example: "1, then 1.5 (with γ = 0.5)" },
+    nit: { tex: "n_i^{(t)}", name: "This batch's count", meaning: "How many outputs in batch t chose entry i.", shape: "a whole number", example: "2" },
+    mit: { tex: "m_i^{(t)}", name: "Running sum", meaning: "A fading sum of the outputs that chose entry i, after batch t. Divided by the running count it gives the entry.", shape: "D numbers", example: "(1, 0), then (1.3, 0.3)" },
+    gamma: { tex: "\\gamma", name: "Decay", meaning: "How much of the old totals each batch keeps, between 0 and 1. Close to 1 means a long memory and slow, steady updates.", shape: "a number from 0 to 1", example: "0.99 in the paper; 0.5 in the worked example" },
+    t: { tex: "(t)", name: "Batch number", meaning: "Which training batch the totals are after; (t − 1) is the batch before.", shape: "a whole number", example: "1" },
+  },
+
+  blocks: {
+    // Figure 1 (left)
+    x: { title: "Input x", body: "<p>An image, in the paper's image experiments. For speech the input is a raw waveform and for video a stack of frames; the same machinery applies with a 1D or 3D grid instead of a 2D one.</p>", shape: "e.g. 128 × 128 × 3" },
+    enc: { title: "Encoder", body: "<p>A convolutional network that shrinks the input. For CIFAR10: two convolutions with stride 2 and two residual blocks, 256 units wide. Each output position summarises a patch of the input.</p>", shape: "image → grid of D-wide vectors", lesson: "primer/ml/generative/autoencoders.html" },
+    ze: { title: "z<sub>e</sub>(x): the encoder's output", body: "<p>A grid of ordinary real-valued vectors, one per position, each D numbers wide. Up to here, this is a plain autoencoder.</p>", shape: "e.g. 32 × 32 × D" },
+    codebook: { title: "The codebook e", body: "<p>A learned table of K vectors, each D wide, shared by every position. Trained by the codebook term of equation 3 (or the moving averages of Appendix A.1).</p>", shape: "K × D (512 × D for images)" },
+    lookup: { title: "Nearest entry (equation 1)", body: "<p>For each position, measure the distance from its vector to every codebook row and keep the number of the closest. This step has no gradient, which is what §3.2 has to work around.</p>", shape: "vector → one id", lesson: "primer/ml/generative/multimodal.html#quantize" },
+    ids: { title: "q(z | x): the discrete code", body: "<p>A grid of whole numbers from 1 to K. This is what gets stored or handed to the prior: 32 × 32 ids of 9 bits each for a 128 × 128 image.</p>", shape: "e.g. 32 × 32 ids" },
+    zq: { title: "z<sub>q</sub>(x): the looked-up rows (equation 2)", body: "<p>Each id replaced by its codebook row. Same shape as z<sub>e</sub>, but every vector is now one of only K possibilities.</p>", shape: "e.g. 32 × 32 × D", lesson: "primer/ml/generative/multimodal.html#dequantize" },
+    dec: { title: "Decoder", body: "<p>A convolutional network that grows the grid back to full size: residual blocks, then transposed convolutions with stride 2. For audio, a dilated convolutional decoder like WaveNet's, also told the speaker's identity.</p>", shape: "grid of vectors → image" },
+    out: { title: "p(x | z<sub>q</sub>): the rebuild", body: "<p>The decoder's output, a distribution over possible inputs. Its log-probability of the real x is the reconstruction term of the loss.</p>", shape: "same shape as x" },
+    grad: { title: "The copied gradient", body: "<p>Going backwards, the gradient arriving at z<sub>q</sub> is passed to z<sub>e</sub> unaltered: the straight-through estimator. The snap is used going forward and ignored going back.</p>", shape: "∇L at z_q → ∇L at z_e" },
+    // the prior pipeline
+    imgs: { title: "Training images", body: "<p>The same dataset in both stages: first to train the VQ-VAE, then, pushed through the frozen encoder, to make training data for the prior.</p>", shape: "e.g. ImageNet at 128 × 128" },
+    vqvae: { title: "VQ-VAE (stage 1)", body: "<p>Encoder, codebook and decoder trained together with equation 3. The prior is held uniform, so it plays no part in training.</p>", shape: "image → ids → image" },
+    rebuild: { title: "Rebuilds", body: "<p>Stage 1 is judged by how well the decoder rebuilds the input from the ids: slightly blurry for ImageNet, nearly perfect for DeepMind Lab.</p>", shape: "same shape as the input" },
+    encfrozen: { title: "Encode and snap (frozen)", body: "<p>The trained encoder and codebook, no longer learning, turn every training image into its grid of ids.</p>", shape: "image → 32 × 32 ids" },
+    idgrids: { title: "Grids of ids", body: "<p>The training data for the prior: one grid per image, each cell a whole number from 1 to K. Like sentences, but in two dimensions.</p>", shape: "32 × 32 ids per image" },
+    pixelcnn: { title: "The learned prior", body: "<p>A PixelCNN for images (a WaveNet for audio) learns p(z), predicting each id from the ids before it. The paper trains it after the VQ-VAE, not jointly.</p>", shape: "ids so far → probabilities of the next id" },
+    newids: { title: "A new grid of ids", body: "<p>Written one id at a time by sampling from the prior: ancestral sampling. Nothing here is a copy of a training image.</p>", shape: "32 × 32 ids" },
+    lookup2: { title: "Look up e", body: "<p>Each generated id is turned back into its codebook vector, exactly as in equation 2.</p>", shape: "ids → 32 × 32 × D" },
+    decoder2: { title: "Decoder (from stage 1)", body: "<p>The same decoder, painting full-size pixels from the looked-up vectors.</p>", shape: "32 × 32 × D → 128 × 128 × 3" },
+    newimg: { title: "A new image", body: "<p>A sample from the whole model. The paper's Figure 3 shows ImageNet samples of this kind, class by class.</p>", shape: "128 × 128 × 3" },
+    // speaker conversion
+    wavA: { title: "Speaker A's recording", body: "<p>A raw waveform from the VCTK corpus of 109 speakers.</p>", shape: "one number per audio sample" },
+    enc3: { title: "Encoder", body: "<p>Six convolutions of stride 2 and window 4: each halves the length, so the code is 2<sup>6</sup> = 64 times shorter than the waveform.</p>", shape: "T samples → T/64 vectors" },
+    codes: { title: "The ids", body: "<p>One feature map, K = 512 entries. They carry what was said; the paper's phoneme study shows they line up with phonemes far better than chance.</p>", shape: "T/64 ids" },
+    spk: { title: "Speaker identity", body: "<p>A one-hot vector naming the speaker, given to the decoder alongside the ids. Because the decoder is told the voice, the ids do not need to encode it.</p>", shape: "one of 109 speakers" },
+    dec3: { title: "Decoder", body: "<p>A dilated convolutional network similar to WaveNet, conditioned on both the ids and the speaker. It produces the waveform sample by sample.</p>", shape: "ids + speaker → waveform" },
+    wavB: { title: "The converted voice", body: "<p>The same content in speaker B's voice, when B's identity is given. With A's identity, the same path gives a rebuild of the original words with a different waveform.</p>", shape: "a waveform" },
+  },
+
+  onReady(P) {
+    spacePlayground(P);
+    bars("bits-bars", [["VAE (continuous)", 4.51], ["VQ-VAE", 4.67], ["VIMCO (discrete)", 5.14], ["deep conv. VAE, quoted", 4.54, true]], 0, 6, "CIFAR10, bits per dimension (lower is better), axis 0 to 6 · striped: a reference from other work quoted by the paper", "");
+    bars("phone-bars", [["VQ-VAE codes", 49.3], ["random code space", 7.2, true]], 0, 100, "41-way phoneme accuracy from unsupervised codes, %, axis 0 to 100 · striped: the chance baseline", "%");
+    emaChart(P);
+  },
+};
+
+/* ---- §3.2: the embedding space, live ---- */
+function spacePlayground(P) {
+  const svg = document.getElementById("sp-svg");
+  const readout = document.getElementById("sp-readout");
+  const NS = "http://www.w3.org/2000/svg";
+  const lo = -0.45, hi = 1.45, S = 320, pad = 16;
+  const toPx = (v) => pad + ((v - lo) / (hi - lo)) * (S - 2 * pad);
+  const toX = (px) => lo + ((px - pad) / (S - 2 * pad)) * (hi - lo);
+  const BETA = 0.25, LR = 0.25;
+  const start = () => ({ codes: [[0, 0], [1, 0], [0, 1]], z: [0.9, 0.2] });
+  let st = start();
+  const el = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+  const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+  const nearest = () => { const ds = st.codes.map((c) => d2(st.z, c)); return ds.indexOf(Math.min(...ds)); };
+  function draw() {
+    svg.textContent = "";
+    // axes through the origin, for orientation
+    svg.appendChild(el("line", { x1: toPx(lo), x2: toPx(hi), y1: S - toPx(0), y2: S - toPx(0), class: "wire", "stroke-dasharray": "2 4" }));
+    svg.appendChild(el("line", { x1: toPx(0), x2: toPx(0), y1: S - toPx(lo), y2: S - toPx(hi), class: "wire", "stroke-dasharray": "2 4" }));
+    const k = nearest();
+    st.codes.forEach((c, i) => {
+      const line = el("line", { x1: toPx(st.z[0]), y1: S - toPx(st.z[1]), x2: toPx(c[0]), y2: S - toPx(c[1]), style: `stroke:var(${i === k ? "--attn-stroke" : "--wire"});stroke-width:${i === k ? 2.4 : 1.2}` });
+      if (i !== k) line.setAttribute("stroke-dasharray", "2 3");
+      svg.appendChild(line);
+    });
+    st.codes.forEach((c, i) => {
+      svg.appendChild(el("rect", { x: toPx(c[0]) - 8, y: S - toPx(c[1]) - 8, width: 16, height: 16, rx: 3, style: `fill:var(--accent);stroke:var(--fg);stroke-width:${i === k ? 2 : 0.6}` }));
+      const t = el("text", { x: toPx(c[0]) + 11, y: S - toPx(c[1]) + 20 });
+      t.textContent = `e${"₁₂₃"[i]}`;
+      svg.appendChild(t);
+    });
+    svg.appendChild(el("circle", { cx: toPx(st.z[0]), cy: S - toPx(st.z[1]), r: 7, style: "fill:var(--attn-stroke);stroke:var(--fg);stroke-width:1" }));
+    const tz = el("text", { x: toPx(st.z[0]) - 12, y: S - toPx(st.z[1]) - 12, "text-anchor": "end" });
+    tz.textContent = "zₑ";
+    svg.appendChild(tz);
+    const dist = st.codes.map((c) => Math.sqrt(d2(st.z, c)));
+    const book = d2(st.z, st.codes[k]);
+    readout.innerHTML = `z<sub>e</sub> = (${st.z[0].toFixed(2)}, ${st.z[1].toFixed(2)}) · distances ${dist.map((d) => d.toFixed(3)).join(", ")} · snaps to <strong>e<sub>${k + 1}</sub></strong> = (${st.codes[k][0].toFixed(2)}, ${st.codes[k][1].toFixed(2)}), id <strong>${k + 1}</strong> · codebook term ${book.toFixed(4)} · commitment term β × ${book.toFixed(4)} = ${(BETA * book).toFixed(4)}`;
+  }
+  function place(ev) {
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    st.z = [Math.max(lo, Math.min(hi, toX(loc.x))), Math.max(lo, Math.min(hi, toX(S - loc.y)))];
+    draw();
+  }
+  let dragging = false;
+  svg.addEventListener("pointerdown", (e) => { dragging = true; svg.setPointerCapture(e.pointerId); place(e); });
+  svg.addEventListener("pointermove", (e) => dragging && place(e));
+  svg.addEventListener("pointerup", () => { dragging = false; });
+  P.keyPoint(svg, {
+    what: "the encoder output",
+    get: () => [(st.z[0] - lo) / (hi - lo), 1 - (st.z[1] - lo) / (hi - lo)],
+    set: (fx, fy) => { st.z = [lo + fx * (hi - lo), lo + (1 - fy) * (hi - lo)]; draw(); },
+    announce: false,
+  });
+  document.getElementById("sp-book").addEventListener("click", () => {
+    // gradient of ‖sg[z_e] − e‖² with respect to e is 2(e − z_e); step against it
+    const k = nearest();
+    st.codes[k] = st.codes[k].map((c, d) => c - LR * 2 * (c - st.z[d]));
+    draw();
+  });
+  document.getElementById("sp-commit").addEventListener("click", () => {
+    // gradient of β‖z_e − sg[e]‖² with respect to z_e is 2β(z_e − e); same learning rate
+    const k = nearest();
+    st.z = st.z.map((z, d) => z - LR * 2 * BETA * (z - st.codes[k][d]));
+    draw();
+  });
+  document.getElementById("sp-reset").addEventListener("click", () => { st = start(); draw(); });
+  draw();
+}
+
+/* ---- §4: horizontal bars for the paper's reported numbers ---- */
+function bars(id, rows, lo, hi, legend, unit) {
+  const el = document.getElementById(id);
+  el.innerHTML = `<div class="legend" style="margin:0 0 .4rem">${legend}</div>` + rows.map(([name, v, striped]) => {
+    const w = Math.max(1, ((v - lo) / (hi - lo)) * 100);
+    return `<div class="share-row"><span>${name}</span><div><div class="share-bar${striped ? " alt" : ""}" style="width:${w.toFixed(1)}%"></div></div><span>${v}${unit}</span></div>`;
+  }).join("");
+}
+
+/* ---- Appendix A.1: the moving-average codebook entry ---- */
+function emaChart(P) {
+  const gammas = [0.5, 0.8, 0.9, 0.99];
+  // A seeded generator, so every reader sees the same made-up batches.
+  let seed = 7;
+  const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const T = 200;
+  const batches = [];
+  for (let t = 1; t <= T; t++) {
+    const n = 1 + Math.floor(rand() * 4); // 1 to 4 outputs choose this entry in the batch
+    const zs = Array.from({ length: n }, () => 0.8 + (rand() - 0.5) * 0.16);
+    batches.push(zs);
+  }
+  const series = (gamma) => {
+    let N = 1, m = 1; // the entry starts at 1: m / N
+    const avg = [[0, 1]], ema = [[0, 1]];
+    batches.forEach((zs, i) => {
+      N = N * gamma + zs.length * (1 - gamma);
+      m = m * gamma + zs.reduce((a, b) => a + b, 0) * (1 - gamma);
+      avg.push([i + 1, zs.reduce((a, b) => a + b, 0) / zs.length]);
+      ema.push([i + 1, m / N]);
+    });
+    return [{ name: "this batch's average (k-means would jump here)", points: avg }, { name: "moving-average entry eᵢ", points: ema }];
+  };
+  const slider = document.getElementById("ema-g");
+  const label = document.getElementById("ema-gv");
+  const chart = P.lineChart(document.getElementById("ema-chart"), {
+    series: series(0.9),
+    xLabel: "batch", yLabel: "entry, first coordinate",
+    yMin: 0.7, yMax: 1.02, width: 420, height: 260,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("ema-readout"),
+    ariaLabel: "A codebook entry updated by moving averages, against the batch number",
+  });
+  const set = () => {
+    const g = gammas[+slider.value];
+    label.textContent = g.toFixed(2);
+    slider.setAttribute("aria-valuetext", `gamma ${g}`);
+    chart.update(series(g));
+  };
+  slider.addEventListener("input", set);
+  set();
+}
+</script>
+</body>
+</html>

@@ -557,7 +557,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.generative.multimodal"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "llava",
@@ -588,9 +588,10 @@ window.PRIMER_PAPERS = [
    "https://arxiv.org/abs/1711.00937"
   ],
   "lessons": [
-   "primer.ml.generative.multimodal"
+   "primer.ml.generative.multimodal",
+   "primer.ml.generative.autoencoders"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "soundstream",

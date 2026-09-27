@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flamingo: a Visual Language Model for Few-Shot Learning, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Alayrac et al. (2022), the paper that taught a frozen language model to read images and video through new gated cross-attention layers, and to pick up vision tasks from a handful of examples in the prompt.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .seq { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.6rem 0 0.4rem; }
+  .seq .tok { padding: 0.3rem 0.5rem; font-size: 0.85rem; min-width: 0; cursor: default; }
+  .seq .tok.img { background: var(--emb); border-color: var(--emb-stroke); }
+  .seq .tok.sp { background: var(--norm); border-color: var(--norm-stroke); }
+  .seq .tok.q { border-width: 2px; border-color: var(--active); font-weight: 600; }
+  .mode { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .bars .share-row { grid-template-columns: 9rem minmax(0, 1fr) 3rem; }
+  .bars .share-bar.alt { background: var(--hatch) var(--wire); }
+  .plot select { font: inherit; }
+</style>
+</head>
+<body data-paper="flamingo">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Approach</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Perceiver Resampler</a></li>
+          <li><a href="#s2-2">2.2 Gated cross-attention</a></li>
+          <li><a href="#s2-3">2.3 Per-image masking</a></li>
+          <li><a href="#s2-4">2.4 Training data</a></li>
+          <li><a href="#s2-5">2.5 Few-shot prompting</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Experiments</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Few-shot results</a></li>
+          <li><a href="#s3-2">3.2 Fine-tuning</a></li>
+          <li><a href="#s3-3">3.3 Ablations</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Related work</a></li>
+      <li><a href="#s5">5 Discussion</a></li>
+      <li><a href="#appendix">Appendices, briefly</a></li>
+      <li><a href="#today">What changed since 2022</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Flamingo: a Visual Language Model for Few-Shot Learning, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Alayrac, Donahue, Luc, Miech and colleagues at DeepMind (2022), the paper that left a large language model and an image encoder untouched, joined them with new cross-attention layers that start switched off, trained the result on web pages full of pictures, and got a model that learns a vision task from a few examples in its prompt.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2204.14198">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2204.14198">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2204.14198">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper (arXiv version 2, November 2022; published at NeurIPS 2022) section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable, and the pseudo-code of its Figures 4 and 5 is paraphrased as equations. The paper is distributed under arXiv's standard non-exclusive licence, so its tables are not reproduced: a few selected rows appear in this page's own tables and charts, each attributed, and its figures are redrawn from scratch. Worked numbers come from small examples built on this page, not from the paper, unless a sentence says otherwise; made-up numbers are labelled illustrative. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the numbers of a tiny example, and the same example in a few lines of Python you can run.</li>
+  <li>The pictures are live: hover or tap the parts of the three redrawn architecture figures, turn the gate of a new layer from closed to open, see which image each word is allowed to look at, and compare model sizes and shot counts on the paper's benchmarks.</li>
+</ul>
+<p>The code that builds the pieces from scratch lives in the <a class="lesson" data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a>. Its toy model takes the other common road, the one of the <a href="llava.html">LLaVA companion</a>: it splices image tokens into the prompt, where Flamingo adds new layers that look at the image from inside the language model. Comparing the two is one of the best ways to understand both.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We introduce Flamingo, a family of Visual Language Models (VLM) with this ability.”<cite>Alayrac et al. (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2204.14198">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>“This ability” is learning a new task from a handful of examples. Show a friend three labelled photos of birds, then a fourth unlabelled one, and they will name it in the same style without being taught anything else. Large language models learned to do this with text (see the <a href="gpt-3.html">GPT-3 companion</a>). Flamingo does it with pictures and video mixed into the text: a <span class="t" data-t="vision-language model">visual language model</span> that reads images, videos and words in any order and writes words.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>Architecture:</strong> a way to join a pretrained, frozen vision model to a pretrained, frozen language model, to handle any interleaving of pictures and text, and to take images or video as input.</li>
+  <li><strong>Data:</strong> training on web pages with images scattered through the text, plus image-caption and video-caption pairs, and no data annotated for machine learning.</li>
+  <li><strong>Results:</strong> one model, prompted with task examples and never fine-tuned, sets a new few-shot state of the art across the 16 benchmarks it tests, and on 6 of them beats models fine-tuned on thousands of times more task-specific data.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Flamingo showed that the “prompt it with examples” interface of large language models carries over to vision, and it popularised a recipe still in use: keep the big pretrained models frozen and train small new parts that connect them.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S1">original</a></span></h2>
+<blockquote class="quote">“One key aspect of intelligence is the ability to quickly learn to perform a new task given a short instruction.”<cite>Alayrac et al. (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>In 2022, there were two ways to point a vision model at a new task. The first is <span class="t" data-t="fine-tuning">fine-tuning</span>: collect thousands of labelled examples and keep training. It works, but it is slow and fiddly. The second came from <span class="t" data-t="contrastive learning">contrastive</span> models such as <span class="t" data-t="clip">CLIP</span>, which score how well a caption matches an image, so they can pick the best of a list of labels with no training at all (<span class="t" data-t="zero-shot">zero-shot</span>). But a scorer can only choose from answers you give it. It cannot write a caption or answer an open question.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The paper's Figure 1 opens with a prompt of this shape, where each [photo] is an image:</p>
+<p>[photo of a chinchilla] “This is a chinchilla. They are mainly found in Chile.” [photo of a shiba] “This is a shiba. They are very popular in Japan.” [photo of a flamingo] “This is”</p>
+<p>and the model continues: “a flamingo. They are found in the Caribbean and South America.” Two examples were enough to set the pattern: name the animal, then add one fact about where it is found. A scorer like CLIP could only rank labels you supply; here the model writes the answer.</p>
+<h3 class="rung">The contributions</h3>
+<ol>
+  <li>The Flamingo family of models, which take arbitrarily interleaved images, videos and text and generate text.</li>
+  <li>A careful few-shot evaluation, with a large set of benchmarks held out from every design decision so the estimates are not flattered.</li>
+  <li>A new few-shot state of the art on 16 tasks; on 6, beating the fine-tuned state of the art with only 32 examples, around 1,000 times less task-specific data.</li>
+  <li>With fine-tuning, a new state of the art on five more: VQAv2, VATEX, VizWiz, MSRVTTQA and HatefulMemes.</li>
+</ol>
+<h3 class="rung">Why it matters</h3>
+<p>Casting every vision task as “continue this text” is what lets one model handle captioning, question answering and classification without a separate head for each. The <a data-lesson="primer/ml/big_picture.html">big-picture lesson</a> explains <span class="t" data-t="in-context learning">in-context learning</span> for text; this paper is where it reached pictures at scale.</p>
+</section>
+
+<section id="s2">
+<h2>2 Approach <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S2">original</a></span></h2>
+<blockquote class="quote">“First, the Perceiver Resampler (Section 2.1) receives spatio-temporal features from the Vision Encoder (obtained from either an image or a video) and outputs a fixed number of visual tokens.”<cite>Alayrac et al. (2022), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Picture a brilliant writer (the language model) and a sharp-eyed photographer (the vision encoder), both already trained and both told to stay exactly as they are. Flamingo adds two things between them. A note-taker (the Perceiver Resampler) boils each photo down to the same short set of notes, however big the photo or long the video. And a set of new glances (gated cross-attention layers) lets the writer look at those notes between its own thinking steps. The glances start with their eyes shut, so on day one the writer writes exactly as it always did.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The web page “[dog photo] This is a very cute dog. [cat photo] This is” becomes the text “&lt;image&gt; This is a very cute dog. &lt;image&gt; This is” plus two photos. Each photo becomes a fixed set of visual tokens. The language model reads only the text; whenever it reaches a word, its new cross-attention layers may look at the tokens of the photo that came just before that word. The model continues: “a very serious cat.”</p>
+
+<figure class="ix" id="fig3">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 548" role="img" aria-label="The Flamingo architecture, redrawn from Figure 3">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <!-- vision column -->
+    <path class="wire" d="M70,470 V446" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,406 V382" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,342 V318" marker-end="url(#arr)"/>
+    <path class="wire" d="M130,298 H150 V124 H168" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,258 H168" marker-end="url(#arr)"/>
+    <!-- language column -->
+    <path class="wire" d="M250,452 V424" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,384 V282" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,214 V194" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,176 V150" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,485 H132" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,82 V58" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="f_out"><rect x="170" y="14" width="160" height="44" rx="6"/><text x="250" y="32" text-anchor="middle">Output: text</text><text x="250" y="49" text-anchor="middle" class="lbl">“a very serious cat.”</text></g>
+    <g class="blk lin" data-block="f_lm"><rect x="170" y="82" width="160" height="30" rx="6"/><text x="250" y="102" text-anchor="middle">n-th LM block (frozen)</text></g>
+    <g class="blk attn" data-block="f_xattn"><rect x="170" y="112" width="160" height="36" rx="6"/><text x="250" y="128" text-anchor="middle">n-th gated xattn-dense</text><text x="250" y="142" text-anchor="middle" class="lbl">(trained)</text></g>
+    <text x="250" y="186" text-anchor="middle" class="lbl">⋯ more pairs ⋯</text>
+    <g class="blk lin" data-block="f_lm"><rect x="170" y="214" width="160" height="30" rx="6"/><text x="250" y="234" text-anchor="middle">1st LM block (frozen)</text></g>
+    <g class="blk attn" data-block="f_xattn"><rect x="170" y="244" width="160" height="38" rx="6"/><text x="250" y="261" text-anchor="middle">1st gated xattn-dense</text><text x="250" y="275" text-anchor="middle" class="lbl">(trained)</text></g>
+    <g class="blk emb" data-block="f_text"><rect x="170" y="384" width="160" height="40" rx="6"/><text x="250" y="401" text-anchor="middle">&lt;image&gt; This is a very</text><text x="250" y="416" text-anchor="middle">cute dog. &lt;image&gt; This is</text></g>
+    <g class="blk plain" data-block="f_web"><rect x="150" y="452" width="180" height="40" rx="6"/><text x="240" y="469" text-anchor="middle">a web page: two photos</text><text x="240" y="484" text-anchor="middle" class="lbl">and the sentences around them</text></g>
+    <g class="blk plain" data-block="f_img"><rect x="10" y="470" width="120" height="30" rx="6"/><text x="70" y="490" text-anchor="middle">each photo</text></g>
+    <g class="blk ff" data-block="f_venc"><rect x="10" y="406" width="120" height="40" rx="6"/><text x="70" y="424" text-anchor="middle">Vision Encoder</text><text x="70" y="439" text-anchor="middle" class="lbl">frozen NFNet-F6</text></g>
+    <g class="blk norm" data-block="f_resampler"><rect x="10" y="342" width="120" height="40" rx="6"/><text x="70" y="358" text-anchor="middle">Perceiver</text><text x="70" y="374" text-anchor="middle">Resampler</text></g>
+    <g class="blk emb" data-block="f_vtok"><rect x="10" y="278" width="120" height="40" rx="6"/><text x="70" y="296" text-anchor="middle">64 visual tokens</text><text x="70" y="311" text-anchor="middle" class="lbl">per image</text></g>
+    <text x="10" y="524" class="lbl">frozen: the vision encoder and the LM blocks</text><text x="10" y="539" class="lbl">trained from scratch: the resampler, the gated layers</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start at the bottom: the web page splits into photos (left) and text (right), and the two meet in the gated xattn-dense layers.</p></div>
+  </div>
+  <figcaption>Figure 3 of the paper, redrawn: the Flamingo architecture. Based on Alayrac et al. (2022), Figure 3.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the bottom up, in two columns. On the left, each photo passes through the frozen vision encoder and then the Perceiver Resampler, which hands back 64 visual tokens per image. On the right, the text (with an &lt;image&gt; tag where each photo was) climbs the language model's stack of frozen blocks. Before each chosen frozen block sits a new gated xattn-dense layer, and the wire from the left feeds the visual tokens into every one of them. The visual tokens never join the text sequence: the text stays as short as it was, and the pictures reach it only through these side doors. The colours follow the paper's split: the vision encoder and the language model blocks are frozen, the resampler and the gated layers are trained from scratch.</p>
+
+<h3 class="rung">The math: equation 1</h3>
+<p>Flamingo is a text model that happens to see pictures: it gives a probability to each next word, and multiplies them for the whole text.</p>
+<div class="eq" data-tex="\htmlData{sym=pyx}{p(y \mid x)} = \htmlData{sym=prodl}{\prod_{\ell=1}^{L}} \htmlData{sym=pyl}{p(y_\ell \mid y_{&lt;\ell},\, x_{\le \ell})}" data-fallback="p(y | x) = Π_ℓ p(y_ℓ | y_&lt;ℓ, x_≤ℓ)"></div>
+<div class="symtable" data-syms="pyx,prodl,pyl,yl,ylt,xle"></div>
+<p class="inwords"><strong>In words:</strong> “the probability of the whole text, given the pictures, is the product over positions of the probability of each word, given the words before it and the pictures that appeared before it.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> after the cat photo, the model gives “a” probability 0.5, then “serious” 0.4, then “cat” 0.9. The three-word continuation has probability 0.5 × 0.4 × 0.9 = 0.18.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# p(y_ℓ | y_&lt;ℓ, x_≤ℓ) for "a", "serious", "cat"
+p = [0.5, 0.4, 0.9]
+# Π over ℓ
+prob = 1
+for p_l in p:
+    prob *= p_l
+round(prob, 2)  # → 0.18
+# the loss is the negative log of the same thing, a sum
+round(-sum(math.log(p_l) for p_l in p), 3)  # → 1.715</code></pre>
+<p>The only difference from an ordinary language model is the x<sub>≤ℓ</sub>: each word may depend on the images and videos that came <em>before</em> it in the interleaved sequence (§2.3 says exactly which).</p>
+<h3 class="rung">Why it matters</h3>
+<p>Because the output is just text probabilities, every vision task becomes “write the answer” or “score the candidate answers”, the same interface as a language model. The <a data-lesson="primer/ml/losses.html">losses lesson</a> covers the negative log-likelihood this product turns into.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Visual processing and the Perceiver Resampler <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S2.SS1">original</a></span></h3>
+<blockquote class="quote">“It takes as input a variable number of image or video features from the vision encoder and produces a fixed number of visual outputs (64), reducing the computational complexity of the vision-text cross-attention.”<cite>Alayrac et al. (2022), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A meeting has 64 note-takers, each with a standing question such as “what objects are there?” or “what is happening on the left?”. Hand them a single photo or a thirty-frame video: each note-taker skims all of it, writes one note, and the meeting always ends with exactly 64 notes. The questions themselves are learned. That is the <span class="t" data-t="perceiver resampler">Perceiver Resampler</span>: a small transformer whose queries are a fixed set of learned vectors rather than the input.</p>
+<h4>The vision encoder first</h4>
+<ul>
+  <li>A <span class="t" data-tip-title="NFNet" data-tip="Normalizer-Free ResNet: a family of convolutional image networks that train well without batch normalization. F0 is the smallest and F6 the largest in the family.">Normalizer-Free ResNet</span>, the F6 model, pretrained by the authors with a <span class="t" data-t="contrastive learning">contrastive</span> loss on image-text pairs (the two-term loss of CLIP; see the <a href="clip.html">CLIP companion</a>), then frozen.</li>
+  <li>Its last stage gives a 2D grid of features, flattened into a list. For video, frames are sampled at 1 per second and encoded one by one, and a learned time embedding is added to each frame's features.</li>
+</ul>
+<h4>Tiny example</h4>
+<p>One learned latent query x = (1, 0) looks at three visual features, (2, 0), (0, 2) and (1, 1). A detail from the paper's Appendix A.1.1: the keys and values include the latents themselves, so the list it attends over is (2, 0), (0, 2), (1, 1) and (1, 0). With the projection matrices set to the identity to keep the numbers small, the scores are the dot products divided by √2: 1.414, 0, 0.707, 0.707. <span class="t" data-t="softmax">Softmax</span> turns them into weights 0.449, 0.109, 0.221, 0.221. The weighted blend of the values is (1.340, 0.439), and the residual adds it to the query: the latent becomes (2.340, 0.439). It has soaked up mostly the first feature, the one that matched its question best.</p>
+
+<figure class="ix" id="fig5">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 480" role="img" aria-label="The Perceiver Resampler, redrawn from Figure 5">
+    <defs><marker id="arr5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M45,432 V408 M105,432 V408 M165,432 V408" marker-end="url(#arr5)"/>
+    <path class="wire" d="M45,378 V356 M105,378 V356 M165,378 V356" marker-end="url(#arr5)"/>
+    <path class="wire" d="M105,326 V304" marker-end="url(#arr5)"/>
+    <path class="wire" d="M105,266 V222" marker-end="url(#arr5)"/>
+    <path class="wire" d="M270,266 V222" marker-end="url(#arr5)"/>
+    <path class="wire" d="M170,176 V150" marker-end="url(#arr5)"/>
+    <path class="wire" d="M170,108 V60" marker-end="url(#arr5)"/>
+    <g class="blk plain" data-block="p_out"><rect x="70" y="14" width="200" height="46" rx="6"/><text x="170" y="33" text-anchor="middle">R visual tokens out</text><text x="170" y="50" text-anchor="middle" class="lbl">R = 64, whatever came in</text></g>
+    <g class="blk frame" data-block="p_layers"><rect x="20" y="84" width="300" height="148" rx="12"/></g>
+    <text x="30" y="100" class="lbl">× 6 layers</text>
+    <g class="blk ff" data-block="p_ffw"><rect x="60" y="108" width="220" height="42" rx="7"/><text x="170" y="126" text-anchor="middle">FFW, plus residual</text><text x="170" y="142" text-anchor="middle" class="lbl">x = x + ffw(x)</text></g>
+    <g class="blk attn" data-block="p_attn"><rect x="40" y="176" width="260" height="46" rx="7"/><text x="170" y="195" text-anchor="middle">Attention, plus residual</text><text x="170" y="212" text-anchor="middle" class="lbl">Q = X · K = V = [X<tspan baseline-shift="sub" font-size="8">f</tspan>, X]</text></g>
+    <g class="blk norm" data-block="p_lat"><rect x="220" y="266" width="110" height="40" rx="7"/><text x="275" y="284" text-anchor="middle">learned latent</text><text x="275" y="299" text-anchor="middle">queries X</text></g>
+    <g class="blk emb" data-block="p_xf"><rect x="30" y="266" width="150" height="38" rx="7"/><text x="105" y="284" text-anchor="middle">X<tspan baseline-shift="sub" font-size="9">f</tspan>: flatten</text><text x="105" y="298" text-anchor="middle" class="lbl">T × S features → T·S</text></g>
+    <g class="blk plain" data-block="p_time"><rect x="30" y="326" width="150" height="30" rx="7"/><text x="105" y="346" text-anchor="middle">+ time embedding</text></g>
+    <g class="blk ff" data-block="p_venc"><rect x="18" y="378" width="54" height="30" rx="5"/><text x="45" y="397" text-anchor="middle" class="lbl">encoder</text><rect x="78" y="378" width="54" height="30" rx="5"/><text x="105" y="397" text-anchor="middle" class="lbl">encoder</text><rect x="138" y="378" width="54" height="30" rx="5"/><text x="165" y="397" text-anchor="middle" class="lbl">encoder</text></g>
+    <g class="blk plain" data-block="p_frames"><rect x="18" y="432" width="54" height="30" rx="5"/><text x="45" y="451" text-anchor="middle">t = 0</text><rect x="78" y="432" width="54" height="30" rx="5"/><text x="105" y="451" text-anchor="middle">t = 1</text><rect x="138" y="432" width="54" height="30" rx="5"/><text x="165" y="451" text-anchor="middle">t = 2</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start at the bottom with the video frames, then follow the features and the learned queries into the attention step.</p></div>
+  </div>
+  <figcaption>Figure 5 of the paper, redrawn: the Perceiver Resampler on a three-frame video. Based on Alayrac et al. (2022), Figure 5 and its pseudo-code.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the bottom up. Each frame goes through the frozen vision encoder on its own; its grid of S spatial features gets that frame's time embedding added; then all T frames are flattened into one long list X<sub>f</sub> of T × S features (an image is a video with T = 1). On the right sit R learned latent queries X. Inside the dashed box, which repeats 6 times, the latents ask the questions (Q) and the keys and values are the features <em>and</em> the latents together; a feed-forward layer follows, each step with a residual connection. Whatever the size of X<sub>f</sub>, the output at the top has exactly R = 64 rows.</p>
+
+<h4>The math: one resampler layer</h4>
+<p>The paper gives this layer as pseudo-code; written as equations, with the attention of the <a href="attention-is-all-you-need.html">Transformer companion</a>:</p>
+<div class="eq" data-tex="\htmlData{sym=Xlat}{X} \leftarrow \htmlData{sym=Xlat}{X} + \htmlData{sym=softmax}{\text{softmax}}\!\left(\frac{\htmlData{sym=Qr}{Q}\htmlData{sym=KrT}{K^\top}}{\htmlData{sym=sqrtd}{\sqrt{d}}}\right)\htmlData{sym=Vr}{V}, \quad \htmlData{sym=Qr}{Q} = \htmlData{sym=Xlat}{X}\htmlData{sym=WQ}{W_Q}, \quad \htmlData{sym=Kr}{K} = \htmlData{sym=cat}{[\htmlData{sym=Xf}{X_f};\, \htmlData{sym=Xlat}{X}]}\htmlData{sym=WK}{W_K}, \quad \htmlData{sym=Vr}{V} = \htmlData{sym=cat}{[\htmlData{sym=Xf}{X_f};\, \htmlData{sym=Xlat}{X}]}\htmlData{sym=WV}{W_V}" data-fallback="X ← X + softmax(Q Kᵀ / √d) V, Q = X W_Q, K = [X_f; X] W_K, V = [X_f; X] W_V"></div>
+<div class="symtable" data-syms="Xlat,Xf,cat,Qr,Kr,KrT,Vr,WQ,WK,WV,sqrtd,softmax"></div>
+<p class="inwords"><strong>In words:</strong> “each learned latent asks a question of the visual features and of the latents themselves, blends the answers by how well they match, and adds the blend to what it already holds.” (Then x ← x + ffw(x), and repeat 6 times.)</p>
+<p class="inwords"><strong>With the numbers:</strong> scores (1.414, 0, 0.707, 0.707); weights (0.449, 0.109, 0.221, 0.221); blend (1.340, 0.439); new latent (2.340, 0.439).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# one learned latent query, and three visual features
+x = [1, 0]
+X_f = [[2, 0], [0, 2], [1, 1]]
+# K = V = [X_f; X]: the latents join the keys and values (W = identity here)
+kv = X_f + [x]
+d = 2
+scores = [sum(a * b for a, b in zip(x, k)) / math.sqrt(d) for k in kv]
+[round(s, 3) for s in scores]  # → [1.414, 0.0, 0.707, 0.707]
+exps = [math.exp(s) for s in scores]
+w = [e / sum(exps) for e in exps]
+[round(v, 3) for v in w]  # → [0.449, 0.109, 0.221, 0.221]
+blend = [sum(w_j * v[i] for w_j, v in zip(w, kv)) for i in range(d)]
+[round(v, 3) for v in blend]  # → [1.34, 0.439]
+# the residual: X ← X + attention
+[round(a + b, 3) for a, b in zip(x, blend)]  # → [2.34, 0.439]</code></pre>
+<p>Some facts from the appendix: the resampler has 6 layers, width 1,536 and 16 heads (so each head works on 1,536 / 16 = 96 numbers), about 200 million parameters in every model size, and no spatial position encodings, only the time ones: they did not help, probably, the paper suggests, because a convolutional encoder already carries position in its channels. Concatenating the latents to the keys and values, which the original Perceiver does not do, was found “to perform slightly better”.</p>
+<pre class="in-python"><code># width per head in the resampler: D / H
+1536 // 16  # → 96</code></pre>
+<h4>Why it matters today</h4>
+<p>A fixed number of tokens per image, however large, keeps the cost of looking at pictures predictable. Compressing an image to a small set of learned-query outputs reappears in later vision-language models; the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> describes this family next to the splice-in-the-prompt design, and builds the attention with <a data-lesson="primer/ml/attention.html#scaled_dot_product_attention"><code>scaled_dot_product_attention</code></a>.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Conditioning frozen language models on visual representations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“This multiplies the output of a newly added layer by tanh(α) before adding it to the input representation from the residual connection, where α is a layer-specific learnable scalar initialized to 0.”<cite>Alayrac et al. (2022), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You are adding a new pipe into a building's water supply. If you open it fully on day one, whatever is in the new pipe floods the system. So you fit a valve, start it closed, and open it gradually as you learn what the new pipe carries. The <span class="t" data-t="gated cross-attention">gated cross-attention</span> layer is the new pipe (visual information into the language model) and <span class="t" data-t="tanh">tanh</span>(α), starting at tanh(0) = 0, is the valve.</p>
+<h4>Tiny example</h4>
+<p>A word's vector inside the language model is y = (1, 2). The new <span class="t" data-t="cross-attention">cross-attention</span> layer, looking at the image, proposes the change a = (0.5, −1) (illustrative). At the start of training α = 0, so tanh(α) = 0 and y stays (1, 2): the language model behaves exactly as before. Once training has moved α to 0.5, tanh(0.5) = 0.462 and y becomes (1 + 0.462 × 0.5, 2 − 0.462 × 1) = (1.231, 1.538).</p>
+
+<figure class="ix" id="fig4">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 520" role="img" aria-label="A gated xattn-dense layer before a frozen language model layer, redrawn from Figure 4">
+    <defs><marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M230,486 V444" marker-end="url(#arr4)"/>
+    <path class="wire" d="M70,486 V421 H148" marker-end="url(#arr4)"/>
+    <path class="wire" d="M230,400 V394" marker-end="url(#arr4)"/>
+    <path class="wire" d="M230,370 V342" marker-end="url(#arr4)"/>
+    <path class="wire" d="M230,300 V294" marker-end="url(#arr4)"/>
+    <path class="wire" d="M230,270 V192" marker-end="url(#arr4)"/>
+    <path class="wire" d="M230,160 V152" marker-end="url(#arr4)"/>
+    <path class="wire" d="M230,110 V64" marker-end="url(#arr4)"/>
+    <g class="blk plain" data-block="g_out"><rect x="140" y="16" width="180" height="46" rx="6"/><text x="230" y="35" text-anchor="middle">Y out</text><text x="230" y="52" text-anchor="middle" class="lbl">visually informed words</text></g>
+    <g class="blk frame" data-block="g_lmframe"><rect x="130" y="78" width="200" height="120" rx="12"/></g>
+    <text x="12" y="130" class="lbl">LM layer</text><text x="12" y="144" class="lbl">(frozen)</text>
+    <g class="blk lin" data-block="g_ffw2"><rect x="150" y="110" width="160" height="40" rx="6"/><text x="230" y="128" text-anchor="middle">FFW</text><text x="230" y="143" text-anchor="middle" class="lbl">y = y + frozen_ffw(y)</text></g>
+    <g class="blk lin" data-block="g_self"><rect x="150" y="160" width="160" height="30" rx="6"/><text x="230" y="180" text-anchor="middle">self-attention on Y</text></g>
+    <g class="blk frame" data-block="g_xframe"><rect x="130" y="214" width="200" height="240" rx="12"/></g>
+    <text x="12" y="310" class="lbl">gated</text><text x="12" y="324" class="lbl">xattn-dense</text><text x="12" y="338" class="lbl">(new, trained)</text>
+    <g class="blk soft" data-block="g_gate2"><rect x="150" y="270" width="160" height="22" rx="6"/><text x="230" y="285" text-anchor="middle">× tanh(α_dense), then add</text></g>
+    <g class="blk ff" data-block="g_ffw1"><rect x="150" y="300" width="160" height="40" rx="6"/><text x="230" y="318" text-anchor="middle">FFW</text><text x="230" y="333" text-anchor="middle" class="lbl">new, squared ReLU</text></g>
+    <g class="blk soft" data-block="g_gate1"><rect x="150" y="370" width="160" height="22" rx="6"/><text x="230" y="385" text-anchor="middle">× tanh(α_xattn), then add</text></g>
+    <g class="blk attn" data-block="g_xattn"><rect x="150" y="400" width="160" height="42" rx="6"/><text x="230" y="418" text-anchor="middle">cross-attention</text><text x="230" y="434" text-anchor="middle" class="lbl">Q = Y · K = V = X</text></g>
+    <g class="blk emb" data-block="g_yin"><rect x="170" y="486" width="120" height="28" rx="6"/><text x="230" y="505" text-anchor="middle">language Y</text></g>
+    <g class="blk norm" data-block="g_xin"><rect x="10" y="486" width="120" height="28" rx="6"/><text x="70" y="505" text-anchor="middle">vision X</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start at the bottom: the language input Y on the right, the visual tokens X on the left.</p></div>
+  </div>
+  <figcaption>Figure 4 of the paper, redrawn: a gated xattn-dense layer inserted before a frozen language model layer. Based on Alayrac et al. (2022), Figure 4 and its pseudo-code.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the bottom up. The word vectors Y enter the new block first. Its cross-attention takes its queries from the words and its keys and values from the visual tokens X, which arrive from the left. The result is multiplied by the gate tanh(α<sub>xattn</sub>) and added back to Y (a residual connection, as in every transformer layer); then a new feed-forward layer does the same with its own gate, tanh(α<sub>dense</sub>). Only then does the untouched, frozen language model layer run: its self-attention and feed-forward network, each with its usual residual. With both gates at zero, the new block adds nothing, and the stack computes exactly what the original language model computed.</p>
+
+<h4>The math: the two gated updates</h4>
+<div class="eq" data-tex="\htmlData{sym=ytext}{y} \leftarrow \htmlData{sym=ytext}{y} + \htmlData{sym=tanh}{\tanh}(\htmlData{sym=ax}{\alpha_{\text{xattn}}}) \cdot \htmlData{sym=xatt}{\text{attention}(q{=}y,\ kv{=}x)}, \qquad \htmlData{sym=ytext}{y} \leftarrow \htmlData{sym=ytext}{y} + \htmlData{sym=tanh}{\tanh}(\htmlData{sym=ad}{\alpha_{\text{dense}}}) \cdot \htmlData{sym=ffwy}{\text{ffw}(y)}" data-fallback="y ← y + tanh(α_xattn) · attention(q = y, kv = x);  y ← y + tanh(α_dense) · ffw(y)"></div>
+<div class="symtable" data-syms="ytext,tanh,ax,xatt,xvis,ad,ffwy"></div>
+<p class="inwords"><strong>In words:</strong> “let the words look at the image, scale what they find by a learned valve that starts closed, and add it on; then do the same with a new feed-forward layer and its own valve.”</p>
+<p class="inwords"><strong>With the numbers:</strong> y = (1, 2), attention output (0.5, −1). α = 0: y stays (1, 2). α = 0.5: tanh = 0.4621 and y = (1.231, 1.538). α = 3: tanh = 0.9951 and y = (1.498, 1.005), almost the full change.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+y = [1, 2]
+# attention(q = y, kv = x): what the words found in the image (illustrative)
+a = [0.5, -1]
+def gated(y, a, alpha):
+    # y + tanh(α) · a
+    return [round(y_i + math.tanh(alpha) * a_i, 3) for y_i, a_i in zip(y, a)]
+gated(y, a, 0)  # → [1.0, 2.0]
+round(math.tanh(0.5), 4), gated(y, a, 0.5)  # → (0.4621, [1.231, 1.538])
+round(math.tanh(3), 4), gated(y, a, 3)  # → (0.9951, [1.498, 1.005])</code></pre>
+
+<h4>Try it: open the valve</h4>
+<div class="play" id="gate-play">
+  <div class="sliders ui"><label for="gate-a">α</label><input type="range" id="gate-a" min="-3" max="3" step="0.05" value="0"><output id="gate-av">0.00</output></div>
+  <div class="shares" id="gate-bars"></div>
+  <p class="readout" id="gate-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the slider sets the learnable scalar α of one gated layer, and the top bar shows how open the valve is, |tanh(α)|, from 0 to 1. The two lower bars show the word's two numbers, y<sub>1</sub> and y<sub>2</sub>, after the gated update; the readout prints them. At α = 0 they are the language model's own (1, 2), whatever the image says: this is why Flamingo, at the first step of training, is exactly the pretrained language model. Slide right and the image's contribution fades in; slide left and it enters with the opposite sign. tanh never goes past ±1, so no single gate can amplify the visual signal without limit. The paper's Appendix A.1.2 plots the real gates of Flamingo-3B: in every layer they move quickly away from 0 during training, and they seem to grow with depth, though the paper warns against reading much into that.</p>
+
+<h4>How many new layers?</h4>
+<p>A gated layer before every language-model block is best but expensive. The paper inserts one before every block for Flamingo-3B, every fourth for Flamingo-9B and every seventh for Flamingo-80B, starting from the first block. Their language models are the 1.4B, 7B and 70B <a href="scaling-laws.html">Chinchilla</a> models, with 24, 40 and 80 blocks (Table 4 of the paper).</p>
+<div class="tablewrap"><table>
+  <caption>Model sizes, from Tables 4 and 5 of Alayrac et al. (2022)</caption>
+  <thead><tr><th>Model</th><th>Gated layers</th><th class="num">Frozen LM</th><th class="num">Total</th></tr></thead>
+  <tbody>
+    <tr><td>Flamingo-3B</td><td>24 of 24 blocks</td><td class="num">1.4B</td><td class="num">3.2B</td></tr>
+    <tr><td>Flamingo-9B</td><td>10 of 40 (every 4th)</td><td class="num">7.1B</td><td class="num">9.3B</td></tr>
+    <tr class="hl"><td>Flamingo (80B)</td><td>12 of 80 (every 7th)</td><td class="num">70B</td><td class="num">80B</td></tr>
+  </tbody>
+</table></div>
+<pre class="in-python"><code># one gated layer every k blocks, starting from the first
+[len(range(0, n_blocks, k)) for n_blocks, k in [(24, 1), (40, 4), (80, 7)]]  # → [24, 10, 12]
+# Table 5's parts, in billions: frozen LM + frozen vision + gated layers + resampler
+[round(sum(parts), 1) for parts in [(1.4, 0.435, 1.2, 0.194), (7.1, 0.435, 1.6, 0.194), (70, 0.435, 10, 0.194)]]  # → [3.2, 9.3, 80.6]
+# the share of Flamingo-80B that is frozen
+round((70 + 0.435) / 80.629, 3)  # → 0.874</code></pre>
+<p>The gated layers are transformer layers of the same width as their language model, and use the <span class="t" data-tip-title="Squared ReLU" data-tip="An activation function: ReLU, then square it. max(0, x)². The paper found it worked better than GELU for its new, trainable layers.">squared ReLU</span> activation; the frozen language model keeps its <span class="t" data-t="gelu">GELU</span>.</p>
+<h4>Why it matters today</h4>
+<p>Gating a new branch so it starts as the identity is a general trick for adding parts to a trained network without breaking it on day one; the paper cites earlier uses of it. Here it is what lets a 70-billion-parameter language model take new inputs while staying frozen. The <a data-lesson="primer/ml/transformer.html#TransformerBlock"><code>TransformerBlock</code></a> of the transformer lesson is the kind of block the gated layers sit in front of.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Multi-visual input support: per-image masking <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S2.SS3">original</a></span></h3>
+<blockquote class="quote">“At a given text token, the model attends to the visual tokens of the image that appeared just before it in the interleaved sequence, rather than to all previous images”<cite>Alayrac et al. (2022), §2.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A photo album with a caption under each photo. When you read a caption, you look at the photo just above it, not at every photo in the album. You still remember the earlier photos, because you read their captions on the way down.</p>
+<h4>Tiny example</h4>
+<p>The sequence “Cute pics of my pets! &lt;image&gt; My puppy. &lt;image&gt; My cat.” has two images. Number the images 1 and 2, and give every text token the number of the last image before it, or 0 if there is none: that numbering is the function φ. “Cute” gets 0, “puppy” gets 1, “cat” gets 2. In the cross-attention, each token may look only at the 64 visual tokens of image φ. “cat” cannot look directly at the puppy photo, but it has read “My puppy.” through the language model's ordinary <span class="t" data-t="self-attention">self-attention</span>, and those words did look at the puppy.</p>
+
+<figure class="ix" id="fig7">
+  <div class="ixgrid">
+  <div>
+    <div class="mode ui" style="margin-bottom:.5rem"><span>Cross-attend to:</span>
+      <button type="button" data-xmode="last" aria-pressed="true">only the last image (Flamingo)</button>
+      <button type="button" data-xmode="all" aria-pressed="false">all previous images</button>
+    </div>
+    <svg viewBox="0 0 330 380" role="img" aria-label="The cross-attention mask: which visual tokens each text token may see">
+      <g id="xmaskgrid"></g>
+    </svg>
+  </div>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a cell. Each row is a text token; the columns are the visual tokens of image 1 and image 2 (three drawn for each, standing for 64).</p></div>
+  </div>
+  <figcaption>The masked cross-attention of Figure 7 of the paper, redrawn on a shorter sequence. Based on Alayrac et al. (2022), Figure 7.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each row is one text token, with its φ value at the far left; each column is a visual token, the first three from image 1 and the next three from image 2. A filled cell with a tick means the row may attend to that column; an empty cell is masked out. With Flamingo's rule the allowed cells form a staircase: rows before any image see nothing (φ = 0), rows after the first image see only image 1, and rows after the second see only image 2. Switch to “all previous images” and the staircase fills in to the left: the last rows now see both images. The paper tried both, and the single-image rule scored 7.2 points higher overall (Appendix B.3.1). In this page's tokenisation the &lt;image&gt; tag itself counts as coming after its image, as the paper's Figure 7 draws it.</p>
+
+<h4>The math: φ and the images a token may use</h4>
+<div class="eq" data-tex="\htmlData{sym=phi}{\phi} : [1, \htmlData{sym=Ltok}{L}] \to [0, \htmlData{sym=Nimg}{N}], \qquad \htmlData{sym=xle}{x_{\le \ell}} = \{\, \htmlData{sym=ximg}{x_i} \mid i \le \htmlData{sym=phi}{\phi}(\htmlData{sym=ell}{\ell}) \,\}" data-fallback="φ : [1, L] → [0, N],   x_≤ℓ = { x_i | i ≤ φ(ℓ) }"></div>
+<div class="symtable" data-syms="phi,Ltok,Nimg,xle,ximg,ell"></div>
+<p class="inwords"><strong>In words:</strong> “φ gives every text position the number of the last image before it (0 if none); the images a token's prediction may depend on are those numbered up to φ of its position, but the cross-attention looks directly only at image φ itself.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in “Cute pics of my pets! &lt;image&gt; My puppy. &lt;image&gt; My cat.”, φ(“Cute”) = 0, φ(“puppy”) = 1, φ(“cat”) = 2; the prediction of “cat” may use images {1, 2}, of which its cross-attention sees image 2.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>tokens = ["Cute", "pics", "&lt;image&gt;", "My", "puppy", "&lt;image&gt;", "My", "cat"]
+# φ: the number of the last image at or before each position (the tag counts as its image)
+phi, seen = [], 0
+for tok in tokens:
+    if tok == "&lt;image&gt;":
+        seen += 1
+    phi.append(seen)
+phi  # → [0, 0, 1, 1, 1, 2, 2, 2]
+# x_≤ℓ for "cat": every image numbered up to φ
+list(range(1, phi[-1] + 1))  # → [1, 2]
+# query-key pairs: 64 per token that has an image, against 64 per earlier image
+sum(64 for p in phi if p &gt; 0), sum(64 * p for p in phi)  # → (384, 576)</code></pre>
+<p>The last line counts the cross-attention's query-key pairs on this short sequence under the two rules; the gap grows with the number of images. On a training sequence of 256 tokens with 5 images, attending only to the last image costs at most 256 × 64 = 16,384 query-key scores per head, against up to 256 × 320 = 81,920 if every token could see all five.</p>
+<h4>Why it matters</h4>
+<p>This rule is what lets the model train on at most 5 images per sequence and then use up to 32 at test time: nothing in a token's cross-attention depends on how many images came before. The paper tried giving images explicit indices (&lt;image 1&gt;, &lt;image 2&gt;) or learned index embeddings so a token could see all of them; those did not cope as well when the number of images changed between training and test.</p>
+</section>
+
+<section id="s2-4">
+<h3>2.4 Training on a mixture of vision and language datasets <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S2.SS4">original</a></span></h3>
+<blockquote class="quote">“The few-shot capabilities of Flamingo models rely on training on interleaved text and image data.”<cite>Alayrac et al. (2022), §2.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A child who learns to read from picture books, where the pictures sit in the middle of the story, learns something that flash cards alone do not teach: that a picture and the sentences around it belong together, and that a page can hold several of each. Flamingo's main diet is web pages kept in their original order, pictures and all, supplemented with captioned images and captioned videos.</p>
+<h4>The three kinds of data</h4>
+<div class="tablewrap"><table>
+  <caption>Training datasets, from §2.4 and Appendix A.3 of Alayrac et al. (2022)</caption>
+  <thead><tr><th>Dataset</th><th>What it holds</th><th class="num">Size</th><th class="num">Weight λ</th></tr></thead>
+  <tbody>
+    <tr><td>M3W (MultiModal MassiveWeb)</td><td>text and images from about 43 million web pages, in page order</td><td class="num">43M pages</td><td class="num">1.0</td></tr>
+    <tr><td>ALIGN</td><td>images with their alt-text (noisy, short: 12.4 tokens on average)</td><td class="num">1.8B pairs</td><td class="num">0.2</td></tr>
+    <tr><td>LTIP (Long Text &amp; Image Pairs)</td><td>images with longer, better descriptions (20.5 tokens on average)</td><td class="num">312M pairs</td><td class="num">0.2</td></tr>
+    <tr><td>VTP (Video &amp; Text Pairs)</td><td>short videos, about 22 seconds on average, with a sentence each</td><td class="num">27M videos</td><td class="num">0.03</td></tr>
+  </tbody>
+</table></div>
+<p>A web page becomes a training example by inserting an &lt;image&gt; tag where each image sat in the page's structure (the <span class="t" data-tip-title="DOM" data-tip="Document Object Model: the tree of elements (paragraphs, images, headings) a web browser builds from a page's HTML. Positions in this tree say what comes before what.">DOM</span>) and a learned &lt;EOC&gt; (end of chunk) token before each image and at the end. From each page the paper samples 256 tokens and keeps at most the first 5 images in them. Caption pairs get the same format: &lt;image&gt;, the caption, &lt;EOC&gt;.</p>
+<h4>The math: equation 2</h4>
+<div class="eq" data-tex="\htmlData{sym=summ}{\sum_{m=1}^{M}} \htmlData{sym=lam}{\lambda_m} \cdot \htmlData{sym=Edm}{\mathbb{E}_{(x,y)\sim \mathcal{D}_m}}\left[ -\htmlData{sym=suml}{\sum_{\ell=1}^{L}} \htmlData{sym=logp}{\log p(y_\ell \mid y_{&lt;\ell},\, x_{\le\ell})} \right]" data-fallback="Σ_m λ_m · E_(x,y)~D_m [ −Σ_ℓ log p(y_ℓ | y_&lt;ℓ, x_≤ℓ) ]"></div>
+<div class="symtable" data-syms="summ,lam,Edm,suml,logp"></div>
+<p class="inwords"><strong>In words:</strong> “for each dataset, take the average negative log-likelihood of the text given its pictures, weight it by that dataset's λ, and add the four up.”</p>
+<p class="inwords"><strong>With the numbers (the losses are illustrative, the weights are the paper's):</strong> if the four average losses were 2.0 (M3W), 3.0 (ALIGN), 2.5 (LTIP) and 3.5 (VTP), the training objective would be 1.0 × 2.0 + 0.2 × 3.0 + 0.2 × 2.5 + 0.03 × 3.5 = 3.205.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># λ_m for M3W, ALIGN, LTIP, VTP (Appendix B.1.2)
+lam = [1.0, 0.2, 0.2, 0.03]
+# E[−Σ log p] for each dataset (illustrative)
+nll = [2.0, 3.0, 2.5, 3.5]
+round(sum(l * n for l, n in zip(lam, nll)), 3)  # → 3.205</code></pre>
+<p>The paper says tuning the weights is “key to performance”, and that <em>accumulating</em> the gradients of all four datasets into each update beats alternating between them (“round-robin”): 70.7 against 62.9 on its overall score (Table 3, row ii).</p>
+<h4>A small data trick</h4>
+<p>On a web page, does the sentence after a picture describe it, or does it describe the <em>next</em> picture? Both happen. So for each page the paper flips a coin (p<sub>next</sub> = ½) to decide whether text tokens are tied to the previous image or the next one. It is wrong about half the time on purpose, and it still scored a little better than always choosing one way (Appendix A.3.2).</p>
+<h4>Why it matters today</h4>
+<p>Interleaved web documents became a standard ingredient for training models that take several images in one conversation. The <a data-lesson="primer/ml/pretraining.html">pretraining lesson</a> covers the <span class="t" data-t="data mixture">data mixture</span> weights that this equation formalises.</p>
+</section>
+
+<section id="s2-5">
+<h3>2.5 Task adaptation with few-shot in-context learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S2.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To use Flamingo on a new task you do not train it; you write a prompt that shows the task. A few worked examples (the <em>support</em> examples), each an image followed by its answer, then the new image (the <em>query</em>) followed by the start of an answer for the model to finish.</p>
+<h4>Tiny example</h4>
+<p>Switch between a two-shot captioning prompt and the paper's zero-shot version, in which the two examples keep their text but lose their images:</p>
+<div class="play" id="prompt-play">
+  <div class="mode ui"><span>Prompt:</span>
+    <button type="button" data-pmode="2" aria-pressed="true">two-shot</button>
+    <button type="button" data-pmode="0" aria-pressed="false">zero-shot (two text-only examples)</button>
+  </div>
+  <div class="seq" id="prompt-strip" aria-label="The prompt, token by token"></div>
+  <p class="readout" id="prompt-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the chips are the prompt in order. Chips in square brackets are images, chips in angle brackets are special tokens, and the chip with the thick outline is the query image, after which the model writes. In the two-shot prompt each support image is followed by “Output:” and its caption, then &lt;EOC&gt;. In the zero-shot prompt the support images are gone and only their captions remain: the paper found that two text-only examples fix the answer's format without showing any images, and that a single example biased the model towards copying it (Appendix A.2).</p>
+<h4>Two ways to read the answer</h4>
+<ul>
+  <li><strong>Open-ended</strong> tasks (captioning, free-form questions): generate with <span class="t" data-t="beam search">beam search</span>, beam size 3, stopping at the first &lt;EOC&gt;.</li>
+  <li><strong>Close-ended</strong> tasks (multiple choice, classification): append each candidate answer to the prompt, score each with the model's <span class="t" data-t="log-likelihood">log-likelihood</span>, and rank them.</li>
+</ul>
+<p><strong>Tiny example (illustrative probabilities):</strong> the candidates are “a dog” and “a cat”. The model gives “a” probability 0.6 either way; then “dog” 0.9 and “cat” 0.3. Scores: log 0.6 + log 0.9 = −0.616 against log 0.6 + log 0.3 = −1.715. “a dog” wins.</p>
+<pre class="in-python"><code>import math
+# p of each token of each candidate, after the prompt
+candidates = {"a dog": [0.6, 0.9], "a cat": [0.6, 0.3]}
+scores = {c: round(sum(math.log(p) for p in ps), 3) for c, ps in candidates.items()}
+scores  # → {'a dog': -0.616, 'a cat': -1.715}
+max(scores, key=scores.get)  # → 'a dog'</code></pre>
+<p>For tasks with many labelled examples, such as ImageNet classification, the prompt cannot hold them all. The paper then uses retrieval-based example selection (<span class="t" data-tip-title="RICES" data-tip="Retrieval-based In-Context Example Selection: for each query image, pick the support examples whose images are most similar to it (by the frozen vision encoder's features) and put them in the prompt, most similar last.">RICES</span>): pick the support examples whose images look most like the query, and put the most similar one last, right before the query.</p>
+<h4>Why it matters today</h4>
+<p>This is the same prompt engineering a chat model uses with text (see the <a data-lesson="primer/agents/context.html">context lesson</a> on <span class="t" data-t="few-shot prompt">few-shot prompts</span>), with pictures as part of each example.</p>
+</section>
+
+<section id="s3">
+<h2>3 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S3">original</a></span></h2>
+<blockquote class="quote">“We emphasize that we do not validate any design decisions on these 11 benchmarks and use them solely to estimate unbiased few-shot learning performance of our models.”<cite>Alayrac et al. (2022), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>If you tune a recipe by tasting it every day, your own opinion of it is no longer a fair review. The paper splits its 16 <span class="t" data-t="benchmark">benchmarks</span> in two: 5 “dev” benchmarks (COCO, OKVQA, VQAv2, MSVDQA and VATEX) that it tasted while designing the model, and 11 it never looked at until the end. The 11 give the honest estimate.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Measuring few-shot skill needs two disjoint sets per benchmark: <em>support</em> examples to put in prompts and <em>query</em> examples to test on. A dev benchmark needs four (support and query for validation, and again for the final test), so that no final number was also used to make a design choice. All benchmarks share one set of evaluation settings, including the prompt formats “Output: {output}” and “Question: {question} Answer: {answer}”, with a few exceptions such as HatefulMemes, whose prompt includes the meme's text.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Few-shot results are easy to inflate by quietly choosing prompts or settings on the test set. Holding out 11 benchmarks from every decision is the paper's guard against that; see the <a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> for why the best of many tuned versions looks better than it is.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Few-shot learning on vision-language tasks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two dials: how big the model is, and how many examples its prompt shows. Turn either up and the scores tend to rise; the biggest model gets the most out of extra examples.</p>
+<div class="plot">
+  <div class="controls ui"><label for="fs-bench">Benchmark</label><select id="fs-bench"></select></div>
+  <div id="fs-chart"></div>
+  <p class="readout" id="fs-readout">Hover or tap the chart, or focus it and use the arrow keys, to read the scores at 0, 4 and 32 shots.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of examples in the prompt (0, 4 or 32); the y-axis is the benchmark's score (accuracy in percent for question answering, <span class="t" data-t="cider">CIDEr</span> for captioning, where values above 100 are normal). Each line is one model size, and the flat line is the best fine-tuned model at the time, trained on thousands of task-specific examples. All numbers are from Table 1 of the paper. On OKVQA, the three model sizes rise with shots and the 80B model passes the fine-tuned line; on VQAv2 and COCO, even 32 shots stay well below it. Pick VisDial: the 4-shot and 32-shot scores are identical; its dialogues make such long prompts that the paper capped it at 16 shots (§5). Pick STAR: more shots barely help at all. The dev benchmarks are the first five in the list.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1 of Alayrac et al. (2022): Flamingo (80B) with 0, 4 and 32 shots, and the fine-tuned state of the art with its number of training examples</caption>
+  <thead><tr><th>Benchmark</th><th class="num">0</th><th class="num">4</th><th class="num">32</th><th class="num">Fine-tuned</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>OKVQA</td><td class="num">50.6</td><td class="num">57.4</td><td class="num">57.8</td><td class="num">54.4 <small>(10K)</small></td></tr>
+    <tr><td>VQAv2</td><td class="num">56.3</td><td class="num">63.1</td><td class="num">67.6</td><td class="num">80.2 <small>(444K)</small></td></tr>
+    <tr><td>COCO (CIDEr)</td><td class="num">84.3</td><td class="num">103.2</td><td class="num">113.8</td><td class="num">143.3 <small>(500K)</small></td></tr>
+    <tr class="hl"><td>MSVDQA</td><td class="num">35.6</td><td class="num">41.7</td><td class="num">52.3</td><td class="num">47.9 <small>(27K)</small></td></tr>
+    <tr class="hl"><td>Flickr30K (CIDEr)</td><td class="num">67.2</td><td class="num">75.1</td><td class="num">75.4</td><td class="num">67.4 <small>(30K)</small></td></tr>
+    <tr class="hl"><td>iVQA</td><td class="num">40.7</td><td class="num">44.1</td><td class="num">45.3</td><td class="num">35.4 <small>(6K)</small></td></tr>
+    <tr class="hl"><td>STAR</td><td class="num">39.7</td><td class="num">42.4</td><td class="num">42.2</td><td class="num">36.7 <small>(46K)</small></td></tr>
+    <tr class="hl"><td>NextQA (WUPS)</td><td class="num">26.7</td><td class="num">30.8</td><td class="num">33.5</td><td class="num">25.2 <small>(38K)</small></td></tr>
+  </tbody>
+</table></div>
+<p>The highlighted rows are the six benchmarks where 32 shots beat the fine-tuned state of the art. (The text says six; the caption of the paper's Table 1 says seven, but the table itself shows six.) The gap in training data is largest on COCO and VATEX, whose fine-tuned models saw 500,000 examples each.</p>
+<pre class="in-python"><code># Flamingo (80B) at 32 shots against the fine-tuned SotA, all 15 scored benchmarks of Table 1
+flamingo_32 = [57.8, 67.6, 113.8, 52.3, 65.1, 49.8, 75.4, 31.0, 45.3, 86.8, 42.2, 55.6, 37.9, 33.5, 70.0]
+fine_tuned = [54.4, 80.2, 143.3, 47.9, 76.3, 57.2, 67.4, 46.8, 35.4, 138.7, 36.7, 75.2, 54.7, 25.2, 79.1]
+sum(f > s for f, s in zip(flamingo_32, fine_tuned))  # → 6
+# 32 examples against 10,000 (OKVQA's fine-tuned model)
+10_000 // 32  # → 312</code></pre>
+<h4>Why it matters</h4>
+<p>The fine-tuned models used from 6,000 to 500,000 task-specific examples against Flamingo's 32, which the paper summarises as around 1,000 times less data. The pattern that bigger models use more shots better mirrors what the <a href="gpt-3.html">GPT-3 companion</a> shows for text.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Fine-tuning Flamingo as a pretrained vision-language model <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A generalist who is good at picking up tasks from a few examples can still get better with a proper training course. On the nine tasks where 32 shots fell short, the paper fine-tunes Flamingo on each task's full training set.</p>
+<h4>Tiny example</h4>
+<p>On VQAv2, Flamingo scores 67.6 with 32 shots. Fine-tuned, it scores 82.0, above the previous best of 81.3.</p>
+<div class="tablewrap"><table>
+  <caption>Selected entries of Table 2 of Alayrac et al. (2022): fine-tuned Flamingo against the state of the art</caption>
+  <thead><tr><th>Benchmark</th><th class="num">32 shots</th><th class="num">Fine-tuned</th><th class="num">Previous SotA</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>VQAv2 (test-dev)</td><td class="num">67.6</td><td class="num">82.0</td><td class="num">81.3</td></tr>
+    <tr class="hl"><td>VATEX (CIDEr)</td><td class="num">65.1</td><td class="num">84.2</td><td class="num">81.4</td></tr>
+    <tr class="hl"><td>VizWiz (test-dev)</td><td class="num">49.8</td><td class="num">65.7</td><td class="num">57.2</td></tr>
+    <tr class="hl"><td>MSRVTTQA</td><td class="num">31.0</td><td class="num">47.4</td><td class="num">46.8</td></tr>
+    <tr class="hl"><td>HatefulMemes (AUC)</td><td class="num">70.0</td><td class="num">86.6</td><td class="num">84.6</td></tr>
+    <tr><td>COCO (CIDEr)</td><td class="num">113.8</td><td class="num">138.1</td><td class="num">149.6</td></tr>
+  </tbody>
+</table></div>
+<p>How: the language model stays frozen; the same layers as in pretraining train, plus, this time, the vision encoder, at a higher image resolution (480 × 480 instead of 320 × 320), with a short schedule and a small learning rate. Five new records (highlighted). On others it trails methods that optimise the test metric directly, such as CIDEr optimisation for COCO captioning, which it does not use.</p>
+<h4>Why it matters</h4>
+<p>The same weights serve both uses: prompt them for a quick start, fine-tune them when the data exists. That is how pretrained language models are used too; see the <a data-lesson="primer/ml/fine_tuning.html">fine-tuning lesson</a>.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Ablation studies <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S3.SS3">original</a></span></h3>
+<blockquote class="quote">“Interestingly, fine-tuning our pretrained LM also leads to a drop in performance of -8.0%.”<cite>Alayrac et al. (2022), §3.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>To learn which parts of a machine matter, take them out one at a time and see what breaks. Every <span class="t" data-t="ablation">ablation</span> here is Flamingo-3B, trained for a shorter time, with one design choice changed, scored on the five dev benchmarks with 4 shots.</p>
+<h4>The overall score</h4>
+<p>To combine five benchmarks on different scales, the paper divides each score by the state of the art from Table 1 and averages the five ratios.</p>
+<div class="eq" data-tex="\htmlData{sym=overall}{\text{Overall}} = \frac{1}{5} \htmlData{sym=sumb}{\sum_{b}} \frac{\htmlData{sym=sb}{s_b}}{\htmlData{sym=sotab}{\text{SotA}_b}}" data-fallback="Overall = (1/5) Σ_b s_b / SotA_b"></div>
+<div class="symtable" data-syms="overall,sumb,sb,sotab"></div>
+<p class="inwords"><strong>In words:</strong> “express each benchmark score as a fraction of the best known result, and average the fractions.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the baseline Flamingo-3B scores 86.5 (COCO), 42.1 (OKVQA), 55.8 (VQAv2), 36.3 (MSVDQA) and 53.4 (VATEX); against the fine-tuned records 143.3, 54.4, 80.2, 47.9 and 76.3 the ratios average 0.706, which is 70.6. The paper reports 70.7; the small difference probably comes from rounding in the printed tables.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># Table 3's baseline row and Table 1's fine-tuned records
+s = [86.5, 42.1, 55.8, 36.3, 53.4]
+sota = [143.3, 54.4, 80.2, 47.9, 76.3]
+# (1/5) Σ_b s_b / SotA_b, as a percentage
+round(100 * sum(a / b for a, b in zip(s, sota)) / 5, 1)  # → 70.6</code></pre>
+<div class="plot"><div class="bars" id="abl-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one ablation's overall score, from Table 3 of the paper; the top bar, striped, is the unchanged Flamingo-3B at 70.7, and the axis runs from 50 to 75 so the gaps are visible. Longer is better. The biggest single loss is removing the interleaved web data M3W (53.4, down 17.3 points), which is the data that teaches in-context learning. Training the language model instead of freezing it hurts twice: from random weights (57.8) and, more surprisingly, even from the pretrained weights (62.7), the <span class="t" data-t="catastrophic forgetting">catastrophic forgetting</span> the quote refers to. Removing the tanh gate costs 4.2 points and made training unstable. The CLIP ViT-L/14 encoder scores 5.8 points below the authors' own NFNet-F6.</p>
+<h4>The findings, in short</h4>
+<ul>
+  <li><strong>Data:</strong> every dataset helps; M3W most. Swapping the image-text pairs for the public LAION-400M costs a little (66.4).</li>
+  <li><strong>Architecture:</strong> gated xattn-dense beats plain cross-attention (66.9) and “grafting” new layers on top of the frozen model's output (63.1). The resampler beats a plain transformer (66.7) and an MLP (66.6) of similar size.</li>
+  <li><strong>Cost:</strong> a gated layer every fourth block instead of every block drops the overall score only from 70.7 to 68.8, with fewer parameters (2.3B against 3.2B) and a step time of 1.02 s instead of 1.74 s. The paper calls this 66% faster training; the two step times give about 1.7 times as fast.</li>
+  <li><strong>Frozen is better:</strong> freezing the language model beats training it, and is cheaper: no gradient updates for almost 90% of the largest model's weights.</li>
+</ul>
+<pre class="in-python"><code># the cost trade-off of row (v): step times from Table 3
+round(1.74 / 1.02, 2)  # → 1.71
+# overall score lost by inserting a gated layer every 4th block
+round(70.7 - 68.8, 1)  # → 1.9</code></pre>
+<h4>Why it matters today</h4>
+<p>“Freeze the big pretrained models, train small new connectors” became a default for vision-language models because of results like row (viii): it was better as well as cheaper. The <a data-lesson="primer/ml/fine_tuning.html#forgetting"><code>forgetting</code></a> measure in the fine-tuning lesson quantifies the damage that unfreezing can do.</p>
+</section>
+
+<section id="s4">
+<h2>4 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Flamingo sits where three roads meet. Language models that learn from prompts (GPT-3, and Chinchilla, whose 70B model it builds on). Vision-language models, some trained BERT-style and fine-tuned per task, some contrastive like CLIP and ALIGN, some already generating text. And web-scale datasets scraped instead of annotated.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Ways to adapt a language model to a new task, as the paper lists them: small adapter modules, fine-tuning a small part, showing in-context examples, or optimising the prompt by gradient descent. Flamingo takes the third.</p>
+<h3 class="rung">What is new</h3>
+<ul>
+  <li>Earlier work already froze pretrained language models to avoid forgetting; Flamingo adds learnable layers <em>within</em> the frozen stack.</li>
+  <li>It claims the first language model to take arbitrarily interleaved images, video and text.</li>
+  <li>It shows training on whole web pages, pictures in place, matters, alongside paired image-text data. The concurrent CM3 also trained on web pages but generated HTML; Flamingo only generates plain text.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The contrastive road (see the <a href="clip.html">CLIP companion</a>) supplied Flamingo's eyes; the language-model road supplied its voice. The paper's contribution is the joint between them.</p>
+</section>
+
+<section id="s5">
+<h2>5 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#S5">original</a></span></h2>
+<blockquote class="quote">“First, our models build on pretrained LMs, and as a side effect, directly inherit their weaknesses.”<cite>Alayrac et al. (2022), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Borrow a brilliant writer and you also borrow their habits, good and bad: fluent guesses when unsure, and trouble with texts much longer than they are used to.</p>
+<h3 class="rung">Tiny example: when prompts get too long</h3>
+<p>A VisDial example is an image followed by a dialogue of 21 sentences. Thirty-two of them make at least 32 × 21 = 672 sentences, a prompt of 4,096 to 8,192 tokens, while the language models were trained on sequences of at most 2,048. So VisDial results stop at 16 shots.</p>
+<pre class="in-python"><code># 32 VisDial shots, 21 sentences each
+32 * 21  # → 672
+# how far past the training length the shortest such prompt goes
+4096 / 2048  # → 2.0</code></pre>
+<h3 class="rung">The limitations the paper names</h3>
+<ul>
+  <li><strong>Inherited from the language model:</strong> occasional <span class="t" data-t="hallucination">hallucinations</span> and ungrounded guesses, poor generalisation to sequences longer than in training, poor sample efficiency.</li>
+  <li><strong>Classification:</strong> it trails contrastive models, including its own vision encoder, because they optimise image-text matching directly.</li>
+  <li><strong>In-context learning:</strong> sensitive to the order and format of examples; its cost grows linearly with the number of shots if the prompt's keys and values are cached and reused, and quadratically otherwise; and the gains flatten beyond about 32 shots.</li>
+</ul>
+<p>The paper also discusses societal impacts: it inherits the language model's risks (offensive language, social biases, leaking private information), adds visual ones such as biases about the people in images, and reports early bias and toxicity checks on COCO captions.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Every item on the list is still an active problem for vision-language models, and the “ungrounded guess”, confidently describing something that is not in the picture, is the one users meet most often.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices, briefly <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2204.14198#A1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The appendices are the workshop manual: the exact sizes, the training settings, the evaluation details, and a model card.</p>
+<h3 class="rung">Training details worth knowing</h3>
+<ul>
+  <li><strong>Optimiser:</strong> <span class="t" data-t="adamw">AdamW</span>, <span class="t" data-t="gradient clipping">gradient clipping</span> at norm 1, weight decay 0.1 (none on the resampler), learning rate warmed up linearly to 10<sup>−4</sup> over 5,000 steps and then held constant; 500,000 steps.</li>
+  <li><strong>Images:</strong> resized to 320 × 320, higher than the 288 × 288 used for the vision encoder's contrastive pretraining, which is affordable because nothing is back-propagated through the frozen encoder.</li>
+  <li><strong>Video:</strong> 8 frames at 1 frame per second in training, 30 frames at 3 per second at test time, made possible by interpolating the learned time embeddings.</li>
+  <li><strong>A tokenizer quirk:</strong> half the time, a space is prepended to paired captions, because the tokenizer splits a word differently with and without a leading space; the paper reports a substantial improvement.</li>
+  <li><strong>Hardware:</strong> Flamingo-80B trained on 1,536 TPUv4 chips for 15 days, split 16 ways with <a href="megatron-lm.html">Megatron-style</a> model parallelism and ZeRO stage 1 for the optimiser state (see the <a href="zero.html">ZeRO companion</a>), trained weights in float32 and activations in bfloat16 (<span class="t" data-t="mixed precision">mixed precision</span>).</li>
+</ul>
+<pre class="in-python"><code># chip-days of the largest training run
+1536 * 15  # → 23040</code></pre>
+<h3 class="rung">Two numbers that disagree</h3>
+<p>Appendix B.1.1 says the gated layers add 1.4B parameters to Flamingo-3B and 1.8B to Flamingo-9B; its Table 5 lists 1.2B and 1.6B. The table's figures add up to the stated totals (3.2B and 9.3B) and the text's do not, so this page uses the table's. Similarly, Appendix B.2.2 gives VQAv2 at 32 shots as 67.3%, where Tables 1 and 2 give 67.6.</p>
+<pre class="in-python"><code># Flamingo-3B's total with the table's 1.2B, and with the text's 1.4B
+round(1.4 + 0.435 + 1.2 + 0.194, 1), round(1.4 + 0.435 + 1.4 + 0.194, 1)  # → (3.2, 3.4)</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The details that make a training run work (warmup, clipping, precision, sharding) are the same for a vision-language model as for a language model; the <a data-lesson="primer/ml/pretraining.html">pretraining lesson</a> builds them.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2022</h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Flamingo proved that a language model could learn to see without forgetting how to write. The field then split over how to plumb the connection.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>What it changed</th><th>Build it or read it</th></tr></thead>
+  <tbody>
+    <tr><td>Splice instead of cross-attend</td><td>project the image into a few hundred tokens and put them straight into the prompt, with no new layers inside the language model; simpler, and the default for many open models</td><td><a href="llava.html">LLaVA companion</a>, <a data-lesson="primer/ml/generative/multimodal.html#VisionLanguageModel"><code>VisionLanguageModel</code></a></td></tr>
+    <tr><td>Open reproductions</td><td>OpenFlamingo rebuilt the design on the open LLaMA model</td><td><a href="llava.html">LLaVA companion</a>, §2</td></tr>
+    <tr><td>Instruction data</td><td>tuning on image conversations, not only captions and web pages, made models follow requests about pictures</td><td><a href="llava.html">LLaVA companion</a></td></tr>
+    <tr><td>Transformer image encoders</td><td>a CLIP-trained ViT became the usual eye, where Flamingo used a convolutional NFNet</td><td><a href="vit.html">ViT companion</a>, <a href="clip.html">CLIP companion</a></td></tr>
+  </tbody>
+</table></div>
+<h3 class="rung">Why it matters</h3>
+<p>Whichever plumbing a model uses, Flamingo's lessons stand: keep the pretrained parts' knowledge intact, compress what the eye sends, train on documents where pictures and words interleave, and evaluate on benchmarks you did not tune on.</p>
+</section>
+
+<section id="glossary"><h2>Glossary</h2><dl class="glossary" id="glossary-list"></dl></section>
+
+<footer>
+  <p>Companion to Jean-Baptiste Alayrac, Jeff Donahue, Pauline Luc, Antoine Miech, Iain Barr, Yana Hasson, Karel Lenc, Arthur Mensch, Katie Millican, Malcolm Reynolds, Roman Ring, Eliza Rutherford, Serkan Cabi, Tengda Han, Zhitao Gong, Sina Samangooei, Marianne Monteiro, Jacob Menick, Sebastian Borgeaud, Andrew Brock, Aida Nematzadeh, Sahand Sharifzadeh, Mikolaj Binkowski, Ricardo Barreira, Oriol Vinyals, Andrew Zisserman and Karen Simonyan, <em>Flamingo: a Visual Language Model for Few-Shot Learning</em>, NeurIPS 2022. <a href="https://arxiv.org/abs/2204.14198">arXiv:2204.14198</a>. Quotations are brief and attributed; table rows are selected and attributed. Figures are redrawn from scratch; all explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // equation 1
+    pyx: { tex: "p(y\\mid x)", name: "Probability of the text", meaning: "How likely the model finds the whole text y, given ( | ) the interleaved images and videos x.", shape: "a number from 0 to 1", example: "0.18 for “a serious cat”" },
+    prodl: { tex: "\\prod_{\\ell=1}^{L}", name: "Product over positions", meaning: "Multiply together one factor for each text position ℓ, from 1 to L.", shape: "L factors, one number out", example: "0.5 × 0.4 × 0.9" },
+    pyl: { tex: "p(y_\\ell\\mid y_{<\\ell}, x_{\\le\\ell})", name: "One next-token probability", meaning: "The probability of the ℓ-th token given the tokens before it and the images and videos before it.", shape: "a number from 0 to 1", example: "0.9 for “cat”" },
+    yl: { tex: "y_\\ell", name: "Token ℓ", meaning: "The ℓ-th text token.", shape: "one token", example: "“cat”" },
+    ylt: { tex: "y_{<\\ell}", name: "Earlier tokens", meaning: "Every text token before position ℓ.", shape: "ℓ − 1 tokens", example: "“… This is a serious”" },
+    xle: { tex: "x_{\\le\\ell}", name: "Earlier images", meaning: "The images and videos that appear before position ℓ in the interleaved sequence: those numbered up to φ(ℓ).", shape: "a set of images", example: "{dog photo, cat photo}" },
+    // resampler
+    Xlat: { tex: "X", name: "Learned latents", meaning: "The resampler's R learned query vectors. They start as parameters, the same for every input, and are updated layer by layer; after the last layer they are the visual tokens.", shape: "R × d (64 × 1,536)", example: "one latent, (1, 0)" },
+    Xf: { tex: "X_f", name: "Visual features", meaning: "The vision encoder's features for every frame, plus time embeddings, flattened into one list.", shape: "T·S × d", example: "(2, 0), (0, 2), (1, 1)" },
+    cat: { tex: "[X_f; X]", name: "Concatenation", meaning: "The features and the latents stacked into one list, so the latents attend to each other as well as to the image.", shape: "(T·S + R) × d", example: "four rows" },
+    Qr: { tex: "Q", name: "Queries", meaning: "What each latent is asking: the latents times W_Q.", shape: "R × d", example: "(1, 0)" },
+    Kr: { tex: "K", name: "Keys", meaning: "What each feature or latent offers to be matched on.", shape: "(T·S + R) × d", example: "the four rows" },
+    KrT: { tex: "K^\\top", name: "Keys, transposed", meaning: "The keys flipped so that Q Kᵀ computes every query-key dot product at once.", shape: "d × (T·S + R)", example: "" },
+    Vr: { tex: "V", name: "Values", meaning: "What each feature or latent hands over when it is attended to.", shape: "(T·S + R) × d", example: "the four rows" },
+    WQ: { tex: "W_Q", name: "Query projection", meaning: "A learned matrix turning latents into queries (one per head in practice).", shape: "d × d", example: "the identity here" },
+    WK: { tex: "W_K", name: "Key projection", meaning: "A learned matrix turning features and latents into keys.", shape: "d × d", example: "the identity here" },
+    WV: { tex: "W_V", name: "Value projection", meaning: "A learned matrix turning features and latents into values.", shape: "d × d", example: "the identity here" },
+    sqrtd: { tex: "\\sqrt{d}", name: "Scale", meaning: "The square root of the width of each key, dividing the scores so they do not grow with the width.", shape: "a number", example: "√2 = 1.414" },
+    softmax: { tex: "\\text{softmax}", name: "Softmax", meaning: "Turns each row of scores into positive weights that add up to 1: e to each score, divided by the sum.", shape: "row by row", example: "(0.449, 0.109, 0.221, 0.221)" },
+    // gating
+    ytext: { tex: "y", name: "Language features", meaning: "The language model's vector for each text token at this depth of the stack.", shape: "one vector per token, width D (8,192 in Flamingo-80B)", example: "(1, 2)" },
+    tanh: { tex: "\\tanh", name: "tanh", meaning: "The hyperbolic tangent: squashes any number into the range −1 to 1, with tanh(0) = 0.", shape: "one number in, one out", example: "tanh(0.5) = 0.462" },
+    ax: { tex: "\\alpha_{\\text{xattn}}", name: "Cross-attention gate", meaning: "A single learnable number per gated layer, initialised to 0, so the cross-attention branch starts switched off.", shape: "one scalar per layer", example: "0, then 0.5" },
+    xatt: { tex: "\\text{attention}(q{=}y, kv{=}x)", name: "Cross-attention", meaning: "Attention whose queries come from the text tokens and whose keys and values come from the visual tokens of the image allowed by the mask.", shape: "one vector per text token", example: "(0.5, −1), illustrative" },
+    xvis: { tex: "x", name: "Visual tokens", meaning: "The Perceiver Resampler's output for the image a token may see.", shape: "64 × d", example: "the cat photo's 64 tokens" },
+    ad: { tex: "\\alpha_{\\text{dense}}", name: "Feed-forward gate", meaning: "The same kind of scalar gate, for the new feed-forward layer that follows the cross-attention.", shape: "one scalar per layer", example: "starts at 0" },
+    ffwy: { tex: "\\text{ffw}(y)", name: "New feed-forward layer", meaning: "A feed-forward network trained from scratch, 4 times the width inside, with squared ReLU.", shape: "one vector per token", example: "" },
+    // masking
+    phi: { tex: "\\phi", name: "Which image", meaning: "A function giving each text position the number of the last image or video before it, or 0 if there is none.", shape: "positions 1..L → numbers 0..N", example: "φ(“cat”) = 2" },
+    Ltok: { tex: "L", name: "Text length", meaning: "The number of text tokens in the example.", shape: "a whole number", example: "8 here; 256 in M3W training" },
+    Nimg: { tex: "N", name: "Number of images", meaning: "How many images or videos the example holds.", shape: "a whole number", example: "2 here; at most 5 in training, up to 32 at test time" },
+    ximg: { tex: "x_i", name: "Image i", meaning: "The i-th image or video of the sequence, counting from 1.", shape: "one image or video", example: "x₁ = the puppy photo" },
+    ell: { tex: "\\ell", name: "Position", meaning: "A text position, from 1 to L.", shape: "a whole number", example: "the position of “cat”" },
+    // equation 2
+    summ: { tex: "\\sum_{m=1}^{M}", name: "Sum over datasets", meaning: "Add up one term per training dataset m, from 1 to M.", shape: "M = 4 terms", example: "M3W, ALIGN, LTIP, VTP" },
+    lam: { tex: "\\lambda_m", name: "Dataset weight", meaning: "How much dataset m counts in the objective; tuned at small scale and kept fixed.", shape: "a number ≥ 0", example: "1.0, 0.2, 0.2, 0.03" },
+    Edm: { tex: "\\mathbb{E}_{(x,y)\\sim\\mathcal{D}_m}", name: "Average over the dataset", meaning: "The expected value, the average, over examples (x, y) drawn (∼) from dataset D_m; in practice, over a batch.", shape: "one number", example: "2.0 for M3W, illustrative" },
+    suml: { tex: "\\sum_{\\ell=1}^{L}", name: "Sum over positions", meaning: "Add up over the text positions of one example.", shape: "L terms", example: "" },
+    logp: { tex: "\\log p(y_\\ell\\mid y_{<\\ell}, x_{\\le\\ell})", name: "Log-probability of a token", meaning: "The natural log of the model's probability for the right token; its negative is the token's cross-entropy loss.", shape: "a number ≤ 0", example: "log 0.9 = −0.105" },
+    // overall score
+    overall: { tex: "\\text{Overall}", name: "Overall score", meaning: "The ablation score: each dev benchmark as a fraction of its state of the art, averaged, as a percentage.", shape: "a percentage", example: "70.6 (the paper: 70.7)" },
+    sumb: { tex: "\\sum_{b}", name: "Sum over benchmarks", meaning: "Add up over the five dev benchmarks b.", shape: "5 terms", example: "COCO, OKVQA, VQAv2, MSVDQA, VATEX" },
+    sb: { tex: "s_b", name: "Score on benchmark b", meaning: "The ablated model's score on benchmark b with 4 shots.", shape: "a number", example: "86.5 on COCO" },
+    sotab: { tex: "\\text{SotA}_b", name: "State of the art on b", meaning: "The best fine-tuned result on benchmark b, from Table 1.", shape: "a number", example: "143.3 on COCO" },
+  },
+
+  blocks: {
+    // Figure 3
+    f_out: { title: "Output: text", body: "<p>Flamingo writes text only, one token at a time, like any language model. Here it finishes the prompt “… &lt;image&gt; This is” with “a very serious cat.”</p>", shape: "tokens" },
+    f_lm: { title: "Language model block (frozen)", body: "<p>A block of the pretrained Chinchilla language model: self-attention and a feed-forward network. Its weights never change during Flamingo training; this preserves what the language model knows.</p>", shape: "80 blocks in Flamingo-80B", lesson: "primer/ml/transformer.html#TransformerBlock" },
+    f_xattn: { title: "Gated xattn-dense (trained)", body: "<p>A new block inserted before a frozen one: gated cross-attention to the visual tokens, then a gated feed-forward layer (§2.2). Trained from scratch; its gates start at zero.</p>", shape: "one before every 7th block in Flamingo-80B" },
+    f_text: { title: "Processed text", body: "<p>The page's text with an &lt;image&gt; tag where each picture was (and special tokens such as &lt;EOC&gt;, not drawn). The visual tokens never join this sequence.</p>", shape: "text tokens only" },
+    f_web: { title: "Interleaved input", body: "<p>A web page (or a prompt) with pictures and text in any order. Flamingo splits it into the pictures and the text with tags.</p>", shape: "images or videos + text" },
+    f_img: { title: "Each photo (or video)", body: "<p>Every image or video is processed on its own. A video is a stack of frames sampled at 1 per second.</p>", shape: "resized to 320 × 320" },
+    f_venc: { title: "Vision encoder (frozen)", body: "<p>An NFNet-F6 convolutional network, pretrained by the authors with a CLIP-style contrastive loss on image-text pairs, then frozen.</p>", shape: "435M parameters" },
+    f_resampler: { title: "Perceiver Resampler (trained)", body: "<p>A 6-layer transformer whose 64 learned queries attend to the encoder's features and return 64 visual tokens, whatever the image size or video length (§2.1).</p>", shape: "about 200M parameters" },
+    f_vtok: { title: "Visual tokens", body: "<p>64 vectors per image. They are the keys and values of every gated cross-attention layer, but never enter the text sequence.</p>", shape: "64 × 1,536" },
+    // Figure 5
+    p_out: { title: "The visual tokens", body: "<p>The latents after the last layer. There are always R of them (64 in the paper; five in the paper's figure), independent of the input's resolution or number of frames.</p>", shape: "R × d" },
+    p_layers: { title: "× 6 layers", body: "<p>The attention and feed-forward steps repeat for 6 layers in every Flamingo model, width 1,536, 16 heads.</p>", shape: "6 layers" },
+    p_ffw: { title: "Feed-forward, plus residual", body: "<p>x = x + ffw(x): each latent is processed on its own, as in any transformer layer.</p>", shape: "R × d → R × d", lesson: "primer/ml/transformer.html#FeedForward" },
+    p_attn: { title: "Attention, plus residual", body: "<p>x = x + attention(q = x, kv = [X<sub>f</sub>, x]). The latents ask; the visual features and the latents themselves answer. The paper found that adding the latents to the keys and values worked slightly better than using the features alone.</p>", shape: "R queries over T·S + R keys", lesson: "primer/ml/attention.html#scaled_dot_product_attention" },
+    p_lat: { title: "Learned latent queries", body: "<p>R vectors learned during training: the resampler's standing questions. They are the same for every input; the inputs change only what the answers are.</p>", shape: "R × d (64 × 1,536)" },
+    p_xf: { title: "Flatten into X<sub>f</sub>", body: "<p>The T frames' grids of S spatial features are laid end to end into one list of T·S features. For an image, T = 1.</p>", shape: "T × S × d → T·S × d" },
+    p_time: { title: "Time embedding", body: "<p>A learned vector per frame index, added to every feature of that frame, so the resampler knows which frame a feature came from. No spatial position encoding is added: the paper saw no gain from one.</p>", shape: "T × 1 × d" },
+    p_venc: { title: "Vision encoder, frame by frame", body: "<p>The frozen NFNet-F6 runs on each frame independently.</p>", shape: "each frame → S × d features" },
+    p_frames: { title: "Video frames", body: "<p>Sampled at 1 frame per second. Training uses 8 frames; evaluation 30 frames at 3 per second, with the time embeddings interpolated.</p>", shape: "T frames" },
+    // Figure 4
+    g_out: { title: "Output: visually informed features", body: "<p>The same shape as the input Y, now carrying information from the image. It goes on to the next gated layer or frozen block.</p>", shape: "one vector per text token" },
+    g_lmframe: { title: "The frozen language model layer", body: "<p>An original layer of the pretrained language model, unchanged: self-attention then feed-forward, each with a residual.</p>", shape: "frozen weights" },
+    g_ffw2: { title: "Frozen feed-forward", body: "<p>y = y + frozen_ffw(y), the language model's own feed-forward network.</p>", shape: "GELU inside" },
+    g_self: { title: "Frozen self-attention", body: "<p>y = y + frozen_attention(q = y, kv = y): the words attend to each other, causally, as in the original model. This is how a word learns about earlier images indirectly, through earlier words.</p>", shape: "text tokens only" },
+    g_xframe: { title: "The new gated xattn-dense block", body: "<p>Two new sub-layers, each gated by tanh of its own learnable scalar, both trained from scratch.</p>", shape: "trained" },
+    g_gate2: { title: "Gate: tanh(α<sub>dense</sub>)", body: "<p>Scales the new feed-forward layer's output before it is added. Starts at 0.</p>", shape: "one scalar" },
+    g_ffw1: { title: "New feed-forward layer", body: "<p>y = y + tanh(α<sub>dense</sub>) · ffw(y). Hidden width 4 times the model width, squared ReLU activation.</p>", shape: "D → 4D → D" },
+    g_gate1: { title: "Gate: tanh(α<sub>xattn</sub>)", body: "<p>Scales the cross-attention's output before it is added. Starts at 0, so at initialisation the block adds nothing.</p>", shape: "one scalar" },
+    g_xattn: { title: "Cross-attention", body: "<p>Queries from the text (Y), keys and values from the visual tokens (X). Masked so that each token sees only the image just before it (§2.3).</p>", shape: "text tokens × 64 visual tokens", lesson: "primer/ml/attention.html#scaled_dot_product_attention" },
+    g_yin: { title: "Language input Y", body: "<p>The text tokens' vectors as they arrive at this depth of the stack: from the embedding table for the first block, from the previous frozen block otherwise.</p>", shape: "L × D" },
+    g_xin: { title: "Vision input X", body: "<p>The visual tokens from the Perceiver Resampler: the same ones feed every gated layer.</p>", shape: "64 per image" },
+  },
+
+  onReady(P) {
+    gatePlay();
+    promptStrip();
+    fewShotChart(P);
+    bars("abl-bars", [
+      ["Flamingo-3B, as designed", 70.7, true], ["every 4th layer", 68.8], ["vanilla cross-attn", 66.9], ["Transformer resampler", 66.7],
+      ["MLP resampler", 66.6], ["no tanh gating", 66.5], ["image-text → LAION", 66.4], ["CLIP ViT-L/14 encoder", 64.9], ["grafting", 63.1], ["round-robin updates", 62.9],
+      ["LM fine-tuned", 62.7], ["no image-text pairs", 60.9], ["LM from random init", 57.8], ["no M3W", 53.4],
+    ], 50, 75, "overall score on the 5 dev benchmarks, 4 shots, axis from 50 to 75 (Table 3) · striped: the unchanged model");
+  },
+};
+
+/* ---- §2.3: the per-image cross-attention mask (built before papers.js wires the diagram) ---- */
+(function crossMask() {
+  const rows = [["Cute", 0], ["pics", 0], ["&lt;image&gt;", 1], ["My", 1], ["puppy", 1], ["&lt;image&gt;", 2], ["My", 2], ["cat", 2]];
+  const plain = (s) => s.replace("&lt;", "<").replace("&gt;", ">");
+  const cols = [1, 1, 1, 2, 2, 2];
+  const g = document.getElementById("xmaskgrid");
+  const NS = "http://www.w3.org/2000/svg";
+  const x0 = 120, y0 = 50, s = 34;
+  const mk = (tag, attrs, text) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text !== undefined) n.textContent = text; return n; };
+  g.appendChild(mk("text", { x: x0 + 1.5 * s, y: 18, "text-anchor": "middle", class: "lbl" }, "image 1"));
+  g.appendChild(mk("text", { x: x0 + 4.5 * s, y: 18, "text-anchor": "middle", class: "lbl" }, "image 2"));
+  cols.forEach((c, j) => g.appendChild(mk("text", { x: x0 + j * s + s / 2, y: 40, "text-anchor": "middle", class: "lbl" }, `v${(j % 3) + 1}`)));
+  g.appendChild(mk("text", { x: 10, y: 40, class: "lbl" }, "φ"));
+  let mode = "last";
+  const cells = [];
+  rows.forEach(([w, phi], i) => {
+    g.appendChild(mk("text", { x: 10, y: y0 + i * s + s / 2 + 4, class: "lbl" }, String(phi)));
+    g.appendChild(mk("text", { x: x0 - 8, y: y0 + i * s + s / 2 + 4, "text-anchor": "end" }, plain(w)));
+    cols.forEach((c, j) => {
+      const cell = mk("g", { "data-block": `xm_${i}_${j}` });
+      const r = mk("rect", { x: x0 + j * s + 2, y: y0 + i * s + 2, width: s - 4, height: s - 4, rx: 5 });
+      const t = mk("text", { x: x0 + j * s + s / 2, y: y0 + i * s + s / 2 + 4, "text-anchor": "middle" });
+      cell.append(r, t);
+      g.appendChild(cell);
+      cells.push({ cell, t, i, j, w, phi, c });
+    });
+  });
+  function paint() {
+    cells.forEach(({ cell, t, i, j, w, phi, c }) => {
+      const ok = mode === "last" ? c === phi : c <= phi;
+      cell.setAttribute("class", "blk " + (ok ? "ff" : "plain"));
+      t.textContent = ok ? "✓" : "";
+      const who = `“${plain(w)}” (φ = ${phi})`;
+      const title = `${who} looking at image ${c}: ${ok ? "allowed" : "masked"}`;
+      cell.setAttribute("aria-label", title);
+      let body;
+      if (phi === 0) body = `<p>No image comes before ${who}, so φ = 0 and its cross-attention sees nothing. Its gated layers add nothing here, and it is predicted from text alone.</p>`;
+      else if (ok && c === phi) body = `<p>Image ${c} is the last image before this token, so its visual tokens are the keys and values of this token's cross-attention.</p>`;
+      else if (ok) body = `<p>In the “all previous images” variant, this token may also look directly at the earlier image ${c}. Flamingo does not allow this; the paper measured the variant as 7.2 points worse overall.</p>`;
+      else if (c > phi) body = `<p>Image ${c} comes <em>after</em> this token in the sequence, so it is masked: x<sub>≤ℓ</sub> contains only images up to φ(ℓ) = ${phi}.</p>`;
+      else body = `<p>Image ${c} came earlier, but Flamingo lets each token cross-attend only to the last image before it (image ${phi}). The token still learns about image ${c} indirectly, through the self-attention of the frozen language model over earlier words.</p>`;
+      window.PAPER.blocks[`xm_${i}_${j}`] = { title, body, shape: `row ${i + 1}, visual token ${(j % 3) + 1} of image ${c}` };
+    });
+  }
+  paint();
+  document.querySelectorAll("[data-xmode]").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.xmode;
+    document.querySelectorAll("[data-xmode]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    paint();
+  }));
+})();
+
+/* ---- §2.2: the tanh valve ---- */
+function gatePlay() {
+  const y = [1, 2], a = [0.5, -1];
+  const slider = document.getElementById("gate-a");
+  const out = document.getElementById("gate-av");
+  const barsEl = document.getElementById("gate-bars");
+  const readout = document.getElementById("gate-readout");
+  function draw() {
+    const alpha = +slider.value;
+    const t = Math.tanh(alpha);
+    const ny = y.map((v, i) => v + t * a[i]);
+    out.textContent = alpha.toFixed(2);
+    const row = (label, frac, text, striped) => `<div class="share-row"><span>${label}</span><div><div class="share-bar${striped ? " alt" : ""}" style="width:${Math.max(0, Math.min(100, frac * 100)).toFixed(1)}%${striped ? ";background:var(--hatch) var(--wire)" : ""}"></div></div><span>${text}</span></div>`;
+    barsEl.innerHTML =
+      row("valve", Math.abs(t), Math.abs(t).toFixed(3), true) +
+      row("y₁", ny[0] / 3, ny[0].toFixed(3)) +
+      row("y₂", ny[1] / 3, ny[1].toFixed(3));
+    readout.innerHTML = `α = ${alpha.toFixed(2)}, tanh(α) = <strong>${t.toFixed(3)}</strong> · y = (1, 2) + ${t.toFixed(3)} × (0.5, −1) = <strong>(${ny[0].toFixed(3)}, ${ny[1].toFixed(3)})</strong>${Math.abs(t) < 0.0005 ? " · the language model is unchanged" : ""}. Striped bar: how open the valve is; plain bars: the two numbers of y, axis 0 to 3.`;
+  }
+  slider.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- §2.5: a few-shot prompt, and its zero-shot version ---- */
+function promptStrip() {
+  const strip = document.getElementById("prompt-strip");
+  const readout = document.getElementById("prompt-readout");
+  const two = [
+    ["&lt;BOS&gt;", "sp"], ["[image: cat in sunglasses]", "img"], ["Output: This is a cat wearing sunglasses.", ""], ["&lt;EOC&gt;", "sp"],
+    ["[image: elephants]", "img"], ["Output: Three elephants walking in the savanna.", ""], ["&lt;EOC&gt;", "sp"],
+    ["[query image]", "img q"], ["Output:", ""],
+  ];
+  const zero = [
+    ["&lt;BOS&gt;", "sp"], ["Output: This is a cat wearing sunglasses.", ""], ["&lt;EOC&gt;", "sp"],
+    ["Output: Three elephants walking in the savanna.", ""], ["&lt;EOC&gt;", "sp"],
+    ["[query image]", "img q"], ["Output:", ""],
+  ];
+  function draw(which) {
+    const pieces = which === 2 ? two : zero;
+    strip.innerHTML = pieces.map(([text, kind]) => `<span class="tok${kind ? " " + kind : ""}">${text}</span>`).join("");
+    const imgs = pieces.filter((p) => p[1].startsWith("img")).length;
+    readout.innerHTML = which === 2
+      ? `Two support examples, each an image and its caption, then the query image: <strong>${imgs}</strong> images in the prompt. The model writes after the final “Output:”, and stops at &lt;EOC&gt;.`
+      : `The paper's zero-shot prompt (Appendix A.2): the two examples keep only their text, so the only image is the query: <strong>${imgs}</strong> image. The captions still show the format of the answer.`;
+    document.querySelectorAll("[data-pmode]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.pmode === which)));
+  }
+  document.querySelectorAll("[data-pmode]").forEach((b) => b.addEventListener("click", () => draw(+b.dataset.pmode)));
+  draw(2);
+}
+
+/* ---- §3.1: Table 1 as a chart ---- */
+function fewShotChart(P) {
+  // Table 1 of Alayrac et al. (2022): scores at 0, 4 and 32 shots, and the fine-tuned state of the art.
+  const T = {
+    "OKVQA (dev)": { "3B": [41.2, 43.3, 45.9], "9B": [44.7, 49.3, 51.0], "80B": [50.6, 57.4, 57.8], ft: 54.4 },
+    "VQAv2 (dev)": { "3B": [49.2, 53.2, 57.1], "9B": [51.8, 56.3, 60.4], "80B": [56.3, 63.1, 67.6], ft: 80.2 },
+    "COCO (dev, CIDEr)": { "3B": [73.0, 85.0, 99.0], "9B": [79.4, 93.1, 106.3], "80B": [84.3, 103.2, 113.8], ft: 143.3 },
+    "MSVDQA (dev)": { "3B": [27.5, 33.0, 42.6], "9B": [30.2, 36.2, 47.2], "80B": [35.6, 41.7, 52.3], ft: 47.9 },
+    "VATEX (dev, CIDEr)": { "3B": [40.1, 50.0, 59.2], "9B": [39.5, 51.7, 57.4], "80B": [46.7, 56.0, 65.1], ft: 76.3 },
+    "VizWiz": { "3B": [28.9, 34.0, 45.5], "9B": [28.8, 34.9, 44.0], "80B": [31.6, 39.6, 49.8], ft: 57.2 },
+    "Flickr30K (CIDEr)": { "3B": [60.6, 72.0, 71.2], "9B": [61.5, 72.6, 72.8], "80B": [67.2, 75.1, 75.4], ft: 67.4 },
+    "MSRVTTQA": { "3B": [11.0, 14.9, 25.6], "9B": [13.7, 18.2, 29.4], "80B": [17.4, 23.9, 31.0], ft: 46.8 },
+    "iVQA": { "3B": [32.7, 35.7, 37.7], "9B": [35.2, 37.7, 40.7], "80B": [40.7, 44.1, 45.3], ft: 35.4 },
+    "YouCook2 (CIDEr)": { "3B": [55.8, 64.6, 76.7], "9B": [55.0, 70.8, 77.3], "80B": [60.1, 74.5, 86.8], ft: 138.7 },
+    "STAR": { "3B": [39.6, 41.3, 41.6], "9B": [41.8, 42.8, 41.2], "80B": [39.7, 42.4, 42.2], ft: 36.7 },
+    "VisDial (capped at 16 shots)": { "3B": [46.1, 47.3, 47.3], "9B": [48.0, 50.4, 50.4], "80B": [52.0, 55.6, 55.6], ft: 75.2 },
+    "TextVQA": { "3B": [30.1, 32.7, 30.6], "9B": [31.8, 33.6, 32.6], "80B": [35.0, 36.5, 37.9], ft: 54.7 },
+    "NextQA": { "3B": [21.3, 22.4, 26.1], "9B": [23.0, 24.7, 28.4], "80B": [26.7, 30.8, 33.5], ft: 25.2 },
+    "HatefulMemes": { "3B": [53.7, 53.6, 56.3], "9B": [57.0, 62.7, 63.5], "80B": [46.4, 68.6, 70.0], ft: 79.1 },
+  };
+  const shots = [0, 4, 32];
+  const select = document.getElementById("fs-bench");
+  select.innerHTML = Object.keys(T).map((k) => `<option>${k}</option>`).join("");
+  const series = (k) => {
+    const row = T[k];
+    return [
+      { name: "Flamingo-80B", points: shots.map((s, i) => [s, row["80B"][i]]) },
+      { name: "Flamingo-9B", points: shots.map((s, i) => [s, row["9B"][i]]) },
+      { name: "Flamingo-3B", points: shots.map((s, i) => [s, row["3B"][i]]) },
+      { name: "fine-tuned state of the art", points: shots.map((s) => [s, row.ft]) },
+    ];
+  };
+  // The y-axis starts a little below the lowest score, so the lines are not squashed at the top.
+  const floor = (k) => Math.floor(Math.min(...["3B", "9B", "80B"].flatMap((m) => T[k][m]), T[k].ft) * 0.8 / 10) * 10;
+  const opts = {
+    series: series(select.value),
+    yMin: floor(select.value),
+    xLabel: "shots", yLabel: "score",
+    width: 420, height: 280,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(1),
+    readout: document.getElementById("fs-readout"),
+    ariaLabel: "Few-shot score against number of shots, per model size",
+  };
+  const chart = P.lineChart(document.getElementById("fs-chart"), opts);
+  select.addEventListener("change", () => { opts.yMin = floor(select.value); chart.update(series(select.value)); });
+}
+
+/* ---- §3.3: horizontal bars for Table 3 ---- */
+function bars(id, rows, lo, hi, legend) {
+  const el = document.getElementById(id);
+  el.innerHTML = `<div class="legend" style="margin:0 0 .4rem">${legend}</div>` + rows.map(([name, v, striped]) => {
+    const w = Math.max(1, ((v - lo) / (hi - lo)) * 100);
+    return `<div class="share-row"><span>${name}</span><div><div class="share-bar${striped ? " alt" : ""}" style="width:${w.toFixed(1)}%"></div></div><span>${v}</span></div>`;
+  }).join("");
+}
+</script>
+</body>
+</html>
