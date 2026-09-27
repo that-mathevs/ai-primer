@@ -1489,7 +1489,9 @@ def figures() -> dict:
         xs, ys, ks = zip(*pts)
         ax.plot(xs, ys, "o-", color=color, label=f"{label} (labels: {knob})")
         for x, y, kv in zip(xs, ys, ks):
-            ax.annotate(str(kv), (x, y), textcoords="offset points", xytext=(4, -10), fontsize=7, color=color)
+            # The two curves run close together; an opaque box keeps each knob value readable over the other line.
+            ax.annotate(str(kv), (x, y), textcoords="offset points", xytext=(4, -10), fontsize=7, color=color,
+                        zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=0.5))
     ax.axvline(100, color=MUTED, ls="--")
     ax.text(95, 0.45, "flat scan:\nevery vector,\nrecall 1.0", ha="right", color=MUTED, fontsize=8)
     ax.set_xscale("log")

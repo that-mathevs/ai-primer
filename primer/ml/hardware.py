@@ -1448,12 +1448,17 @@ def figures() -> dict:
     # --- 5. Relative precision across magnitudes ----------------------------
     x = np.logspace(-10, 6, 1200)
     fig, ax = plt.subplots(figsize=(8.5, 4))
+    top = 10  # a line that would climb past the chart ends at its top instead of running into the title
+
+    def within(y):
+        return np.where(y <= top, y, np.nan)
+
     for fmt, color in zip(FLOAT_FORMATS, (BLUE, GREEN, ORANGE, RED, "#7c3aed")):
-        ax.loglog(x, _relative_spacing(x, fmt), color=color, label=fmt.name)
+        ax.loglog(x, within(_relative_spacing(x, fmt)), color=color, label=fmt.name)
     for bits, ls in ((8, "--"), (4, ":")):
         step = 1 / (2 ** (bits - 1) - 1)  # scale chosen so 1.0 lands on the top code
-        ax.loglog(x, np.where(x <= 1, step / x, np.nan), color="#4b5563", ls=ls, label=f"int{bits}, scale 1/{2 ** (bits - 1) - 1}")
-    ax.set_ylim(1e-8, 10)
+        ax.loglog(x, within(np.where(x <= 1, step / x, np.nan)), color="#4b5563", ls=ls, label=f"int{bits}, scale 1/{2 ** (bits - 1) - 1}")
+    ax.set_ylim(1e-8, top)
     ax.set(xlabel="size of the number stored", ylabel="gap to the next value ÷ the number",
            title="Relative precision: flat for floats, rising for integers")
     ax.legend(frameon=False, fontsize=8, loc="center left", bbox_to_anchor=(1.01, 0.5))

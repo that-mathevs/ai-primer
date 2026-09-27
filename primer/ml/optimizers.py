@@ -98,12 +98,13 @@ Worked example on the bowl w², where each step multiplies w by (1 − 2η):
 | 0.5 | 0 | 0, 0, 0 | lands on the bottom in one step |
 | 1.1 | −1.2 | −1.2, 1.44, −1.728 | overshoots further each time: diverges |
 
-![Over 30 steps, rate 0.001 barely lowers the loss, 0.1 falls steadily, 0.45 plunges fastest, and 1.1 climbs off the chart as every step overshoots](figures/primer.ml.optimizers.learning_rates.svg)
+![Over 30 steps, rate 0.001 barely lowers the loss, 0.1 falls steadily, 0.45 plunges below the chart within six steps, and 1.1 climbs as every step overshoots](figures/primer.ml.optimizers.learning_rates.svg)
 
 **Reading it:** each line is the loss (log scale) over 30 steps for one
 learning rate. The flat line near the top is 0.001: technically improving,
-practically stuck. 0.1 falls steadily. 0.45 falls fastest. 1.1 climbs off
-the top of the chart: every step makes things worse. On a real model you
+practically stuck. 0.1 falls steadily. 0.45 falls fastest: its line ends at
+step 5, because one step later the loss is down to 10⁻¹², the floor of the chart.
+1.1 climbs the whole way: every step makes things worse. On a real model you
 can't compute the perfect rate, so you look for the fastest one that doesn't
 blow up.
 
@@ -817,8 +818,10 @@ def figures() -> dict:
     fig, ax = plt.subplots(figsize=(6.4, 3.6))
     for lr in (0.001, 0.1, 0.45, 1.1):
         path = np.array(descend_bowl(1.0, lr, steps=30))
-        ax.plot(np.maximum(path**2, 1e-30), label=f"η = {lr}")
-    ax.set(yscale="log", ylim=(1e-12, 1e3), xlabel="step", ylabel="loss w² (log scale)",
+        # Stop drawing a line once it falls below the chart, rather than letting it run off the edge.
+        loss = np.where(path**2 >= 1e-12, path**2, np.nan)
+        ax.plot(loss, label=f"η = {lr}")
+    ax.set(yscale="log", ylim=(1e-12, 1e6), xlabel="step", ylabel="loss w² (log scale)",
            title="Learning rate on the bowl f(w) = w²")
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)

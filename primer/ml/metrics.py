@@ -1000,7 +1000,8 @@ def figures() -> dict:
             c = confusion(y, s >= t)
             costs.append(cfn * c.fn + cfp * c.fp)
         costs = np.array(costs)
-        line, = ax.plot(thresholds, costs, label=f"miss costs {cfn}, false alarm costs {cfp}")
+        # Costs above the chart's 500 are left off, so no line runs up into the title.
+        line, = ax.plot(thresholds, np.where(costs <= 500, costs, np.nan), label=f"miss costs {cfn}, false alarm costs {cfp}")
         i = int(np.argmin(costs))
         ax.plot(thresholds[i], costs[i], "o", color=line.get_color())
     ax.set(xlabel="threshold (flag if score >= threshold)", ylabel="total cost", title="Where to cut depends on what errors cost")

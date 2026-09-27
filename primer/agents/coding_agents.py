@@ -1748,7 +1748,8 @@ def figures() -> dict:
     for p, color in ((0.2, RED), (0.4, BLUE), (0.6, GREEN)):
         ax.plot(ks, [chance_within(p, int(k)) for k in ks], "o-", color=color, label=f"p = {p}, with tests")
         ax.axhline(p, color=color, ls="--", lw=1)
-    ax.text(10.2, 0.4, "no checker:\nstuck at p", va="center", fontsize=8, color="#4b5563")
+    ax.text(10.2, 0.4, "no checker:\nstuck at p", va="center", fontsize=8, color="#4b5563",
+            zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))  # sits on its own dashed line
     ax.set_xlim(0.5, 11.8)
     ax.set_ylim(0, 1.05)
     ax.set_xlabel("attempts allowed (k)")
@@ -1769,7 +1770,8 @@ def figures() -> dict:
             ax.text(i, n + 0.08, f"{n}/{len(MEDIAN_CASES)}", ha="center")
         else:
             ax.bar(i, 0.15, color=GREY, width=0.6)
-    ax.annotate("off-by-one patch:\nsame count, new message\n(IndexError)", xy=(5, 2), xytext=(5.6, 3.1),
+    # Point at the bar's side, so the arrowhead doesn't land on its "2/4".
+    ax.annotate("off-by-one patch:\nsame count, new message\n(IndexError)", xy=(5.3, 1.6), xytext=(5.6, 3.1),
                 fontsize=8, arrowprops={"arrowstyle": "->", "color": "#4b5563"})
     ax.set_xticks(range(1, len(run.actions) + 1), [f"{i}\n{a.replace('_', ' ')}" for i, a in enumerate(run.actions, 1)],
                   fontsize=8)

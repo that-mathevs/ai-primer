@@ -2489,7 +2489,7 @@ def figures() -> dict:
                   label=["stage 0: plain data parallel", "stage 1: + shard optimizer", "stage 2: + shard gradients",
                          "stage 3 (FSDP): + shard weights"][stage])
     ax.axhline(80, color="#4b5563", ls="--")
-    ax.text(2**7, 95, "80 GB GPU", color="#4b5563")
+    ax.text(2**7, 95, "80 GB GPU", color="#4b5563", zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xscale("log", base=2)
     ax.set_xlabel("GPUs sharing the state")
     ax.set_ylabel("training state per GPU (GB)")
@@ -2596,11 +2596,12 @@ def figures() -> dict:
     fig, ax = plt.subplots(figsize=(6, 3.4))
     T = np.logspace(0, np.log10(300), 200)
     for cost, color, label in ((1.0, BLUE, "1-minute save"), (1 / 6, GREEN, "10-second save")):
-        ax.semilogx(T, [wasted_fraction(t, cost, 180) for t in T], color=color, label=label)
+        wasted = np.array([wasted_fraction(t, cost, 180) for t in T])
+        ax.semilogx(T, np.where(wasted <= 0.5, wasted, np.nan), color=color, label=label)  # above 50% leaves the chart
         best = optimal_checkpoint_interval(cost, 180)
         ax.plot(best, wasted_fraction(best, cost, 180), "o", color=color)
         ax.annotate(f"{best:.1f} min, {wasted_fraction(best, cost, 180):.1%}", (best, wasted_fraction(best, cost, 180)),
-                    textcoords="offset points", xytext=(6, -14), color=color)
+                    textcoords="offset points", xytext=(6, -14), color=color, zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xlabel("minutes between checkpoints (failure every 180 min)")
     ax.set_ylabel("share of time wasted")
     ax.set_ylim(0, 0.5)

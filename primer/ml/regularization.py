@@ -947,10 +947,14 @@ def figures() -> dict:
     grid = np.linspace(-1, 1, 400)
     x_tr, y_tr = make_curve_data(12, seed=0)
 
+    def on_chart(y, limit=2.0):
+        # A wild fit swings far off the chart; break its line there instead of running it into the labels.
+        return np.where(np.abs(y) <= limit, y, np.nan)
+
     fig, ax = plt.subplots(figsize=(7, 3.8))
     ax.plot(grid, true_function(grid), color="gray", lw=3, alpha=0.5, label="true pattern")
     for degree, c in ((1, "C0"), (3, "C2"), (11, "C3")):
-        ax.plot(grid, _poly_eval(_poly_fit(x_tr, y_tr, degree), grid), color=c, label=f"degree {degree}")
+        ax.plot(grid, on_chart(_poly_eval(_poly_fit(x_tr, y_tr, degree), grid)), color=c, label=f"degree {degree}")
     ax.scatter(x_tr, y_tr, color="black", zorder=5, s=18, label="12 training points")
     ax.set(ylim=(-2, 2), xlabel="x", ylabel="y", title="Underfit, good fit, memorised")
     ax.legend(fontsize=8, loc="lower right")
@@ -987,7 +991,7 @@ def figures() -> dict:
     for ax, degree in zip(axes, (1, 9)):
         bv = bias_variance(degree)
         for p in bv["preds"][:20]:
-            ax.plot(bv["x_test"], p, lw=0.8, alpha=0.6)
+            ax.plot(bv["x_test"], on_chart(np.asarray(p)), lw=0.8, alpha=0.6)
         ax.plot(bv["x_test"], true_function(bv["x_test"]), color="gray", lw=3, alpha=0.7)
         ax.set(ylim=(-2, 2), xlabel="x", title=f"degree {degree}: bias² {bv['bias_sq']:.3f}, variance {bv['variance']:.3f}")
     axes[0].set_ylabel("prediction")

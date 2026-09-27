@@ -1085,7 +1085,9 @@ def figures() -> dict:
     # LoRA rank sweep on a rank-2 task.
     fig, ax = plt.subplots(figsize=(6, 3.8))
     for r in (1, 2, 4):
-        ax.semilogy(train_toy_lora(rank=r, steps=300)["losses"], lw=2, label=f"rank {r}")
+        losses = np.asarray(train_toy_lora(rank=r, steps=300)["losses"])
+        # Once a loss falls below the chart it stops, rather than running down into the axis labels.
+        ax.semilogy(np.where(losses >= 1e-8, losses, np.nan), lw=2, label=f"rank {r}")
     ax.set(xlabel="training step", ylabel="mean squared error (log scale)",
            title="The task needs a rank-2 change: rank 1 can't express it")
     ax.set_ylim(1e-8, 10)

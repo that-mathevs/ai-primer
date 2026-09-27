@@ -789,7 +789,7 @@ def figures() -> dict:
     # InfoNCE: probability matrix for a batch where query 2's hard negative is document 3.
     q, d = _contrastive_batch()
     probs = np.exp(log_softmax(q @ d.T / 0.1))
-    fig, ax = plt.subplots(figsize=(5, 4.2))
+    fig, ax = plt.subplots(figsize=(5, 4.2), layout="constrained")  # leaves the colour bar its own room
     im = ax.imshow(probs, cmap="viridis", vmin=0, vmax=1)
     for i in range(probs.shape[0]):
         for j in range(probs.shape[1]):
@@ -797,7 +797,6 @@ def figures() -> dict:
                     color="white" if probs[i, j] < 0.5 else "black", fontsize=8)
     ax.set(xlabel="document j", ylabel="query i", title="InfoNCE: softmax over each row (τ = 0.1)")
     fig.colorbar(im, ax=ax, fraction=0.046)
-    fig.tight_layout()
     figs["infonce_matrix"] = fig
 
     return figs

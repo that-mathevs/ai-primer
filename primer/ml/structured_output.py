@@ -1633,7 +1633,8 @@ def figures() -> dict:
     for p, color in ((0.999, GREEN), (0.99, BLUE), (0.98, AMBER), (0.95, RED)):
         ax.plot(n, chance_all_valid(p, n), color=color, label=f"{p:.1%} per token")
     ax.plot([10], [chance_all_valid(0.98, 10)], "o", color="#111827")
-    ax.annotate("10 tokens at 98%: 0.82", (10, 0.817), (60, 0.72), arrowprops=dict(arrowstyle="-", color=MUTED))
+    ax.annotate("10 tokens at 98%: 0.82", (10, 0.817), (60, 0.72), arrowprops=dict(arrowstyle="-", color=MUTED),
+                zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xlabel("answer length n (tokens)")
     ax.set_ylabel("share of answers valid, pⁿ")
     ax.set_ylim(0, 1.05)
@@ -1730,11 +1731,14 @@ def figures() -> dict:
     # --- 7. Retrying: expected attempts --------------------------------------
     p = np.linspace(0.05, 1.0, 200)
     fig, ax = plt.subplots(figsize=(6, 3.4))
-    ax.plot(p, expected_attempts(p), color=BLUE)
+    tries = expected_attempts(p)
+    ax.plot(p, np.where(tries <= 12, tries, np.nan), color=BLUE)  # past 12 tries it leaves the chart, below the title
     for value, label, dx, dy in ((0.95, "95% valid", -0.12, 1.4), (0.665, "toy age answer", -0.3, 3.2), (0.18, "toy person answer", 0.04, 1.6)):
         ax.plot([value], [expected_attempts(value)], "o", color=RED)
+        # An opaque box above the curve keeps each label whole where the curve passes behind it.
         ax.annotate(f"{label}: {expected_attempts(value):.2f}", (value, expected_attempts(value)),
-                    (value + dx, expected_attempts(value) + dy), fontsize=8, arrowprops=dict(arrowstyle="-", color=MUTED))
+                    (value + dx, expected_attempts(value) + dy), fontsize=8, arrowprops=dict(arrowstyle="-", color=MUTED),
+                    zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xlabel("chance a single try is valid, p")
     ax.set_ylabel("average tries until valid, 1/p")
     ax.set_ylim(0, 12)

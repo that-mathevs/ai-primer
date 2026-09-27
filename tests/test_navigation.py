@@ -1351,3 +1351,31 @@ class TestFigureWordsStayReadable:
         ax.text(0.5, 0.5, "2/4", ha="center", va="center")
         ax.annotate("note", xy=(0.5, 0.5), xytext=(0.9, 0.9), arrowprops=dict(arrowstyle="->"))
         assert any("2/4" in p for p in text_collisions(fig))
+
+    def test_given_a_label_on_an_opaque_background_above_the_line_it_is_not_reported(self):
+        from tools.figures import text_collisions
+
+        # The line passes behind the label's box, so the words stay whole.
+        fig, ax = self.figure()
+        ax.plot([0, 1], [0.5, 0.5], zorder=2)
+        ax.text(0.5, 0.5, "crossing here", ha="center", va="center", zorder=3,
+                bbox=dict(facecolor="white", edgecolor="none"))
+        assert text_collisions(fig) == []
+
+    def test_given_a_tick_outside_the_plots_range_its_undrawn_label_is_not_checked(self):
+        from tools.figures import text_collisions
+
+        # Matplotlib keeps labels for ticks beyond the view but never draws them.
+        fig, ax = self.figure(layout="constrained")
+        im = ax.imshow([[0, 1], [1, 0]])
+        ax.set_xticks([-1, 0, 1, 2])
+        fig.colorbar(im, ax=ax, fraction=0.3)
+        assert text_collisions(fig) == []
+
+    def test_given_an_arrow_leaving_its_own_note_the_note_is_not_reported(self):
+        from tools.figures import text_collisions
+
+        # An annotation's own extent includes its arrow; the note is judged by its words alone.
+        fig, ax = self.figure()
+        ax.annotate("same count,\nnew message", xy=(0.2, 0.2), xytext=(0.6, 0.6), arrowprops=dict(arrowstyle="->"))
+        assert text_collisions(fig) == []

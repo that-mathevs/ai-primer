@@ -373,15 +373,23 @@ L 410.448125 221.142281
 " style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
    </g>
    <g id="patch_5">
-    <path d="M 126.836935 115.91357 
-Q 127.692385 157.471127 128.524826 197.910888 
+    <path d="M 126.816314 114.91182 
+Q 127.682049 156.96901 128.524774 197.908403 
 " style="fill: none; stroke: #4b5563; stroke-linecap: round"/>
-    <path d="M 130.442081 193.870574 
-L 128.524826 197.910888 
-L 126.442928 193.952895 
+    <path d="M 130.442029 193.868089 
+L 128.524774 197.908403 
+L 126.442877 193.95041 
 " style="fill: none; stroke: #4b5563; stroke-linecap: round"/>
    </g>
    <g id="text_15">
+    <g id="patch_6">
+     <path d="M 73.304182 112.912473 
+L 180.005744 112.912473 
+L 180.005744 101.234348 
+L 73.304182 101.234348 
+z
+" style="fill: #ffffff"/>
+    </g>
     <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="74.304182" y="109.832786" transform="rotate(-0 74.304182 109.832786)">336 px → 576 tokens</text>
    </g>
    <g id="text_16">

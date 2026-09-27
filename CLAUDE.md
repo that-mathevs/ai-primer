@@ -188,6 +188,13 @@ Every lesson is diagram-first. Two kinds, both rendered in the HTML site:
   `![What it shows](figures/<dotted.module>.<key>.svg)`, where `<key>` is its
   dict key. `make figures` renders them into `docs/figures/`.
 
+**Every diagram draws and every word in a figure is readable.** `make
+browsercheck` fails a mermaid diagram that doesn't draw (quote a label that
+holds `@`, parentheses or a semicolon: `A["recall@k"]`). `make figures` fails a
+figure whose words a line or another panel runs through: keep lines inside the
+plot (`set_ylim`), give each title room, and set an in-plot label where no line
+crosses it or on an opaque box drawn above the line (`bbox=`, `zorder=`).
+
 **Every diagram and figure is followed by a paragraph that starts with
 `**Reading it:**`** and walks the reader through it: what the axes or boxes
 are, where to look first, and what the picture proves. A picture without its

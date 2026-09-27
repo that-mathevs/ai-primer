@@ -430,15 +430,23 @@ L 400.90125 210.054281
 " style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
    </g>
    <g id="patch_5">
-    <path d="M 206.934615 114.278874 
-Q 174.362122 128.444837 142.814899 142.164905 
+    <path d="M 209.235353 113.27827 
+Q 175.510188 127.945537 142.810292 142.166908 
 " style="fill: none; stroke: #4b5563; stroke-linecap: round"/>
-    <path d="M 147.280656 142.403678 
-L 142.814899 142.164905 
-L 145.685372 138.735563 
+    <path d="M 147.27605 142.405682 
+L 142.810292 142.166908 
+L 145.680765 138.737567 
 " style="fill: none; stroke: #4b5563; stroke-linecap: round"/>
    </g>
    <g id="text_18">
+    <g id="patch_6">
+     <path d="M 171.582639 112.480765 
+L 277.407639 112.480765 
+L 277.407639 100.80264 
+L 171.582639 100.80264 
+z
+" style="fill: #ffffff"/>
+    </g>
     <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="172.582639" y="109.401077" transform="rotate(-0 172.582639 109.401077)">50 steps at 2%: 0.36</text>
    </g>
    <g id="text_19">

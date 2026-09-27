@@ -1276,7 +1276,8 @@ def figures() -> dict:
     # --- 1. BM25: saturation and length normalization ----------------------
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(10, 3.8))
     f = np.arange(0, 21)
-    a1.plot(f, f, "--", color=MUTED, label="raw count")
+    shown = f <= 6  # the raw count keeps climbing; draw it up to the chart's top, not through the title
+    a1.plot(f[shown], f[shown], "--", color=MUTED, label="raw count")
     for k1, shade in [(0.5, 0.45), (1.2, 0.7), (1.5, 1.0), (3.0, 0.3)]:
         # With b = 0, BM25's per-word credit is f·(k1+1)/(f+k1): plot it straight from the class.
         index = BM25([["w"] * int(n) for n in f[1:]] + [["x"]], k1=k1, b=0.0)
@@ -1388,8 +1389,10 @@ def figures() -> dict:
         ax.plot([s, e], [y, y], color=HYB_C, lw=3)
     ax.axvline(heading_at, color=HOT, lw=2)
     ax.axvline(amount_at, color=GOOD, lw=2)
-    ax.text(heading_at, 1.02, "heading", color=HOT, ha="center", fontsize=8)
-    ax.text(amount_at, 1.02, "50 dollars", color=GOOD, ha="center", fontsize=8)
+    # Each label sits on its own line; an opaque box above the line keeps the words whole.
+    on_line = dict(ha="center", fontsize=8, zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
+    ax.text(heading_at, 1.02, "heading", color=HOT, **on_line)
+    ax.text(amount_at, 1.02, "50 dollars", color=GOOD, **on_line)
     ax.text(-2, 0.63, "fixed\n40-word\nwindows", ha="right", va="center", fontsize=8, color="#4b5563")
     ax.text(-2, -0.63, "structure-\naware\nchunks", ha="right", va="center", fontsize=8, color=HYB_C)
     ax.set_xlim(-30, len(words) + 2)

@@ -768,7 +768,7 @@ def figures() -> dict[str, Any]:
     ax.axhline(0.95, ls="--", color="k", lw=1, label="promotion bar (95%)")
     if s["promoted_at"]:
         ax.plot(s["promoted_at"], s["rolling"][s["promoted_at"] - 1], "o", color="#55a868", ms=9, label="promoted to approval mode")
-    ax.set_ylim(0.85, 1.01)
+    ax.set_ylim(0.6, 1.01)  # low enough for the early, short-window dips (down to 2 of 3)
     ax.set_xlabel("shadow decisions so far")
     ax.set_ylabel("agreement with humans")
     ax.set_title("Shadow mode: earning the first promotion")

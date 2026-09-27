@@ -1666,7 +1666,7 @@ def figures() -> dict:
     ax.axvline(gini(ys), color=DARK, ls="--")
     ax.text(gini(ys) + 0.01, 0.5, "before any\nsplit: 0.5", va="center", color=DARK)
     for i, s in enumerate(scores):
-        ax.text(s + 0.008, i, f"{s:.3f}", va="center")
+        ax.text(s + 0.008, i, f"{s:.3f}", va="center", zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.invert_yaxis()
     ax.set_xlim(0, 0.65)
     ax.set_xlabel("weighted Gini impurity after the split (lower is better)")

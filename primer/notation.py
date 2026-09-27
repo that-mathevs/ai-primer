@@ -704,14 +704,14 @@ def figures() -> dict:
 
     # e^x and ln x, mirrored across y = x
     fig, ax = plt.subplots(figsize=(5.5, 5))
-    xs = np.linspace(-3, 2.2, 200)
+    xs = np.linspace(-3, np.log(9), 200)  # e^x reaches the chart's top, 9, at x = ln 9
     ax.plot(xs, np.exp(xs), label="$e^x$ (always > 0, grows fast)")
     pos = np.linspace(0.02, 9, 300)
     ax.plot(pos, np.log(pos), label=r"$\ln x$ (undoes $e^x$)")
     ax.plot([-3, 9], [-3, 9], ls="--", color="#9ca3af", lw=1, label="mirror line y = x")
     for p in (0.9, 0.01):
         ax.plot(p, np.log(p), "o", color="#dc2626")
-        ax.annotate(f"ln {p} = {np.log(p):.2f}", (p, np.log(p)), xytext=(10, -4), textcoords="offset points")
+        ax.annotate(f"ln {p} = {np.log(p):.2f}", (p, np.log(p)), xytext=(10, -4), textcoords="offset points", zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xlim(-3, 9)
     ax.set_ylim(-5, 9)
     ax.axhline(0, color="#4b5563", lw=0.8)

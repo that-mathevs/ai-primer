@@ -909,7 +909,7 @@ def figures() -> dict:
         ax.annotate("", xy=pos[f], xytext=pos[m], arrowprops=dict(arrowstyle="->", color="C3", lw=1.5))
     for w, (x, y) in pos.items():
         ax.scatter(x, y, color="C0")
-        ax.annotate(w, (x, y), textcoords="offset points", xytext=(5, 5))
+        ax.annotate(w, (x, y), textcoords="offset points", xytext=(5, 5), zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set(xlabel="principal component 1", ylabel="principal component 2", title="Learned word vectors: male→female arrows are parallel")
     figs["space"] = fig
 

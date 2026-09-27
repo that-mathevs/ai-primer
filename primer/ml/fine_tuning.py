@@ -1709,7 +1709,7 @@ def figures() -> dict:
     ax.plot(epochs, run["val"], color=RED, label="validation loss (200 held-out examples)")
     ax.axvline(best + 1, color=MUTED, ls="--")
     ax.axvline(stop + 1, color=MUTED, ls=":")
-    ax.text((best + 1) * 1.08, 1.9, f"best epoch {best}", color="#4b5563")
+    ax.text((best + 1) * 1.08, 1.9, f"best epoch {best}", color="#4b5563", zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xscale("log")
     ax.set_xlabel("epoch (log scale)")
     ax.set_ylabel("loss")

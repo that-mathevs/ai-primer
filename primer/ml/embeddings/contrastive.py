@@ -807,13 +807,15 @@ def figures() -> dict:
     pw = make_pairs(["password"])
     pw_q = [t[0] for t in pw]
     pw_cards = [PASSAGE_TEMPLATES["howto"].format(T="Password"), PASSAGE_TEMPLATES["policy"].format(T="Password")]
-    fig, axes = plt.subplots(1, 2, figsize=(9, 5))
+    # Both panels ask the same questions, so they share one set of row labels on the left.
+    fig, axes = plt.subplots(1, 2, figsize=(9, 5), sharey=True, layout="constrained")
     for ax, (title, enc) in zip(axes, models.items()):
         S = enc.encode(pw_q) @ enc.encode(pw_cards).T
         im = ax.imshow(S, cmap="viridis", vmin=-0.2, vmax=1.0, aspect="auto")
         ax.set_xticks([0, 1], ["reset card", "policy card"])
         ax.set_yticks(range(len(pw_q)), pw_q, fontsize=7)
         ax.set(title=title)
+    axes[1].tick_params(labelleft=False)
     fig.colorbar(im, ax=axes, label="cosine similarity")
     figs["heatmap"] = fig
 

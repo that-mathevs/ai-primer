@@ -1408,7 +1408,7 @@ def figures() -> dict:
     for e, color in ((0.005, GREEN), (0.02, BLUE), (0.05, RED)):
         ax.plot(ks, [steps_all_right(e, k) for k in ks], color=color, label=f"slip rate per step = {e}")
     ax.plot([50], [steps_all_right(0.02, 50)], "o", color=BLUE)
-    ax.annotate("50 steps at 2%: 0.36", (50, steps_all_right(0.02, 50)), xytext=(70, 0.55), arrowprops=dict(arrowstyle="->", color="#4b5563"))
+    ax.annotate("50 steps at 2%: 0.36", (50, steps_all_right(0.02, 50)), xytext=(70, 0.55), arrowprops=dict(arrowstyle="->", color="#4b5563"), zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xlabel("steps in the chain, k")
     ax.set_ylabel("chance every step is right")
     ax.set_ylim(0, 1.03)

@@ -1590,7 +1590,7 @@ def figures() -> dict:
     for patch, merge, color, label in ((14, 1, RED, "14-pixel patches"), (16, 1, BLUE, "16-pixel patches"),
                                        (14, 2, GREEN, "14-pixel patches, 2×2 merged")):
         ax.plot(sides, [count_image_tokens(s, s, patch, merge) for s in sides], "o-", color=color, label=label, ms=4)
-    ax.annotate("336 px → 576 tokens", xy=(336, 576), xytext=(130, 5200), arrowprops=dict(arrowstyle="->", color="#4b5563"))
+    ax.annotate("336 px → 576 tokens", xy=(336, 576), xytext=(130, 5200), arrowprops=dict(arrowstyle="->", color="#4b5563"), zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xlabel("image side length (pixels)")
     ax.set_ylabel("tokens per image")
     ax.set_title("Double the side, quadruple the tokens")
@@ -1681,7 +1681,7 @@ def figures() -> dict:
     ax.plot(bits, [r["learned"] for r in rows], "o-", color=BLUE, label="learned codebook (k-means)")
     ax.plot([3 * s for s in range(1, 5)], stage_err, "s--", color=GREEN, label="residual: 1 to 4 stages of 8 entries")
     ax.axhline(0.09, color=MUTED, ls=":")
-    ax.text(0.1, 0.078, "clean pattern, noise dropped (0.3² = 0.09)", color="#4b5563")
+    ax.text(0.1, 0.078, "clean pattern, noise dropped (0.3² = 0.09)", color="#4b5563", zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xlabel("bits per patch  (log₂ of codebook size, summed over stages)")
     ax.set_ylabel("mean squared error per pixel")
     ax.set_title("A learned codebook, and a second one for the leftovers")

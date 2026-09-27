@@ -4,12 +4,13 @@ then check that docstrings and figures agree:
 
 * every `![...](figures/X.svg)` in a docstring has a rendered figure, and
 * every rendered figure is shown somewhere, followed by a "**Reading it:**"
-  paragraph (see CLAUDE.md, "Diagrams").
+  paragraph (see CLAUDE.md, "Diagrams"), and
+* no line or neighbouring panel runs through a figure's words (text_collisions).
 
     python tools/figures.py            # all modules
     python tools/figures.py attention  # modules whose name contains "attention"
 
-Exits non-zero when a figure is missing, unused, or unexplained.
+Exits non-zero when a figure is missing, unused, unexplained, or has words a line runs through.
 """
 
 from __future__ import annotations
@@ -85,6 +86,14 @@ def _crosses(p, q, box) -> bool:
     return _clipped(p, q, box) is not None
 
 
+def _hides(text, zorder: float) -> bool:
+    """Whether the label sits on an opaque box drawn above a line of this zorder, hiding the line."""
+    from matplotlib.colors import to_rgba
+
+    patch = text.get_bbox_patch()
+    return patch is not None and to_rgba(patch.get_facecolor())[3] > 0.9 and text.get_zorder() > zorder
+
+
 def text_collisions(fig) -> list[str]:
     """Words in the figure that a drawn line runs through, or that sit on another panel.
 
@@ -93,10 +102,12 @@ def text_collisions(fig) -> list[str]:
     labels, and one that leaves through the left runs into the y-axis labels (a guide that
     merely stops at an edge leaves nothing). Inside the plot, a line runs through a label
     when it crosses it; a plotted line that ends at the label (an edge to its node) points
-    at it, but an annotation arrow's head always covers what it lands on.
+    at it, but an annotation arrow never gets that pass: its head covers what it lands on.
+    A note is measured by its words alone (an annotation's own extent includes its arrow).
     """
     import math
 
+    from matplotlib.text import Text
     from matplotlib.transforms import Bbox
 
     fig.canvas.draw()
@@ -107,10 +118,12 @@ def text_collisions(fig) -> list[str]:
         plot = ax.get_window_extent(renderer)
         titles = [t for t in (ax.title, ax._left_title, ax._right_title) if t.get_text()]
         words = [(f"axis label '{t.get_text()}'", t) for t in (ax.xaxis.label, ax.yaxis.label) if t.get_text()]
-        words += [(f"tick label '{t.get_text()}'", t)
-                  for t in ax.get_xticklabels() + ax.get_yticklabels() if t.get_visible() and t.get_text()]
+        # Only ticks inside the plot's range are drawn; matplotlib keeps labels for the rest.
+        drawn = [tick.label1 for axis, (lo, hi) in ((ax.xaxis, sorted(ax.get_xbound())), (ax.yaxis, sorted(ax.get_ybound())))
+                 for tick in axis.get_major_ticks() if lo - 1e-9 <= tick.get_loc() <= hi + 1e-9]
+        words += [(f"tick label '{t.get_text()}'", t) for t in drawn if t.get_visible() and t.get_text()]
         words += [(f"label '{t.get_text()}'", t) for t in ax.texts if t.get_visible() and t.get_text().strip()]
-        # (segment as drawn, endpoints that end a plotted line, the annotation it belongs to)
+        # (segment as drawn, endpoints that end a plotted line, the annotation it belongs to, its zorder)
         segments: list[tuple] = []
         exits: dict[str, list[float]] = {"top": [], "bottom": [], "left": []}
         for line in ax.lines:
@@ -125,7 +138,7 @@ def text_collisions(fig) -> list[str]:
                 if not seg:
                     continue
                 ends = [pt for pt, j in ((seg[0], i), (seg[1], i + 1)) if j in (0, last) and pt in (tuple(p), tuple(q))]
-                segments.append((seg, ends, None))
+                segments.append((seg, ends, None, line.get_zorder()))
                 if line.get_clip_on():
                     for pt, orig in ((seg[0], p), (seg[1], q)):
                         if orig[1] > plot.y1 + 1e-6 and abs(pt[1] - plot.y1) < 0.5:
@@ -138,11 +151,11 @@ def text_collisions(fig) -> list[str]:
             arrow = getattr(note, "arrow_patch", None)
             if note.get_visible() and arrow is not None:
                 points = arrow.get_transform().transform(arrow.get_path().vertices)
-                segments += [((p, q), [], note) for p, q in zip(points[:-1], points[1:])]
+                segments += [((p, q), [], note, arrow.get_zorder()) for p, q in zip(points[:-1], points[1:])]
         for title in titles:
             box = title.get_window_extent(renderer)
             if any(box.x0 <= x <= box.x1 for x in exits["top"]) or any(
-                _crosses(*seg, box.shrunk(0.98, 0.9)) for seg, _, _ in segments
+                _crosses(*seg, box.shrunk(0.98, 0.9)) for seg, _, _, _ in segments
             ):
                 problems.append(f"a line runs into the title '{title.get_text()}'")
         if exits["bottom"] and (ax.xaxis.label.get_text() or any(t.get_text() for t in ax.get_xticklabels())):
@@ -150,9 +163,10 @@ def text_collisions(fig) -> list[str]:
         if exits["left"] and any(t.get_text() for t in ax.get_yticklabels()):
             problems.append("a line runs off the left of the plot into the y-axis labels")
         for name, text in words:
-            box = text.get_window_extent(renderer).shrunk(0.98, 0.9)
-            if any(_crosses(*seg, box) and owner is not text and not any(box.contains(*pt) for pt in ends)
-                   for seg, ends, owner in segments):
+            # Text's own extent: an annotation's get_window_extent also spans its arrow.
+            box = Text.get_window_extent(text, renderer).shrunk(0.98, 0.9)
+            if any(_crosses(*seg, box) and not any(box.contains(*pt) for pt in ends)
+                   and not _hides(text, zorder) for seg, ends, owner, zorder in segments):
                 problems.append(f"a line runs into the {name}")
             for other in panels:
                 if other is ax:
@@ -192,13 +206,16 @@ def main(filter_text: str = "") -> int:
             for key, fig in figs.items():
                 stem = f"{name}.{key}"
                 fig.savefig(OUT / f"{stem}.svg", bbox_inches="tight", metadata={"Date": None})
-                plt.close(fig)
                 produced.add(stem)
                 rendered += 1
             took = time.perf_counter() - started
             print(f"  {took:6.1f}s  {name}", flush=True)
             if took > SLOW_SECONDS:
                 problems.append(f"{name}.figures() took {took:.0f}s; keep each lesson's figures under {SLOW_SECONDS}s")
+            # Checked outside the timing: words a line or another panel runs through can't be read.
+            for key, fig in figs.items():
+                problems += [f"{name}.{key}: {p}" for p in text_collisions(fig)]
+                plt.close(fig)
         for stem in sorted(referenced - produced):
             problems.append(f"{name}: docstring shows figures/{stem}.svg but figures() doesn't produce it")
         for stem in sorted(produced - referenced):
