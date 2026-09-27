@@ -1023,10 +1023,12 @@ split the video and summarise the parts.
   https://arxiv.org/abs/2304.08485. The encode, project and splice recipe,
   trained in two stages: align the projector, then tune on image
   instructions.
+  [Annotated companion](../../../papers/llava.html)
 - **Radford et al., *Robust Speech Recognition via Large-Scale Weak
   Supervision* (Whisper, 2022)**: https://arxiv.org/abs/2212.04356. An
   encoder over log-mel spectrograms and a text decoder, trained on 680,000
   hours of transcribed audio.
+  [Annotated companion](../../../papers/whisper.html)
 - **van den Oord, Vinyals & Kavukcuoglu, *Neural Discrete Representation
   Learning* (VQ-VAE, 2017)**: https://arxiv.org/abs/1711.00937. Learned a
   codebook inside an autoencoder, turning images and audio into discrete

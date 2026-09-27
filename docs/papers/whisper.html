@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robust Speech Recognition via Large-Scale Weak Supervision (Whisper), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Radford et al. (2022), the Whisper paper: an off-the-shelf encoder-decoder transformer trained on 680,000 hours of transcripts from the web, used with no fine-tuning at all.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .seq { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.6rem 0 0.4rem; }
+  .seq .tok { padding: 0.3rem 0.5rem; font-size: 0.82rem; min-width: 0; cursor: default; }
+  .seq .tok.special { background: var(--emb); border-color: var(--emb-stroke); font-family: ui-monospace, monospace; }
+  .seq .tok.time { background: var(--lin); border-color: var(--lin-stroke); font-family: ui-monospace, monospace; }
+  .seq .tok.ctx { border-style: dashed; color: var(--muted); }
+  .mode { display: flex; flex-wrap: wrap; gap: 0.35rem 0.4rem; align-items: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; margin: 0.25rem 0; }
+  .mode > span:first-child { min-width: 6.5rem; color: var(--muted); }
+  .bars .share-row { grid-template-columns: 8.5rem minmax(0, 1fr) 3.6rem; }
+  .bars .share-bar.alt { background: var(--hatch) var(--wire); }
+  .bars .pair { margin: 0.35rem 0 0.6rem; }
+  .play label.field { display: block; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+  .play input[type=text], .play textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 0.92rem; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .play textarea { min-height: 4.5rem; resize: vertical; }
+  .plot svg[role="slider"] { max-width: 600px; margin: 0 auto; }
+</style>
+</head>
+<body data-paper="whisper">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Approach</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Data processing</a></li>
+          <li><a href="#s2-2">2.2 Model</a></li>
+          <li><a href="#s2-3">2.3 Multitask format</a></li>
+          <li><a href="#s2-4">2.4 Training details</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Experiments</a>
+        <ol>
+          <li><a href="#s3-2">3.1–3.2 Zero-shot, and how to score it</a></li>
+          <li><a href="#s3-3">3.3 English speech recognition</a></li>
+          <li><a href="#s3-4">3.4 Multilingual recognition</a></li>
+          <li><a href="#s3-5">3.5–3.6 Translation and language ID</a></li>
+          <li><a href="#s3-7">3.7 Noise</a></li>
+          <li><a href="#s3-8">3.8–3.9 Long recordings and humans</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Analysis and ablations</a>
+        <ol>
+          <li><a href="#s4-1">4.1–4.2 Model and data scaling</a></li>
+          <li><a href="#s4-3">4.3 Multitask transfer</a></li>
+          <li><a href="#s4-4">4.4 Text normalization</a></li>
+          <li><a href="#s4-5">4.5 Long-form decoding</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Related work</a></li>
+      <li><a href="#s6">6 Limitations</a></li>
+      <li><a href="#s7">7 Conclusion</a></li>
+      <li><a href="#appendix">Appendices, briefly</a></li>
+      <li><a href="#today">What changed since 2022</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Robust Speech Recognition via Large-Scale Weak Supervision, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Radford, Kim, Xu, Brockman, McLeavey and Sutskever (2022), the Whisper paper: take a standard encoder-decoder transformer, train it on 680,000 hours of audio paired with transcripts found on the internet, and use it on new recordings with no fine-tuning at all.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2212.04356">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2212.04356">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2212.04356">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its tables are not reproduced: a few selected rows appear in this page's own tables and charts, each attributed, and its figures are redrawn from scratch. Worked numbers come from tiny examples built on this page unless a sentence says otherwise, and illustrative numbers are labelled as such. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the numbers of a tiny example, and the same example in a few lines of Python.</li>
+  <li>The pictures are live: explore the architecture, build the decoder's task tokens yourself, score a transcript with and without normalization, and feed a looping transcript to the rule that catches it.</li>
+</ul>
+<p>How sound becomes a picture the model can read (the <span class="t" data-t="log-mel spectrogram">log-mel spectrogram</span>) is built from scratch in the <a class="lesson" data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a>, which this page leans on rather than repeats.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“When scaled to 680,000 hours of multilingual and multitask supervision, the resulting models generalize well to standard benchmarks and are often competitive with prior fully supervised results but in a zero-shot transfer setting without the need for any fine-tuning.”<cite>Radford et al. (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2212.04356">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Most speech recognizers of the time were like students coached for one exam: superb on the test they practised for, shaky on anything else. Whisper is the student who spent years listening to everything, from podcasts and lectures to interviews in dozens of languages, each with whatever transcript came with it, and was then handed exams it had never seen. It doesn't top every exam, but it rarely falls apart.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>Data, not cleverness:</strong> an ordinary <span class="t" data-t="encoder-decoder">encoder-decoder</span> transformer, trained to predict transcripts on 680,000 hours of web audio, is enough.</li>
+  <li><strong><span class="t" data-t="zero-shot">Zero-shot</span> robustness:</strong> used as is on benchmarks it never trained on, it makes on average 55.2% fewer errors than a supervised model that is equally good on the standard LibriSpeech test.</li>
+  <li><strong>One model, many jobs:</strong> the same network transcribes 96 languages besides English, translates speech into English, identifies the language, detects silence and writes timestamps, steered by a few special tokens.</li>
+  <li><strong>Near-human:</strong> on 25 real-world recordings its errors are close to those of professional transcribers.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The paper reran, for speech, the experiment <a href="clip.html">CLIP</a> ran for images the year before (several of the same authors wrote both): trade clean labels for enormous, noisy, naturally occurring ones, and evaluate zero-shot. Its released models became the default open speech recognizer, and its audio encoder is the kind of front end the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> describes feeding into language models.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S1">original</a></span></h2>
+<blockquote class="quote">“The goal of a speech recognition system should be to work reliably “out of the box” in a broad range of environments without requiring supervised fine-tuning of a decoder for every deployment distribution.”<cite>Radford et al. (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>There were two roads to a good <span class="t" data-t="speech recognition">speech recognizer</span>. One is <span class="t" data-t="self-supervised learning">self-supervised</span> pre-training: let a model listen to a million hours of unlabelled audio (wav2vec 2.0 and its successors) and learn what speech sounds like. It learns to <em>hear</em> very well, but it has no way to <em>write</em>, so every use needs a <span class="t" data-t="fine-tuning">fine-tuning</span> stage on labelled data from the place it will be used. The other road is supervised training on transcribed speech, where the best labelled datasets are small. Whisper takes a third road: <span class="t" data-t="weak supervision">weak supervision</span>, meaning labels that are plentiful but imperfect, here transcripts that already exist on the internet next to the audio.</p>
+<h3 class="rung">Tiny example: the sizes</h3>
+<p>The introduction's numbers, in hours of audio: a typical academic supervised dataset has about 1,000; SpeechStew combined 7 datasets for 5,140; two weakly supervised datasets reached 10,000 and 30,000; unsupervised pre-training had used 1,000,000 (unlabelled). Whisper uses 680,000 labelled hours.</p>
+<div class="plot bars" id="fig-sizes"><div id="sizes-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one training set's size in hours, drawn on a logarithmic scale so that each step of the axis is ten times the last (a bar twice as long is not twice as much data, it is many times more). The striped bar is the only one without transcripts. Whisper's bar sits just below it: labelled data more than twenty times the largest weakly supervised set before it, and more than a hundred times the size of SpeechStew.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># hours of audio
+speechstew, prior_weak, whisper = 5_140, 30_000, 680_000
+round(whisper / speechstew)  # → 132
+round(whisper / prior_weak, 1)  # → 22.7</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The introduction's warning is the heart of the paper: a model fine-tuned on one dataset learns that dataset's quirks, and scores that look superhuman on its home test can collapse elsewhere. It cites a CLIP result as the example: fine-tuning on ImageNet raised ImageNet accuracy by 9.2% with no gain on seven other datasets of the same objects. Fine-tuning is also a skilled job. A model that works well “out of the box” removes both problems.</p>
+</section>
+
+<section id="s2">
+<h2>2 Approach <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Four parts: gather and clean the data (2.1), use a standard model (2.2), write every task as a short sequence of tokens (2.3), and train (2.4). The only new ideas are in the data and the task format; the network is deliberately ordinary.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Data processing <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S2.SS1">original</a></span></h3>
+<blockquote class="quote">“While diversity in audio quality can help train a model to be robust, diversity in transcript quality is not similarly beneficial.”<cite>Radford et al. (2022), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Collect every recording on the web that comes with a transcript. The audio can be as messy as it likes: noisy rooms, bad microphones, accents. That variety is exactly what makes the model robust. The <em>text</em> is another matter: a transcript that is wrong teaches the model to be wrong. So the cleaning effort goes into the transcripts, and the audio is left alone.</p>
+<h4>What gets filtered, and why</h4>
+<ul>
+  <li><strong>Transcripts written by other machines.</strong> Many online transcripts are the output of existing recognizers. Training on them would teach Whisper to imitate their habits, “transcript-ese”. They give themselves away: all capitals or all lower case, no commas, no question marks. Such transcripts are removed.</li>
+  <li><strong>Language mismatches.</strong> A <span class="t" data-t="language identification">language detector</span> checks that the spoken language matches the transcript's language. If the transcript is English but the speech is not, the pair is kept as a <em>translation</em> example (speech in language X, text in English); otherwise it is dropped.</li>
+  <li><strong>Duplicates</strong>, by fuzzy matching on transcript text, and <strong>overlap with a test set</strong> (TED-LIUM 3), to avoid <span class="t" data-t="contamination">contamination</span>.</li>
+  <li><strong>Bad sources.</strong> After training a first model, the team ranked data sources by that model's error rate and size and inspected the worst by hand, finding partial transcripts, misaligned ones and machine captions the heuristics had missed.</li>
+</ul>
+<p>Audio files are cut into 30-second segments, each paired with the part of the transcript that falls inside it. Segments with no speech are kept too (at a reduced rate) so the model learns <span class="t" data-t="voice activity detection">voice activity detection</span>: when to say nothing.</p>
+<h4>Tiny example: what the 680,000 hours are</h4>
+<p>Of the 680,000 hours, 117,000 are speech recognition in 96 languages other than English and 125,000 are translation into English. The rest, 438,000 hours, is English speech recognition: about two thirds.</p>
+<div class="plot bars" id="fig-mixdata"><div id="mixdata-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> the three bars split the training set by task, on one scale. English transcription dominates at 64% of the audio; all 96 other languages together get 17%; translation into English 18%. The imbalance comes back later: performance in a language tracks how many hours of it there are (§3.4), and §4.3 reports that about 65% of training compute goes to English recognition, close to this share.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>total, other_languages, translation = 680_000, 117_000, 125_000
+english = total - other_languages - translation
+english  # → 438000
+[round(100 * h / total, 1) for h in (english, other_languages, translation)]  # → [64.4, 17.2, 18.4]</code></pre>
+<h4>Why it matters today</h4>
+<p>“Keep the messy inputs, clean the labels” is a general lesson for web-scale data, and so is the particular danger here: a web corpus increasingly contains the outputs of earlier models. The <a data-lesson="primer/ml/pretraining.html">pre-training lesson</a> covers the same filtering problems for text.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Model <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“Since the focus of our work is on studying the capabilities of large-scale supervised pre-training for speech recognition, we use an off-the-shelf architecture to avoid confounding our findings with model improvements.”<cite>Radford et al. (2022), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A court stenographer and a typist sharing a desk. The stenographer (the <span class="t" data-t="encoder">encoder</span>) listens to the whole 30 seconds at once and writes rich notes about every moment of it. The typist (the <span class="t" data-t="decoder">decoder</span>) writes the transcript one token at a time, rereading what it has typed so far and glancing at the stenographer's notes before each token. It is the translation model of <a href="attention-is-all-you-need.html">Attention Is All You Need</a>, with sound in place of the source sentence.</p>
+
+<figure class="ix wide" id="fig-arch">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 440" role="img" aria-label="The Whisper architecture: a log-mel spectrogram goes through two convolutions and an encoder; a decoder reads the tokens so far and the encoder's output through cross-attention and predicts the next token">
+    <defs><marker id="arrw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M90,396 V376" marker-end="url(#arrw)"/>
+    <path class="wire" d="M90,344 V329" marker-end="url(#arrw)"/>
+    <path class="wire" d="M90,309 V280" marker-end="url(#arrw)"/>
+    <path class="wire" d="M90,250 V226" marker-end="url(#arrw)"/>
+    <path class="wire" d="M90,196 V130 H180 V246 H208" marker-end="url(#arrw)"/>
+    <text x="96" y="122" class="lbl">audio features</text>
+    <path class="wire" d="M270,396 V381" marker-end="url(#arrw)"/>
+    <path class="wire" d="M270,361 V328" marker-end="url(#arrw)"/>
+    <path class="wire" d="M270,298 V262" marker-end="url(#arrw)"/>
+    <path class="wire" d="M270,232 V196" marker-end="url(#arrw)"/>
+    <path class="wire" d="M270,166 V80" marker-end="url(#arrw)"/>
+    <text x="104" y="322" class="lbl">sinusoidal</text>
+    <text x="284" y="375" class="lbl">learned</text>
+    <g class="blk frame" data-block="encstack"><rect x="14" y="150" width="152" height="150" rx="12"/></g>
+    <text x="160" y="166" class="lbl" text-anchor="end">Encoder × N</text>
+    <g class="blk frame" data-block="decstack"><rect x="194" y="110" width="152" height="236" rx="12"/></g>
+    <text x="340" y="126" class="lbl" text-anchor="end">Decoder × N</text>
+    <g class="blk plain" data-block="mel"><rect x="12" y="396" width="156" height="32" rx="6"/><text x="90" y="416" text-anchor="middle">Log-mel spectrogram</text></g>
+    <g class="blk ff" data-block="conv"><rect x="20" y="346" width="140" height="30" rx="6"/><text x="90" y="365" text-anchor="middle">2 × Conv1D + GELU</text></g>
+    <g class="blk pe" data-block="sinpos"><circle cx="90" cy="319" r="10"/><text x="90" y="323" text-anchor="middle">+</text></g>
+    <g class="blk attn" data-block="encsa"><rect x="30" y="252" width="120" height="28" rx="6"/><text x="90" y="270" text-anchor="middle">Self-attention</text></g>
+    <g class="blk ff" data-block="encmlp"><rect x="30" y="198" width="120" height="28" rx="6"/><text x="90" y="216" text-anchor="middle">MLP</text></g>
+    <g class="blk emb" data-block="tokens"><rect x="200" y="396" width="140" height="32" rx="6"/><text x="270" y="416" text-anchor="middle">Tokens so far</text></g>
+    <g class="blk pe" data-block="learnpos"><circle cx="270" cy="371" r="10"/><text x="270" y="375" text-anchor="middle">+</text></g>
+    <g class="blk attn" data-block="decsa"><rect x="210" y="300" width="120" height="28" rx="6"/><text x="270" y="318" text-anchor="middle">Masked self-attn</text></g>
+    <g class="blk attn" data-block="decxa"><rect x="210" y="234" width="120" height="28" rx="6"/><text x="270" y="252" text-anchor="middle">Cross-attention</text></g>
+    <g class="blk ff" data-block="decmlp"><rect x="210" y="168" width="120" height="28" rx="6"/><text x="270" y="186" text-anchor="middle">MLP</text></g>
+    <g class="blk soft" data-block="next"><rect x="200" y="50" width="140" height="30" rx="6"/><text x="270" y="69" text-anchor="middle">Next token</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with <strong>the spectrogram</strong> at the bottom left, then the <strong>tokens so far</strong> at the bottom right.</p></div>
+  </div>
+  <figcaption>The centre of Figure 1 of the paper, redrawn (layer norms and residual connections left out). Based on Radford et al. (2022), Figure 1 and §2.2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> two columns, both read from the bottom up. On the left, the encoder: the spectrogram (80 numbers for every 10 ms of sound) goes through two small convolutions that also halve its length, gets sinusoidal position vectors added (the + circle), and runs through N transformer blocks with no mask, so every moment of the clip can inform every other. On the right, the decoder: the tokens written so far get learned position vectors, then each of its N blocks does three things: masked self-attention over its own tokens, cross-attention to the audio features (the wire from the encoder's top), and an MLP. The top of the decoder predicts the next token, which is fed back in at the bottom right. Nothing in either column is new; the paper names only standard choices: <span class="t" data-t="pre-norm">pre-activation residual blocks</span>, a final <span class="t" data-t="layer normalization">layer norm</span> on the encoder's output, and <span class="t" data-t="weight tying">tied</span> input and output token embeddings.</p>
+
+<h4>The front end, in numbers</h4>
+<p><strong>Everyday picture:</strong> before the encoder sees anything, 30 seconds of sound is re-sampled to 16,000 measurements a second, cut into overlapping 25 ms slices that start every 10 ms, and each slice is summarised as 80 numbers: how loud each band of pitch is, on the ear-shaped <span class="t" data-t="mel scale">mel scale</span>, as a log. The inputs are then scaled to lie between −1 and 1 with a mean of about 0 across the whole training set.</p>
+<p><strong>Tiny example:</strong> a 30-second clip is 480,000 samples. A 400-sample window (25 ms) moved 160 samples (10 ms) at a time fits about 3,000 times.</p>
+<div class="eq" data-tex="\htmlData{sym=Tfr}{T} = 1 + \htmlData{sym=floor}{\lfloor} \frac{\htmlData{sym=Lsamp}{L} - \htmlData{sym=Nwin}{N}}{\htmlData{sym=Hhop}{H}} \htmlData{sym=floor}{\rfloor}" data-fallback="T = 1 + ⌊(L − N) / H⌋"></div>
+<div class="symtable" data-syms="Tfr,Lsamp,Nwin,Hhop,floor"></div>
+<p class="inwords"><strong>In words:</strong> “one window fits at the start; after that, count how many whole hops still leave room for a full window.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 1 + ⌊(480,000 − 400) / 160⌋ = 1 + ⌊2,997.5⌋ = 2,998 frames. Implementations usually pad the clip's ends a little so a 30-second clip gives a round 3,000: exactly 100 frames a second. The paper gives only the window and the stride; the frame count is this page's arithmetic.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># 30 seconds at 16,000 samples a second
+L = 30 * 16_000
+L  # → 480000
+# 25 ms windows, 10 ms hops
+N, H = 400, 160
+1 + (L - N) // H  # → 2998</code></pre>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/multimodal.html#frame_count"><code>frame_count</code></a> is this formula; <a data-lesson="primer/ml/generative/multimodal.html#stft"><code>stft</code></a>, <a data-lesson="primer/ml/generative/multimodal.html#mel_filterbank"><code>mel_filterbank</code></a> and <a data-lesson="primer/ml/generative/multimodal.html#log_mel_spectrogram"><code>log_mel_spectrogram</code></a> build the 80-band picture step by step, with a figure of each stage.</p>
+
+<h4>The stem: two convolutions, the second with stride 2</h4>
+<p><strong>Everyday picture:</strong> before the transformer, a small sliding window looks at three neighbouring frames at a time and mixes them (a 1-D <span class="t" data-t="convolution">convolution</span> with filter width 3, followed by a <span class="t" data-t="gelu">GELU</span>). The second convolution moves two frames at a time instead of one (a <span class="t" data-t="stride">stride</span> of 2), so its output has half as many positions. Halving the length quarters the attention's cost, which grows with the square of the sequence length.</p>
+<p><strong>Tiny example:</strong> six frames with one number each, (1, 2, 3, 4, 5, 6), padded with a zero at each end, and a width-3 filter that averages its window. Moving one frame at a time gives six outputs; moving two at a time gives three: the averages of (0, 1, 2), (2, 3, 4) and (4, 5, 6), which are 1, 3 and 5.</p>
+<div class="eq" data-tex="\htmlData{sym=Tout}{T_{\text{out}}} = \htmlData{sym=floor}{\lfloor} \frac{\htmlData{sym=Tin}{T_{\text{in}}} + 2\htmlData{sym=pad}{p} - \htmlData{sym=kw}{k}}{\htmlData{sym=sstride}{s}} \htmlData{sym=floor}{\rfloor} + 1" data-fallback="T_out = ⌊(T_in + 2p − k) / s⌋ + 1"></div>
+<div class="symtable" data-syms="Tout,Tin,pad,kw,sstride,floor"></div>
+<p class="inwords"><strong>In words:</strong> “add the padding to the input's length, subtract the filter's width, see how many strides fit, and add one for the first position.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the toy: ⌊(6 + 2 − 3) / 2⌋ + 1 = 2 + 1 = 3. Whisper: the first convolution keeps 3,000 positions (⌊(3,000 + 2 − 3) / 1⌋ + 1 = 3,000), and the second gives ⌊(3,000 + 2 − 3) / 2⌋ + 1 = 1,500. That is 50 positions a second, one every 20 ms: exactly the resolution the paper gives its timestamps (§2.3). The paper says the filters are 3 wide and the second stride is 2; one frame of padding at each end is this page's assumption, the one that makes the length halve exactly.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x = [1, 2, 3, 4, 5, 6]
+k, p = 3, 1
+padded = [0] * p + x + [0] * p
+# a width-3 averaging filter, moved s frames at a time
+def conv(s):
+    return [sum(padded[i:i + k]) / k for i in range(0, len(padded) - k + 1, s)]
+conv(s=2)  # → [1.0, 3.0, 5.0]
+# T_out = ⌊(T_in + 2p − k) / s⌋ + 1
+def T_out(T_in, s):
+    return (T_in + 2 * p - k) // s + 1
+T_out(6, s=1), T_out(6, s=2)  # → (6, 3)
+T_out(T_out(3000, s=1), s=2)  # → 1500
+# milliseconds of audio per encoder position
+30_000 / 1500  # → 20.0</code></pre>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/multimodal.html#audio_tokens"><code>audio_tokens</code></a> counts encoder positions from a clip's length, the 10 ms hop and the downsampling by 2: 1,500 for 30 seconds.</p>
+
+<h4>The model sizes</h4>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, reproduced with attribution (Radford et al., 2022)</caption>
+  <thead><tr><th>Model</th><th class="num">Layers</th><th class="num">Width</th><th class="num">Heads</th><th class="num">Parameters</th></tr></thead>
+  <tbody>
+    <tr><td>Tiny</td><td class="num">4</td><td class="num">384</td><td class="num">6</td><td class="num">39M</td></tr>
+    <tr><td>Small</td><td class="num">12</td><td class="num">768</td><td class="num">12</td><td class="num">244M</td></tr>
+    <tr><td>Large</td><td class="num">32</td><td class="num">1280</td><td class="num">20</td><td class="num">1550M</td></tr>
+  </tbody>
+</table></div>
+<p>Base and Medium sit between them. “Layers” counts each stack: the encoder and the decoder have the same width and the same number of blocks. In every size the width divided by the number of heads is 64, so the models grow by adding heads, not by widening each one.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># width / heads for Tiny, Small and Large
+[w // h for w, h in [(384, 6), (768, 12), (1280, 20)]]  # → [64, 64, 64]</code></pre>
+<p>Text uses the <span class="t" data-t="byte-level bpe">byte-level BPE</span> tokenizer of GPT-2 (see the <a href="bpe-subwords.html">BPE companion</a>) for the English-only models; for the multilingual ones the vocabulary is refitted, keeping its size, because GPT-2's was fitted to English and would chop other languages into too many pieces.</p>
+<h4>Why it matters today</h4>
+<p>Choosing an unremarkable architecture was the point: any gain had to come from the data. The same encoder shape (a stride-2 convolution stem over a log-mel spectrogram, then transformer blocks) is what many later systems put in front of a language model to let it hear.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Multitask format <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S2.SS3">original</a></span></h3>
+<blockquote class="quote">“We use a simple format to specify all tasks and conditioning information as a sequence of input tokens to the decoder.”<cite>Radford et al. (2022), §2.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A traditional speech system is an assembly line of separate machines: one decides whether anyone is speaking, one identifies the language, one transcribes, another translates, another adds punctuation and timing. Whisper replaces the line with one machine and a form at the top of each job. The first few tokens the decoder writes <em>are</em> the form: which language, which task, with or without timestamps. Filling the form in is part of the prediction, so language identification and voice detection come for free.</p>
+<p><strong>Try it:</strong> choose the audio, the task, whether to write timestamps and whether to give the decoder the previous window's text. Watch which special tokens appear, in which order, and which pieces the model is trained to predict.</p>
+<div class="play" id="fig-format">
+  <div class="mode" role="group" aria-label="The audio"><span>Audio:</span>
+    <button type="button" data-k="audio" data-v="en" aria-pressed="true">English speech</button>
+    <button type="button" data-k="audio" data-v="es" aria-pressed="false">Spanish speech</button>
+    <button type="button" data-k="audio" data-v="none" aria-pressed="false">No speech</button></div>
+  <div class="mode" role="group" aria-label="The task"><span>Task:</span>
+    <button type="button" data-k="task" data-v="transcribe" aria-pressed="true">Transcribe</button>
+    <button type="button" data-k="task" data-v="translate" aria-pressed="false">Translate to English</button></div>
+  <div class="mode" role="group" aria-label="Timestamps"><span>Timestamps:</span>
+    <button type="button" data-k="ts" data-v="on" aria-pressed="false">On</button>
+    <button type="button" data-k="ts" data-v="off" aria-pressed="true">Off</button></div>
+  <div class="mode" role="group" aria-label="Previous text"><span>Previous text:</span>
+    <button type="button" data-k="prev" data-v="on" aria-pressed="false">Include</button>
+    <button type="button" data-k="prev" data-v="off" aria-pressed="true">Leave out</button></div>
+  <div class="seq" id="format-strip" role="list" aria-label="The decoder's token sequence"></div>
+  <p class="readout" id="format-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the chips are the decoder's sequence, left to right. Monospaced chips are special tokens: <code>SOT</code> starts the transcript; a language tag (<code>EN</code>, <code>ES</code>: one token for each of 99 languages) or <code>NO SPEECH</code> comes next; then <code>TRANSCRIBE</code> or <code>TRANSLATE</code>; then either <code>NO TIMESTAMPS</code> or the first time token; then the text; then <code>EOT</code>, the end. With timestamps on, a time token comes before and after each stretch of text (shaded differently). With previous text included, the chips before <code>SOT</code> are dashed: they are context the model reads but is never graded on, the only part of the sequence masked out of the loss. Choose “No speech” and the form ends almost at once. This page writes the tokens in the paper's Figure 1 style (<code>SOT</code>, <code>EN</code>, <code>EOT</code>); the text of §2.3 spells them like <code>&lt;|startoftranscript|&gt;</code> and <code>&lt;|nospeech|&gt;</code>.</p>
+<h4>Timestamps as tokens</h4>
+<p>Times are relative to the start of the 30-second window, rounded to the nearest 20 ms, and each rounded time gets its own token in the vocabulary. The decoder writes a start time before each stretch of text and an end time after it. If a stretch runs past the end of the window, only its start time is written, which tells the next window where to begin.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># a moment 1.613 seconds into the window, rounded to the nearest 20 ms
+step = 0.02
+round(round(1.613 / step) * step, 2)  # → 1.62
+# one token per step from 0.00 to 30.00 seconds
+round(30 / step) + 1  # → 1501</code></pre>
+<p>The paper says a token is added for each rounded time; 1,501 is what one token per 20 ms step across a 30-second window comes to, by this page's count.</p>
+<h4>Why it matters today</h4>
+<p>Steering one model with special tokens in its output is how instruction-following models are steered too (see the <span class="t" data-t="chat template">chat template</span> in the <a data-lesson="primer/ml/tokenization.html">tokenization lesson</a>). It is <span class="t" data-t="multitask learning">multitask learning</a> in its simplest form, and it made Whisper a whole speech pipeline in one network.</p>
+</section>
+
+<section id="s2-4">
+<h3>2.4 Training details <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S2.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>With this much data, the usual worry of training, memorising the examples, hardly applies: the model sees each segment only a few times. So there is no <span class="t" data-t="regularization">regularization</span> and no data augmentation in the first models; the variety of the data does that job.</p>
+<h4>The recipe</h4>
+<ul>
+  <li><span class="t" data-t="adamw">AdamW</span> (β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.98, weight decay 0.1), <span class="t" data-t="gradient clipping">gradient clipping</span> at norm 1.0, 2,048 <span class="t" data-t="warmup">warmup</span> updates then a linear decay to zero (Appendix F).</li>
+  <li>Batches of 256 segments, 2<sup>20</sup> = 1,048,576 updates; <span class="t" data-t="fp16">FP16</span> with dynamic <span class="t" data-t="loss scaling">loss scaling</span> and <span class="t" data-t="activation checkpointing">activation checkpointing</span>, spread across accelerators by <span class="t" data-t="data parallelism">data parallelism</span>.</li>
+  <li>Peak learning rates shrink as models grow: 1.5 × 10<sup>−3</sup> for Tiny, 1.75 × 10<sup>−4</sup> for Large.</li>
+  <li>Previous text is given as context half the time; speechless segments are sampled 10 times less often.</li>
+</ul>
+<p><strong>Tiny example: how many passes over the data?</strong> The paper says the updates amount to “between two and three passes over the dataset”. The arithmetic, if every segment were a full 30 seconds, gives about 3.3.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>updates, batch, seconds = 2 ** 20, 256, 30
+hours_seen = updates * batch * seconds / 3600
+print(f"{hours_seen:,.0f}")  # → 2,236,962
+round(hours_seen / 680_000, 1)  # → 3.3
+# Large V2: 655,360 updates of 1,024 segments, against the original run
+655_360 * 1024 / (updates * batch)  # → 2.5</code></pre>
+<p>The paper does not say what closes the gap between 3.3 and “two to three” (segments shorter than 30 seconds would, but it doesn't say they exist). The second calculation does match the paper: Large V2, trained later with <span class="t" data-tip-title="SpecAugment" data-tip="A data augmentation for speech: blank out random bands of frequencies and random stretches of time in the spectrogram, so the model can't rely on any one of them.">SpecAugment</span>, <span class="t" data-tip-title="Stochastic depth" data-tip="Randomly skipping whole residual blocks during training, a regularizer for deep networks: each block must be useful without relying on its neighbours.">stochastic depth</span> and <span class="t" data-tip-title="BPE dropout" data-tip="Randomly skipping some BPE merges while tokenizing training text, so the model sees the same words split in several ways.">BPE dropout</span>, sees exactly 2.5 times as many segments, the “2.5X more epochs” of its footnote.</p>
+<h4>A quirk worth knowing</h4>
+<p>Early models liked to write a speaker's name at the start of a transcript, and almost always guessed wrong. Many web transcripts start with the speaker's name, so the model learned to predict one, though 30 seconds of audio rarely reveals it. The fix was a brief fine-tune on transcripts without speaker names: a small, concrete case of a model faithfully learning a habit of its labels.</p>
+<h4>Why it matters today</h4>
+<p>Two or three passes over the data with no regularization is the regime large language models are trained in too (see the <a href="scaling-laws.html">scaling laws companion</a>): when data is abundant, the model's size and the number of examples it sees matter more than regularization tricks.</p>
+</section>
+
+<section id="s3">
+<h2>3 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Every test is taken zero-shot: Whisper never trains on any of the benchmark datasets' training splits. It is measured on how well it generalizes, not on how well it has learned one dataset's style.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.1–3.2 Zero-shot evaluation, and how to score it <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To score a transcript, line it up word by word against a reference and count the fixes needed: words to swap, words to delete, words to insert. That count, divided by the reference's length, is the <span class="t" data-t="word error rate">word error rate</span> (WER). The catch: WER counts <em>every</em> difference, and two correct transcripts can differ in style. “you're” against “you are” is one substitution and one deletion, though a person would call both correct.</p>
+<h4>Tiny example</h4>
+<p>Reference “you are going to the store” (6 words); a system writes “you're going to store”. Lined up: “you” became “you're” (a substitution), “are” is missing (a deletion), “the” is missing (another deletion). Three errors in six words: 50%. Expand the contraction first and only the missing “the” remains: 1 in 6, 16.7%.</p>
+<div class="eq" data-tex="\htmlData{sym=WER}{\mathrm{WER}} = \frac{\htmlData{sym=Ssub}{S} + \htmlData{sym=Ddel}{D} + \htmlData{sym=Iins}{I}}{\htmlData{sym=Nref}{N}}" data-fallback="WER = (S + D + I) / N"></div>
+<div class="symtable" data-syms="WER,Ssub,Ddel,Iins,Nref"></div>
+<p class="inwords"><strong>In words:</strong> “add up the substitutions, deletions and insertions of the cheapest alignment, and divide by how many words the reference has.” The paper doesn't print the formula; it describes WER as “based on string edit distance”, and this is the standard definition built on that <span class="t" data-t="edit distance">edit distance</span>, counted in words.</p>
+<p class="inwords"><strong>With the numbers:</strong> (1 + 2 + 0) / 6 = 50%; after normalization (0 + 1 + 0) / 6 = 16.7%. WER can exceed 100%, since insertions are unlimited.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the edit distance between two lists of words, by dynamic programming
+def edits(ref, hyp):
+    d = [[i + j if i * j == 0 else 0 for j in range(len(hyp) + 1)] for i in range(len(ref) + 1)]
+    for i in range(1, len(ref) + 1):
+        for j in range(1, len(hyp) + 1):
+            same = ref[i - 1] == hyp[j - 1]
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (0 if same else 1))
+    return d[-1][-1]
+ref = "you are going to the store".split()
+# WER = (S + D + I) / N
+round(edits(ref, "you're going to store".split()) / len(ref), 3)  # → 0.5
+round(edits(ref, "you are going to store".split()) / len(ref), 3)  # → 0.167</code></pre>
+<h4>The fix: normalize before scoring</h4>
+<p>Whisper writes natural text, with capitals, punctuation and contractions, because it was trained on raw transcripts. Benchmark references come in every house style. A zero-shot model can't know each dataset's style, so it pays a style penalty no fine-tuned model pays. The paper's answer is <span class="t" data-t="text normalization">text normalization</span>: rewrite both texts into one standard form before counting. For several datasets this cut WER by up to 50%, often because of one quirk, such as a reference that separates contractions from their words with a space.</p>
+<p><strong>Try it:</strong> edit the reference or the system's output, and switch the normalizer on and off. Watch the error count change without a single word being misheard.</p>
+<div class="play" id="fig-wer">
+  <label class="field" for="wer-ref">Reference transcript</label>
+  <input type="text" id="wer-ref" value="you are going to the store">
+  <label class="field" for="wer-hyp">System output</label>
+  <input type="text" id="wer-hyp" value="Um, you're going to the store!">
+  <div class="mode" role="group" aria-label="Normalizer"><span>Normalizer:</span>
+    <button type="button" data-norm="off" aria-pressed="true">Off</button>
+    <button type="button" data-norm="on" aria-pressed="false">On</button></div>
+  <p class="readout" id="wer-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the readout lines the two texts up word by word and counts substitutions (S), deletions (D) and insertions (I) against the reference's length (N). With the normalizer off, “Um,” and “you're” and “store!” are all errors: 3 in 6, 50%. With it on, both texts are lower-cased, the filler “um” is removed, “you're” is expanded to “you are”, and punctuation is stripped: 0%. The normalizer here is a simplified version of the paper's English one (Appendix C), which also removes bracketed text, standardizes numbers and currencies (“Ten thousand dollars” becomes “$10000”) and converts British spellings to American.</p>
+<h4>Why it matters today</h4>
+<p>A metric that punishes style more than substance distorts every comparison built on it. The paper releases its normalizer, and checks (§4.4) that it doesn't simply favour Whisper. The same problem, a correct answer marked wrong for its format, is why the <a data-lesson="primer/ml/metrics.html">metrics lesson</a> treats string-matching scores such as <span class="t" data-t="bleu">BLEU</span> with care.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 English speech recognition <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S3.SS3">original</a></span></h3>
+<blockquote class="quote">“What explains this gap between reportedly superhuman performance in-distribution and subhuman performance out-of-distribution?”<cite>Radford et al. (2022), §3.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A person tested on audiobooks has usually never trained on audiobooks: their score measures how well they generalize. A model tested on LibriSpeech has usually trained on LibriSpeech: its score measures how well it learned that one dataset. Same test, different skill. By 2022, models trained on LibriSpeech scored 1.4% WER on its clean test, far below a human's 5.8%, yet made many more mistakes than people on other recordings.</p>
+<h4>Effective robustness</h4>
+<p>So the paper compares models that score the <em>same</em> on LibriSpeech, and asks how each does elsewhere. Whisper Large V2 and a supervised wav2vec 2.0 model both score 2.7% on LibriSpeech test-clean. On twelve other datasets they diverge. How much better a model does away from home than its home score predicts is its <span class="t" data-tip-title="Effective robustness" data-tip="How much better a model performs on out-of-distribution test sets than its score on a reference (in-distribution) test set would predict. Two models with the same reference score can have very different effective robustness. Introduced by Taori et al. (2020).">effective robustness</span>.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2, reproduced with attribution (Radford et al., 2022). WER %, after the text normalizer</caption>
+  <thead><tr><th>Dataset</th><th class="num">wav2vec 2.0 Large (no LM)</th><th class="num">Whisper Large V2</th><th class="num">RER %</th></tr></thead>
+  <tbody>
+    <tr><td>LibriSpeech Clean</td><td class="num">2.7</td><td class="num">2.7</td><td class="num">0.0</td></tr>
+    <tr><td>Artie</td><td class="num">24.5</td><td class="num">6.2</td><td class="num">74.7</td></tr>
+    <tr><td>CHiME6</td><td class="num">65.8</td><td class="num">25.5</td><td class="num">61.2</td></tr>
+    <tr><td>CallHome</td><td class="num">34.8</td><td class="num">17.6</td><td class="num">49.4</td></tr>
+    <tr><td>LibriSpeech Other</td><td class="num">6.2</td><td class="num">5.2</td><td class="num">16.1</td></tr>
+    <tr class="hl"><td>Average (the 13 datasets other than LibriSpeech Clean)</td><td class="num">29.3</td><td class="num">12.8</td><td class="num">55.2</td></tr>
+  </tbody>
+</table></div>
+<p><strong>Tiny example:</strong> on Artie, WER falls from 24.5% to 6.2%. As a share of the old errors, that is (24.5 − 6.2) / 24.5 = 74.7% fewer: the <span class="t" data-tip-title="Relative error reduction (RER)" data-tip="The share of one model's errors that another model avoids: (old error − new error) / old error. 50% means half the errors are gone.">relative error reduction</span>.</p>
+<div class="eq" data-tex="\htmlData{sym=RER}{\mathrm{RER}} = \frac{\htmlData{sym=Wbase}{\mathrm{WER}_{\text{base}}} - \htmlData{sym=Wnew}{\mathrm{WER}_{\text{new}}}}{\htmlData{sym=Wbase}{\mathrm{WER}_{\text{base}}}}" data-fallback="RER = (WER_base − WER_new) / WER_base"></div>
+<div class="symtable" data-syms="RER,Wbase,Wnew"></div>
+<p class="inwords"><strong>In words:</strong> “the share of the baseline's errors that the new model no longer makes.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Artie: (24.5 − 6.2) / 24.5 = 74.7%. The headline 55.2% is the <em>average of the thirteen per-dataset reductions</em>; the reduction of the average WERs, (29.3 − 12.8) / 29.3, is a little higher, 56.3%, because the datasets with large reductions and the ones with large WERs are not the same ones.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># RER = (WER_base − WER_new) / WER_base, in percent
+def rer(base, new):
+    return 100 * (base - new) / base
+round(rer(24.5, 6.2), 1)  # → 74.7
+# the RER column of Table 2 for the 13 datasets other than LibriSpeech Clean
+column = [74.7, 69.9, 69.9, 61.9, 61.2, 59.2, 54.5, 54.3, 51.2, 49.4, 49.4, 46.2, 16.1]
+round(sum(column) / len(column), 1)  # → 55.2
+# the reduction of the averages instead
+round(rer(29.3, 12.8), 1)  # → 56.3</code></pre>
+<div class="plot bars" id="fig-robust"><div id="robust-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one dataset from the table: the striped bar is the supervised wav2vec 2.0 model, the solid bar Whisper, on the same WER scale (shorter is better). At the top they are identical: 2.7% on LibriSpeech Clean, the home ground both are matched on. Everywhere else the solid bar is shorter, by the most on Artie (in relative terms) and CHiME6 (in points), and the least on LibriSpeech's own harder split, the dataset most like the one the supervised model trained on. The paper's Figure 2 plots this for many models at once: the LibriSpeech-trained models sit on one line, far from the dashed line of equal performance everywhere, and zero-shot Whisper sits much closer to it, near the human.</p>
+<h4>Why it matters today</h4>
+<p>The paper's advice outlived its benchmarks: compare models at equal in-distribution performance and look at how they fail elsewhere, and be wary of any “superhuman” claim made on a test the model was trained for. Even the smallest Whisper, 39 million parameters with a middling 6.7% on LibriSpeech, is roughly competitive with the best supervised LibriSpeech model on other datasets.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Multilingual speech recognition <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S3.SS4">original</a></span></h3>
+<blockquote class="quote">“The amount of pre-training speech recognition data for a given language is very predictive of zero-shot performance on that language in Fleurs.”<cite>Radford et al. (2022), Figure 3 caption</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Whisper is only as good in a language as the hours it heard in it. The paper measures this directly on Fleurs, a dataset with the same sentences read in many languages, and finds a clean rule of thumb: <em>sixteen times the data, half the errors</em>.</p>
+<h4>Tiny example</h4>
+<p>Say a language with 1,000 hours of training audio has a WER of 20% (an illustrative number, not from the paper). With 16,000 hours the rule predicts 10%; with 256,000 hours, 5%. Going the other way, with only 62.5 hours, 40%.</p>
+<div class="eq" data-tex="\htmlData{sym=WERD}{\mathrm{WER}(D)} = \htmlData{sym=WERD0}{\mathrm{WER}(D_0)} \cdot \left(\frac{\htmlData{sym=Dh}{D}}{\htmlData{sym=D0}{D_0}}\right)^{\htmlData{sym=expo}{-1/4}}" data-fallback="WER(D) = WER(D_0) · (D / D_0)^(−1/4)"></div>
+<div class="symtable" data-syms="WERD,WERD0,Dh,D0,expo"></div>
+<p class="inwords"><strong>In words:</strong> “multiply the hours by any factor, and the error rate is divided by the fourth root of that factor.” The paper states it as a fit to the log of WER against the log of the hours, with a squared correlation of 0.83, whose slope means “WER halves for every 16× increase in training data”. Since 16 is 2<sup>4</sup>, the exponent is −1/4.</p>
+<p class="inwords"><strong>With the numbers:</strong> 20 × (16,000 / 1,000)<sup>−1/4</sup> = 20 × 16<sup>−1/4</sup> = 20 × 0.5 = 10%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# the exponent that halves the error for 16 times the data
+round(math.log(0.5) / math.log(16), 4)  # → -0.25
+# WER(D) = WER(D0) · (D / D0) ** (−1/4), with an illustrative WER of 20% at 1,000 hours
+def wer(D, D0=1_000, wer0=20.0):
+    return wer0 * (D / D0) ** -0.25
+[round(wer(D), 1) for D in (62.5, 1_000, 16_000, 256_000)]  # → [40.0, 20.0, 10.0, 5.0]</code></pre>
+<div class="plot" id="fig-law">
+  <div id="law-chart"></div>
+  <p class="readout" id="law-readout">Hover or tap the chart, or focus it and use the arrow keys, to read the predicted error at each amount of data.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is hours of training audio in a language, on a logarithmic scale; the y-axis is word error rate. The curve is the rule above, anchored at an illustrative 20% for 1,000 hours, so read its shape, not its height. Every move of 16 times to the right halves the height. That makes the curve steep on the left and flat on the right: going from 10 to 160 hours saves far more errors than going from 10,000 to 160,000. The paper's Figure 3 shows the real languages as points around such a line; the ones that fall well above it, such as Hebrew, Telugu, Chinese and Korean, have their own scripts and are distant from the Indo-European languages that make up most of the data.</p>
+<p>On the two older multilingual benchmarks the picture is mixed: Whisper beats the prior models zero-shot on Multilingual LibriSpeech (7.3 against 9.7 for the best), but trails them on VoxPopuli (13.6 against 8.1), a dataset the paper suspects the other models used heavily in pre-training, and one with about ten times more supervised data per language to fine-tune on.</p>
+<h4>Why it matters today</h4>
+<p>The rule is a small <span class="t" data-tip-title="Power law" data-tip="A relationship where one quantity is proportional to a fixed power of another, such as y ∝ x^(−1/4). On log-log axes it is a straight line; each multiplication of x multiplies y by the same factor.">power law</span> of the kind the <a href="scaling-laws.html">scaling laws companion</a> studies for language models, and it points to a cheap fix the paper itself names: most languages have under 1,000 hours, so a targeted effort to collect more of them would pay off steeply.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5–3.6 Translation and language identification <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S3.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Because some web transcripts are English text for non-English speech, Whisper learned to translate as a side effect of learning to transcribe. And because every transcript starts with a language tag, it learned to identify languages too.</p>
+<h4>Translation, in numbers</h4>
+<p>On the X→English part of the CoVoST2 benchmark, Whisper reaches 29.1 <span class="t" data-t="bleu">BLEU</span> zero-shot, a new best, and does especially well on the languages with the least data, beating the prior best there by 6.7 BLEU (25.2 against 18.5). The paper credits its 68,000 hours of noisy translation data for these languages, against CoVoST2's own 861 hours. On the high-resource languages it does not beat the directly supervised models.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>round(68_000 / 861)  # → 79
+round(25.2 - 18.5, 1)  # → 6.7</code></pre>
+<p><strong>A cautionary tale:</strong> Welsh has 9,000 hours of supposed translation data, fourth most of any language and more than French, Spanish or Russian, yet scores only 13 BLEU. Inspection showed most of it was English speech with English captions, misidentified as Welsh by the language detector and so filed as translation data by the rules of §2.1. The correlation between hours and BLEU is correspondingly weak, 0.24, against 0.83 for recognition.</p>
+<h4>Language identification, in numbers</h4>
+<p>On Fleurs, Whisper identifies the language 64.5% of the time, below the best supervised system's 77.7%. But Fleurs has 102 languages and Whisper's data has none of 20 of them, so it can be right at most 82 / 102 = 80.4% of the time. On the 82 languages it knows, it scores 80.3%, and the numbers fit together: 80.3% right on 82 of the 102 languages, and none right on the rest, is about 64.5% overall.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>known, fleurs = 82, 102
+round(100 * known / fleurs, 1)  # → 80.4
+# 80.3% right on the known languages, zero on the rest
+round(80.3 * known / fleurs, 2)  # → 64.55
+# the gap to the best supervised system in Table 5, in points
+round(77.7 - 64.5, 1)  # → 13.2</code></pre>
+<p>The 64.55 against Table 5's 64.5 is only rounding (80.3 is itself rounded). One number does not fit: the text says Whisper “underperforms the supervised SOTA by 13.6%”, while the gap in Table 5 is 13.2 points (77.7 against 64.5), and 13.2 is 17% of 77.7, so the 13.6 is neither the gap in points nor the relative gap. The paper doesn't explain it.</p>
+<h4>Why it matters today</h4>
+<p>The Welsh story is the paper's clearest example of a general truth about weak supervision: an automatic filter's errors become the model's training data. The data pipeline is part of the model.</p>
+</section>
+
+<section id="s3-7">
+<h3>3.7 Robustness to additive noise <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S3.SS7">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Play the same audiobook in a quiet room, then with a fan running, then in a pub. The paper adds white noise or recorded pub noise (ambient sound and indistinct chatter) at controlled levels and measures how fast each model's WER climbs.</p>
+<h4>Tiny example</h4>
+<p>Noise level is measured by the <span class="t" data-t="signal-to-noise ratio">signal-to-noise ratio</span> in decibels. If the speech carries 10 times the power of the noise, that is 10 dB; 10,000 times is 40 dB.</p>
+<div class="eq" data-tex="\htmlData{sym=SNR}{\mathrm{SNR}_{\mathrm{dB}}} = 10\,\htmlData{sym=log10}{\log_{10}}\!\left(\frac{\htmlData{sym=Psig}{P_{\text{signal}}}}{\htmlData{sym=Pnoise}{P_{\text{noise}}}}\right)" data-fallback="SNR_dB = 10 log10(P_signal / P_noise)"></div>
+<div class="symtable" data-syms="SNR,log10,Psig,Pnoise"></div>
+<p class="inwords"><strong>In words:</strong> “ten times the base-10 logarithm of how many times more power the speech has than the noise.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 10 log<sub>10</sub>(10) = 10 dB; 10 log<sub>10</sub>(10,000) = 40 dB; equal power, 10 log<sub>10</sub>(1) = 0 dB.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def snr_db(P_signal, P_noise):
+    return 10 * math.log10(P_signal / P_noise)
+snr_db(10, 1), snr_db(10_000, 1), snr_db(1, 1)  # → (10.0, 40.0, 0.0)</code></pre>
+<p><strong>The result</strong> (the paper's Figure 5): at 40 dB, almost no noise, many LibriSpeech-trained models beat zero-shot Whisper, as expected on their home ground. As noise rises they degrade faster, and below 10 dB of pub noise every one of the 14 models is worse than Whisper.</p>
+<h4>Why it matters today</h4>
+<p>Real audio is noisy. A model that is best in the quiet and worst in the pub is the wrong model for most uses; noise robustness is a direct payoff of training on messy web audio.</p>
+</section>
+
+<section id="s3-8">
+<h3>3.8–3.9 Long recordings, and a comparison with people <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S3.SS8">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Whisper hears only 30 seconds at a time, but meetings and podcasts last hours. The solution is buffered transcription: transcribe a window, then slide the window forward to where the last complete stretch of text ended, as given by the predicted timestamps, and repeat. §4.5 below covers the heuristics this needs.</p>
+<h4>What was measured</h4>
+<ul>
+  <li><strong>Long-form:</strong> seven datasets from a few minutes to a few hours long (full TED talks, jargon-heavy late-night TV segments, podcasts, earnings calls, long interviews). Whisper beats the best open-source model on all seven and, in most cases, four commercial services queried in September 2022, with the caveat that those services may have trained on some of these public datasets.</li>
+  <li><strong>Against people:</strong> 25 recordings transcribed by Whisper, the same commercial systems, one computer-assisted human service and four purely human services. The computer-assisted service's overall WER is 1.15 points better than Whisper's; the purely human services are only a fraction of a point better.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Close to human on English is the sense in which speech recognition became “solved enough” for everyday tools. The remaining errors are less about hearing and more about decoding, which is where the paper turns next.</p>
+</section>
+
+<section id="s4">
+<h2>4 Analysis and ablations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Having shown that the recipe works, the paper asks why: does it keep improving with a bigger model, with more data, with more tasks and languages mixed in? And are its own measuring tools, the normalizer and the decoding tricks, fair?</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1–4.2 Model scaling and dataset scaling <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A worry with noisy data is a ceiling: a model might only ever become as good as its worst labels, or, worse, learn their quirks more and more faithfully as it grows. The paper checks both directions. Bigger models (§4.1): every task keeps improving with size except English recognition, which slows as it nears human level. More data (§4.2): the medium model is retrained on 0.5%, 1%, 2%, 4% and 8% of the data, from 3,405 hours up.</p>
+<div class="plot" id="fig-dscale">
+  <div id="dscale-chart"></div>
+  <p class="readout" id="dscale-readout">Hover or tap the chart, or focus it and use the arrow keys, to read each task's error at each dataset size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is hours of training data on a logarithmic scale, from 3,405 hours (0.5% of the data) to all 681,070; the y-axis is WER, the average over twelve English datasets for one line and over the Fleurs languages for the other. Both lines fall at every step: more data always helped. The English line drops fast to about 13,000 hours and then flattens: the last step, 12.5 times more data, buys one point (10.9 to 9.9). The multilingual line keeps falling almost straight on this scale until 54,000 hours, then bends too, gaining a further 7 points from the last 12.5×. Plotted from Table 6 of the paper.</p>
+<div class="plot" id="fig-bleu">
+  <div id="bleu-chart"></div>
+  <p class="readout" id="bleu-readout">Hover or tap the chart to read the translation score at each dataset size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the same x-axis, now with translation quality (BLEU on CoVoST2, higher is better). With 7,000 hours or less the model can barely translate (0.2 and 1.7 BLEU); from there to 54,000 hours the line climbs roughly straight on this log scale, then it too flattens (19.2 to 24.8). Plotted from Table 6 of the paper.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># hours in the last two rows of Table 6
+round(681_070 / 54_486, 1)  # → 12.5
+# English and multilingual WER over that last step
+round(10.9 - 9.9, 1), round(36.4 - 29.2, 1)  # → (1.0, 7.2)</code></pre>
+<h4>Why it matters today</h4>
+<p>The flattening between 54,000 and 680,000 hours has two readings, and the paper gives both: the models may be under-trained for so much data (bigger models and longer training would unlock more), or recognition may be nearing the end of what more data can buy. It calls for “scaling laws” for speech to decide between them.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Multitask and multilingual transfer <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Does learning Spanish and translation take room away from English, or does it help? For a small brain, juggling many subjects can crowd out the main one (<span class="t" data-tip-title="Negative transfer" data-tip="When training on extra tasks or languages makes a model worse at the main task than training on the main task alone, because the tasks compete for the same capacity.">negative transfer</span>); for a big one, each subject can sharpen the others.</p>
+<h4>What was measured</h4>
+<p>English-only models are compared with the standard multitask, multilingual models on English recognition, counting only the compute the joint models spend on English (about 65% of it, matching English's share of the data in §2.1). Small joint models are worse than English-only models; large joint models are better, and at the largest size they are slightly better even without the compute adjustment.</p>
+<h4>Why it matters today</h4>
+<p>“Mixing tasks hurts small models and helps large ones” recurs across the field. It is one reason today's large models are trained on everything at once.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Text normalization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S4.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If you design the marking scheme while looking at one student's work, you may end up forgiving exactly that student's habits. The normalizer was developed while inspecting Whisper's outputs, so the paper checks whether it is unfair to other models.</p>
+<h4>What was measured</h4>
+<p>The paper compares its normalizer with an independent one from the FairSpeech project, on many models. On most datasets the two cut WER similarly for Whisper and for the other models. On three the paper's normalizer helps Whisper noticeably more: CallHome and Switchboard, whose references are full of contractions it doesn't penalize (“you're” against “you are”), and WSJ, where it treats spoken and written numbers alike (“sixty-eight million dollars” against “$68 million”).</p>
+<h4>Why it matters today</h4>
+<p>Checking your metric against an independent one is cheap and catches a whole class of self-deception. The paper publishes its normalizer's code for exactly this reason.</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Strategies for reliable long-form transcription <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S4.SS5">original</a></span></h3>
+<blockquote class="quote">“These heuristics serve as a workaround for the noisy predictions of the model, and more research would be needed to further improve the reliability of long-form decoding.”<cite>Radford et al. (2022), §4.5</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>When a decoder gets stuck, it tends to repeat itself: the same phrase, over and over. A careful transcriber who notices they are going in circles stops, loosens up, and tries again. Whisper's long-form decoding does the same, with two alarms and a ladder of retries.</p>
+<h4>The heuristics, in the order they are added</h4>
+<ol>
+  <li><strong><span class="t" data-t="beam search">Beam search</span></strong> with 5 beams, scored by log-probability, because <span class="t" data-t="greedy decoding">greedy decoding</span> loops more often.</li>
+  <li><strong>Temperature fallback:</strong> decode at <span class="t" data-t="temperature">temperature</span> 0 (always the most probable token); if either alarm below goes off, try again at 0.2, then 0.4, and so on up to 1.0.</li>
+  <li><strong>Voice activity detection:</strong> call a window silent only if the <code>NO SPEECH</code> probability is above 0.6 <em>and</em> the average log-probability is below −1; the no-speech token alone was not reliable enough.</li>
+  <li><strong>Previous-text conditioning:</strong> give the decoder the previous window's text, but only when the temperature is below 0.5.</li>
+  <li><strong>Initial timestamp constraint:</strong> force the first timestamp to lie between 0.0 and 1.0 seconds, so the model can't skip the window's first words.</li>
+</ol>
+<h4>The two alarms</h4>
+<p><strong>Tiny example:</strong> a window's three tokens got log-probabilities −0.1, −0.3 and −2.9. Their average is −1.1: below −1, so the model was unsure, and the window is decoded again, hotter.</p>
+<div class="eq" data-tex="\htmlData{sym=lbar}{\bar{\ell}} = \frac{1}{\htmlData{sym=ntok}{n}} \htmlData{sym=sumi}{\sum_{i=1}^{n}} \htmlData{sym=logpi}{\log p(y_i \mid y_{&lt;i}, \text{audio})} \quad \text{retry if } \htmlData{sym=lbar}{\bar{\ell}} &lt; -1 \text{ or } \htmlData{sym=rho}{\rho} &gt; 2.4" data-fallback="ℓ̄ = (1/n) Σ log p(y_i | y_&lt;i, audio); retry if ℓ̄ &lt; −1 or ρ &gt; 2.4"></div>
+<div class="symtable" data-syms="lbar,ntok,sumi,logpi,rho"></div>
+<p class="inwords"><strong>In words:</strong> “average the log-probabilities of the tokens the model just wrote; if the average is below −1, or if the text compresses better than 2.4 to 1, throw the window's text away and decode it again at the next temperature.” A text that compresses very well is a text that repeats itself.</p>
+<p class="inwords"><strong>With the numbers:</strong> (−0.1 − 0.3 − 2.9) / 3 = −1.1 &lt; −1: retry. A looping transcript, “I think so.” twelve times, is 144 bytes and compresses to 23: ρ = 6.26 &gt; 2.4, retry. A normal sentence of 94 bytes compresses to only 82: ρ = 1.15, fine.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import zlib
+# ℓ̄: the mean log-probability of the tokens written
+logp = [-0.1, -0.3, -2.9]
+round(sum(logp) / len(logp), 2)  # → -1.1
+# ρ: bytes before compression over bytes after (DEFLATE, the method inside gzip)
+def rho(text):
+    raw = text.encode()
+    return len(raw) / len(zlib.compress(raw))
+round(rho("I think so. " * 12), 2)  # → 6.26
+round(rho("Thank you all for coming. Today we look at how the model copes with long recordings of speech."), 2)  # → 1.15
+# the temperatures tried, in order
+[round(0.2 * i, 1) for i in range(6)]  # → [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]</code></pre>
+<p><strong>Try it:</strong> type or paste a transcript, move the confidence slider, and see which alarm goes off. Start with the looping example, then load the normal one.</p>
+<div class="play" id="fig-fallback">
+  <div class="mode" role="group" aria-label="Load an example"><span>Example:</span>
+    <button type="button" data-ex="loop">Stuck in a loop</button>
+    <button type="button" data-ex="normal">Normal speech</button></div>
+  <label class="field" for="fb-text">Transcript of one window</label>
+  <textarea id="fb-text"></textarea>
+  <div class="sliders">
+    <label for="fb-lp">average log-prob ℓ̄</label>
+    <input type="range" id="fb-lp" min="-2" max="0" step="0.05" value="-0.4">
+    <span id="fb-lpv">−0.40</span>
+  </div>
+  <p class="readout" id="fb-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the readout compresses your text in the browser with DEFLATE (the method inside gzip) and divides its length before by its length after. Repetitive text shrinks a lot and pushes ρ past 2.4; ordinary sentences stay near 1 to 1.5. The slider stands in for the model's average confidence, since this page has no model to ask. If either alarm is on, the window is decoded again at the next temperature in the ladder. The browser's compressor may differ from Python's by a byte or two, so ρ can differ slightly from the Python above.</p>
+<div class="plot bars" id="fig-t7"><div id="t7-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> average WER over the seven long-form datasets as each heuristic is added on top of the ones above it (from the Average column of the paper's Table 7). Beam search helps (11.0 to 10.6); temperature fallback leaves the average unchanged here; voice activity detection and previous-text conditioning each help a little more, to 10.0; the timestamp constraint leaves the average at 10.0. The table's own columns show what the average hides: every heuristic except temperature fallback (which changes no number in this table) helps some datasets and hurts others. Previous-text conditioning, for instance, raises the WER on one dataset from 4.61 to 6.16 while lowering it on others.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/inference.html#temperature_probs"><code>temperature_probs</code></a> in the inference lesson shows what raising the temperature does to the next-token probabilities.</p>
+<h4>Why it matters today</h4>
+<p>Repetition loops and skipped words are failure modes of any autoregressive decoder, not of speech in particular, and compression ratio is a neat, model-free detector of the first. The paper is candid that these are workarounds: the underlying model is still noisy.</p>
+</section>
+
+<section id="s5">
+<h2>5 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Three threads meet here. <strong>Scaling:</strong> speech recognition has improved with more data for a long time, from 3 hours of TIMIT to 2,000 hours of Switchboard, 12,000 for Deep Speech 2, 162,000 hours of labelled audio with semi-supervised pre-training, and 1,000,000 unlabelled. <strong>Multitask learning:</strong> one model for many tasks, steered by language codes, goes back to machine translation (and to the “text-to-text” framing of T5 and GPT-2). <strong>Robustness:</strong> models that shine on their own test set and stumble on others have been documented across vision, language and speech, and training across many domains is the recurring cure.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Whisper's novelty is not any one of these threads but pulling all three at once, at a scale speech had not seen with labels.</p>
+</section>
+
+<section id="s6">
+<h2>6 Limitations and future work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Bigger models steadily fixed <em>hearing</em> mistakes, such as confusing similar-sounding words. The stubborn remaining errors are not the kind a person makes: getting stuck in a loop, dropping the first or last words of a window, and <span class="t" data-t="hallucination">hallucination</span>, which the paper describes as the model outputting “a transcript entirely unrelated to the actual audio”.</p>
+<h3 class="rung">The paper's list</h3>
+<ul>
+  <li><strong>Better decoding:</strong> fine-tuning on high-quality data, or <span class="t" data-t="reinforcement learning">reinforcement learning</span> aimed at decoding quality, might cut those errors.</li>
+  <li><strong>More data for rare languages:</strong> most languages have under 1,000 hours, and §3.4's rule says a little more data goes a long way.</li>
+  <li><strong>Fine-tuning:</strong> only zero-shot was studied; where good in-domain data exists, fine-tuning should help further.</li>
+  <li><strong>What makes it robust:</strong> perhaps the strong decoder, which is an audio-conditional language model; the paper suggests ablations to find out.</li>
+  <li><strong>Unsupervised objectives:</strong> not needed here, but they might add more.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>A transcript of something nobody said is the worst error a transcriber can make, because it reads fluently. Anything built on transcripts inherits it.</p>
+</section>
+
+<section id="s7">
+<h2>7 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#S7">original</a></span></h2>
+<blockquote class="quote">“Whisper suggests that scaling weakly supervised pre-training has been underappreciated so far in speech recognition research.”<cite>Radford et al. (2022), §7</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>No self-supervision, no self-training, no new architecture: a standard model, a large and diverse labelled dataset, and zero-shot evaluation. The robustness came from the breadth of what the model heard.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>For speech, the paper settled the question “can naturally occurring labels at scale replace careful curation?” with a yes, and released the models that proved it.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices, briefly <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04356#A1">original</a></span></h2>
+<h3 class="rung">What they contain</h3>
+<ul>
+  <li><strong>A, evaluation datasets:</strong> exactly which splits and preprocessing were used, for short-form English, long-form English and multilingual tests.</li>
+  <li><strong>B, compared models:</strong> 14 open models (wav2vec 2.0, HuBERT, speech-to-text transformers, NVIDIA Conformers, SpeechBrain), all trained entirely or partly on LibriSpeech.</li>
+  <li><strong>C, text standardization:</strong> the English normalizer's twelve steps, from removing bracketed text and fillers (hmm, mm, mhm, mmm, uh, um) to expanding contractions, standardizing numbers and currencies and converting British spellings to American; and a simpler normalizer for other languages, which for languages written without spaces (Chinese, Japanese, Thai, Lao, Burmese) puts a space between every character, so the score becomes a character error rate.</li>
+  <li><strong>D, raw results:</strong> every model on every dataset, with <span class="t" data-t="greedy decoding">greedy decoding</span> and with beam search plus temperature fallback. The two differ: Large V2 scores 2.7% on LibriSpeech test-clean greedily (the number in Table 2) and 2.5% with beam search (the number in the text of §3.3).</li>
+  <li><strong>E, dataset statistics</strong> and <strong>F, hyperparameters:</strong> the training settings summarised in §2.4 above.</li>
+</ul>
+</section>
+
+<section id="today">
+<h2>What changed since 2022</h2>
+<p>The core, a log-mel front end, a transformer encoder, and a text decoder trained on huge weakly labelled data, is still how open speech recognizers are built. Around it:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common since</th><th>Why</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>A dedicated text decoder</td><td>The audio encoder's output projected into a general language model's prompt</td><td>The same model can then answer questions about a recording, not only transcribe it</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal</a></td></tr>
+    <tr><td>Text out</td><td>Speech out too, through discrete audio tokens from a learned codebook</td><td>A language model that predicts audio tokens can speak</td><td><a data-lesson="primer/ml/generative/multimodal.html#quantize">multimodal</a></td></tr>
+    <tr><td>30-second windows stitched with heuristics</td><td>The same windowing, with voice detection and alignment tools around it</td><td>The encoder's fixed window stayed; the stitching moved outside the model</td><td><a data-lesson="primer/ml/inference.html">inference</a></td></tr>
+    <tr><td>Zero-shot WER on a normalized benchmark suite</td><td>The same practice, plus checks for hallucinated text</td><td>Fluent invented text is the error readers can't catch</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey and Ilya Sutskever, <em>Robust Speech Recognition via Large-Scale Weak Supervision</em>, ICML 2023. <a href="https://arxiv.org/abs/2212.04356">arXiv:2212.04356</a>. Quotations are brief and attributed, and only selected rows of the paper's tables are reproduced, with attribution. Figures are redrawn from scratch, two of them plotted from Table 6; all explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // frames
+    Tfr: { tex: "T", name: "Number of frames", meaning: "How many spectrogram columns the clip gives: one per window position.", shape: "a whole number", example: "2,998 for 30 s (3,000 with padding)" },
+    Lsamp: { tex: "L", name: "Clip length", meaning: "The recording's length in samples, after re-sampling to 16,000 a second.", shape: "a whole number", example: "480,000" },
+    Nwin: { tex: "N", name: "Window length", meaning: "How many samples each spectrogram slice covers.", shape: "samples", example: "400 (25 ms)" },
+    Hhop: { tex: "H", name: "Hop", meaning: "How far the window moves between slices: the paper's “stride of 10 milliseconds”.", shape: "samples", example: "160 (10 ms)" },
+    floor: { tex: "\\lfloor \\cdot \\rfloor", name: "Floor", meaning: "Round down to a whole number: a part-window or part-stride at the end is dropped.", shape: "a number → a whole number", example: "⌊2,997.5⌋ = 2,997" },
+    // convolution
+    Tout: { tex: "T_{\\text{out}}", name: "Output length", meaning: "How many positions the convolution produces.", shape: "a whole number", example: "3 in the toy; 1,500 after Whisper's second convolution" },
+    Tin: { tex: "T_{\\text{in}}", name: "Input length", meaning: "How many positions go into the convolution.", shape: "a whole number", example: "6 in the toy; 3,000 in Whisper" },
+    pad: { tex: "p", name: "Padding", meaning: "Zeros added at each end so the filter can sit over the first and last positions. One at each end is this page's assumption; the paper doesn't say.", shape: "positions", example: "1" },
+    kw: { tex: "k", name: "Filter width", meaning: "How many neighbouring frames the filter looks at at once. The paper's “filter width of 3”.", shape: "positions", example: "3" },
+    sstride: { tex: "s", name: "Stride", meaning: "How many positions the filter moves each step: 1 for the first convolution, 2 for the second.", shape: "a whole number", example: "2" },
+    // WER
+    WER: { tex: "\\mathrm{WER}", name: "Word error rate", meaning: "The share of the reference's words the output gets wrong. Lower is better; 0 is perfect; it can exceed 1.", shape: "a ratio, often shown as %", example: "0.5 before normalizing, 0.167 after" },
+    Ssub: { tex: "S", name: "Substitutions", meaning: "Reference words replaced by a different word in the output.", shape: "a count", example: "1 (“you” → “you're”)" },
+    Ddel: { tex: "D", name: "Deletions", meaning: "Reference words missing from the output.", shape: "a count", example: "2 (“are”, “the”)" },
+    Iins: { tex: "I", name: "Insertions", meaning: "Words in the output that the reference doesn't have.", shape: "a count", example: "0" },
+    Nref: { tex: "N", name: "Reference length", meaning: "How many words the reference transcript has.", shape: "a count", example: "6" },
+    // RER
+    RER: { tex: "\\mathrm{RER}", name: "Relative error reduction", meaning: "The share of the baseline's errors that the new model avoids.", shape: "a ratio, shown as %", example: "74.7% on Artie" },
+    Wbase: { tex: "\\mathrm{WER}_{\\text{base}}", name: "Baseline error rate", meaning: "The comparison model's WER: here the supervised wav2vec 2.0 model.", shape: "%", example: "24.5" },
+    Wnew: { tex: "\\mathrm{WER}_{\\text{new}}", name: "New error rate", meaning: "The WER of the model being compared: here Whisper Large V2.", shape: "%", example: "6.2" },
+    // power law
+    WERD: { tex: "\\mathrm{WER}(D)", name: "Predicted error", meaning: "The word error rate the rule predicts for a language with D hours of training audio.", shape: "%", example: "10% at 16,000 hours" },
+    WERD0: { tex: "\\mathrm{WER}(D_0)", name: "Error at the anchor", meaning: "A known error rate at some amount of data D₀, which fixes the curve's height. Illustrative on this page.", shape: "%", example: "20% (illustrative)" },
+    Dh: { tex: "D", name: "Hours of data", meaning: "How many hours of speech recognition audio in that language the model was trained on.", shape: "hours", example: "16,000" },
+    D0: { tex: "D_0", name: "Anchor hours", meaning: "The amount of data at which the error rate is known.", shape: "hours", example: "1,000" },
+    expo: { tex: "-1/4", name: "The exponent", meaning: "Fitted from the paper's log-log line: halving per 16× means 16 raised to this power is 1/2.", shape: "a number", example: "16^(−1/4) = 0.5" },
+    // SNR
+    SNR: { tex: "\\mathrm{SNR}_{\\mathrm{dB}}", name: "Signal-to-noise ratio", meaning: "How much stronger the speech is than the noise, on a log scale in decibels. Lower means noisier.", shape: "decibels", example: "10 dB" },
+    log10: { tex: "\\log_{10}", name: "Base-10 logarithm", meaning: "“10 to what power gives this?” It turns ratios into steps: every ×10 in power adds 10 dB.", shape: "a number → a number", example: "log₁₀(10,000) = 4" },
+    Psig: { tex: "P_{\\text{signal}}", name: "Speech power", meaning: "The average power of the speech: the mean of its squared samples.", shape: "a positive number", example: "10" },
+    Pnoise: { tex: "P_{\\text{noise}}", name: "Noise power", meaning: "The average power of the added noise, set per example to hit the chosen SNR.", shape: "a positive number", example: "1" },
+    // fallback
+    lbar: { tex: "\\bar{\\ell}", name: "Average log-probability", meaning: "The mean, over the tokens just written, of the log of the probability the model gave each one. Near 0 means confident; very negative means unsure.", shape: "a negative number", example: "−1.1" },
+    ntok: { tex: "n", name: "Tokens written", meaning: "How many tokens the decoder produced for this window.", shape: "a count", example: "3" },
+    sumi: { tex: "\\sum_{i=1}^{n}", name: "Sum over tokens", meaning: "Add up one term for each token i from 1 to n.", shape: "one number out", example: "−0.1 − 0.3 − 2.9" },
+    logpi: { tex: "\\log p(y_i \\mid y_{<i}, \\text{audio})", name: "One token's log-probability", meaning: "The natural log of the probability the model gave token y_i, given the tokens before it and the audio.", shape: "≤ 0", example: "−2.9" },
+    rho: { tex: "\\rho", name: "Compression ratio", meaning: "The text's length in bytes divided by its length after gzip-style compression. Repetitive text compresses well and scores high.", shape: "≥ about 1", example: "6.26 for a loop; 1.15 for normal speech" },
+  },
+
+  blocks: {
+    mel: { title: "Log-mel spectrogram", body: "<p>80 numbers for every 10 ms of sound: the log of the energy in 80 mel-spaced bands of pitch, from 25 ms windows. 30 seconds is about 3,000 columns. Scaled to lie between −1 and 1.</p>", shape: "3,000 × 80", lesson: "primer/ml/generative/multimodal.html#log_mel_spectrogram" },
+    conv: { title: "2 × Conv1D + GELU", body: "<p>Two convolutions with filter width 3, each followed by a GELU. The second moves two frames at a time, halving the length: 3,000 frames become 1,500 positions, one per 20 ms.</p>", shape: "3,000 × 80 → 1,500 × width", lesson: "primer/ml/generative/multimodal.html#audio_tokens" },
+    sinpos: { title: "+ sinusoidal positions", body: "<p>Fixed sine and cosine patterns added to each position so attention knows where in the clip it is. Not learned; the encoder always reads one 30-second window.</p>", shape: "1,500 × width", lesson: "primer/ml/positional.html" },
+    encsa: { title: "Encoder self-attention", body: "<p>Every audio position looks at every other, with no mask: a sound late in the clip can help interpret one early in it.</p>", shape: "1,500 × width", lesson: "primer/ml/attention.html" },
+    encmlp: { title: "Encoder MLP", body: "<p>Two linear layers with a GELU between, applied to each position on its own.</p>", shape: "1,500 × width", lesson: "primer/ml/transformer.html#FeedForward" },
+    encstack: { title: "Encoder × N", body: "<p>The encoder block, repeated N times (4 in Tiny, 32 in Large), each with pre-norm residual connections, then a final layer norm. Its output, the audio features, is computed once per window.</p>", shape: "1,500 × width", lesson: "primer/ml/transformer.html#TransformerBlock" },
+    tokens: { title: "Tokens so far", body: "<p>Everything the decoder has written for this window: optional previous text, then SOT, the language and task tokens, and the transcript so far.</p>", shape: "up to a few hundred tokens", lesson: "primer/ml/tokenization.html" },
+    learnpos: { title: "+ learned positions", body: "<p>Position vectors learned in training, one per slot, added to the token embeddings.</p>", shape: "tokens × width", lesson: "primer/ml/positional.html" },
+    decsa: { title: "Masked self-attention", body: "<p>Each token looks only at the tokens before it (a causal mask), as in any language model.</p>", shape: "tokens × width", lesson: "primer/ml/attention.html" },
+    decxa: { title: "Cross-attention", body: "<p>Queries come from the decoder's tokens; keys and values come from the encoder's audio features. This is where the text being written listens to the audio.</p>", shape: "tokens × width, reading 1,500 × width", lesson: "primer/ml/transformer.html" },
+    decmlp: { title: "Decoder MLP", body: "<p>The same per-token feed-forward layer as in the encoder.</p>", shape: "tokens × width", lesson: "primer/ml/transformer.html#FeedForward" },
+    decstack: { title: "Decoder × N", body: "<p>The decoder block, repeated as many times as the encoder's and just as wide. Its output layer shares its weights with the input token embeddings (tied embeddings).</p>", shape: "tokens × width" },
+    next: { title: "Next token", body: "<p>A probability for every token in the vocabulary, including the special task tokens and the timestamp tokens. The chosen one is fed back in at the bottom right.</p>", shape: "vocabulary scores" },
+  },
+
+  onReady(P) {
+    const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    // §1: training set sizes, log scale
+    logBars("sizes-bars", [["Academic supervised set", 1_000], ["SpeechStew (7 sets)", 5_140], ["Weakly supervised, prior", 30_000], ["Whisper", 680_000], ["Unlabelled pre-training", 1_000_000, true]], "hours of audio, log scale from 100 to 1,000,000 · striped: no transcripts");
+    // §2.1: what the hours are
+    linBars("mixdata-bars", [["English transcription", 438_000], ["96 other languages", 117_000], ["Translation to English", 125_000]], 0, 680_000, "hours of training audio, axis 0 to 680,000", (v) => `${Math.round(v / 1000)}k`);
+    // §3.3: selected rows of Table 2
+    pairBars("robust-bars", [["LibriSpeech Clean", 2.7, 2.7], ["Artie", 24.5, 6.2], ["CHiME6", 65.8, 25.5], ["CallHome", 34.8, 17.6], ["LibriSpeech Other", 6.2, 5.2], ["Average of 13", 29.3, 12.8]], 70, "WER %, axis 0 to 70 · striped: wav2vec 2.0 Large, supervised on LibriSpeech · solid: Whisper Large V2, zero-shot");
+    // §3.4: the illustrative power law
+    const hours = [10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000];
+    P.lineChart(document.getElementById("law-chart"), {
+      width: 420, height: 260, logX: true, yMin: 0, yMax: 70,
+      series: [{ name: "WER, 20% at 1,000 hours (illustrative)", points: hours.map((h) => [h, 20 * Math.pow(h / 1000, -0.25)]) }],
+      xLabel: "hours of training audio", yLabel: "WER %",
+      xFmt: (v) => v.toLocaleString(), yFmt: (v) => v.toFixed(1),
+      readout: document.getElementById("law-readout"), ariaLabel: "Illustrative word error rate against hours of training audio, halving for every 16 times more data",
+    });
+    // §4.2: Table 6
+    const sizes = [3405, 6811, 13621, 27243, 54486, 681070];
+    P.lineChart(document.getElementById("dscale-chart"), {
+      width: 420, height: 260, logX: true, yMin: 0, yMax: 100,
+      series: [
+        { name: "multilingual WER (Fleurs)", points: sizes.map((s, i) => [s, [92.4, 72.7, 56.6, 45.0, 36.4, 29.2][i]]) },
+        { name: "English WER (12 datasets)", points: sizes.map((s, i) => [s, [30.5, 19.6, 14.4, 12.3, 10.9, 9.9][i]]) },
+      ],
+      xLabel: "hours of training data", yLabel: "WER %",
+      xFmt: (v) => v.toLocaleString(), yFmt: (v) => v.toFixed(1),
+      readout: document.getElementById("dscale-readout"), ariaLabel: "English and multilingual word error rate against training set size, from Table 6",
+    });
+    P.lineChart(document.getElementById("bleu-chart"), {
+      width: 420, height: 220, logX: true, yMin: 0, yMax: 30,
+      series: [{ name: "X→English BLEU (CoVoST2)", points: sizes.map((s, i) => [s, [0.2, 1.7, 7.9, 13.9, 19.2, 24.8][i]]) }],
+      xLabel: "hours of training data", yLabel: "BLEU",
+      xFmt: (v) => v.toLocaleString(), yFmt: (v) => v.toFixed(1),
+      readout: document.getElementById("bleu-readout"), ariaLabel: "Translation BLEU against training set size, from Table 6",
+    });
+    // §4.5: Table 7's average column
+    linBars("t7-bars", [["Greedy decoding only", 11.0], ["+ beam search", 10.6], ["+ temperature fallback", 10.6], ["+ voice activity detection", 10.2], ["+ previous text", 10.0], ["+ first-timestamp rule", 10.0]], 0, 12, "average WER % over seven long-form datasets, axis 0 to 12", (v) => v.toFixed(1));
+    formatBuilder();
+    werPlay();
+    fallbackPlay();
+  },
+};
+
+/* ---- bars: linear, logarithmic, and paired ---- */
+function row(name, width, label, striped) {
+  return `<div class="share-row"><span>${name}</span><div><div class="share-bar${striped ? " alt" : ""}" style="width:${Math.max(1, width).toFixed(1)}%"></div></div><span>${label}</span></div>`;
+}
+function linBars(id, rows, lo, hi, legend, fmt) {
+  document.getElementById(id).innerHTML = `<div class="legend" style="margin:0 0 .4rem">${legend}</div>` +
+    rows.map(([n, v, s]) => row(n, ((v - lo) / (hi - lo)) * 100, fmt(v), s)).join("");
+}
+function logBars(id, rows, legend) {
+  const lo = 2, hi = 6; // log10 of 100 and of 1,000,000
+  document.getElementById(id).innerHTML = `<div class="legend" style="margin:0 0 .4rem">${legend}</div>` +
+    rows.map(([n, v, s]) => row(n, ((Math.log10(v) - lo) / (hi - lo)) * 100, v >= 1e6 ? "1M" : `${(v / 1000).toLocaleString()}k`, s)).join("");
+}
+function pairBars(id, rows, hi, legend) {
+  document.getElementById(id).innerHTML = `<div class="legend" style="margin:0 0 .4rem">${legend}</div>` +
+    rows.map(([n, a, b]) => `<div class="pair">${row(n, (a / hi) * 100, `${a}`, true)}${row("", (b / hi) * 100, `${b}`, false)}</div>`).join("");
+}
+
+/* ---- §2.3: build the decoder's token sequence ---- */
+function formatBuilder() {
+  const state = { audio: "en", task: "transcribe", ts: "off", prev: "off" };
+  const strip = document.getElementById("format-strip");
+  const readout = document.getElementById("format-readout");
+  const TEXT = {
+    en: { transcribe: "the cat sat on the mat", translate: "the cat sat on the mat" },
+    es: { transcribe: "hola, ¿cómo estás?", translate: "hello, how are you?" },
+  };
+  function draw() {
+    const chips = [];
+    if (state.prev === "on") chips.push(["PREV", "special ctx"], ["…the last window's text", "ctx"]);
+    chips.push(["SOT", "special"]);
+    if (state.audio === "none") {
+      chips.push(["NO SPEECH", "special"], ["EOT", "special"]);
+    } else {
+      chips.push([state.audio === "en" ? "EN" : "ES", "special"], [state.task === "transcribe" ? "TRANSCRIBE" : "TRANSLATE", "special"]);
+      const text = TEXT[state.audio][state.task];
+      if (state.ts === "on") chips.push(["0.00", "time"], [text, ""], ["1.62", "time"]);
+      else chips.push(["NO TIMESTAMPS", "special"], [text, ""]);
+      chips.push(["EOT", "special"]);
+    }
+    strip.textContent = "";
+    chips.forEach(([t, cls]) => {
+      const c = document.createElement("span");
+      c.className = "tok" + (cls ? " " + cls : "");
+      c.setAttribute("role", "listitem");
+      c.textContent = t;
+      strip.appendChild(c);
+    });
+    const graded = chips.filter(([, cls]) => !cls.includes("ctx")).length;
+    let note;
+    if (state.audio === "none") note = "No speech: after SOT the model predicts NO SPEECH, and the transcript ends. This is voice activity detection, learned from the speechless segments kept in the data.";
+    else if (state.audio === "en" && state.task === "translate") note = "Translating English into English is transcription: the text is the same. The TRANSLATE token matters for other languages.";
+    else if (state.task === "translate") note = "The language tag still says what was spoken (ES); TRANSLATE asks for English text.";
+    else note = `The language tag says what was spoken (${state.audio === "en" ? "EN" : "ES"}); TRANSCRIBE asks for text in that same language.`;
+    if (state.ts === "on" && state.audio !== "none") note += " Time tokens bracket the text: it starts at 0.00 s and ends at 1.62 s, both multiples of 20 ms.";
+    if (state.prev === "on") note += " The dashed chips are context: read, never graded.";
+    readout.innerHTML = `${note} <strong>${graded}</strong> of ${chips.length} pieces are trained on.`;
+    document.querySelectorAll("#fig-format [data-k]").forEach((b) => b.setAttribute("aria-pressed", String(state[b.dataset.k] === b.dataset.v)));
+  }
+  document.querySelectorAll("#fig-format [data-k]").forEach((b) => b.addEventListener("click", () => { state[b.dataset.k] = b.dataset.v; draw(); }));
+  draw();
+}
+
+/* ---- §3.2: word error rate, with and without a normalizer ---- */
+function werPlay() {
+  const ref = document.getElementById("wer-ref");
+  const hyp = document.getElementById("wer-hyp");
+  const readout = document.getElementById("wer-readout");
+  let normalize = false;
+  const CONTRACTIONS = { "you're": "you are", "we're": "we are", "they're": "they are", "i'm": "i am", "it's": "it is", "that's": "that is", "don't": "do not", "can't": "can not", "won't": "will not", "isn't": "is not", "aren't": "are not", "didn't": "did not", "i'll": "i will", "we'll": "we will", "let's": "let us" };
+  const FILLERS = new Set(["hmm", "mm", "mhm", "mmm", "uh", "um"]);
+  function norm(s) {
+    s = s.toLowerCase().replace(/[’]/g, "'").replace(/\[[^\]]*\]|\([^)]*\)/g, " ");
+    return s.split(/\s+/).map((w) => w.replace(/^[^\w']+|[^\w']+$/g, "")).filter((w) => w && !FILLERS.has(w))
+      .flatMap((w) => (CONTRACTIONS[w] || w).split(" ")).map((w) => w.replace(/[^\w]/g, "")).filter(Boolean);
+  }
+  function align(r, h) {
+    // d[i][j]: fewest edits turning r[:i] into h[:j]; then walk back to count each kind
+    const d = Array.from({ length: r.length + 1 }, (_, i) => Array.from({ length: h.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
+    for (let i = 1; i <= r.length; i++) for (let j = 1; j <= h.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (r[i - 1] === h[j - 1] ? 0 : 1));
+    let i = r.length, j = h.length, S = 0, D = 0, I = 0;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && d[i][j] === d[i - 1][j - 1] + (r[i - 1] === h[j - 1] ? 0 : 1)) { if (r[i - 1] !== h[j - 1]) S++; i--; j--; }
+      else if (i > 0 && d[i][j] === d[i - 1][j] + 1) { D++; i--; }
+      else { I++; j--; }
+    }
+    return { S, D, I };
+  }
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+  function draw() {
+    const r = normalize ? norm(ref.value) : ref.value.split(/\s+/).filter(Boolean);
+    const h = normalize ? norm(hyp.value) : hyp.value.split(/\s+/).filter(Boolean);
+    if (!r.length) { readout.textContent = "Type a reference transcript to score against."; return; }
+    const { S, D, I } = align(r, h);
+    const wer = (S + D + I) / r.length;
+    readout.innerHTML = `Compared as: reference [${esc(r.join(" "))}], output [${esc(h.join(" "))}]. S = ${S}, D = ${D}, I = ${I}, N = ${r.length}: <strong>WER = ${(100 * wer).toFixed(1)}%</strong>${normalize ? " after normalizing" : " as written"}.`;
+    document.querySelectorAll("#fig-wer [data-norm]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.norm === "on") === normalize)));
+  }
+  document.querySelectorAll("#fig-wer [data-norm]").forEach((b) => b.addEventListener("click", () => { normalize = b.dataset.norm === "on"; draw(); }));
+  ref.addEventListener("input", draw);
+  hyp.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- §4.5: the two alarms of temperature fallback ---- */
+function fallbackPlay() {
+  const text = document.getElementById("fb-text");
+  const lp = document.getElementById("fb-lp");
+  const lpv = document.getElementById("fb-lpv");
+  const readout = document.getElementById("fb-readout");
+  const EX = {
+    loop: "I think so. I think so. I think so. I think so. I think so. I think so. I think so. I think so. I think so. I think so. I think so. I think so.",
+    normal: "Thank you all for coming. Today we look at how the model copes with long recordings of speech.",
+  };
+  async function deflatedLength(s) {
+    const bytes = new TextEncoder().encode(s);
+    if (typeof CompressionStream === "undefined") return null;
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
+    const out = await new Response(stream).arrayBuffer();
+    return [bytes.length, out.byteLength];
+  }
+  let ticket = 0;
+  async function draw() {
+    const mine = ++ticket;
+    const l = +lp.value;
+    lpv.textContent = l.toFixed(2).replace("-", "−");
+    const sizes = text.value ? await deflatedLength(text.value) : [0, 0];
+    if (mine !== ticket) return;
+    let rho = null;
+    let rhoText = "no text";
+    if (sizes === null) rhoText = "compression isn't available in this browser";
+    else if (sizes[0]) { rho = sizes[0] / sizes[1]; rhoText = `${sizes[0]} bytes → ${sizes[1]} compressed, <strong>ρ = ${rho.toFixed(2)}</strong>`; }
+    const loop = rho !== null && rho > 2.4;
+    const unsure = l < -1;
+    const verdict = loop || unsure
+      ? `<strong>Retry</strong> at the next temperature (0.0 → 0.2 → … → 1.0): ${[loop ? "the text repeats itself (ρ &gt; 2.4)" : "", unsure ? "the model was unsure (ℓ̄ &lt; −1)" : ""].filter(Boolean).join(" and ")}.`
+      : "<strong>Keep</strong> this window's text: neither alarm is on.";
+    readout.innerHTML = `${rhoText}; ℓ̄ = ${l.toFixed(2).replace("-", "−")}. ${verdict}`;
+  }
+  document.querySelectorAll("#fig-fallback [data-ex]").forEach((b) => b.addEventListener("click", () => { text.value = EX[b.dataset.ex]; draw(); }));
+  text.addEventListener("input", draw);
+  lp.addEventListener("input", draw);
+  text.value = EX.loop;
+  draw();
+}
+</script>
+</body>
+</html>
