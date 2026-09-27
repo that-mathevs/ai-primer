@@ -827,6 +827,7 @@ into full-size pixels once, at the end.
   https://arxiv.org/abs/1312.6114. Introduced the variational autoencoder,
   the reparameterization trick and the ELBO loss with its closed-form
   Gaussian KL.
+  [Annotated companion](../../../papers/auto-encoding-variational-bayes.html)
 - **Rezende, Mohamed & Wierstra, *Stochastic Backpropagation and Approximate
   Inference in Deep Generative Models* (2014)**:
   https://arxiv.org/abs/1401.4082. Developed the same idea independently at
