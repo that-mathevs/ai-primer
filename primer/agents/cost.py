@@ -3,7 +3,137 @@ r"""
 
 Run: `python -m primer.agents.cost`
 
-## The everyday picture
+This lesson builds on tokens and pricing from `primer.ml.inference`, on the
+context window from `primer.agents.context` and on the release gate from
+`primer.agents.evals`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Cost engineering for a model-backed system means paying
+less per *successful* task, not per call, by taking the levers that can't
+hurt quality first and checking the ones that can against an eval.
+
+**When you need it.** When the bill grows faster than the value, when a
+latency budget is missed, or before the first big customer arrives and the
+price per task stops being a rounding error. The tell: you know your spend
+per month but not your cost per successful task, or you know cost per call
+but have never counted retries and human clean-up. The lesson's worked
+example shows why that number, and only that number, decides things: a
+small model at \$0.002 a call with a 60% success rate beats a large one at
+\$0.010 and 95% if failures can simply be retried (\$0.0033 against
+\$0.0105 per success), and loses by 7x if a person has to fix each failure
+(\$0.802 against \$0.110 per task, at an illustrative \$2 per fix). You don't
+need any of this for a prototype with ten users a day, and you shouldn't
+touch the levers that change behaviour (routing, semantic caching) until
+you have an eval to watch them with. All prices in this lesson are
+illustrative constants chosen for round arithmetic (a large model at \$5
+per million input tokens and \$25 per million output, a small one at \$1
+and \$5); check a provider's current price list for real numbers.
+
+**Your options.** Eight levers, from the ones that can't hurt quality to the
+ones that can:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Prompt caching | Puts the stable part of the prompt first so the provider reuses its work | No behaviour change; the worked 10,000-token call falls from \$0.0625 to \$0.0265 with 8,000 tokens cached | A small write premium the first time; reordering the prompt | The provider's API |
+| Trim tokens | Compress tool results, send fewer retrieved chunks, ask for concise output | No change if you only cut what the next step never read; output is the expensive direction | Engineering, and care not to cut what was needed | Your prompt and code |
+| Parallel tool calls | Run independent tool calls at the same time | Wall-clock time falls to the slowest call (300 ms to 100 ms for three lookups); tokens unchanged | Concurrency in the agent loop | Your agent loop |
+| Exact response cache | The same question, ignoring case and spaces, returns the stored answer | Never wrong until the facts change | A time-to-live to manage | Your code |
+| Batch API | Non-interactive work submitted in bulk at about half price | Half price, results within hours | Waiting; only for work nobody is waiting on | The provider's API |
+| Budgets and alerts | Caps steps and tokens per task and spend per tenant; alerts on a sudden jump | A confused agent stops instead of looping all night | Choosing the limits; a false alarm now and then | Your code |
+| Routing | Sends easy tasks (classify, extract, format) to a small model and hard ones to a large one | 53% saved on this lesson's ten-task workload, if the router is right | The first lever that can lose quality; needs an eval before and after | Your code, in front of every request |
+| Semantic cache | Answers a *similar* question from memory, using embeddings to judge similarity | The cheapest possible hit | Confidently wrong answers: on this lesson's pairs, 40% of different-intent questions are served from cache at a 0.95 threshold | Your code, plus an embedding model |
+
+A ninth, for later: train or distil a small model on the large model's
+answers so it can take more of the routed traffic (Hinton et al., 2015).
+
+**How to choose.** Measure first, then go down the table in order.
+
+- No measurement yet: instrument cost per task by step, by model, input
+  against output and cached against uncached, and put an eval set in place
+  to hold quality fixed.
+- A long, stable system prompt or tool list: prompt caching, today. It is
+  the only lever that halves a bill without changing a single answer.
+- Big tool results or many retrieved chunks: trim. Compress to the fields
+  the next step needs and send the top few reranked chunks.
+- Several independent lookups per turn: run them concurrently, and stream
+  the answer so users see progress.
+- Anything nobody is waiting on (nightly evals, backfills, bulk
+  classification): batch it.
+- Most traffic is simple: route, with the eval watching. A router that sends
+  hard tasks to the small model saves money and quietly loses quality.
+- Narrow, curated, FAQ-style traffic and nothing else: a semantic cache
+  with guards (identifiers, numbers and negation must match), a
+  time-to-live and a measured wrong-hit rate. On everyday questions no
+  threshold makes it safe.
+- Whatever you pick, judge it by cost per successful task, with retries and
+  human clean-up counted in.
+
+**What it costs.** The levers stack. On this lesson's ten-task workload the
+baseline is \$0.671; caching takes it to \$0.311 (2.2x), trimming tool output
+to \$0.186 (3.6x), concise output to \$0.171 (3.9x), routing to \$0.086 (7.8x)
+and batching the non-interactive share to \$0.080 (8.4x). The first three
+are free wins that don't touch quality; routing is the big one and the
+first that can. Caching is not free on the first request: Anthropic's
+prompt caching documentation, for one, prices a cache write at 1.25 times
+the base input price for a five-minute cache (2 times for an hour), reads at
+a tenth of it or less, and only caches prompts above a per-model minimum of
+a few hundred to a few thousand tokens. Batching costs time: the same
+provider quotes a 50% discount with most batches finishing within an hour.
+Parallel calls and streaming cost no tokens at all; they buy time and
+perceived speed. Budgets cost the occasional false alarm: this lesson's
+anomaly rule flags a task using more than the mean plus three standard
+deviations of recent usage, so a 10,000-token task against a history around
+1,000 trips it at once.
+
+**What breaks.**
+
+- **Cost per call replacing cost per success.** The cheap model looks
+  cheaper until failures are priced. Count retries and fixes.
+- **Routing that loses quality quietly.** Nothing errors; the answers just
+  get worse. Gate the router with the eval, and re-check when the small
+  model changes.
+- **The semantic cache that answers the wrong question.** "How many sick
+  days do I get?" scores 0.97 against the vacation question and gets the
+  vacation answer. Near-misses score higher than real paraphrases, so no
+  threshold separates them.
+- **Stale cache hits.** The policy changed; the cache didn't. Give every
+  entry a time-to-live.
+- **A cache that never hits.** Something volatile (a timestamp, the user's
+  name) sits at the top of the prompt, so the prefix differs every call.
+  Stable content first.
+- **Trimming what was needed.** A tool result cut to 500 tokens loses the
+  field the next step reads. Compress by field, not by length alone.
+- **The runaway loop.** An agent calls the same tool with the same
+  arguments all night. Cap steps and tokens per task; alert on tokens per
+  task jumping.
+- **One tenant's surprise invoice.** A shared platform with no per-customer
+  cap turns one customer's bug into everyone's bill.
+
+**In the wild.** Prompt caching and batch processing are standard features
+of hosted APIs; Anthropic's documentation for both is linked in Further
+reading and gives the multipliers quoted above. FrugalGPT (Chen, Zaharia and
+Zou, 2023) named the three families, prompt adaptation, model approximation
+and cascades that try a cheap model first and escalate, and reported
+matching the best single model with up to 98% less cost on its benchmarks.
+Distillation (Hinton, Vinyals and Dean, 2015) is how the small model in the
+routing table gets good enough to take more traffic. Tooling: LiteLLM is an
+open-source gateway that puts one interface in front of many providers and
+adds routing with fallbacks, per-key and per-team budgets, spend tracking
+and caching; GPTCache is an open-source semantic cache built on embeddings
+and a vector store with a pluggable similarity evaluator, the design this
+lesson's `SemanticCache` reproduces in miniature, guards and all. Parallel
+tool use is part of the tool-calling protocol of the major APIs: the model
+asks for several tools in one turn and you return all the results in one
+message.
+
+**Go deeper.** Level 2 prices a request symbol by symbol, builds the router,
+both caches and the parallel loop in plain Python, derives the anomaly
+alert from a mean and a standard deviation, works the unit economics with
+every number, and stacks the levers to draw the 8.4x figure. If you only
+needed to know which lever to pull first, you are done.
+
+## Level 2: How it works, from scratch
 
 A restaurant doesn't cut costs by buying worse ingredients for every dish.
 It sends simple orders to the line cook and complex ones to the head chef,
