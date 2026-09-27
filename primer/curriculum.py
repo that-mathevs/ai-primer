@@ -287,7 +287,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.ml.deep_nets",
 
     # the transformer
-    "primer.ml.transformer",
     "primer.ml.tokenization",
     "primer.ml.cnn_rnn",
 
