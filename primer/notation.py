@@ -3,6 +3,138 @@ r"""
 
 Run: `python -m primer.notation`
 
+This lesson builds on nothing: it is where the primer's symbols come from.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** The notation of AI is shorthand for short loops (Σ
+adds a list up, Π multiplies it, a dot product multiplies matching entries
+and adds, ∇ lists the slopes), and the same few dozen symbols fill the
+equations of every paper, the tables of every model card and the parameter
+lists of every API.
+
+**When you need it.** You need it the moment a decision hinges on something
+written in symbols: a model card that says "70B parameters, 4k context, 2.0T
+tokens" (Llama 2's Table 1), an API reference with `temperature`, `top_p`
+and `max_tokens`, a training library's `betas=(0.9, 0.999)`, or a paper
+whose whole claim is one equation. You don't need to derive anything; you
+need to read. The tell: you skip the equation, read the sentence after it,
+and the sentence says "see Equation 1". You don't need this lesson to use a
+chat product, and you don't need proofs, derivations or the appendix of any
+paper to use its result. One number from this lesson shows what reading
+buys: ten agent steps that each succeed 95% of the time all succeed with
+probability 0.95¹⁰ ≈ 0.60 (the demo's first table). Anyone who can read Π
+sees why long chains of steps fail before building one.
+
+**Your options.** Five ways to handle a formula when you meet one, from the
+cheapest to the most certain:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Read the prose, skip the formula | Trusts the author's sentence about what the equation says | Nothing; the prose usually points back at the equation for the part that matters | Free | Your reading |
+| Decode the symbols | Looks each letter up (Σ, η, θ, ‖x‖, ∂) and reads the whole line aloud as a sentence | You know what is added, multiplied or divided, and over what | Minutes, with a symbols table or the Greek-letter table in Level 2 | Your reading |
+| Check the shapes | Follows the sizes through the line: a 4 × 3 matrix times a 3 × 5 matrix is 4 × 5, n tokens by d dimensions stays n by d | Catches most misreadings, because a formula whose shapes don't line up cannot run | One line of arithmetic per formula | The paper's margin, or the shape comments in code |
+| Evaluate it on three numbers | Puts a tiny example through the formula by hand | A number you can compare with the paper's own table | Ten minutes | Paper and pencil |
+| Write it as a loop and run it | Translates Σ into `for`, a dot product into multiply-then-add, and checks the result against NumPy | The definition itself, executable; every function in this lesson is built and tested that way | An hour the first time, minutes after | A notebook |
+
+**How to choose.** Match the effort to what the notation decides.
+
+- A model card or a config file (parameter count, layers, context length):
+  decode the names; no formula is involved. The size words are this lesson's
+  shapes: in Hugging Face's `LlamaConfig`, `hidden_size` 4096 is the vector
+  width d, `num_hidden_layers` 32 is the number of blocks, `vocab_size`
+  32000 is V, and `rms_norm_eps` 1e-6 is the ε that stops a division by
+  zero.
+- An API parameter (`temperature`, `top_p`, `top_k`, `max_tokens`): read
+  the one formula behind it once (softmax, with the scores divided by the
+  temperature; `primer.ml.big_picture` walks it), then follow the vendor's
+  advice. Claude's Messages API documents temperature from 0.0 to 1.0,
+  default 1.0, closer to 0.0 for analytical and multiple-choice work and
+  closer to 1.0 for creative work.
+- A training recipe (η, β₁, β₂, ε, λ, warmup steps, a clipping norm):
+  decode the Greek and copy the values, because these are settings, not
+  derivations. *Attention Is All You Need* trains with Adam at β₁ = 0.9,
+  β₂ = 0.98, ε = 10⁻⁹ and 4000 warmup steps; Llama 2 with AdamW at β₁ = 0.9,
+  β₂ = 0.95, ε = 10⁻⁵, weight decay 0.1 and gradient clipping 1.0.
+  `primer.ml.optimizers` explains each knob.
+- A paper's central equation (a new loss, a new attention variant):
+  evaluate it on three numbers, and write the loop if you will implement it.
+- What you can safely skip: derivations and convergence proofs
+  (appendices), and the notation of the theory (expectations 𝔼, distributions
+  𝒩) until you reproduce a result. What you cannot skip: shapes, Σ, softmax,
+  log, ∇ and the Greek letters that name hyperparameters.
+- Whatever you pick, read every formula aloud as a sentence before deciding
+  it is beyond you. Every formula in this primer has a symbols table and an
+  "In words" line for exactly that.
+
+**What it costs.** Learning the vocabulary costs an afternoon: the whole of
+this lesson is a couple of dozen symbols, and `python -m primer.notation`
+runs every one of them in under a second. Misreading costs more. A
+log-probability is a natural logarithm, so an API that reports a token's
+logprob as −4.61 is saying 1%, and −0.11 is saying 90% (the lesson's *e* and
+log section); read it as base 10 and every confidence you compute is wrong.
+Attention's cost is O(n²) in sequence length (Table 1 of the transformer
+paper gives O(n²·d) per layer), so doubling the context quadruples that part
+of the work, which is the arithmetic behind long-context pricing. And the
+scaling laws are written in this notation: Kaplan et al. (2020) found that
+loss falls as a power law in model size, dataset size and compute, and
+Hoffmann et al. (2022, Chinchilla) that for every doubling of model size the
+training tokens should double too, which is how a 70-billion-parameter model
+came to beat a 280-billion one. A reader who cannot follow N, D and a power
+law cannot check a vendor's claim about either.
+
+**What breaks.**
+
+- **Counting from 1 or from 0.** Mathematics writes $x_1$ for the first
+  entry; Python writes `x[0]`. A position formula copied from a paper into
+  code is off by one until you check which convention it uses.
+- **log means ln.** In ML papers and API responses, log is the natural
+  logarithm. −ln(0.01) = 4.61 and −ln(0.9) = 0.11; that gap is the
+  "confidently wrong" penalty in every training loss.
+- **One letter, several meanings.** β is the momentum coefficient in Adam
+  (β₁, β₂), the learned shift in a normalization layer and the strength knob
+  in DPO; σ is a standard deviation or the sigmoid. The symbols table wins
+  over memory every time.
+- **Shapes that don't line up.** A is 4 × 3 and B is 3 × 5: AB is 4 × 5 and
+  BA does not exist. When a formula's shapes fail, you have misread a
+  transpose, and the code will fail the same way.
+- **Temperature 0 read as determinism.** argmax picks the largest score, but
+  Claude's API reference says results are not fully deterministic even at
+  temperature 0.0, and the pipeline lesson explains why serving hardware
+  makes that so.
+- **Products of probabilities.** The probability of a sentence is a product
+  of thousands of numbers below 1, which underflows to 0 in floating point.
+  That is why models add log-probabilities instead, and why a "score" in a
+  log is negative.
+
+**In the wild.** The transformer paper's Equation 1, softmax(QKᵀ/√d_k)V,
+packs a matrix multiply, a transpose, a square root and a softmax into one
+line, and its Table 1 is the big-O comparison of layer types. Model cards
+and configs carry the shapes: `LlamaConfig` (hidden_size 4096,
+intermediate_size 11008, 32 layers, 32 heads, vocab 32000, initializer_range
+0.02), Llama 2's Table 1 (7B to 70B parameters, 2.0T tokens, learning rates
+3.0 × 10⁻⁴ and 1.5 × 10⁻⁴), the Llama 3 abstract (a dense transformer with
+405B parameters and a 128K-token context). APIs carry the sampling symbols:
+Claude's Messages API (`temperature`, `max_tokens`, `stop_sequences`; models
+released after Claude Opus 4.6 accept only the default temperature of 1.0
+and no `top_k`), Hugging Face's `GenerationConfig` (`do_sample`, otherwise
+greedy; `temperature` 1.0, `top_k` 50, `top_p` 1.0, `max_new_tokens`,
+`repetition_penalty`). Training libraries carry the Greek: PyTorch's
+`AdamW(lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.01)`,
+Hugging Face's `TrainingArguments` (learning_rate 5e-5, adam_beta1 0.9,
+adam_beta2 0.999, adam_epsilon 1e-8, max_grad_norm 1.0). Every value above
+is quoted from the paper or the reference page named beside it; the papers
+are linked from the lessons that build on them.
+
+**Go deeper.** Level 2 builds each symbol as the loop it stands for: Σ and
+Π, the dot product, ‖x‖, matrix multiply and transpose, *e* and log,
+softmax and argmax, mean and spread, derivatives and the gradient, then
+probability notation, big-O and the Greek alphabet, every one with numbers
+you can check by hand and a figure to read. If you only needed to read a
+model card or an API reference, you are done.
+
+## Level 2: How it works, from scratch
+
 Machine learning papers look impenetrable mostly because of **notation**:
 Greek letters, big sigmas, little superscript Ts. Almost every symbol is
 shorthand for a short loop you could write in a few lines of Python. This
