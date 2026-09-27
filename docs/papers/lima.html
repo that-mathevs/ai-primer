@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LIMA: Less Is More for Alignment, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Zhou et al. (2023), the paper that fine-tuned a 65B language model on only 1,000 carefully chosen examples and found it held its own against assistants trained with far more data and human feedback.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .stackrow { display: grid; grid-template-columns: 7.2rem minmax(0, 1fr) 6.4rem; gap: 0.5rem; align-items: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.82rem; margin: 0.3rem 0; }
+  .stack { display: flex; height: 18px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+  .stack span { display: block; height: 100%; transition: width 0.15s; }
+  @media (max-width: 600px) {
+    .stackrow { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0.15rem; }
+    .stackrow .stack { grid-column: 1 / -1; grid-row: 2; }
+  }
+  .seg-win { background: var(--soft-stroke); }
+  .seg-tie { background: var(--wire); opacity: 0.55; }
+  .seg-lose { background: var(--hatch) var(--attn-stroke); }
+  .legend i.sq { width: 12px; height: 12px; border-radius: 2px; }
+  .cands { display: grid; gap: 0.35rem; margin: 0.6rem 0; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.83rem; }
+  .cand { display: grid; grid-template-columns: 3.6rem minmax(0, 1fr); gap: 0.5rem; align-items: start; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+  .cand .verdict { font-weight: 700; }
+  .cand.pass .verdict { color: var(--soft-stroke); }
+  .cand.fail .verdict { color: var(--active); }
+  .cand .why { color: var(--muted); display: block; }
+  .rules { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .barrow { display: grid; grid-template-columns: 10rem minmax(0, 1fr) 6rem; gap: 0.2rem 0.5rem; align-items: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.82rem; margin: 0.35rem 0; }
+  .barrow > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 600px) {
+    .barrow { grid-template-columns: minmax(0, 1fr) auto; }
+    .barrow > div { grid-column: 1 / -1; grid-row: 2; }
+  }
+</style>
+</head>
+<body data-paper="lima">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Alignment data</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Community questions and answers</a></li>
+          <li><a href="#s2-2">2.2 Manually authored examples</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Training LIMA</a></li>
+      <li><a href="#s4">4 Human evaluation</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Experiment setup</a></li>
+          <li><a href="#s4-2">4.2 Results</a></li>
+          <li><a href="#s4-3">4.3 Analysis</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Why is less more?</a></li>
+      <li><a href="#s6">6 Multi-turn dialogue</a></li>
+      <li><a href="#s7">7 Discussion</a></li>
+      <li><a href="#appb">Appendix B: perplexity versus quality</a></li>
+      <li><a href="#appe">Appendix E: six examples of structure</a></li>
+      <li><a href="#today">What changed since 2023</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>LIMA: Less Is More for Alignment, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Chunting Zhou, Pengfei Liu, Puxin Xu, Srini Iyer, Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu, Lili Yu, Susan Zhang, Gargi Ghosh, Mike Lewis, Luke Zettlemoyer and Omer Levy (2023): the paper that fine-tuned a large language model on just 1,000 carefully chosen examples, and asked what that says about where a model's abilities really come from.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2305.11206">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2305.11206">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2305.11206">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is released on arXiv under a Creative Commons Attribution 4.0 licence; the few numbers and table rows shown here are attributed to it. Every chart is redrawn from scratch from numbers printed in the paper, and where a value had to be read off a plot instead, the page says so. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap; so does every symbol in every equation.</li>
+  <li>The diagrams are live: hover, tab to or tap a block to read about it. The preference chart in §4.2 switches between human and GPT-4 judges, and the filter in §2.1 lets you turn the paper's rules on and off.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it matters today</strong>. The <a data-lesson="primer/ml/fine_tuning.html">fine-tuning lesson</a> builds the data-preparation steps this paper relies on (chat formatting, deduplication, a held-out set, label audits) from scratch, and the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> builds the supervised loss LIMA is trained with.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206">original</a></span></h2>
+<blockquote class="quote">“Taken together, these results strongly suggest that almost all knowledge in large language models is learned during pretraining, and only limited instruction tuning data is necessary to teach models to produce high quality output.”<cite>Zhou et al. (2023), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A new hire arrives with a degree, years of reading and a head full of facts. On day one they do not need to be taught chemistry again; they need to see how this office writes a reply: greet the customer, answer the question, list the steps, sign off. A thousand good examples of house style are enough, because the knowledge was already there. LIMA asks whether a <span class="t" data-t="base model">base model</span> is that new hire.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A 65-billion-<span class="t" data-t="parameters">parameter</span> LLaMa model, <span class="t" data-t="fine-tuning">fine-tuned</span> with the ordinary supervised loss on only <strong>1,000</strong> curated prompts and responses, with no <span class="t" data-t="rlhf">reinforcement learning from human feedback</span> and no <span class="t" data-t="preference model">preference model</span>, produces strong assistant-style answers.</li>
+  <li>In a blind comparison, people judged LIMA's answer equal to or better than GPT-4's in 43% of prompts, Bard's in 58%, and DaVinci003's (a model trained with human feedback) in 65%.</li>
+  <li>The interpretation: almost everything a model knows comes from <span class="t" data-t="pretraining">pretraining</span>; alignment mostly teaches a format.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>LIMA changed how people think about the size of an instruction dataset. Before it, the reflex was “more examples”; after it, the question became “which examples, and how good are they?”. That is the stance the <a data-lesson="primer/ml/fine_tuning.html">fine-tuning lesson</a> takes in its sections on label quality and on how many examples to collect.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S1">original</a></span></h2>
+<blockquote class="quote">“We hypothesize that alignment can be a simple process where the model learns the style or format for interacting with users, to expose the knowledge and capabilities that were already acquired during pretraining.”<cite>Zhou et al. (2023), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Think of two ways to open a restaurant with a brilliant chef. One way puts the chef through months of training on millions of customer orders and then a season of diners scoring every plate. The other hands the chef one thick binder: a thousand menus and plated dishes showing exactly how this restaurant serves food. If the chef already knows how to cook, the binder might be almost as good.</p>
+<h3 class="rung">Tiny example: how much data?</h3>
+<p>LIMA's training set is 1,000 examples, about 750,000 <span class="t" data-t="token">tokens</span> in total, so roughly 750 tokens per example. The Alpaca baseline it is compared with was trained on 52,000 examples: 52 times more. The methods it is contrasted with, <span class="t" data-t="instruction tuning">instruction tuning</span> on multi-million-example datasets followed by RLHF over millions of interactions with annotators, use more by further orders of magnitude.</p>
+<figure class="ix" id="fig-pipeline">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 318" role="img" aria-label="Two recipes for turning a pretrained model into an assistant: the usual one with large instruction tuning and RLHF, and LIMA's with 1,000 curated examples">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M170,46 V66" marker-end="url(#arr)"/>
+    <path class="wire" d="M170,98 V110 H90 V128" marker-end="url(#arr)"/>
+    <path class="wire" d="M170,110 H250 V128" marker-end="url(#arr)"/>
+    <path class="wire" d="M90,176 V196" marker-end="url(#arr)"/>
+    <path class="wire" d="M90,244 V264" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,176 V264" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="pretrain"><rect x="20" y="8" width="300" height="38" rx="7"/><text x="170" y="31" text-anchor="middle">Pretraining on raw text</text></g>
+    <g class="blk plain" data-block="base"><rect x="20" y="66" width="300" height="32" rx="7"/><text x="170" y="87" text-anchor="middle">Base model (LLaMa 65B for LIMA)</text></g>
+    <text x="84" y="124" class="lbl" text-anchor="end">usual recipe</text>
+    <text x="256" y="124" class="lbl">LIMA</text>
+    <g class="blk ff" data-block="it"><rect x="12" y="130" width="156" height="46" rx="7"/><text x="90" y="150" text-anchor="middle">Instruction tuning</text><text x="90" y="166" text-anchor="middle" class="lbl">millions of examples</text></g>
+    <g class="blk attn" data-block="rlhf"><rect x="12" y="198" width="156" height="46" rx="7"/><text x="90" y="218" text-anchor="middle">RLHF</text><text x="90" y="234" text-anchor="middle" class="lbl">millions of interactions</text></g>
+    <g class="blk soft" data-block="lima1k"><rect x="176" y="130" width="148" height="46" rx="7"/><text x="250" y="150" text-anchor="middle">Supervised loss on</text><text x="250" y="166" text-anchor="middle">1,000 examples</text></g>
+    <text x="258" y="212" class="lbl">no reward</text>
+    <text x="258" y="226" class="lbl">model, no RL</text>
+    <g class="blk plain" data-block="product"><rect x="12" y="266" width="156" height="40" rx="7"/><text x="90" y="291" text-anchor="middle">Assistant</text></g>
+    <g class="blk soft" data-block="lima"><rect x="176" y="266" width="148" height="40" rx="7"/><text x="250" y="291" text-anchor="middle">LIMA</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start at the top with <strong>Pretraining</strong>, then compare the two columns.</p></div>
+  </div>
+  <figcaption>The contrast the introduction draws, redrawn as a diagram. Based on Zhou et al. (2023), §1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> both recipes start from the same place: a model pretrained on an enormous amount of raw text to predict the next token. The left column is the usual path to a chat assistant: a large instruction-tuning stage, then reinforcement learning from human feedback. The right column is LIMA: one short supervised fine-tune on 1,000 examples and nothing else. If the right column gets close to the left, most of what makes an assistant capable must already be in the top two boxes, and the paper's whole argument rests on that comparison.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>This framing, pretraining supplies the knowledge and <span class="t" data-t="sft">supervised fine-tuning</span> supplies the manners, is now the standard way to explain why a small fine-tune can transform a model. The <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> walks the full pipeline, and the <a href="instructgpt.html">InstructGPT companion</a> explains the RLHF column LIMA leaves out.</p>
+</section>
+
+<section id="s2">
+<h2>2 Alignment data <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S2">original</a></span></h2>
+<blockquote class="quote">“A model’s knowledge and capabilities are learnt almost entirely during pretraining, while alignment teaches it which subdistribution of formats should be used when interacting with users.”<cite>Zhou et al. (2023), §2, the Superficial Alignment Hypothesis</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A pretrained model has read forum threads, textbooks, recipes, arguments and jokes, and it can continue any of them. Asked a question, it might answer, or ask three more questions, or write a sarcastic reply, because all of those appear after questions on the web. The paper's <span class="t" data-tip-title="Superficial Alignment Hypothesis" data-tip="The paper's claim that a model learns what it knows during pretraining, and that alignment only teaches it which of the many styles it has seen to use when talking to a user.">Superficial Alignment Hypothesis</span> says alignment is choosing one of those voices (the helpful assistant) and making it the default. If that is all it is, a small set of examples all written in that voice should do.</p>
+<h3 class="rung">Tiny example: the recipe for the set</h3>
+<p>The authors want <em>diverse inputs</em> and <em>uniform outputs</em>: prompts from every corner of life, answered in one consistent assistant style. The training sources add up to exactly 1,000: 200 + 200 + 200 + 150 + 50 + 200. Separately, they keep 50 development prompts for choosing checkpoints and 300 test prompts (70 + 230) for the evaluation.</p>
+<figure class="ix" id="fig-data">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 372" role="img" aria-label="Table 1 of the paper as bars: the six training sources, the development set and the two test sources, with their example counts">
+    <text x="4" y="14" class="lbl">Training: 1,000 examples</text>
+    <g class="blk ff" data-block="se_stem"><text x="8" y="34">Stack Exchange (STEM)</text><rect x="8" y="40" width="200" height="14" rx="3"/><text x="214" y="52" class="lbl">200</text></g>
+    <g class="blk ff" data-block="se_other"><text x="8" y="72">Stack Exchange (Other)</text><rect x="8" y="78" width="200" height="14" rx="3"/><text x="214" y="90" class="lbl">200</text></g>
+    <g class="blk ff" data-block="wikihow"><text x="8" y="110">wikiHow</text><rect x="8" y="116" width="200" height="14" rx="3"/><text x="214" y="128" class="lbl">200</text></g>
+    <g class="blk ff" data-block="writing"><text x="8" y="148">Reddit r/WritingPrompts</text><rect x="8" y="154" width="150" height="14" rx="3"/><text x="164" y="166" class="lbl">150</text></g>
+    <g class="blk ff" data-block="natinst"><text x="8" y="186">Super-Natural Instructions</text><rect x="8" y="192" width="50" height="14" rx="3"/><text x="64" y="204" class="lbl">50</text></g>
+    <g class="blk ff" data-block="authors_a"><text x="8" y="224">Paper authors, group A</text><rect x="8" y="230" width="200" height="14" rx="3"/><text x="214" y="242" class="lbl">200</text></g>
+    <text x="4" y="266" class="lbl">Development: 50 prompts</text>
+    <g class="blk norm" data-block="dev"><text x="8" y="284">Paper authors, group A</text><rect x="8" y="290" width="50" height="14" rx="3"/><text x="64" y="302" class="lbl">50</text></g>
+    <text x="4" y="324" class="lbl">Test: 300 prompts</text>
+    <g class="blk attn" data-block="test"><rect x="8" y="332" width="70" height="14" rx="3"/><rect x="78" y="332" width="230" height="14" rx="3"/><text x="43" y="364" class="lbl" text-anchor="middle">r/AskReddit 70</text><text x="193" y="364" class="lbl" text-anchor="middle">authors, group B 230</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a bar to see where its examples came from and how long they are.</p></div>
+  </div>
+  <figcaption>Table 1 of the paper, redrawn as bars. Counts from Zhou et al. (2023), Table 1 (CC BY 4.0).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each bar's length is the number of examples. The six blue bars are the whole training set; four of them come from websites where good answers were already written, and one (group A) the authors wrote themselves. The development and test prompts come from different people than the training prompts: group B wrote the test prompts, and the Reddit test prompts have no reference answers at all. Hover the bars to compare lengths: a wikiHow prompt averages 12 tokens and its answer 1,811, while a Super-Natural Instructions prompt averages 236 tokens and its answer 92. The set is tiny, but it is deliberately mixed.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>“Diverse prompts, consistent answers” is still the working rule for a small instruction set. The fine-tuning lesson turns the same idea into checks you can run: <a data-lesson="primer/ml/fine_tuning.html#chat_example"><code>chat_example</code></a> builds one training example in the chat format, and <a data-lesson="primer/ml/fine_tuning.html#deduplicate"><code>deduplicate</code></a> removes near-copies so the 1,000 slots are not wasted on repeats.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Community questions and answers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Mining a forum for training data is like panning for gold: most of what you scoop up is gravel. Stack Exchange and wikiHow are rich streams, moderated and mostly helpful, so simple rules can sift them automatically. Reddit rewards jokes and sarcasm, so the authors picked those examples by hand.</p>
+<h4>Tiny example: the Stack Exchange sieve</h4>
+<p>For each question the authors took the top answer, only if it scored at least 10, and then dropped it if it was shorter than 1,200 characters or longer than 4,096, written in the first person (“I”, “my”), or pointing at other answers (“as mentioned”, “stack exchange”). Links, images and other HTML were stripped; code blocks and lists stayed. Try the sieve on seven invented candidates.</p>
+<div class="play" id="sieve">
+  <div class="rules ui" role="group" aria-label="Filtering rules">
+    <label><input type="checkbox" data-rule="len" checked> 1,200 to 4,096 characters</label>
+    <label><input type="checkbox" data-rule="first" checked> no first person</label>
+    <label><input type="checkbox" data-rule="ref" checked> no references to other answers</label>
+    <label><input type="checkbox" data-rule="score" checked> score at least 10</label>
+  </div>
+  <div class="cands" id="sieve-list"></div>
+  <p class="readout" id="sieve-readout"></p>
+  <p class="readout"><em>The seven candidates are illustrative, invented to exercise each rule; the rules themselves are the paper's.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each card is one top answer and its verdict. With every rule on, two of seven survive. Switch a rule off and watch what floods back in: without the length rule, a one-liner and a sprawling reference both return; without the first-person rule, an anecdote about someone's job returns. The score rule keeps answers the community trusted; the other three remove answers that are fine in a forum but read wrongly from an assistant. That is the paper's point about style: the filter is choosing a voice, not checking facts.</p>
+<h4>The math: sampling across 179 communities</h4>
+<p>Stack Exchange has 179 communities. The authors split them into 75 STEM and 99 other (dropping 5 niche ones), then drew 200 questions from each group “using a temperature of τ = 3 to get a more uniform sample of the different domains”. The paper names the temperature but not the formula. The usual form, and our reading of it, raises each community's size to the power 1/τ before turning sizes into shares, which lifts small communities and trims big ones.</p>
+<p>Tiny example (illustrative sizes): two communities with 900 and 100 questions. Sampling in proportion to size gives shares 0.9 and 0.1. With τ = 3, the sizes become 900<sup>1/3</sup> = 9.655 and 100<sup>1/3</sup> = 4.642, so the shares become 0.675 and 0.325: the small community's share more than triples.</p>
+<div class="eq" data-tex="\htmlData{sym=pi}{p_i} = \frac{\htmlData{sym=ni}{n_i}^{\,1/\htmlData{sym=tau}{\tau}}}{\htmlData{sym=sumj}{\sum_j} \htmlData{sym=nj}{n_j}^{\,1/\htmlData{sym=tau}{\tau}}}" data-fallback="p_i = n_i^(1/τ) / Σ_j n_j^(1/τ)"></div>
+<div class="symtable" data-syms="pi,ni,nj,tau,sumj"></div>
+<p class="inwords"><strong>In words:</strong> “shrink every community's size by taking its τ-th root, then divide by the total so the shares add up to one; the bigger τ, the more even the shares.”</p>
+<p class="inwords"><strong>With the numbers:</strong> p<sub>small</sub> = 4.642 / (9.655 + 4.642) = 0.325, against 0.1 without the temperature.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>n = [900, 100]
+tau = 3
+# n_i^(1/τ): each community's size, softened
+softened = [n_i ** (1 / tau) for n_i in n]
+[round(x, 3) for x in softened]  # → [9.655, 4.642]
+# p_i = n_i^(1/τ) / Σ_j n_j^(1/τ)
+[round(x / sum(softened), 3) for x in softened]  # → [0.675, 0.325]
+# τ = 1 is plain proportional sampling
+[x / sum(n) for x in n]  # → [0.9, 0.1]</code></pre>
+<h4>wikiHow and Reddit</h4>
+<p>From wikiHow, 200 articles: first a category (out of 19), then an article within it, the title as the prompt and the body as the answer, with “This article...” rewritten as “The following answer...”. From Reddit, 150 hand-picked prompts and stories from r/WritingPrompts went into training, and 70 self-contained r/AskReddit questions went into the test set, because top Reddit answers are not reliably helpful.</p>
+<h4>Why it matters today</h4>
+<p>Rule-based filters like these, plus a sampling scheme that stops one big source from dominating, are how most instruction sets are still assembled. A <span class="t" data-t="quality filter">quality filter</span> during pretraining plays the same role at a far larger scale.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Manually authored examples <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S2.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Forum questions cover what people ask forums. To reach the rest of what people might ask an assistant, the authors wrote prompts themselves, inspired by their own interests and their friends', and then wrote the answers in one house voice.</p>
+<h4>Tiny example: two groups, kept apart</h4>
+<p>Two groups of authors each wrote 250 prompts. Group A's became 200 training examples (with answers the authors wrote) and 50 development prompts; group B's, after filtering, became the 230 test prompts. A footnote admits the separation was imperfect: the groups talked before writing, so they share some habits. Of the 200 group-A training examples, 13 are prompts with some toxicity or malice, answered with a partial or full refusal and an explanation. Another 50 examples come from Super-Natural Instructions, one random example from each of 50 generation tasks (summarising, paraphrasing, style transfer), lightly edited into the same style.</p>
+<p>The house style usually acknowledges the question first and then answers it. The authors found this consistent format helped in preliminary experiments and suggest it works a little like <span class="t" data-t="chain of thought">chain of thought</span>: the opening sentence gives the model a running start.</p>
+<h4>Why it matters today</h4>
+<p>Keeping the authors of the test prompts separate from the authors of the training data is the same discipline as the fine-tuning lesson's held-out set, built there by <a data-lesson="primer/ml/fine_tuning.html#split_before_training"><code>split_before_training</code></a>. The footnote is an honest reminder of how easily it leaks. The 13 refusal examples are a first look at the question §4.3 returns to: how much safety behaviour can a handful of examples teach?</p>
+</section>
+
+<section id="s3">
+<h2>3 Training LIMA <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S3">original</a></span></h2>
+<blockquote class="quote">“We find that perplexity does not correlate with generation quality, and thus manually select checkpoints between the 5th and the 10th epochs using the held-out 50-example development set.”<cite>Zhou et al. (2023), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The training itself is deliberately ordinary: read the 1,000 examples fifteen times, adjusting the model a little after every batch, and take smaller steps as you go. Two details stand out. A new <span class="t" data-t="special token">special token</span> marks the end of each speaker's turn, like a “your turn” card passed across a table. And the checkpoint to keep is chosen by reading its answers, not by a number.</p>
+<h3 class="rung">Tiny example: the recipe in numbers</h3>
+<ul>
+  <li><strong>Start:</strong> LLaMa 65B. <strong>Loss:</strong> the standard supervised loss, the one the <a data-lesson="primer/ml/training_stages.html#sft_loss"><code>sft_loss</code></a> function computes.</li>
+  <li><strong>End-of-turn token:</strong> a new token (EOT) after each utterance. It stops generation the way an end-of-sequence token does, but avoids whatever other meanings the pretrained model had attached to that existing token.</li>
+  <li><strong>Optimizer:</strong> <span class="t" data-t="adamw">AdamW</span> with β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.95, <span class="t" data-t="weight decay">weight decay</span> 0.1; 15 <span class="t" data-t="epoch">epochs</span>; batch size 32; texts longer than 2,048 tokens trimmed.</li>
+  <li><strong>Learning rate:</strong> no warm-up; starts at 10<sup>−5</sup> and falls in a straight line to 10<sup>−6</sup> by the end.</li>
+  <li><strong>Steps:</strong> 1,000 examples in batches of 32 is 31.25 batches per epoch, so 15 epochs is roughly 470 steps (our arithmetic; the paper does not print a step count).</li>
+</ul>
+<div class="eq" data-tex="\htmlData{sym=eta}{\eta}(\htmlData{sym=s}{s}) = \htmlData{sym=eta0}{\eta_0} + \big(\htmlData{sym=etaS}{\eta_S} - \htmlData{sym=eta0}{\eta_0}\big)\,\frac{\htmlData{sym=s}{s}}{\htmlData{sym=S}{S}}" data-fallback="η(s) = η_0 + (η_S − η_0) · s / S"></div>
+<div class="symtable" data-syms="eta,s,S,eta0,etaS"></div>
+<p class="inwords"><strong>In words:</strong> “start at the initial learning rate and slide in a straight line to the final one; at a fraction s/S of the way through training, you are that fraction of the way down.”</p>
+<p class="inwords"><strong>With the numbers:</strong> halfway through, η = 10<sup>−5</sup> + (10<sup>−6</sup> − 10<sup>−5</sup>) × 0.5 = 5.5 × 10<sup>−6</sup>; at the end it is 10<sup>−6</sup>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>eta_0, eta_S = 1e-5, 1e-6
+S = 470
+# η(s) = η_0 + (η_S − η_0) · s / S
+def eta(s):
+    return eta_0 + (eta_S - eta_0) * s / S
+round(eta(0), 8), round(eta(S / 2), 8), round(eta(S), 8)  # → (1e-05, 5.5e-06, 1e-06)
+# batches per epoch, and steps over 15 epochs
+1000 / 32, 15 * 1000 / 32  # → (31.25, 468.75)</code></pre>
+<div class="plot">
+  <div id="lr-chart"></div>
+  <p class="readout" id="lr-readout">Hover or tap the chart to read the learning rate at each step.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the training step, out of roughly 470; the y-axis is the learning rate, the size of each update. It starts at its highest, 10<sup>−5</sup>, with no gentle warm-up, and falls in a straight line to a tenth of that. Checkpoints were saved along the way, and the one kept came from between epochs 5 and 10, roughly steps 155 to 315: the middle third of this line. The final model is not the last one.</p>
+<h3 class="rung">Residual dropout, raised layer by layer</h3>
+<p>The one unusual regulariser is <span class="t" data-t="dropout">dropout</span> on the <span class="t" data-t="residual connection">residual connections</span> (following InstructGPT): no dropout at the bottom layer, rising in a straight line to 0.3 at the top layer (0.2 for smaller models). With only 1,000 examples read 15 times, the model could memorise them; switching off random parts of the top layers makes that harder.</p>
+<p>Tiny example (a made-up 5-layer model; this paper does not state LLaMa 65B's layer count): the dropout rates are 0, 0.075, 0.15, 0.225 and 0.3.</p>
+<div class="eq" data-tex="\htmlData{sym=pd}{p_d}(\htmlData{sym=ell}{\ell}) = \htmlData{sym=pmax}{p_{\max}}\cdot\frac{\htmlData{sym=ell}{\ell} - 1}{\htmlData{sym=L}{L} - 1}" data-fallback="p_d(ℓ) = p_max · (ℓ − 1) / (L − 1)"></div>
+<div class="symtable" data-syms="pd,ell,L,pmax"></div>
+<p class="inwords"><strong>In words:</strong> “the bottom layer gets no dropout, the top layer gets the maximum, and every layer between is spaced evenly along the way.”</p>
+<p class="inwords"><strong>With the numbers:</strong> layer 3 of 5 gets 0.3 × (3 − 1)/(5 − 1) = 0.15.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>p_max, L = 0.3, 5
+# p_d(ℓ) = p_max · (ℓ − 1) / (L − 1), for ℓ = 1 … L
+[round(p_max * (ell - 1) / (L - 1), 3) for ell in range(1, L + 1)]  # → [0.0, 0.075, 0.15, 0.225, 0.3]</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>Two habits from this section stuck. A dedicated turn marker is part of every modern <span class="t" data-t="chat template">chat template</span>; the fine-tuning lesson's <a data-lesson="primer/ml/fine_tuning.html#render_chat"><code>render_chat</code></a> ends every turn with one. And choosing checkpoints by reading generations on a small development set, rather than trusting <span class="t" data-t="perplexity">perplexity</span>, is common practice for chat models; <a href="#appb">Appendix B</a> below shows why.</p>
+</section>
+
+<section id="s4">
+<h2>4 Human evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A blind taste test. A judge gets one question and two answers from unnamed models, and says which is better or that neither is clearly better. Repeat for 300 questions and five rival models, and count.</p>
+<h3 class="rung">Why it matters</h3>
+<p>For open-ended answers there is no answer key, so preference between two answers is the most direct measurement available. It is also the same kind of judgement RLHF's reward models are trained on, which makes the comparison fair to the RLHF-trained rivals.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Experiment setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S4.SS1">original</a></span></h3>
+<h4>The rivals</h4>
+<ul>
+  <li><strong>Alpaca 65B:</strong> the same LLaMa 65B fine-tuned on Alpaca's 52,000 examples. Same starting model, 52 times the data: the cleanest comparison in the paper.</li>
+  <li><strong>DaVinci003:</strong> an OpenAI model tuned with RLHF (the method of the <a href="instructgpt.html">InstructGPT companion</a>).</li>
+  <li><strong>Bard</strong> (based on PaLM), <strong>Claude</strong> (52B parameters, trained with reinforcement learning from AI feedback, the method of the <a href="constitutional-ai.html">Constitutional AI companion</a>), and <strong>GPT-4</strong>. All three answered in April 2023.</li>
+</ul>
+<h4>Generating answers</h4>
+<p>One answer per prompt per model, sampled with <span class="t" data-t="top-p">nucleus sampling</span> at p = 0.9 and <span class="t" data-t="temperature">temperature</span> 0.7, a <span class="t" data-tip-title="Repetition penalty" data-tip="A sampling rule that lowers the score of tokens the model has already produced, here by a factor of 1.2, so it is less likely to loop or repeat itself.">repetition penalty</span> of 1.2 on previously generated tokens, and at most 2,048 tokens. The inference lesson builds these knobs: <a data-lesson="primer/ml/inference.html#temperature_probs"><code>temperature_probs</code></a> and <a data-lesson="primer/ml/inference.html#top_p_filter"><code>top_p_filter</code></a>.</p>
+<h4>Do judges agree? Tie-discounted agreement</h4>
+<p>Before trusting the judges, the authors measured how often two judges agree on the same 50 comparisons, scoring one point when two judges give the same verdict, half a point when exactly one of them says “tie”, and zero when they pick opposite answers. This is a form of <span class="t" data-t="inter-annotator agreement">inter-annotator agreement</span>.</p>
+<p>Tiny example: four comparisons. Both judges pick A (1 point); one picks A, the other says tie (½); one picks A, the other B (0); both say tie (1). Agreement = 2.5 / 4 = 0.625.</p>
+<div class="eq" data-tex="\htmlData{sym=agr}{\text{agreement}} = \frac{1}{\htmlData{sym=n}{n}}\htmlData{sym=sumn}{\sum_{i=1}^{n}} \htmlData{sym=ai}{a_i}, \qquad \htmlData{sym=ai}{a_i}\in\{1, \tfrac12, 0\}" data-fallback="agreement = (1/n) Σ_i a_i, with a_i ∈ {1, ½, 0}"></div>
+<div class="symtable" data-syms="agr,n,sumn,ai"></div>
+<p class="inwords"><strong>In words:</strong> “score each shared comparison 1 for the same verdict, ½ if only one judge called it a tie, 0 for opposite verdicts, and average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1 + ½ + 0 + 1) / 4 = 0.625. The paper measured 82% between crowd workers, 81% crowd and authors, 78% between authors, and 78% and 79% between GPT-4 and crowd and authors respectively: GPT-4 agreed with people about as well as people agreed with each other.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>pairs = [("A", "A"), ("A", "tie"), ("A", "B"), ("tie", "tie")]
+# a_i: 1 if the verdicts match, ½ if exactly one is a tie, else 0
+def a(first, second):
+    if first == second:
+        return 1
+    if "tie" in (first, second):
+        return 0.5
+    return 0
+scores = [a(x, y) for x, y in pairs]
+scores  # → [1, 0.5, 0, 1]
+# agreement = (1/n) Σ a_i
+sum(scores) / len(scores)  # → 0.625</code></pre>
+<h4>Why it matters today</h4>
+<p>Measuring agreement before trusting a judge is the step people most often skip. The fine-tuning lesson's <a data-lesson="primer/ml/fine_tuning.html#label_agreement"><code>label_agreement</code></a> does the plain version, and the <a href="llm-as-judge.html">LLM-as-a-judge companion</a> studies when a model can stand in for human judges, which LIMA's GPT-4 numbers foreshadow.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“Perhaps ironically, even GPT-4 prefers LIMA outputs over its own 19% of the time.”<cite>Zhou et al. (2023), §4.2</cite></blockquote>
+<h4>Tiny example: reading one bar</h4>
+<p>Against GPT-4, human judges said LIMA won 18% of prompts, tied 25% and lost 57%. “Equal or better” is wins plus ties: 18 + 25 = 43%, the number in the abstract. Against Alpaca 65B, the same count is 53 + 21 = 74%.</p>
+<div class="eq" data-tex="\htmlData{sym=g}{g} = \htmlData{sym=w}{w} + \htmlData{sym=t}{t}, \qquad \htmlData{sym=l}{l} = 1 - \htmlData{sym=g}{g}" data-fallback="g = w + t,  l = 1 − g"></div>
+<div class="symtable" data-syms="g,w,t,l"></div>
+<p class="inwords"><strong>In words:</strong> “LIMA is at least as good whenever it wins or ties, and it loses the rest.”</p>
+<p class="inwords"><strong>With the numbers:</strong> against GPT-4, g = 0.18 + 0.25 = 0.43 and l = 0.57; against Bard, g = 0.33 + 0.25 = 0.58.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># (wins, ties) for LIMA, human judges, Figure 1
+human = {"Alpaca 65B": (0.53, 0.21), "DaVinci003": (0.44, 0.21), "Bard": (0.33, 0.25),
+         "Claude": (0.24, 0.22), "GPT-4": (0.18, 0.25)}
+# g = w + t for each rival
+{rival: round(w + t, 2) for rival, (w, t) in human.items()}  # → {'Alpaca 65B': 0.74, 'DaVinci003': 0.65, 'Bard': 0.58, 'Claude': 0.46, 'GPT-4': 0.43}</code></pre>
+<figure class="ix" id="fig-pref">
+  <div class="play" style="margin:0;border:0;padding:0">
+    <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+      <span>Judged by:</span>
+      <button type="button" data-judge="human" aria-pressed="true">human crowd workers (Figure 1)</button>
+      <button type="button" data-judge="gpt4" aria-pressed="false">GPT-4 (Figure 2)</button>
+    </div>
+    <div class="legend" style="margin:.6rem 0 .2rem"><span><i class="sq seg-win"></i>LIMA wins</span><span><i class="sq seg-tie"></i>tie</span><span><i class="sq seg-lose"></i>LIMA loses (striped)</span></div>
+    <div id="pref-bars" aria-label="LIMA's wins, ties and losses against five rival models"></div>
+    <p class="readout" id="pref-readout"></p>
+  </div>
+  <figcaption>Figures 1 and 2 of the paper, redrawn. Percentages from Zhou et al. (2023), Figures 1 and 2 (CC BY 4.0), over 300 test prompts.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each row is one rival; each bar is split into LIMA's wins (solid), ties (grey) and losses (striped), adding to 100%. Rows follow the paper's order, and the striped part grows as you go down. Look first at Alpaca 65B: the same base model trained on 52 times more data, and LIMA is at least as good 74% of the time. Then DaVinci003, trained with RLHF: LIMA wins more often than it loses (44% against 35%). Against Claude and GPT-4, LIMA mostly loses, but not always. Switch to GPT-4 as the judge: the ranking of rivals is the same and the picture barely changes, which is why the authors treat the GPT-4 judgements as corroboration.</p>
+<h4>Why it matters today</h4>
+<p>The headline is not that LIMA beats GPT-4; it doesn't. It is that 1,000 examples and no human-feedback stage got surprisingly far, and in particular beat the same base model trained on 52,000 automatically generated examples. Quality of examples, not their count, separated LIMA from Alpaca.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A head-to-head against the best products in the world is a high bar: those products may have seen millions of real user prompts. So the authors also graded LIMA on its own, like marking an exam against the question rather than against the top student.</p>
+<h4>Tiny example: 50 answers, three grades</h4>
+<p>On 50 random test prompts: <strong>Fail</strong> (did not meet the prompt's requirements), <strong>Pass</strong> (met them) or <strong>Excellent</strong>. 25 were excellent (50%), 19 passed (38%) and 6 failed (12%). Of those 50, 43 had a somewhat related training example (advice, letter writing, and so on); adding 13 more prompts with no related training example gives 20 out-of-distribution prompts, of which 20% failed, 35% passed and 45% were excellent: 4, 7 and 9 prompts.</p>
+<div class="plot">
+  <div class="legend" style="margin:0 0 .3rem"><span><i class="sq seg-win"></i>excellent</span><span><i class="sq seg-tie"></i>pass</span><span><i class="sq seg-lose"></i>fail (striped)</span></div>
+  <div id="grade-bars" aria-label="Share of LIMA answers graded excellent, pass and fail"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> the top bar is Figure 3 of the paper: 50 test prompts, half excellent. The bottom bar is the out-of-distribution sample, prompts unlike anything in training. The two bars look alike: about half excellent and a small failing slice in each. The sample is small (20 prompts), but it is the paper's evidence that LIMA did not just learn to copy its 1,000 examples.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># Figure 3: 50 prompts
+excellent, passed, failed = 25, 19, 6
+[x / 50 for x in (excellent, passed, failed)]  # → [0.5, 0.38, 0.12]
+# out of distribution: 20% fail, 35% pass, 45% excellent, of 20 prompts
+[round(share * 20) for share in (0.20, 0.35, 0.45)]  # → [4, 7, 9]
+# safety: 80% of 30 sensitive prompts answered safely
+round(0.8 * 30)  # → 24</code></pre>
+<h4>Safety, from 13 examples</h4>
+<p>On 30 potentially sensitive test prompts, LIMA responded safely to 80% (24), including 6 of the 10 with malicious intent. It refuses outright when a request is plainly harmful (a celebrity's home address), but is more likely to comply when the harmful intent is implied rather than stated: the paper's Figure 4 shows it helpfully advising on drugging a neighbour's dog.</p>
+<h4>Why it matters today</h4>
+<p>Style generalised from a handful of examples; safety only partly did. That split is one reason most assistant recipes still add a preference-tuning stage after supervised fine-tuning, as in the <a href="dpo.html">DPO companion</a>, and why dedicated safety evaluation and <a data-lesson="primer/agents/guardrails.html">guardrails</a> exist.</p>
+</section>
+
+<section id="s5">
+<h2>5 Why is less more? Diversity, quality and quantity <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S5">original</a></span></h2>
+<blockquote class="quote">“We observe that, for the purpose of alignment, scaling up input diversity and output quality have measurable positive effects, while scaling up quantity alone might not.”<cite>Zhou et al. (2023), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Three ways to improve a phrasebook: add more kinds of situation (diversity), fix the clumsy translations (quality), or print more copies of the same phrases (quantity). Only the first two teach you anything new.</p>
+<h3 class="rung">Tiny example: how each score is made</h3>
+<p>These <span class="t" data-t="ablation">ablations</span> use a smaller 7B LLaMa, trained on 2,000 examples per set (a footnote says the 7B model can be tuned on 1,000, but at least 2,000 made training more stable). For every test prompt, the model writes 5 answers, and ChatGPT (GPT-3.5 Turbo) grades each for helpfulness on a six-point <span class="t" data-t="likert scale">Likert scale</span>, from 1 (not helpful) to 6 (highly helpful: clear, detailed, well organised with headings or lists). The model's score is the average grade. Illustrative grades for one prompt: 4, 3, 5, 4, 3, averaging 3.8.</p>
+<div class="eq" data-tex="\htmlData{sym=sbar}{\bar{s}} = \frac{1}{\htmlData{sym=m}{m}}\htmlData{sym=sumk}{\sum_{k=1}^{m}} \htmlData{sym=sk}{s_k}" data-fallback="s̄ = (1/m) Σ_k s_k"></div>
+<div class="symtable" data-syms="sbar,m,sumk,sk"></div>
+<p class="inwords"><strong>In words:</strong> “add up every grade the judge gave and divide by how many there are.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (4 + 3 + 5 + 4 + 3) / 5 = 3.8 for the illustrative prompt. The real comparison below: filtered Stack Exchange scores 3.83 and unfiltered 3.33, a gap of 0.50, which the paper calls significant (it reports each average with a 95% <span class="t" data-t="confidence interval">confidence interval</span>).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>s = [4, 3, 5, 4, 3]
+# s̄ = (1/m) Σ s_k
+sum(s) / len(s)  # → 3.8
+# Figure 5: filtered minus unfiltered, and filtered minus wikiHow
+round(3.83 - 3.33, 2), round(3.83 - 3.49, 2)  # → (0.5, 0.34)</code></pre>
+<div class="plot">
+  <p class="legend" style="margin:0 0 .4rem">Figure 5: generation quality (1 to 6), 2,000 examples each, axis from 3.0 to 4.0</p>
+  <div id="abl-bars" aria-label="Generation quality for three training sets"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> three 7B models, each trained on 2,000 examples, scored by the average ChatGPT grade (the bars start at 3.0 to make differences visible). <strong>Diversity:</strong> wikiHow (high-quality answers, but every prompt is “how to...”) scores 3.49; filtered Stack Exchange (high-quality answers to varied questions) scores 3.83. <strong>Quality:</strong> the same Stack Exchange data without the §2.1 filters drops to 3.33, the lowest of the three, even though its prompts are just as diverse. The filters are worth half a point.</p>
+<div class="plot">
+  <div id="qty-chart"></div>
+  <p class="readout" id="qty-readout">Hover or tap to read the score at each training-set size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> Figure 6 of the paper, redrawn. The x-axis is the number of filtered Stack Exchange training examples on a log scale, doubling from 2,000 to 32,000; the y-axis is the average grade, drawn from 3.2 to 4.0 as in the paper. The line is flat: sixteen times the data buys nothing measurable. These values are read off the paper's plot (it prints no numbers for this figure), so treat them as accurate to about ±0.01; every point sits near 3.83, and the plotted error bars overlap.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>This is the result behind “quality beats quantity” in fine-tuning. It sits beside the <a href="scaling-laws.html">scaling laws</a> of pretraining without contradicting them: for pretraining, more tokens teach more; for this kind of alignment, more copies of the same style teach nothing new. The fine-tuning lesson's advice to double the data only while the held-out score still rises by more than its <span class="t" data-t="margin of error">margin of error</span> (<a data-lesson="primer/ml/fine_tuning.html#margin_of_error"><code>margin_of_error</code></a>) is the practical form of Figure 6.</p>
+</section>
+
+<section id="s6">
+<h2>6 Multi-turn dialogue <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S6">original</a></span></h2>
+<blockquote class="quote">“This leap in capability from a mere 30 examples, as well as the fact that the zero-shot model can converse at all, reinforces the hypothesis that such capabilities are learned during pretraining, and can be invoked through limited supervision.”<cite>Zhou et al. (2023), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Every one of LIMA's 1,000 examples is a single question and a single answer. Asking it to hold a conversation is like asking someone who has only ever answered letters to chat on the phone. It can, a bit, and then it loses the thread. Thirty sample conversations fix most of that.</p>
+<h3 class="rung">Tiny example: counting failures</h3>
+<p>Ten live conversations each. The 1,000-example model failed 15 of its 42 turns (35.7%); in 6 of 10 conversations it stopped following the prompt within 3 exchanges. The authors then added 30 multi-turn conversations (10 written by the authors, 20 edited from Stack Exchange comment chains) and fine-tuned a fresh model from LLaMa on the 1,030 examples. It failed 1 turn of 46 (2.2%), and the share of excellent turns rose from 45.2% to 76.1%. Judged as whole conversations, it was significantly better in 7 of 10 and tied in 3.</p>
+<div class="eq" data-tex="\htmlData{sym=r}{r} = \frac{\htmlData{sym=nf}{n_{\text{fail}}}}{\htmlData{sym=nt}{n_{\text{turns}}}}" data-fallback="r = n_fail / n_turns"></div>
+<div class="symtable" data-syms="r,nf,nt"></div>
+<p class="inwords"><strong>In words:</strong> “the failure rate is the number of failed turns divided by all turns.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 15 / 42 = 0.357 before, 1 / 46 = 0.022 after: sixteen times fewer failures from 30 extra examples.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># r = n_fail / n_turns, before and after the 30 dialogue examples
+r_before, r_after = 15 / 42, 1 / 46
+round(r_before, 3), round(r_after, 3)  # → (0.357, 0.022)
+round(r_before / r_after, 1)  # → 16.4</code></pre>
+<div class="plot">
+  <div class="legend" style="margin:0 0 .3rem"><span><i class="sq seg-win"></i>excellent</span><span><i class="sq seg-tie"></i>pass</span><span><i class="sq seg-lose"></i>fail (striped)</span></div>
+  <div id="dialog-bars" aria-label="Share of dialogue turns graded excellent, pass and fail, before and after adding 30 dialogues"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> Figure 7 of the paper, redrawn: each bar is every turn from 10 conversations, split into excellent, pass and fail. The top bar is LIMA as trained on single-turn examples only (zero-shot at dialogue); the bottom is the version with 30 dialogues added. The striped failure slice shrinks from over a third to a sliver, and the excellent share grows by more than half. Thirty examples are 3% of the training set.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>A behaviour the model can almost do already needs only a few demonstrations, but it does need them: a gap in coverage shows up as a gap in behaviour. <a href="#appe">Appendix E</a> repeats the finding for structured answers with just six examples.</p>
+</section>
+
+<section id="s7">
+<h2>7 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#S7">original</a></span></h2>
+<blockquote class="quote">“Primarily, the mental effort in constructing such examples is significant and difficult to scale up.”<cite>Zhou et al. (2023), §7</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A hand-written style guide is a great way to train one excellent new hire, and a slow way to train a thousand of them for a thousand different jobs.</p>
+<h3 class="rung">The two limitations the authors name</h3>
+<ul>
+  <li><strong>Curation does not scale easily.</strong> 1,000 examples is small to train on but large to write and check by hand.</li>
+  <li><strong>Robustness.</strong> LIMA is not as dependable as product-grade models: an unlucky sample during decoding, or an adversarial prompt, can produce a weak answer.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Both limitations point where the field went next: generating and filtering examples with models to scale curation (<span class="t" data-t="synthetic data">synthetic data</span>), and preference tuning to make behaviour dependable across unlucky samples and adversarial prompts. The <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> shows where each stage fits.</p>
+</section>
+
+<section id="appb">
+<h2>Appendix B: perplexity rises while quality rises <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#A2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A trainee copy-editor gets steadily worse at predicting, word for word, what other writers wrote, because they are learning to write in the house voice instead. Their own writing improves while their “guess the next word of someone else's text” score gets worse. LIMA's validation <span class="t" data-t="perplexity">perplexity</span> behaves exactly like that.</p>
+<h3 class="rung">Tiny example: what perplexity measures</h3>
+<p>Perplexity scores how surprised a model is by some text. If it gave the three actual next tokens probabilities 0.5, 0.25 and 0.125, their average <span class="t" data-t="cross-entropy">negative log-probability</span> is (0.693 + 1.386 + 2.079) / 3 = 1.386, and perplexity is e<sup>1.386</sup> = 4: on average, the model was as unsure as if it were choosing among 4 equally likely tokens.</p>
+<div class="eq" data-tex="\htmlData{sym=PPL}{\text{PPL}} = \htmlData{sym=exp}{\exp}\Big(-\frac{1}{\htmlData{sym=N}{N}}\htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=logp}{\log p(t_i \mid t_{&lt;i})}\Big)" data-fallback="PPL = exp( −(1/N) Σ_i log p(t_i | t_&lt;i) )"></div>
+<div class="symtable" data-syms="PPL,exp,N,sumi,logp"></div>
+<p class="inwords"><strong>In words:</strong> “average how surprised the model is by each real next token, measured as minus the log of the probability it gave that token, and exponentiate so the answer reads as a number of choices.”</p>
+<p class="inwords"><strong>With the numbers:</strong> exp(1.386) = 4.0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+p = [0.5, 0.25, 0.125]
+N = len(p)
+# −(1/N) Σ log p(t_i | t_&lt;i)
+mean_nll = -sum(math.log(p_i) for p_i in p) / N
+round(mean_nll, 3)  # → 1.386
+# PPL = exp(mean negative log-probability)
+round(math.exp(mean_nll), 3)  # → 4.0</code></pre>
+<div class="plot">
+  <div id="ppl-chart"></div>
+  <p class="readout" id="ppl-readout">Hover or tap to read validation perplexity at each step.</p>
+</div>
+<div class="plot">
+  <div id="qual-chart"></div>
+  <p class="readout" id="qual-readout">Hover or tap to read generation quality at each step.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> Figure 9 of the paper, split into two charts that share the same x-axis: training steps of LIMA 65B, from 60 to 420. The top chart is perplexity on 2,000 held-out Stack Exchange examples; the bottom is the average ChatGPT grade of generations (the §5 method). Both climb, apart from a small dip in quality at the last point. In most training, rising validation perplexity is the classic sign of <span class="t" data-t="overfitting">overfitting</span> and a reason to stop; here the answers keep getting better while it rises. The values are read off the paper's plot, so they are approximate, and the grades carry wide error bars in the original. The paper reports the correlation and does not explain it; a plausible reading is that the model grows more committed to its own house style, and therefore less likely to predict other people's exact wording.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Perplexity on reference answers is a poor guide to choosing a chat model's checkpoint. That is why LIMA picks checkpoints by reading answers on a 50-prompt development set, and it is the exception to the fine-tuning lesson's rule of stopping at the best validation loss, shown by <a data-lesson="primer/ml/fine_tuning.html#overfitting_run"><code>overfitting_run</code></a>: that rule holds when the validation loss measures the thing you care about.</p>
+</section>
+
+<section id="appe">
+<h2>Appendix E: six examples of structure <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.11206#A5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>If no one has ever shown you a form with named sections, you might answer “fill in Goals, Audience and Budget” with a nice essay that ignores the headings. Once you have seen a few forms, you fill in any form.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Early versions of LIMA handled most development prompts but not those that dictated a structure, such as “summarise this into bullet points” or “write a plan with these five sections”. Six training examples with formatting constraints (a product page with Highlights, About the Product and How to Use sections; question-and-answer pairs from an article) were enough. The paper's Figure 13 contrasts 994 examples with 1,000: without the six, a request for a coffee-shop marketing plan with five named sections gets a generic plan that ignores them; with them, the answer follows all five, although no marketing plan appears anywhere in the training data.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Six examples, 0.6% of the data, switched a whole class of behaviour on. When a fine-tuned model ignores a format, the first thing to check is whether any training example shows that kind of format at all.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2023</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where to learn more</th></tr></thead>
+  <tbody>
+    <tr><td>Supervised fine-tuning only, no preference stage</td><td>A supervised stage followed by preference tuning such as DPO</td><td>LIMA itself reports fragile safety and occasional weak answers; preference tuning targets exactly those</td><td><a href="dpo.html">DPO companion</a>, <a data-lesson="primer/ml/training_stages.html">training stages lesson</a></td></tr>
+    <tr><td>1,000 examples written or curated by hand</td><td>Instruction sets often drafted or filtered by models, then checked</td><td>Hand curation does not scale, the limitation §7 names; LIMA's lesson carries over as “filter hard”</td><td><a data-lesson="primer/ml/fine_tuning.html">fine-tuning lesson</a></td></tr>
+    <tr><td>GPT-4 as a second judge, agreeing with humans about as well as humans agree</td><td>Model judges used routinely for quick comparisons, calibrated against human labels</td><td>Human judging is slow and costly; agreement must still be measured</td><td><a href="llm-as-judge.html">LLM-as-a-judge companion</a>, <a data-lesson="primer/agents/evals.html">evals lesson</a></td></tr>
+    <tr><td>A special end-of-turn token</td><td>Every chat model has a template of turn markers</td><td>The model must know exactly where a turn ends, and existing tokens carry old meanings</td><td><a data-lesson="primer/ml/fine_tuning.html#render_chat">fine-tuning lesson, <code>render_chat</code></a></td></tr>
+    <tr><td>Full fine-tuning of all 65B weights</td><td>Small instruction sets are often trained as adapters instead</td><td>Updating a few low-rank matrices is far cheaper and forgets less of the base model</td><td><a href="lora.html">LoRA companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Chunting Zhou, Pengfei Liu, Puxin Xu, Srini Iyer, Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu, Lili Yu, Susan Zhang, Gargi Ghosh, Mike Lewis, Luke Zettlemoyer and Omer Levy, <em>LIMA: Less Is More for Alignment</em>, NeurIPS 2023. <a href="https://arxiv.org/abs/2305.11206">arXiv:2305.11206</a>, released under CC BY 4.0. Quotations are brief and attributed; selected numbers are reproduced with attribution, and values read off plots are marked as approximate. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    pi: { tex: "p_i", name: "Share of samples from group i", meaning: "The probability of drawing the next question from community i.", shape: "0 to 1, all shares add to 1", example: "0.325 for the small community" },
+    ni: { tex: "n_i", name: "Size of group i", meaning: "How many questions community i has.", shape: "a whole number", example: "100 (illustrative)" },
+    nj: { tex: "n_j", name: "Size of group j", meaning: "j walks over every community to form the total.", shape: "a whole number", example: "900 and 100" },
+    tau: { tex: "\\tau", name: "Sampling temperature", meaning: "How much to even out the groups. τ = 1 samples in proportion to size; larger τ gives small groups a bigger share. The paper uses τ = 3.", shape: "a number ≥ 1", example: "3" },
+    sumj: { tex: "\\sum_j", name: "Sum over groups", meaning: "Add up the softened sizes of every community, so the shares total 1.", shape: "an operation", example: "9.655 + 4.642 = 14.297" },
+    eta: { tex: "\\eta(s)", name: "Learning rate at step s", meaning: "How big an update the optimizer takes at training step s.", shape: "a small positive number", example: "5.5 × 10⁻⁶ halfway" },
+    s: { tex: "s", name: "Current step", meaning: "How many updates have been made so far.", shape: "0 to S", example: "235" },
+    S: { tex: "S", name: "Total steps", meaning: "How many updates the whole run makes (15 epochs).", shape: "a whole number", example: "about 470 (our estimate)" },
+    eta0: { tex: "\\eta_0", name: "Starting learning rate", meaning: "The rate at the first step; LIMA uses no warm-up, so it starts here at once.", shape: "a number", example: "10⁻⁵" },
+    etaS: { tex: "\\eta_S", name: "Final learning rate", meaning: "The rate at the last step.", shape: "a number", example: "10⁻⁶" },
+    pd: { tex: "p_d(\\ell)", name: "Dropout rate of layer ℓ", meaning: "The chance that each value on layer ℓ's residual connection is switched off during a training step.", shape: "0 to p_max", example: "0.15 for layer 3 of 5" },
+    ell: { tex: "\\ell", name: "Layer number", meaning: "Which layer, counting from the bottom (1) to the top (L).", shape: "1 to L", example: "3" },
+    L: { tex: "L", name: "Number of layers", meaning: "How many layers the model stacks.", shape: "a whole number", example: "5 (illustrative)" },
+    pmax: { tex: "p_{\\max}", name: "Top-layer dropout", meaning: "The dropout rate at the last layer: 0.3 for LIMA 65B, 0.2 for smaller models.", shape: "0 to 1", example: "0.3" },
+    agr: { tex: "\\text{agreement}", name: "Tie-discounted agreement", meaning: "How often two judges agree on the same comparisons, with half credit when only one calls a tie.", shape: "0 to 1", example: "0.625" },
+    n: { tex: "n", name: "Number of shared comparisons", meaning: "How many comparisons both judges labelled. The paper used 50.", shape: "a whole number", example: "4" },
+    sumn: { tex: "\\sum_{i=1}^{n}", name: "Sum over comparisons", meaning: "Add up one score for every shared comparison.", shape: "an operation", example: "1 + ½ + 0 + 1 = 2.5" },
+    sumi: { tex: "\\sum_{i=1}^{N}", name: "Sum over tokens", meaning: "Add up one term for every token of held-out text.", shape: "an operation", example: "−0.693 − 1.386 − 2.079 = −4.159" },
+    ai: { tex: "a_i", name: "Score for comparison i", meaning: "1 if the two verdicts match, ½ if exactly one judge said tie, 0 if they chose opposite answers.", shape: "1, ½ or 0", example: "½ for (A, tie)" },
+    g: { tex: "g", name: "At least as good", meaning: "The share of prompts where LIMA's answer won or tied.", shape: "0 to 1", example: "0.43 against GPT-4" },
+    w: { tex: "w", name: "Win share", meaning: "The share of prompts where the judge preferred LIMA's answer.", shape: "0 to 1", example: "0.18 against GPT-4" },
+    t: { tex: "t", name: "Tie share", meaning: "The share of prompts where the judge said neither answer was significantly better.", shape: "0 to 1", example: "0.25 against GPT-4" },
+    l: { tex: "l", name: "Loss share", meaning: "The share of prompts where the rival's answer was preferred.", shape: "0 to 1", example: "0.57 against GPT-4" },
+    sbar: { tex: "\\bar{s}", name: "Average grade", meaning: "The model's score in §5: the mean of every helpfulness grade the judge gave it.", shape: "1 to 6", example: "3.8" },
+    m: { tex: "m", name: "Number of grades", meaning: "How many graded answers are averaged: 5 samples for every test prompt.", shape: "a whole number", example: "5" },
+    sumk: { tex: "\\sum_{k=1}^{m}", name: "Sum over grades", meaning: "Add up all m grades.", shape: "an operation", example: "4 + 3 + 5 + 4 + 3 = 19" },
+    sk: { tex: "s_k", name: "Grade k", meaning: "One helpfulness grade on the six-point scale.", shape: "1 to 6", example: "4" },
+    r: { tex: "r", name: "Failure rate", meaning: "The share of dialogue turns graded Fail.", shape: "0 to 1", example: "0.357 before, 0.022 after" },
+    nf: { tex: "n_{\\text{fail}}", name: "Failed turns", meaning: "How many turns did not meet the prompt's requirements.", shape: "a whole number", example: "15, then 1" },
+    nt: { tex: "n_{\\text{turns}}", name: "All turns", meaning: "How many model turns the 10 conversations contained.", shape: "a whole number", example: "42, then 46" },
+    PPL: { tex: "\\text{PPL}", name: "Perplexity", meaning: "How surprised the model is by real text, as an effective number of choices per token. Lower means better prediction.", shape: "a number ≥ 1", example: "4.0" },
+    exp: { tex: "\\exp", name: "Exponential", meaning: "e raised to a power; it undoes the logarithm, turning an average log-probability back into a count of choices.", shape: "an operation", example: "exp(1.386) = 4" },
+    N: { tex: "N", name: "Number of tokens", meaning: "How many tokens of held-out text are scored.", shape: "a whole number", example: "3" },
+    logp: { tex: "\\log p(t_i \\mid t_{<i})", name: "Log-probability of the real token", meaning: "The natural log of the probability the model gave token i, given all the tokens before it. Always zero or negative; very negative means very surprised.", shape: "≤ 0", example: "log 0.25 = −1.386" },
+  },
+
+  blocks: {
+    pretrain: { title: "Pretraining", body: "<p>Predict the next token over an enormous amount of raw text. This is where, according to the paper, almost all knowledge and ability is learned.</p>", lesson: "primer/ml/pretraining.html" },
+    base: { title: "Base model", body: "<p>LIMA starts from LLaMa 65B, a pretrained model that continues text but does not yet reliably behave like an assistant. Alpaca 65B, a rival in §4, starts from the very same weights.</p>" },
+    it: { title: "Instruction tuning at scale", body: "<p>The usual first step: supervised fine-tuning on large, often multi-million-example instruction datasets.</p>", lesson: "primer/ml/training_stages.html" },
+    rlhf: { title: "RLHF", body: "<p>Reinforcement learning from human feedback: a reward model learns from people's comparisons, collected over millions of interactions, and the model is tuned to score well on it. DaVinci003 and GPT-4 were trained this way.</p>", lesson: "primer/ml/training_stages.html" },
+    product: { title: "Assistant", body: "<p>A model shaped by large-scale tuning and feedback, such as DaVinci003 or GPT-4 in the paper's comparisons. (Claude, another rival, learned from AI feedback rather than human feedback.)</p>" },
+    lima1k: { title: "1,000 curated examples", body: "<p>One supervised fine-tune with the standard next-token loss on 1,000 prompts and responses: about 750,000 tokens. No reward model and no reinforcement learning.</p>", shape: "15 epochs, batch 32" },
+    lima: { title: "LIMA", body: "<p>Judged equal to or better than GPT-4 in 43% of test prompts, and than DaVinci003 in 65%.</p>" },
+    se_stem: { title: "Stack Exchange (STEM)", body: "<p>200 questions and top answers from 75 science, maths and programming communities, filtered for length, style and score.</p>", shape: "avg input 117 tokens, output 523" },
+    se_other: { title: "Stack Exchange (Other)", body: "<p>200 from 99 other communities: English, cooking, travel and more.</p>", shape: "avg input 119 tokens, output 530" },
+    wikihow: { title: "wikiHow", body: "<p>200 how-to articles: title as prompt, body as answer. Very short prompts, very long answers.</p>", shape: "avg input 12 tokens, output 1,811" },
+    writing: { title: "Reddit r/WritingPrompts", body: "<p>150 story premises and high-quality creative responses, chosen by hand, because upvotes on Reddit often reward jokes over help.</p>", shape: "avg input 34 tokens, output 274" },
+    natinst: { title: "Super-Natural Instructions", body: "<p>50 examples, one from each of 50 generation tasks (summarisation, paraphrasing, style transfer), edited into the house style for extra variety.</p>", shape: "avg input 236 tokens, output 92" },
+    authors_a: { title: "Paper authors, group A", body: "<p>200 prompts the authors wrote and answered themselves in one consistent assistant voice, including 13 that call for a refusal.</p>", shape: "avg input 40 tokens, output 334" },
+    dev: { title: "Development set", body: "<p>50 more group-A prompts, held out and used only to pick the checkpoint by reading answers.</p>", shape: "avg input 36 tokens" },
+    test: { title: "Test set", body: "<p>70 r/AskReddit questions (no reference answers) and 230 prompts written by a separate group of authors, group B. 300 in all, used for every comparison in §4.</p>", shape: "avg input 30 and 31 tokens" },
+  },
+
+  onReady(P) {
+    sieve();
+    lrChart(P);
+    prefBars();
+    stackBars("grade-bars", [["50 test prompts", 50, 38, 12], ["20 out-of-distribution", 45, 35, 20]], ["excellent", "pass", "fail"]);
+    stackBars("dialog-bars", [["single-turn only", 45.2, 19.1, 35.7], ["+ 30 dialogues", 76.1, 21.7, 2.2]], ["excellent", "pass", "fail"]);
+    ablationBars();
+    qtyChart(P);
+    pplCharts(P);
+  },
+};
+
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+/* Seven invented Stack Exchange answers, each tripping at most one of the paper's rules. */
+const CANDS = [
+  { text: "A 2,300-character explanation of TCP handshakes, with a code block.", chars: 2300, first: false, ref: false, score: 57 },
+  { text: "A 640-character answer: “Use an interactive rebase.”", chars: 640, first: false, ref: false, score: 88 },
+  { text: "A 2,800-character answer that opens “I ran into this at my job...”", chars: 2800, first: true, ref: false, score: 35 },
+  { text: "A 1,900-character answer that opens “As mentioned in the answer above...”", chars: 1900, first: false, ref: true, score: 20 },
+  { text: "A 5,200-character exhaustive reference list.", chars: 5200, first: false, ref: false, score: 140 },
+  { text: "A 1,500-character answer with a score of 6.", chars: 1500, first: false, ref: false, score: 6 },
+  { text: "A 3,100-character history of the semicolon.", chars: 3100, first: false, ref: false, score: 41 },
+];
+
+function sieve() {
+  const boxes = [...document.querySelectorAll("#sieve [data-rule]")];
+  const list = document.getElementById("sieve-list"), out = document.getElementById("sieve-readout");
+  function draw() {
+    const on = Object.fromEntries(boxes.map((b) => [b.dataset.rule, b.checked]));
+    let kept = 0;
+    list.innerHTML = CANDS.map((c) => {
+      const why = [];
+      if (on.len && (c.chars < 1200 || c.chars > 4096)) why.push(c.chars < 1200 ? "too short" : "too long");
+      if (on.first && c.first) why.push("first person");
+      if (on.ref && c.ref) why.push("refers to other answers");
+      if (on.score && c.score < 10) why.push("score below 10");
+      if (!why.length) kept++;
+      return `<div class="cand ${why.length ? "fail" : "pass"}"><span class="verdict">${why.length ? "drop" : "keep"}</span><span>${c.text}<span class="why">${why.length ? why.join(", ") : "passes every rule that is on"}</span></span></div>`;
+    }).join("");
+    out.textContent = `${kept} of ${CANDS.length} candidates are kept with these rules.`;
+  }
+  boxes.forEach((b) => b.addEventListener("change", draw));
+  draw();
+}
+
+function lrChart(P) {
+  const S = 470, pts = [];
+  for (let s = 0; s <= S; s += 5) pts.push([s, 1e-5 + (1e-6 - 1e-5) * s / S]);
+  P.lineChart(document.getElementById("lr-chart"), { width: 420, height: 270,
+    series: [{ name: "learning rate", points: pts }],
+    xLabel: "training step", yLabel: "learning rate", yMin: 0, yMax: 1.1e-5,
+    xFmt: (x) => Math.round(x), yFmt: (y) => y.toExponential(1),
+    readout: document.getElementById("lr-readout"), ariaLabel: "LIMA's learning rate falling linearly from 1e-5 to 1e-6 over about 470 steps",
+  });
+}
+
+const PREF = {
+  human: [["Alpaca 65B", 53, 21, 26], ["DaVinci003", 44, 21, 35], ["Bard", 33, 25, 42], ["Claude", 24, 22, 54], ["GPT-4", 18, 25, 57]],
+  gpt4: [["Alpaca 65B", 64, 19, 17], ["DaVinci003", 54, 23, 23], ["Bard", 27, 26, 47], ["Claude", 14, 23, 63], ["GPT-4", 19, 15, 66]],
+};
+
+function stackRows(rows, names) {
+  return rows.map(([label, a, b, c]) =>
+    `<div class="stackrow"><span>${label}</span><div class="stack" role="img" aria-label="${label}: ${names[0]} ${a}%, ${names[1]} ${b}%, ${names[2]} ${c}%"><span class="seg-win" style="width:${a}%"></span><span class="seg-tie" style="width:${b}%"></span><span class="seg-lose" style="width:${c}%"></span></div><span>${a} / ${b} / ${c}%</span></div>`
+  ).join("");
+}
+
+function stackBars(id, rows, names) {
+  document.getElementById(id).innerHTML = stackRows(rows, names);
+}
+
+function prefBars() {
+  const host = document.getElementById("pref-bars"), out = document.getElementById("pref-readout");
+  const buttons = [...document.querySelectorAll("#fig-pref [data-judge]")];
+  function draw(judge) {
+    host.innerHTML = stackRows(PREF[judge], ["LIMA wins", "tie", "LIMA loses"]);
+    const g = PREF[judge].map(([r, w, t]) => `${r} ${w + t}%`).join(", ");
+    out.textContent = `Judged by ${judge === "human" ? "human crowd workers" : "GPT-4"}, LIMA is at least as good as: ${g}.`;
+    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.judge === judge)));
+  }
+  buttons.forEach((b) => b.addEventListener("click", () => draw(b.dataset.judge)));
+  draw("human");
+}
+
+function ablationBars() {
+  const rows = [["wikiHow (not diverse)", 3.49], ["Stack Exchange, unfiltered", 3.33], ["Stack Exchange, filtered", 3.83]];
+  document.getElementById("abl-bars").innerHTML = rows.map(([name, v]) =>
+    `<div class="barrow"><span>${name}</span><div><div class="share-bar" style="width:${(v - 3) * 100}%"></div></div><span>${v.toFixed(2)}</span></div>`).join("");
+}
+
+function qtyChart(P) {
+  /* Read off Figure 6 of the paper (no values are printed there); approximate to about ±0.01. */
+  /* x is log2 of thousands of examples, so each step right is one doubling: 1 = 2K … 5 = 32K. */
+  const pts = [[1, 3.83], [2, 3.86], [3, 3.84], [4, 3.83], [5, 3.82]];
+  P.lineChart(document.getElementById("qty-chart"), { width: 420, height: 270,
+    series: [{ name: "generation quality", points: pts }],
+    xLabel: "training examples (each step doubles)", yLabel: "average grade (1 to 6)", yMin: 3.2, yMax: 4.0,
+    xFmt: (x) => (Math.abs(x - Math.round(x)) < 1e-6 ? `${2 ** Math.round(x)}K` : ""), yFmt: (y) => y.toFixed(2),
+    readout: document.getElementById("qty-readout"), ariaLabel: "Generation quality against training-set size from 2,000 to 32,000 examples: flat",
+  });
+}
+
+function pplCharts(P) {
+  /* Read off Figure 9 of the paper; approximate. */
+  const steps = [60, 120, 180, 240, 300, 360, 420];
+  const ppl = [5.1, 6.0, 7.2, 8.2, 9.2, 9.7, 10.3];
+  const qual = [3.90, 3.95, 3.95, 3.97, 4.10, 4.15, 4.10];
+  P.lineChart(document.getElementById("ppl-chart"), { width: 420, height: 270,
+    series: [{ name: "validation perplexity", points: steps.map((s, i) => [s, ppl[i]]), color: css("--attn-stroke") }],
+    xLabel: "training step", yLabel: "validation perplexity", yMin: 4, yMax: 11,
+    xFmt: (x) => Math.round(x), yFmt: (y) => y.toFixed(1),
+    readout: document.getElementById("ppl-readout"), ariaLabel: "Validation perplexity rising from about 5 to about 10 over training",
+  });
+  P.lineChart(document.getElementById("qual-chart"), { width: 420, height: 270,
+    series: [{ name: "generation quality", points: steps.map((s, i) => [s, qual[i]]), color: css("--soft-stroke") }],
+    xLabel: "training step", yLabel: "average grade (1 to 6)", yMin: 3.8, yMax: 4.25,
+    xFmt: (x) => Math.round(x), yFmt: (y) => y.toFixed(2),
+    readout: document.getElementById("qual-readout"), ariaLabel: "Generation quality rising from about 3.9 to about 4.1 over training",
+  });
+}
+</script>
+</body>
+</html>

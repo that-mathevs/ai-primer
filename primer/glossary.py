@@ -129,6 +129,7 @@ GLOSSARY: dict[str, Entry] = {
     # --- tokens ---------------------------------------------------------------
     "token": _E("A piece of text from a model's fixed vocabulary: often a whole common word, or a fragment of a rare one. Models read and write tokens, not words.", TOK),
     "tokenizer": _E("The component that splits text into tokens and maps each to an integer ID.", TOK),
+    "special token": _E("A token reserved for structure rather than text, such as a turn marker or an end-of-text marker. The model learns when to emit it, and generation stops at the end marker.", "primer.ml.fine_tuning"),
     "vocabulary": _E("The fixed set of tokens a model knows, typically 32,000 to 200,000 entries.", TOK),
     "byte pair encoding": _E("A tokenizer-building method that starts from characters and repeatedly merges the most frequent adjacent pair into a new token.", TOK),
     "byte-level bpe": _E("Byte pair encoding run on the raw bytes of UTF-8 text, so any string can be tokenized and there is never an unknown token.", TOK),
@@ -187,6 +188,8 @@ GLOSSARY: dict[str, Entry] = {
     "ndcg": _E("A ranking score that gives more credit for relevant results near the top and handles degrees of relevance.", MET),
     "bleu": _E("A score that counts overlapping word sequences with a reference text. Cheap, but blind to paraphrase.", MET),
     "ablation": _E("Removing or replacing one part of a method and measuring again, to find out which part the gains come from."),
+    "inter-annotator agreement": _E("How often two people labelling the same items independently give the same label. It caps how finely any evaluation built on those labels can tell two models apart.", "primer.ml.fine_tuning"),
+    "likert scale": _E("A rating on a short fixed ladder of labelled points, such as 1 (not helpful) to 6 (highly helpful), averaged over many items to compare systems.", EVAL),
     'calibration': _E("How well a model's confidence matches how often it is right: a calibrated model is right about 80% of the time when it says 80%.", LOSS, scope=('primer/ml/losses', 'primer/ml/alignment')),
     # --- embeddings -----------------------------------------------------------
     "embedding": _E("A learned vector for a piece of content, arranged so that similar meanings end up close together.", W2V),

@@ -1185,6 +1185,7 @@ either way.
   https://arxiv.org/abs/2305.11206. Fine-tuned a large base model on 1,000
   carefully curated examples and got a strong assistant, evidence that
   example quality matters more than quantity.
+  [Annotated companion](../../papers/lima.html)
 - **Lee et al., *Deduplicating Training Data Makes Language Models Better*
   (2021)**: https://arxiv.org/abs/2107.06499. Found widespread near-duplicates
   in standard datasets, including between training and test sets, and
