@@ -3,6 +3,123 @@ r"""
 
 Run: `python -m primer.ml.neural_net`
 
+New to the notation (slopes, Σ, matrices)? `primer.notation` builds every
+symbol used here from zero. This lesson builds on the pipeline picture in
+`primer.ml.big_picture`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** A neural network is stacked layers of weighted sums
+with a nonlinear rule after each, and training is one loop, forward pass,
+loss, backpropagation, optimizer step, that nudges every weight in the
+direction that makes the loss smaller.
+
+**When you need it.** You need this the first time you run or read a
+training job rather than call a finished model: a fine-tuning API asks you
+for epochs and a batch size, a training script runs out of memory that
+inference never needed, a loss curve refuses to move, or a custom layer
+needs a gradient you must trust. The tell: a setting in a training config
+(`num_train_epochs`, `per_device_train_batch_size`, `hidden_act`) that you
+copied from an example without knowing which box of the loop it touches.
+You don't need it to prompt a hosted model, and you don't need it to pick
+one from a leaderboard; the forward pass is the only part that runs at
+inference and a vendor has already tuned it. One number from this lesson
+says why depth is worth anything: on the two-moons data, a single linear
+layer scores 88% because it can only draw a straight line, and one hidden
+layer with a nonlinearity scores 100%.
+
+**Your options.** How much of the training loop you own, from the least to
+the most:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Call a trained model | Runs the forward pass only | No gradients, no activations kept: inference memory, and nothing you can break | Per-token pricing, and a model whose weights you cannot move | The API or the model server |
+| Hosted fine-tuning | The vendor runs forward, loss, backward and step on your examples; you set epochs and batch size | No training infrastructure; the loop's four boxes are the vendor's problem | Curated examples, a job that takes hours, a higher per-token price at some vendors | The vendor's fine-tuning API |
+| Framework autograd on your own hardware | `loss.backward()` in PyTorch or `jax.grad` records the forward pass and replays the chain rule backwards over every weight | The gradient is right, for any layer you compose from the framework's pieces | GPU memory several times the inference footprint, because every layer's activations are cached for the backward pass; the loop is yours to debug | Your training script |
+| Backprop by hand, checked numerically | You write the backward pass of a custom layer and compare it with nudging each weight by ±ε | A gradient you can prove: this lesson's check agrees to a relative error of 4.5 × 10⁻⁹ | Time, and a test per layer | A custom layer's backward method |
+
+**How to choose.** Start from what you are changing.
+
+- Behaviour that prompting cannot fix, on a model you cannot host: hosted
+  fine-tuning. Keep the epochs low; fine-tuning runs several passes over a
+  small dataset, and that is how it overfits.
+- A model you host and a dataset of your own: the framework, with the
+  activation the model was built with. Read it from the config
+  (`hidden_act` in a Hugging Face Llama config is `silu`; GPT-2 uses GELU;
+  the transformer paper's feed-forward uses ReLU) and leave it alone,
+  because the trained weights assume it.
+- A new layer, a new loss, a new attention variant: write its backward pass
+  and gradient-check it before training anything on it. A wrong gradient
+  trains quietly and badly.
+- A training run that misbehaves: the fault is in one of the four boxes
+  (data, forward, loss, backward-and-step). Plot the loss per epoch first;
+  its shape (slow start, steep fall, flat tail) is the first diagnostic in
+  this lesson.
+- Whatever you pick, hold out an evaluation set. The loss you train on is
+  the loss the loop minimises, not the score you care about.
+
+**What it costs.** Memory first: the backward pass reuses every layer's
+activations from the forward pass, so training keeps what inference throws
+away and needs several times the memory (this lesson's two-layer trace
+shows the three cached values it depends on). Compute is one matrix
+multiply per layer per direction, and in a transformer most parameters sit
+in the feed-forward layers, which are exactly the two-layer network built
+here. Steps are counted in batches: 400 examples in batches of 32 is 13
+steps per epoch, and two epochs is 26 updates; Hugging Face's
+`TrainingArguments` defaults to 3 epochs, a batch of 8 per device and a
+learning rate of 5 × 10⁻⁵. Pretraining a language model is roughly one
+epoch over trillions of tokens; fine-tuning is several epochs over a small
+set. Quality is paid for in gradient signal: a sigmoid's slope is at most
+0.25, so ten sigmoid layers can shrink the gradient by 0.25¹⁰ ≈ 10⁻⁶ before
+it reaches the first weights, while ReLU passes exactly 1 for positive
+inputs.
+
+**What breaks.**
+
+- **The loss doesn't move.** The learning rate is too small (the one-knob
+  example halves the error every step at 0.25 and would crawl at 0.001), or
+  the gradient is dying on the way back: saturated sigmoids pass 0.02 of the
+  signal at |z| = 4, and a ReLU whose input stays negative passes nothing,
+  forever.
+- **The loss explodes or turns NaN.** The step is too big; `primer.ml.optimizers`
+  is the fix.
+- **Out of memory in training, fine in inference.** Cached activations.
+  Halve the batch size before anything else.
+- **Great training loss, poor real results.** Several epochs over a small
+  dataset memorised it; measure on held-out data and stop earlier.
+- **A custom gradient that is wrong.** The network still trains, just not
+  towards anything. Nudge each weight by ±ε and compare: anything below
+  about 10⁻⁶ relative error is right, this lesson's check reports 4.5 × 10⁻⁹.
+- **Depth without nonlinearity.** Five stacked linear layers equal one
+  matrix to 2.2 × 10⁻¹⁶; more parameters, no more power. Every layer needs
+  its activation.
+
+**In the wild.** PyTorch's autograd does this lesson's backward pass for
+billions of weights when you call `loss.backward()`; JAX does it as a
+function transformation, `jax.grad` and `jax.value_and_grad`. PyTorch's
+`nn.Linear` initialises its weights from a uniform range set by the
+fan-in, the rule `primer.ml.deep_nets` explains. Activations in the field:
+GELU in BERT and GPT-2 (Hendrycks and Gimpel, 2016), SwiGLU in Llama 2
+(its paper), and `hidden_act` is the field a Hugging Face config uses to
+name it. Hugging Face's `Trainer` runs the four-box loop with the defaults
+above, and any hosted fine-tuning API runs the same loop behind a form that
+asks for epochs and a batch size. The idea is Rumelhart, Hinton and
+Williams (1986); Karpathy's micrograd is the whole of autograd in about a
+hundred lines. The papers are linked at the end of the lesson.
+
+**Go deeper.** Level 2 trains one knob by hand, builds a neuron and a
+layer, passes blame backwards through the chain rule with every number
+shown, proves why stacked linear layers collapse, compares the activations
+and their slopes, and runs backprop through two layers against a numerical
+check. If you only needed to read a training config, you are done.
+
+## Level 2: How it works, from scratch
+
+A neuron is six lines of arithmetic, a layer is a matrix multiply, and
+training is a loop of four boxes. This level builds each one with numbers
+small enough to check by hand, then verifies the hand-written gradients
+against a numerical check.
+
 ## The idea: learning is adjusting knobs to be less wrong
 
 Picture learning to throw darts blindfolded, with a friend calling out "a bit
