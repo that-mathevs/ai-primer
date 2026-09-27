@@ -459,6 +459,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/failures.html",
   "term": "circuit breaker"
  },
+ "classifier guidance": {
+  "def": "Steering a diffusion model toward a label by adding the slope of a separate classifier, trained on noisy inputs, to the model's noise guess at every step.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "classifier guidance"
+ },
  "classifier-free guidance": {
   "def": "Mixing a model's guesses with and without the prompt, and pushing past the prompted one to follow it more closely.",
   "lesson": "primer/ml/generative/diffusion.html",
@@ -1494,6 +1499,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/cnn_rnn.html",
   "term": "ImageNet"
  },
+ "implicit generative model": {
+  "def": "A model that makes samples by pushing random noise through a fixed procedure, without giving the probability of any sample: a GAN generator, or a diffusion model sampled with DDIM.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "implicit generative model"
+ },
  "implicit reward": {
   "def": "In DPO, β times the log of how much more likely training has made a response than the reference model did.",
   "lesson": "primer/ml/training_stages.html",
@@ -1508,6 +1518,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Picking up a task from instructions or examples in the prompt, with no change to the model's weights.",
   "lesson": "primer/ml/big_picture.html",
   "term": "in-context learning"
+ },
+ "inception score": {
+  "def": "A score for generated images from a pretrained image classifier: high when each image is confidently one class and the images spread over many classes. Higher is better; it never looks at real images.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "inception score"
  },
  "index alias": {
   "def": "A pointer name like \"live\" that search uses, so switching indexes means repointing one name.",
@@ -2619,6 +2634,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/notation.html",
   "term": "probability distribution"
  },
+ "probability flow ode": {
+  "def": "The deterministic equation whose solutions carry noise to data with the same in-between distributions as a diffusion process; DDIM sampling is one way of stepping along it.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "probability flow ode"
+ },
  "probability ratio": {
   "def": "The current policy's probability of a sampled action divided by its probability when the action was sampled.",
   "lesson": "primer/ml/reinforcement.html",
@@ -3103,6 +3123,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Squashes any number into the range 0 to 1, with an S-shaped curve.",
   "lesson": "primer/ml/neural_net.html",
   "term": "sigmoid"
+ },
+ "signal-to-noise ratio": {
+  "def": "How much signal a noisy value holds compared with its noise, as a ratio of their variances; in diffusion it falls from very large (clean) to nearly zero (pure noise).",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "signal-to-noise ratio"
  },
  "silhouette score": {
   "def": "How much closer each point is to its own cluster than to the nearest other one, from −1 to 1.",

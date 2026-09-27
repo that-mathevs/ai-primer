@@ -1,0 +1,1162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Denoising Diffusion Implicit Models, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Song, Meng and Ermon (2020), the paper that made diffusion sampling ten to fifty times faster by reusing a trained network with a deterministic, step-skipping sampler.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .dd-canvas { display: block; width: 100%; max-width: 460px; height: auto; margin: 0.4rem auto; touch-action: none; }
+  .dd-toggle { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  /* Charts are drawn narrow so their labels stay legible on a phone; on a wide screen they stop growing. */
+  .plot svg[role="slider"] { max-width: 600px; margin: 0 auto; }
+  .note { border-left: 4px solid var(--accent); padding: 0.5rem 0.8rem; background: var(--quote-bg); border-radius: 6px; }
+</style>
+</head>
+<body data-paper="ddim">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background</a></li>
+      <li><a href="#s3">3 Non-Markovian forward processes</a>
+        <ol>
+          <li><a href="#s3-1">3.1 A family of forward processes</a></li>
+          <li><a href="#s3-2">3.2 One objective for all of them</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Sampling from generalized processes</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Denoising diffusion implicit models</a></li>
+          <li><a href="#s4-2">4.2 Accelerated generation</a></li>
+          <li><a href="#s4-3">4.3 Relevance to neural ODEs</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Experiments</a>
+        <ol>
+          <li><a href="#s5-1">5.1 Sample quality and efficiency</a></li>
+          <li><a href="#s5-2">5.2 Sample consistency</a></li>
+          <li><a href="#s5-3">5.3 Interpolation</a></li>
+          <li><a href="#s5-4">5.4 Reconstruction</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Related work</a></li>
+      <li><a href="#s7">7 Discussion</a></li>
+      <li><a href="#appendix">Appendices A to D</a></li>
+      <li><a href="#today">What changed since 2020</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Denoising Diffusion Implicit Models, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Song, Meng and Ermon (2020), the paper that showed a diffusion model trained the usual way can be sampled in 20 to 100 big, noise-free jumps instead of 1,000 small, noisy steps, with no retraining.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2010.02502">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2010.02502">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2010.02502">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, which does not grant permission to republish its tables, so only a few selected numbers appear here, each attributed, and every figure is redrawn from scratch. The worked numbers come from a one-pixel toy chain and a four-blob toy dataset built on this page, not from the paper, unless a sentence says otherwise. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols.</li>
+  <li>The diagrams and pictures are live: hover or tap the parts, drag the sliders, and the readouts say what changed.</li>
+</ul>
+<p>Each idea is explained in the same order: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>.</p>
+<div class="note">
+  <p style="margin:0"><strong>One warning about notation, before anything else.</strong> In the <a href="ddpm.html">DDPM paper</a> and in the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>, α<sub>t</sub> is the share of variance <em>one</em> step keeps and ᾱ<sub>t</sub> (“alpha bar”) is the signal left after <em>all</em> steps so far. This paper drops the bar: its <strong>α<sub>t</sub> means DDPM's ᾱ<sub>t</sub></strong>, the signal share left at level t. (Appendix C.2 explains why: one list of numbers is all you need to choose, and it makes skipping steps easy to write.) This page follows the paper, so every α below is a running product, going from α<sub>0</sub> = 1 (clean) down to nearly 0 (pure noise).</p>
+</div>
+<div class="play">
+  <p style="margin:0"><strong>The one-pixel toy chain.</strong> A clean pixel <strong>x<sub>0</sub> = 2.0</strong> and two noise levels: <strong>α<sub>1</sub> = 0.96</strong> (lightly noised) and <strong>α<sub>2</sub> = 0.64</strong> (heavily noised). One noise draw ε = 0.5 takes the pixel to x<sub>2</sub> = √0.64 × 2.0 + √0.36 × 0.5 = 0.8 × 2.0 + 0.6 × 0.5 = <strong>1.9</strong>. The paper uses the same arithmetic with 1,000 levels and whole images; the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> builds it from scratch in NumPy on dots in a plane.</p>
+</div>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“To accelerate sampling, we present denoising diffusion implicit models (DDIMs), a more efficient class of iterative implicit probabilistic models with the same training procedure as DDPMs.”<cite>Song, Meng and Ermon (2020), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2010.02502">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A <span class="t" data-t="diffusion model">diffusion model</span> generates a picture like a restorer who removes dust one speck at a time, a thousand passes per picture. This paper keeps the same restorer, with the same training, and changes only the instructions: look at the dusty picture, imagine the fully clean result, then jump most of the way there at once. Twenty looks instead of a thousand.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>The training loss of a <span class="t" data-t="ddpm">DDPM</span> is shared by a whole family of noising processes, most of which are not <span class="t" data-t="markov chain">Markov chains</span>. Any member of the family can be used for sampling, with the <em>same</em> trained network.</li>
+  <li>One member samples with no randomness at all after the starting noise. It is an <span class="t" data-t="implicit generative model">implicit generative model</span>, named DDIM.</li>
+  <li>DDIM samples of comparable quality come 10× to 50× faster in wall-clock time. It lets you trade steps for quality, interpolate meaningfully between samples by blending their starting noise, and encode a real image into noise and decode it back with very low error.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>This is the paper that made “sample in 20 to 50 steps” normal. Its update rule is also the template that classifier-free guidance plugs into (classifier-free guidance, the trick that makes a prompt count), and its reading of sampling as solving an <span class="t" data-t="ordinary differential equation">ordinary differential equation</span> leads straight to the straight-path samplers of the <a href="flow-matching.html">flow matching companion</a>.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S1">original</a></span></h2>
+<blockquote class="quote">“For example, it takes around 20 hours to sample 50k images of size 32 × 32 from a DDPM, but less than a minute to do so from a GAN on a Nvidia 2080 Ti GPU.”<cite>Song, Meng and Ermon (2020), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A <span class="t" data-t="gan">GAN</span> paints a picture in one stroke: one pass through its network. A DDPM paints it in a thousand strokes, and each stroke is a full pass through a network of similar size. Diffusion models had caught up with GANs on quality without the fragile two-player training, but they paid for it at every single sample.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The paper's own numbers: 20 hours for 50,000 images of 32 × 32 pixels, and nearly 1,000 hours at 256 × 256. The first is 20 × 3,600 / 50,000 = 1.44 seconds per image, or 1.44 milliseconds per network call when every image needs 1,000 calls. The call is not slow; there are just a thousand of them.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>hours, images, steps = 20, 50_000, 1000
+# seconds per image
+per_image = hours * 3600 / images
+round(per_image, 2)  # → 1.44
+# milliseconds per network call
+round(per_image / steps * 1000, 2)  # → 1.44</code></pre>
+<h3 class="rung">The paper's three findings</h3>
+<ul>
+  <li><strong>Quality at speed:</strong> when sampling is accelerated 10× to 100×, DDIMs give better samples than DDPMs run with the same number of steps.</li>
+  <li><strong>Consistency:</strong> start from the same noise and sample with chains of different lengths, and the results share their high-level features. That is not true for DDPMs.</li>
+  <li><strong>Interpolation:</strong> because of that consistency, blending two starting noises gives a meaningful blend of the two pictures.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>Sampling cost is paid on every picture anyone ever asks for; training is paid once. A trick that cuts sampling cost without touching training is worth more than almost any training improvement.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A DDPM has two halves. The <span class="t" data-t="forward process">forward process</span> is fixed arithmetic that fades a picture into static a little at a time. The <span class="t" data-t="reverse process">reverse process</span> is a learned chain that runs the road backwards. Both are explained step by step in the <a href="ddpm.html">DDPM companion</a>; this section only restates them in this paper's notation.</p>
+<h3 class="rung">Tiny example</h3>
+<p>In the toy chain, one forward step goes from level 1 (α<sub>1</sub> = 0.96) to level 2 (α<sub>2</sub> = 0.64). In DDPM's language, that step keeps α<sub>2</sub>/α<sub>1</sub> = 2/3 of the variance and replaces 1/3 with noise. Or skip the chain and jump straight from the clean pixel: x<sub>2</sub> = 0.8 × 2.0 + 0.6 × ε.</p>
+<div class="eq" data-tex="\htmlData{sym=qstep}{q(\mathbf{x}_t\mid\mathbf{x}_{t-1})} \coloneqq \htmlData{sym=Ngauss}{\mathcal{N}}\Big(\htmlData{sym=sqrtratio}{\sqrt{\tfrac{\alpha_t}{\alpha_{t-1}}}}\,\mathbf{x}_{t-1},\ \htmlData{sym=stepvar}{\big(1-\tfrac{\alpha_t}{\alpha_{t-1}}\big)}\htmlData{sym=I}{\mathbf{I}}\Big), \qquad \htmlData{sym=xt}{\mathbf{x}_t} = \htmlData{sym=sqrta}{\sqrt{\alpha_t}}\,\htmlData{sym=x0}{\mathbf{x}_0} + \htmlData{sym=sqrt1ma}{\sqrt{1-\alpha_t}}\,\htmlData{sym=eps}{\epsilon}" data-fallback="q(x_t | x_t−1) := N(√(α_t/α_t−1) x_t−1, (1 − α_t/α_t−1) I),   x_t = √α_t x_0 + √(1 − α_t) ε"></div>
+<div class="symtable" data-syms="qstep,Ngauss,sqrtratio,stepvar,I,xt,sqrta,x0,sqrt1ma,eps"></div>
+<p class="inwords"><strong>In words:</strong> “each forward step shrinks the previous value by the square root of the variance share it keeps and adds noise to fill the rest; and the whole chain collapses into one jump: the clean value, shrunk by √α<sub>t</sub>, plus noise scaled by √(1 − α<sub>t</sub>).”</p>
+<p class="inwords"><strong>With the numbers:</strong> the step from level 1 to level 2 keeps a share 0.64/0.96 = 0.6667 and adds noise of variance 0.3333. The jump: x<sub>2</sub> = 0.8 × 2.0 + 0.6 × 0.5 = 1.9. These are equations 3 and 4 of the paper.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x0, eps = 2.0, 0.5
+alpha1, alpha2 = 0.96, 0.64
+# the step from level 1 to level 2: kept share α_t/α_(t−1) and noise variance 1 − α_t/α_(t−1)
+round(alpha2 / alpha1, 4), round(1 - alpha2 / alpha1, 4)  # → (0.6667, 0.3333)
+# the jump: x_t = √α_t x_0 + √(1 − α_t) ε
+x2 = math.sqrt(alpha2) * x0 + math.sqrt(1 - alpha2) * eps
+round(x2, 4)  # → 1.9</code></pre>
+<h3 class="rung">The training loss</h3>
+<p>The model is a set of noise guessers ε<sub>θ</sub><sup>(t)</sup>, one per level (in practice one network told the level). Its bound, as in the DDPM paper, simplifies to a weighted squared error on the noise:</p>
+<div class="eq" data-tex="\htmlData{sym=Lgamma}{L_{\gamma}(\epsilon_\theta)} \coloneqq \htmlData{sym=sumT}{\sum_{t=1}^{T}}\htmlData{sym=gammat}{\gamma_t}\,\htmlData{sym=Ex0eps}{\mathbb{E}_{\mathbf{x}_0,\,\epsilon_t}}\Big[\big\Vert \htmlData{sym=epstheta}{\epsilon_\theta^{(t)}}\big(\htmlData{sym=noisy}{\sqrt{\alpha_t}\,\mathbf{x}_0 + \sqrt{1-\alpha_t}\,\epsilon_t}\big) - \htmlData{sym=epstrue}{\epsilon_t}\big\Vert_2^2\Big]" data-fallback="L_γ(ε_θ) := Σ_t γ_t E_(x0, ε_t)[ ‖ε_θ^(t)(√α_t x_0 + √(1 − α_t) ε_t) − ε_t‖² ]"></div>
+<div class="symtable" data-syms="Lgamma,sumT,gammat,Ex0eps,epstheta,noisy,epstrue"></div>
+<p class="inwords"><strong>In words:</strong> “at every level, noise a real example in one jump, ask the network what noise was added, and score the squared miss; weight each level by γ<sub>t</sub> and add them up.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at level 2 the network sees 1.9 and guesses 0.4 instead of the true 0.5: a squared miss of 0.01. DDPM's best samples came from γ = <strong>1</strong>, every level weighted the same (the paper calls it L<sub>1</sub>); this is the loss the next section is about.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>eps_true, eps_guess, gamma = 0.5, 0.4, 1.0
+# γ_t ‖ε_θ − ε_t‖² for one example at one level
+round(gamma * (eps_guess - eps_true) ** 2, 4)  # → 0.01</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The number of levels T is set before training, and in the DDPM recipe sampling must visit all of them: T = 1,000 levels means 1,000 network calls, one after another, with no way to run them in parallel. The rest of the paper asks whether that coupling is really necessary.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#add_noise"><code>add_noise</code></a> is the one-jump formula and <a data-lesson="primer/ml/generative/diffusion.html#train_noise_predictor"><code>train_noise_predictor</code></a> trains on the loss with γ = 1.</p>
+</section>
+
+<section id="s3">
+<h2>3 Variational inference for non-Markovian forward processes <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S3">original</a></span></h2>
+<blockquote class="quote">“Our key observation is that the DDPM objective in the form of L<sub>γ</sub> only depends on the marginals q(x<sub>t</sub>|x<sub>0</sub>), but not directly on the joint q(x<sub>1:T</sub>|x<sub>0</sub>).”<cite>Song, Meng and Ermon (2020), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Picture a class of students graded only on single snapshots: “at minute 5, how noisy was the photo?”, “at minute 20?”. Nobody ever asks how the noise got from minute 5 to minute 20. Then many different noising stories, some fresh-noise-every-minute, some one-noise-turned-up-slowly, give identical exams, and the same student passes all of them. The training loss above is exactly such an exam: every term looks at <em>one</em> level at a time, through the one-jump formula.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Two recipes for noising the toy pixel to both levels:</p>
+<ul>
+  <li><strong>Recipe A (DDPM, fresh noise each step):</strong> x<sub>1</sub> = √0.96 × 2 + √0.04 × ε<sub>1</sub>, then x<sub>2</sub> = √(2/3) × x<sub>1</sub> + √(1/3) × ε<sub>2</sub>, two independent draws.</li>
+  <li><strong>Recipe B (one noise, turned up):</strong> draw one ε and set x<sub>1</sub> = √0.96 × 2 + 0.2ε and x<sub>2</sub> = 0.8 × 2 + 0.6ε.</li>
+</ul>
+<p>Recipe A gives x<sub>2</sub> a centre of √(2/3) × √0.96 × 2 = 1.6 and a variance of (2/3) × 0.04 + 1/3 = 0.36. Recipe B gives 1.6 and 0.6² = 0.36. Same bell curve at every level, so the same training loss, yet the two recipes tell very different stories in between.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x0 = 2.0
+# Recipe A: x_1 ~ N(√0.96 x0, 0.04), then x_2 = √(2/3) x_1 + √(1/3) ε_2
+mean_A = math.sqrt(2 / 3) * math.sqrt(0.96) * x0
+var_A = (2 / 3) * 0.04 + 1 / 3
+round(mean_A, 4), round(var_A, 4)  # → (1.6, 0.36)
+# Recipe B: x_2 = 0.8 x0 + 0.6 ε, one ε for every level
+round(0.8 * x0, 4), round(0.6 ** 2, 4)  # → (1.6, 0.36)</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>If the loss cannot tell the recipes apart, then a network trained for recipe A (the only one anyone had trained) is equally a trained network for recipe B, and for everything in between. And each recipe comes with its own way of running backwards. Choosing the recipe becomes a <em>sampling-time</em> decision.</p>
+
+<section id="s3-1">
+<h3>3.1 Non-Markovian forward processes <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Think of the noise level as a dimmer and the noise itself as a pattern of static. DDPM re-rolls the static every time the dimmer moves. The new family lets you keep some or all of the old pattern as the dimmer moves: a dial σ<sub>t</sub> says how much fresh static to roll in at each step. Turn it to zero and the same static pattern just gets louder.</p>
+<h4>Tiny example</h4>
+<p>Suppose you know the clean pixel (2.0) and you see it at level 2 (1.9). Where was it at level 1? Work out the noise pattern it must carry: (1.9 − 0.8 × 2.0)/0.6 = 0.5. With σ = 0 the answer is certain: the same pattern at the lower volume, √0.96 × 2.0 + √0.04 × 0.5 = 2.0596. With DDPM's σ = 0.1925, the answer is a bell curve centred at 1.9868 with that spread.</p>
+<div class="eq" data-tex="\htmlData{sym=qsigma}{q_\sigma(\mathbf{x}_{t-1}\mid\mathbf{x}_t,\mathbf{x}_0)} = \htmlData{sym=Ngauss}{\mathcal{N}}\Big(\htmlData{sym=sqrtaprev}{\sqrt{\alpha_{t-1}}}\,\htmlData{sym=x0}{\mathbf{x}_0} + \htmlData{sym=dircoef}{\sqrt{1-\alpha_{t-1}-\sigma_t^2}}\cdot\htmlData{sym=noisedir}{\frac{\mathbf{x}_t-\sqrt{\alpha_t}\,\mathbf{x}_0}{\sqrt{1-\alpha_t}}},\ \htmlData{sym=sigmat2}{\sigma_t^2}\htmlData{sym=I}{\mathbf{I}}\Big)" data-fallback="q_σ(x_t−1 | x_t, x_0) = N(√α_t−1 x_0 + √(1 − α_t−1 − σ_t²) · (x_t − √α_t x_0)/√(1 − α_t), σ_t² I)"></div>
+<div class="symtable" data-syms="qsigma,sqrtaprev,dircoef,noisedir,sigmat2"></div>
+<p class="inwords"><strong>In words:</strong> “one level back, the value is the clean value at the lower level's volume, plus the noise pattern read off x<sub>t</sub> at a slightly lower volume, plus fresh noise of spread σ<sub>t</sub>; the two noise volumes are chosen so they add up to exactly the right total.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the noise pattern is (1.9 − 1.6)/0.6 = 0.5. With σ<sub>2</sub> = 0: centre 0.9798 × 2.0 + √0.04 × 0.5 = 1.9596 + 0.1 = 2.0596 and no spread. With σ<sub>2</sub>² = 0.0370 (DDPM's value, below): centre 1.9596 + √0.00296 × 0.5 = 1.9868, which is exactly the DDPM backward centre μ̃ of the <a href="ddpm.html#s2">DDPM companion's §2</a>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x0, x2 = 2.0, 1.9
+alpha1, alpha2 = 0.96, 0.64
+# the noise pattern x_t carries: (x_t − √α_t x_0) / √(1 − α_t)
+pattern = (x2 - math.sqrt(alpha2) * x0) / math.sqrt(1 - alpha2)
+round(pattern, 4)  # → 0.5
+def centre(sigma):
+    # √α_(t−1) x_0 + √(1 − α_(t−1) − σ_t²) · pattern
+    return math.sqrt(alpha1) * x0 + math.sqrt(1 - alpha1 - sigma ** 2) * pattern
+sigma_ddpm = math.sqrt((1 - alpha1) / (1 - alpha2)) * math.sqrt(1 - alpha2 / alpha1)
+round(centre(0.0), 4), round(centre(sigma_ddpm), 4)  # → (2.0596, 1.9868)</code></pre>
+<p>The paper builds the whole forward process <em>backwards</em> from these pieces (its equation 6): first x<sub>T</sub> from the one-jump formula, then each x<sub>t−1</sub> from x<sub>t</sub> and x<sub>0</sub>. The centre was chosen so that every level still has the right one-jump bell curve, N(√α<sub>t</sub> x<sub>0</sub>, (1 − α<sub>t</sub>)I) (Lemma 1, checked with numbers in the <a href="#appendix">appendix</a>). Because x<sub>t−1</sub> depends on x<sub>0</sub> as well as x<sub>t</sub>, the process is not a Markov chain any more; the paper calls it <span class="t" data-tip-title="Non-Markovian" data-tip="A random process where the next value may depend on more than just the current one. Here every noisy level depends on the clean picture as well as on its neighbour.">non-Markovian</span>.</p>
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 330" role="img" aria-label="Figure 1 redrawn: on the left, the Markov forward chain x0 to x1 to x2 to x3, each step from the one before; on the right, the non-Markovian process, where each level also depends directly on x0">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker>
+    </defs>
+    <text x="80" y="16" text-anchor="middle" class="lbl">Markov (DDPM)</text>
+    <text x="235" y="16" text-anchor="middle" class="lbl">non-Markovian (this paper)</text>
+    <path class="wire" d="M80,282 V246" marker-end="url(#arr)"/>
+    <path class="wire" d="M80,202 V166" marker-end="url(#arr)"/>
+    <path class="wire" d="M80,122 V86" marker-end="url(#arr)"/>
+    <path class="wire" d="M215,86 V122" marker-end="url(#arr)"/>
+    <path class="wire" d="M215,166 V202" marker-end="url(#arr)"/>
+    <path class="wire" d="M252,290 C300,260 300,90 252,68" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <path class="wire" d="M247,286 C284,262 284,168 250,146" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <path class="wire" d="M240,280 C262,262 262,246 242,230" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <g class="blk pe" data-block="m3"><circle cx="80" cy="64" r="20"/><text x="80" y="69" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">3</tspan></text></g>
+    <g class="blk pe" data-block="m2"><circle cx="80" cy="144" r="20"/><text x="80" y="149" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">2</tspan></text></g>
+    <g class="blk pe" data-block="m1"><circle cx="80" cy="224" r="20"/><text x="80" y="229" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">1</tspan></text></g>
+    <g class="blk pe" data-block="x0node"><circle cx="80" cy="304" r="20" style="fill:var(--ff)"/><text x="80" y="309" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">0</tspan></text></g>
+    <g class="blk pe" data-block="n3"><circle cx="215" cy="64" r="20"/><text x="215" y="69" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">3</tspan></text></g>
+    <g class="blk pe" data-block="n2"><circle cx="215" cy="144" r="20"/><text x="215" y="149" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">2</tspan></text></g>
+    <g class="blk pe" data-block="n1"><circle cx="215" cy="224" r="20"/><text x="215" y="229" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">1</tspan></text></g>
+    <g class="blk pe" data-block="x0node"><circle cx="215" cy="304" r="20" style="fill:var(--ff)"/><text x="215" y="309" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">0</tspan></text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a circle. Start with <strong>x<sub>0</sub></strong>, the clean picture, at the bottom of either side.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn with three noise levels and turned upright to fit a phone. Based on Song, Meng and Ermon (2020), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> both sides show how the noisy levels x<sub>1</sub>, x<sub>2</sub>, x<sub>3</sub> are made from a clean picture x<sub>0</sub> (shaded, because it is observed). On the left, DDPM's chain: each level is made from the one just below it and nothing else, so the arrows climb one rung at a time. On the right, the non-Markovian process: the top level x<sub>3</sub> is made straight from x<sub>0</sub> (the long dashed arrow), and then the process works <em>downwards</em>, each level made from the one above it <em>and</em> from x<sub>0</sub> (the other dashed arrows). The pictures look different, but hover any level and the note says the same thing on both sides: its bell curve given x<sub>0</sub> is identical. That shared bell curve is all the training loss ever sees.</p>
+<h4>See it: the same bell curves, different journeys</h4>
+<p><strong>Try it:</strong> drag η from 1 (DDPM's fresh noise at every level) down to 0 (one noise pattern, turned up). Watch the individual paths, then watch the shaded band and the readout.</p>
+<div class="plot" id="fig-paths">
+  <div class="controls"><label for="paths-eta">η = <strong id="paths-etav">1.0</strong></label><input type="range" id="paths-eta" min="0" max="1" step="0.1" value="1"></div>
+  <canvas id="paths-canvas" class="dd-canvas" width="640" height="480" aria-label="Twenty-five forward paths of one clean pixel through the noise levels, from clean on the left to pure noise on the right, with a shaded band showing the spread every level must have."></canvas>
+  <p class="readout" id="paths-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the level t, from the clean pixel (x<sub>0</sub> = 1, on the left) to pure noise (t = 1,000, on the right), on the paper's schedule. Each thin line (12 are drawn) is one run of the forward process of equation 7, built from the top level down as the paper defines it, with σ<sub>t</sub> = η × DDPM's value. The shaded band is the one-jump bell curve's centre ± 2 standard deviations at each level: what the training loss sees. At η = 1 the paths zigzag, because every level rolls fresh noise. At η = 0 each path is a smooth curve, because one noise pattern is simply turned up. The readout measures, over 2,000 runs, how spread out the paths are at level 500: it matches the band's √(1 − α<sub>500</sub>) = 0.960 at every η, up to sampling wobble in the second decimal place. Computed live, in your browser.</p>
+<h4>Why it matters today</h4>
+<p>The whole paper rests on this freedom. Since the network was only ever asked about one level at a time, you may choose the in-between story after training, and the story with no fresh noise turns out to be the most useful.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Generative process and unified variational inference objective <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Equation 7 needs the clean picture, which a sampler does not have. So the sampler first <em>guesses</em> the clean picture from what it sees, then uses equation 7 as if the guess were true. A detective who cannot see the culprit sketches a best guess from the clues, then reasons from the sketch.</p>
+<h4>Tiny example</h4>
+<p>The network looks at x<sub>2</sub> = 1.9 and guesses the noise as 0.5 (perfect). Undo the one-jump formula: (1.9 − 0.6 × 0.5)/0.8 = 2.0, the true clean pixel. A slightly wrong guess, 0.4, gives (1.9 − 0.24)/0.8 = 2.075.</p>
+<div class="eq" data-tex="\htmlData{sym=ftheta}{f_\theta^{(t)}(\mathbf{x}_t)} \coloneqq \big(\htmlData{sym=xt}{\mathbf{x}_t} - \htmlData{sym=sqrt1ma}{\sqrt{1-\alpha_t}}\cdot\htmlData{sym=epstheta}{\epsilon_\theta^{(t)}(\mathbf{x}_t)}\big)\,/\,\htmlData{sym=sqrta}{\sqrt{\alpha_t}}" data-fallback="f_θ^(t)(x_t) := (x_t − √(1 − α_t) · ε_θ^(t)(x_t)) / √α_t"></div>
+<div class="symtable" data-syms="ftheta,xt,sqrt1ma,epstheta,sqrta"></div>
+<p class="inwords"><strong>In words:</strong> “the predicted clean picture is the noisy one with the guessed noise removed, scaled back up by the signal it lost.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1.9 − 0.6 × 0.5)/0.8 = 2.0; with the guess 0.4, (1.9 − 0.6 × 0.4)/0.8 = 2.075.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x_t, alpha_t = 1.9, 0.64
+# f_θ(x_t) = (x_t − √(1 − α_t) ε_θ) / √α_t, for a perfect and a slightly wrong guess
+[round((x_t - math.sqrt(1 - alpha_t) * g) / math.sqrt(alpha_t), 4) for g in (0.5, 0.4)]  # → [2.0, 2.075]</code></pre>
+<p>The generative process then starts at pure noise, p<sub>θ</sub>(x<sub>T</sub>) = N(0, I), and uses equation 7 with the guess in place of x<sub>0</sub>:</p>
+<div class="eq" data-tex="\htmlData{sym=pgen}{p_\theta^{(t)}(\mathbf{x}_{t-1}\mid\mathbf{x}_t)} = \begin{cases}\htmlData{sym=Ngauss}{\mathcal{N}}\big(\htmlData{sym=ftheta}{f_\theta^{(1)}(\mathbf{x}_1)},\ \htmlData{sym=sigma1}{\sigma_1^2}\htmlData{sym=I}{\mathbf{I}}\big) & \text{if } t = 1\\ \htmlData{sym=qsigma}{q_\sigma}\big(\mathbf{x}_{t-1}\mid\mathbf{x}_t,\ \htmlData{sym=ftheta}{f_\theta^{(t)}(\mathbf{x}_t)}\big) & \text{otherwise}\end{cases}" data-fallback="p_θ^(t)(x_t−1 | x_t) = N(f_θ^(1)(x_1), σ_1² I) if t = 1, otherwise q_σ(x_t−1 | x_t, f_θ^(t)(x_t))"></div>
+<div class="symtable" data-syms="pgen,sigma1"></div>
+<p class="inwords"><strong>In words:</strong> “to step back, guess the clean picture and take the forward process's own backward step as if that guess were right; at the very last step, just output the guess (with a little noise so the model gives every picture some probability).”</p>
+<p class="inwords"><strong>With the numbers:</strong> from x<sub>2</sub> = 1.9 with the perfect guess, the step to level 1 is q<sub>σ</sub>(x<sub>1</sub> | 1.9, 2.0): centre 2.0596 with σ = 0, or 1.9868 with DDPM's σ, the same numbers as in §3.1. With the guess 0.4 (so f = 2.075) and DDPM's σ, the centre moves to 2.0548.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha1, alpha2, x2 = 0.96, 0.64, 1.9
+sigma = math.sqrt((1 - alpha1) / (1 - alpha2)) * math.sqrt(1 - alpha2 / alpha1)
+def step_centre(f, sigma):
+    # the centre of q_σ(x_1 | x_2, f): eq 7 with x_0 replaced by the guess f
+    pattern = (x2 - math.sqrt(alpha2) * f) / math.sqrt(1 - alpha2)
+    return math.sqrt(alpha1) * f + math.sqrt(1 - alpha1 - sigma ** 2) * pattern
+round(step_centre(2.0, 0.0), 4), round(step_centre(2.0, sigma), 4)  # → (2.0596, 1.9868)
+round(step_centre(2.075, sigma), 4)  # → 2.0548</code></pre>
+<h4>Theorem 1: one training loss for the whole family</h4>
+<p>Each σ gives a different forward process and a different generative process, so on paper each has its own <span class="t" data-t="evidence lower bound">variational bound</span> J<sub>σ</sub>, and it looks as if each would need its own training run. Theorem 1 says no:</p>
+<div class="eq" data-tex="\text{for all } \htmlData{sym=sigmavec}{\sigma} > \mathbf{0}:\quad \htmlData{sym=Jsigma}{J_\sigma} = \htmlData{sym=Lgamma}{L_\gamma} + \htmlData{sym=Cconst}{C} \quad \text{for some } \htmlData{sym=gammavec}{\gamma} \in \mathbb{R}^T_{>0},\ C \in \mathbb{R}" data-fallback="for all σ > 0: J_σ = L_γ + C for some positive weights γ and a constant C"></div>
+<div class="symtable" data-syms="sigmavec,Jsigma,Lgamma,Cconst,gammavec"></div>
+<p class="inwords"><strong>In words:</strong> “whatever amount of fresh noise you pick, the proper training objective for that choice is the familiar noise-guessing loss with some positive weight on each level, plus a number that does not depend on the network.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the toy, at level 2 with DDPM's σ, the bound's term is a KL divergence between two bell curves of equal width whose centres differ only because the guess differs. Guess 0.4 gives a KL of 0.0625; guess 0.3 gives 0.25. Divide by the squared misses (0.01 and 0.04): both give the same weight, γ<sub>2</sub> = 6.25. The bound really is the noise loss, reweighted.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x0, x2, eps = 2.0, 1.9, 0.5
+alpha1, alpha2 = 0.96, 0.64
+sigma = math.sqrt((1 - alpha1) / (1 - alpha2)) * math.sqrt(1 - alpha2 / alpha1)
+def centre(f):
+    # the centre of q_σ(x_1 | x_2, f)
+    return math.sqrt(alpha1) * f + math.sqrt(1 - alpha1 - sigma ** 2) * (x2 - math.sqrt(alpha2) * f) / math.sqrt(1 - alpha2)
+for guess in (0.4, 0.3):
+    f = (x2 - math.sqrt(1 - alpha2) * guess) / math.sqrt(alpha2)
+    # KL between two bell curves of equal variance σ²: (difference of centres)² / (2σ²)
+    kl = (centre(x0) - centre(f)) ** 2 / (2 * sigma ** 2)
+    print(round(kl, 4), round(kl / (eps - guess) ** 2, 4))  # → 0.0625 6.25 0.25 6.25</code></pre>
+<p>Here is the key step. If every level had its own separate network, the best network for L<sub>γ</sub> would not depend on γ at all: each level's term is minimised on its own, and scaling a term does not move its minimum. So the weights do not matter, the network trained with γ = <strong>1</strong> is optimal for every J<sub>σ</sub>, and DDPM's trained networks can be used for any member of the family. (In practice one network is shared across levels, so this is an argument rather than a guarantee; the experiments are the evidence that it holds.)</p>
+<p class="inwords">One detail for careful readers: the constant printed in the paper's proof (Appendix B, equation 35) is 1/(2dσ<sub>t</sub>²α<sub>t</sub>), which for the toy would be 21.09, not the 6.25 computed directly above. The proof drops the factor that turns a miss in x<sub>0</sub> into a miss in ε and the centre's coefficient on x<sub>0</sub>. Only the existence of <em>some</em> positive weight matters for the theorem, and that survives.</p>
+<h4>Why it matters today</h4>
+<p>Theorem 1 is why a single diffusion checkpoint can be paired with many samplers, chosen by whoever runs it. Every “sampler” menu in an image tool rests on this separation between how a model was trained and how it is sampled.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Sampling from generalized generative processes <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Same chef, same training, a new recipe card. This section writes the sampling step for any σ, picks out two special cards (DDPM and DDIM), and then shows how to skip most of the steps.</p>
+
+<section id="s4-1">
+<h3>4.1 Denoising diffusion implicit models <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“Different choices of σ values results in different generative processes, all while using the same model ε<sub>θ</sub>, so re-training the model is unnecessary.”<cite>Song, Meng and Ermon (2020), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>One step back is three moves. Predict the finished picture. Point back along the noise you believe is in the current one, at the volume the next level should have. Then, optionally, add a pinch of fresh noise. DDPM always adds the pinch; DDIM never does.</p>
+<h4>Tiny example</h4>
+<p>From x<sub>2</sub> = 1.9 with a noise guess of 0.5: the predicted clean pixel is 2.0; the next level wants √0.96 × 2.0 = 1.9596 of signal and a noise volume of √0.04 = 0.2. With no fresh noise, x<sub>1</sub> = 1.9596 + 0.2 × 0.5 = 2.0596. With DDPM's σ = 0.1925 and a fresh draw of −1.0: 1.9596 + 0.0544 × 0.5 + 0.1925 × (−1.0) = 1.7944.</p>
+<div class="eq" data-tex="\htmlData{sym=xtm1}{\mathbf{x}_{t-1}} = \htmlData{sym=sqrtaprev}{\sqrt{\alpha_{t-1}}}\underbrace{\Big(\frac{\mathbf{x}_t - \sqrt{1-\alpha_t}\,\epsilon_\theta^{(t)}(\mathbf{x}_t)}{\sqrt{\alpha_t}}\Big)}_{\htmlData{sym=predx0}{\text{predicted } \mathbf{x}_0}} + \underbrace{\htmlData{sym=dircoef}{\sqrt{1-\alpha_{t-1}-\sigma_t^2}}\cdot\htmlData{sym=epstheta}{\epsilon_\theta^{(t)}(\mathbf{x}_t)}}_{\htmlData{sym=dirxt}{\text{direction pointing to } \mathbf{x}_t}} + \underbrace{\htmlData{sym=sigmat}{\sigma_t}\,\htmlData{sym=epsfresh}{\epsilon_t}}_{\htmlData{sym=randnoise}{\text{random noise}}}" data-fallback="x_t−1 = √α_t−1 · (x_t − √(1 − α_t) ε_θ(x_t))/√α_t + √(1 − α_t−1 − σ_t²) · ε_θ(x_t) + σ_t ε_t"></div>
+<div class="symtable" data-syms="xtm1,sqrtaprev,predx0,dircoef,epstheta,dirxt,sigmat,epsfresh,randnoise"></div>
+<p class="inwords"><strong>In words:</strong> “the next, cleaner value is the predicted clean picture at the next level's volume, plus the guessed noise at the next level's volume (less whatever is handed to fresh noise), plus the fresh noise.”</p>
+<p class="inwords"><strong>With the numbers:</strong> σ = 0: 0.9798 × 2.0 + 0.2 × 0.5 + 0 = 2.0596. σ = 0.1925, fresh ε<sub>t</sub> = −1.0 (illustrative): 1.9596 + 0.0272 − 0.1925 = 1.7944. This is equation 12, the paper's general sampler; α<sub>0</sub> is defined as 1, so the last step outputs the predicted clean picture.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x_t, eps_hat = 1.9, 0.5
+alpha_t, alpha_prev = 0.64, 0.96
+def step(sigma, fresh):
+    x0_pred = (x_t - math.sqrt(1 - alpha_t) * eps_hat) / math.sqrt(alpha_t)
+    toward_xt = math.sqrt(1 - alpha_prev - sigma ** 2) * eps_hat
+    return math.sqrt(alpha_prev) * x0_pred + toward_xt + sigma * fresh
+sigma_ddpm = math.sqrt((1 - alpha_prev) / (1 - alpha_t)) * math.sqrt(1 - alpha_t / alpha_prev)
+# DDIM (σ = 0), then DDPM with an illustrative fresh draw of −1.0
+round(step(0.0, 0.0), 4), round(step(sigma_ddpm, -1.0), 4)  # → (2.0596, 1.7944)</code></pre>
+<figure class="ix" id="fig-step">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 280" role="img" aria-label="One sampling step drawn as a flow: the noisy input goes to the network, the noise guess makes the predicted clean picture and the direction back toward the input, and optional fresh noise is added">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M160,48 V70" marker-end="url(#arr2)"/>
+    <path class="wire" d="M160,100 V112 H80 V130" marker-end="url(#arr2)"/>
+    <path class="wire" d="M160,100 V112 H240 V130" marker-end="url(#arr2)"/>
+    <path class="wire" d="M80,160 V196 H128" marker-end="url(#arr2)"/>
+    <path class="wire" d="M240,160 V196 H192" marker-end="url(#arr2)"/>
+    <path class="wire" d="M140,251 H150 V214" marker-end="url(#arr2)"/>
+    <path class="wire" d="M170,212 V251 H178" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="sin"><rect x="105" y="20" width="110" height="28" rx="6"/><text x="160" y="38" text-anchor="middle">x_t (noisy)</text></g>
+    <g class="blk lin" data-block="snet"><rect x="95" y="70" width="130" height="30" rx="6"/><text x="160" y="90" text-anchor="middle">network: guess ε</text></g>
+    <g class="blk norm" data-block="sx0"><rect x="20" y="130" width="120" height="30" rx="6"/><text x="80" y="150" text-anchor="middle">predicted x₀</text></g>
+    <g class="blk emb" data-block="sdir"><rect x="180" y="130" width="120" height="30" rx="6"/><text x="240" y="150" text-anchor="middle">direction to x_t</text></g>
+    <g class="blk soft" data-block="ssum"><rect x="130" y="182" width="60" height="30" rx="15"/><text x="160" y="202" text-anchor="middle">+</text></g>
+    <g class="blk attn" data-block="snoise"><rect x="10" y="236" width="130" height="30" rx="6"/><text x="75" y="256" text-anchor="middle">σ_t · fresh noise</text></g>
+    <g class="blk plain" data-block="sout"><rect x="180" y="236" width="130" height="30" rx="6"/><text x="245" y="256" text-anchor="middle">out: x_(t−1)</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. One network call per step; everything else is arithmetic.</p></div>
+  </div>
+  <figcaption>Equation 12 drawn as a flow. Drawn for this page; not a figure from the paper.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the only expensive box is the network at the top, run once per step. Its noise guess is used twice: on the left to predict the clean picture, on the right as the direction pointing back toward the current noisy input. The two meet at the plus sign, each scaled to the next level's volume, and the sum leaves at the bottom right as x<sub>t−1</sub>. The box at the bottom left, fresh noise, is the only source of randomness: it is on for DDPM and switched off (σ<sub>t</sub> = 0) for DDIM. With it off, the step is a fixed function of x<sub>t</sub>.</p>
+<h4>The two special cases</h4>
+<p>One particular σ makes the forward process Markovian again, and the sampler becomes exactly DDPM:</p>
+<div class="eq" data-tex="\htmlData{sym=sigmat}{\sigma_t} = \htmlData{sym=ratiovar}{\sqrt{(1-\alpha_{t-1})/(1-\alpha_t)}}\ \htmlData{sym=betaeq}{\sqrt{1-\alpha_t/\alpha_{t-1}}}" data-fallback="σ_t = √((1 − α_t−1)/(1 − α_t)) · √(1 − α_t/α_t−1)"></div>
+<div class="symtable" data-syms="ratiovar,betaeq"></div>
+<p class="inwords"><strong>In words:</strong> “DDPM's fresh noise has the spread of one forward step's noise, shrunk by the ratio of the two levels' noise.”</p>
+<p class="inwords"><strong>With the numbers:</strong> √(0.04/0.36) × √(1 − 0.64/0.96) = 0.3333 × 0.5774 = 0.1925, so σ<sub>2</sub>² = 0.0370: DDPM's backward variance β̃ from the <a href="ddpm.html#s2">DDPM companion</a>, written in this paper's letters.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha_prev, alpha_t = 0.96, 0.64
+sigma = math.sqrt((1 - alpha_prev) / (1 - alpha_t)) * math.sqrt(1 - alpha_t / alpha_prev)
+round(sigma, 4), round(sigma ** 2, 4)  # → (0.1925, 0.037)
+# DDPM's β̃_t = (1 − ᾱ_(t−1))/(1 − ᾱ_t) · β_t, with ᾱ = this paper's α and β_t = 1 − α_t/α_(t−1)
+round((1 - alpha_prev) / (1 - alpha_t) * (1 - alpha_t / alpha_prev), 4)  # → 0.037</code></pre>
+<p>The other special case is σ<sub>t</sub> = 0 for every t. The random term vanishes, and after the starting noise x<sub>T</sub> every step is fixed arithmetic: the same x<sub>T</sub> always gives the same picture. A model that makes samples by pushing a random starting code through a fixed procedure is an <span class="t" data-t="implicit generative model">implicit generative model</span>, like a GAN's generator. The authors name this one the <span class="t" data-t="ddim">denoising diffusion implicit model</span>, DDIM, “because it is an implicit probabilistic model trained with the DDPM objective”. (Strictly, Theorem 1 needs σ &gt; 0; a footnote notes σ = 0 is the limit of ever smaller σ.)</p>
+<h4>Why it matters today</h4>
+<p>Equation 12 is still how most diffusion code writes a sampling step: predict x<sub>0</sub>, re-noise toward the next level, optionally add noise. The σ = 0 case is the one people usually mean by “the DDIM sampler”.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#ddim_step"><code>ddim_step</code></a> is equation 12 with σ = 0 (the lesson writes it as “predict x̂<sub>0</sub>, then re-noise”), and <a data-lesson="primer/ml/generative/diffusion.html#ddpm_step"><code>ddpm_step</code></a> is DDPM's small step.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Accelerated generation processes <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“In principle, this means that we can train a model with an arbitrary number of forward steps but only sample from some of them in the generative process.”<cite>Song, Meng and Ermon (2020), §4.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A staircase of 1,000 steps, but the exam only ever asked about individual steps, never about climbing them in order. So build a forward process that visits only every 100th step, check that each visited step has the right bell curve, and walk down that short staircase instead. The network already knows every step it will be asked about.</p>
+<h4>Tiny example</h4>
+<p>With T = 3 levels and the sub-sequence τ = [1, 3] (the paper always ends τ at T), sampling goes x<sub>3</sub> → x<sub>1</sub> → x<sub>0</sub>: two network calls instead of three. The step from 3 to 1 is equation 12 with t = 3 and t − 1 replaced by 1: the formula never needed the two levels to be neighbours.</p>
+<figure class="ix" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 200" role="img" aria-label="Figure 2 redrawn: the accelerated generative process for tau equal to 1 and 3, a chain x3 to x1 to x0 that skips x2, with x2 attached only to x0">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M62,70 H118" marker-end="url(#arr3)"/>
+    <path class="wire" d="M142,70 C190,20 214,20 258,58" marker-end="url(#arr3)"/>
+    <path class="wire" d="M210,160 C240,140 256,120 262,94" stroke-dasharray="5 4"/>
+    <g class="blk pe" data-block="a3"><circle cx="40" cy="70" r="20"/><text x="40" y="75" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">3</tspan></text></g>
+    <g class="blk pe" data-block="a1"><circle cx="140" cy="70" r="20"/><text x="140" y="75" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">1</tspan></text></g>
+    <g class="blk pe" data-block="a0"><circle cx="270" cy="74" r="20" style="fill:var(--ff)"/><text x="270" y="79" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">0</tspan></text></g>
+    <g class="blk pe" data-block="a2"><circle cx="190" cy="165" r="20" stroke-dasharray="4 3" style="fill:var(--card)"/><text x="190" y="170" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">2</tspan></text></g>
+    <text x="90" y="104" text-anchor="middle" class="lbl">jump</text>
+    <text x="206" y="18" text-anchor="middle" class="lbl">last jump: output x₀</text>
+    <text x="100" y="170" text-anchor="middle" class="lbl">skipped level</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a circle. Sampling reads left to right.</p></div>
+  </div>
+  <figcaption>Figure 2 of the paper, redrawn: the graphical model for accelerated generation with τ = [1, 3]. Based on Song, Meng and Ermon (2020), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> sampling runs left to right along the solid arrows: start at x<sub>3</sub>, jump straight to x<sub>1</sub>, then to the picture x<sub>0</sub>. Level x<sub>2</sub> (dashed) is never visited. In the paper's construction it hangs off x<sub>0</sub> alone, like a star's spoke, so it still appears in the training bound but plays no part in sampling. Each solid arrow is one network call; the number of arrows, not T, is the cost of a sample.</p>
+<h4>Choosing which levels to visit</h4>
+<p>Appendix D.2 gives two rules for choosing S levels out of T:</p>
+<div class="eq" data-tex="\text{linear: } \htmlData{sym=taui}{\tau_i} = \htmlData{sym=floor}{\lfloor}\htmlData{sym=cconst}{c}\,\htmlData{sym=iidx}{i}\htmlData{sym=floor}{\rfloor}, \qquad \text{quadratic: } \htmlData{sym=taui}{\tau_i} = \htmlData{sym=floor}{\lfloor}\htmlData{sym=cconst}{c}\,\htmlData{sym=iidx}{i}^2\htmlData{sym=floor}{\rfloor}" data-fallback="linear: τ_i = ⌊c i⌋,   quadratic: τ_i = ⌊c i²⌋"></div>
+<div class="symtable" data-syms="taui,floor,cconst,iidx"></div>
+<p class="inwords"><strong>In words:</strong> “visit evenly spaced levels, or levels that bunch up near the clean end, where fine detail is decided; pick c so the last visited level lands near T.”</p>
+<p class="inwords"><strong>With the numbers:</strong> T = 1,000 and S = 10. Linear with c = 100: 100, 200, …, 1000. Quadratic with c = 10: 10, 40, 90, 160, 250, 360, 490, 640, 810, 1000 (these values of c are this page's choice). The paper used quadratic for CIFAR10 and linear elsewhere.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+T, S = 1000, 10
+# τ_i = ⌊c i⌋ with c = T/S, and τ_i = ⌊c i²⌋ with c = T/S²
+[math.floor(T / S * i) for i in range(1, S + 1)]  # → [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+[math.floor(T / S ** 2 * i * i) for i in range(1, S + 1)]  # → [10, 40, 90, 160, 250, 360, 490, 640, 810, 1000]</code></pre>
+<h4>Why it matters today</h4>
+<p>Training with many fine levels and sampling a few coarse ones is now the norm. The paper also notes the training levels could even become continuous, which later diffusion work adopted (the classifier-free guidance paper trains in continuous time).</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#ddim_path"><code>ddim_path</code></a> picks evenly spaced levels and jumps between them; <a data-lesson="primer/ml/generative/diffusion.html#ddim_sample"><code>ddim_sample</code></a> keeps only the end point.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Relevance to neural ODEs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>With no fresh noise, sampling is a journey along a fixed road: at every point the network says which way to go, as a wind map would. Following such a map is solving an <span class="t" data-t="ordinary differential equation">ordinary differential equation</span>, and each DDIM jump is one <span class="t" data-t="euler step">Euler step</span>: move in a straight line at the current direction, then look again. The trick is which “clock” you step along.</p>
+<h4>Tiny example</h4>
+<p>Rescale the toy pixel by its signal: x̄ = x/√α. At level 2 that is 1.9/0.8 = 2.375, and the noise-to-signal ratio σ = √((1 − α)/α) is 0.75. At level 1, σ = √(0.04/0.96) = 0.2041. In these units the DDIM jump is a straight line: x̄ changes by (0.2041 − 0.75) × 0.5 = −0.273, to 2.1021, which is 2.0596 after scaling back by √0.96. The same answer as equation 12.</p>
+<div class="eq" data-tex="\frac{\htmlData{sym=xnext}{\mathbf{x}_{t-\Delta t}}}{\htmlData{sym=sqrtanext}{\sqrt{\alpha_{t-\Delta t}}}} = \frac{\htmlData{sym=xt}{\mathbf{x}_t}}{\htmlData{sym=sqrta}{\sqrt{\alpha_t}}} + \Big(\htmlData{sym=signext}{\sqrt{\tfrac{1-\alpha_{t-\Delta t}}{\alpha_{t-\Delta t}}}} - \htmlData{sym=signow}{\sqrt{\tfrac{1-\alpha_t}{\alpha_t}}}\Big)\,\htmlData{sym=epstheta}{\epsilon_\theta^{(t)}(\mathbf{x}_t)}" data-fallback="x_(t−Δt)/√α_(t−Δt) = x_t/√α_t + (√((1 − α_(t−Δt))/α_(t−Δt)) − √((1 − α_t)/α_t)) ε_θ(x_t)"></div>
+<div class="symtable" data-syms="xnext,sqrtanext,signext,signow"></div>
+<p class="inwords"><strong>In words:</strong> “measured in signal-rescaled units, one DDIM jump moves the point by the noise guess times the change in the noise-to-signal ratio.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 1.9/0.8 + (0.2041 − 0.75) × 0.5 = 2.375 − 0.2730 = 2.1021; times √0.96 = 2.0596.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x_t, eps_hat = 1.9, 0.5
+alpha_t, alpha_next = 0.64, 0.96
+def ratio(a):
+    # σ = √((1 − α)/α): noise-to-signal
+    return math.sqrt((1 - a) / a)
+round(ratio(alpha_t), 4), round(ratio(alpha_next), 4)  # → (0.75, 0.2041)
+xbar_next = x_t / math.sqrt(alpha_t) + (ratio(alpha_next) - ratio(alpha_t)) * eps_hat
+round(xbar_next, 4), round(xbar_next * math.sqrt(alpha_next), 4)  # → (2.1021, 2.0596)</code></pre>
+<p>Let the jumps shrink to nothing and equation 13 becomes an ODE, with σ(t) = √((1 − α)/α) as the clock and x̄ = x/√α as the position:</p>
+<div class="eq" data-tex="\mathrm{d}\htmlData{sym=xbar}{\bar{\mathbf{x}}(t)} = \htmlData{sym=epstheta}{\epsilon_\theta^{(t)}}\Big(\htmlData{sym=xfromxbar}{\frac{\bar{\mathbf{x}}(t)}{\sqrt{\sigma^2+1}}}\Big)\,\mathrm{d}\htmlData{sym=sigmaclock}{\sigma(t)}" data-fallback="d x̄(t) = ε_θ^(t)(x̄(t)/√(σ² + 1)) dσ(t)"></div>
+<div class="symtable" data-syms="xbar,xfromxbar,sigmaclock"></div>
+<p class="inwords"><strong>In words:</strong> “as the noise-to-signal ratio changes by a tiny amount, the rescaled point moves by the network's noise guess times that amount.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at x̄ = 2.375, σ = 0.75, the network is asked about x̄/√(0.75² + 1) = 2.375/1.25 = 1.9 (the ordinary x<sub>t</sub>), guesses 0.5, so x̄ changes 0.5 times as fast as σ does. Run it backwards in σ and you generate; run it forwards and you <em>encode</em> a picture into its noise, which DDPM cannot do.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+xbar, sigma = 2.375, 0.75
+# the network is asked about x = x̄ / √(σ² + 1), which is x_t
+round(xbar / math.sqrt(sigma ** 2 + 1), 4)  # → 1.9
+# and α = 1 / (1 + σ²) recovers the signal share
+round(1 / (1 + sigma ** 2), 4)  # → 0.64</code></pre>
+<h4>Proposition 1: the same ODE as the probability flow, stepped on a different clock</h4>
+<p>Concurrent work (Song et al., on stochastic differential equations) had described a <span class="t" data-t="probability flow ode">probability flow ODE</span>. Proposition 1 says that, with a perfect network, the DDIM ODE is the same ODE as their “variance exploding” one. The difference is the Euler step: their natural step moves along time t, which in the same units reads</p>
+<div class="eq" data-tex="\frac{\htmlData{sym=xnext}{\mathbf{x}_{t-\Delta t}}}{\htmlData{sym=sqrtanext}{\sqrt{\alpha_{t-\Delta t}}}} = \frac{\htmlData{sym=xt}{\mathbf{x}_t}}{\htmlData{sym=sqrta}{\sqrt{\alpha_t}}} + \htmlData{sym=half}{\frac{1}{2}}\Big(\htmlData{sym=sig2next}{\frac{1-\alpha_{t-\Delta t}}{\alpha_{t-\Delta t}}} - \htmlData{sym=sig2now}{\frac{1-\alpha_t}{\alpha_t}}\Big)\cdot\htmlData{sym=invsig}{\sqrt{\frac{\alpha_t}{1-\alpha_t}}}\cdot\htmlData{sym=epstheta}{\epsilon_\theta^{(t)}(\mathbf{x}_t)}" data-fallback="x_(t−Δt)/√α_(t−Δt) = x_t/√α_t + ½((1 − α_(t−Δt))/α_(t−Δt) − (1 − α_t)/α_t) · √(α_t/(1 − α_t)) · ε_θ(x_t)"></div>
+<div class="symtable" data-syms="half,sig2next,sig2now,invsig"></div>
+<p class="inwords"><strong>In words:</strong> “the same move, but the change in noise-to-signal ratio is estimated from the change in its square, halved and divided by the current ratio: correct for tiny steps, off for big ones.”</p>
+<p class="inwords"><strong>With the numbers:</strong> ½ × (0.0417 − 0.5625) / 0.75 × 0.5 = −0.1736, so x̄ = 2.2014 and x = 2.1569, not 2.0596. For a small jump the two agree; for this big one they do not.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x_t, eps_hat = 1.9, 0.5
+alpha_t, alpha_next = 0.64, 0.96
+s2_now, s2_next = (1 - alpha_t) / alpha_t, (1 - alpha_next) / alpha_next
+xbar = x_t / math.sqrt(alpha_t) + 0.5 * (s2_next - s2_now) / math.sqrt(s2_now) * eps_hat
+round(xbar, 4), round(xbar * math.sqrt(alpha_next), 4)  # → (2.2014, 2.1569)</code></pre>
+<p><strong>Try it:</strong> the toy data are two clean values, −2 and +2. Pick where to start, then read how far one big jump of each kind lands from the exact ODE solution, as the target level gets cleaner (to the right).</p>
+<div class="plot" id="fig-ode">
+  <div class="controls"><span class="dd-toggle" role="group" aria-label="Where the jump starts"><button type="button" data-start="near" aria-pressed="true">start x = 1.9 at α = 0.64</button><button type="button" data-start="mid" aria-pressed="false">start x = 0.5 at α = 0.2</button></span></div>
+  <div id="ode-chart"></div>
+  <p class="readout" id="ode-readout">Hover or use the arrow keys to compare the three landing points at each target level.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the target level's signal share α (to the right is cleaner); the y-axis is where one jump lands. The solid line is the exact answer, found by following the ODE in many tiny steps. Start at 1.9: nearly all the probability says the clean value is +2, so the network's noise guess barely changes along the road, and the DDIM jump (dashed) lies exactly on the exact line, at any distance. The time-stepped Euler jump (dotted) drifts away as the jump grows: 2.1569 against 2.0596 at α = 0.96. Now start at 0.5 at α = 0.2, where both clean values are plausible: the guess changes as the road bends toward +2, and <em>both</em> single jumps fall short. That is the error the paper's discussion hopes multi-step ODE methods can reduce. Computed live from equations 13 and 15.</p>
+<h4>Why it matters today</h4>
+<p>Reading a sampler as an ODE solver opened a whole line of work: better solvers take fewer steps for the same accuracy. It also makes diffusion models invertible, which image-editing methods use to find the noise that produces a given photo. Flow matching takes the idea further by training the road to be straight; see the <a href="flow-matching.html">flow matching companion</a>.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#euler_step"><code>euler_step</code></a> is the plain Euler step the lesson uses for flow matching, and <a data-lesson="primer/ml/generative/diffusion.html#ddim_step"><code>ddim_step</code></a> is equation 13 written in ordinary units.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Nothing is retrained. The experiments take networks already trained the DDPM way (T = 1,000, γ = 1) and change only two knobs at sampling time: how many levels to visit, S, and how much fresh noise to add, η.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The knob η scales DDPM's σ: η = 1 is DDPM, η = 0 is DDIM, and η = 0.5 adds half DDPM's fresh noise. For the toy jump from level 2 to level 1, that is 0.1925, 0 and 0.0962.</p>
+<div class="eq" data-tex="\htmlData{sym=sigmaeta}{\sigma_{\tau_i}(\eta)} = \htmlData{sym=eta}{\eta}\,\htmlData{sym=ratiovar}{\sqrt{(1-\alpha_{\tau_{i-1}})/(1-\alpha_{\tau_i})}}\ \htmlData{sym=betaeq}{\sqrt{1-\alpha_{\tau_i}/\alpha_{\tau_{i-1}}}}, \qquad \htmlData{sym=sigmahat}{\hat\sigma_{\tau_i}} = \sqrt{1-\alpha_{\tau_i}/\alpha_{\tau_{i-1}}}" data-fallback="σ_τi(η) = η √((1 − α_τ(i−1))/(1 − α_τi)) √(1 − α_τi/α_τ(i−1)),   σ̂_τi = √(1 − α_τi/α_τ(i−1))"></div>
+<div class="symtable" data-syms="sigmaeta,eta,sigmahat"></div>
+<p class="inwords"><strong>In words:</strong> “η is a dial from no fresh noise (0) to DDPM's amount (1); σ̂ is a larger amount DDPM's original code used for CIFAR10, the full noise of one forward step.”</p>
+<p class="inwords"><strong>With the numbers:</strong> η = 0.5 gives 0.0962. And σ̂ = √(1 − 0.64/0.96) = 0.5774, so σ̂² = 0.333: more than eight times the 0.04 of noise variance the destination level should hold in total. Over one tiny step the two amounts are close; over a big jump σ̂ swamps the picture with noise.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha_prev, alpha_t = 0.96, 0.64
+def sigma(eta):
+    return eta * math.sqrt((1 - alpha_prev) / (1 - alpha_t)) * math.sqrt(1 - alpha_t / alpha_prev)
+[round(sigma(eta), 4) for eta in (1.0, 0.0, 0.5)]  # → [0.1925, 0.0, 0.0962]
+sigma_hat = math.sqrt(1 - alpha_t / alpha_prev)
+# σ̂², and how many times the level's whole noise variance 1 − α_(t−1) it is
+round(sigma_hat, 4), round(sigma_hat ** 2 / (1 - alpha_prev), 2)  # → (0.5774, 8.33)</code></pre>
+<h3 class="rung">The setup</h3>
+<div class="tablewrap"><table>
+  <caption>Settings stated in §5 and Appendix D of Song, Meng and Ermon (2020), collected into one table</caption>
+  <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Datasets</td><td>CIFAR10 (32 × 32), CelebA (64 × 64), LSUN Bedroom and Church (256 × 256)</td></tr>
+    <tr><td>Networks</td><td>DDPM's pretrained <span class="t" data-t="u-net">U-Net</span> checkpoints for CIFAR10, Bedroom and Church; a new one trained on CelebA with the same L<sub>1</sub> loss</td></tr>
+    <tr><td>Training levels</td><td>T = 1,000, schedule as in DDPM</td></tr>
+    <tr><td>Knobs</td><td>S = dim(τ), the number of levels visited; η, the fresh noise</td></tr>
+    <tr><td>Level choice</td><td>quadratic τ for CIFAR10, linear for the others</td></tr>
+    <tr><td>Quality measure</td><td><span class="t" data-t="fid">FID</span>, lower is better</td></tr>
+  </tbody>
+</table></div>
+<h3 class="rung">Why it matters</h3>
+<p>Because the network is fixed, every difference in the results below is a difference between samplers, not between models.</p>
+
+<section id="s5-1">
+<h3>5.1 Sample quality and efficiency <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S5.SS1">original</a></span></h3>
+<blockquote class="quote">“Notably, DDIM is able to produce samples with quality comparable to 1000 step models within 20 to 100 steps, which is a 10× to 50× speed up compared to the original DDPM.”<cite>Song, Meng and Ermon (2020), §5.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A painter asked to finish in ten strokes instead of a thousand: the careful one who commits to each stroke does fine; the one who adds a random splash after every stroke, as if there were still hundreds to come, leaves a mess.</p>
+<h4>Tiny example</h4>
+<div class="tablewrap"><table>
+  <caption>Selected entries of Table 1, CIFAR10 FID (lower is better), reproduced with attribution (Song, Meng and Ermon, 2020)</caption>
+  <thead><tr><th>Sampler</th><th class="num">S = 10</th><th class="num">S = 100</th><th class="num">S = 1000</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>DDIM (η = 0)</td><td class="num">13.36</td><td class="num">4.16</td><td class="num">4.04</td></tr>
+    <tr><td>DDPM (η = 1)</td><td class="num">41.07</td><td class="num">5.78</td><td class="num">4.73</td></tr>
+    <tr><td>DDPM (σ̂)</td><td class="num">367.43</td><td class="num">9.99</td><td class="num">3.17</td></tr>
+  </tbody>
+</table></div>
+<p>At 10 steps, DDIM's FID is about a third of DDPM's (13.36 against 41.07). At the full 1,000 steps the order flips slightly: σ̂ is best (3.17), which the paper notes. The σ̂ row shows the danger computed above: at 10 steps it scores 367.43, with visible noise left in the images.</p>
+<div class="plot" id="fig-table1">
+  <div id="t1-chart"></div>
+  <p class="readout" id="t1-readout">Hover or use the arrow keys to read the FID at each step count.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of sampling steps S on a logarithmic scale (10, 20, 50, 100, 1,000); the y-axis is FID, lower is better. Each line is one sampler on one dataset, drawn from the η = 0 and η = 1 rows of the paper's Table 1 (σ̂ is left out: its 10-step values, 367 and 300, would flatten everything else). Follow any pair of lines from the right: at 1,000 steps DDIM and DDPM are close. Move left and the DDPM lines climb steeply while the DDIM lines climb gently, so the gap opens exactly where sampling is cheap. On CelebA, 20 DDIM steps (13.73) roughly match 100 DDPM steps (13.93), the comparison the paper draws.</p>
+<p>Figure 4 of the paper adds that sampling time grows in a straight line with S. So if 1,000 steps take the 20 hours of §1, then 20 steps take about 20 × 20/1,000 = 0.4 hours and 100 steps about 2: the 10× to 50× of the abstract.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>hours_1000 = 20
+# time is linear in the number of steps (Figure 4)
+[round(hours_1000 * S / 1000, 1) for S in (20, 50, 100)]  # → [0.4, 1.0, 2.0]
+# the speed-ups
+[1000 // S for S in (20, 50, 100)]  # → [50, 20, 10]</code></pre>
+<h4>Try it: the sampler on four blobs</h4>
+<p>The toy data are four tight blobs, like the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>'s but drawn tighter so stray samples stand out. Instead of a trained network, this page computes the <em>perfect</em> noise guess exactly (possible because the data are a known mixture of bell curves), then runs equation 12 on the paper's 1,000-level schedule. <strong>Try it:</strong> set S = 10 and compare η = 0 with η = 1, then switch on σ̂. Then drop S to 1, 2 and 3 and watch where the samples go.</p>
+<div class="plot" id="fig-sampler">
+  <div class="controls">
+    <label for="samp-s">steps S = <strong id="samp-sv">10</strong></label><input type="range" id="samp-s" min="0" max="8" step="1" value="4">
+    <label for="samp-eta">η = <strong id="samp-etav">0.0</strong></label><input type="range" id="samp-eta" min="0" max="1" step="0.1" value="0">
+    <span class="dd-toggle" role="group" aria-label="Fresh noise rule"><button type="button" id="samp-hat" aria-pressed="false">use σ̂ instead</button></span>
+  </div>
+  <canvas id="samp-canvas" class="dd-canvas" width="640" height="640" aria-label="Four grey data blobs at the corners of a square and 400 generated samples after S sampling steps with the chosen amount of fresh noise."></canvas>
+  <p class="readout" id="samp-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grey dots are the data, four blobs around the centre; the coloured dots are 400 samples, each started from the same noise every time. At S = 1 every sample lands in the empty middle: from pure noise, the best guess of the clean picture is the average of all the data. By S = 3 the samples have split toward the four blobs; by S = 10 most sit on them, with a few stragglers in the gaps, and by S = 20 nearly all do. With a perfect noise guess on this small toy, η makes little difference (the readout's distance moves only slightly); the large η gap in Table 1 is a measurement on real images with a real, imperfect network, and the paper reports it rather than explaining it. The σ̂ button reproduces the other finding clearly: at 5 to 20 steps it leaves many samples scattered outside the blobs (about half of them at S = 10), the too-much-noise problem worked out above, and only at hundreds of steps does it catch up. The readout's distance averages two checks (each sample to its nearest data point, and each data point to its nearest sample), so collapsing onto one blob cannot score well.</p>
+<h4>Why it matters today</h4>
+<p>This table is where “20 to 50 steps” as a default came from. It also showed that fresh noise, necessary for many small steps, becomes harmful for a few big ones, a lesson later samplers kept.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#step_sweep"><code>step_sweep</code></a> runs the lesson's trained networks at several step counts and scores them with <a data-lesson="primer/ml/generative/diffusion.html#two_way_distance"><code>two_way_distance</code></a>, the same two-way check as the readout above.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 Sample consistency in DDIMs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S5.SS2">original</a></span></h3>
+<blockquote class="quote">“Interestingly, for the generated images with the same initial x<sub>T</sub>, most high-level features are similar, regardless of the generative trajectory.”<cite>Song, Meng and Ermon (2020), §5.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Give the same rough sketch to a painter in a hurry and to a painter with all day. Their finished pictures differ in detail but show the same scene, because the sketch already decided it. With DDIM, the starting noise x<sub>T</sub> is that sketch; with DDPM, the fresh noise added along the way keeps redrawing it.</p>
+<h4>Tiny example</h4>
+<p>In the toy below, 500 starting noises are each sampled twice, with S = 10 and with S = 100. With η = 0, every one of them lands on the same blob both times, and the two end points are on average 0.12 apart. With η = 1, only about a quarter land on the same blob: no better than chance with four blobs.</p>
+<div class="plot" id="fig-consistency">
+  <div class="controls"><span class="dd-toggle" role="group" aria-label="Sampler"><button type="button" data-eta="0" aria-pressed="true">DDIM (η = 0)</button><button type="button" data-eta="1" aria-pressed="false">DDPM (η = 1)</button></span></div>
+  <canvas id="cons-canvas" class="dd-canvas" width="640" height="640" aria-label="For eighty starting noises, the end point after 10 steps and the end point after 100 steps, joined by a line."></canvas>
+  <p class="readout" id="cons-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each hollow ring is where one starting noise ends after 10 steps, each filled dot where the <em>same</em> starting noise ends after 100 steps, and a line joins the pair (80 pairs are drawn; the readout counts 500). With DDIM most lines are short, and even the longer ones (a 10-step sample caught in a gap) end on the blob that sample was already heading for: the short and the long run agree, and the long run only tidies the detail. Switch to DDPM and the lines stretch across the picture, from blob to blob: the starting noise decided almost nothing, because the fresh noise added on the way redecided it.</p>
+<p>The paper's conclusion is that x<sub>T</sub> alone works as a <span class="t" data-t="latent space">latent code</span> for the picture: high-level features are fixed by x<sub>T</sub>, and more steps only refine details.</p>
+<h4>Why it matters today</h4>
+<p>Consistency is what makes a seed meaningful. Re-running an image generator with the same seed and a different step count gives a recognisably similar picture because modern deterministic samplers behave like DDIM.</p>
+</section>
+
+<section id="s5-3">
+<h3>5.3 Interpolation in deterministic generative processes <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S5.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If each starting noise is a sketch, you can blend two sketches and see what the painter makes of the blend. With a GAN this gives a smooth morph between two faces; the paper shows DDIM does the same, which DDPM cannot (its same starting noise gives many different pictures).</p>
+<h4>Tiny example</h4>
+<p>There is a catch in how to blend. Two unit-length noise directions, (1, 0) and (0, 1), averaged in a straight line give (0.5, 0.5), of length only 0.707: a weak, atypically quiet noise. Blend along the arc instead and the midpoint is (0.707, 0.707), still of length 1. In high dimensions this matters: a noise vector with 3,072 numbers (a CIFAR10 image) almost always has length close to √3,072 ≈ 55.4, so a straight-line midpoint of two of them, about 39.2 long, looks nothing like real starting noise.</p>
+<div class="eq" data-tex="\htmlData{sym=xTalpha}{\mathbf{x}_T^{(\alpha)}} = \htmlData{sym=wa}{\frac{\sin((1-\alpha)\theta)}{\sin\theta}}\,\htmlData{sym=xT0}{\mathbf{x}_T^{(0)}} + \htmlData{sym=wb}{\frac{\sin(\alpha\theta)}{\sin\theta}}\,\htmlData{sym=xT1}{\mathbf{x}_T^{(1)}}, \qquad \htmlData{sym=thetaang}{\theta} = \arccos\Big(\frac{(\mathbf{x}_T^{(0)})^{\top}\mathbf{x}_T^{(1)}}{\Vert\mathbf{x}_T^{(0)}\Vert\,\Vert\mathbf{x}_T^{(1)}\Vert}\Big)" data-fallback="x_T^(α) = sin((1 − α)θ)/sin θ · x_T^(0) + sin(αθ)/sin θ · x_T^(1),  θ = arccos of the cosine similarity of x_T^(0) and x_T^(1)"></div>
+<div class="symtable" data-syms="xTalpha,xT0,xT1,thetaang,wa,wb"></div>
+<p class="inwords"><strong>In words:</strong> “measure the angle between the two noises, then walk along the arc between them, a fraction α of the way; this is <span class="t" data-tip-title="Spherical linear interpolation (slerp)" data-tip="Blending two vectors by walking along the arc between them at constant speed, instead of cutting straight across. For two vectors of equal length, every point on the way keeps that length.">spherical linear interpolation</span> (slerp).”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1, 0) and (0, 1) have cosine 0, so θ = π/2 and sin θ = 1. At α = 0.5 both weights are sin(π/4) = 0.7071, giving (0.7071, 0.7071), length 1. (Here α is the blend fraction; the paper reuses the letter.)</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+a, b = [1.0, 0.0], [0.0, 1.0]
+cos = sum(x * y for x, y in zip(a, b)) / (math.hypot(*a) * math.hypot(*b))
+theta = math.acos(cos)
+alpha = 0.5
+w_a = math.sin((1 - alpha) * theta) / math.sin(theta)
+w_b = math.sin(alpha * theta) / math.sin(theta)
+mid = [w_a * x + w_b * y for x, y in zip(a, b)]
+[round(v, 4) for v in mid], round(math.hypot(*mid), 4)  # → ([0.7071, 0.7071], 1.0)
+# a straight-line midpoint is shorter: length 0.7071 of each end, e.g. √3072 → about 39.2
+round(math.sqrt(3072), 1), round(0.7071 * math.sqrt(3072), 1)  # → (55.4, 39.2)</code></pre>
+<p><strong>Try it:</strong> two starting noises that DDIM sends to different blobs; slide α to blend them along the arc.</p>
+<div class="plot" id="fig-interp">
+  <div class="controls"><label for="interp-a">blend α = <strong id="interp-av">0.00</strong></label><input type="range" id="interp-a" min="0" max="1" step="0.01" value="0"></div>
+  <canvas id="interp-canvas" class="dd-canvas" width="640" height="640" aria-label="The arc of blended starting noises between two noises, and the curve of DDIM samples they produce, with the current blend marked on both."></canvas>
+  <p class="readout" id="interp-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grey dots are the data. The dashed arc across the top is the path of blended starting noises, from the first noise (square, on the right) to the second (triangle, on the left); the ring marks the current blend. Noises and samples are both two numbers here, so they share one picture. The solid curve is where DDIM with 50 steps sends every point of that arc, and the large dot is where the current blend goes. As α grows the output first stays inside the first blob, then crosses quickly to the next blob and settles there: the map from noise to sample is continuous, but it hurries across the empty gaps between blobs. On real images those gaps are much smaller than in this toy, which is why the paper's interpolations look like smooth morphs.</p>
+<h4>Why it matters today</h4>
+<p>Walking in noise space, and editing a picture by finding its noise and changing the prompt, both depend on the deterministic map from x<sub>T</sub> to a picture that DDIM introduced.</p>
+</section>
+
+<section id="s5-4">
+<h3>5.4 Reconstruction from latent space <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S5.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If you can drive a road from noise to picture, you can drive it back from picture to noise. Encode a real photo by running the ODE the other way, decode the noise you get, and see how close you come back.</p>
+<h4>Tiny example</h4>
+<p>In the toy chain, encoding the clean pixel 2.0 to level 2 with a perfect noise guess (0.5) lands on 1.9; decoding 1.9 with the same guess returns 2.0 exactly. Errors in a real network, and the size of each jump, are what keep the round trip from being perfect.</p>
+<div class="tablewrap"><table>
+  <caption>Selected entries of Table 2, reconstruction error on the CIFAR10 test set, reproduced with attribution (Song, Meng and Ermon, 2020)</caption>
+  <thead><tr><th>Steps S</th><th class="num">10</th><th class="num">100</th><th class="num">1000</th></tr></thead>
+  <tbody><tr><td>Error (per-dimension squared error, pixels scaled to [0, 1])</td><td class="num">0.014</td><td class="num">0.0009</td><td class="num">0.0001</td></tr></tbody>
+</table></div>
+<div class="plot" id="fig-recon">
+  <div id="recon-chart"></div>
+  <p class="readout" id="recon-readout">Hover or use the arrow keys to read the error at each step count.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is S, the steps used both to encode and to decode, from 10 to 1,000 on a logarithmic scale; the y-axis is the mean squared round-trip error per number. The solid line is computed live on this page's four-blob toy with a perfect noise guess: 200 data points are encoded to noise and decoded back. The dashed line is the paper's Table 2 for CIFAR10 with its trained network. Both fall steadily with S and agree closely up to 50 steps (0.013 against 0.014 at 10). Beyond that the paper's error levels off near 0.0001, while the toy's, with its perfect noise guess, keeps falling. The error comes from taking big Euler steps, not from any randomness, since there is none.</p>
+<h4>Why it matters today</h4>
+<p>This “inversion” is the basis of many diffusion editing methods: invert a real photo to its noise, then regenerate it with a changed prompt or a guided sampler. DDPM, with its fresh noise, cannot do it.</p>
+</section>
+</section>
+
+<section id="s6">
+<h2>6 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>DDPMs and score networks (NCSN) had arrived at the same place from two directions: both learn to denoise at many noise levels and both sample by something like <span class="t" data-t="langevin dynamics">Langevin dynamics</span>, many small, noisy steps. DDIM steps outside that frame.</p>
+<h3 class="rung">What it says</h3>
+<ul>
+  <li>Langevin dynamics discretizes a gradient flow, which the paper links to both families needing many steps.</li>
+  <li>DDIM is an implicit model, where samples are fixed functions of the latent noise; that makes it resemble GANs and invertible flows, including meaningful interpolation.</li>
+  <li>It is derived purely variationally, so the restrictions of Langevin dynamics do not apply; the authors suggest this may partly explain the better few-step quality.</li>
+</ul>
+<h3 class="rung">Tiny example</h3>
+<p>A Langevin step on the toy pixel: move a little along the <span class="t" data-t="score">score</span> and add fresh noise, so two runs from 1.9 separate after one step. A DDIM step from 1.9 gives 2.0596 every time. Same network, two kinds of sampler.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The split between stochastic samplers (Langevin-like, DDPM-like) and deterministic ones (ODE-like, DDIM-like) is still how samplers are classified. See the <a href="ddpm.html#s5">DDPM companion's related work</a> for the score-matching side.</p>
+</section>
+
+<section id="s7">
+<h2>7 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#S7">original</a></span></h2>
+<blockquote class="quote">“…it would be interesting to see if methods that decrease the discretization error in ODEs, including multi-step methods such as Adams-Bashforth…, could be helpful for further improving sample quality in fewer steps.”<cite>Song, Meng and Ermon (2020), §7</cite></blockquote>
+<h3 class="rung">What the paper concludes</h3>
+<ul>
+  <li>DDIMs sample much faster than DDPMs and NCSNs and interpolate meaningfully in their latent space.</li>
+  <li>The non-Markovian view suggests noising processes that are not Gaussian at all; Appendix A sketches one for categories (discrete data).</li>
+  <li>Since DDIM sampling is an ODE solver, better ODE solvers may need fewer steps still.</li>
+</ul>
+<h3 class="rung">Tiny example</h3>
+<p>A multi-step method uses the <em>previous</em> step's direction as well as the current one to predict how the road bends. In the ODE figure above, starting at 0.5, one jump misses because the direction changes along the way: a method that estimates that change from two recent guesses can correct for it without extra network calls.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>That suggestion was taken up: a family of later samplers applies higher-order and multi-step ODE methods to exactly this equation, reaching good quality in 10 to 20 steps.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices A to D <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.02502#A1">original</a></span></h2>
+<h3 class="rung">A: a discrete case</h3>
+<p>For data that are categories (a one-hot vector with K options), the paper defines a noising process that mixes the true category with a uniform choice, and a backward step that picks the current value, the predicted clean value, or a uniform draw with set probabilities. As σ<sub>t</sub> shrinks the step becomes less random. The bound's terms turn into ordinary classification losses. The paper leaves experiments to future work.</p>
+<h3 class="rung">B: Lemma 1, checked with numbers</h3>
+<p>Lemma 1 says equation 7 keeps every level's bell curve right. The centre's check is immediate (the noise pattern averages to 0). The variance check is one line:</p>
+<div class="eq" data-tex="\htmlData{sym=Sigmaprev}{\Sigma_{t-1}} = \htmlData{sym=sigmat2}{\sigma_t^2}\htmlData{sym=I}{\mathbf{I}} + \htmlData{sym=varshare}{\frac{1-\alpha_{t-1}-\sigma_t^2}{1-\alpha_t}}\,\htmlData{sym=varnow}{(1-\alpha_t)}\htmlData{sym=I}{\mathbf{I}} = \htmlData{sym=vartarget}{(1-\alpha_{t-1})}\htmlData{sym=I}{\mathbf{I}}" data-fallback="Σ_t−1 = σ_t² I + ((1 − α_t−1 − σ_t²)/(1 − α_t)) (1 − α_t) I = (1 − α_t−1) I"></div>
+<div class="symtable" data-syms="Sigmaprev,varshare,varnow,vartarget"></div>
+<p class="inwords"><strong>In words:</strong> “the fresh noise contributes σ<sub>t</sub>², and the noise carried over from x<sub>t</sub> contributes the rest, so together they give exactly the variance level t − 1 should have, whatever σ<sub>t</sub> is.”</p>
+<p class="inwords"><strong>With the numbers:</strong> σ<sub>2</sub>² = 0.0370: 0.0370 + (0.04 − 0.0370)/0.36 × 0.36 = 0.04. With σ<sub>2</sub> = 0: 0 + 0.04 = 0.04. Both equal 1 − α<sub>1</sub>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha_prev, alpha_t = 0.96, 0.64
+sigma_ddpm = math.sqrt((1 - alpha_prev) / (1 - alpha_t)) * math.sqrt(1 - alpha_t / alpha_prev)
+for sigma in (sigma_ddpm, 0.0):
+    total = sigma ** 2 + (1 - alpha_prev - sigma ** 2) / (1 - alpha_t) * (1 - alpha_t)
+    print(round(total, 4))  # → 0.04 0.04</code></pre>
+<p>Appendix B also proves Theorem 1 (see the note in <a href="#s3-2">§3.2</a> about its printed constant) and Proposition 1, by rewriting both ODEs in the rescaled units x̄ and σ and finding the same equation. A few equations in the appendices carry small typographical slips that do not affect the argument: equation 46 writes x(t) = √α(t) x(t) where x(0) is meant, equation 48 likewise, equation 56 feeds x<sub>τ<sub>i−1</sub></sub> to the network where x<sub>τ<sub>i</sub></sub> is meant, and equation 62 writes the variance as σ<sub>t</sub>I rather than σ<sub>t</sub>²I.</p>
+<h3 class="rung">C: accelerated processes and the notation</h3>
+<p>Appendix C.1 builds the short forward process of §4.2 formally. Appendix C.2 translates to DDPM's letters: this paper's α<sub>t</sub> is DDPM's ᾱ<sub>t</sub>, so DDPM's per-step values are ratios of neighbours:</p>
+<div class="eq" data-tex="\htmlData{sym=alphaddpm}{\alpha_t^{\text{DDPM}}} = \frac{\htmlData{sym=alphaddim}{\alpha_t}}{\htmlData{sym=alphaddimprev}{\alpha_{t-1}}}, \qquad \htmlData{sym=betaddpm}{\beta_t^{\text{DDPM}}} = 1 - \frac{\htmlData{sym=alphaddim}{\alpha_t}}{\htmlData{sym=alphaddimprev}{\alpha_{t-1}}}" data-fallback="α_t (DDPM) = α_t / α_t−1,   β_t (DDPM) = 1 − α_t / α_t−1"></div>
+<div class="symtable" data-syms="alphaddpm,alphaddim,alphaddimprev,betaddpm"></div>
+<p class="inwords"><strong>In words:</strong> “a DDPM step's kept share is the ratio of this paper's signal shares at two neighbouring levels, and its noise dose is what is left.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the <a href="ddpm.html#how">DDPM companion's toy chain</a> has β = 0.1 then 0.2, so this paper's α list is 1, 0.9, 0.72. Ratios of neighbours give back 0.9 and 0.8, and β = 0.1 and 0.2.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>alphas = [1.0, 0.9, 0.72]
+# α_t^DDPM = α_t / α_(t−1) and β_t = 1 − α_t / α_(t−1)
+[round(alphas[t] / alphas[t - 1], 4) for t in (1, 2)]  # → [0.9, 0.8]
+[round(1 - alphas[t] / alphas[t - 1], 4) for t in (1, 2)]  # → [0.1, 0.2]</code></pre>
+<h3 class="rung">D: experimental details</h3>
+<p>Architectures follow DDPM (a U-Net based on a Wide ResNet). LSUN results (Table 3) tell the same story as Table 1: on Bedroom, 20 DDIM steps give FID 8.89 against 22.77 for DDPM with η = 1, and with 100 steps they are close (6.62 and 6.81). Interpolations use slerp, and grids of interpolations blend four noises two ways.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The appendices are where the paper's generality lives: the discrete case hints that the same trick works beyond bell curves, and the notation map is what lets DDPM's trained checkpoints be reused without change.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2020</h2>
+<p>The idea that training and sampling are separable has held up completely. What sits on either side of it has moved on:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where to read</th></tr></thead>
+  <tbody>
+    <tr><td>DDIM with 20 to 100 steps</td><td>Higher-order ODE solvers, often 10 to 30 steps; distilled students with a handful</td><td>Every step is a network call</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a></td></tr>
+    <tr><td>Unconditional or class samples</td><td>Text prompts with classifier-free guidance applied inside a DDIM-style step</td><td>Generate what was asked for</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a></td></tr>
+    <tr><td>Curved noising paths, stepped on a better clock</td><td>Flow matching: train the road to be straight</td><td>Straight roads forgive big steps</td><td><a href="flow-matching.html">flow matching companion</a></td></tr>
+    <tr><td>Inversion for reconstruction</td><td>Inversion for editing real photos</td><td>Find a photo's noise, regenerate it differently</td><td><a href="#s5-4">§5.4 above</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Jiaming Song, Chenlin Meng and Stefano Ermon, <em>Denoising Diffusion Implicit Models</em>, ICLR 2021. <a href="https://arxiv.org/abs/2010.02502">arXiv:2010.02502</a>. Quotations are brief and attributed; a few selected table entries are reproduced with attribution and the figures are redrawn. All explanations, diagrams, worked numbers and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §2, eq 3 and 4
+    qstep: { tex: "q(\\mathbf{x}_t\\mid\\mathbf{x}_{t-1})", name: "One forward step", meaning: "DDPM's fixed noising step, written with this paper's α: shrink the previous value, add noise.", shape: "a bell curve", example: "level 1 to level 2 of the toy" },
+    Ngauss: { tex: "\\mathcal{N}", name: "Normal (Gaussian) density", meaning: "The bell curve: N(m, v) has centre m and variance v.", shape: "a density", example: "" },
+    sqrtratio: { tex: "\\sqrt{\\tfrac{\\alpha_t}{\\alpha_{t-1}}}", name: "The step's shrink", meaning: "Square root of the variance share this one step keeps: a ratio of two running products.", shape: "just under 1", example: "√(0.64/0.96) = 0.8165" },
+    stepvar: { tex: "1-\\tfrac{\\alpha_t}{\\alpha_{t-1}}", name: "The step's noise variance", meaning: "How much variance this one step replaces with noise: DDPM's β_t.", shape: "0 … 1", example: "0.3333" },
+    I: { tex: "\\mathbf{I}", name: "Identity matrix", meaning: "Says every pixel gets its own independent noise of the same size.", shape: "D × D", example: "" },
+    xt: { tex: "\\mathbf{x}_t", name: "The noisy picture at level t", meaning: "The input the network sees.", shape: "same size as a picture", example: "1.9" },
+    sqrta: { tex: "\\sqrt{\\alpha_t}", name: "Signal share (as a scale)", meaning: "How much of the clean picture is still in x_t. In this paper α_t is DDPM's ᾱ_t, the running product.", shape: "1 down to about 0", example: "√0.64 = 0.8" },
+    x0: { tex: "\\mathbf{x}_0", name: "The clean picture", meaning: "A real training example; at sampling time, what the chain produces.", shape: "same size as a picture", example: "2.0" },
+    sqrt1ma: { tex: "\\sqrt{1-\\alpha_t}", name: "Noise share (as a scale)", meaning: "How loud the noise in x_t is.", shape: "0 up to about 1", example: "√0.36 = 0.6" },
+    eps: { tex: "\\epsilon", name: "The noise draw", meaning: "“Epsilon”: standard-normal noise, the pattern mixed into the picture.", shape: "same size as a picture", example: "0.5" },
+    // eq 5
+    Lgamma: { tex: "L_\\gamma", name: "Weighted noise-guessing loss", meaning: "The squared error of the noise guesses, summed over levels with weights γ_t. With γ = 1 it is DDPM's simple loss.", shape: "one number", example: "0.01 for one example at one level" },
+    sumT: { tex: "\\sum_{t=1}^{T}", name: "Sum over levels", meaning: "Add one term per noise level, 1 to T.", shape: "one number", example: "T = 1,000 in the paper" },
+    gammat: { tex: "\\gamma_t", name: "Weight of level t", meaning: "“Gamma”: how much level t counts. Positive.", shape: "a positive number", example: "1 in L₁; 6.25 for the toy's exact bound" },
+    Ex0eps: { tex: "\\mathbb{E}_{\\mathbf{x}_0,\\epsilon_t}", name: "Average over examples and noise", meaning: "Average over real pictures and noise draws; in code, a batch average.", shape: "one number", example: "" },
+    epstheta: { tex: "\\epsilon_\\theta^{(t)}", name: "The network's noise guess", meaning: "“Epsilon theta”: the trained network's estimate of the noise in x_t at level t.", shape: "same size as a picture", example: "0.5 (perfect) or 0.4" },
+    noisy: { tex: "\\sqrt{\\alpha_t}\\mathbf{x}_0 + \\sqrt{1-\\alpha_t}\\epsilon_t", name: "The noised training input", meaning: "A real example pushed to level t in one jump.", shape: "same size as a picture", example: "0.8 × 2.0 + 0.6 × 0.5 = 1.9" },
+    epstrue: { tex: "\\epsilon_t", name: "The real noise", meaning: "The noise actually drawn: the answer the guess is graded against.", shape: "same size as a picture", example: "0.5" },
+    // eq 7
+    qsigma: { tex: "q_\\sigma(\\mathbf{x}_{t-1}\\mid\\mathbf{x}_t,\\mathbf{x}_0)", name: "The backward step of the new family", meaning: "Where level t − 1 is, given level t and the clean picture, for a chosen amount σ_t of fresh noise.", shape: "a bell curve", example: "centre 2.0596 (σ = 0) or 1.9868 (DDPM's σ)" },
+    sqrtaprev: { tex: "\\sqrt{\\alpha_{t-1}}", name: "Next level's signal scale", meaning: "How much signal level t − 1 should hold.", shape: "a bit more than √α_t", example: "√0.96 = 0.9798" },
+    dircoef: { tex: "\\sqrt{1-\\alpha_{t-1}-\\sigma_t^2}", name: "Volume of the carried-over noise", meaning: "How loud the old noise pattern is at level t − 1: the level's whole noise budget, minus what fresh noise takes.", shape: "0 … √(1 − α_(t−1))", example: "0.2 (σ = 0) or 0.0544" },
+    noisedir: { tex: "\\frac{\\mathbf{x}_t-\\sqrt{\\alpha_t}\\mathbf{x}_0}{\\sqrt{1-\\alpha_t}}", name: "The noise pattern in x_t", meaning: "Read off the noise x_t must contain, given x_0: undo the one-jump formula.", shape: "same size as a picture", example: "(1.9 − 1.6)/0.6 = 0.5" },
+    sigmat2: { tex: "\\sigma_t^2", name: "Fresh-noise variance", meaning: "How much fresh randomness the step adds. The dial that picks a member of the family.", shape: "0 … 1 − α_(t−1)", example: "0 (DDIM) or 0.0370 (DDPM)" },
+    // eq 9, 10
+    ftheta: { tex: "f_\\theta^{(t)}(\\mathbf{x}_t)", name: "Predicted clean picture", meaning: "The network's noise guess turned into a guess of x_0 by undoing the one-jump formula.", shape: "same size as a picture", example: "2.0; 2.075 with the guess 0.4" },
+    pgen: { tex: "p_\\theta^{(t)}(\\mathbf{x}_{t-1}\\mid\\mathbf{x}_t)", name: "One learned sampling step", meaning: "The generative process: equation 7 with the predicted clean picture in place of the real one.", shape: "a bell curve", example: "centre 2.0548 with guess 0.4 and DDPM's σ" },
+    sigma1: { tex: "\\sigma_1^2", name: "Last step's variance", meaning: "A little noise on the very last step, so the model gives every picture some probability.", shape: "a small number", example: "" },
+    // Theorem 1
+    sigmavec: { tex: "\\sigma", name: "The fresh-noise amounts", meaning: "The list σ_1 … σ_T that picks one member of the family. The theorem needs every entry above 0.", shape: "T numbers", example: "" },
+    Jsigma: { tex: "J_\\sigma", name: "The proper bound for this σ", meaning: "The variational bound (negative ELBO) of the forward and generative processes chosen by σ.", shape: "one number", example: "a KL of 0.0625 for guess 0.4, level 2 of the toy" },
+    Cconst: { tex: "C", name: "A constant", meaning: "A number that depends on σ but not on the network, so it never changes what training does.", shape: "one number", example: "0 for the toy's level-2 term" },
+    gammavec: { tex: "\\gamma", name: "The level weights", meaning: "Some positive weight per level; which ones depends on σ.", shape: "T positive numbers", example: "γ₂ = 6.25 in the toy" },
+    // eq 12
+    xtm1: { tex: "\\mathbf{x}_{t-1}", name: "The next, cleaner picture", meaning: "The result of one sampling step.", shape: "same size as a picture", example: "2.0596 (DDIM) or 1.7944" },
+    predx0: { tex: "\\text{predicted } \\mathbf{x}_0", name: "Predicted clean picture", meaning: "The guess f_θ(x_t), placed at the next level's signal volume.", shape: "same size as a picture", example: "2.0, scaled to 1.9596" },
+    dirxt: { tex: "\\text{direction pointing to } \\mathbf{x}_t", name: "Direction back toward x_t", meaning: "The guessed noise at the next level's noise volume: it keeps the new point on the same side as the old one.", shape: "same size as a picture", example: "0.2 × 0.5 = 0.1 (DDIM)" },
+    sigmat: { tex: "\\sigma_t", name: "Fresh-noise spread", meaning: "Standard deviation of the fresh noise. 0 is DDIM; DDPM's value is below.", shape: "≥ 0", example: "0 or 0.1925" },
+    epsfresh: { tex: "\\epsilon_t", name: "Fresh noise", meaning: "A new standard-normal draw, independent of x_t.", shape: "same size as a picture", example: "−1.0, illustrative" },
+    randnoise: { tex: "\\text{random noise}", name: "The random part", meaning: "σ_t ε_t: the only randomness in a step. Switched off in DDIM.", shape: "same size as a picture", example: "−0.1925" },
+    ratiovar: { tex: "\\sqrt{\\tfrac{1-\\alpha_{t-1}}{1-\\alpha_t}}", name: "Ratio of noise levels", meaning: "How loud the next level's noise is compared with this one's.", shape: "below 1", example: "√(0.04/0.36) = 0.3333" },
+    betaeq: { tex: "\\sqrt{1-\\tfrac{\\alpha_t}{\\alpha_{t-1}}}", name: "One forward step's noise spread", meaning: "The spread of noise a forward step from t − 1 to t adds: √β_t in DDPM's letters.", shape: "0 … 1", example: "√(1/3) = 0.5774" },
+    // eq 16
+    sigmaeta: { tex: "\\sigma_{\\tau_i}(\\eta)", name: "Fresh noise for a jump", meaning: "The fresh-noise spread for the jump from level τ_i to τ_(i−1), scaled by η.", shape: "≥ 0", example: "0.0962 at η = 0.5" },
+    eta: { tex: "\\eta", name: "The stochasticity dial", meaning: "“Eta”: 0 is DDIM (no fresh noise), 1 is DDPM.", shape: "0 … 1 in the paper", example: "0, 0.2, 0.5, 1" },
+    sigmahat: { tex: "\\hat\\sigma_{\\tau_i}", name: "DDPM's larger noise", meaning: "“Sigma hat”: the full spread of one forward step, used by DDPM's CIFAR10 code; far too much for big jumps.", shape: "0 … 1", example: "0.5774 in the toy" },
+    // tau
+    taui: { tex: "\\tau_i", name: "The i-th visited level", meaning: "“Tau i”: which of the T training levels the sampler visits at its i-th stop.", shape: "an integer 1 … T", example: "100, 200, …; or 10, 40, 90, …" },
+    floor: { tex: "\\lfloor\\,\\rfloor", name: "Round down", meaning: "The largest whole number not above what is inside.", shape: "an integer", example: "⌊33.3⌋ = 33" },
+    cconst: { tex: "c", name: "Spacing constant", meaning: "Chosen so the last visited level is close to T.", shape: "a positive number", example: "100 (linear) or 10 (quadratic)" },
+    iidx: { tex: "i", name: "Stop number", meaning: "Counts the sampler's stops, 1 to S.", shape: "1 … S", example: "1 … 10" },
+    // eq 13 to 15
+    xnext: { tex: "\\mathbf{x}_{t-\\Delta t}", name: "The point after the jump", meaning: "Where one step lands, at the cleaner level t − Δt.", shape: "same size as a picture", example: "2.0596 (DDIM)" },
+    sqrtanext: { tex: "\\sqrt{\\alpha_{t-\\Delta t}}", name: "Target level's signal scale", meaning: "Dividing by it puts the new point in signal-rescaled units.", shape: "0 … 1", example: "√0.96" },
+    signext: { tex: "\\sqrt{\\tfrac{1-\\alpha_{t-\\Delta t}}{\\alpha_{t-\\Delta t}}}", name: "Target noise-to-signal ratio", meaning: "σ at the target level: the clock value after the step.", shape: "≥ 0", example: "0.2041" },
+    signow: { tex: "\\sqrt{\\tfrac{1-\\alpha_t}{\\alpha_t}}", name: "Current noise-to-signal ratio", meaning: "σ at the current level: the clock value now.", shape: "≥ 0", example: "0.75" },
+    xbar: { tex: "\\bar{\\mathbf{x}}(t)", name: "Signal-rescaled position", meaning: "“x bar”: x divided by √α, so the signal part stays the same size while the noise part grows.", shape: "same size as a picture", example: "1.9/0.8 = 2.375" },
+    xfromxbar: { tex: "\\bar{\\mathbf{x}}/\\sqrt{\\sigma^2+1}", name: "Back to ordinary units", meaning: "What the network is actually asked about: x̄ converted back to x.", shape: "same size as a picture", example: "2.375/1.25 = 1.9" },
+    sigmaclock: { tex: "\\sigma(t)", name: "The noise-to-signal clock", meaning: "√((1 − α)/α): 0 for a clean picture, growing without limit toward pure noise. DDIM takes Euler steps along it.", shape: "≥ 0", example: "0.75 at α = 0.64" },
+    half: { tex: "\\frac{1}{2}", name: "One half", meaning: "From the chain rule: the change in σ² is about 2σ times the change in σ.", shape: "", example: "" },
+    sig2next: { tex: "\\frac{1-\\alpha_{t-\\Delta t}}{\\alpha_{t-\\Delta t}}", name: "Target σ²", meaning: "The squared clock value after the step.", shape: "≥ 0", example: "0.0417" },
+    sig2now: { tex: "\\frac{1-\\alpha_t}{\\alpha_t}", name: "Current σ²", meaning: "The squared clock value now.", shape: "≥ 0", example: "0.5625" },
+    invsig: { tex: "\\sqrt{\\tfrac{\\alpha_t}{1-\\alpha_t}}", name: "One over the current σ", meaning: "Turns a change in σ² into an estimate of the change in σ, valid for small steps.", shape: "> 0", example: "1/0.75 = 1.3333" },
+    // slerp
+    xTalpha: { tex: "\\mathbf{x}_T^{(\\alpha)}", name: "Blended starting noise", meaning: "The starting noise a fraction α of the way along the arc. Here α is a blend fraction, not a signal share.", shape: "same size as a picture", example: "(0.7071, 0.7071)" },
+    xT0: { tex: "\\mathbf{x}_T^{(0)}", name: "First starting noise", meaning: "The noise that DDIM turns into the first picture.", shape: "same size as a picture", example: "(1, 0)" },
+    xT1: { tex: "\\mathbf{x}_T^{(1)}", name: "Second starting noise", meaning: "The noise that DDIM turns into the second picture.", shape: "same size as a picture", example: "(0, 1)" },
+    thetaang: { tex: "\\theta", name: "Angle between the noises", meaning: "“Theta”: from their cosine similarity. Here it is an angle, not the network's weights.", shape: "0 … π", example: "π/2" },
+    wa: { tex: "\\frac{\\sin((1-\\alpha)\\theta)}{\\sin\\theta}", name: "Weight on the first noise", meaning: "Shrinks from 1 to 0 as α goes from 0 to 1, along the arc.", shape: "0 … 1", example: "0.7071" },
+    wb: { tex: "\\frac{\\sin(\\alpha\\theta)}{\\sin\\theta}", name: "Weight on the second noise", meaning: "Grows from 0 to 1 as α goes from 0 to 1.", shape: "0 … 1", example: "0.7071" },
+    // Lemma 1
+    Sigmaprev: { tex: "\\Sigma_{t-1}", name: "Variance of level t − 1 given x_0", meaning: "What equation 7 gives, averaged over x_t.", shape: "D × D", example: "0.04" },
+    varshare: { tex: "\\frac{1-\\alpha_{t-1}-\\sigma_t^2}{1-\\alpha_t}", name: "Squared volume of carried noise", meaning: "The carried-over noise pattern is scaled by this before its variance, 1 − α_t, is counted.", shape: "0 … 1", example: "(0.04 − 0.037)/0.36" },
+    varnow: { tex: "1-\\alpha_t", name: "Noise variance at level t", meaning: "How much noise variance x_t holds.", shape: "0 … 1", example: "0.36" },
+    vartarget: { tex: "1-\\alpha_{t-1}", name: "Target noise variance", meaning: "What level t − 1 must hold, so the marginals match.", shape: "0 … 1", example: "0.04" },
+    // C.2
+    alphaddpm: { tex: "\\alpha_t^{\\text{DDPM}}", name: "DDPM's per-step alpha", meaning: "The variance share one DDPM step keeps.", shape: "just under 1", example: "0.9, 0.8" },
+    alphaddim: { tex: "\\alpha_t", name: "This paper's alpha", meaning: "The signal share left at level t: DDPM's ᾱ_t.", shape: "1 down to about 0", example: "0.9, 0.72" },
+    alphaddimprev: { tex: "\\alpha_{t-1}", name: "The previous level's alpha", meaning: "This paper's α one level cleaner.", shape: "1 down to about 0", example: "1, 0.9" },
+    betaddpm: { tex: "\\beta_t^{\\text{DDPM}}", name: "DDPM's noise dose", meaning: "The share of variance one DDPM step replaces with noise.", shape: "0 … 1", example: "0.1, 0.2" },
+  },
+
+  blocks: {
+    // Figure 1
+    m3: { title: "x<sub>3</sub>, Markov side", body: "<p>Made from x<sub>2</sub> alone. Given x<sub>0</sub>, its bell curve is N(√α<sub>3</sub> x<sub>0</sub>, (1 − α<sub>3</sub>)I), the same as on the right.</p>" },
+    m2: { title: "x<sub>2</sub>, Markov side", body: "<p>Made from x<sub>1</sub> alone, with fresh noise. Given x<sub>0</sub>: N(√α<sub>2</sub> x<sub>0</sub>, (1 − α<sub>2</sub>)I). In the toy, N(1.6, 0.36).</p>" },
+    m1: { title: "x<sub>1</sub>, Markov side", body: "<p>Made from x<sub>0</sub> with one noise step. Given x<sub>0</sub>: N(√α<sub>1</sub> x<sub>0</sub>, (1 − α<sub>1</sub>)I).</p>", lesson: "primer/ml/generative/diffusion.html#noise_step" },
+    x0node: { title: "x<sub>0</sub>: the clean picture", body: "<p>Observed during training (shaded). Both processes start from it; the right-hand one keeps using it at every level.</p>" },
+    n3: { title: "x<sub>3</sub>, non-Markovian side", body: "<p>Made first, straight from x<sub>0</sub> with the one-jump formula. Same bell curve as on the left.</p>", lesson: "primer/ml/generative/diffusion.html#add_noise" },
+    n2: { title: "x<sub>2</sub>, non-Markovian side", body: "<p>Made from x<sub>3</sub> <em>and</em> x<sub>0</sub> with equation 7. Given x<sub>0</sub> alone it is still N(1.6, 0.36) in the toy (Lemma 1).</p>" },
+    n1: { title: "x<sub>1</sub>, non-Markovian side", body: "<p>Made from x<sub>2</sub> and x<sub>0</sub>. With σ = 0 it is fully determined by them: the same noise pattern, turned down.</p>" },
+    // eq 12 flow
+    sin: { title: "The current noisy picture x<sub>t</sub>", body: "<p>Pure noise at the first step; a little cleaner after each.</p>" },
+    snet: { title: "One network call", body: "<p>ε<sub>θ</sub>(x<sub>t</sub>): the trained noise guesser, the same network DDPM trained. The only expensive part of a step.</p>", lesson: "primer/ml/generative/diffusion.html#NoisePredictor" },
+    sx0: { title: "Predicted x<sub>0</sub>", body: "<p>(x<sub>t</sub> − √(1 − α<sub>t</sub>) ε<sub>θ</sub>)/√α<sub>t</sub>, then scaled by √α<sub>t−1</sub>. Toy: 2.0, scaled to 1.9596.</p>" },
+    sdir: { title: "Direction pointing to x<sub>t</sub>", body: "<p>√(1 − α<sub>t−1</sub> − σ<sub>t</sub>²) · ε<sub>θ</sub>: the guessed noise at the next level's volume. Toy with σ = 0: 0.1.</p>" },
+    ssum: { title: "Add the parts", body: "<p>Predicted x<sub>0</sub> plus direction plus (optional) noise gives x<sub>t−1</sub>. Toy DDIM: 1.9596 + 0.1 = 2.0596.</p>", lesson: "primer/ml/generative/diffusion.html#ddim_step" },
+    sout: { title: "The next point x<sub>t−1</sub>", body: "<p>The input to the next step, one level cleaner. After the last step (to α<sub>0</sub> = 1) it is the finished sample.</p>", lesson: "primer/ml/generative/diffusion.html#ddim_sample" },
+    snoise: { title: "Fresh noise σ<sub>t</sub> ε<sub>t</sub>", body: "<p>On for DDPM (σ<sub>t</sub> = 0.1925 in the toy), off for DDIM. η scales it between.</p>", lesson: "primer/ml/generative/diffusion.html#ddpm_step" },
+    // Figure 2
+    a3: { title: "x<sub>3</sub>: where sampling starts", body: "<p>The top level, drawn as pure noise N(0, I).</p>" },
+    a1: { title: "x<sub>1</sub>: the only stop in between", body: "<p>Reached from x<sub>3</sub> in one jump of equation 12, with t = 3 and the target level 1.</p>" },
+    a0: { title: "x<sub>0</sub>: the output", body: "<p>The last jump goes to α<sub>0</sub> = 1, so it outputs the predicted clean picture.</p>" },
+    a2: { title: "x<sub>2</sub>: skipped", body: "<p>Never visited by the sampler. In the construction it depends on x<sub>0</sub> only, so it still appears in the training bound.</p>" },
+  },
+
+  onReady(P) {
+    pathsFigure(P);
+    odeFigure(P);
+    table1Chart(P);
+    samplerFigure(P);
+    consistencyFigure(P);
+    interpFigure(P);
+    reconChart(P);
+  },
+};
+
+/* ---- the toy: the paper's 1,000-level schedule, four tight blobs, and the exact noise guess ---- */
+const DD = (() => {
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const T = 1000;
+  // This paper's α_t (DDPM's ᾱ_t): the running product of 1 − β, with α_0 = 1.
+  const alphas = [1];
+  for (let i = 0; i < T; i++) alphas.push(alphas[i] * (1 - (1e-4 + ((0.02 - 1e-4) * i) / (T - 1))));
+  const S_BLOB = 0.15;
+  const MU = [0, 1, 2, 3].map((k) => { const a = Math.PI / 4 + (k * Math.PI) / 2; return [Math.cos(a), Math.sin(a)]; });
+  // The perfect noise guess for a mixture of four equal bell curves: ε* = −√(1 − α) × score.
+  function eps(x, a) {
+    const v = a * S_BLOB * S_BLOB + 1 - a, sa = Math.sqrt(a);
+    const d = MU.map((m) => [x[0] - sa * m[0], x[1] - sa * m[1]]);
+    const lw = d.map((q) => -(q[0] * q[0] + q[1] * q[1]) / (2 * v));
+    const mx = Math.max(...lw);
+    const w = lw.map((l) => Math.exp(l - mx));
+    const W = w.reduce((p, q) => p + q, 0);
+    const s = [0, 1].map((k) => -d.reduce((acc, q, i) => acc + (w[i] / W) * q[k], 0) / v);
+    return [-Math.sqrt(1 - a) * s[0], -Math.sqrt(1 - a) * s[1]];
+  }
+  // The linear rule of Appendix D.2: τ_i = ⌊(T/S) i⌋, so the last stop is T.
+  const taus = (S) => Array.from({ length: S }, (_, i) => Math.floor((T / S) * (i + 1) + 1e-9));
+  function rng(seed) {
+    return () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let r = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(r) { const u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+  const normals = (n, seed) => { const r = rng(seed); return Array.from({ length: n }, () => [gauss(r), gauss(r)]); };
+  // Equation 12 from level t to level s (s < t), with fresh-noise spread sig (or σ̂ when hat).
+  function step(x, at, as, eta, hat, r) {
+    const e = eps(x, at);
+    const x0 = [(x[0] - Math.sqrt(1 - at) * e[0]) / Math.sqrt(at), (x[1] - Math.sqrt(1 - at) * e[1]) / Math.sqrt(at)];
+    // No fresh noise when η = 0 and σ̂ is off; this also keeps the clean level (α = 1) from dividing by zero when encoding.
+    const sig = eta > 0 ? eta * Math.sqrt((1 - as) / (1 - at)) * Math.sqrt(1 - at / as) : 0;
+    const sd = hat ? Math.sqrt(1 - at / as) : sig;
+    const dir = Math.sqrt(Math.max(1 - as - sig * sig, 0));
+    const z = sd > 0 ? [gauss(r), gauss(r)] : [0, 0];
+    return [Math.sqrt(as) * x0[0] + dir * e[0] + sd * z[0], Math.sqrt(as) * x0[1] + dir * e[1] + sd * z[1]];
+  }
+  function sample(starts, S, eta = 0, hat = false, seed = 11) {
+    const r = rng(seed);
+    const seq = taus(S).reverse().concat([0]);
+    return starts.map((x0) => {
+      let x = x0;
+      for (let i = 0; i < S; i++) x = step(x, alphas[seq[i]], alphas[seq[i + 1]], eta, hat, r);
+      return x;
+    });
+  }
+  // DDIM run the other way: from a clean point up to level T, in S jumps.
+  function encode(x0, S) {
+    const seq = [0].concat(taus(S));
+    let x = x0;
+    for (let i = 0; i < S; i++) x = step(x, alphas[seq[i]], alphas[seq[i + 1]], 0, false, null);
+    return x;
+  }
+  const r0 = rng(3);
+  const DATA = Array.from({ length: 400 }, (_, i) => { const m = MU[i % 4]; return [m[0] + S_BLOB * gauss(r0), m[1] + S_BLOB * gauss(r0)]; });
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  function twoWay(xs, data = DATA) {
+    const a = xs.reduce((acc, x) => acc + Math.min(...data.map((d) => dist(x, d))), 0) / xs.length;
+    const b = data.reduce((acc, d) => acc + Math.min(...xs.map((x) => dist(x, d))), 0) / data.length;
+    return 0.5 * (a + b);
+  }
+  const blob = (x) => { let k = 0; MU.forEach((m, i) => { if (dist(x, m) < dist(x, MU[k])) k = i; }); return k; };
+  function dot(ctx, px, py, r, color, fill = true) {
+    ctx.beginPath(); ctx.arc(px, py, r, 0, 2 * Math.PI);
+    if (fill) { ctx.fillStyle = color; ctx.fill(); } else { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke(); }
+  }
+  function plane(canvas, R) {
+    const W = canvas.width, H = canvas.height;
+    return { W, H, toPx: (x, y) => [((x + R) / (2 * R)) * W, ((R - y) / (2 * R)) * H] };
+  }
+  function background(ctx, canvas, R, withData = true) {
+    const { W, H, toPx } = plane(canvas, R);
+    ctx.fillStyle = css("--card") || "#fff"; ctx.fillRect(0, 0, W, H);
+    if (withData) DATA.forEach((d) => { const [px, py] = toPx(...d); dot(ctx, px, py, 3, css("--wire")); });
+    return toPx;
+  }
+  return { css, T, alphas, S_BLOB, MU, eps, taus, rng, gauss, normals, step, sample, encode, DATA, twoWay, blob, dist, dot, plane, background };
+})();
+
+/* ---- §3.1: forward paths for one clean pixel, same band at every η ---- */
+function pathsFigure(P) {
+  const canvas = document.getElementById("paths-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height, x0 = 1;
+  const levels = Array.from({ length: 51 }, (_, i) => i * 20); // 0, 20, …, 1000
+  const A = levels.map((t) => DD.alphas[t]);
+  const slider = document.getElementById("paths-eta"), label = document.getElementById("paths-etav"), readout = document.getElementById("paths-readout");
+  const Y = [-3.4, 3.4];
+  const toPx = (i, y) => [44 + (i / (levels.length - 1)) * (W - 54), ((Y[1] - y) / (Y[1] - Y[0])) * (H - 44) + 8];
+  // One run of equation 7, built from the top level down, as equation 6 defines the process.
+  function run(eta, r) {
+    const n = levels.length, x = new Array(n);
+    x[n - 1] = Math.sqrt(A[n - 1]) * x0 + Math.sqrt(1 - A[n - 1]) * DD.gauss(r);
+    for (let i = n - 1; i > 0; i--) {
+      const at = A[i], ap = A[i - 1];
+      const sig = eta * Math.sqrt((1 - ap) / (1 - at)) * Math.sqrt(1 - at / ap);
+      const pattern = (x[i] - Math.sqrt(at) * x0) / Math.sqrt(1 - at);
+      x[i - 1] = Math.sqrt(ap) * x0 + Math.sqrt(Math.max(1 - ap - sig * sig, 0)) * pattern + sig * DD.gauss(r);
+    }
+    return x;
+  }
+  function draw() {
+    const eta = +slider.value;
+    label.textContent = eta.toFixed(1);
+    const r = DD.rng(21);
+    const runs = Array.from({ length: 2000 }, () => run(eta, r));
+    const fg = DD.css("--fg"), band = DD.css("--accent-soft") || "rgba(120,120,200,0.2)", line = DD.css("--attn-stroke");
+    ctx.fillStyle = DD.css("--card") || "#fff"; ctx.fillRect(0, 0, W, H);
+    // the band: centre ± 2 standard deviations of the one-jump bell curve
+    ctx.fillStyle = band; ctx.beginPath();
+    levels.forEach((_, i) => { const [px, py] = toPx(i, Math.sqrt(A[i]) * x0 + 2 * Math.sqrt(1 - A[i])); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+    for (let i = levels.length - 1; i >= 0; i--) { const [px, py] = toPx(i, Math.sqrt(A[i]) * x0 - 2 * Math.sqrt(1 - A[i])); ctx.lineTo(px, py); }
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = line; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.75;
+    runs.slice(0, 12).forEach((x) => { ctx.beginPath(); x.forEach((v, i) => { const [px, py] = toPx(i, v); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.stroke(); });
+    ctx.globalAlpha = 1;
+    // axes and labels
+    ctx.fillStyle = fg; ctx.font = "22px ui-sans-serif, system-ui, sans-serif"; ctx.textAlign = "right";
+    [-2, 0, 2].forEach((v) => { const [, py] = toPx(0, v); ctx.fillText(String(v), 36, py + 7); ctx.strokeStyle = DD.css("--wire"); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(44, py); ctx.lineTo(W - 10, py); ctx.stroke(); });
+    ctx.textAlign = "left"; ctx.fillText("clean (t = 0)", 46, H - 8); ctx.textAlign = "right"; ctx.fillText("pure noise (t = 1000)", W - 10, H - 8); ctx.textAlign = "left";
+    const i500 = 25, vals = runs.map((x) => x[i500]);
+    const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const sd = Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length);
+    readout.innerHTML = `η = ${eta.toFixed(1)}: at level 500 the 2,000 paths have spread <strong>${sd.toFixed(3)}</strong>; the band says √(1 − α<sub>500</sub>) = <strong>${Math.sqrt(1 - A[i500]).toFixed(3)}</strong>. ${eta === 0 ? "Each path is one noise pattern turned up: smooth curves." : eta === 1 ? "DDPM's fresh noise at every level: zigzag paths." : "Some fresh noise at each level."}`;
+  }
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- §4.3: one DDIM jump against one time-stepped Euler jump, two-point data at ±2 ---- */
+function odeFigure(P) {
+  const PTS = [-2, 2];
+  function eps1(x, a) {
+    const lw = PTS.map((p) => -((x - Math.sqrt(a) * p) ** 2) / (2 * (1 - a)));
+    const m = Math.max(...lw), w = lw.map((l) => Math.exp(l - m)), W = w[0] + w[1];
+    const ex0 = (w[0] * PTS[0] + w[1] * PTS[1]) / W;
+    return (x - Math.sqrt(a) * ex0) / Math.sqrt(1 - a);
+  }
+  const sg = (a) => Math.sqrt((1 - a) / a);
+  const ddim = (x, a, b) => Math.sqrt(b) * (x / Math.sqrt(a) + (sg(b) - sg(a)) * eps1(x, a));
+  const pf = (x, a, b) => Math.sqrt(b) * (x / Math.sqrt(a) + (0.5 * (sg(b) ** 2 - sg(a) ** 2)) / sg(a) * eps1(x, a));
+  function exact(x, a, b, n = 400) {
+    // midpoint steps along the σ clock: d x̄ = ε(x̄/√(σ² + 1)) dσ
+    const f = (xb, s) => { const aa = 1 / (1 + s * s); return eps1(xb * Math.sqrt(aa), aa); };
+    let xb = x / Math.sqrt(a), s = sg(a);
+    const h = (sg(b) - s) / n;
+    for (let i = 0; i < n; i++) { const k1 = f(xb, s); xb += h * f(xb + 0.5 * h * k1, s + 0.5 * h); s += h; }
+    return xb * Math.sqrt(b);
+  }
+  const starts = { near: [1.9, 0.64], mid: [0.5, 0.2] };
+  const series = (k) => {
+    const [x, a] = starts[k];
+    const bs = Array.from({ length: 41 }, (_, i) => a + ((0.999 - a) * i) / 40);
+    return [
+      { name: "exact ODE solution", points: bs.map((b) => [b, exact(x, a, b)]) },
+      { name: "one DDIM jump (eq 13)", points: bs.map((b) => [b, ddim(x, a, b)]) },
+      { name: "one time-stepped Euler jump (eq 15)", points: bs.map((b) => [b, pf(x, a, b)]) },
+    ];
+  };
+  const ranges = { near: [1.8, 2.25], mid: [0.4, 2.0] };
+  const opts = {
+    series: series("near"), yMin: ranges.near[0], yMax: ranges.near[1], xLabel: "target signal share α", yLabel: "landing point x", width: 440, height: 280,
+    xFmt: (v) => v.toFixed(3), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("ode-readout"), ariaLabel: "Where one jump lands against the target level, for the exact ODE, DDIM and time-stepped Euler",
+  };
+  const chart = P.lineChart(document.getElementById("ode-chart"), opts);
+  document.querySelectorAll("#fig-ode [data-start]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#fig-ode [data-start]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    [opts.yMin, opts.yMax] = ranges[b.dataset.start];
+    chart.update(series(b.dataset.start));
+  }));
+}
+
+/* ---- §5.1: Table 1, the η = 0 and η = 1 rows for both datasets ---- */
+function table1Chart(P) {
+  const S = [10, 20, 50, 100, 1000];
+  const rows = {
+    "CIFAR10, DDIM (η = 0)": [13.36, 6.84, 4.67, 4.16, 4.04],
+    "CIFAR10, DDPM (η = 1)": [41.07, 18.36, 8.01, 5.78, 4.73],
+    "CelebA, DDIM (η = 0)": [17.33, 13.73, 9.17, 6.53, 3.51],
+    "CelebA, DDPM (η = 1)": [33.12, 26.03, 18.48, 13.93, 5.98],
+  };
+  P.lineChart(document.getElementById("t1-chart"), {
+    series: Object.entries(rows).map(([name, v]) => ({ name, points: S.map((s, i) => [s, v[i]]) })),
+    xLabel: "sampling steps S (log scale)", yLabel: "FID", logX: true, width: 440, height: 300, yMin: 0,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("t1-readout"), ariaLabel: "FID against sampling steps for DDIM and DDPM on CIFAR10 and CelebA, from Table 1 of the paper",
+  });
+}
+
+/* ---- §5.1: the sampler on four blobs, with a perfect noise guess ---- */
+function samplerFigure(P) {
+  const canvas = document.getElementById("samp-canvas"), ctx = canvas.getContext("2d");
+  const STEPS = [1, 2, 3, 5, 10, 20, 50, 100, 1000];
+  const sIn = document.getElementById("samp-s"), eIn = document.getElementById("samp-eta"), hatBtn = document.getElementById("samp-hat");
+  const readout = document.getElementById("samp-readout");
+  const starts = DD.normals(400, 7);
+  let hat = false;
+  function draw() {
+    const S = STEPS[+sIn.value], eta = +eIn.value;
+    document.getElementById("samp-sv").textContent = String(S);
+    document.getElementById("samp-etav").textContent = eta.toFixed(1);
+    const xs = DD.sample(starts, S, eta, hat);
+    const R = 1.7, toPx = DD.background(ctx, canvas, R);
+    const c = hat ? DD.css("--attn-stroke") : DD.css("--ff-stroke");
+    xs.forEach((x) => { const [px, py] = toPx(...x); DD.dot(ctx, px, py, 4, c); });
+    const counts = [0, 0, 0, 0]; xs.forEach((x) => counts[DD.blob(x)]++);
+    readout.innerHTML = `S = ${S} step${S > 1 ? "s" : ""} (${S} network call${S > 1 ? "s" : ""} per sample), ${hat ? "fresh noise σ̂" : `η = ${eta.toFixed(1)}`}: two-way distance to the data <strong>${DD.twoWay(xs).toFixed(3)}</strong> (fresh data scores about 0.03). Samples nearest each blob: ${counts.join(", ")}.`;
+  }
+  sIn.addEventListener("input", draw);
+  eIn.addEventListener("input", draw);
+  hatBtn.addEventListener("click", () => { hat = !hat; hatBtn.setAttribute("aria-pressed", String(hat)); eIn.disabled = hat; draw(); });
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- §5.2: same starting noise, 10 steps against 100 steps ---- */
+function consistencyFigure(P) {
+  const canvas = document.getElementById("cons-canvas"), ctx = canvas.getContext("2d");
+  const readout = document.getElementById("cons-readout");
+  const starts = DD.normals(500, 5);
+  const runs = {};
+  [0, 1].forEach((eta) => { runs[eta] = { a: DD.sample(starts, 10, eta, false, 1), b: DD.sample(starts, 100, eta, false, 2) }; });
+  let eta = 0;
+  function draw() {
+    const R = 1.9, toPx = DD.background(ctx, canvas, R);
+    const { a, b } = runs[eta];
+    const c1 = DD.css("--attn-stroke"), c2 = DD.css("--ff-stroke");
+    ctx.lineWidth = 1.5; ctx.strokeStyle = DD.css("--fg"); ctx.globalAlpha = 0.5;
+    for (let i = 0; i < 80; i++) { const [ax, ay] = toPx(...a[i]), [bx, by] = toPx(...b[i]); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 80; i++) { const [ax, ay] = toPx(...a[i]); DD.dot(ctx, ax, ay, 7, c1, false); const [bx, by] = toPx(...b[i]); DD.dot(ctx, bx, by, 4, c2); }
+    const same = a.filter((x, i) => DD.blob(x) === DD.blob(b[i])).length / a.length;
+    const move = a.reduce((acc, x, i) => acc + DD.dist(x, b[i]), 0) / a.length;
+    readout.innerHTML = `${eta ? "DDPM (η = 1)" : "DDIM (η = 0)"}: of 500 starting noises, <strong>${Math.round(same * 100)}%</strong> end on the same blob with 10 steps as with 100; the two end points are <strong>${move.toFixed(2)}</strong> apart on average.`;
+  }
+  document.querySelectorAll("#fig-consistency [data-eta]").forEach((btn) => btn.addEventListener("click", () => {
+    eta = +btn.dataset.eta;
+    document.querySelectorAll("#fig-consistency [data-eta]").forEach((o) => o.setAttribute("aria-pressed", String(o === btn)));
+    draw();
+  }));
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- §5.3: slerp between two starting noises, decoded by DDIM ---- */
+function interpFigure(P) {
+  const canvas = document.getElementById("interp-canvas"), ctx = canvas.getContext("2d");
+  const slider = document.getElementById("interp-a"), label = document.getElementById("interp-av"), readout = document.getElementById("interp-readout");
+  const n0 = [0.9, 1.1], n1 = [-1.2, 0.8];
+  const norm = (v) => Math.hypot(v[0], v[1]);
+  const theta = Math.acos((n0[0] * n1[0] + n0[1] * n1[1]) / (norm(n0) * norm(n1)));
+  const slerp = (a) => { const wa = Math.sin((1 - a) * theta) / Math.sin(theta), wb = Math.sin(a * theta) / Math.sin(theta); return [wa * n0[0] + wb * n1[0], wa * n0[1] + wb * n1[1]]; };
+  const as = Array.from({ length: 101 }, (_, i) => i / 100);
+  const noises = as.map(slerp);
+  const outs = DD.sample(noises, 50, 0);
+  const names = ["north-east", "north-west", "south-west", "south-east"];
+  function draw() {
+    const a = +slider.value, i = Math.round(a * 100);
+    label.textContent = a.toFixed(2);
+    const R = 2.0, toPx = DD.background(ctx, canvas, R);
+    const fg = DD.css("--fg"), c = DD.css("--ff-stroke"), cn = DD.css("--attn-stroke");
+    // the arc of noises (dashed) and the curve of samples (solid)
+    ctx.setLineDash([8, 6]); ctx.strokeStyle = cn; ctx.lineWidth = 2.5; ctx.beginPath();
+    noises.forEach((p, k) => { const [px, py] = toPx(...p); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.beginPath();
+    outs.forEach((p, k) => { const [px, py] = toPx(...p); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.stroke();
+    const [ax, ay] = toPx(...n0); ctx.fillStyle = fg; ctx.fillRect(ax - 8, ay - 8, 16, 16);
+    const [bx, by] = toPx(...n1); ctx.beginPath(); ctx.moveTo(bx, by - 10); ctx.lineTo(bx + 9, by + 7); ctx.lineTo(bx - 9, by + 7); ctx.closePath(); ctx.fill();
+    const [qx, qy] = toPx(...noises[i]); DD.dot(ctx, qx, qy, 9, fg, false);
+    const [ox, oy] = toPx(...outs[i]); DD.dot(ctx, ox, oy, 9, c);
+    readout.innerHTML = `α = ${a.toFixed(2)}: the blended noise (${noises[i][0].toFixed(2)}, ${noises[i][1].toFixed(2)}), length ${norm(noises[i]).toFixed(2)}, becomes the sample (<strong>${outs[i][0].toFixed(2)}, ${outs[i][1].toFixed(2)}</strong>), in the ${names[DD.blob(outs[i])]} blob.`;
+  }
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- §5.4: encode then decode, error against steps, beside the paper's Table 2 ---- */
+function reconChart(P) {
+  const Ss = [10, 20, 50, 100, 200, 500, 1000];
+  const pts = DD.DATA.slice(0, 200);
+  const toy = Ss.map((S) => {
+    const back = DD.sample(pts.map((x) => DD.encode(x, S)), S, 0);
+    const mse = back.reduce((acc, x, i) => acc + ((x[0] - pts[i][0]) ** 2 + (x[1] - pts[i][1]) ** 2) / 2, 0) / pts.length;
+    return [S, mse];
+  });
+  const paper = [0.014, 0.0065, 0.0023, 0.0009, 0.0004, 0.0001, 0.0001];
+  P.lineChart(document.getElementById("recon-chart"), {
+    series: [
+      { name: "four-blob toy, perfect noise guess", points: toy },
+      { name: "paper's Table 2, CIFAR10", points: Ss.map((s, i) => [s, paper[i]]) },
+    ],
+    xLabel: "steps S (log scale)", yLabel: "round-trip squared error", logX: true, width: 440, height: 280, yMin: 0,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(4),
+    readout: document.getElementById("recon-readout"), ariaLabel: "Round-trip reconstruction error against the number of steps, for the toy and for the paper's CIFAR10 model",
+  });
+}
+</script>
+</body>
+</html>

@@ -1164,7 +1164,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.generative.diffusion"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "score-sde",

@@ -944,6 +944,7 @@ gap.
 - **Song, Meng and Ermon, *Denoising Diffusion Implicit Models* (2020)**:
   https://arxiv.org/abs/2010.02502. Deterministic sampling with big jumps,
   using the same trained network.
+  [Annotated companion](../../../papers/ddim.html)
 - **Song et al., *Score-Based Generative Modeling through Stochastic
   Differential Equations* (2020)**: https://arxiv.org/abs/2011.13456. Showed
   diffusion and score-based models are one family, described as continuous
