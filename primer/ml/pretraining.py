@@ -1740,6 +1740,7 @@ checkpoints and less waste.
   Models Using Model Parallelism* (2019)**: https://arxiv.org/abs/1909.08053.
   Split transformer layers across GPUs by columns and rows, with one
   all-reduce per block.
+  [Annotated companion](../../papers/megatron-lm.html)
 - **Huang et al., *GPipe: Efficient Training of Giant Neural Networks using
   Pipeline Parallelism* (2018)**: https://arxiv.org/abs/1811.06965. Split a
   model into stages fed by micro-batches, and analysed the resulting bubble.

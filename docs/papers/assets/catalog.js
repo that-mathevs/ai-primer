@@ -478,7 +478,7 @@ window.PRIMER_PAPERS = [
    "primer.ml.hardware",
    "primer.ml.pretraining"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "horovod",
