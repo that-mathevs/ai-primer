@@ -1028,6 +1028,7 @@ split the video and summarise the parts.
   Supervision* (Whisper, 2022)**: https://arxiv.org/abs/2212.04356. An
   encoder over log-mel spectrograms and a text decoder, trained on 680,000
   hours of transcribed audio.
+  [Annotated companion](../../../papers/whisper.html)
 - **van den Oord, Vinyals & Kavukcuoglu, *Neural Discrete Representation
   Learning* (VQ-VAE, 2017)**: https://arxiv.org/abs/1711.00937. Learned a
   codebook inside an autoencoder, turning images and audio into discrete

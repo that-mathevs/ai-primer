@@ -899,6 +899,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/gans.html",
   "term": "earth mover's distance"
  },
+ "edit distance": {
+  "def": "The fewest single-item insertions, deletions and substitutions that turn one sequence into another.",
+  "lesson": null,
+  "term": "edit distance"
+ },
  "edit-run-test loop": {
   "def": "An agent loop that changes code, runs the tests, and repeats until they pass or a budget runs out.",
   "lesson": "primer/agents/coding_agents.html",
@@ -2199,6 +2204,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/multimodal.html",
   "term": "multimodal model"
  },
+ "multitask learning": {
+  "def": "Training one model on several tasks at once, with part of the input saying which task to do, so what it learns for one task can help the others.",
+  "lesson": null,
+  "term": "multitask learning"
+ },
  "n-gram overlap": {
   "def": "The share of a text's n-word runs that also appear in another corpus.",
   "lesson": "primer/ml/benchmarks.html",
@@ -3044,6 +3054,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/reasoning.html",
   "term": "self-consistency"
  },
+ "self-supervised learning": {
+  "def": "Learning from unlabelled data by predicting a hidden part of each example from the rest, such as a masked word or a masked stretch of audio.",
+  "lesson": null,
+  "term": "self-supervised learning"
+ },
  "semantic cache": {
   "def": "Reusing a stored answer when a new question's embedding is nearly identical to a previous question's.",
   "lesson": "primer/ml/embeddings/clustering.html",
@@ -3118,6 +3133,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Squashes any number into the range 0 to 1, with an S-shaped curve.",
   "lesson": "primer/ml/neural_net.html",
   "term": "sigmoid"
+ },
+ "signal-to-noise ratio": {
+  "def": "How much stronger a signal is than the noise mixed into it, usually in decibels: 0 dB is equal power, and every 10 dB is ten times the ratio.",
+  "lesson": null,
+  "term": "signal-to-noise ratio"
  },
  "silhouette score": {
   "def": "How much closer each point is to its own cluster than to the nearest other one, from −1 to 1.",
@@ -3223,6 +3243,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Starting likely work early, in parallel, and throwing it away if the guess was wrong.",
   "lesson": "primer/ml/inference.html",
   "term": "speculative execution"
+ },
+ "speech recognition": {
+  "def": "Turning recorded speech into written text; also called automatic speech recognition (ASR).",
+  "lesson": "primer/ml/generative/multimodal.html",
+  "term": "speech recognition"
  },
  "sram": {
   "def": "The tiny, very fast on-chip memory next to a GPU's arithmetic units.",
@@ -3433,6 +3458,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Pulling a web page's main text out of its HTML, leaving menus and adverts behind.",
   "lesson": "primer/ml/pretraining.html",
   "term": "text extraction"
+ },
+ "text normalization": {
+  "def": "Rewriting text into one standard form (case, punctuation, contractions, how numbers are written) so two texts are compared on their words, not their style.",
+  "lesson": null,
+  "term": "text normalization"
  },
  "thinking budget": {
   "def": "The maximum number of tokens a model may spend reasoning before it must answer.",
@@ -3694,6 +3724,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/tokenization.html",
   "term": "vocabulary"
  },
+ "voice activity detection": {
+  "def": "Deciding which stretches of a recording contain speech at all, so silence, music and noise are not transcribed.",
+  "lesson": null,
+  "term": "voice activity detection"
+ },
  "voronoi cell": {
   "def": "All the points closer to one centroid than to any other: the section an IVF index searches.",
   "lesson": "primer/ml/embeddings/ann.html",
@@ -3718,6 +3753,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Sound recorded as a list of air-pressure measurements over time.",
   "lesson": "primer/ml/generative/multimodal.html",
   "term": "waveform"
+ },
+ "weak supervision": {
+  "def": "Training on labels that are plentiful but noisy or imperfect, such as captions and transcripts found on the web, instead of a small set checked by experts.",
+  "lesson": null,
+  "term": "weak supervision"
  },
  "weight": {
   "def": "A learned number that says how strongly one input influences an output. Training adjusts the weights.",
@@ -3763,6 +3803,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The best of many versions chosen on a test looks better on it than it really is.",
   "lesson": "primer/ml/benchmarks.html",
   "term": "winner's curse"
+ },
+ "word error rate": {
+  "def": "The share of a reference transcript's words that a system gets wrong: the substitutions, deletions and insertions needed to turn its output into the reference, divided by the reference's word count.",
+  "lesson": null,
+  "term": "word error rate"
  },
  "word2vec": {
   "def": "A 2013 method that learns one vector per word by predicting nearby words.",
