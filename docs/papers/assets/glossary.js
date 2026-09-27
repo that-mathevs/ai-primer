@@ -107,7 +107,7 @@ window.PRIMER_GLOSSARY = {
  "alibi": {
   "def": "A position scheme that adds no position vectors and instead subtracts a penalty proportional to distance from each attention score.",
   "lesson": "primer/ml/positional.html",
-  "term": "alibi"
+  "term": "ALiBi"
  },
  "alignment": {
   "def": "Making a model's behaviour match what we want (helpful, honest, harmless), not just the measurements we optimize.",
@@ -2197,7 +2197,7 @@ window.PRIMER_GLOSSARY = {
  "lost in the middle": {
   "def": "Models use information at the start and end of a long input more reliably than information in the middle.",
   "lesson": "primer/agents/context.html",
-  "term": "lost in the middle"
+  "term": "Lost in the Middle"
  },
  "lstm": {
   "def": "An RNN with gates that decide what to forget, what to write and what to output, so it can remember across long sequences.",
@@ -3462,7 +3462,7 @@ window.PRIMER_GLOSSARY = {
  "sentencepiece": {
   "def": "A tokenizer library that runs BPE or Unigram directly on raw text, writing spaces as the visible symbol ▁.",
   "lesson": "primer/ml/tokenization.html",
-  "term": "sentencepiece"
+  "term": "SentencePiece"
  },
  "sft": {
   "def": "Supervised fine-tuning: training on examples of instructions paired with good responses.",
