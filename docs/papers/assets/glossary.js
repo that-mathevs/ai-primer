@@ -434,6 +434,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/attention.html",
   "term": "causal mask"
  },
+ "causal tracing": {
+  "def": "Activation patching used to find where a model recalls a fact: blur the subject in the input, then restore one clean hidden state at a time and see which ones bring the right answer back.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "causal tracing"
+ },
  "cbow": {
   "def": "Continuous bag of words: the word2vec model that averages the surrounding words' vectors to predict the middle word.",
   "lesson": "primer/ml/embeddings/word2vec.html",
@@ -703,6 +708,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Total spend divided by the number of tasks that succeeded, counting retries and cleanup.",
   "lesson": "primer/agents/cost.html",
   "term": "cost per successful task"
+ },
+ "covariance": {
+  "def": "How two quantities vary together: positive when they rise together, negative when one rises as the other falls. For vectors, a matrix holding it for every pair of entries.",
+  "lesson": null,
+  "term": "covariance"
  },
  "credit assignment": {
   "def": "Working out which of many earlier actions deserves the blame or credit for how an episode ended.",
@@ -1484,6 +1494,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/alignment.html",
   "term": "harmful compliance"
  },
+ "harmonic mean": {
+  "def": "n divided by the sum of the reciprocals of n numbers; dominated by the smallest, so it is high only when every number is high.",
+  "lesson": "primer/ml/metrics.html",
+  "term": "harmonic mean"
+ },
  "hash chain": {
   "def": "Records that each store the previous record's hash, so any edit or deletion is detectable.",
   "lesson": "primer/agents/deployment.html",
@@ -1899,6 +1914,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/tools.html",
   "term": "least privilege"
  },
+ "least squares": {
+  "def": "Choosing the parameters that make the sum of squared errors as small as possible.",
+  "lesson": "primer/ml/regularization.html",
+  "term": "least squares"
+ },
  "length normalization": {
   "def": "BM25's discount for mentions in documents longer than average, controlled by b.",
   "lesson": "primer/ml/embeddings/retrieval.html",
@@ -2253,6 +2273,11 @@ window.PRIMER_GLOSSARY = {
   "def": "An open standard that lets any AI application connect to any tool server the same way.",
   "lesson": "primer/agents/mcp.html",
   "term": "Model Context Protocol"
+ },
+ "model editing": {
+  "def": "Changing one specific fact or behaviour inside a trained model by adjusting a few weights directly, without retraining, while leaving everything else as it was.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "Model Editing"
  },
  "model merging": {
   "def": "Building one model from several fine-tunes by arithmetic on their weights, with no extra training.",

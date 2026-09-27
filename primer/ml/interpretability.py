@@ -951,6 +951,7 @@ model's activity unexplained.
   (2022)**: https://arxiv.org/abs/2202.05262. Introduced causal tracing,
   found factual recall in middle-layer MLPs at the subject's last token,
   and edited single facts there.
+  [Annotated companion](../../papers/rome-causal-tracing.html)
 - **Wang et al., *Interpretability in the Wild: a Circuit for Indirect
   Object Identification in GPT-2 small* (2022)**:
   https://arxiv.org/abs/2211.00593. Used patching to reverse-engineer a

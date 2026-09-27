@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Locating and Editing Factual Associations in GPT, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Meng et al. (2022): causal tracing finds facts recalled by middle-layer MLPs at the subject's last token, and ROME rewrites one fact with a single rank-one weight update.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="rome-causal-tracing">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Tracing information flow</a>
+        <ol>
+          <li><a href="#s2-1">Causal tracing</a></li>
+          <li><a href="#s2-2">What the traces show</a></li>
+          <li><a href="#s2-3">The localized hypothesis</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Editing the weights</a>
+        <ol>
+          <li><a href="#s3-1">ROME: the MLP as a memory</a></li>
+          <li><a href="#s3-2">zsRE</a></li>
+          <li><a href="#s3-3">CounterFact</a></li>
+          <li><a href="#s3-4">Confirming the decisive states</a></li>
+          <li><a href="#s3-5">Generated text and people's ratings</a></li>
+          <li><a href="#s3-6">Limitations</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Related work</a></li>
+      <li><a href="#s5">5 Conclusion and ethics</a></li>
+      <li><a href="#s6">A Solving for Λ</a></li>
+      <li><a href="#s7">B, I Robustness checks</a></li>
+      <li><a href="#today">Where it leads</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Locating and Editing Factual Associations in GPT, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Meng, Bau, Andonian and Belinkov (2022), <em>Locating and Editing Factual Associations in GPT</em>: blur a sentence's subject, restore one hidden state at a time to find where a fact is recalled, then rewrite that fact with one rank-one change to one layer's weights.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2202.05262">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2202.05262">PDF</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed on arXiv under its standard non-exclusive licence, which grants no permission to reproduce figures, so every picture here is drawn from scratch: numbers in pictures either come from the paper's text and tables (a few selected rows, credited in each caption) or are labelled illustrative. Equations are reproduced with every symbol decoded; numbers invented to keep an example small are labelled illustrative. Read the original alongside: every section heading links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation comes with a table decoding it, a sentence reading it aloud, the numbers worked through, and the same numbers in Python.</li>
+  <li>The pictures are live: hover the causal-trace map and switch between states, MLPs and attention; move a new key and watch how much a naive edit and ROME disturb the old memories; drag three scores and see why the paper averages them the way it does.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/ml/interpretability.html">interpretability lesson</a> builds causal tracing, there called <span class="t" data-t="activation patching">activation patching</span>, on a hand-built model where the answer is known.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S1">original</a></span></h2>
+<blockquote class="quote">“Where does a large language model store its facts?”<cite>Meng et al. (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Give GPT “The Space Needle is located in the city of” and it says “Seattle”. Somewhere in its billions of weights is the fact. Finding where is like finding which wire in a house controls one light: you can flick switches at random, or you can cut power everywhere and restore it one wire at a time until the light comes back on. The paper does the second, then proves it found the right wire by rewiring it: after one small change to one layer's weights, the model says the Space Needle is in Paris, however the question is phrased, while leaving other landmarks where they were.</p>
+<h3 class="rung">What they did</h3>
+<ol>
+  <li><strong><span class="t" data-t="causal tracing">Causal tracing</span></strong>: run the model on a factual prompt; run it again with the subject's words blurred by noise; then rerun the blurred version many times, each time restoring one hidden state to its clean value, and measure which restorations bring the right answer back.</li>
+  <li><strong>ROME</strong>, Rank-One Model Editing: treat one middle-layer MLP's output matrix as a lookup table from subject to facts, and insert a new entry with a single <span class="t" data-tip-title="Rank-one update" data-tip="Adding to a matrix a table made from one column vector times one row vector. It changes the matrix in only one input direction.">rank-one update</span>.</li>
+  <li><strong>Two tests</strong>: an existing benchmark (zsRE) and a harder new one, CounterFact, built from counterfactual facts, which checks that an edit generalizes to paraphrases without spilling onto similar subjects.</li>
+</ol>
+<h3 class="rung">What they found</h3>
+<ul>
+  <li>In GPT-2 XL, factual recall runs through <strong>MLP modules at middle layers, while the model is reading the subject's last token</strong>; attention at late layers then carries the result to the end of the prompt.</li>
+  <li>Editing one MLP layer's weights there works: ROME matches other editors on zsRE and, on CounterFact, is the only method that is both general and specific.</li>
+  <li>Editing works best exactly where tracing pointed, which ties the two halves together.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Clean run, corrupted run, one restored activation: that recipe is the one the lesson builds as activation patching, and its <a data-lesson="primer/ml/interpretability.html#patching_map"><code>patching_map</code></a> is the loop. The idea that an MLP layer is a key–value memory you can write to directly is the root of <span class="t" data-t="model editing">model editing</span>, which the authors' own follow-up scaled to many facts at once, and of the sobering point the paper makes itself: an editable model can be edited to say false things.</p>
+</section>
+
+<section id="s2">
+<h2>2 Interventions on activations for tracing information flow <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A fact is a triple: a subject, a relation and an object, like (Space Needle, is located in, Seattle). The prompt states the subject and relation; the model supplies the object. Inside, the model keeps one running vector per token, updated layer by layer: think of a grid of notebooks, one row per word and one column per layer, where each layer adds two notes to every notebook. One note comes from <span class="t" data-t="attention">attention</span>, which reads earlier words' notebooks; the other from the <span class="t" data-t="mlp">MLP</span>, which looks only at this word's notebook.</p>
+<h3 class="rung">Tiny example</h3>
+<p>This page's illustrative numbers: a two-number hidden state h = (1, 0) at the previous layer, an attention contribution a = (0.5, 0.5), and an MLP with three hidden neurons.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=hil}{h^{(l)}_i} = \htmlData{sym=hilm}{h^{(l-1)}_i} + \htmlData{sym=ail}{a^{(l)}_i} + \htmlData{sym=mil}{m^{(l)}_i} \\ \htmlData{sym=mil}{m^{(l)}_i} = \htmlData{sym=Wproj}{W^{(l)}_{proj}}\;\htmlData{sym=sigmar}{\sigma}\big(\htmlData{sym=Wfc}{W^{(l)}_{fc}}\;\htmlData{sym=gammar}{\gamma}(\htmlData{sym=ail}{a^{(l)}_i} + \htmlData{sym=hilm}{h^{(l-1)}_i})\big) \end{gathered}" data-fallback="h_i^(l) = h_i^(l−1) + a_i^(l) + m_i^(l),  m_i^(l) = W_proj^(l) σ(W_fc^(l) γ(a_i^(l) + h_i^(l−1)))   (1)"></div>
+<div class="symtable" data-syms="hil,hilm,ail,mil,Wproj,sigmar,Wfc,gammar"></div>
+<p class="inwords"><strong>In words:</strong> “a token's new state is its old state plus what attention adds plus what the MLP adds; the MLP normalizes attention's output plus the old state, multiplies by one matrix, clips negatives to zero, and multiplies by a second matrix.” This is the paper's equation (1), with attention and the MLP in sequence, as in GPT-2 and GPT-3; a footnote says the methods also apply to models such as GPT-J that compute them in parallel.</p>
+<p class="inwords"><strong>With the numbers:</strong> a + h = (1.5, 0.5); normalized, γ gives (1, −1). W<sub>fc</sub> turns that into (1, −1, 0); the <span class="t" data-t="relu">ReLU</span> keeps (1, 0, 0). W<sub>proj</sub> maps it to m = (0.5, 0). New state: (1, 0) + (0.5, 0.5) + (0.5, 0) = <strong>(2, 0.5)</strong>. Keep an eye on the middle vector (1, 0, 0): §3.1 will call it the <em>key</em>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import statistics
+h_prev = [1.0, 0.0]
+a = [0.5, 0.5]
+# γ: normalize a + h (subtract the mean, divide by the spread)
+v = [p + q for p, q in zip(a, h_prev)]
+mu, sd = statistics.mean(v), statistics.pstdev(v)
+g = [(x - mu) / sd for x in v]
+g  # → [1.0, -1.0]
+# σ(W_fc γ(...)): the MLP's hidden layer, one number per neuron
+W_fc = [[1, 0], [0, 1], [1, 1]]
+k = [max(0.0, sum(w * x for w, x in zip(row, g))) for row in W_fc]
+k  # → [1.0, 0.0, 0.0]
+# m = W_proj k
+W_proj = [[0.5, 0, 0], [0, 0, 1]]
+m = [sum(w * x for w, x in zip(row, k)) for row in W_proj]
+m  # → [0.5, 0.0]
+# h = h_prev + a + m
+[p + q + r for p, q, r in zip(h_prev, a, m)]  # → [2.0, 0.5]</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>Written this way, every token at every layer has three separate places information could live: the state h, the attention output a, and the MLP output m. The whole grid is a causal graph, with arrows only from earlier layers and (through attention) from earlier tokens. Causal tracing asks which nodes in that graph the fact must pass through. The lesson's <a data-lesson="primer/ml/interpretability.html#residual_stream"><code>residual_stream</code></a> collects the same h at every layer of a tiny GPT.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Causal tracing of factual associations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>This is <span class="t" data-tip-title="Causal mediation analysis" data-tip="A way to measure how much of a cause's effect on an outcome flows through one intermediate variable, by setting that variable by hand and watching the outcome.">causal mediation analysis</span>, and it needs three runs. The <strong>clean run</strong> answers correctly, and every hidden state is saved. The <strong>corrupted run</strong> adds noise to the subject's word vectors, so the model can no longer tell which landmark it is reading about, and usually gets the answer wrong. The <strong>corrupted-with-restoration run</strong> repeats the corrupted run but forces one hidden state, at one token and one layer, back to its clean value, and lets everything after it run normally. If that single state brings the answer back, it carries the fact.</p>
+<h4>How much noise</h4>
+<p>Every subject token's <span class="t" data-t="embedding">embedding</span> gets <span class="t" data-t="gaussian">Gaussian</span> noise added, with a spread three times the <span class="t" data-t="standard deviation">standard deviation</span> of real token embeddings. This page's illustrative sample of embedding entries: 0.1, −0.1, 0.3, −0.3, 0.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=hi0}{h^{(0)}_i} := \htmlData{sym=hi0}{h^{(0)}_i} + \htmlData{sym=eps}{\epsilon} \\ \htmlData{sym=eps}{\epsilon} \sim \htmlData{sym=normal}{\mathcal{N}(0;\,\nu)}, \qquad \htmlData{sym=nu}{\nu} = 3\,\htmlData{sym=sigmat}{\sigma_t} \end{gathered}" data-fallback="h_i^(0) := h_i^(0) + ε,  ε ~ N(0; ν),  ν = 3 σ_t"></div>
+<div class="symtable" data-syms="hi0,eps,normal,nu,sigmat"></div>
+<p class="inwords"><strong>In words:</strong> “for every token of the subject, replace its embedding by itself plus random noise whose spread is three times the typical spread of embeddings.” The third part is from Appendix B.1.</p>
+<p class="inwords"><strong>With the numbers:</strong> the sample's standard deviation is σ<sub>t</sub> = <strong>0.2</strong>, so the noise has spread ν = <strong>0.6</strong>. The paper repeats each corrupted run ten times with different noise.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import statistics
+# a few entries of token embeddings sampled from text (illustrative)
+samples = [0.1, -0.1, 0.3, -0.3, 0.0]
+sigma_t = statistics.pstdev(samples)
+round(sigma_t, 3)  # → 0.2
+# ν = 3 σ_t: the noise added to every subject embedding
+round(3 * sigma_t, 3)  # → 0.6</code></pre>
+<h4>Diagram: the three runs</h4>
+<figure class="ix wide" id="fig-trace">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 310" role="img" aria-label="A grid of hidden states, one row per token of the prompt The Space Needle is in downtown, one column per layer. The subject's embeddings get noise; one clean state at the last subject token is restored; information flows from there to the last token and the output.">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="40" y="16" text-anchor="middle" class="lbl">token</text>
+    <text x="98" y="16" text-anchor="middle" class="lbl">embed</text>
+    <text x="230" y="16" text-anchor="middle" class="lbl">layers 1 → L</text>
+    <g class="lbl-rows">
+      <text x="66" y="38" text-anchor="end" style="font-size:11px">The*</text>
+      <text x="66" y="70" text-anchor="end" style="font-size:11px">Space*</text>
+      <text x="66" y="102" text-anchor="end" style="font-size:11px">Need*</text>
+      <text x="66" y="134" text-anchor="end" style="font-size:11px">le*</text>
+      <text x="66" y="166" text-anchor="end" style="font-size:11px">is</text>
+      <text x="66" y="198" text-anchor="end" style="font-size:11px">in</text>
+      <text x="66" y="230" text-anchor="end" style="font-size:11px">downtown</text>
+    </g>
+    <g class="blk attn" data-block="noisy">
+      <rect x="86" y="24" width="22" height="18" rx="4"/><rect x="86" y="56" width="22" height="18" rx="4"/><rect x="86" y="88" width="22" height="18" rx="4"/><rect x="86" y="120" width="22" height="18" rx="4"/>
+    </g>
+    <g class="blk emb" data-block="embclean">
+      <rect x="86" y="152" width="22" height="18" rx="4"/><rect x="86" y="184" width="22" height="18" rx="4"/><rect x="86" y="216" width="22" height="18" rx="4"/>
+    </g>
+    <g class="blk pe" data-block="states">
+      <circle cx="140" cy="33" r="8"/><circle cx="185" cy="33" r="8"/><circle cx="230" cy="33" r="8"/><circle cx="275" cy="33" r="8"/><circle cx="320" cy="33" r="8"/>
+      <circle cx="140" cy="65" r="8"/><circle cx="185" cy="65" r="8"/><circle cx="230" cy="65" r="8"/><circle cx="275" cy="65" r="8"/><circle cx="320" cy="65" r="8"/>
+      <circle cx="140" cy="97" r="8"/><circle cx="185" cy="97" r="8"/><circle cx="230" cy="97" r="8"/><circle cx="275" cy="97" r="8"/><circle cx="320" cy="97" r="8"/>
+      <circle cx="140" cy="129" r="8"/><circle cx="275" cy="129" r="8"/><circle cx="320" cy="129" r="8"/>
+      <circle cx="140" cy="161" r="8"/><circle cx="185" cy="161" r="8"/><circle cx="230" cy="161" r="8"/><circle cx="275" cy="161" r="8"/><circle cx="320" cy="161" r="8"/>
+      <circle cx="140" cy="193" r="8"/><circle cx="185" cy="193" r="8"/><circle cx="230" cy="193" r="8"/><circle cx="275" cy="193" r="8"/><circle cx="320" cy="193" r="8"/>
+      <circle cx="140" cy="225" r="8"/><circle cx="185" cy="225" r="8"/><circle cx="230" cy="225" r="8"/>
+    </g>
+    <g class="blk ff" data-block="early"><rect x="172" y="119" width="72" height="20" rx="10"/><text x="208" y="133" text-anchor="middle" class="lbl">early site</text></g>
+    <g class="blk soft" data-block="late"><rect x="262" y="215" width="72" height="20" rx="10"/><text x="298" y="229" text-anchor="middle" class="lbl">late site</text></g>
+    <path class="wire" d="M244,129 C262,160 262,190 266,212" marker-end="url(#arr)"/>
+    <path class="wire" d="M320,235 V262" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="outc"><rect x="276" y="264" width="80" height="36" rx="6"/><text x="316" y="280" text-anchor="middle">Seattle?</text><text x="316" y="294" text-anchor="middle" class="lbl">P[o]</text></g>
+    <g class="blk frame" data-block="restore"><rect x="12" y="258" width="200" height="44" rx="8"/><text x="112" y="276" text-anchor="middle" class="lbl">copy in one clean state,</text><text x="112" y="292" text-anchor="middle" class="lbl">then rerun what follows</text></g>
+    <path class="wire" d="M150,258 C170,210 180,160 190,142" marker-end="url(#arr)" style="stroke-dasharray:4 3"/>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a part. Start with the <strong>noisy embeddings</strong> (the starred subject tokens), then the dashed <strong>restore</strong> arrow, then follow the flow to <strong>Seattle?</strong></p></div>
+  </div>
+  <figcaption>The paper's Figure 1 (a to d), redrawn and simplified: five layer columns stand for GPT-2 XL's 48. Based on Meng et al. (2022), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> rows are the tokens of “The Space Needle is in downtown” (the tokenizer splits “Needle” into “Need” and “le”); columns are layers, left to right. The four starred rows are the subject, and their embeddings (the small boxes on the left) get noise, so every later state in those rows, and every state that attends to them, is corrupted. The dashed arrow restores one clean state, here at the subject's last token in a middle layer, and everything after it is recomputed. The pill-shaped “early site” and “late site” mark the two places the paper finds restoration works: middle layers at the last subject token, and late layers at the last token. The curved arrow is the example flow: once the early site is clean again, attention carries the fact down to “downtown”, and the output recovers.</p>
+<h4>Tiny example: the two effects</h4>
+<p>This page's illustrative single prompt: the clean run gives “Seattle” probability 0.90, the corrupted run 0.10, and restoring one middle-layer state at the subject's last token brings it back to 0.60.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=TE}{\text{TE}} = \htmlData{sym=Po}{\mathbb{P}[o]} - \htmlData{sym=Pso}{\mathbb{P}_{*}[o]} \\ \htmlData{sym=IE}{\text{IE}} = \htmlData{sym=Pcl}{\mathbb{P}_{*,\,\text{clean } h^{(l)}_i}[o]} - \htmlData{sym=Pso}{\mathbb{P}_{*}[o]} \end{gathered}" data-fallback="TE = P[o] − P*[o],  IE = P*,clean h_i^(l)[o] − P*[o]"></div>
+<div class="symtable" data-syms="TE,Po,Pso,IE,Pcl"></div>
+<p class="inwords"><strong>In words:</strong> “the total effect is how much the noise costs: clean probability minus corrupted probability. The indirect effect of one state is how much restoring just that state gives back: restored probability minus corrupted probability.” Averaged over many prompts they become the ATE and the AIE.</p>
+<p class="inwords"><strong>With the numbers:</strong> TE = 0.90 − 0.10 = <strong>0.8</strong>; IE = 0.60 − 0.10 = <strong>0.5</strong>. This one state recovers 0.5 / 0.8 = 62.5% of what the noise took away.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># illustrative probabilities of "Seattle" for one prompt
+P_clean = 0.90
+P_corrupt = 0.10
+# restoring one clean state: at the last subject token, a middle layer
+P_restored = 0.60
+# TE = P[o] − P*[o]
+round(P_clean - P_corrupt, 2)  # → 0.8
+# IE = P*,clean h[o] − P*[o]
+round(P_restored - P_corrupt, 2)  # → 0.5
+# as a share of the total effect
+round((P_restored - P_corrupt) / (P_clean - P_corrupt), 3)  # → 0.625</code></pre>
+<h4>Why it matters</h4>
+<p>This is exactly the lesson's “fraction restored”, computed by <a data-lesson="primer/ml/interpretability.html#fraction_restored"><code>fraction_restored</code></a>, with probabilities instead of a <span class="t" data-t="logit difference">logit difference</span> and noise instead of a swapped word. The paper found a third quantity, the direct effect, too noisy to be useful. It also found the method more informative than gradient-based saliency (Appendix B).</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Causal tracing results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S2.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Repeat the restoration for every token and every layer, average over 1,000 facts GPT-2 XL knows, and you get a heat map of where facts live. It shows two bright spots, and one of them was a surprise.</p>
+<h4>The numbers from the text</h4>
+<ul>
+  <li>Over the 1,000 facts, the average total effect is <strong>18.6%</strong> (in Appendix B.1, the correct token's probability averages 27.0% clean and 8.47% corrupted).</li>
+  <li>At the <strong>last subject token</strong>, single states reach an AIE of <strong>8.7% at layer 15</strong>: the <em>early site</em>, the new discovery.</li>
+  <li>At the <strong>last token</strong> of the prompt, late layers are strongly causal: the <em>late site</em>, unsurprising, since that is where the prediction is read out.</li>
+  <li>Split by module: MLP contributions peak at an AIE of <strong>6.6%</strong> at the early site, while attention there reaches only <strong>1.6%</strong>; attention matters at the late site instead. Because restoring one MLP or attention output alone had little effect, these module traces restore a window of ten consecutive layers at once.</li>
+</ul>
+<h4>Diagram: the average trace, three ways</h4>
+<p><strong>Try it:</strong> switch between restoring whole states, MLP outputs and attention outputs, and hover (or use the arrow keys on) the map to read a value. Watch where the bright band sits in each view.</p>
+<div class="plot" id="trace-plot">
+  <div class="controls" role="group" aria-label="What to restore">
+    <button type="button" data-kind="state" aria-pressed="true">states h</button>
+    <button type="button" data-kind="mlp" aria-pressed="false">MLP m</button>
+    <button type="button" data-kind="attn" aria-pressed="false">attention a</button>
+  </div>
+  <p class="readout" style="margin:.2rem 0 .4rem">Rows, top to bottom: first subject token, middle subject tokens, last subject token, first token after the subject, further tokens, last token. Columns: layers 0 to 47.</p>
+  <canvas id="trace-canvas" style="aspect-ratio:4 / 1" aria-label="Illustrative average indirect effect of restoring each layer at each token position"></canvas>
+  <p class="readout" id="trace-readout" aria-live="polite">Hover the map.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> this is an <em>illustrative</em> map shaped to the paper's description, not its data: the three peak values the text reports are placed where the text says (states 8.7% at layer 15 and MLPs 6.6% around layer 17, both at the last subject token; attention 1.6% there), and the rest is smooth filler. Each cell is the average indirect effect, in percentage points, of restoring that layer at that position; darker red is a bigger effect. In the <strong>states</strong> view there are two bands: the early site across middle layers of the last-subject-token row, and the late site in the last row at high layers, which rises to the whole total effect because restoring the final state restores everything. The <strong>MLP</strong> view keeps only the early band; the <strong>attention</strong> view keeps only the late one. That split is the paper's main finding: MLPs do the recalling while the subject is being read, attention moves the result to where it is needed.</p>
+<h4>Severing the MLPs</h4>
+<p>To test that the early site really depends on the MLPs, the paper modifies the graph: restore a clean state as before, but freeze every MLP output at that token in its corrupted value, so the clean state cannot pass through later MLPs. The lowest layers then lose their effect, while higher layers barely change. So a clean state at an early layer matters because the <em>MLPs after it</em> use it; by the upper middle layers the MLP work is done. Freezing attention instead shows no such gap. The paper's summary is its hypothesis: a localized middle-layer MLP key–value mapping recalls facts about the subject.</p>
+<h4>Why it matters</h4>
+<p>The same picture appears in GPT-J and GPT-NeoX (Appendix B.3), and in smaller GPT-2s, though the peak layers move from model to model. It is a claim about where a computation happens, found by intervening rather than by looking, the rung the lesson calls <a data-lesson="primer/ml/interpretability.html#patching_map">intervention</a>.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 The localized factual association hypothesis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S2.SS3">original</a></span></h3>
+<blockquote class="quote">“We conjecture that any fact could be equivalently stored in any one of the middle MLP layers.”<cite>Meng et al. (2022), §2.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A receptionist hears a visitor's name, looks it up in a card file, and writes the relevant facts on a sticky note; later, a clerk at the end of the corridor reads the note to answer a question. The card file is the middle-layer MLPs, consulted while the model reads the subject's last token; the clerk is attention at the high layers.</p>
+<figure class="ix" id="fig-hyp">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 300" role="img" aria-label="The hypothesis: subject tokens are read, middle-layer MLPs at the last subject token recall the subject's properties into the residual stream, attention at high layers copies them to the last token, and the model predicts the object.">
+    <defs><marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M150,54 V76" marker-end="url(#arr4)"/>
+    <path class="wire" d="M150,130 V152" marker-end="url(#arr4)"/>
+    <path class="wire" d="M150,198 V220" marker-end="url(#arr4)"/>
+    <g class="blk emb" data-block="subj"><rect x="40" y="14" width="220" height="40" rx="6"/><text x="150" y="31" text-anchor="middle">subject tokens</text><text x="150" y="46" text-anchor="middle" class="lbl">The Space Need le</text></g>
+    <g class="blk ff" data-block="emlp"><rect x="40" y="78" width="220" height="52" rx="6"/><text x="150" y="98" text-anchor="middle">middle-layer MLPs</text><text x="150" y="113" text-anchor="middle" class="lbl">at the last subject token:</text><text x="150" y="125" text-anchor="middle" class="lbl">look up the subject's properties</text></g>
+    <g class="blk attn" data-block="copy"><rect x="40" y="154" width="220" height="44" rx="6"/><text x="150" y="172" text-anchor="middle">high-layer attention</text><text x="150" y="188" text-anchor="middle" class="lbl">copies them to the last token</text></g>
+    <g class="blk soft" data-block="pred"><rect x="40" y="222" width="220" height="40" rx="6"/><text x="150" y="239" text-anchor="middle">last token “downtown”</text><text x="150" y="254" text-anchor="middle" class="lbl">predicts Seattle</text></g>
+    <text x="150" y="286" text-anchor="middle" class="lbl">localized by module, layer and token</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a step, top to bottom.</p></div>
+  </div>
+  <figcaption>The paper's hypothesis from §2.3, drawn by this page.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read top to bottom. The hypothesis pins factual recall down three ways: in the MLP modules (not attention), at a range of middle layers (not early or late), and at the subject's last token (not the other tokens). Each middle MLP adds a little, and the sum accumulates in the last subject token's residual stream; high attention layers then copy the accumulated information to the end. The paper goes further: since reordering a transformer's middle layers changes little (a finding it cites), it conjectures that any single middle MLP could hold any fact. That is testable: pick one layer and try to write a new fact into it.</p>
+<h4>Why it matters</h4>
+<p>It connects two earlier observations: that MLP layers behave like memories, and that attention's job is largely copying information between positions. And it turns an observation about activations into a prediction about weights, which §3 tests.</p>
+</section>
+
+<section id="s3">
+<h2>3 Interventions on weights for understanding factual association storage <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Finding the right wire is one thing; proving you understand it is rewiring it and having the light switch correctly from every switch in the house, and no other light change. The test: replace a true fact (Space Needle, located in, Seattle) with a false one (Space Needle, located in, Paris), so the change works for any phrasing (<em>generalization</em>) but leaves other subjects alone (<em>specificity</em>). Earlier work observed that an MLP's first layer acts like a set of keys and its second like the values they retrieve; this paper treats the second layer as a single <em>linear</em> memory rather than a set of separate neurons.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Rank-one model editing: the MLP as an associative memory <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Any matrix can act as a lookup table. Multiply it by a key vector and out comes a value vector. With many key–value pairs, the best matrix is the one that gets all of them as right as possible: <span class="t" data-t="least squares">least squares</span>, solved by the <span class="t" data-tip-title="Pseudoinverse" data-tip="The closest thing to an inverse for a matrix that doesn't have one: it gives the least-squares answer. For keys K and values V, the best memory is V times K's pseudoinverse.">pseudoinverse</span>. Now add one new pair that must be stored exactly. You could change the matrix any number of ways; the right way changes it least on the keys it already stores, and especially on the keys it sees most often. ROME uses the average statistics of keys, their uncentred <span class="t" data-t="covariance">covariance</span> C, to know which directions are crowded.</p>
+<h4>Tiny example</h4>
+<p>This page's illustrative memory in two dimensions. It stores key k₁ = (1, 0) three times and k₂ = (0, 1) once, each as itself, so W is the identity. The new association: key k* = (1, 1) should give v* = (2, 0).</p>
+<div class="eq" data-tex="\begin{gathered} \text{minimize } \lVert \htmlData{sym=What}{\hat{W}}\htmlData{sym=Kmat}{K} - \htmlData{sym=Vmat}{V} \rVert \text{ such that } \htmlData{sym=What}{\hat{W}}\htmlData{sym=kstar}{k_*} = \htmlData{sym=vstar}{v_*} \\ \text{by setting } \htmlData{sym=What}{\hat{W}} = \htmlData{sym=Wmat}{W} + \htmlData{sym=Lam}{\Lambda}(\htmlData{sym=Cinv}{C^{-1}}\htmlData{sym=kstar}{k_*})^{\htmlData{sym=Tt}{T}} \\ \htmlData{sym=Cmat}{C} = \htmlData{sym=Kmat}{K}\htmlData{sym=Kmat}{K}^{\htmlData{sym=Tt}{T}}, \quad \htmlData{sym=Lam}{\Lambda} = \frac{\htmlData{sym=vstar}{v_*} - \htmlData{sym=Wmat}{W}\htmlData{sym=kstar}{k_*}}{(\htmlData{sym=Cinv}{C^{-1}}\htmlData{sym=kstar}{k_*})^{\htmlData{sym=Tt}{T}}\htmlData{sym=kstar}{k_*}} \end{gathered}" data-fallback="minimize ‖Ŵ K − V‖ such that Ŵ k* = v*, by setting Ŵ = W + Λ (C⁻¹ k*)ᵀ, with C = K Kᵀ and Λ = (v* − W k*) / ((C⁻¹ k*)ᵀ k*)   (2)"></div>
+<div class="symtable" data-syms="What,Kmat,Vmat,kstar,vstar,Wmat,Lam,Cinv,Tt,Cmat"></div>
+<p class="inwords"><strong>In words:</strong> “keep the memory as good as possible on all the old keys, subject to storing the new pair exactly; the answer is the old matrix plus one column-times-row table: the column is the new value's current error, scaled; the row is the new key reshaped by the inverse key covariance, which steers the change away from directions where common keys live.” This is the paper's equation (2) with the two definitions that follow it.</p>
+<p class="inwords"><strong>With the numbers:</strong> C = [[3, 0], [0, 1]], so u = C⁻¹k* = (1/3, 1) and uᵀk* = 4/3. The new value's error is v* − Wk* = (2, 0) − (1, 1) = (1, −1), so Λ = (3/4, −3/4), and Ŵ = [[5/4, 3/4], [−1/4, 1/4]]. Check: Ŵk* = <strong>(2, 0)</strong>. The old memories move by a total squared amount of <strong>1.5</strong>; a plain rank-one edit that ignores C moves them by <strong>2.0</strong>, because it disturbs the thrice-stored k₁ four times as much.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>from fractions import Fraction as Fr
+# old keys: k1 = (1, 0) stored three times, k2 = (0, 1) once; W = I stores each as itself
+K = [(1, 0), (1, 0), (1, 0), (0, 1)]
+W = [[Fr(1), Fr(0)], [Fr(0), Fr(1)]]
+# C = K Kᵀ: add up k kᵀ over the stored keys
+C = [[sum(Fr(k[r] * k[c]) for k in K) for c in range(2)] for r in range(2)]
+C  # → [[Fraction(3, 1), Fraction(0, 1)], [Fraction(0, 1), Fraction(1, 1)]]
+det = C[0][0] * C[1][1] - C[0][1] * C[1][0]
+C_inv = [[C[1][1] / det, -C[0][1] / det], [-C[1][0] / det, C[0][0] / det]]
+# the new association: key k* = (1, 1) should now give v* = (2, 0)
+k_star, v_star = [1, 1], [2, 0]
+# u = C⁻¹ k*
+u = [sum(C_inv[r][c] * k_star[c] for c in range(2)) for r in range(2)]
+[str(x) for x in u]  # → ['1/3', '1']
+# Λ = (v* − W k*) / (uᵀ k*)
+Wk = [sum(W[r][c] * k_star[c] for c in range(2)) for r in range(2)]
+Lam = [(v_star[r] - Wk[r]) / sum(u[c] * k_star[c] for c in range(2)) for r in range(2)]
+[str(x) for x in Lam]  # → ['3/4', '-3/4']
+# Ŵ = W + Λ uᵀ
+W_hat = [[W[r][c] + Lam[r] * u[c] for c in range(2)] for r in range(2)]
+[[str(x) for x in row] for row in W_hat]  # → [['5/4', '3/4'], ['-1/4', '1/4']]
+# the new memory is stored exactly: Ŵ k* = v*
+[sum(W_hat[r][c] * k_star[c] for c in range(2)) for r in range(2)]  # → [Fraction(2, 1), Fraction(0, 1)]
+# damage to the old memories: Σ ‖Ŵ k − W k‖² over the stored keys
+def damage(M):
+    return sum(sum((sum((M[r][c] - W[r][c]) * k[c] for c in range(2))) ** 2 for r in range(2)) for k in K)
+float(damage(W_hat))  # → 1.5
+# a plain rank-one edit that ignores C (u = k* / ‖k*‖²) damages more
+u0 = [Fr(1, 2), Fr(1, 2)]
+Lam0 = [v_star[r] - Wk[r] for r in range(2)]
+W0 = [[W[r][c] + Lam0[r] * u0[c] for c in range(2)] for r in range(2)]
+float(damage(W0))  # → 2.0</code></pre>
+<h4>Try it: crowded keys</h4>
+<p>Change how often the old key k₁ was stored and the direction of the new key, and compare how much each edit disturbs the old memories. Both edits store the new pair exactly.</p>
+<div class="plot" id="rome-play">
+  <div class="sliders">
+    <label for="rome-n">copies of k₁</label><input type="range" id="rome-n" min="1" max="9" step="1" value="3"><output id="rome-nv">3</output>
+    <label for="rome-t">angle of k*</label><input type="range" id="rome-t" min="0" max="90" step="5" value="45"><output id="rome-tv">45°</output>
+  </div>
+  <div id="rome-bars"></div>
+  <p class="readout" id="rome-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the old memory stores k₁ = (1, 0) as many times as the first slider says and k₂ = (0, 1) once; the new key k* has length √2 at the chosen angle from k₁ (45° is the worked example) and must map to (2, 0). The solid bar is the total squared disturbance to the old memories from a plain rank-one edit along k*; the striped bar is ROME's. With k₁ stored once the two memories are equally common, C is the identity, and the edits coincide. The more copies of k₁, the more ROME tilts its change away from k₁'s direction and the bigger its advantage. At 0°, the new key points exactly along k₁, and no edit can avoid changing what k₁ retrieves: the bars meet again. At 90° it points along k₂, and both edits leave k₁ untouched. The readout shows ROME's trade: it disturbs the rarely stored k₂ <em>more</em> than the plain edit does, in exchange for protecting the common k₁, and comes out ahead overall.</p>
+<h4>Step 1: the key, from the subject</h4>
+<p>The key is the MLP's hidden activation (after the nonlinearity) at the subject's last token, in the chosen layer: the vector (1, 0, 0) of §2. It depends a little on the words before the subject, so ROME averages it over several random prefixes. Illustrative: three prefixes give keys (1.0, 0.2), (0.8, 0.4) and (1.2, 0.0).</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=kkey}{k_*} = \htmlData{sym=avgN}{\frac{1}{N}\sum_{j=1}^{N}} \htmlData{sym=kfun}{k}(\htmlData{sym=xj}{x_j} + \htmlData{sym=subj}{s}) \\ \htmlData{sym=kfun}{k(x)} = \htmlData{sym=sigmar}{\sigma}\big(\htmlData{sym=Wfc}{W^{(l^*)}_{fc}}\;\htmlData{sym=gammar}{\gamma}(a^{(l^*)}_{[x],i} + h^{(l^*-1)}_{[x],i})\big) \end{gathered}" data-fallback="k* = (1/N) Σ_j k(x_j + s),  k(x) = σ(W_fc^(l*) γ(a_[x],i^(l*) + h_[x],i^(l*−1)))   (3)"></div>
+<div class="symtable" data-syms="kkey,avgN,kfun,xj,subj,sigmar,Wfc,gammar"></div>
+<p class="inwords"><strong>In words:</strong> “run several texts that end with the subject, read the MLP's hidden activation at the subject's last token each time, and average them.”</p>
+<p class="inwords"><strong>With the numbers:</strong> ((1.0 + 0.8 + 1.2) / 3, (0.2 + 0.4 + 0.0) / 3) = <strong>(1.0, 0.2)</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the key at the subject's last token, after three different prefixes (illustrative)
+keys = [[1.0, 0.2], [0.8, 0.4], [1.2, 0.0]]
+N = len(keys)
+# k* = (1/N) Σ_j k(x_j + s)
+[round(sum(k[i] for k in keys) / N, 6) for i in range(2)]  # → [1.0, 0.2]</code></pre>
+<h4>Step 2: the value, by optimization</h4>
+<p>The value v* is found, not written by hand: search for a vector z that, placed as the MLP's output at the subject's last token, makes the model predict the new object after each prefix, while keeping what the model says about the subject's nature (“{subject} is a”) close to before. The second term prevents <span class="t" data-tip-title="Essence drift" data-tip="An edit that changes what kind of thing the subject is, not just the one fact: after moving an island to Scotland, calling it a university campus.">essence drift</span>. Illustrative: after two prefixes the new object has probability 0.5 and 0.25; the “is a” predictions are (0.7, 0.2, 0.1) edited and (0.6, 0.3, 0.1) originally.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=Lz}{\mathcal{L}(z)} = \htmlData{sym=avgN}{\frac{1}{N}\sum_{j=1}^{N}} -\log \htmlData{sym=PGz}{\mathbb{P}_{G(m^{(l^*)}_i := z)}}\big[\htmlData{sym=ostar}{o^*} \mid \htmlData{sym=xj}{x_j} + \htmlData{sym=prompt}{p}\big] \\ + \htmlData{sym=DKL}{D_{\mathrm{KL}}}\Big(\htmlData{sym=PGz}{\mathbb{P}_{G(m^{(l^*)}_{i'} := z)}}[x \mid \htmlData{sym=pprime}{p'}] \,\Big\|\, \mathbb{P}_{G}[x \mid \htmlData{sym=pprime}{p'}]\Big) \end{gathered}" data-fallback="L(z) = (1/N) Σ_j −log P_{G(m := z)}[o* | x_j + p] + D_KL( P_{G(m := z)}[x | p′] ‖ P_G[x | p′] )   (4)"></div>
+<div class="symtable" data-syms="Lz,avgN,PGz,ostar,xj,prompt,DKL,pprime"></div>
+<p class="inwords"><strong>In words:</strong> “make the new object likely after every prefix (the first term), and keep the model's idea of what the subject is unchanged (the second term, a <span class="t" data-t="kl divergence">KL divergence</span>); the z that minimizes both is v*.” The optimization changes no weights; it only finds the vector the weights should produce.</p>
+<p class="inwords"><strong>With the numbers:</strong> (−ln 0.5 − ln 0.25) / 2 = (0.693 + 1.386) / 2 = <strong>1.04</strong>; the KL term is 0.7 ln(0.7/0.6) + 0.2 ln(0.2/0.3) = <strong>0.0268</strong>; 𝓛 = <strong>1.067</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# (a): probability of the new object o* after each prefix, with z written into the MLP output
+p_new = [0.5, 0.25]
+nll = sum(-math.log(p) for p in p_new) / len(p_new)
+round(nll, 3)  # → 1.04
+# (b): KL between next-token predictions for "{subject} is a", edited against original
+P_edit = [0.7, 0.2, 0.1]
+P_orig = [0.6, 0.3, 0.1]
+kl = sum(p * math.log(p / q) for p, q in zip(P_edit, P_orig))
+round(kl, 4)  # → 0.0268
+round(nll + kl, 3)  # → 1.067</code></pre>
+<h4>Step 3: insert</h4>
+<p>With k* and v* in hand, equation (2) gives the new W<sub>proj</sub> in closed form. In the paper's setup (Appendix E.5): layer 18 of GPT-2 XL; C estimated from 100,000 keys collected on Wikipedia text; v* found with <span class="t" data-t="adam">Adam</span> in at most 20 steps; the whole edit about 2 seconds on one GPU.</p>
+<h4>Why it matters</h4>
+<p>The edit is one <span class="t" data-t="outer product">outer product</span> added to one matrix, derived rather than trained, which is what makes it a test of understanding: if the key–value picture were wrong, a single rank-one change would not generalize to paraphrases. Nothing in this primer's code edits weights this way; the closest neighbour is the lesson's <a data-lesson="primer/ml/interpretability.html#LandmarkModel"><code>LandmarkModel</code></a>, whose middle MLP is a hand-written lookup from landmark to city.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Evaluating ROME on zero-shot relation extraction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3.SS2">original</a></span></h3>
+<p>The first test uses <span class="t" data-tip-title="zsRE" data-tip="Zero-shot relation extraction: a question-answering dataset reused to test model editors. Each record has a fact to insert, a paraphrase of it, and one unrelated fact.">zsRE</span>, as used by earlier editors: 10,000 records, each with a fact to insert, a paraphrase of it, and an unrelated fact. The baselines are <span class="t" data-t="fine-tuning">fine-tuning</span> one layer (FT), fine-tuning with a limit on how far any weight may move (FT+L), and two <span class="t" data-tip-title="Hypernetwork" data-tip="A second network trained to output weight changes for the first; here, trained to turn a requested fact into an edit.">hypernetworks</span> that learn to predict weight edits, KE and MEND, also retrained on zsRE itself (the “-zsRE” rows).</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1 (GPT-2 XL, accuracy %, ± 95% interval), Meng et al. (2022)</caption>
+  <thead><tr><th>Editor</th><th class="num">Efficacy</th><th class="num">Paraphrase</th><th class="num">Specificity</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-2 XL, unedited</td><td class="num">22.2 (±0.5)</td><td class="num">21.3 (±0.5)</td><td class="num">24.2 (±0.5)</td></tr>
+    <tr><td>FT</td><td class="num">99.6 (±0.1)</td><td class="num">82.1 (±0.6)</td><td class="num">23.2 (±0.5)</td></tr>
+    <tr><td>MEND-zsRE</td><td class="num">99.4 (±0.1)</td><td class="num">99.3 (±0.1)</td><td class="num">24.1 (±0.5)</td></tr>
+    <tr><td>ROME</td><td class="num">99.8 (±0.0)</td><td class="num">88.1 (±0.5)</td><td class="num">24.2 (±0.5)</td></tr>
+  </tbody>
+</table></div>
+<p>ROME, which needs no training at all, is competitive; the hypernetwork trained on zsRE's own data generalizes to paraphrases better. The authors note that zsRE's specificity score barely moves for any method, because its unrelated facts are random and edits bleed mostly into <em>similar</em> subjects. That motivates the next benchmark.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Evaluating ROME on CounterFact <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Teaching a model a fact it half-believes already is easy. <span class="t" data-tip-title="CounterFact" data-tip="The paper's benchmark of 21,919 counterfactual edits, each with paraphrases, similar neighbouring subjects that must not change, and prompts for generating text.">CounterFact</span> uses <em>counterfactuals</em> the model starts out rating unlikely, and measures three things per edit: did it take (efficacy), does it hold under rewording (paraphrase), and did it leave similar subjects alone (neighbourhood)? For the Eiffel Tower moved to a new city, the neighbours are other things in Paris, such as the Louvre, found through Wikidata.</p>
+<h4>The scores</h4>
+<ul>
+  <li><strong>ES</strong>, efficacy score: the share of edits after which P[o*] &gt; P[o<sup>c</sup>]; <strong>EM</strong> is the mean gap.</li>
+  <li><strong>PS</strong>, paraphrase score: the same on reworded prompts; <strong>PM</strong> its mean gap.</li>
+  <li><strong>NS</strong>, neighbourhood score: the share of neighbouring subjects that still prefer the true object; <strong>NM</strong> its mean gap.</li>
+  <li><strong>RS</strong>, consistency of generated text with the new fact (a <span class="t" data-t="cosine similarity">cosine similarity</span> of word statistics against reference texts), and <strong>GE</strong>, fluency (below).</li>
+</ul>
+<h4>Tiny example: one score from three</h4>
+<p>The overall score S is the <span class="t" data-t="harmonic mean">harmonic mean</span> of ES, PS and NS. The numbers are ROME's and FT's on GPT-2 XL, from Table 4.</p>
+<div class="eq" data-tex="\htmlData{sym=Sscore}{S} = \frac{3}{\dfrac{1}{\htmlData{sym=ES}{\mathrm{ES}}} + \dfrac{1}{\htmlData{sym=PS}{\mathrm{PS}}} + \dfrac{1}{\htmlData{sym=NS}{\mathrm{NS}}}}" data-fallback="S = 3 / (1/ES + 1/PS + 1/NS)"></div>
+<div class="symtable" data-syms="Sscore,ES,PS,NS"></div>
+<p class="inwords"><strong>In words:</strong> “average the reciprocals of the three scores and take the reciprocal of that”: a mean that is dragged down hard by whichever score is worst. The paper names it; the formula is the standard definition.</p>
+<p class="inwords"><strong>With the numbers:</strong> ROME: 3 / (1/100 + 1/96.4 + 1/75.4) = <strong>89.2</strong>, as printed. FT: 3 / (1/100 + 1/87.9 + 1/40.4) = <strong>65.0</strong>; the table prints 65.1, presumably computed before its inputs were rounded. An ordinary average would give FT 76.1 and hide how badly it damages neighbours.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># S = harmonic mean of ES, PS, NS (Table 4, GPT-2 XL)
+def S(es, ps, ns):
+    return 3 / (1 / es + 1 / ps + 1 / ns)
+round(S(100.0, 96.4, 75.4), 1)  # → 89.2
+# FT: the table prints 65.1, computed before its inputs were rounded
+round(S(100.0, 87.9, 40.4), 1)  # → 65.0
+# the ordinary average would hide FT's failure on neighbours
+round((100.0 + 87.9 + 40.4) / 3, 1)  # → 76.1</code></pre>
+<h4>Try it: why a harmonic mean</h4>
+<p>Drag the three scores. Watch how far a single low score pulls the harmonic mean compared with the ordinary average.</p>
+<div class="plot" id="hm-play">
+  <div class="sliders">
+    <label for="hm-es">ES</label><input type="range" id="hm-es" min="1" max="100" step="1" value="100"><output id="hm-esv">100</output>
+    <label for="hm-ps">PS</label><input type="range" id="hm-ps" min="1" max="100" step="1" value="88"><output id="hm-psv">88</output>
+    <label for="hm-ns">NS</label><input type="range" id="hm-ns" min="1" max="100" step="1" value="40"><output id="hm-nsv">40</output>
+  </div>
+  <div id="hm-bars"></div>
+  <p class="readout" id="hm-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the sliders are the three success rates of one editor, starting near FT's (100, 88, 40). The solid bar is their ordinary average, the striped bar the harmonic mean S. Drop any one slider toward zero and S follows it down, however high the other two are, while the average barely notices. An editor can only score well on S by being effective, general and specific at once, which is the point of the benchmark: the paper's two failure modes, overfitting to one phrasing and bleeding into neighbours, each sink one of the three.</p>
+<h4>Fluency, measured by repetition</h4>
+<p>GE is a weighted average of bigram and trigram <span class="t" data-t="entropy">entropy</span> of generated text: it drops when an edit makes the model repeat itself. Illustrative: five repetitions of one word, against five different words.</p>
+<div class="eq" data-tex="\htmlData{sym=GE}{\mathrm{GE}} \propto -\htmlData{sym=sumk}{\sum_k} \htmlData{sym=fk}{f(k)}\,\htmlData{sym=log2}{\log_2} \htmlData{sym=fk}{f(k)}" data-fallback="GE ∝ −Σ_k f(k) log₂ f(k)"></div>
+<div class="symtable" data-syms="GE,sumk,fk,log2"></div>
+<p class="inwords"><strong>In words:</strong> “for each distinct n-gram, multiply its share of all n-grams by the base-2 log of that share, add up, and flip the sign”: zero when one n-gram repeats, larger when many different ones appear.</p>
+<p class="inwords"><strong>With the numbers:</strong> “medicine” five times gives one bigram with share 1 and entropy <strong>0</strong>; “he studied medicine in paris” gives four distinct bigrams, each ¼, and entropy <strong>2</strong> bits.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+from collections import Counter
+def bigram_entropy(words):
+    # f(k): how often each bigram k occurs, as a share
+    grams = Counter(zip(words, words[1:]))
+    total = sum(grams.values())
+    # −Σ_k f(k) log₂ f(k); adding 0.0 turns a −0.0 into 0.0
+    return -sum(c / total * math.log2(c / total) for c in grams.values()) + 0.0
+bigram_entropy("medicine medicine medicine medicine medicine".split())  # → 0.0
+bigram_entropy("he studied medicine in paris".split())  # → 2.0</code></pre>
+<h4>Why it matters</h4>
+<p>The dataset has 21,919 records, with two paraphrase prompts, ten neighbourhood prompts and several generation prompts each, built from the ParaRel dataset. Its design, and especially its neighbourhood prompts, is what exposes the failures the next section shows.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Confirming the importance of decisive states <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If tracing found the right place, editing there should work best. So the authors ran ROME at every layer and every token position of GPT-2 XL. Edits at the subject's last token do best, with both generalization and specificity peaking at the middle layers, and generalization peaking at layer 18, inside the early site. Edits at other tokens generalize or stay specific poorly. (Appendix I adds that editing the late attention layers instead makes the model repeat the new fact only in the trained wording.)</p>
+<h4>Diagram: the editors compared</h4>
+<div class="plot" id="cf-plot"><div id="cf-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> selected rows of the paper's Table 4, for GPT-2 XL on 7,500 CounterFact records; the axis runs from 0 to 100%. For each editor, the solid bar is efficacy (ES), the striped bar paraphrase (PS), and the grey striped bar neighbourhood (NS). Look for the editor whose three bars are all long. FT has perfect efficacy but keeps only 40.4% of neighbours correct: it bleeds. FT+L protects neighbours but generalizes to under half the paraphrases: it overfits one wording. KE and MEND show both problems at once. ROME's three bars are all long, which is why its S is 89.2 against the next best, FT+L's 66.9. The unedited model's NS of 78.1 is the ceiling to compare neighbourhood scores with: ROME's 75.4 is close. On GPT-J, with 2,000 records, ROME scores S = 91.5.</p>
+<p>The paper names the two failure modes (F1) overfitting to the counterfactual statement and failing to generalize, and (F2) underfitting and predicting the new object for unrelated subjects. Every method but ROME shows one or both. <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3.SS4">Knowledge Neurons</a> (KN), which edits the MLP rows of neurons picked out by gradients, fails both ways on this benchmark.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 and 3.6 Generated text, and people's ratings <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3.SS5">original</a></span></h3>
+<p>Insert “Pierre Curie's area of work is medicine” (he was a physicist) and let each edited model write. FT and ROME describe him as a physician under every wording; FT+L, KE and MEND switch between medicine and physics depending on the phrasing, and KE repeats “medicine” to the point of nonsense. On specificity, GPT-2 XL already (wrongly) called Robert Millikan an astronomer; after the Curie edit, FT+L calls him a biologist and KE and MEND a medical scientist, while ROME leaves him unchanged. Appendix G adds cases where edits compose with other knowledge (after moving Liberty Island to Scotland, a ROME-edited model connects it to Loch Lomond) and cases of <span class="t" data-tip-title="Essence drift" data-tip="An edit that changes what kind of thing the subject is, not just the one fact: after moving an island to Scotland, calling it a university campus.">essence drift</span>.</p>
+<p><a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3.SS6">Human evaluation</a>: 15 volunteers compared generated text on 50 inserted facts. They were 1.8 times more likely to judge ROME's text more consistent with the new fact than FT+L's, but 1.3 times less likely to judge it more fluent: a loss of fluency the automatic entropy score did not catch.</p>
+</section>
+
+<section id="s3-6">
+<h3>3.7 Limitations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S3.SS7">original</a></span></h3>
+<blockquote class="quote">“it only edits a single fact at a time, and it is not intended as a practical method for large-scale model training.”<cite>Meng et al. (2022), §3.7</cite></blockquote>
+<ul>
+  <li><strong>One fact per edit</strong>, and <strong>one direction</strong>: “the Space Needle is in Seattle” and “Seattle's iconic landmark is the Space Needle” are stored separately and need two edits. The authors point to their follow-up work for editing many facts at once.</li>
+  <li><strong>Only factual associations</strong>: logical, spatial or numerical knowledge were not studied, and the structure of the vector spaces involved is not well understood.</li>
+  <li><strong>Plausible guessing</strong>: even after a successful edit, the model will invent plausible new facts with no basis, which limits its use as a source of facts.</li>
+</ul>
+</section>
+
+<section id="s4">
+<h2>4 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S4">original</a></span></h2>
+<h3 class="rung">Three lines of prior work</h3>
+<ul>
+  <li><strong>What representations encode.</strong> <span class="t" data-t="probe">Probing classifiers</span> read properties from hidden states but can be dissociated from what the network actually does. Causal methods avoid that: earlier work used causal mediation analysis on individual neurons (gender bias, syntactic agreement) and erased information to measure its effect. Causal tracing adds paired interventions that measure a single hidden state's indirect effect.</li>
+  <li><strong>How much knowledge models hold</strong>: fill-in-the-blank prompts, better and more varied prompts, and ParaRel, the paraphrase dataset CounterFact is built from. This paper asks <em>how</em> knowledge is recalled rather than how much can be extracted.</li>
+  <li><strong>Localizing and editing knowledge</strong>: MLP layers as key–value memories; Knowledge Neurons, which writes the object's embedding into selected MLP rows; KE and MEND, hypernetworks that predict weight updates. ROME is compared with all of them.</li>
+</ul>
+<p>This primer's <a data-lesson="primer/ml/interpretability.html#train_probe">probes</a> and <a data-lesson="primer/ml/interpretability.html#patching_map">patching</a> sit on exactly this reading-versus-intervening divide.</p>
+</section>
+
+<section id="s5">
+<h2>5 Conclusion and ethical considerations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S5">original</a></span></h2>
+<blockquote class="quote">“we stress that large language models should not be used as an authoritative source of factual knowledge in critical settings.”<cite>Meng et al. (2022), §6</cite></blockquote>
+<p>The paper clarifies how information flows when a GPT recalls a fact, and turns that into a simple editor. It frames ROME as a tool for testing where knowledge is stored, not a product. The <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#S6">ethics section</a> is two-sided: understanding a model's organization improves transparency and makes fixing errors cheaper; but the same ability can insert misinformation, bias or other adversarial content, which, together with the guessing behaviour above, is why the authors warn against treating a language model as an authoritative source.</p>
+</section>
+
+<section id="s6">
+<h2>Appendix A: solving for Λ algebraically <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#A1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>This is the classic problem of least squares with one equality constraint. The old matrix W already solves the unconstrained problem. Adding the constraint with a <span class="t" data-tip-title="Lagrange multiplier" data-tip="An extra variable that turns “minimize this, subject to that” into an ordinary minimization; at the answer, it measures how hard the constraint pushes.">Lagrange multiplier</span> Λ and setting the slope to zero gives two equations, one for the old optimum and one for the new; subtracting them, almost everything cancels.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Reuse §3.1's numbers: C = [[3, 0], [0, 1]], k* = (1, 1), Λ = (3/4, −3/4), and the change Ŵ − W = Λuᵀ with u = (1/3, 1).</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=Wmat}{W}\htmlData{sym=Kmat}{K}\htmlData{sym=Kmat}{K}^{\htmlData{sym=Tt}{T}} = \htmlData{sym=Vmat}{V}\htmlData{sym=Kmat}{K}^{\htmlData{sym=Tt}{T}} \\ (\htmlData{sym=What}{\hat{W}} - \htmlData{sym=Wmat}{W})\,\htmlData{sym=Kmat}{K}\htmlData{sym=Kmat}{K}^{\htmlData{sym=Tt}{T}} = \htmlData{sym=Lam}{\Lambda}\,\htmlData{sym=kstar}{k_*}^{\htmlData{sym=Tt}{T}} \\ \Rightarrow\; \htmlData{sym=What}{\hat{W}} = \htmlData{sym=Wmat}{W} + \htmlData{sym=Lam}{\Lambda}(\htmlData{sym=Cinv}{C^{-1}}\htmlData{sym=kstar}{k_*})^{\htmlData{sym=Tt}{T}} \end{gathered}" data-fallback="W K Kᵀ = V Kᵀ   (6);  (Ŵ − W) K Kᵀ = Λ k*ᵀ   (12);  Ŵ = W + Λ (C⁻¹ k*)ᵀ   (13)"></div>
+<div class="symtable" data-syms="Wmat,Kmat,Tt,Vmat,What,Lam,kstar,Cinv"></div>
+<p class="inwords"><strong>In words:</strong> “the old matrix satisfies the normal equations; the new one satisfies them plus a term from the constraint; subtract, and the change times C equals Λ times the new key laid on its side; multiply by C's inverse to get the rank-one update.” Then substituting into Ŵk* = v* gives Λ = (v* − Wk*) / ((C⁻¹k*)ᵀk*), equation (26).</p>
+<p class="inwords"><strong>With the numbers:</strong> Λuᵀ = [[1/4, 3/4], [−1/4, −3/4]]; times C, that is <strong>[[3/4, 3/4], [−3/4, −3/4]]</strong>, which is exactly Λk*ᵀ.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>from fractions import Fraction as Fr
+# the numbers from §3.1: C, k*, Λ and the change Ŵ − W = Λ uᵀ
+C = [[Fr(3), Fr(0)], [Fr(0), Fr(1)]]
+k_star = [1, 1]
+Lam = [Fr(3, 4), Fr(-3, 4)]
+u = [Fr(1, 3), Fr(1)]
+dW = [[Lam[r] * u[c] for c in range(2)] for r in range(2)]
+# left side of (12): (Ŵ − W) C
+left = [[sum(dW[r][j] * C[j][c] for j in range(2)) for c in range(2)] for r in range(2)]
+# right side of (12): Λ k*ᵀ
+right = [[Lam[r] * k_star[c] for c in range(2)] for r in range(2)]
+left == right  # → True
+[[str(x) for x in row] for row in left]  # → [['3/4', '3/4'], ['-3/4', '-3/4']]</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The derivation assumes C is invertible and that W was the least-squares memory for the keys C summarizes. In practice C is estimated from keys on Wikipedia text, which is why it stands for “the keys this layer usually sees”. The <span class="t" data-t="frobenius norm">Frobenius norm</span> in the paper's version is just the squared error summed over every entry of the matrix.</p>
+</section>
+
+<section id="s7">
+<h2>Appendices B and I: robustness checks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2202.05262#A2">original</a></span></h2>
+<h3 class="rung">Is the trace an artefact of the noise?</h3>
+<p>The authors vary the corruption: also corrupting the token after the subject, drawing noise from a Gaussian matched to the embeddings' mean and covariance, or from a uniform distribution. The early site at the last subject token persists every time. The noise must be large, though: with a spread of just one standard deviation, the total effect becomes too small to read indirect effects from. Gradient saliency (<span class="t" data-tip-title="Integrated gradients" data-tip="A way to score each input's importance by adding up gradients along a straight path from a baseline input to the real one.">integrated gradients</span>) on the same prompts gives scattered maps that show neither the last subject token's importance nor the middle MLPs.</p>
+<h3 class="rung">Is the last subject token always the one?</h3>
+<p>Not always. For “Windows Media Player”, the first word “Windows” triggers the decisive lookup; for “Mitsubishi Electric”, “Electric” doesn't matter; for “Madame de Montesson”, the title “Madame” does most of the work. Some low-confidence facts show no decisive MLP lookup inside the subject at all.</p>
+<h3 class="rung">Other models</h3>
+<p>GPT-J (6B, 28 layers) and GPT-NeoX (20B, 44 layers), with noise rescaled to their embeddings, show the same early and late sites, with attention playing a larger role at the first layers of the last subject token, perhaps because fewer layers force the work into fewer places. Across GPT-2 Medium, GPT-2 Large and NeoX, early-site MLPs keep large effects, though the peak layer differs.</p>
+<h3 class="rung">Editing attention instead (Appendix I)</h3>
+<p>Constrained fine-tuning of the query, key and value weights of the attention at layer 33 (the peak of the attention trace) makes the model repeat the new fact when given the exact training prompt, but not under paraphrase: word prediction rather than recall. ROME at the MLP generalizes. It supports the division of labour in the hypothesis.</p>
+</section>
+
+<section id="today">
+<h2>Where it leads</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Idea in the paper</th><th>Why it lasts</th><th>Where to build it</th></tr></thead>
+  <tbody>
+    <tr><td>Clean run, corrupted run, restore one activation</td><td>The basic causal experiment of interpretability</td><td><a data-lesson="primer/ml/interpretability.html#patching_map">patching every site</a>, <a data-lesson="primer/ml/interpretability.html#LandmarkModel.run">a run that accepts patches</a></td></tr>
+    <tr><td>Indirect effect as the measure</td><td>Separates what a site carries from what reaches the output</td><td><a data-lesson="primer/ml/interpretability.html#fraction_restored">fraction restored</a></td></tr>
+    <tr><td>MLPs recall, attention moves</td><td>A reusable picture of how facts flow through a transformer</td><td><a data-lesson="primer/ml/interpretability.html#LandmarkModel">the landmark model</a>, <a data-lesson="primer/ml/transformer.html">the transformer lesson</a></td></tr>
+    <tr><td>A linear layer as a key–value memory, edited in closed form</td><td>Model editing without retraining</td><td>No code in this primer; the worked example above</td></tr>
+    <tr><td>Test edits on paraphrases and on neighbours</td><td>Generalization and specificity, reported together</td><td><a data-lesson="primer/agents/evals.html">evaluations</a></td></tr>
+    <tr><td>Features as the unit of intervention</td><td>A later route from “where” to “what”</td><td><a href="scaling-monosemanticity.html">Scaling Monosemanticity companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Kevin Meng, David Bau, Alex Andonian and Yonatan Belinkov, <em>Locating and Editing Factual Associations in GPT</em>, 2022, <a href="https://arxiv.org/abs/2202.05262">arXiv:2202.05262</a>. The authors' code, dataset and demos are linked from the paper, at <a href="https://rome.baulab.info/">rome.baulab.info</a>. Quotations are brief and attributed; table rows are a small selection, credited in their captions. No figures are reproduced: the pictures are drawn from scratch, from the paper's text and tables or from illustrative numbers, as labelled. All explanations, diagrams, examples and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+<script>
+window.PAPER = {
+  symbols: {
+    // §2, eq. (1)
+    hil: { tex: "h^{(l)}_i", name: "Hidden state", meaning: "Token i's running vector after layer l: the residual stream at that grid cell.", shape: "H numbers", example: "(2, 0.5)" },
+    hilm: { tex: "h^{(l-1)}_i", name: "Previous hidden state", meaning: "The same token's vector one layer earlier.", shape: "H numbers", example: "(1, 0)" },
+    ail: { tex: "a^{(l)}_i", name: "Attention output", meaning: "What layer l's attention adds at token i, computed from the states of token i and every token before it.", shape: "H numbers", example: "(0.5, 0.5)" },
+    mil: { tex: "m^{(l)}_i", name: "MLP output", meaning: "What layer l's MLP adds at token i, computed from this token alone.", shape: "H numbers", example: "(0.5, 0)" },
+    Wproj: { tex: "W^{(l)}_{proj}", name: "MLP output matrix", meaning: "The MLP's second matrix. ROME edits this one: it maps a key to a value.", shape: "H × MLP hidden width", example: "[[0.5, 0, 0], [0, 0, 1]]" },
+    sigmar: { tex: "\\sigma", name: "Rectifying nonlinearity", meaning: "The rectifying nonlinearity, applied entry by entry inside the MLP; a ReLU in this page's example.", shape: "keeps the shape", example: "(1, −1, 0) → (1, 0, 0)" },
+    Wfc: { tex: "W^{(l)}_{fc}", name: "MLP input matrix", meaning: "The MLP's first matrix: its output, after σ, is the key.", shape: "hidden width × H", example: "[[1, 0], [0, 1], [1, 1]]" },
+    gammar: { tex: "\\gamma", name: "Normalization", meaning: "The normalizing nonlinearity: rescales a vector to zero mean and unit spread (any learned scale and shift is left out here).", shape: "keeps the shape", example: "(1.5, 0.5) → (1, −1)" },
+    // §2.1 noise
+    hi0: { tex: "h^{(0)}_i", name: "Embedding", meaning: "Token i's input vector: its token embedding plus its position embedding. “:=” means “is replaced by”.", shape: "H numbers", example: "one row of the grid's left column" },
+    eps: { tex: "\\epsilon", name: "Noise", meaning: "A random vector added to each subject token's embedding.", shape: "H numbers", example: "drawn fresh for each of ten runs" },
+    normal: { tex: "\\mathcal{N}(0;\\,\\nu)", name: "Gaussian distribution", meaning: "Bell-curve random numbers centred on 0 with spread ν.", shape: "", example: "N(0; 0.6)" },
+    nu: { tex: "\\nu", name: "Noise spread", meaning: "How large the noise is: three times the embeddings' standard deviation for GPT-2 XL; set to 0.025 for GPT-J and 0.03 for GPT-NeoX.", shape: "one number", example: "0.6" },
+    sigmat: { tex: "\\sigma_t", name: "Embedding standard deviation", meaning: "The typical spread of token-embedding entries, measured over a body of text.", shape: "one number", example: "0.2" },
+    // §2.1 effects
+    TE: { tex: "\\text{TE}", name: "Total effect", meaning: "How much corrupting the subject lowers the probability of the right answer. Averaged over prompts: the ATE.", shape: "−1 to 1", example: "0.8" },
+    Po: { tex: "\\mathbb{P}[o]", name: "Clean probability", meaning: "The probability the unmodified model gives the correct object o.", shape: "0 to 1", example: "0.90" },
+    Pso: { tex: "\\mathbb{P}_{*}[o]", name: "Corrupted probability", meaning: "The probability of o when the subject's embeddings have noise. The star marks the corrupted run.", shape: "0 to 1", example: "0.10" },
+    IE: { tex: "\\text{IE}", name: "Indirect effect", meaning: "How much restoring one clean state raises the probability of o in the corrupted run. Averaged over prompts: the AIE.", shape: "−1 to 1", example: "0.5" },
+    Pcl: { tex: "\\mathbb{P}_{*,\\,\\text{clean } h^{(l)}_i}[o]", name: "Restored probability", meaning: "The probability of o in the corrupted run with state h at token i, layer l set back to its clean value.", shape: "0 to 1", example: "0.60" },
+    // §3.1 eq. (2)
+    What: { tex: "\\hat{W}", name: "Edited matrix", meaning: "The new W_proj after the edit.", shape: "same as W", example: "[[5/4, 3/4], [−1/4, 1/4]]" },
+    Kmat: { tex: "K", name: "Old keys", meaning: "Every key the layer stores, side by side as columns.", shape: "key width × number of keys", example: "(1,0) three times, (0,1) once" },
+    Vmat: { tex: "V", name: "Old values", meaning: "The value each old key should retrieve, as columns.", shape: "H × number of keys", example: "the same as K here" },
+    kstar: { tex: "k_*", name: "New key", meaning: "The MLP hidden activation that represents the subject, at its last token.", shape: "MLP hidden width", example: "(1, 1)" },
+    vstar: { tex: "v_*", name: "New value", meaning: "The MLP output that makes the model state the new fact.", shape: "H numbers", example: "(2, 0)" },
+    Wmat: { tex: "W", name: "Original matrix", meaning: "W_proj before the edit, assumed to be the least-squares memory for the old keys.", shape: "H × key width", example: "the identity" },
+    Lam: { tex: "\\Lambda", name: "Update column", meaning: "The new value's current error, v* − W k*, rescaled so the edit stores v* exactly. Also the Lagrange multiplier.", shape: "H numbers", example: "(3/4, −3/4)" },
+    Cinv: { tex: "C^{-1}", name: "Inverse key covariance", meaning: "The matrix that undoes C. Multiplying k* by it shrinks the directions where common keys live.", shape: "key width × key width", example: "[[1/3, 0], [0, 1]]" },
+    Tt: { tex: "T", name: "Transpose", meaning: "Turn a column into a row (or flip a matrix), so a column times a row gives a table.", shape: "", example: "(1/3, 1) laid on its side" },
+    Cmat: { tex: "C", name: "Key covariance", meaning: "K Kᵀ: the uncentred covariance of the keys, estimated from 100,000 keys on Wikipedia text.", shape: "key width × key width", example: "[[3, 0], [0, 1]]" },
+    // eq. (3)
+    kkey: { tex: "k_*", name: "The subject's key", meaning: "The average key over prefixes: what ROME will insert as the new key.", shape: "MLP hidden width", example: "(1.0, 0.2)" },
+    avgN: { tex: "\\frac{1}{N}\\sum_{j=1}^{N}", name: "Average over prefixes", meaning: "Add one term per random prefix text j and divide by how many there are.", shape: "", example: "N = 3 here; §3.1 says 50 prefixes, Appendix E.5 says 20" },
+    kfun: { tex: "k(x)", name: "Key of a text", meaning: "The MLP hidden activation, after σ, at the subject's last token when the model reads text x.", shape: "key width", example: "(1.0, 0.2)" },
+    xj: { tex: "x_j", name: "Prefix j", meaning: "A short random text generated by the model, put before the subject or prompt so the edit works in many contexts.", shape: "a few tokens", example: "three prefixes" },
+    subj: { tex: "s", name: "Subject", meaning: "The words naming the subject, such as “The Space Needle”.", shape: "text", example: "" },
+    // eq. (4)
+    Lz: { tex: "\\mathcal{L}(z)", name: "Value objective", meaning: "What the search for v* minimizes over candidate vectors z.", shape: "one number", example: "1.067" },
+    PGz: { tex: "\\mathbb{P}_{G(m^{(l^*)}_i := z)}", name: "Probability with z patched in", meaning: "The model's predictions when the MLP output at the subject's last token, in layer l*, is replaced by z.", shape: "a distribution over tokens", example: "0.5, then 0.25" },
+    ostar: { tex: "o^*", name: "New object", meaning: "The answer the edit should produce, such as “Paris”.", shape: "a token", example: "" },
+    prompt: { tex: "p", name: "Factual prompt", meaning: "Text stating the subject and relation, such as “The Space Needle is located in”.", shape: "text", example: "" },
+    DKL: { tex: "D_{\\mathrm{KL}}", name: "KL divergence", meaning: "How different the edited model's predictions are from the original's. Zero when they match.", shape: "one number ≥ 0", example: "0.0268" },
+    pprime: { tex: "p'", name: "Essence prompt", meaning: "A prompt of the form “{subject} is a”, whose predictions should not change.", shape: "text", example: "" },
+    // §3.3
+    Sscore: { tex: "S", name: "Score", meaning: "The harmonic mean of the three success rates.", shape: "0 to 100", example: "89.2 for ROME" },
+    ES: { tex: "\\mathrm{ES}", name: "Efficacy score", meaning: "Share of edits after which the new object beats the true one on the editing prompt.", shape: "0 to 100", example: "100.0" },
+    PS: { tex: "\\mathrm{PS}", name: "Paraphrase score", meaning: "The same, on reworded prompts.", shape: "0 to 100", example: "96.4" },
+    NS: { tex: "\\mathrm{NS}", name: "Neighbourhood score", meaning: "Share of similar subjects that still prefer their true object.", shape: "0 to 100", example: "75.4" },
+    GE: { tex: "\\mathrm{GE}", name: "Generation entropy", meaning: "A weighted average of bigram and trigram entropies of generated text: lower means more repetitive.", shape: "one number", example: "621.9 for ROME (the paper's units)" },
+    sumk: { tex: "\\sum_k", name: "Sum over n-grams", meaning: "One term for each distinct n-gram k in the text.", shape: "", example: "4 bigrams" },
+    fk: { tex: "f(k)", name: "n-gram share", meaning: "How often n-gram k occurs, as a share of all n-grams in the text.", shape: "0 to 1", example: "1/4" },
+    log2: { tex: "\\log_2", name: "Base-2 logarithm", meaning: "How many doublings: log₂(1/4) = −2. Measures information in bits.", shape: "", example: "log₂ 1 = 0" },
+  },
+
+  blocks: {
+    noisy: { title: "Corrupted subject embeddings", body: "<p>The four subject tokens, “The Space Need le”, get Gaussian noise added to their embeddings (starred). Everything computed from them is corrupted too.</p>", shape: "ν = 3 σ_t" },
+    embclean: { title: "Untouched embeddings", body: "<p>“is”, “in”, “downtown” are left alone; the model just can't tell which landmark they are about.</p>", shape: "no noise" },
+    states: { title: "Hidden states", body: "<p>One circle per token per layer: h<sup>(l)</sup><sub>i</sub>. In the clean run all are saved; in each restoration run, one of them is copied back in.</p>", shape: "7 tokens × 48 layers in GPT-2 XL" },
+    early: { title: "Early site", body: "<p>Middle layers at the subject's last token, “le”. Restoring a single state here gives an average indirect effect of 8.7% at layer 15. MLPs dominate it.</p>", shape: "last subject token, middle layers" },
+    late: { title: "Late site", body: "<p>High layers at the last token, “downtown”. Restoring here is expected to work: this is where the answer is read out. Attention dominates it.</p>", shape: "last token, late layers" },
+    outc: { title: "The output", body: "<p>The probability of “Seattle”. Clean runs average 27.0% over the 1,000 prompts, corrupted runs 8.47%.</p>", shape: "P[o]" },
+    restore: { title: "Restoration", body: "<p>Rerun the corrupted input, but at one token and one layer force the state to its clean value; compute everything after it normally. Repeat for every cell.</p>", shape: "one run per cell" },
+    subj: { title: "Subject tokens", body: "<p>The model reads the subject's words one at a time. Only at the last one does it know the whole name.</p>", shape: "“The Space Need le”" },
+    emlp: { title: "Middle-layer MLPs", body: "<p>At the subject's last token, a run of middle-layer MLPs acts as a key–value memory: the subject representation is the key, the facts about it are the value, added to the residual stream.</p>", shape: "MLP AIE peak 6.6%", lesson: "primer/ml/interpretability.html#LandmarkModel" },
+    copy: { title: "High-layer attention", body: "<p>Attention at high layers copies the recalled information from the subject's position to the last token.</p>", shape: "late site", lesson: "primer/ml/attention.html" },
+    pred: { title: "Prediction", body: "<p>The last token's final state is decoded into the next word: “Seattle”.</p>", shape: "y = decode(h_T^(L))" },
+  },
+
+  onReady(P) {
+    traceMap(P);
+    romeWidget();
+    harmonicWidget();
+    cfBars();
+  },
+};
+
+function barRow(label, value, max, style, text, cols) {
+  const w = Math.max(0, Math.min(100, (value / max) * 100));
+  return `<div class="share-row" style="grid-template-columns:${cols || "6rem minmax(0,1fr) 3.4rem"}"><span>${label}</span><div><div class="share-bar" style="width:${w.toFixed(1)}%;${style || ""}"></div></div><span>${text}</span></div>`;
+}
+const STRIPED = "background:var(--hatch) var(--accent)";
+const GREY = "background:var(--hatch) var(--wire)";
+
+/* ---- §2.2: an illustrative average-indirect-effect map, shaped to the text's peaks ---- */
+function traceMap(P) {
+  const rows = ["first subject token", "middle subject tokens", "last subject token", "first token after", "further tokens", "last token"];
+  const bump = (l, c, w, h) => h * Math.exp(-((l - c) ** 2) / (2 * w * w));
+  const rise = (l, c, w, h) => h / (1 + Math.exp(-(l - c) / w));
+  const maps = {
+    state: (r, l) => [bump(l, 8, 6, 1.2), bump(l, 10, 6, 1.5), bump(l, 15, 7, 8.7), 0.4, 0.3, rise(l, 36, 3, 18.6)][r],
+    mlp: (r, l) => [bump(l, 10, 5, 0.6), bump(l, 12, 5, 0.9), bump(l, 17, 5, 6.6), 0.2, 0.2, bump(l, 36, 4, 1.2)][r],
+    attn: (r, l) => [0.1, 0.2, bump(l, 9, 4, 1.6), 0.2, 0.3, bump(l, 32, 5, 8)][r],
+  };
+  const labels = { state: "states h", mlp: "MLP outputs m (10-layer windows)", attn: "attention outputs a (10-layer windows)" };
+  let kind = "state";
+  const out = document.getElementById("trace-readout");
+  function draw() {
+    const old = document.getElementById("trace-canvas");
+    const canvas = old.cloneNode(false);
+    old.replaceWith(canvas);
+    const f = maps[kind];
+    P.heatmap(canvas, {
+      rows: 6, cols: 48, min: -12, max: 12, value: (r, c) => f(r, c),
+      onHover(r, c, v) {
+        out.textContent = r === null ? "Hover the map." : `Restoring ${labels[kind]} at the ${rows[r]}, layer ${c}: average indirect effect ${v.toFixed(1)} points (illustrative).`;
+      },
+    });
+  }
+  document.querySelectorAll("#trace-plot [data-kind]").forEach((b) => b.addEventListener("click", () => {
+    kind = b.dataset.kind;
+    document.querySelectorAll("#trace-plot [data-kind]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    out.textContent = `Showing ${labels[kind]}. Hover the map.`;
+    draw();
+  }));
+  draw();
+}
+
+/* ---- §3.1: ROME's covariance-aware edit against a plain rank-one edit ---- */
+function romeWidget() {
+  const sn = document.getElementById("rome-n"), st = document.getElementById("rome-t");
+  const on = document.getElementById("rome-nv"), ot = document.getElementById("rome-tv");
+  const bars = document.getElementById("rome-bars"), out = document.getElementById("rome-readout");
+  const vStar = [2, 0];
+  function edit(n, k, u) {
+    // Ŵ = I + Λ uᵀ with Λ = (v* − k) / (uᵀ k); returns the damage on the stored keys
+    const uk = u[0] * k[0] + u[1] * k[1];
+    const lam = [(vStar[0] - k[0]) / uk, (vStar[1] - k[1]) / uk];
+    // stored keys: (1, 0) n times, (0, 1) once; the change on key e_c is Λ u_c
+    const d1 = (lam[0] * u[0]) ** 2 + (lam[1] * u[0]) ** 2;
+    const d2 = (lam[0] * u[1]) ** 2 + (lam[1] * u[1]) ** 2;
+    return { total: n * d1 + d2, d1, d2 };
+  }
+  function draw() {
+    const n = +sn.value, t = (+st.value * Math.PI) / 180;
+    on.textContent = n; ot.textContent = `${st.value}°`;
+    const k = [Math.SQRT2 * Math.cos(t), Math.SQRT2 * Math.sin(t)];
+    const kk = k[0] * k[0] + k[1] * k[1];
+    const plain = edit(n, k, [k[0] / kk, k[1] / kk]);
+    const rome = edit(n, k, [k[0] / n, k[1]]);
+    const top = Math.max(4, plain.total, rome.total);
+    const cols = "7rem minmax(0,1fr) 3.2rem";
+    bars.innerHTML = `<div class="legend" style="margin:.4rem 0">Total squared disturbance to the old memories, axis 0 to ${top.toFixed(1)}. Solid: plain rank-one edit. Striped: ROME.</div>` +
+      barRow("plain edit", plain.total, top, "", plain.total.toFixed(2), cols) +
+      barRow("ROME", rome.total, top, STRIPED, rome.total.toFixed(2), cols);
+    out.innerHTML = `k* = (${k[0].toFixed(2)}, ${k[1].toFixed(2)}), k₁ stored ${n}×. Per copy of k₁: plain ${plain.d1.toFixed(3)}, ROME ${rome.d1.toFixed(3)}. On k₂: plain ${plain.d2.toFixed(3)}, ROME ${rome.d2.toFixed(3)}. Totals: plain <strong>${plain.total.toFixed(2)}</strong>, ROME <strong>${rome.total.toFixed(2)}</strong>.`;
+  }
+  sn.addEventListener("input", draw);
+  st.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- §3.3: harmonic mean against the ordinary average ---- */
+function harmonicWidget() {
+  const ids = ["es", "ps", "ns"];
+  const bars = document.getElementById("hm-bars"), out = document.getElementById("hm-readout");
+  function draw() {
+    const v = ids.map((id) => +document.getElementById(`hm-${id}`).value);
+    ids.forEach((id, i) => (document.getElementById(`hm-${id}v`).textContent = v[i]));
+    const mean = (v[0] + v[1] + v[2]) / 3;
+    const S = 3 / (1 / v[0] + 1 / v[1] + 1 / v[2]);
+    const cols = "7.4rem minmax(0,1fr) 3rem";
+    bars.innerHTML = `<div class="legend" style="margin:.4rem 0">Axis 0 to 100. Solid: ordinary average. Striped: harmonic mean S.</div>` +
+      barRow("average", mean, 100, "", mean.toFixed(1), cols) + barRow("harmonic S", S, 100, STRIPED, S.toFixed(1), cols);
+    out.innerHTML = `ES ${v[0]}, PS ${v[1]}, NS ${v[2]}: average <strong>${mean.toFixed(1)}</strong>, harmonic mean S <strong>${S.toFixed(1)}</strong>.`;
+  }
+  ids.forEach((id) => document.getElementById(`hm-${id}`).addEventListener("input", draw));
+  draw();
+}
+
+/* ---- §3.4: selected rows of Table 4, GPT-2 XL ---- */
+function cfBars() {
+  const rows = [["unedited", 22.2, 24.7, 78.1, 30.5], ["FT", 100.0, 87.9, 40.4, 65.1], ["FT+L", 99.1, 48.7, 70.3, 66.9], ["KE", 84.3, 75.4, 30.9, 52.2], ["MEND", 99.1, 65.4, 37.9, 57.9], ["ROME", 100.0, 96.4, 75.4, 89.2]];
+  const cols = "6.6rem minmax(0,1fr) 3rem";
+  document.getElementById("cf-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Axis 0 to 100%. Solid: efficacy ES. Striped: paraphrase PS. Grey striped: neighbourhood NS.</div>` +
+    rows.map(([name, es, ps, ns, s]) =>
+      `<p class="readout" style="margin:.5rem 0 .1rem"><strong>${name}</strong>, S = ${s}</p>` +
+      barRow(`${name} ES`, es, 100, "", es.toFixed(1), cols) +
+      barRow(`${name} PS`, ps, 100, STRIPED, ps.toFixed(1), cols) +
+      barRow(`${name} NS`, ns, 100, GREY, ns.toFixed(1), cols)
+    ).join("");
+}
+</script>
+</body>
+</html>
