@@ -280,7 +280,6 @@ def reading_list(package: str) -> str:
 
 LEVELS_PENDING: frozenset[str] = frozenset({
     # the foundations
-    "primer.ml.deep_nets",
 
     # the transformer
     "primer.ml.attention",

@@ -3,6 +3,134 @@ r"""
 
 Run: `python -m primer.ml.deep_nets`
 
+New to the notation (Π, ∂, σ)? `primer.notation` builds every symbol used
+here from zero. This lesson builds on backpropagation from
+`primer.ml.neural_net` and the optimizer step from `primer.ml.optimizers`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Backpropagation multiplies one factor per layer, so
+in a deep stack the learning signal shrinks to nothing or grows without
+bound unless every layer is built to pass it on at about its original
+size, and the four standard fixes (a good activation, matched
+initialization, residual connections, normalization) plus a safety net
+(gradient clipping) are what make every modern architecture trainable.
+
+**When you need it.** You need this when you read a model's config and
+meet `rms_norm_eps`, `initializer_range` or `layer_norm_eps`, when a
+network you built stops improving while its loss curve looks merely slow,
+when a training run turns NaN in its first steps, or when a paper says
+"pre-norm" and you have to decide whether it matters. The tell: a model
+whose late layers learn while its early layers stay at their random start,
+which no loss curve shows and a plot of gradient size per layer shows at
+once. You don't need it to fine-tune a published transformer: the fixes
+are baked into its architecture, and your job is to leave them alone. One
+number from this lesson says why they are there: in a 30-layer network of
+ReLU units, weights drawn a little too small shrink the gradient reaching
+the first layer by 36 orders of magnitude, a little too large grow it by
+22, and the right size keeps it within a factor of about 4.
+
+**Your options.** The fixes, from the ones a framework applies for you to
+the ones that shape an architecture:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| An activation with slope 1 (ReLU, GELU, SiLU) | Passes the gradient through unshrunk for positive inputs, where sigmoid passes at most 0.25 | No 0.25-per-layer decay: ten sigmoid layers lose a factor of a million, ten ReLU layers lose nothing | ReLU units pushed negative pass nothing and can die; GELU and SiLU leak a little instead | `hidden_act` in a config |
+| Initialization matched to the activation (Xavier, He) | Sets the starting weights' size so each layer passes signal on at the same size, forward and backward | The healthy line in this lesson's figure: a factor of about 4 over 30 layers, against 10⁻³⁶ or 10²² | Nothing at runtime; a per-layer rule you must apply to custom layers | The framework's default init; `initializer_range` in a config |
+| Residual connections | Each block adds its correction to its input instead of replacing it | Some gradient always reaches the early layers: 1.28 after ten blocks against 10⁻¹⁶ without | The signal grows as corrections pile up (7 million times over 30 layers here) unless normalized; block input and output must share a shape | The architecture: every transformer block |
+| Normalization (BatchNorm, LayerNorm, RMSNorm) | Re-centres and rescales activations, across the batch or within each example | Activations in a steady range at every depth; with residuals, a stable stack of any depth | A mean and a variance per layer per step (RMSNorm drops the mean); BatchNorm ties each example to its batch-mates | The architecture: `layer_norm_eps`, `rms_norm_eps` |
+| Gradient clipping | Rescales the whole update when its length exceeds a limit | A rare spike cannot wreck the run: a gradient of length 8 × 10⁴⁶ becomes length 1, same direction | One norm per step; a network that explodes every step is hidden, not fixed | The training loop: `max_grad_norm` |
+
+**How to choose.** Start from whether you are reading an architecture or
+building one.
+
+- Fine-tuning a published model: read the config and change nothing. A
+  Llama config carries RMSNorm placed before each sub-layer (pre-norm),
+  residuals in every block, SiLU-based activations, an `initializer_range`
+  of 0.02 and an `rms_norm_eps` of 10⁻⁶; the trained weights assume every
+  one of them.
+- Building a network more than a few layers deep: ReLU or GELU, the
+  framework's default initialization (PyTorch's `nn.Linear` scales its
+  starting weights by the fan-in), a residual path around every block, and
+  a normalization layer beside it.
+- Sequences, or inference one example at a time: LayerNorm or RMSNorm,
+  never BatchNorm, because an example's output must not depend on who else
+  is in the batch. Convolutional networks with large batches: BatchNorm
+  remains common.
+- A run that spikes: clip at 1.0, the limit almost every large run uses.
+  If the clip fires on every step, the fault is initialization or
+  normalization, and clipping is masking it.
+- A network that trains slowly for no visible reason: plot the gradient
+  norm per layer. Vanishing shows up as a slope of many orders of
+  magnitude from the last layer to the first.
+- Whatever you pick, the goal is one number: a per-layer factor near 1 in
+  both directions. Check the forward signal and the backward gradient
+  separately, because a healthy one does not prove a healthy other.
+
+**What it costs.** Initialization is free. Residual connections cost no
+compute but fix the shape of every block's output to its input. A
+normalization layer costs a mean and a variance per row per layer, which
+is why RMSNorm, dropping the mean, is the cheaper choice modern language
+models make. Clipping costs one norm over all parameters per step. What they buy is depth itself: ResNet trained networks over 100
+layers deep with residuals, a 7-billion-parameter Llama config stacks 32
+blocks, and Llama 3's largest model is a dense transformer with 405 billion
+parameters, none of which could be trained if the per-layer factor drifted
+from 1. Depth is also what you pay for at inference: every layer runs on
+every token.
+
+**What breaks.**
+
+- **Early layers never learn.** The gradient vanished on the way back:
+  sigmoid or tanh stacked deep (18 orders of magnitude lost over 30 layers
+  even with Xavier initialization), or weights initialized too small.
+- **NaN in the first steps.** Weights too large (22 orders of magnitude
+  of growth), or residual blocks stacked without normalization.
+- **A healthy forward pass with a dead backward pass.** The sigmoid
+  network's signal holds steady near 0.5 through all 30 layers while its
+  gradient collapses, because the forward pass sends values through the
+  activation and the backward pass multiplies by its slope. Check both.
+- **BatchNorm where the batch is not a population.** The value 1 becomes
+  −1.22 in one batch and −0.93 in another; at batch size 1, or with
+  variable-length sequences, the statistics are meaningless. Use LayerNorm.
+- **A custom layer that silently fails to train.** It skipped the
+  initialization rule the framework applies to its own layers.
+- **Clipping that fires every step.** Not a spike: an explosion. Fix the
+  cause.
+- **Post-norm instability.** Placing the norm after the residual add trains
+  less stably than before it (Xiong et al., 2020); pre-norm is what Llama
+  and most recent models use.
+
+**In the wild.** Llama 2's paper describes its blocks as pre-normalization
+with RMSNorm, the SwiGLU activation and rotary position embeddings, and
+Hugging Face's `LlamaConfig` exposes the settings (`rms_norm_eps` 1e-6,
+`initializer_range` 0.02, `num_hidden_layers` 32, `hidden_act` silu).
+PyTorch's `nn.LayerNorm` takes the shape to normalize over with
+`eps=1e-05` and a learned per-element scale and shift; its `nn.Linear`
+initializes from a uniform range set by the fan-in; and
+`torch.nn.utils.clip_grad_norm_` clips by the norm over all parameters
+together, which Hugging Face's `TrainingArguments` calls with a default
+`max_grad_norm` of 1.0, the same limit Llama 2 trained with. The fixes are
+He et al. (ResNet and He initialization, 2015), Glorot and Bengio (Xavier,
+2010), Ioffe and Szegedy (BatchNorm, 2015), Ba, Kiros and Hinton
+(LayerNorm, 2016) and Zhang and Sennrich (RMSNorm, 2019), with the problem
+itself diagnosed by Bengio, Simard and Frasconi (1994); all are linked at
+the end of the lesson.
+
+**Go deeper.** Level 2 multiplies the slopes of a ten-layer chain by hand,
+watches the gradient at every layer of a 30-layer network under four
+initializations, derives the Xavier and He rules from one variance
+equation, shows the "1 +" that residual connections add, normalizes one
+row three ways with the numbers shown, and clips an exploding gradient of
+length 8 × 10⁴⁶ down to 1. If you only needed to read a config, you are
+done.
+
+## Level 2: How it works, from scratch
+
+A deep network's gradient is a product with one factor per layer, and
+every fix in this lesson is a way of holding that factor near 1. This
+level builds the problem in a chain of ten numbers, watches it in a
+30-layer network, then adds each fix and measures what it restores.
+
 ## The idea: a gradient is a product of slopes
 
 Picture a game of telephone along a line of 30 people. Each person repeats
