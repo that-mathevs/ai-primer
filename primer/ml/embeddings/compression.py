@@ -5,7 +5,115 @@ Run: `python -m primer.ml.embeddings.compression`
 
 New to vectors, dimensions or Σ? `primer.notation` builds them from zero.
 
-## The everyday picture
+## Level 1: The practitioner's guide
+
+**In one sentence.** Embedding compression stores each vector in fewer
+numbers, or rougher ones, so that an index of millions fits in memory and
+searches faster, while still returning the same neighbours as the full
+vectors would.
+
+**When you need it.** The moment a vector index stops fitting on the machine
+you meant to run it on, or its bill stops fitting the budget. Do the sum
+before you pick either: vectors × dimensions × 4 bytes. Ten million
+1,536-dimension vectors are 61 GB as 32-bit floats, before the index adds
+its own links (about 1.3 GB for an HNSW graph at 16 links per node); at
+3,072 dimensions it is 123 GB. Fast indexes keep every vector in RAM, so
+that number is the server. The tell is a search service whose memory line is
+the vectors themselves, or an embedding upgrade to a longer model that
+doubled the hosting cost. You don't need any of this while the sum is small
+(a hundred thousand 1,536-dimension vectors are 0.6 GB of floats), and you
+never need it at the price of neighbours you can't measure: the cost of
+every option here is recall@k against exact search on your own queries.
+
+**Your options.** From the least saving to the most, each measured in this
+lesson on 5,000 documents of 256 dimensions:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Full float32 | Stores every number as is | Exact: recall 1.00 by definition | 4 bytes per dimension; 61 GB for 10M × 1,536 | The default everywhere |
+| Half precision | Stores each number in 2 bytes instead of 4 | Halves storage and keeps every dimension | 16-bit rounding, small but still to be measured | The column type (pgvector's halfvec) |
+| Fewer dimensions (Matryoshka) | Keeps the first m numbers of a vector trained so the important ones come first, and re-normalizes | Any size you choose, with graceful loss: 32 of 256 dimensions keep 93% of the top-10 neighbours here; 98% of benchmark performance at 8% of the size in Hugging Face's tests | A model trained for it; a random model loses more than half its neighbours at the same cut | The embedding call (a dimensions parameter) or your write path |
+| int8 scalar quantization | Rounds each number to one of 256 levels between the dimension's minimum and maximum | 4× smaller with little loss: recall 0.98 here, about 99% retained in Hugging Face's benchmarks | A calibration pass to find each dimension's range, and clipping for values outside it | The database's quantization setting |
+| Binary with re-scoring | Keeps one bit per number (its sign), searches by counting differing bits, then re-ranks a shortlist with the full vectors | 32× smaller in the fast path: bits alone keep 0.54 of the neighbours here, re-scoring the top 100 brings back 0.97 | The full vectors kept somewhere slower for the re-score, and a second stage per query | Index settings with rescoring or oversampling on |
+| Product quantization | Splits each vector into chunks and replaces every chunk with the id of its nearest learned centroid | Up to 64× (Qdrant's figure) when memory is everything | A training step for the codebooks and the largest quality loss; measure before trusting it | Faiss, Qdrant |
+| Two stages combined | Shortlists with a short or binary form, re-ranks with full vectors | Most of the quality at a fraction of the memory: 32 dimensions to shortlist 100, full vectors to re-rank, recall 1.00 here | Full vectors on disk, two lookups per query | Your search code, or an index with rescoring built in |
+
+**How to choose.** Start from the sum, then from what your model supports.
+
+- It fits with headroom: change nothing. Every option below costs neighbours
+  or complexity.
+- Your model exposes a dimensions parameter (it was trained Matryoshka
+  style): cut dimensions first. It is the cheapest knob and it shrinks
+  compute per comparison as well as memory.
+- Memory tight by a factor of a few: int8. It is the safe default; 4× for a
+  loss you will struggle to see.
+- Memory tight by an order of magnitude, or a corpus in the hundreds of
+  millions: binary for the scan, floats on disk for the re-score, with the
+  shortlist size tuned until recall@10 on your queries is back where you
+  need it.
+- Whatever you pick, measure recall@k against exact float search on a sample
+  of your own queries before and after, and keep the number with the index
+  configuration.
+
+**What it costs.** Memory follows the bytes: for 10 million 1,536-dimension
+vectors, 61 GB as float32, 15 GB as int8, 1.9 GB as bits (this lesson's
+sum). Hugging Face's benchmark prices it at 250 million 1,024-dimension
+vectors on a cloud instance: about \$3,623 a month as float32, \$905 as int8,
+\$113 as binary. Speed follows memory: binary search runs up to 45× faster
+than float in that benchmark (a mean of 25×), int8 up to 4×. Quality is the
+cost you pay in neighbours: here int8 loses 2% of the top-10, binary alone
+loses 46% and gets 43 points back from re-scoring, and Matryoshka at one
+eighth of the dimensions loses 7%. Effort is a calibration pass for int8,
+a training step for product quantization, and a second query stage for any
+two-stage design. Nothing here changes the model or its vectors' meaning:
+compression is applied on the write path and can be undone by re-indexing.
+
+**What breaks.**
+
+- **Truncating a model not trained for it.** Cut a plain model's vector to
+  32 of 256 dimensions and recall@10 drops to 0.44; the same cut on
+  importance-ordered vectors keeps 0.93. Check the model card, or order the
+  dimensions yourself as Level 2 does.
+- **Forgetting to re-normalize.** A truncated vector is shorter than 1; the
+  provider's parameter does this for you, a manual slice does not, and
+  OpenAI's guide says so in as many words.
+- **Binary as the final answer.** Signs alone keep half the neighbours. Bits
+  are a shortlist, never the ranking.
+- **A calibration range that drifted.** int8's levels span the minimum and
+  maximum seen at calibration; documents added later that fall outside are
+  clipped. Recalibrate when the corpus changes character.
+- **Bits on bunched vectors.** Vectors that crowd into a narrow cone
+  (`primer.ml.embeddings.similarity`) share most of their signs, so their
+  bits carry little; Qdrant recommends binary for centred, high-dimensional
+  distributions. Mean-centre first, or pick int8.
+- **Measuring on someone else's queries.** A benchmark's recall is not
+  yours. Sample your own queries and compare against exact search.
+- **Counting only the vectors.** The graph's links, the full vectors kept for
+  re-scoring and the working memory of a build all add to the bill.
+
+**In the wild.** OpenAI's text-embedding-3 models take a dimensions
+parameter that shortens their 1,536 or 3,072 numbers; Cohere's embed-v4.0
+offers 256 to 1,536 dimensions and returns float, int8, uint8, binary or
+ubinary embeddings from one call; Nomic's nomic-embed-text-v1.5 is an open
+Matryoshka model, and sentence-transformers trains one with MatryoshkaLoss
+wrapped around any base loss. Qdrant ships scalar, binary and product
+quantization with rescoring and oversampling; pgvector has a halfvec column,
+a bit column and a binary_quantize function for its HNSW indexes; Faiss
+offers scalar quantizers, product quantization (PQ, OPQ) and RaBitQ at about
+d/8 + 8 bytes per vector. The idea comes from Kusupati et al. (2022),
+Matryoshka Representation Learning, which reported up to 14× smaller
+embeddings at the same ImageNet accuracy and up to 14× faster retrieval; the
+numbers above come from Hugging Face's embedding quantization and Matryoshka
+posts and from this lesson's own experiment.
+
+**Go deeper.** Level 2 does the byte arithmetic, builds Matryoshka ordering
+from a principal-direction rotation and measures recall as dimensions fall
+away, rounds a real vector to 256 levels and shows the error never exceeds
+half a step, packs signs into bytes and counts differing bits with one XOR,
+and runs the two-stage search that gets the neighbours back. If you only
+needed to choose, you are done.
+
+## Level 2: How it works, from scratch
 
 An embedding describes a text with a long list of numbers, like describing
 a person with hundreds of adjectives. More adjectives let you tell very

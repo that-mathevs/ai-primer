@@ -5,7 +5,115 @@ Run: `python -m primer.ml.embeddings.word2vec`
 
 New to vectors, dot products or Σ? `primer.notation` builds them from zero.
 
-## The everyday picture
+## Level 1: The practitioner's guide
+
+**In one sentence.** word2vec turns every word in a body of text into a short
+list of numbers (its vector) by training it to guess its neighbours, so that
+words used in the same company land close together and can be compared,
+averaged and searched with arithmetic.
+
+**When you need it.** You need word vectors the moment a program has to know
+that two different strings mean similar things: matching "laptop" to
+"notebook computer" in a search box, grouping support tickets by topic,
+feeding words to a classifier as something richer than an id, or finding
+which products are "like" a given one from the sentences they appear in. The
+tell is a synonym table you maintain by hand, or a keyword search that misses
+every rephrasing. You don't need word2vec when a word's meaning depends on
+the sentence around it: in this lesson's demo the single static vector for
+"bank" sits at cosine 0.52 to the river words and 0.50 to the money words,
+halfway between its two senses, where one step of attention over "river bank
+fish" takes it to 0.83 on the river side and "bank loan cash" to 0.85 on the
+money side. And you don't need it for whole sentences or documents:
+averaging word vectors is a rough baseline, but the sentence-embedding models
+of `primer.ml.embeddings.contrastive` were built for that job. Today word2vec
+is the idea to understand, and a cheap tool for a vocabulary of your own;
+contextual models are the default for text.
+
+**Your options.** Five ways to get a vector per word, from the cheapest to
+the most capable:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Download pretrained vectors (GloVe, word2vec, fastText) | Loads a table trained on billions of words of news, Wikipedia or web text | A good general vocabulary in minutes: Stanford's largest GloVe set covers 2.2 million words at 300 dimensions, from 840 billion tokens | A file of gigabytes; words your field uses differently keep their public meaning | A file you load |
+| Count, then compress (PPMI + SVD) | Tallies which words appear near which, keeps the pairs that meet more often than chance, compresses the table | Deterministic, one pass over the text, no training loop to tune | Memory for a vocabulary-by-vocabulary table, which caps the vocabulary | Your code |
+| Train skip-gram with negative sampling on your corpus | Plays the guessing game on your own text | Vectors that know your jargon; the analogies of Level 2 on clean data | CPU hours in proportion to the text, and a corpus big enough to see each word in many contexts | A library such as gensim, on your machine |
+| Subword vectors (fastText) | Builds each word's vector from the vectors of its character pieces | A vector for words never seen in training, including typos and rare inflections | A bigger model, and pieces shared by unrelated words leak into each other | A library |
+| Contextual embeddings (BERT and every model since) | Runs the sentence through a transformer and reads off a fresh vector per word, per sentence | Word senses separated by their context | A forward pass per text, a model to host or an API to pay | A model server or an embedding API |
+
+**How to choose.** Start from whose words they are and whether context
+matters.
+
+- General English, a prototype by this afternoon: download pretrained
+  vectors and get on with it.
+- Your own vocabulary (product codes, ticket jargon, a legal field): train
+  skip-gram on your own text. It runs on a laptop; the demo here trains on
+  1,800 sentences in seconds.
+- Typos, rare words, or a language with many word forms: fastText, which
+  assembles a vector for any spelling.
+- A word whose meaning depends on the sentence, or whole sentences to
+  compare: a contextual model, and the rest of this package.
+- Whatever you pick, judge the vectors on your own task, not on analogy
+  puzzles. Level 2's corpus is built from three clean attributes so that
+  king − man + woman lands on queen; your search logs are messier, and they
+  are what counts.
+
+**What it costs.** Training is cheap, which is the point of the method:
+negative sampling scores one true pair and k noise words per training
+example instead of the whole vocabulary. The negative-sampling paper reports
+k = 5 to 20 as useful for small datasets and 2 to 5 for large ones, an
+optimized single-machine implementation training on more than 100 billion
+words in a day, and a 2× to 10× further speed-up from subsampling the most
+frequent words. This lesson trains 16-dimensional vectors for a 45-word
+vocabulary in seconds. Storage is a table of vocabulary × dimensions numbers:
+the 400,000-word, 300-dimension GloVe set is 400,000 × 300 × 4 bytes, about
+480 MB as float32. Query time costs nothing: a vector is a table lookup, no
+model runs. Quality, in the paper's own numbers: 300-dimensional vectors
+trained on a billion words score about 60% on its analogy test, and the same
+paper names the settings that matter most as the architecture, the vector
+size, the subsampling rate and the window.
+
+**What breaks.**
+
+- **One vector, many senses.** "bank" at 0.52 to river and 0.50 to money is
+  the whole story: a static table cannot separate senses. Use a contextual
+  model where senses matter.
+- **Words never seen.** A word absent from training has no vector, and
+  libraries drop rare words on purpose (gensim's default keeps words seen at
+  least 5 times). Map unknown words to a shared placeholder, or use fastText.
+- **Order is invisible.** The window records which words were near, not in
+  what order: "not good" and "very good" put "good" in the same company.
+  Sentiment and negation need a model that reads order.
+- **Frequent words swamp the rest.** "the" appears next to everything and
+  teaches nothing; the 3/4 power on the noise distribution and subsampling
+  of frequent words exist to counter it. Skip them in a home-made trainer and
+  the vectors degrade.
+- **The corpus's prejudices come along.** Bolukbasi et al. (2016) found that
+  vectors trained on Google News exhibit gender stereotypes "to a disturbing
+  extent". Audit before any decision about people rests on them.
+- **Public vectors, private meaning.** A pretrained "python" is a snake and a
+  language in whatever balance the web had; your codebase has one meaning.
+  Train on your own text when the two differ.
+
+**In the wild.** gensim's Word2Vec is the standard Python implementation
+(defaults: 100 dimensions, window 5, 5 negatives, 5 epochs, min_count 5, and
+the CBOW variant unless you ask for skip-gram). Stanford publishes GloVe
+vectors trained on Wikipedia and Gigaword (6 billion tokens, 400,000 words,
+50 to 300 dimensions) and on Common Crawl (840 billion tokens, 2.2 million
+words, 300 dimensions). fastText (Bojanowski et al., 2016) is the subword
+variant. Levy and Goldberg (2014) showed that skip-gram with negative
+sampling factorizes a shifted PMI table, so counting and predicting are one
+family. BERT (2018) is the contextual model that replaced static tables as
+the default, and every sentence-embedding model since inherits its shape.
+
+**Go deeper.** Level 2 plays the guessing game by hand on a three-word
+sentence: the pairs a window makes, the dot product, the sigmoid, one nudge
+of the vectors, and the gradient that nudge follows. It then trains real
+vectors on a small corpus, checks king − man + woman = queen, gets the same
+vectors by counting (PPMI + SVD, GloVe), and shows one attention step turning
+a static "bank" into a contextual one. If you only needed to choose, you are
+done.
+
+## Level 2: How it works, from scratch
 
 You can learn a lot about a stranger from their friends. If two people keep
 turning up with the same crowd, they probably have something in common.

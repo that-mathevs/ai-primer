@@ -5,7 +5,120 @@ Run: `python -m primer.ml.embeddings.contrastive`
 
 New to vectors, dot products, Σ or log? `primer.notation` builds them from zero.
 
-## The everyday picture
+## Level 1: The practitioner's guide
+
+**In one sentence.** Contrastive training teaches an embedding model what
+"similar" means by showing it pairs that belong together and pairs that
+don't, pulling the first kind close and pushing the second apart, and it is
+how nearly every embedding model behind search and RAG was made.
+
+**When you need it.** You need to understand it whenever you pick or judge
+an embedding model, because what a model calls similar is exactly what its
+training pairs called similar: a model trained on (question, answer) pairs
+ranks answers, one trained on (sentence, paraphrase) pairs ranks
+restatements, and neither is "the" similarity. You need to *run* it when a
+general model keeps confusing things your users never confuse: the reset
+steps with the password policy, two product lines that share a name, a
+statute with its commentary. The tell is a retrieval log where the top hit is
+on topic and still wrong. This lesson's experiment puts a number on it: a
+model trained only with random negatives picks the right card over its
+look-alike 60% of the time on unseen topics, barely above a coin flip,
+scoring the reset card at 0.646 and the policy card at 0.632 for "my
+password is broken"; the same model trained with hard negatives picks right
+100% of the time and scores them 0.944 and −0.588. You don't need to train
+anything when a general model already ranks your held-out queries well, and
+you don't need it for one-off comparisons where a person reads the result.
+
+**Your options.** From the cheapest to the most work:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| A general pretrained model, as is | Uses vectors from a model trained on millions of public pairs | Good general similarity; on public benchmarks, dense models beat keyword search (DPR: 9 to 19 points of top-20 accuracy over BM25) | Per-token fees or hosting, and nothing about your jargon | An embedding API or an open model |
+| The model's query and document modes | Embeds each side of a search the way the model was trained for it (a query prefix, an input type) | The pairing the model learned, instead of a symmetric comparison it wasn't trained for | Reading the model card | Your embedding calls |
+| Fine-tune with in-batch negatives | Trains on your (query, right document) pairs; every other document in the batch is a free negative | Learns your vocabulary and topics from a few thousand pairs | Pairs from logs, a training run, a full re-embedding of the corpus | Your training job |
+| Fine-tune with mined hard negatives | Adds to each pair a top search result that is wrong | Learns the distinction retrieval needs: right answer versus look-alike | A mining pass over the corpus per training query, plus the above | Your training job |
+| Contrastive pretraining at scale | Trains from weak public pairs before any fine-tuning (E5's CCPairs) | A general model that beats BM25 zero-shot | Curated web-scale pairs and GPU weeks; for model builders | A research lab or a model vendor |
+| Two encoders, one space (CLIP) | Trains an image encoder and a text encoder so matching pairs meet | Search across modalities and zero-shot labelling; 26% to 92% on the lesson's toy | Paired data across modalities (CLIP used 400 million pairs) | A multimodal model |
+
+**How to choose.** Start from what the model must tell apart, and whether it
+already can.
+
+- Measure first: embed a few hundred held-out queries with the general model
+  and check recall@k against the documents that resolved them. Good enough
+  means stop.
+- Check the model card for a query mode before blaming the model; embedding
+  both sides the same way when it expects a prefix costs quality for free.
+- Failures are about vocabulary (your terms, your product names): fine-tune
+  on pairs from logs with in-batch negatives.
+- Failures are about intent (right topic, wrong document): mine hard
+  negatives from your current search results and train with them. This is
+  the step that moved the lesson's model from 60% to 100%.
+- Images, scans or audio next to text: a CLIP-style dual-encoder model, not
+  a text model with captions.
+- Whatever you pick, judge it on held-out pairs against the base model, and
+  ship only a winner. Fine-tuning changes the whole space, so every stored
+  vector is re-embedded.
+
+**What it costs.** Data is the main price, and it is cheap when you have
+logs: real questions and the document that resolved each, support tickets
+and the article that closed them. A few thousand good pairs usually adapt a
+general model to a domain. In-batch negatives are free, which is why batches
+matter: a batch of B pairs gives every question B − 1 negatives at no extra
+cost, and sentence-transformers' guidance for its
+MultipleNegativesRankingLoss is that larger batches are better, with a cached
+variant (GradCache) for large batches on limited memory. Hard negatives cost
+one search per training question, with BM25 or the model itself. Compute for
+fine-tuning is small next to pretraining: the lesson's bi-encoder trains for
+400 steps at batch 8 in seconds, and a fine-tune starts from a model whose
+web-scale training someone else paid for. The recurring bill is deployment: a new model means re-embedding the
+whole corpus, and every model change repeats it. One setting to get right:
+the temperature, the dial that turns small cosine gaps into confident
+scores; typical values are 0.01 to 0.1 (sentence-transformers' default scale
+of 20 is a temperature of 0.05).
+
+**What breaks.**
+
+- **Topic matching instead of answering.** Random negatives are about other
+  subjects, so the model learns subjects: 60% on look-alikes. Mine hard
+  negatives.
+- **A hidden right answer in the batch.** Every card that isn't a question's
+  own is treated as wrong, so two questions with the same answer in one batch
+  push a right answer away. Deduplicate pairs before batching;
+  sentence-transformers' GISTEmbedLoss guides in-batch sampling for this.
+- **Temperature at the wrong setting.** At a temperature of 1, a right card
+  leading three wrong ones by 0.2 in cosine earns only 29% of the softmax, so
+  training keeps punishing correct rankings; at 0.05 it earns 95%. Too low
+  and a few hard pairs dominate and training turns unstable.
+- **Training and testing on the same topics.** The lesson's exam uses four
+  topics the model never saw; a model scored on its training topics looks
+  better than it is.
+- **The old index after a new model.** A fine-tuned model is a new space.
+  Vectors from the old one are not comparable; re-embed everything.
+- **Both sides embedded the same way.** A model trained with a query side and
+  a document side scores worse when you skip the prefix or the input type it
+  was trained with.
+
+**In the wild.** Sentence-BERT (2019) made the bi-encoder the standard
+shape; DPR (2020) trained one on question-passage pairs with in-batch and
+BM25-mined hard negatives and beat BM25 by 9 to 19 points of top-20 accuracy;
+E5 (2022) pretrained contrastively on weakly supervised web pairs and was
+the first to beat BM25 on BEIR with no labels; SimCSE (2021) showed that
+dropout noise alone gives usable positives, with NLI pairs as hard
+negatives; CLIP (2021) trained an image and a text encoder on 400 million
+pairs with the symmetric loss. sentence-transformers implements the loss as
+MultipleNegativesRankingLoss, with CachedMultipleNegativesRankingLoss for big
+batches and GISTEmbedLoss for guided negatives. Cohere's embedding API asks
+which side of a search each text is on. The MTEB leaderboard ranks embedding
+models by the tasks these losses target.
+
+**Go deeper.** Level 2 scores one question against two answer cards by hand,
+turns the scores into a loss (InfoNCE) and shows what the temperature does
+to it, then runs the controlled experiment: two identical models, one with
+hard negatives, tested on topics neither has seen. It ends with the CLIP
+recipe, two encoders trained into one space, and a zero-shot classifier that
+needs no classifier. If you only needed to choose, you are done.
+
+## Level 2: How it works, from scratch
 
 A teacher has a stack of question cards and a stack of answer cards. She
 lays out a few questions, deals out all the answers face up, and asks the
