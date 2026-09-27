@@ -158,7 +158,7 @@
 <blockquote class="quote">“This result explains why random forests do not overfit as more trees are added, but produce a limiting value of the generalization error.”<cite>Breiman (2001), §2.1</cite></blockquote>
 <h4>Tiny example</h4>
 <p>Ten trees vote on email A, which really is spam. Seven vote spam and three vote not spam. The average vote for the right class is 0.7, the biggest average vote for any wrong class is 0.3, and the margin is 0.7 − 0.3 = <strong>0.4</strong>: positive, so the forest gets email A right. Emails B, C and D get margins 0.8, −0.2 and 0.6. Only C has a negative margin, so this forest misclassifies one email in four.</p>
-<div class="eq" data-tex="\htmlData{sym=mg}{mg}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y}) = \htmlData{sym=avk}{\operatorname{av}_k}\, \htmlData{sym=Ind}{I}(\htmlData{sym=hk}{h_k}(\htmlData{sym=X}{X}) = \htmlData{sym=Y}{Y}) - \htmlData{sym=maxj}{\max_{j \ne Y}}\, \htmlData{sym=avk}{\operatorname{av}_k}\, \htmlData{sym=Ind}{I}(\htmlData{sym=hk}{h_k}(\htmlData{sym=X}{X}) = \htmlData{sym=j}{j})" data-fallback="mg(X,Y) = av_k I(h_k(X) = Y) − max_{j≠Y} av_k I(h_k(X) = j)"></div>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=mg}{mg}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y}) = {} &amp; \htmlData{sym=avk}{\operatorname{av}_k}\, \htmlData{sym=Ind}{I}(\htmlData{sym=hk}{h_k}(\htmlData{sym=X}{X}) = \htmlData{sym=Y}{Y}) \\ &amp; - \htmlData{sym=maxj}{\max_{j \ne Y}}\, \htmlData{sym=avk}{\operatorname{av}_k}\, \htmlData{sym=Ind}{I}(\htmlData{sym=hk}{h_k}(\htmlData{sym=X}{X}) = \htmlData{sym=j}{j}) \end{aligned}" data-fallback="mg(X,Y) = av_k I(h_k(X) = Y) − max_{j≠Y} av_k I(h_k(X) = j)"></div>
 <div class="symtable" data-syms="mg,X,Y,hk,Ind,avk,maxj,j"></div>
 <p class="inwords"><strong>In words:</strong> “the margin at an example is the share of trees that vote for its true class, minus the share that vote for the most popular wrong class.”</p>
 <p class="inwords"><strong>With the numbers:</strong> email A: av<sub>k</sub> I(h<sub>k</sub> = spam) = 7/10 = 0.7; the only wrong class, not spam, gets 3/10 = 0.3; mg = 0.7 − 0.3 = 0.4.</p>
@@ -204,7 +204,7 @@ sum(1 for m in mg if m &lt; 0) / len(mg)  # → 0.25</code></pre>
 <p>A committee is good when its members are individually good (strong) and do not all share the same blind spot (uncorrelated). The paper turns that sentence into an inequality.</p>
 <h4>Tiny example</h4>
 <p>In the limit of many trees, the margin at an example uses probabilities instead of vote shares; call it mr. The forest's <strong>strength</strong> s is the average margin over all examples. For the four emails, the margins 0.4, 0.8, −0.2 and 0.6 average to s = <strong>0.4</strong>. Their <span class="t" data-t="variance">variance</span> (how much they spread around 0.4) is (0 + 0.16 + 0.36 + 0.04) / 4 = <strong>0.14</strong>.</p>
-<div class="eq" data-tex="\htmlData{sym=mr}{mr}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y}) = \htmlData{sym=PTheta}{P_\Theta}(h(\htmlData{sym=X}{X},\htmlData{sym=Theta}{\Theta}) = \htmlData{sym=Y}{Y}) - \htmlData{sym=maxj}{\max_{j \ne Y}} \htmlData{sym=PTheta}{P_\Theta}(h(\htmlData{sym=X}{X},\htmlData{sym=Theta}{\Theta}) = \htmlData{sym=j}{j}), \qquad \htmlData{sym=s}{s} = \htmlData{sym=EXY}{E_{X,Y}}\, \htmlData{sym=mr}{mr}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y})" data-fallback="mr(X,Y) = P_Θ(h(X,Θ) = Y) − max_{j≠Y} P_Θ(h(X,Θ) = j),   s = E_{X,Y} mr(X,Y)"></div>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=mr}{mr}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y}) = {} &amp; \htmlData{sym=PTheta}{P_\Theta}(h(\htmlData{sym=X}{X},\htmlData{sym=Theta}{\Theta}) = \htmlData{sym=Y}{Y}) \\ &amp; - \htmlData{sym=maxj}{\max_{j \ne Y}} \htmlData{sym=PTheta}{P_\Theta}(h(\htmlData{sym=X}{X},\htmlData{sym=Theta}{\Theta}) = \htmlData{sym=j}{j}), \\ \htmlData{sym=s}{s} = {} &amp; \htmlData{sym=EXY}{E_{X,Y}}\, \htmlData{sym=mr}{mr}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y}) \end{aligned}" data-fallback="mr(X,Y) = P_Θ(h(X,Θ) = Y) − max_{j≠Y} P_Θ(h(X,Θ) = j),   s = E_{X,Y} mr(X,Y)"></div>
 <div class="symtable" data-syms="mr,PTheta,Theta,s,EXY"></div>
 <p class="inwords"><strong>In words:</strong> “the margin of the whole forest at an example is the probability that a random tree votes for the right class, minus the probability of the most popular wrong class; the strength is that margin averaged over every example.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for two classes the wrong class gets whatever the right one does not, so mr = P − (1 − P) = 2P − 1. With P = 0.7 for email A, mr = 0.4. Averaging the four margins, s = (0.4 + 0.8 − 0.2 + 0.6) / 4 = 0.4.</p>
@@ -356,7 +356,7 @@ round(1 / ratio, 1)  # → 20.0</code></pre>
 <p>With only a handful of inputs, drawing F of them at random does not decorrelate much: the trees keep drawing the same few. <strong>Forest-RC</strong> (random combinations) invents new inputs instead. At each node it mixes L randomly chosen inputs with random weights, makes F such mixtures, and splits on the best one. There are so many possible mixtures that trees rarely repeat each other.</p>
 <h3 class="rung">Tiny example</h3>
 <p>Take L = 3 inputs, already rescaled to comparable units: age 0.5, income −1.2 and number of links 2.0. Draw three weights uniformly between −1 and 1, say 0.3, −0.8 and 0.5. The new feature for this row is 0.3 × 0.5 + (−0.8) × (−1.2) + 0.5 × 2.0 = 0.15 + 0.96 + 1.0 = <strong>2.11</strong>. The node then searches for the best threshold on that feature, exactly as it would on a real column.</p>
-<div class="eq" data-tex="\htmlData{sym=v}{v} = \htmlData{sym=suml}{\sum_{l=1}^{L}} \htmlData{sym=al}{a_l}\, \htmlData{sym=xml}{x_{m_l}}, \qquad \htmlData{sym=al}{a_l} \sim \htmlData{sym=unif}{U[-1, 1]}" data-fallback="v = Σ_{l=1}^{L} a_l x_{m_l},   a_l ~ U[−1, 1]"></div>
+<div class="eq" data-tex="\begin{aligned} &amp;\htmlData{sym=v}{v} = \htmlData{sym=suml}{\sum_{l=1}^{L}} \htmlData{sym=al}{a_l}\, \htmlData{sym=xml}{x_{m_l}}, \\ &amp;\htmlData{sym=al}{a_l} \sim \htmlData{sym=unif}{U[-1, 1]} \end{aligned}" data-fallback="v = Σ_{l=1}^{L} a_l x_{m_l},   a_l ~ U[−1, 1]"></div>
 <div class="symtable" data-syms="v,suml,al,xml,unif"></div>
 <p class="inwords"><strong>In words:</strong> “a random feature is a weighted sum of L randomly chosen inputs, with each weight drawn evenly from −1 to 1.” (The paper describes this in prose; the formula is ours.)</p>
 <p class="inwords"><strong>With the numbers:</strong> 0.3 × 0.5 + (−0.8) × (−1.2) + 0.5 × 2.0 = 2.11.</p>
@@ -370,7 +370,7 @@ round(sum(a_l * x_ml for a_l, x_ml in zip(a, x)), 2)  # → 2.11</code></pre>
 <h3 class="rung">5.1 Categorical variables</h3>
 <p>A <span class="t" data-tip-title="Categorical variable" data-tip="An input whose values are labels rather than amounts, such as a region code or a colour. The values have no order, so “region 4” is not twice “region 2”.">categorical</span> input with I values (a region code with I = 6 regions, say) is handled by drawing a random subset of its categories each time it is chosen, and turning it into a yes/no feature: “is the region in this subset?”. Since such an input carries as much as I − 1 yes/no columns would, it is made I − 1 times as likely to be picked; the region code is 5 times as likely as a numeric input. With many categorical inputs, the paper finds F must rise to two or three times int(log<sub>2</sub> M + 1) to keep enough strength. This also sidesteps the costly search for the best subset of categories, which for more than two classes grows like 2<sup>I−1</sup>.</p>
 <h3 class="rung">Why it matters</h3>
-<p>Random combinations produce splits that are not parallel to the axes, an idea that returns in later “oblique” forests. Most popular implementations kept Forest-RI's simpler axis-aligned splits, which are easier to explain and faster.</p>
+<p>Random combinations produce splits that are not parallel to the axes, so the forest can follow a diagonal boundary with fewer steps. The price is that each question mixes several inputs and is harder to read; the lesson's forest, like Forest-RI, asks about one real input per split.</p>
 </section>
 
 <section id="s6">
@@ -516,7 +516,7 @@ rows = [(0.45, 26.3), (0.55, 32.5), (0.56, 8.3)]
 <p>The forest always beats bagging. Where adaptive bagging (which, like boosting, changes the training data as it goes) helps a lot, the forest helps less; where it helps nothing, the forest still helps. One difference from classification: correlation rises only slowly as more features are allowed per node, so regression forests need more features per node to drive down each tree's error.</p>
 <p>The paper also swaps bagging for random output noise (Gaussian noise with the same spread as the targets added to every training target) and gets its lowest errors yet on the first two datasets. Its Table 8 lists Boston at 10.2 with bagging and 9.1 with noise. One entry there does not match the earlier tables: Table 8 gives ozone's with-bagging error as 17.8, which is bagging's entry in Table 6, while the forest's is 16.3 in Tables 6 and 7, the same value Table 8 gives for the noise version.</p>
 <h3 class="rung">Why it matters</h3>
-<p>The out-of-bag estimates track the test errors, usually a little high, as §3.1 predicted. And the result that different kinds of injected randomness work better on different problems is the paper's invitation to experiment, which later methods such as extremely randomized trees took up.</p>
+<p>The out-of-bag estimates track the test errors, usually a little high, as §3.1 predicted. And the result that different kinds of injected randomness work better on different problems is the paper's standing invitation to experiment with the recipe.</p>
 </section>
 
 <section id="s13">
@@ -529,7 +529,7 @@ rows = [(0.45, 26.3), (0.55, 32.5), (0.56, 8.3)]
   <li><strong>Random features plus boosting.</strong> Combining the two gave errors as low as 5.1% on zip-code, 2.2% on letters and 7.9% on the satellite data in some runs: better than either alone on the larger datasets.</li>
 </ul>
 <h3 class="rung">Why it matters</h3>
-<p>The last open question was answered in practice: modern gradient-boosting libraries sample rows and columns at random for every tree, borrowing the forest's decorrelation trick to make boosting more robust.</p>
+<p>The last open question was answered in practice: XGBoost, for one, samples a random subset of columns for every tree, borrowing the forest's decorrelation trick to make boosting less prone to overfitting (see the <a href="xgboost.html">XGBoost companion</a>, §2.3).</p>
 </section>
 
 <section id="appendix">
@@ -538,7 +538,7 @@ rows = [(0.45, 26.3), (0.55, 32.5), (0.56, 8.3)]
 <p>Strength and correlation are defined through the probabilities that an imaginary random tree votes each way. The appendix replaces each imaginary probability with a real count: the share of out-of-bag trees that voted that way.</p>
 <h3 class="rung">Tiny example</h3>
 <p>In the out-of-bag table above, email 2 is spam and is out of bag for trees 1 and 3. If both vote spam, its out-of-bag vote share for spam is 2/2 = 1. Email 1 is out of bag only for tree 2; if tree 2 votes not spam, email 1's share for spam is 0/1 = 0.</p>
-<div class="eq" data-tex="\htmlData{sym=Qxj}{Q(x, j)} = \frac{\htmlData{sym=sumk}{\sum_k} \htmlData{sym=Ind}{I}\big(h(x, \htmlData{sym=Thetak}{\Theta_k}) = \htmlData{sym=j}{j};\ (y, x) \notin \htmlData{sym=Tk}{T_k}\big)}{\htmlData{sym=sumk}{\sum_k} \htmlData{sym=Ind}{I}\big((y, x) \notin \htmlData{sym=Tk}{T_k}\big)}" data-fallback="Q(x, j) = Σ_k I(h(x, Θ_k) = j; (y, x) ∉ T_k) / Σ_k I((y, x) ∉ T_k)"></div>
+<div class="eq" data-tex="\htmlData{sym=Qxj}{Q(x, j)} = \frac{\htmlData{sym=sumk}{\sum_k} \htmlData{sym=Ind}{I}\big(h(x, \htmlData{sym=Thetak}{\Theta_k}) = \htmlData{sym=j}{j};\, (y, x) \notin \htmlData{sym=Tk}{T_k}\big)}{\htmlData{sym=sumk}{\sum_k} \htmlData{sym=Ind}{I}\big((y, x) \notin \htmlData{sym=Tk}{T_k}\big)}" data-fallback="Q(x, j) = Σ_k I(h(x, Θ_k) = j; (y, x) ∉ T_k) / Σ_k I((y, x) ∉ T_k)"></div>
 <div class="symtable" data-syms="Qxj,sumk,Thetak,Tk,Ind,j"></div>
 <p class="inwords"><strong>In words:</strong> “among the trees that never saw this example, the share that voted for class j.”</p>
 <p class="inwords"><strong>With the numbers:</strong> email 2: trees 1 and 3 are out of bag and both vote spam, so Q(email 2, spam) = 2/2 = 1.0. Replace the probabilities in the margin by these shares, average over the training set, and you have the out-of-bag strength; the spread of those margins gives the correlation through equation (7).</p>
@@ -562,7 +562,7 @@ sum(1 for k in oob_trees if vote[k] == "spam") / len(oob_trees)  # → 1.0</code
   <tbody>
     <tr><td>F = 1 or int(log<sub>2</sub> M + 1) inputs per node</td><td>About the square root of the number of inputs for classification</td><td>A middle ground between the paper's two settings that works on most tables</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
     <tr><td>Importance by scrambling inputs in the out-of-bag rows</td><td>Permutation importance on a held-out set, for any model; impurity importance as a quick look</td><td>Impurity importance is biased towards inputs with many distinct values</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
-    <tr><td>Forests versus Adaboost</td><td>Forests versus gradient-boosted trees</td><td>Boosting with shrinkage and subsampling usually edges out forests when tuned; forests need less tuning</td><td><a href="gradient-boosting-machine.html">gradient boosting companion</a></td></tr>
+    <tr><td>Forests versus Adaboost</td><td>Forests versus gradient-boosted trees</td><td>Gradient-boosted trees are the more common winner on tables; forests remain the model that works best with no tuning at all</td><td><a href="gradient-boosting-machine.html">gradient boosting companion</a></td></tr>
     <tr><td>Averaging many randomized models</td><td>The same idea inside neural networks</td><td>Dropout trains an implicit ensemble of thinned networks</td><td><a href="dropout.html">dropout companion</a></td></tr>
   </tbody>
 </table></div>

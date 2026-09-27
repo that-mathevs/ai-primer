@@ -99,7 +99,7 @@
 <p>Learning from examples means finding the rule F that turns inputs x (a house's size) into guesses for the output y (its price) so that, on average over all houses the world could produce, a chosen penalty for bad guesses is as small as possible. The penalty is the <span class="t" data-t="loss function">loss function</span> L(y, F). Pick a different penalty and a different rule is best.</p>
 <h3 class="rung">Tiny example</h3>
 <p>Suppose the rule may only be a single constant guess c for every house. With the squared penalty (y − c)<sup>2</sup>, the best constant for prices 1, 2, 6 and 7 is their average, 4. With the absolute penalty |y − c|, any value between the two middle prices is best, and the <span class="t" data-t="median">median</span> 4 is the usual pick. For these four prices the two agree; §4.2 shows a case where they do not.</p>
-<div class="eq" data-tex="\htmlData{sym=Fstar}{F^*} = \htmlData{sym=argmin}{\arg\min_F}\; \htmlData{sym=Eyx}{E_{y,\mathbf{x}}}\, \htmlData{sym=L}{L}(\htmlData{sym=y}{y}, \htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}})) \qquad (1)" data-fallback="F* = argmin_F E_{y,x} L(y, F(x))   (1)"></div>
+<div class="eq" data-tex="\htmlData{sym=Fstar}{F^*} = \htmlData{sym=argmin}{\arg\min_F}\; \htmlData{sym=Eyx}{E_{y,\mathbf{x}}}\, \htmlData{sym=L}{L}(\htmlData{sym=y}{y}, \htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}})) \quad (1)" data-fallback="F* = argmin_F E_{y,x} L(y, F(x))   (1)"></div>
 <div class="symtable" data-syms="Fstar,argmin,Eyx,L,y,F,x"></div>
 <p class="inwords"><strong>In words:</strong> “the best rule is the one whose average penalty, over every input and output the world could produce, is smallest.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with only constants allowed and the four prices as the whole world, the average squared penalty at c = 4 is (9 + 4 + 4 + 9)/4 = 6.5, lower than at c = 3 (7.5) or c = 5 (7.5). The average absolute penalty at c = 4 is (3 + 2 + 2 + 3)/4 = 2.5.</p>
@@ -112,7 +112,7 @@ def avg_squared(c):
 # the absolute penalty at c = 4
 sum(abs(y_i - 4) for y_i in y) / len(y)  # → 2.5</code></pre>
 <p>The paper then restricts F to an <strong>additive expansion</strong>: a sum of M simple pieces h(x; a<sub>m</sub>), each with its own parameters a<sub>m</sub> and weight β<sub>m</sub>. Neural networks, splines and wavelets all have this shape; the paper's case of interest is where each piece is a small <span class="t" data-t="decision tree">regression tree</span>, whose parameters are its splitting variables, split points and leaf values.</p>
-<div class="eq" data-tex="\htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}}; \{\htmlData{sym=beta}{\beta_m}, \htmlData{sym=am}{\mathbf{a}_m}\}_1^M) = \htmlData{sym=summ}{\sum_{m=1}^{M}} \htmlData{sym=beta}{\beta_m}\, \htmlData{sym=h}{h}(\htmlData{sym=x}{\mathbf{x}}; \htmlData{sym=am}{\mathbf{a}_m}) \qquad (2)" data-fallback="F(x; {β_m, a_m}) = Σ_{m=1}^{M} β_m h(x; a_m)   (2)"></div>
+<div class="eq" data-tex="\htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}}; \{\htmlData{sym=beta}{\beta_m}, \htmlData{sym=am}{\mathbf{a}_m}\}_1^M) = \htmlData{sym=summ}{\sum_{m=1}^{M}} \htmlData{sym=beta}{\beta_m}\, \htmlData{sym=h}{h}(\htmlData{sym=x}{\mathbf{x}}; \htmlData{sym=am}{\mathbf{a}_m}) \quad (2)" data-fallback="F(x; {β_m, a_m}) = Σ_{m=1}^{M} β_m h(x; a_m)   (2)"></div>
 <div class="symtable" data-syms="summ,beta,h,am"></div>
 <p class="inwords"><strong>In words:</strong> “the model is a weighted sum of M simple functions of the input, each shaped by its own parameters.”</p>
 <p class="inwords"><strong>With the numbers:</strong> one stump, h(x) = −2.5 if size ≤ 2.5 and +2.5 otherwise, with weight β = 1, added to a constant 4: F(4) = 4 + 1 × 2.5 = 6.5 and F(1) = 4 − 2.5 = 1.5.</p>
@@ -135,7 +135,7 @@ beta = 1.0
 <p>Instead of turning the knobs of a machine and watching all its outputs move at once, imagine reaching in and moving each output directly. If the machine predicts four house prices, treat those four predictions themselves as the four knobs. The slope of the loss with respect to each prediction says which way that one prediction should move.</p>
 <h3 class="rung">Tiny example</h3>
 <p>Start from F = (4, 4, 4, 4) for the four houses. With the squared loss ½(y − F)<sup>2</sup>, the slope for each house is F − y = (3, 2, −2, −3). Stepping the other way by a full unit moves the predictions to (1, 2, 6, 7): every price hit exactly. That is suspiciously perfect, and useless for a house of size 2.5, which is not one of the four knobs. §3 fixes this.</p>
-<div class="eq" data-tex="\htmlData{sym=fm}{f_m}(\htmlData{sym=x}{\mathbf{x}}) = -\htmlData{sym=rhom}{\rho_m}\, \htmlData{sym=gm}{g_m}(\htmlData{sym=x}{\mathbf{x}}), \qquad \htmlData{sym=gm}{g_m}(\htmlData{sym=x}{\mathbf{x}}) = \htmlData{sym=Ey}{E_y}\!\left[\htmlData{sym=dLdF}{\frac{\partial L(y, F(\mathbf{x}))}{\partial F(\mathbf{x})}} \,\Big|\, \htmlData{sym=x}{\mathbf{x}}\right]_{F = F_{m-1}} \qquad (6, 7)" data-fallback="f_m(x) = −ρ_m g_m(x),  g_m(x) = E_y[∂L(y, F(x))/∂F(x) | x] at F = F_{m−1}   (6, 7)"></div>
+<div class="eq" data-tex="\begin{aligned} &amp;\htmlData{sym=fm}{f_m}(\htmlData{sym=x}{\mathbf{x}}) = -\htmlData{sym=rhom}{\rho_m}\, \htmlData{sym=gm}{g_m}(\htmlData{sym=x}{\mathbf{x}}), \quad (6, 7) \\ &amp;\htmlData{sym=gm}{g_m}(\htmlData{sym=x}{\mathbf{x}}) = \htmlData{sym=Ey}{E_y}\!\left[\htmlData{sym=dLdF}{\frac{\partial L(y, F(\mathbf{x}))}{\partial F(\mathbf{x})}} \,\Big|\, \htmlData{sym=x}{\mathbf{x}}\right]_{F = F_{m-1}} \end{aligned}" data-fallback="f_m(x) = −ρ_m g_m(x),  g_m(x) = E_y[∂L(y, F(x))/∂F(x) | x] at F = F_{m−1}   (6, 7)"></div>
 <div class="symtable" data-syms="fm,rhom,gm,Ey,dLdF"></div>
 <p class="inwords"><strong>In words:</strong> “at every input, the next increment moves the prediction against the average slope of the loss there, by a step size ρ.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for house 4, y = 7 and F<sub>0</sub> = 4, so the slope of ½(7 − F)<sup>2</sup> at F = 4 is 4 − 7 = −3, and with ρ = 1 the increment is +3: the prediction moves from 4 to 7.</p>
@@ -197,7 +197,7 @@ F0 = sum(y) / len(y)
 y_tilde = [y_i - F0 for y_i in y]
 y_tilde  # → [-3.0, -2.0, 2.0, 3.0]</code></pre>
 <p>Line 4 fits the base learner to them by least squares, whatever the loss:</p>
-<div class="eq" data-tex="\htmlData{sym=am}{\mathbf{a}_m} = \htmlData{sym=argminab}{\arg\min_{\mathbf{a}, \beta}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \big[\htmlData{sym=ytilde}{\tilde y_i} - \htmlData{sym=beta}{\beta}\, \htmlData{sym=h}{h}(\mathbf{x}_i; \mathbf{a})\big]^2 \qquad (11)" data-fallback="a_m = argmin_{a, β} Σ_i [ỹ_i − β h(x_i; a)]²   (11)"></div>
+<div class="eq" data-tex="\htmlData{sym=am}{\mathbf{a}_m} = \htmlData{sym=argminab}{\arg\min_{\mathbf{a}, \beta}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \big[\htmlData{sym=ytilde}{\tilde y_i} - \htmlData{sym=beta}{\beta}\, \htmlData{sym=h}{h}(\mathbf{x}_i; \mathbf{a})\big]^2 \quad (11)" data-fallback="a_m = argmin_{a, β} Σ_i [ỹ_i − β h(x_i; a)]²   (11)"></div>
 <div class="symtable" data-syms="argminab,sumi"></div>
 <p class="inwords"><strong>In words:</strong> “choose the tree whose predictions, suitably scaled, come closest to the pseudo-responses in squared distance.”</p>
 <p class="inwords"><strong>With the numbers:</strong> the three possible stumps split after house 1, 2 or 3. Their leftover squared errors on (−3, −2, 2, 3) are 14, 1 and 14, so the split at 2.5 wins, with leaf values −2.5 and +2.5.</p>
@@ -209,7 +209,7 @@ def sse(v):
 # leftover squared error after splitting after house t
 [sse(y_tilde[:t]) + sse(y_tilde[t:]) for t in (1, 2, 3)]  # → [14.0, 1.0, 14.0]</code></pre>
 <p>Line 5 then goes back to the <em>real</em> loss to decide the step size:</p>
-<div class="eq" data-tex="\htmlData{sym=rhom}{\rho_m} = \htmlData{sym=argminrho}{\arg\min_{\rho}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=L}{L}\big(\htmlData{sym=y}{y_i},\, \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)} + \htmlData{sym=rho}{\rho}\, \htmlData{sym=h}{h}(\mathbf{x}_i; \htmlData{sym=am}{\mathbf{a}_m})\big) \qquad (12)" data-fallback="ρ_m = argmin_ρ Σ_i L(y_i, F_{m−1}(x_i) + ρ h(x_i; a_m))   (12)"></div>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=rhom}{\rho_m} = {} &amp; \htmlData{sym=argminrho}{\arg\min_{\rho}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=L}{L}\big(\htmlData{sym=y}{y_i},\, \\ &amp; \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)} + \htmlData{sym=rho}{\rho}\, \htmlData{sym=h}{h}(\mathbf{x}_i; \htmlData{sym=am}{\mathbf{a}_m})\big) \quad (12) \end{aligned}" data-fallback="ρ_m = argmin_ρ Σ_i L(y_i, F_{m−1}(x_i) + ρ h(x_i; a_m))   (12)"></div>
 <div class="symtable" data-syms="argminrho,rho"></div>
 <p class="inwords"><strong>In words:</strong> “slide along the new tree's direction and stop where the actual loss on the training data is lowest.”</p>
 <p class="inwords"><strong>With the numbers:</strong> for squared loss the best ρ is Σ ỹ<sub>i</sub> h<sub>i</sub> / Σ h<sub>i</sub><sup>2</sup> = (7.5 + 5 + 5 + 7.5) / 25 = 1.0.</p>
@@ -265,7 +265,7 @@ sum(a * b for a, b in zip(y_tilde, h)) / sum(b * b for b in h)  # → 1.0</code>
 <p>With the absolute loss |y − F|, the slope is the same size however badly a prediction misses; only its sign matters. So each tree is trained on “too low” or “too high”, never on “by how much”. A wildly wrong label cannot shout louder than any other.</p>
 <h4>Tiny example</h4>
 <p>A typo turns house 4's price from 7 into 70. Least squares starts from the mean, 19.75, and its residuals are −18.75, −17.75, −13.75 and +50.25: the whole next tree bends towards the typo. LAD starts from the median, 4, and its pseudo-responses are −1, −1, +1, +1, exactly what they were before the typo.</p>
-<div class="eq" data-tex="\htmlData{sym=ytilde}{\tilde y_i} = \htmlData{sym=sign}{\operatorname{sign}}\big(\htmlData{sym=y}{y_i} - \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)}\big) \qquad (13)" data-fallback="ỹ_i = sign(y_i − F_{m−1}(x_i))   (13)"></div>
+<div class="eq" data-tex="\htmlData{sym=ytilde}{\tilde y_i} = \htmlData{sym=sign}{\operatorname{sign}}\big(\htmlData{sym=y}{y_i} - \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)}\big) \quad (13)" data-fallback="ỹ_i = sign(y_i − F_{m−1}(x_i))   (13)"></div>
 <div class="symtable" data-syms="sign"></div>
 <p class="inwords"><strong>In words:</strong> “under absolute loss, each example asks only to be moved up or down, never by how much.”</p>
 <p class="inwords"><strong>With the numbers:</strong> prices (1, 2, 6, 70) and F<sub>0</sub> = median = 4: signs of (−3, −2, 2, 66) are (−1, −1, +1, +1).</p>
@@ -289,7 +289,7 @@ F0 = statistics.median(y)
 <p>A tree is not one direction but J separate little ones: one flat value per leaf. So instead of a single step size for the whole tree, give each leaf its own best step. Each leaf becomes a tiny problem: “for the examples that land here, what single number, added to their current predictions, lowers the loss most?”</p>
 <h4>Tiny example</h4>
 <p>For the left leaf (houses 1 and 2, residuals −3 and −2), the best addition under squared loss is their average, −2.5. Under absolute loss it is their median. The tree's structure comes from the least-squares fit of §3; only the leaf values are re-chosen for the real loss.</p>
-<div class="eq" data-tex="\htmlData{sym=gammajm}{\gamma_{jm}} = \htmlData{sym=argmingamma}{\arg\min_{\gamma}} \htmlData{sym=sumleaf}{\sum_{\mathbf{x}_i \in R_{jm}}} \htmlData{sym=L}{L}\big(\htmlData{sym=y}{y_i},\, \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)} + \htmlData{sym=gamma}{\gamma}\big) \qquad (18)" data-fallback="γ_jm = argmin_γ Σ_{x_i ∈ R_jm} L(y_i, F_{m−1}(x_i) + γ)   (18)"></div>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=gammajm}{\gamma_{jm}} = {} &amp; \htmlData{sym=argmingamma}{\arg\min_{\gamma}} \htmlData{sym=sumleaf}{\sum_{\mathbf{x}_i \in R_{jm}}} \\ &amp; \htmlData{sym=L}{L}\big(\htmlData{sym=y}{y_i},\, \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)} + \htmlData{sym=gamma}{\gamma}\big) \quad (18) \end{aligned}" data-fallback="γ_jm = argmin_γ Σ_{x_i ∈ R_jm} L(y_i, F_{m−1}(x_i) + γ)   (18)"></div>
 <div class="symtable" data-syms="gammajm,argmingamma,sumleaf,gamma"></div>
 <p class="inwords"><strong>In words:</strong> “each leaf's value is the constant that, added to the current predictions of the examples in that leaf, minimizes their loss.”</p>
 <p class="inwords"><strong>With the numbers:</strong> left leaf, squared loss: trying γ = −3, −2.5 and −2 gives summed losses 0.5, 0.25 and 0.5 (halved squares), so γ = −2.5.</p>
@@ -301,7 +301,7 @@ def leaf_loss(gamma):
 [leaf_loss(g) for g in (-3.0, -2.5, -2.0)]  # → [0.5, 0.25, 0.5]</code></pre>
 <p>For LAD this gives Algorithm 3 (LAD_TreeBoost): trees are grown on the signs, and each leaf adds the median of its residuals. The paper notes it is highly robust: the trees see only the order of each input, the pseudo-responses take only two values, and the leaf updates are medians.</p>
 <h4>Why it matters</h4>
-<p>Per-leaf steps are what “TreeBoost” means, and every modern library keeps them. XGBoost goes one step further and solves (18) approximately for any loss with a second-order formula; see the <a href="xgboost.html">XGBoost companion</a>.</p>
+<p>Per-leaf steps are what “TreeBoost” means, and XGBoost keeps them. It goes one step further and solves (18) approximately for any loss with a second-order formula; see the <a href="xgboost.html">XGBoost companion</a>.</p>
 </section>
 
 <section id="s4-4">
@@ -310,9 +310,9 @@ def leaf_loss(gamma):
 <p>Squared error is ideal for well-behaved noise but panics at outliers; absolute error is calm about outliers but wastes information on ordinary points. The <span class="t" data-t="huber loss">Huber loss</span> is squared for small misses and absolute for large ones: listen closely to small complaints, and cap the volume of large ones.</p>
 <h4>Tiny example</h4>
 <p>With the typo prices (1, 2, 6, 70), starting from 4, the residuals are −3, −2, 2 and 66. With δ = 5, the first three are small and pass through unchanged; the typo is clipped to 5.</p>
-<div class="eq" data-tex="\htmlData{sym=L}{L}(\htmlData{sym=y}{y}, \htmlData{sym=F}{F}) = \begin{cases} \tfrac{1}{2}(y - F)^2 & |y - F| \le \htmlData{sym=delta}{\delta} \\ \htmlData{sym=delta}{\delta}\,(|y - F| - \htmlData{sym=delta}{\delta}/2) & |y - F| &gt; \htmlData{sym=delta}{\delta} \end{cases} \qquad (19)" data-fallback="L(y, F) = ½(y − F)² if |y − F| ≤ δ, else δ(|y − F| − δ/2)   (19)"></div>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=L}{L}(\htmlData{sym=y}{y}, \htmlData{sym=F}{F}) &amp;= \tfrac{1}{2}(y - F)^2 \ \text{ if } |y - F| \le \htmlData{sym=delta}{\delta} \\ &amp;= \htmlData{sym=delta}{\delta}\,(|y - F| - \htmlData{sym=delta}{\delta}/2) \ \text{ if } |y - F| &gt; \htmlData{sym=delta}{\delta} \end{aligned}" data-fallback="L(y, F) = ½(y − F)² if |y − F| ≤ δ, else δ(|y − F| − δ/2)   (19)"></div>
 <div class="symtable" data-syms="delta"></div>
-<p class="inwords"><strong>In words:</strong> “penalize a miss by half its square while it is within δ, and only in proportion to its size beyond that”; its negative gradient is the residual, clipped to ±δ.</p>
+<p class="inwords"><strong>In words:</strong> “penalize a miss by half its square while it is within δ, and only in proportion to its size beyond that” (equation 19); its negative gradient is the residual, clipped to ±δ.</p>
 <p class="inwords"><strong>With the numbers:</strong> residuals (−3, −2, 2, 66) with δ = 5 give pseudo-responses (−3, −2, 2, 5). The paper sets δ each round to the α-<span class="t" data-t="quantile">quantile</span> of the absolute residuals, with α = 0.9 by default, so the largest 10% are treated as outliers.</p>
 <p class="inwords"><strong>In Python:</strong></p>
 <pre class="in-python"><code>residuals = [-3.0, -2.0, 2.0, 66.0]
@@ -321,7 +321,7 @@ delta = 5.0
 [max(-delta, min(delta, r)) for r in residuals]  # → [-3.0, -2.0, 2.0, 5.0]</code></pre>
 <p>Algorithm 4 (M_TreeBoost) approximates each leaf's value with one step of Huber's iterative method, starting from the leaf's median residual.</p>
 <h4>Why it matters</h4>
-<p>§6.2 finds M_TreeBoost within about 1% of the best method under both perfectly normal noise and extremely heavy-tailed noise. Robust losses of this kind (Huber, quantile, absolute) remain standard options in every boosting library.</p>
+<p>§6.2 finds M_TreeBoost within about 1% of the best method under both perfectly normal noise and extremely heavy-tailed noise. Matching the loss to the noise is still the first modelling choice in boosting, and here it costs nothing but a different pseudo-response.</p>
 </section>
 
 <section id="s4-5">
@@ -330,7 +330,7 @@ delta = 5.0
 <p>For yes/no labels, the model's output F is a score, and the loss punishes confident wrong scores heavily and confident right ones barely at all. The pseudo-response is then “how surprised were we”: large for examples the model gets wrong, near zero for those it already gets right.</p>
 <h4>Tiny example</h4>
 <p>Four emails, labelled y = +1 (spam), +1, +1 and −1. The paper's F is <em>half</em> the <span class="t" data-t="log-odds">log-odds</span>. The starting constant is ½ log(1.5 / 0.5) = ½ log 3 = 0.549, which corresponds to a 75% chance of spam, the base rate. The three spam emails get pseudo-response 0.5 each (a mild “more spam, please”), the one legitimate email −1.5 (a loud “much less”).</p>
-<div class="eq" data-tex="\htmlData{sym=L}{L}(\htmlData{sym=ypm}{y}, \htmlData{sym=F}{F}) = \log\big(1 + e^{-2\htmlData{sym=ypm}{y}\htmlData{sym=F}{F}}\big), \qquad \htmlData{sym=ytilde}{\tilde y_i} = \frac{2\htmlData{sym=ypm}{y_i}}{1 + \exp\big(2\htmlData{sym=ypm}{y_i}\htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)}\big)} \qquad (22)" data-fallback="L(y, F) = log(1 + e^(−2yF)),   ỹ_i = 2y_i / (1 + exp(2 y_i F_{m−1}(x_i)))   (22)"></div>
+<div class="eq" data-tex="\begin{aligned} &amp;\htmlData{sym=L}{L}(\htmlData{sym=ypm}{y}, \htmlData{sym=F}{F}) = \log\big(1 + e^{-2\htmlData{sym=ypm}{y}\htmlData{sym=F}{F}}\big), \\ &amp;\htmlData{sym=ytilde}{\tilde y_i} = \frac{2\htmlData{sym=ypm}{y_i}}{1 + \exp\big(2\htmlData{sym=ypm}{y_i}\htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)}\big)} \quad (22) \end{aligned}" data-fallback="L(y, F) = log(1 + e^(−2yF)),   ỹ_i = 2y_i / (1 + exp(2 y_i F_{m−1}(x_i)))   (22)"></div>
 <div class="symtable" data-syms="ypm"></div>
 <p class="inwords"><strong>In words:</strong> “the loss is the logistic penalty on the score times the label; its negative gradient is twice the label, shrunk by how confidently right the model already is.”</p>
 <p class="inwords"><strong>With the numbers:</strong> with F<sub>0</sub> = 0.549, for y = +1: 2 / (1 + e<sup>1.099</sup>) = 2 / 4 = 0.5. For y = −1: −2 / (1 + e<sup>−1.099</sup>) = −2 / 1.333 = −1.5. (That is 2(y′ − p) with y′ the 0/1 label and p = 0.75: the lesson's y − p, doubled because F is half the log-odds.)</p>
@@ -360,7 +360,7 @@ round(newton_step([-1.5]), 3)  # → -2.0
 [round(1 / (1 + math.exp(-2 * (F0 + g))), 3) for g in (newton_step([0.5, 0.5]), newton_step([-1.5]))]  # → [0.919, 0.052]</code></pre>
 <h4>4.5.1 Influence trimming</h4>
 <p>The curvature |ỹ<sub>i</sub>|(2 − |ỹ<sub>i</sub>|) doubles as a measure of how much example i can still affect the fit. An email the model already scores confidently right has a pseudo-response near 0, and so a weight near 0. The paper drops, each round, the lowest-weight examples that together carry only a fraction α (0.05 to 0.2) of the total weight. It reports that 90% to 95% of the examples were often dropped without hurting accuracy, cutting computation 10 to 20 times.</p>
-<div class="eq" data-tex="\htmlData{sym=wi}{w_i} = |\htmlData{sym=ytilde}{\tilde y_i}|\,(2 - |\htmlData{sym=ytilde}{\tilde y_i}|) \qquad (26)" data-fallback="w_i = |ỹ_i| (2 − |ỹ_i|)   (26)"></div>
+<div class="eq" data-tex="\htmlData{sym=wi}{w_i} = |\htmlData{sym=ytilde}{\tilde y_i}|\,(2 - |\htmlData{sym=ytilde}{\tilde y_i}|) \quad (26)" data-fallback="w_i = |ỹ_i| (2 − |ỹ_i|)   (26)"></div>
 <div class="symtable" data-syms="wi"></div>
 <p class="inwords"><strong>In words:</strong> “an example's influence is the curvature of its loss: large while the model is unsure about it, near zero once it is confidently right.”</p>
 <p class="inwords"><strong>With the numbers:</strong> at the start every email has |ỹ| of 0.5 or 1.5 and weight 0.75. Much later, a spam email the model scores confidently right might have ỹ = 0.02 and weight 0.0396: nearly nothing to learn from it this round.</p>
@@ -377,7 +377,7 @@ round(newton_step([-1.5]), 3)  # → -2.0
 <p>With K classes, the model keeps K scores per input, turns them into probabilities with a <span class="t" data-t="softmax">softmax</span>, and grows K trees per round, one per class, each pushing its class's score up where that class is under-predicted.</p>
 <h4>Tiny example</h4>
 <p>Three classes, all scores 0 at the start, so every class gets probability 1/3. For an example whose true class is the first, the pseudo-responses are (1 − 1/3, 0 − 1/3, 0 − 1/3) = (0.667, −0.333, −0.333).</p>
-<div class="eq" data-tex="\htmlData{sym=ytildeik}{\tilde y_{ik}} = \htmlData{sym=yik}{y_{ik}} - \htmlData{sym=pk}{p_{k,m-1}(\mathbf{x}_i)} \qquad (31)" data-fallback="ỹ_ik = y_ik − p_{k,m−1}(x_i)   (31)"></div>
+<div class="eq" data-tex="\htmlData{sym=ytildeik}{\tilde y_{ik}} = \htmlData{sym=yik}{y_{ik}} - \htmlData{sym=pk}{p_{k,m-1}(\mathbf{x}_i)} \quad (31)" data-fallback="ỹ_ik = y_ik − p_{k,m−1}(x_i)   (31)"></div>
 <div class="symtable" data-syms="ytildeik,yik,pk"></div>
 <p class="inwords"><strong>In words:</strong> “for each class, the next tree's target is the gap between the true 0/1 label and the probability the model currently gives that class.”</p>
 <p class="inwords"><strong>With the numbers:</strong> y = (1, 0, 0) and p = (1/3, 1/3, 1/3) give (0.667, −0.333, −0.333).</p>
@@ -391,7 +391,7 @@ y = [1, 0, 0]
 [round(y_k - p_k, 3) for y_k, p_k in zip(y, p)]  # → [0.667, -0.333, -0.333]</code></pre>
 <p>Each leaf again takes one Newton step (equation 32, with a factor (K − 1)/K). The paper compares this L<sub>K</sub>_TreeBoost with LogitBoost: the leaf updates agree, and they differ only in how the trees are split. It also finds its version more numerically stable, because LogitBoost divides by p(1 − p), which is near zero for any confidently classified example.</p>
 <h4>Why it matters</h4>
-<p>One tree per class per round is still how gradient-boosting libraries handle multi-class problems, and the target y − p is the same gradient of <span class="t" data-t="cross-entropy">cross-entropy</span> that trains the last layer of a neural classifier (see the <a data-lesson="primer/ml/losses.html">losses lesson</a>).</p>
+<p>The target y − p is the same gradient of <span class="t" data-t="cross-entropy">cross-entropy</span> that trains the last layer of a neural classifier (see the <a data-lesson="primer/ml/losses.html">losses lesson</a>).</p>
 </section>
 </section>
 
@@ -402,7 +402,7 @@ y = [1, 0, 0]
 <p>Every tree is fitted to the training data, noise included. Taking each tree's full correction lets the first few trees commit hard to whatever they saw. Taking only a fraction of each correction means many trees must agree before the model moves far, which averages some of the noise away. The price is more trees.</p>
 <h3 class="rung">Tiny example</h3>
 <p>With a learning rate ν = 0.1, house 4 moves from 4 to 4 + 0.1 × 2.5 = 4.25 after the first tree, instead of all the way to 6.5. The remaining gap is left for later trees, which will see a slightly different picture.</p>
-<div class="eq" data-tex="\htmlData{sym=Fm}{F_m}(\htmlData{sym=x}{\mathbf{x}}) = \htmlData{sym=Fm1}{F_{m-1}}(\htmlData{sym=x}{\mathbf{x}}) + \htmlData{sym=nu}{\nu} \cdot \htmlData{sym=rhom}{\rho_m}\, \htmlData{sym=h}{h}(\htmlData{sym=x}{\mathbf{x}}; \htmlData{sym=am}{\mathbf{a}_m}), \qquad 0 &lt; \htmlData{sym=nu}{\nu} \le 1 \qquad (36)" data-fallback="F_m(x) = F_{m−1}(x) + ν · ρ_m h(x; a_m),   0 &lt; ν ≤ 1   (36)"></div>
+<div class="eq" data-tex="\begin{aligned} &amp;\htmlData{sym=Fm}{F_m}(\htmlData{sym=x}{\mathbf{x}}) = \htmlData{sym=Fm1}{F_{m-1}}(\htmlData{sym=x}{\mathbf{x}}) + \htmlData{sym=nu}{\nu} \cdot \htmlData{sym=rhom}{\rho_m}\, \htmlData{sym=h}{h}(\htmlData{sym=x}{\mathbf{x}}; \htmlData{sym=am}{\mathbf{a}_m}), \\ &amp;0 &lt; \htmlData{sym=nu}{\nu} \le 1 \quad (36) \end{aligned}" data-fallback="F_m(x) = F_{m−1}(x) + ν · ρ_m h(x; a_m),   0 &lt; ν ≤ 1   (36)"></div>
 <div class="symtable" data-syms="Fm,nu"></div>
 <p class="inwords"><strong>In words:</strong> “each round adds only a fraction ν of the best step the new tree offers.”</p>
 <p class="inwords"><strong>With the numbers:</strong> house 4: 4 + 0.1 × 1.0 × 2.5 = 4.25.</p>
@@ -430,8 +430,8 @@ round(F_prev + nu * rho * h, 2)  # → 4.25</code></pre>
 </div>
 <p class="reading"><strong>Reading it:</strong> in the picture, dots are training points and the solid line is the model after M trees; it is always a staircase, because every tree adds flat steps. The chart below plots the fit's distance from the true curve against the number of trees, so its lowest point is the best M for your settings. With least squares, the three hollow outliers pull a bump into the fit near them; switch to least absolute deviation or Huber and the bump mostly disappears, because those losses cap how loudly one point can pull. Now drag ν: at 1.0 the curve bottoms out within a few trees and then worsens as trees chase noise; at 0.1 it falls slowly, reaches a lower minimum, and stays near it much longer. That is the paper's ν-M trade-off in miniature.</p>
 <h3 class="rung">What the paper measured</h3>
-<p>The paper boosts 11-leaf trees on 5,000 simulated examples and scores each model with an error measure relative to the best constant:</p>
-<div class="eq" data-tex="\htmlData{sym=A}{A}(\hat F_M) = \frac{\htmlData{sym=Ex}{E_{\mathbf{x}}}\,|\htmlData{sym=Fstar}{F^*}(\mathbf{x}) - \htmlData{sym=Fhat}{\hat F_M}(\mathbf{x})|}{\htmlData{sym=Ex}{E_{\mathbf{x}}}\,|\htmlData{sym=Fstar}{F^*}(\mathbf{x}) - \operatorname{median}_{\mathbf{x}} \htmlData{sym=Fstar}{F^*}(\mathbf{x})|} \qquad (37)" data-fallback="A(F̂_M) = E_x |F*(x) − F̂_M(x)| / E_x |F*(x) − median_x F*(x)|   (37)"></div>
+<p>The paper boosts 11-leaf trees on 5,000 simulated examples and scores each model with an error measure relative to the best constant, its equation (37):</p>
+<div class="eq" data-tex="\htmlData{sym=A}{A}(\hat F_M) = \frac{\htmlData{sym=Ex}{E_{\mathbf{x}}}\,|\htmlData{sym=Fstar}{F^*}(\mathbf{x}) - \htmlData{sym=Fhat}{\hat F_M}(\mathbf{x})|}{\htmlData{sym=Ex}{E_{\mathbf{x}}}\,|\htmlData{sym=Fstar}{F^*}(\mathbf{x}) - \operatorname{median}_{\mathbf{x}} \htmlData{sym=Fstar}{F^*}(\mathbf{x})|}" data-fallback="A(F̂_M) = E_x |F*(x) − F̂_M(x)| / E_x |F*(x) − median_x F*(x)|   (37)"></div>
 <div class="symtable" data-syms="A,Ex,Fhat"></div>
 <p class="inwords"><strong>In words:</strong> “the model's average distance from the true function, as a fraction of the distance a constant guess (the median) would have.” 0 is perfect; 1 is no better than a constant.</p>
 <p class="inwords"><strong>With the numbers:</strong> treat the four prices as the true function and the one-round fit (2.75, 2.75, 5.25, 5.25) as F̂: the top is (1.75 + 0.75 + 0.75 + 1.75)/4 = 1.25, the bottom (3 + 2 + 2 + 3)/4 = 2.5, so A = 0.5: the model has closed half the gap a constant leaves.</p>
@@ -482,7 +482,7 @@ top, bottom, top / bottom  # → (1.25, 2.5, 0.5)</code></pre>
 <p>A house's price may depend on its size and its location separately (each adds its own amount), or on how they combine (a big house matters more downtown). A tree with J leaves can express combinations of at most J − 1 inputs. Stumps (J = 2) can only add up separate effects; bigger trees can capture combinations.</p>
 <h3 class="rung">Tiny example</h3>
 <p>Write any function as a sum of parts that each depend on one input, parts that depend on pairs, parts on triples, and so on:</p>
-<div class="eq" data-tex="\htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}}) = \sum_j \htmlData{sym=fj}{f_j(x_j)} + \sum_{j,k} \htmlData{sym=fjk}{f_{jk}(x_j, x_k)} + \sum_{j,k,l} f_{jkl}(x_j, x_k, x_l) + \cdots \qquad (42)" data-fallback="F(x) = Σ_j f_j(x_j) + Σ_{j,k} f_jk(x_j, x_k) + Σ_{j,k,l} f_jkl(x_j, x_k, x_l) + …   (42)"></div>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}}) = {} &amp; \sum_j \htmlData{sym=fj}{f_j(x_j)} + \sum_{j,k} \htmlData{sym=fjk}{f_{jk}(x_j, x_k)} \\ &amp; + \sum_{j,k,l} f_{jkl}(x_j, x_k, x_l) + \cdots \quad (42) \end{aligned}" data-fallback="F(x) = Σ_j f_j(x_j) + Σ_{j,k} f_jk(x_j, x_k) + Σ_{j,k,l} f_jkl(x_j, x_k, x_l) + …   (42)"></div>
 <div class="symtable" data-syms="fj,fjk"></div>
 <p class="inwords"><strong>In words:</strong> “a function is its one-input effects, plus its two-input <span class="t" data-t="interaction effect">interactions</span>, plus higher ones”; a tree with J leaves reaches at most order min(J − 1, n).</p>
 <p class="inwords"><strong>With the numbers:</strong> the paper's simulations have n = 10 inputs. Trees with J = 2, 3, 6, 11 and 21 leaves reach interactions of order 1, 2, 5, 10 and 10.</p>
@@ -505,7 +505,7 @@ top, bottom, top / bottom  # → (1.25, 2.5, 0.5)</code></pre>
 <h3>8.1 Relative importance of input variables <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
 <h4>Tiny example</h4>
 <p>Each split in a tree removes some squared error. Credit that improvement to the input the split used, add up per input, and average over all trees. In the four-house stump, the split at size 2.5 removed 25 of the 26 units of squared error in the residuals.</p>
-<div class="eq" data-tex="\htmlData{sym=isq}{i^2}(R_l, R_r) = \frac{\htmlData{sym=wlwr}{w_l w_r}}{\htmlData{sym=wlwr}{w_l + w_r}}\,(\htmlData{sym=ylyr}{\bar y_l - \bar y_r})^2 \qquad (35)" data-fallback="i²(R_l, R_r) = w_l w_r / (w_l + w_r) · (ȳ_l − ȳ_r)²   (35)"></div>
+<div class="eq" data-tex="\htmlData{sym=isq}{i^2}(R_l, R_r) = \frac{\htmlData{sym=wlwr}{w_l w_r}}{\htmlData{sym=wlwr}{w_l + w_r}}\,(\htmlData{sym=ylyr}{\bar y_l - \bar y_r})^2 \quad (35)" data-fallback="i²(R_l, R_r) = w_l w_r / (w_l + w_r) · (ȳ_l − ȳ_r)²   (35)"></div>
 <div class="symtable" data-syms="isq,wlwr,ylyr"></div>
 <p class="inwords"><strong>In words:</strong> “the improvement from a split is the gap between the two sides' averages, squared, weighted by how balanced the split is.”</p>
 <p class="inwords"><strong>With the numbers:</strong> two houses a side (w<sub>l</sub> = w<sub>r</sub> = 2), averages −2.5 and 2.5: (2 × 2)/(2 + 2) × 5<sup>2</sup> = 25.</p>
@@ -513,7 +513,7 @@ top, bottom, top / bottom  # → (1.25, 2.5, 0.5)</code></pre>
 <pre class="in-python"><code>w_l, w_r, y_l, y_r = 2, 2, -2.5, 2.5
 # i² = w_l w_r / (w_l + w_r) · (ȳ_l − ȳ_r)²
 w_l * w_r / (w_l + w_r) * (y_l - y_r) ** 2  # → 25.0</code></pre>
-<div class="eq" data-tex="\htmlData{sym=Ijsq}{\hat I_j^2}(\htmlData{sym=T}{T}) = \htmlData{sym=sumt}{\sum_{t=1}^{J-1}} \htmlData{sym=isqt}{\hat\imath_t^2}\, \htmlData{sym=ind}{\mathbf{1}}(\htmlData{sym=vt}{v_t} = j), \qquad \hat I_j^2 = \frac{1}{M}\sum_{m=1}^{M} \hat I_j^2(T_m) \qquad (44, 45)" data-fallback="Î_j²(T) = Σ_{t=1}^{J−1} î_t² 1(v_t = j),   Î_j² = (1/M) Σ_m Î_j²(T_m)   (44, 45)"></div>
+<div class="eq" data-tex="\begin{aligned} &amp;\htmlData{sym=Ijsq}{\hat I_j^2}(\htmlData{sym=T}{T}) = \htmlData{sym=sumt}{\sum_{t=1}^{J-1}} \htmlData{sym=isqt}{\hat\imath_t^2}\, \htmlData{sym=ind}{\mathbf{1}}(\htmlData{sym=vt}{v_t} = j), \\ &amp;\hat I_j^2 = \frac{1}{M}\sum_{m=1}^{M} \hat I_j^2(T_m) \quad (44, 45) \end{aligned}" data-fallback="Î_j²(T) = Σ_{t=1}^{J−1} î_t² 1(v_t = j),   Î_j² = (1/M) Σ_m Î_j²(T_m)   (44, 45)"></div>
 <div class="symtable" data-syms="Ijsq,T,sumt,isqt,ind,vt"></div>
 <p class="inwords"><strong>In words:</strong> “an input's squared importance is the total improvement of every split that used it, averaged over all the trees”; take the square root, and scale so the top input scores 100.</p>
 <p class="inwords"><strong>With the numbers:</strong> a tree splits on x<sub>1</sub> twice (improvements 4.0 and 0.5) and on x<sub>2</sub> once (1.0). Then Î<sub>1</sub> = √4.5 = 2.12 and Î<sub>2</sub> = 1.0, so on the 0 to 100 scale x<sub>1</sub> scores 100 and x<sub>2</sub> scores 47.1.</p>
@@ -537,7 +537,7 @@ round(100 * I[2] / I[1], 1)  # → 47.1</code></pre>
 <p>To see how a model's predicted price depends on size alone, take every real house in the data, pretend each had this particular size, ask the model, and average the answers. Do that for each size and plot the averages: a <span class="t" data-t="partial dependence plot">partial dependence plot</span>.</p>
 <h4>Tiny example</h4>
 <p>A model F̂(x<sub>1</sub>, x<sub>2</sub>) = 2x<sub>1</sub> + x<sub>1</sub>x<sub>2</sub>, and three rows whose x<sub>2</sub> values are 0, 1 and 2. At x<sub>1</sub> = 1 the model gives 2, 3 and 4 for the three rows, averaging 3. At x<sub>1</sub> = 2 it gives 4, 6 and 8, averaging 6.</p>
-<div class="eq" data-tex="\htmlData{sym=Fbar}{\bar F_l}(\htmlData{sym=zl}{\mathbf{z}_l}) = \frac{1}{\htmlData{sym=N}{N}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=Fhat}{\hat F}(\htmlData{sym=zl}{\mathbf{z}_l}, \htmlData{sym=zil}{\mathbf{z}_{i, \backslash l}}) \qquad (53)" data-fallback="F̄_l(z_l) = (1/N) Σ_i F̂(z_l, z_{i,\l})   (53)"></div>
+<div class="eq" data-tex="\htmlData{sym=Fbar}{\bar F_l}(\htmlData{sym=zl}{\mathbf{z}_l}) = \frac{1}{\htmlData{sym=N}{N}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=Fhat}{\hat F}(\htmlData{sym=zl}{\mathbf{z}_l}, \htmlData{sym=zil}{\mathbf{z}_{i, \backslash l}}) \quad (53)" data-fallback="F̄_l(z_l) = (1/N) Σ_i F̂(z_l, z_{i,\l})   (53)"></div>
 <div class="symtable" data-syms="Fbar,zl,zil"></div>
 <p class="inwords"><strong>In words:</strong> “the partial dependence on the chosen inputs is the model's prediction with those inputs set to z, averaged over the other inputs as they occur in the data.”</p>
 <p class="inwords"><strong>With the numbers:</strong> F̄(1) = (2 + 3 + 4)/3 = 3.0 and F̄(2) = (4 + 6 + 8)/3 = 6.0.</p>
@@ -603,7 +603,7 @@ x2_rows = [0, 1, 2]
     <tr><td>Newton leaf values only for the logistic losses</td><td>A second-order (Newton) step for every loss, with penalties on leaf values and tree size in the split score itself</td><td>One formula for any twice-differentiable loss, and built-in regularization</td><td><a href="xgboost.html">XGBoost companion</a></td></tr>
     <tr><td>Exact split search over sorted inputs</td><td>Histogram or quantile-sketch split search</td><td>Scales to billions of rows</td><td><a href="xgboost.html">XGBoost companion</a></td></tr>
     <tr><td>Influence trimming of confident examples</td><td>Random row and column subsampling per tree</td><td>Faster, and decorrelates the trees as in a random forest</td><td><a href="random-forests.html">random forests companion</a></td></tr>
-    <tr><td>Choose M on a left-out test set</td><td>Early stopping on a validation set, built into the training call</td><td>Same idea, automated</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
+    <tr><td>Choose M on a left-out test set</td><td>Early stopping on a validation set</td><td>Same idea: stop adding trees when held-out error stops falling</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
   </tbody>
 </table></div>
 </section>
