@@ -1449,6 +1449,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/operations.html",
   "term": "index alias"
  },
+ "induction head": {
+  "def": "A pattern-completion mechanism: having seen A followed by B earlier in the text, predict B the next time A appears. It is thought to underlie much of in-context learning.",
+  "lesson": null,
+  "term": "induction head"
+ },
  "inertia": {
   "def": "The total squared distance from each point to its cluster's center: the quantity k-means minimizes.",
   "lesson": "primer/ml/embeddings/clustering.html",
@@ -1713,6 +1718,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The idea that features are directions, readable with a dot product.",
   "lesson": "primer/ml/interpretability.html",
   "term": "linear representation hypothesis"
+ },
+ "linear time invariance": {
+  "def": "A sequence model whose update rule is the same at every step, whatever the input; such a model can be computed as one convolution.",
+  "lesson": "primer/ml/efficient_architectures.html",
+  "term": "linear time invariance"
  },
  "llm": {
   "def": "Large language model: a transformer trained to predict the next token, then tuned to follow instructions.",
@@ -3174,6 +3184,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/word2vec.html",
   "term": "SVD"
  },
+ "swiglu": {
+  "def": "A gated feed-forward layer: one projection, passed through the smooth SiLU activation, multiplies a second projection number by number before the output projection.",
+  "lesson": "primer/ml/transformer.html",
+  "term": "swiglu"
+ },
  "sycophancy": {
   "def": "A model changing its answer to agree with a view the user states.",
   "lesson": "primer/ml/alignment.html",
@@ -3268,6 +3283,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Choosing a similarity cut-off by measuring precision and recall on labeled pairs for one specific model.",
   "lesson": "primer/ml/embeddings/similarity.html",
   "term": "threshold calibration"
+ },
+ "throughput": {
+  "def": "Work finished per second, such as tokens generated per second across all requests; it rises with batch size, while latency is the wait for one request.",
+  "lesson": "primer/ml/inference.html",
+  "term": "throughput"
  },
  "tiling": {
   "def": "Loading a block of data into fast memory once and doing all its work before evicting it.",
@@ -3588,6 +3608,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Sharding optimizer state, then gradients, then weights across data-parallel GPUs.",
   "lesson": "primer/ml/pretraining.html",
   "term": "zero"
+ },
+ "zero-order hold": {
+  "def": "A discretization rule that assumes the input stays constant for the whole step; it gives the keep factor e^(ΔA) of a state-space model.",
+  "lesson": "primer/ml/efficient_architectures.html",
+  "term": "zero-order hold"
  },
  "zero-shot": {
   "def": "Doing a task with no task-specific training examples.",
