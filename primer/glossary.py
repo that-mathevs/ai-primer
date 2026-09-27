@@ -684,7 +684,6 @@ GLOSSARY: dict[str, Entry] = {
     'inception score': _E('A score for generated images from a pretrained image classifier: high when each image is confidently one class and the images spread over many classes. Higher is better; it never looks at real images.', 'primer.ml.generative.gans'),
     'inductive bias': _E("The assumptions built into a model before it sees any data, such as a convolution's belief that nearby pixels matter most. Good assumptions help with little data; with enough data a model can learn them instead.", 'primer.ml.cnn_rnn'),
     'importance sampling': _E('Estimating an average under one distribution from samples drawn under another, by weighting each sample by the ratio of its two probabilities.', 'primer.ml.reinforcement'),
-    'inpainting': _E('Filling a masked or missing region of an image with new content that fits the rest of the picture.'),
     'inpainting': _E('Filling in a missing or masked part of an image so that it fits the rest; a generative model does it by sampling only the unknown pixels.', None),
     'information gain': _E('How much a split lowers entropy; the tree picks the split that lowers it most.', 'primer.ml.classical'),
     'induction head': _E('A pattern-completion mechanism: having seen A followed by B earlier in the text, predict B the next time A appears. It is thought to underlie much of in-context learning.', None),
