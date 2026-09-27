@@ -1153,7 +1153,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.generative.diffusion"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "ddim",
@@ -1516,7 +1516,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.generative.autoencoders"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "stochastic-backpropagation",

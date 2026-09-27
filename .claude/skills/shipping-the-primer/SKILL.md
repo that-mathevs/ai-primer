@@ -17,10 +17,13 @@ git merge --no-ff <branch> -m "Merge <what it adds>"
 
 Conflicts come from shared files several branches extend at once:
 
-- [`primer/glossary.py`](../../../primer/glossary.py): keep both sides' entries. If both added the same
-  term, keep the clearer definition, once.
-- [`docs/papers/CATALOG.md`](../../../docs/papers/CATALOG.md) and a lesson's `## The papers behind this lesson`:
-  keep both sides' rows and links.
+- [`primer/glossary.py`](../../../primer/glossary.py) merges as a union (see
+  [`.gitattributes`](../../../.gitattributes)), so both sides' new terms stay.
+  If both added the same term, [`tests/test_glossary.py`](../../../tests/test_glossary.py) fails on it: keep the
+  clearer definition, once.
+- Generated files ([`docs/papers/assets/glossary.js`](../../../docs/papers/assets/glossary.js), `catalog.js`): take
+  either side, then `make docs` rewrites them from their sources.
+- A lesson's `## The papers behind this lesson`: keep both sides' links.
 
 Run `make test` after each merge, before the next one.
 

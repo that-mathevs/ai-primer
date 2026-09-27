@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Denoising Diffusion Probabilistic Models, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Ho, Jain and Abbeel (2020), the paper that made diffusion models generate high-quality images by training a network to guess the noise.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="ddpm">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background</a></li>
+      <li><a href="#s3">3 Diffusion models and denoising autoencoders</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Forward process and L<sub>T</sub></a></li>
+          <li><a href="#s3-2">3.2 Reverse process: guess the noise</a></li>
+          <li><a href="#s3-3">3.3 Data scaling and L<sub>0</sub></a></li>
+          <li><a href="#s3-4">3.4 The simplified objective</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Sample quality</a></li>
+          <li><a href="#s4-2">4.2 Ablation: what to predict</a></li>
+          <li><a href="#s4-3">4.3 Progressive coding</a></li>
+          <li><a href="#s4-4">4.4 Interpolation</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Related work</a></li>
+      <li><a href="#s6">6 Conclusion and broader impact</a></li>
+      <li><a href="#today">What changed since 2020</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Denoising Diffusion Probabilistic Models, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Ho, Jain and Abbeel (2020), the paper that showed diffusion models can generate high-quality images, trained by nothing more than guessing the noise that was added to a picture.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2006.11239">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2006.11239">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2006.11239">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, so its tables are not reproduced: a few selected rows appear in this page's own tables, each attributed, and its figures are redrawn from scratch. Worked numbers come from a two-step toy chain built on this page, not from the paper, unless a sentence says otherwise. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols.</li>
+  <li>The diagrams are live: hover or tap any part to see what it does. The charts read out their values as you hover or use the arrow keys.</li>
+</ul>
+<p>Each idea is explained in the same order: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>. Most of the math is checked on one tiny chain:</p>
+<div class="play">
+  <p style="margin:0"><strong>The two-step toy chain.</strong> One pixel with clean value <strong>x<sub>0</sub> = 2.0</strong>. Step 1 mixes in a share β<sub>1</sub> = 0.1 of noise, step 2 a share β<sub>2</sub> = 0.2. The noise draws are ε<sub>1</sub> = 0.5 and ε<sub>2</sub> = −1.0, so the pixel goes 2.0 → <strong>2.0555</strong> → <strong>1.3913</strong>. The paper uses the same arithmetic with 1,000 steps and whole images. The <a class="lesson" data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> builds all of it from scratch in NumPy, on dots in a plane instead of images.</p>
+</div>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We present high quality image synthesis results using diffusion probabilistic models, a class of latent variable models inspired by considerations from nonequilibrium thermodynamics.”<cite>Ho, Jain and Abbeel (2020), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2006.11239">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A sculptor who cannot carve a horse in one go can still improve a rough horse a little. Chain that modest skill a thousand times, starting from a shapeless block, and a horse comes out. A <span class="t" data-t="diffusion model">diffusion model</span> is that sculptor: it only ever learns to remove a little noise, and the practice material is free, because you can add noise to any real picture yourself and know the right answer.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Diffusion models, proposed in 2015 but not yet shown to produce good images, can: on unconditional CIFAR10 (small 32 × 32 photos), an <span class="t" data-tip-title="Inception score" data-tip="A score for generated images based on how confidently, and how variously, a pretrained image classifier labels them. Higher is better. It never looks at real images, so it is usually reported next to FID.">Inception score</span> of 9.46 and a state-of-the-art <span class="t" data-t="fid">FID</span> of 3.17.</li>
+  <li>The best results come from a <em>weighted</em> version of the model's training bound, found through a new link to <span class="t" data-t="denoising score matching">denoising score matching</span> and <span class="t" data-t="langevin dynamics">Langevin dynamics</span>.</li>
+  <li>The sampler can be read as a progressive, lossy decompression, a generalisation of <span class="t" data-t="autoregressive generation">autoregressive decoding</span>.</li>
+  <li>On 256 × 256 LSUN images, sample quality similar to ProgressiveGAN.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>This paper's training loop, “noise a real image, ask a network for the noise, penalise the squared error”, is the loop inside Stable Diffusion's first versions and a long line of image, video and audio generators. Later work changed the sampler, the schedule and the network, but the idea started here.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S1">original</a></span></h2>
+<blockquote class="quote">“A diffusion probabilistic model (which we will call a ‘diffusion model’ for brevity) is a parameterized Markov chain trained using variational inference to produce samples matching the data after finite time.”<cite>Ho, Jain and Abbeel (2020), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Think of an old television losing its signal, one notch of static at a time, until only snow is left. That fixed, unlearned fading is the <span class="t" data-t="forward process">forward process</span>. The model learns to run the same road backwards, from snow to a picture: the <span class="t" data-t="reverse process">reverse process</span>. Both are <span class="t" data-t="markov chain">Markov chains</span>: each step looks only at the step before.</p>
+<h3 class="rung">Tiny example</h3>
+<p>In the toy chain, the forward process takes 2.0 to 2.0555 to 1.3913; each step used only the value just before it. The reverse process must go from 1.3913 back towards 2.0, one step at a time, without being told the noise.</p>
+<h3 class="rung">The paper's three findings</h3>
+<ul>
+  <li>Diffusion models <strong>can</strong> generate high-quality samples, sometimes better than other model families.</li>
+  <li>A particular way of setting up the network (predict the noise) is equivalent to <strong>denoising score matching</strong> over many noise levels when training, and to <strong>annealed Langevin dynamics</strong> when sampling. That parameterization gave the best samples.</li>
+  <li>Their log-likelihoods are <strong>not</strong> competitive: most of the bits go on details the eye cannot see, which the paper frames as <span class="t" data-tip-title="Lossy compression" data-tip="Compression that throws away detail to save space, like JPEG. Rate is how many bits you spend; distortion is how far the rebuilt picture is from the original.">lossy compression</span>.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>A generator trained by plain <span class="t" data-tip-title="Regression" data-tip="Training a model to predict numbers, graded by how far off they are (here, the squared error). The steadiest kind of training there is: no opponent, no moving target.">regression</span>, with no opponent to balance as in a <span class="t" data-t="gan">GAN</span>, turned out to beat GANs on image quality. That stability is much of why diffusion took over; the <a data-lesson="primer/ml/generative/gans.html">GANs lesson</a> shows the balancing act it avoided.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A diffusion model is a <span class="t" data-t="variational autoencoder">VAE</span> stretched into a long chain. In a VAE, an encoder turns a picture into a fuzzy code and a decoder turns it back. Here the “encoder” is fixed arithmetic (add a little noise, a thousand times) and the “code” is pure noise of the same size as the picture. Only the decoder, the reverse chain, is learned. That makes the <span class="t" data-t="evidence lower bound">ELBO</span> of the <a href="auto-encoding-variational-bayes.html">VAE paper</a> the natural training objective.</p>
+<figure class="ix" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 450" role="img" aria-label="The directed graphical model: a chain from x_T at the top down to x_0, with learned reverse steps going down and fixed forward steps going up">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker>
+    </defs>
+    <path class="wire" d="M60,62 V86" marker-end="url(#arr)"/>
+    <path class="wire" d="M60,112 V156" marker-end="url(#arr)"/>
+    <path class="wire" d="M60,202 V256" marker-end="url(#arr)"/>
+    <path class="wire" d="M60,302 V326" marker-end="url(#arr)"/>
+    <path class="wire" d="M60,352 V396" marker-end="url(#arr)"/>
+    <path class="wire" d="M80,272 C114,252 114,208 82,190" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <path class="wire" d="M130,74 H66"/>
+    <path class="wire" d="M130,230 H106"/>
+    <g class="blk pe" data-block="xT"><circle cx="60" cy="40" r="22"/><text x="60" y="45" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">T</tspan></text></g>
+    <g class="blk plain" data-block="dots"><rect x="35" y="88" width="50" height="24" rx="6"/><text x="60" y="105" text-anchor="middle">···</text></g>
+    <g class="blk pe" data-block="xt"><circle cx="60" cy="180" r="22"/><text x="60" y="185" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">t</tspan></text></g>
+    <g class="blk pe" data-block="xt1"><circle cx="60" cy="280" r="22"/><text x="60" y="285" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">t−1</tspan></text></g>
+    <g class="blk plain" data-block="dots"><rect x="35" y="328" width="50" height="24" rx="6"/><text x="60" y="345" text-anchor="middle">···</text></g>
+    <g class="blk pe" data-block="x0"><circle cx="60" cy="420" r="22" style="fill:var(--ff)"/><text x="60" y="425" text-anchor="middle" style="font-size:15px">x<tspan dy="4" font-size="11">0</tspan></text></g>
+    <g class="blk lin" data-block="parrow"><rect x="130" y="58" width="166" height="32" rx="6"/><text x="213" y="72" text-anchor="middle">learned step down</text><text x="213" y="85" text-anchor="middle" class="lbl">p_θ(x_t−1 | x_t)</text></g>
+    <g class="blk plain" data-block="qarrow"><rect x="130" y="214" width="166" height="32" rx="6"/><text x="213" y="228" text-anchor="middle">fixed step up (dashed)</text><text x="213" y="241" text-anchor="middle" class="lbl">q(x_t | x_t−1)</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a circle or a label. Start with <strong>x<sub>0</sub></strong>, the real picture, at the bottom.</p></div>
+  </div>
+  <figcaption>Figure 2 of the paper, redrawn (turned upright to fit a phone): the diffusion chain. Based on Ho, Jain and Abbeel (2020), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> start at the bottom with x<sub>0</sub>, a real picture (shaded because it is observed). The dashed arrow is one forward step q, which adds a little noise and moves one place up; repeated T = 1,000 times, it reaches x<sub>T</sub>, pure noise, at the top. The solid arrows point the other way: each is one learned reverse step p<sub>θ</sub>, which removes a little noise and moves one place down. Generating a picture means starting from fresh noise at x<sub>T</sub> and following the solid arrows all the way down to x<sub>0</sub>. (The paper draws the same chain on its side, from x<sub>T</sub> on the left to x<sub>0</sub> on the right.) Every x<sub>t</sub> has the same size as the picture: unlike a VAE's code, the “latents” here are never smaller than the data.</p>
+
+<h3 class="rung">The reverse process: the model</h3>
+<p>Every reverse step is a bell curve whose centre and width a network computes from the current noisy picture and the step number:</p>
+<div class="eq" data-tex="\htmlData{sym=pjoint}{p_\theta(\mathbf{x}_{0:T})} \coloneqq \htmlData{sym=pxT}{p(\mathbf{x}_T)}\htmlData{sym=prodt}{\prod_{t=1}^{T}}\htmlData{sym=pstep}{p_\theta(\mathbf{x}_{t-1}\mid\mathbf{x}_t)}, \qquad \htmlData{sym=pstep}{p_\theta(\mathbf{x}_{t-1}\mid\mathbf{x}_t)} \coloneqq \htmlData{sym=Ngauss}{\mathcal{N}}(\mathbf{x}_{t-1};\, \htmlData{sym=mutheta}{\boldsymbol{\mu}_\theta(\mathbf{x}_t,t)},\, \htmlData{sym=Sigmatheta}{\boldsymbol{\Sigma}_\theta(\mathbf{x}_t,t)})" data-fallback="p_θ(x_0:T) := p(x_T) Π_t p_θ(x_t−1 | x_t),  p_θ(x_t−1 | x_t) := N(x_t−1; μ_θ(x_t, t), Σ_θ(x_t, t))"></div>
+<div class="symtable" data-syms="pjoint,pxT,prodt,pstep,Ngauss,mutheta,Sigmatheta"></div>
+<p class="inwords"><strong>In words:</strong> “the probability of a whole path from noise to picture is the probability of the starting noise times the probability of each reverse step; each step is a bell curve centred where the network says, with the spread the network says.”</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative reverse model: centres 1.90 and 1.95, variances β<sub>2</sub> = 0.2 and β<sub>1</sub> = 0.1): for the toy path 1.3913 → 2.0555 → 2.0, log p = log N(1.3913; 0, 1) + log N(2.0555; 1.90, 0.2) + log N(2.0; 1.95, 0.1) = −1.8867 − 0.1747 + 0.2199 = −1.8415. Logs of products are sums, which is why every bound below is a sum over steps.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def log_N(x, mean, var):
+    # log of the bell-curve density
+    return -0.5 * math.log(2 * math.pi * var) - (x - mean) ** 2 / (2 * var)
+x0 = 2.0
+# the toy path, from the forward process
+x1 = math.sqrt(0.9) * x0 + math.sqrt(0.1) * 0.5
+x2 = math.sqrt(0.8) * x1 + math.sqrt(0.2) * -1.0
+round(x1, 4), round(x2, 4)  # → (2.0555, 1.3913)
+# log p(x_T) + Σ_t log p_θ(x_t−1 | x_t), with illustrative centres 1.90 and 1.95
+terms = [log_N(x2, 0, 1), log_N(x1, 1.90, 0.2), log_N(x0, 1.95, 0.1)]
+[round(v, 4) for v in terms]  # → [-1.8867, -0.1747, 0.2199]
+round(sum(terms), 4)  # → -1.8415</code></pre>
+
+<h3 class="rung">The forward process: fixed, no learning</h3>
+<div class="eq" data-tex="\htmlData{sym=qjoint}{q(\mathbf{x}_{1:T}\mid\mathbf{x}_0)} \coloneqq \htmlData{sym=prodt}{\prod_{t=1}^{T}}\htmlData{sym=qstep}{q(\mathbf{x}_t\mid\mathbf{x}_{t-1})}, \qquad \htmlData{sym=qstep}{q(\mathbf{x}_t\mid\mathbf{x}_{t-1})} \coloneqq \htmlData{sym=Ngauss}{\mathcal{N}}(\mathbf{x}_t;\, \htmlData{sym=sqrtab}{\sqrt{1-\beta_t}}\,\mathbf{x}_{t-1},\, \htmlData{sym=betat}{\beta_t}\htmlData{sym=I}{\mathbf{I}})" data-fallback="q(x_1:T | x_0) := Π_t q(x_t | x_t−1),  q(x_t | x_t−1) := N(x_t; √(1 − β_t) x_t−1, β_t I)"></div>
+<div class="symtable" data-syms="qjoint,qstep,sqrtab,betat,I"></div>
+<p class="inwords"><strong>In words:</strong> “each forward step shrinks the previous value a little, by √(1 − β<sub>t</sub>), and adds bell-curve noise of variance β<sub>t</sub>.”</p>
+<p class="inwords"><strong>With the numbers:</strong> step 1 of the toy chain has centre √0.9 × 2.0 = 1.8974 and variance 0.1; the draw ε<sub>1</sub> = 0.5 lands at 1.8974 + √0.1 × 0.5 = 2.0555. Step 2: √0.8 × 2.0555 + √0.2 × (−1.0) = 1.8385 − 0.4472 = 1.3913.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x0, betas, eps = 2.0, [0.1, 0.2], [0.5, -1.0]
+# the centre of q(x_1 | x_0): √(1 − β_1) x_0
+round(math.sqrt(1 - betas[0]) * x0, 4)  # → 1.8974
+x = x0
+path = []
+for beta, e in zip(betas, eps):
+    # x_t = √(1 − β_t) x_t−1 + √β_t ε
+    x = math.sqrt(1 - beta) * x + math.sqrt(beta) * e
+    path.append(round(x, 4))
+path  # → [2.0555, 1.3913]</code></pre>
+
+<h3 class="rung">The training bound</h3>
+<p>Exactly as in a VAE, the log-probability of the data cannot be computed, but a bound on it can. Here it is written as an upper bound on the <em>negative</em> log-likelihood, so training pushes it down:</p>
+<div class="eq" data-tex="\htmlData{sym=Enll}{\mathbb{E}\big[-\log p_\theta(\mathbf{x}_0)\big]} \le \htmlData{sym=Eq}{\mathbb{E}_q}\bigg[-\log \htmlData{sym=pxT}{p(\mathbf{x}_T)} - \htmlData{sym=sumt}{\sum_{t\ge 1}} \log \frac{\htmlData{sym=pstep}{p_\theta(\mathbf{x}_{t-1}\mid\mathbf{x}_t)}}{\htmlData{sym=qstep}{q(\mathbf{x}_t\mid\mathbf{x}_{t-1})}}\bigg] \eqqcolon \htmlData{sym=Lbound}{L}" data-fallback="E[−log p_θ(x_0)] ≤ E_q[−log p(x_T) − Σ_t log p_θ(x_t−1 | x_t) / q(x_t | x_t−1)] =: L"></div>
+<div class="symtable" data-syms="Enll,Eq,pxT,sumt,pstep,qstep,Lbound"></div>
+<p class="inwords"><strong>In words:</strong> “run the forward chain from a real picture; score the noise at the end under the standard bell curve, and at every step compare how likely the reverse model finds going back with how likely the forward chain was to come forward. On average over many runs this never falls below the true negative log-likelihood.”</p>
+<p class="inwords"><strong>With the numbers</strong> (the toy path and the illustrative reverse model above): 1.8867 for the end noise, −0.4396 for step 2 and −0.1125 for step 1, a one-path estimate of L = 1.3347. Continuous log-densities can be positive, so terms can be negative; that is one reason §3.3 makes the last step discrete.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def log_N(x, mean, var):
+    return -0.5 * math.log(2 * math.pi * var) - (x - mean) ** 2 / (2 * var)
+x0 = 2.0
+x1 = math.sqrt(0.9) * x0 + math.sqrt(0.1) * 0.5
+x2 = math.sqrt(0.8) * x1 + math.sqrt(0.2) * -1.0
+# −log p(x_T)
+end = -log_N(x2, 0, 1)
+# −log p_θ(x_1 | x_2) / q(x_2 | x_1), then −log p_θ(x_0 | x_1) / q(x_1 | x_0)
+step2 = -(log_N(x1, 1.90, 0.2) - log_N(x2, math.sqrt(0.8) * x1, 0.2))
+step1 = -(log_N(x0, 1.95, 0.1) - log_N(x1, math.sqrt(0.9) * x0, 0.1))
+[round(v, 4) for v in (end, step2, step1)]  # → [1.8867, -0.4396, -0.1125]
+round(end + step2 + step1, 4)  # → 1.3347</code></pre>
+
+<h3 class="rung">The shortcut: jump to any step</h3>
+<p><strong>Everyday picture:</strong> adding noise twice is the same as adding it once in a bigger dose. So there is no need to run the chain step by step: multiply up how much signal survives, and jump.</p>
+<div class="eq" data-tex="\htmlData{sym=qt0}{q(\mathbf{x}_t\mid\mathbf{x}_0)} = \htmlData{sym=Ngauss}{\mathcal{N}}\big(\mathbf{x}_t;\, \htmlData{sym=sqrtabar}{\sqrt{\bar\alpha_t}}\,\mathbf{x}_0,\, \htmlData{sym=oneminusabar}{(1-\bar\alpha_t)}\htmlData{sym=I}{\mathbf{I}}\big), \qquad \htmlData{sym=alphat}{\alpha_t} \coloneqq 1-\htmlData{sym=betat}{\beta_t}, \qquad \htmlData{sym=abar}{\bar\alpha_t} \coloneqq \htmlData{sym=prods}{\prod_{s=1}^{t}}\htmlData{sym=alphas}{\alpha_s}" data-fallback="q(x_t | x_0) = N(x_t; √ᾱ_t x_0, (1 − ᾱ_t) I),  α_t := 1 − β_t,  ᾱ_t := Π_s α_s"></div>
+<div class="symtable" data-syms="qt0,sqrtabar,oneminusabar,alphat,abar,prods,alphas"></div>
+<p class="inwords"><strong>In words:</strong> “after t steps, the noisy picture is a bell curve centred on the clean picture shrunk by the square root of the surviving signal share, with the rest of the variance filled by noise.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the toy chain keeps 0.9 × 0.8 = 0.72, so q(x<sub>2</sub> | x<sub>0</sub>) = N(√0.72 × 2.0, 0.28) = N(1.6971, 0.28). The paper's 1,000 steps (β rising in a straight line from 0.0001 to 0.02) keep ᾱ<sub>1000</sub> = 0.00004: a signal share of 0.0064, practically nothing.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x0 = 2.0
+alpha_bar = 1.0
+# ᾱ_t = Π α_s, with α_s = 1 − β_s
+for beta in [0.1, 0.2]:
+    alpha_bar *= 1 - beta
+round(alpha_bar, 2)  # → 0.72
+# the centre and variance of q(x_2 | x_0)
+round(math.sqrt(alpha_bar) * x0, 4), round(1 - alpha_bar, 2)  # → (1.6971, 0.28)
+# the paper's schedule: 1,000 betas from 0.0001 to 0.02
+T = 1000
+betas = [1e-4 + (0.02 - 1e-4) * i / (T - 1) for i in range(T)]
+alpha_bar_T = 1.0
+for beta in betas:
+    alpha_bar_T *= 1 - beta
+round(alpha_bar_T, 5), round(math.sqrt(alpha_bar_T), 4)  # → (4e-05, 0.0064)</code></pre>
+<div class="plot" id="sched-plot">
+  <div class="controls"><label for="sched-bT">last step's β<sub>T</sub> = <strong id="sched-bTv">0.020</strong></label><input type="range" id="sched-bT" min="0.005" max="0.05" step="0.001" value="0.02"></div>
+  <div id="sched-chart"></div>
+  <p class="readout" id="sched-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the step t, from 1 to 1,000. The solid line is the signal share √ᾱ<sub>t</sub>, how much of the clean picture is left; the dashed line is the noise share √(1 − ᾱ<sub>t</sub>). With the paper's β<sub>T</sub> = 0.02 they cross near step 260 and the signal ends at 0.0064. Drag β<sub>T</sub> down and the signal survives longer, so the last step is no longer pure noise, and sampling would start from a picture that does not match the real end of the chain. Drag it up and the signal is gone halfway through, wasting steps. The readout below the chart updates as you hover. Computed live from the formula.</p>
+<h3 class="rung">Splitting the bound into comparisons of bell curves</h3>
+<p>The paper rewrites L so that each term compares two bell curves directly, which can be done exactly rather than by sampling:</p>
+<div class="eq" data-tex="\htmlData{sym=Eq}{\mathbb{E}_q}\bigg[\underbrace{\htmlData{sym=DKL}{D_{KL}}\big(\htmlData{sym=qT0}{q(\mathbf{x}_T\mid\mathbf{x}_0)}\,\Vert\,\htmlData{sym=pxT}{p(\mathbf{x}_T)}\big)}_{\htmlData{sym=LT}{L_T}} + \htmlData{sym=sumtg1}{\sum_{t>1}}\underbrace{\htmlData{sym=DKL}{D_{KL}}\big(\htmlData{sym=qpost}{q(\mathbf{x}_{t-1}\mid\mathbf{x}_t,\mathbf{x}_0)}\,\Vert\,\htmlData{sym=pstep}{p_\theta(\mathbf{x}_{t-1}\mid\mathbf{x}_t)}\big)}_{\htmlData{sym=Ltm1}{L_{t-1}}} \underbrace{-\log \htmlData{sym=p0}{p_\theta(\mathbf{x}_0\mid\mathbf{x}_1)}}_{\htmlData{sym=L0}{L_0}}\bigg]" data-fallback="E_q[ D_KL(q(x_T | x_0) ‖ p(x_T)) + Σ_(t>1) D_KL(q(x_t−1 | x_t, x_0) ‖ p_θ(x_t−1 | x_t)) − log p_θ(x_0 | x_1) ]"></div>
+<div class="symtable" data-syms="DKL,LT,qT0,Ltm1,qpost,sumtg1,L0,p0"></div>
+<p class="inwords"><strong>In words:</strong> “the bound is three kinds of cost: how far the end of the forward chain is from pure noise; at every middle step, how far the reverse model's step is from the true backward step (which is known exactly once you know the clean picture); and how well the last step rebuilds the picture.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the toy chain, L<sub>T</sub> = KL(N(1.6971, 0.28) ‖ N(0, 1)) = 1.7165: two steps leave far too much signal. The paper's schedule makes L<sub>T</sub> tiny, under 3 × 10<sup>−5</sup> bits even for a pixel at the edge of its range (the paper reports ≈ 10<sup>−5</sup> bits per dimension). The toy's middle term, with the illustrative reverse step N(1.90, 0.2), is L<sub>1</sub> = 0.2185 (worked out under equation 8 below).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def kl_to_standard(mean, var):
+    # D_KL(N(mean, var) ‖ N(0, 1))
+    return 0.5 * (mean ** 2 + var - math.log(var) - 1)
+# L_T for the toy chain: q(x_2 | x_0) = N(√0.72 · 2, 0.28)
+round(kl_to_standard(math.sqrt(0.72) * 2.0, 0.28), 4)  # → 1.7165
+# L_T for the paper's schedule, a pixel at x_0 = 1, in bits (divide nats by ln 2)
+alpha_bar_T = 4.0358e-05
+bits = kl_to_standard(math.sqrt(alpha_bar_T) * 1.0, 1 - alpha_bar_T) / math.log(2)
+print(f"{bits:.1e}")  # → 2.9e-05</code></pre>
+<h3 class="rung">The true backward step, given the clean picture</h3>
+<p><strong>Everyday picture:</strong> if you know where a walk started and where it is now, you can say quite precisely where it was one step ago. The backward step is hard only because the model does not know x<sub>0</sub>; during training we do, and the answer is a bell curve with a closed form:</p>
+<div class="eq" data-tex="\htmlData{sym=qpost}{q(\mathbf{x}_{t-1}\mid\mathbf{x}_t,\mathbf{x}_0)} = \htmlData{sym=Ngauss}{\mathcal{N}}\big(\mathbf{x}_{t-1};\, \htmlData{sym=mutilde}{\tilde{\boldsymbol{\mu}}_t(\mathbf{x}_t,\mathbf{x}_0)},\, \htmlData{sym=betatilde}{\tilde\beta_t}\htmlData{sym=I}{\mathbf{I}}\big), \quad \htmlData{sym=mutilde}{\tilde{\boldsymbol{\mu}}_t} \coloneqq \htmlData{sym=c0}{\frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}}\mathbf{x}_0 + \htmlData{sym=ct}{\frac{\sqrt{\alpha_t}\,(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}}\mathbf{x}_t, \quad \htmlData{sym=betatilde}{\tilde\beta_t} \coloneqq \frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\,\htmlData{sym=betat}{\beta_t}" data-fallback="q(x_t−1 | x_t, x_0) = N(x_t−1; μ̃_t, β̃_t I),  μ̃_t := (√ᾱ_t−1 β_t / (1 − ᾱ_t)) x_0 + (√α_t (1 − ᾱ_t−1) / (1 − ᾱ_t)) x_t,  β̃_t := ((1 − ᾱ_t−1) / (1 − ᾱ_t)) β_t"></div>
+<div class="symtable" data-syms="qpost,mutilde,c0,ct,betatilde"></div>
+<p class="inwords"><strong>In words:</strong> “one step back from x<sub>t</sub>, knowing x<sub>0</sub>, the value was a weighted blend of the clean picture and the current noisy one, give or take a spread slightly smaller than β<sub>t</sub>.”</p>
+<p class="inwords"><strong>With the numbers:</strong> toy chain, t = 2: the weights are √0.9 × 0.2 / 0.28 = 0.6776 on x<sub>0</sub> and √0.8 × 0.1 / 0.28 = 0.3194 on x<sub>2</sub>, so μ̃<sub>2</sub> = 0.6776 × 2.0 + 0.3194 × 1.3913 = 1.7997, and β̃<sub>2</sub> = (0.1 / 0.28) × 0.2 = 0.0714. The true x<sub>1</sub> was 2.0555, within about one spread (√0.0714 = 0.27) of that centre.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+beta_t, alpha_t = 0.2, 0.8
+alpha_bar_prev, alpha_bar_t = 0.9, 0.72
+x0, xt = 2.0, 1.3913
+# the two blending weights
+c0 = math.sqrt(alpha_bar_prev) * beta_t / (1 - alpha_bar_t)
+ct = math.sqrt(alpha_t) * (1 - alpha_bar_prev) / (1 - alpha_bar_t)
+round(c0, 4), round(ct, 4)  # → (0.6776, 0.3194)
+# μ̃_t and β̃_t
+round(c0 * x0 + ct * xt, 4)  # → 1.7997
+round((1 - alpha_bar_prev) / (1 - alpha_bar_t) * beta_t, 4)  # → 0.0714</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>Every quantity on this section is closed-form, so training never simulates the chain. It picks a step, jumps there with the shortcut, and compares bell curves. The <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> draws the forward process and its schedule on dots in the plane.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#linear_schedule"><code>linear_schedule</code></a> builds the list of β<sub>t</sub> as a <a data-lesson="primer/ml/generative/diffusion.html#NoiseSchedule"><code>NoiseSchedule</code></a>, whose <a data-lesson="primer/ml/generative/diffusion.html#NoiseSchedule.alpha_bars"><code>NoiseSchedule.alpha_bars</code></a> is ᾱ<sub>t</sub>; <a data-lesson="primer/ml/generative/diffusion.html#noise_step"><code>noise_step</code></a> is one forward step and <a data-lesson="primer/ml/generative/diffusion.html#add_noise"><code>add_noise</code></a> is the shortcut.</p>
+</section>
+
+<section id="s3">
+<h2>3 Diffusion models and denoising autoencoders <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The bound of §2 leaves many choices open: the schedule, the network, and how exactly the network describes each reverse step. This section makes those choices one term of the bound at a time: L<sub>T</sub> (§3.1), the middle terms L<sub>1:T−1</sub> (§3.2), and L<sub>0</sub> (§3.3). Along the way, the training loss turns into something a photo restorer would recognise: sprinkle known dust on a clean photo and grade the guess of where the dust went.</p>
+
+<section id="s3-1">
+<h3>3.1 Forward process and L<sub>T</sub> <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If the static dial is bolted in place, how much static is on screen at the end is not something training can change. The paper fixes every β<sub>t</sub> to a constant, so the forward process has no learnable parameters.</p>
+<h4>Tiny example</h4>
+<p>The toy chain's L<sub>T</sub> = 1.7165 depends only on x<sub>0</sub> and the fixed betas. No weight of the network appears in it, so its gradient is zero and training can drop it. (The paper notes the betas <em>could</em> be learned by reparameterization, as in the VAE paper, but chooses not to.)</p>
+<h4>Why it matters today</h4>
+<p>A fixed, parameter-free forward process is what separates diffusion models from VAEs: the “encoder” never has to be trained, and its end point is always the same known noise to sample from.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Reverse process and L<sub>1:T−1</sub>: guess the noise <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“The complete sampling procedure, Algorithm 2, resembles Langevin dynamics with ε<sub>θ</sub> as a learned gradient of the data density.”<cite>Ho, Jain and Abbeel (2020), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>First choice: do not learn the width of each reverse step. The paper fixes Σ<sub>θ</sub> = σ<sub>t</sub>²I and tries σ<sub>t</sub>² = β<sub>t</sub> and σ<sub>t</sub>² = β̃<sub>t</sub>, with similar results (the first is optimal if the data were pure noise, the second if the data were one single point). That leaves the centre. The obvious design asks the network for the centre directly. The paper's design asks it for something simpler: <em>the noise that was added</em>. A photo restorer who practises by guessing where known dust went is learning exactly this.</p>
+<h4>Tiny example</h4>
+<p>In the toy chain, x<sub>2</sub> = 1.3913 is a one-jump mix of x<sub>0</sub> = 2.0 and some total noise ε: 1.3913 = √0.72 × 2.0 + √0.28 × ε, so ε = −0.5779. Plug that ε into the paper's formula for the centre and you get 1.7997: exactly the true backward centre μ̃<sub>2</sub> from §2. A network that guesses the noise perfectly gets the reverse step exactly right.</p>
+<h4>The middle terms are squared distances between centres</h4>
+<div class="eq" data-tex="\htmlData{sym=Ltm1}{L_{t-1}} = \htmlData{sym=Eq}{\mathbb{E}_q}\bigg[\htmlData{sym=inv2sig}{\frac{1}{2\sigma_t^2}}\big\Vert \htmlData{sym=mutilde}{\tilde{\boldsymbol{\mu}}_t(\mathbf{x}_t,\mathbf{x}_0)} - \htmlData{sym=mutheta}{\boldsymbol{\mu}_\theta(\mathbf{x}_t,t)}\big\Vert^2\bigg] + \htmlData{sym=C}{C}" data-fallback="L_t−1 = E_q[ (1 / 2σ_t²) ‖μ̃_t(x_t, x_0) − μ_θ(x_t, t)‖² ] + C"></div>
+<div class="symtable" data-syms="Ltm1,inv2sig,mutilde,mutheta,C"></div>
+<p class="inwords"><strong>In words:</strong> “when both bell curves have fixed widths, the only part of each middle term training can change is the squared distance between the true backward centre and the model's centre, divided by twice the model's variance.”</p>
+<p class="inwords"><strong>With the numbers:</strong> toy chain, t = 2, σ<sub>2</sub>² = β<sub>2</sub> = 0.2 and an illustrative model centre of 1.90: (1.7997 − 1.90)² / 0.4 = 0.0252. The full KL is 0.2185, and the gap, C = 0.1934, depends only on β̃<sub>2</sub> and σ<sub>2</sub>², never on the network.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x0 = 2.0
+x2 = math.sqrt(0.8) * (math.sqrt(0.9) * x0 + math.sqrt(0.1) * 0.5) + math.sqrt(0.2) * -1.0
+# the true backward step from the previous block
+mu_tilde = math.sqrt(0.9) * 0.2 / 0.28 * x0 + math.sqrt(0.8) * 0.1 / 0.28 * x2
+beta_tilde = 0.1 / 0.28 * 0.2
+mu_theta, sigma2 = 1.90, 0.2
+# the part that depends on θ: ‖μ̃ − μ_θ‖² / (2σ²)
+theta_part = (mu_tilde - mu_theta) ** 2 / (2 * sigma2)
+round(theta_part, 4)  # → 0.0252
+# the full KL between N(μ̃, β̃) and N(μ_θ, σ²)
+kl = 0.5 * (beta_tilde / sigma2 + (mu_tilde - mu_theta) ** 2 / sigma2 - 1 - math.log(beta_tilde / sigma2))
+round(kl, 4)  # → 0.2185
+# C: what is left, the same whatever μ_θ is
+round(kl - theta_part, 4)  # → 0.1934</code></pre>
+<h4>Predict the noise instead of the centre</h4>
+<p>Write the noisy picture with the shortcut, x<sub>t</sub> = √ᾱ<sub>t</sub> x<sub>0</sub> + √(1 − ᾱ<sub>t</sub>) ε, and substitute into μ̃<sub>t</sub>: the target centre becomes (x<sub>t</sub> − β<sub>t</sub>/√(1 − ᾱ<sub>t</sub>) ε) / √α<sub>t</sub>. The network already sees x<sub>t</sub>, so the only unknown is ε. The paper's parameterization lets the network supply it:</p>
+<div class="eq" data-tex="\htmlData{sym=mutheta}{\boldsymbol{\mu}_\theta(\mathbf{x}_t,t)} = \htmlData{sym=invsqrta}{\frac{1}{\sqrt{\alpha_t}}}\Big(\htmlData{sym=xt}{\mathbf{x}_t} - \htmlData{sym=share}{\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}}\,\htmlData{sym=epstheta}{\boldsymbol{\epsilon}_\theta(\mathbf{x}_t,t)}\Big), \qquad \htmlData{sym=xtm1}{\mathbf{x}_{t-1}} = \htmlData{sym=mutheta}{\boldsymbol{\mu}_\theta(\mathbf{x}_t,t)} + \htmlData{sym=sigmat}{\sigma_t}\htmlData{sym=zfresh}{\mathbf{z}}" data-fallback="μ_θ(x_t, t) = (1/√α_t)(x_t − (β_t/√(1 − ᾱ_t)) ε_θ(x_t, t)),  x_t−1 = μ_θ(x_t, t) + σ_t z"></div>
+<div class="symtable" data-syms="invsqrta,xt,share,epstheta,xtm1,sigmat,zfresh"></div>
+<p class="inwords"><strong>In words:</strong> “to step back, subtract this step's share of the guessed noise, undo this step's shrink, then add a small fresh wobble.”</p>
+<p class="inwords"><strong>With the numbers:</strong> toy chain with the perfect guess ε = −0.5779: (1.3913 − 0.2/√0.28 × (−0.5779)) / √0.8 = (1.3913 + 0.2184) / 0.8944 = 1.7997 = μ̃<sub>2</sub>. The diffusion lesson's example step, x<sub>t</sub> = 1.0, β<sub>t</sub> = 0.19, ᾱ<sub>t</sub> = 0.75 and a guess of 0.5, gives (1.0 − 0.38 × 0.5)/0.9 = 0.9, and with σ<sub>t</sub> = √0.19 and z = 0.5 the next point is 1.1179.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x0 = 2.0
+xt = math.sqrt(0.8) * (math.sqrt(0.9) * x0 + math.sqrt(0.1) * 0.5) + math.sqrt(0.2) * -1.0
+beta_t, alpha_bar_t = 0.2, 0.72
+alpha_t = 1 - beta_t
+# the total noise that turned x_0 into x_t in one jump
+eps = (xt - math.sqrt(alpha_bar_t) * x0) / math.sqrt(1 - alpha_bar_t)
+round(eps, 4)  # → -0.5779
+# μ_θ = (x_t − β_t / √(1 − ᾱ_t) · ε_θ) / √α_t, with a perfect guess ε_θ = ε
+mu = (xt - beta_t / math.sqrt(1 - alpha_bar_t) * eps) / math.sqrt(alpha_t)
+round(mu, 4)  # → 1.7997
+# one sampling step from the diffusion lesson's example, σ_t = √β_t
+x_t, b, ab, eps_hat, z = 1.0, 0.19, 0.75, 0.5, 0.5
+round((x_t - b / math.sqrt(1 - ab) * eps_hat) / math.sqrt(1 - b) + math.sqrt(b) * z, 4)  # → 1.1179</code></pre>
+<p>Put this centre back into equation 8 and the middle terms become a weighted squared error on the noise:</p>
+<div class="eq" data-tex="\htmlData{sym=Ex0eps}{\mathbb{E}_{\mathbf{x}_0,\boldsymbol{\epsilon}}}\bigg[\htmlData{sym=wt}{\frac{\beta_t^2}{2\sigma_t^2\alpha_t(1-\bar\alpha_t)}}\Big\Vert \htmlData{sym=epstrue}{\boldsymbol{\epsilon}} - \htmlData{sym=epstheta}{\boldsymbol{\epsilon}_\theta}\big(\htmlData{sym=noisy}{\sqrt{\bar\alpha_t}\,\mathbf{x}_0 + \sqrt{1-\bar\alpha_t}\,\boldsymbol{\epsilon}}, t\big)\Big\Vert^2\bigg]" data-fallback="E_x0,ε[ (β_t² / (2σ_t² α_t (1 − ᾱ_t))) ‖ε − ε_θ(√ᾱ_t x_0 + √(1 − ᾱ_t) ε, t)‖² ]"></div>
+<div class="symtable" data-syms="Ex0eps,wt,epstrue,epstheta,noisy"></div>
+<p class="inwords"><strong>In words:</strong> “noise a real picture to step t in one jump, ask the network what noise was added, and score the squared miss, weighted by a number that depends only on the step.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with σ<sub>t</sub>² = β<sub>t</sub> the weight simplifies to β<sub>t</sub> / (2α<sub>t</sub>(1 − ᾱ<sub>t</sub>)). Toy chain, t = 2: 0.2 / (2 × 0.8 × 0.28) = 0.4464. Paper's schedule: 0.5 at t = 1, falling to 0.0102 at t = 1,000, a ratio of 49.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>beta_t, alpha_bar_t = 0.2, 0.72
+sigma2 = beta_t
+# β² / (2σ² α (1 − ᾱ)), with σ² = β
+round(beta_t ** 2 / (2 * sigma2 * (1 - beta_t) * (1 - alpha_bar_t)), 4)  # → 0.4464
+# the paper's schedule, first and last step
+T = 1000
+betas = [1e-4 + (0.02 - 1e-4) * i / (T - 1) for i in range(T)]
+alpha_bars, ab = [], 1.0
+for b in betas:
+    ab *= 1 - b
+    alpha_bars.append(ab)
+w = [b / (2 * (1 - b) * (1 - a)) for b, a in zip(betas, alpha_bars)]
+round(w[0], 3), round(w[-1], 4), round(w[0] / w[-1])  # → (0.5, 0.0102, 49)</code></pre>
+<p>This is the paper's central observation. The loss “resembles <span class="t" data-t="denoising score matching">denoising score matching</span> over multiple noise scales”: guessing the noise is guessing the <span class="t" data-t="score">score</span>, the direction towards more data, flipped and rescaled. And the sampling step, “move a little along a learned direction, then add a little noise”, is the shape of <span class="t" data-t="langevin dynamics">Langevin dynamics</span>. Training this bound trains that sampler.</p>
+<figure class="ix" id="fig-algs">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 340" role="img" aria-label="Algorithm 1, training, and Algorithm 2, sampling, side by side">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="80" y="16" text-anchor="middle" class="lbl">Algorithm 1: training</text>
+    <text x="250" y="16" text-anchor="middle" class="lbl">Algorithm 2: sampling</text>
+    <path class="wire" d="M28,58 V120 M80,58 V120 M132,58 V120" marker-end="url(#arr2)"/>
+    <path class="wire" d="M80,150 V178" marker-end="url(#arr2)"/>
+    <path class="wire" d="M80,208 V236" marker-end="url(#arr2)"/>
+    <path class="wire" d="M132,58 V70 H160 V251 H142" marker-end="url(#arr2)"/>
+    <path class="wire" d="M80,266 V286" marker-end="url(#arr2)"/>
+    <text x="80" y="332" text-anchor="middle" class="lbl">repeat until converged</text>
+    <g class="blk emb" data-block="a1x0"><rect x="6" y="30" width="44" height="28" rx="6"/><text x="28" y="48" text-anchor="middle">x₀</text></g>
+    <g class="blk plain" data-block="a1t"><rect x="58" y="30" width="44" height="28" rx="6"/><text x="80" y="48" text-anchor="middle">t</text></g>
+    <g class="blk plain" data-block="a1eps"><rect x="110" y="30" width="44" height="28" rx="6"/><text x="132" y="48" text-anchor="middle">ε</text></g>
+    <g class="blk norm" data-block="a1mix"><rect x="10" y="120" width="140" height="30" rx="6"/><text x="80" y="140" text-anchor="middle">x_t = √ᾱ x₀ + √(1−ᾱ) ε</text></g>
+    <g class="blk lin" data-block="a1net"><rect x="20" y="178" width="120" height="30" rx="6"/><text x="80" y="198" text-anchor="middle">network ε_θ(x_t, t)</text></g>
+    <g class="blk attn" data-block="a1loss"><rect x="20" y="236" width="120" height="30" rx="6"/><text x="80" y="256" text-anchor="middle">‖ε − ε_θ‖²</text></g>
+    <g class="blk soft" data-block="a1step"><rect x="18" y="286" width="124" height="28" rx="6"/><text x="80" y="305" text-anchor="middle">gradient step</text></g>
+    <path class="wire" d="M250,58 V84" marker-end="url(#arr2)"/>
+    <path class="wire" d="M250,114 V142" marker-end="url(#arr2)"/>
+    <path class="wire" d="M250,172 V200" marker-end="url(#arr2)"/>
+    <path class="wire" d="M250,230 V256" marker-end="url(#arr2)"/>
+    <path class="wire" d="M190,215 H180 V99 H188" marker-end="url(#arr2)"/>
+    <text x="176" y="160" class="lbl" transform="rotate(-90 176 160)" text-anchor="middle">t ← t − 1</text>
+    <g class="blk plain" data-block="a2xT"><rect x="195" y="30" width="110" height="28" rx="6"/><text x="250" y="48" text-anchor="middle">x_T ~ N(0, I)</text></g>
+    <g class="blk lin" data-block="a2net"><rect x="190" y="84" width="120" height="30" rx="6"/><text x="250" y="104" text-anchor="middle">guess ε_θ(x_t, t)</text></g>
+    <g class="blk norm" data-block="a2mean"><rect x="190" y="142" width="120" height="30" rx="6"/><text x="250" y="162" text-anchor="middle">compute μ_θ</text></g>
+    <g class="blk plain" data-block="a2z"><rect x="190" y="200" width="120" height="30" rx="6"/><text x="250" y="220" text-anchor="middle">+ σ_t z (if t &gt; 1)</text></g>
+    <g class="blk soft" data-block="a2out"><rect x="205" y="256" width="90" height="28" rx="6"/><text x="250" y="275" text-anchor="middle">x₀</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step. Training is on the left, sampling on the right.</p></div>
+  </div>
+  <figcaption>Algorithms 1 and 2 of the paper, redrawn as flow diagrams. Based on Ho, Jain and Abbeel (2020), Algorithms 1 and 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> on the left, training takes three random choices at the top (a real picture, a step, a noise draw), mixes them with the shortcut into one noisy picture, and asks the network for the noise. Only the noise draw also takes the long wire down the right-hand side, straight to the loss, where the guess is graded against it. The whole column repeats until the loss stops improving; there is no chain to simulate. On the right, sampling starts from pure noise and loops T times: guess the noise, compute the centre μ<sub>θ</sub>, add a fresh wobble σ<sub>t</sub>z (except on the last step), step t down by one. Each lap is one full run of the network, so a sample costs T = 1,000 network calls.</p>
+<h4>Why it matters today</h4>
+<p>“Predict the noise” is still the most common parameterization, and the two algorithms are the ones a first diffusion implementation writes. Later samplers such as DDIM reuse the same trained ε<sub>θ</sub> with far fewer steps; see the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#train_noise_predictor"><code>train_noise_predictor</code></a> is Algorithm 1 on a small <a data-lesson="primer/ml/generative/diffusion.html#DenoiserMLP"><code>DenoiserMLP</code></a>; <a data-lesson="primer/ml/generative/diffusion.html#ddpm_step"><code>ddpm_step</code></a> is one step of Algorithm 2 with σ<sub>t</sub> = √β<sub>t</sub>, and <a data-lesson="primer/ml/generative/diffusion.html#ddpm_sample"><code>ddpm_sample</code></a> runs the loop; <a data-lesson="primer/ml/generative/diffusion.html#noise_to_score"><code>noise_to_score</code></a> turns the noise guess into the score.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Data scaling, reverse process decoder, and L<sub>0</sub> <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Real pixels are whole numbers from 0 to 255, not smooth values. So the very last step does not ask “how likely is exactly this value?” (a question with no good answer for a continuous bell curve) but “how much of the bell curve falls in this pixel's bin?”, the way a histogram counts everything inside a bar.</p>
+<h4>Tiny example</h4>
+<p>Pixel values are scaled linearly from {0, …, 255} to [−1, 1]. A pixel of 128 becomes 128/127.5 − 1 = 0.0039, and its bin runs half a step either side, from 0.0000 to 0.0078. If the model's last step is a bell curve centred at 0.01 (illustrative) with spread σ<sub>1</sub> = √β<sub>1</sub> = 0.01 (the paper's schedule), the chance of landing in that bin is 0.256.</p>
+<div class="eq" data-tex="\htmlData{sym=p0}{p_\theta(\mathbf{x}_0\mid\mathbf{x}_1)} = \htmlData{sym=prodD}{\prod_{i=1}^{D}}\int_{\htmlData{sym=dminus}{\delta_-(x_0^i)}}^{\htmlData{sym=dplus}{\delta_+(x_0^i)}} \htmlData{sym=Ngauss}{\mathcal{N}}\big(x;\, \htmlData{sym=mui}{\mu_\theta^i(\mathbf{x}_1,1)},\, \htmlData{sym=sig1}{\sigma_1^2}\big)\,dx, \qquad \htmlData{sym=dplus}{\delta_+(x)} = x + \tfrac{1}{255}\ \ (\infty \text{ if } x = 1), \quad \htmlData{sym=dminus}{\delta_-(x)} = x - \tfrac{1}{255}\ \ (-\infty \text{ if } x = -1)" data-fallback="p_θ(x_0 | x_1) = Π_i ∫ from δ−(x_0^i) to δ+(x_0^i) of N(x; μ_θ^i(x_1, 1), σ_1²) dx"></div>
+<div class="symtable" data-syms="p0,prodD,dminus,dplus,mui,sig1"></div>
+<p class="inwords"><strong>In words:</strong> “the probability of the final picture is, for every pixel independently, the area under that pixel's bell curve over the pixel's bin; the outermost bins stretch to infinity so no probability is lost off the ends.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Φ((0.0078 − 0.01)/0.01) − Φ((0.0000 − 0.01)/0.01) = Φ(−0.22) − Φ(−1.0) = 0.256 for the pixel of 128. Multiply such areas over all D = 32 × 32 × 3 = 3,072 numbers of a CIFAR10 image to get p<sub>θ</sub>(x<sub>0</sub> | x<sub>1</sub>).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>from statistics import NormalDist
+# scale a pixel from {0, ..., 255} to [−1, 1]
+x = 128 / 127.5 - 1
+round(x, 4)  # → 0.0039
+# the bin: δ−(x) = x − 1/255, δ+(x) = x + 1/255
+lo, hi = x - 1 / 255, x + 1 / 255
+round(lo, 4), round(hi, 4)  # → (-0.0, 0.0078)
+# area of N(μ, σ_1²) over the bin, with an illustrative μ = 0.01 and σ_1 = √0.0001 = 0.01
+step = NormalDist(0.01, 0.01)
+round(step.cdf(hi) - step.cdf(lo), 3)  # → 0.256
+# D for a CIFAR10 image
+32 * 32 * 3  # → 3072</code></pre>
+<h4>Why it matters today</h4>
+<p>This makes the bound an honest codelength in <span class="t" data-t="bits per dimension">bits per dimension</span>, comparable with other likelihood models. At the end of sampling, the paper shows μ<sub>θ</sub>(x<sub>1</sub>, 1) without adding the last bit of noise.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 The simplified training objective <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S3.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The exact bound grades every step's homework with a different weight, and it weights the easiest homework (removing a whisper of noise from a nearly clean picture) the most. The paper's simplification: grade every step equally. Students then spend their effort on the hard exercises, the heavily noised pictures, where the big decisions about the image are made.</p>
+<h4>Tiny example</h4>
+<p>True noise (0.5, −1.0), network guess (0.4, −0.8): the miss is (0.1, −0.2) and the squared miss 0.01 + 0.04 = 0.05. Under the exact bound this miss would be multiplied by the step's weight (0.5 at step 1, 0.0102 at step 1,000). Under L<sub>simple</sub> it counts as 0.05 at every step.</p>
+<div class="eq" data-tex="\htmlData{sym=Lsimple}{L_{\mathrm{simple}}(\theta)} \coloneqq \htmlData{sym=Etx0eps}{\mathbb{E}_{t,\mathbf{x}_0,\boldsymbol{\epsilon}}}\Big[\big\Vert \htmlData{sym=epstrue}{\boldsymbol{\epsilon}} - \htmlData{sym=epstheta}{\boldsymbol{\epsilon}_\theta}\big(\htmlData{sym=noisy}{\sqrt{\bar\alpha_t}\,\mathbf{x}_0 + \sqrt{1-\bar\alpha_t}\,\boldsymbol{\epsilon}}, t\big)\big\Vert^2\Big]" data-fallback="L_simple(θ) := E_t,x0,ε[ ‖ε − ε_θ(√ᾱ_t x_0 + √(1 − ᾱ_t) ε, t)‖² ]"></div>
+<div class="symtable" data-syms="Lsimple,Etx0eps,epstrue,epstheta,noisy"></div>
+<p class="inwords"><strong>In words:</strong> “pick a random step, a random real picture and random noise; noise the picture to that step in one jump; score the squared distance between the real noise and the network's guess; average over everything.”</p>
+<p class="inwords"><strong>With the numbers:</strong> ‖(0.5, −1.0) − (0.4, −0.8)‖² = 0.05. A network that always guesses zero scores the average of ε<sub>1</sub>² + ε<sub>2</sub>², which is 2 for 2-number noise: the score to beat.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import random
+eps, guess = [0.5, -1.0], [0.4, -0.8]
+# ‖ε − ε_θ‖²
+round(sum((e - g) ** 2 for e, g in zip(eps, guess)), 2)  # → 0.05
+# always guessing 0: the average of ‖ε‖² over many draws of 2-number noise
+random.seed(0)
+draws = [random.gauss(0, 1) ** 2 + random.gauss(0, 1) ** 2 for _ in range(100_000)]
+round(sum(draws) / len(draws), 1)  # → 2.0</code></pre>
+<div class="plot" id="weight-plot">
+  <div id="weight-chart"></div>
+  <p class="readout" id="weight-readout">Hover or use the arrow keys to read the weight at any step.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the step t on a logarithmic scale, so the first few steps get room; the y-axis is the weight the exact bound puts on the noise-guessing error at that step (with σ<sub>t</sub>² = β<sub>t</sub>, the paper's schedule). It starts at 0.5 at t = 1, halves almost at once, and settles near 0.01 for most of the chain. L<sub>simple</sub> replaces this whole curve with a flat line: every step counts the same. Relative to the exact bound, that shifts attention from the first handful of steps (almost clean pictures) to the hundreds of noisy ones, which is the down-weighting of small t the paper describes. Computed live from the schedule.</p>
+<h4>Why it matters today</h4>
+<p>L<sub>simple</sub> gave the paper's best samples (FID 3.17 against 13.51 for the exact bound; §4.2), and plain, unweighted noise regression became the default. Later work returned to the question of how to weight the steps, but the unweighted loss is still the baseline every paper compares against.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#train_noise_predictor"><code>train_noise_predictor</code></a> trains on exactly this loss, averaged over a batch of random steps, pictures and noises.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A recipe is only as good as the dish. The experiments cook the recipe on small photos (CIFAR10), faces (CelebA-HQ) and scenes (LSUN), then judge the results by standard image-quality scores and by the bits the model needs to describe a picture.</p>
+<h3 class="rung">The setup</h3>
+<div class="tablewrap"><table>
+  <caption>Settings stated in §4 and Appendix B of Ho, Jain and Abbeel (2020), collected into one table</caption>
+  <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Steps T</td><td>1,000 (to match earlier work, without a sweep)</td></tr>
+    <tr><td>Schedule</td><td>β rising linearly from 10<sup>−4</sup> to 0.02, chosen from constant, linear and quadratic schedules</td></tr>
+    <tr><td>Network</td><td>a <span class="t" data-t="u-net">U-Net</span> like PixelCNN++'s, with group normalization, <span class="t" data-t="self-attention">self-attention</span> at the 16 × 16 resolution, and the step given by the Transformer's <span class="t" data-t="sinusoidal positional encoding">sinusoidal embedding</span>; one network shared by all steps</td></tr>
+    <tr><td>Size</td><td>35.7 million parameters for CIFAR10; 114 million for LSUN and CelebA-HQ; about 256 million for a larger LSUN Bedroom model</td></tr>
+    <tr><td>Optimiser</td><td><span class="t" data-t="adam">Adam</span>, learning rate 2 × 10<sup>−4</sup> (2 × 10<sup>−5</sup> at 256 × 256); batch 128 for CIFAR10 and 64 for larger images; an exponential moving average of the weights with decay 0.9999</td></tr>
+    <tr><td>Regularisation</td><td><span class="t" data-t="dropout">dropout</span> 0.1 on CIFAR10, random horizontal flips</td></tr>
+    <tr><td>Cost</td><td>on a TPU v3-8, CIFAR10 trains at 21 steps per second, 10.6 hours for 800,000 steps; sampling 256 images takes 17 seconds</td></tr>
+  </tbody>
+</table></div>
+<h3 class="rung">Why it matters</h3>
+<p>Nothing exotic: a standard image network, a standard optimiser, a simple schedule. The quality came from the objective and the parameterization. See the <a href="adam.html">Adam companion</a> and, for the attention blocks and sinusoidal step embedding, the <a href="attention-is-all-you-need.html">Transformer companion</a>.</p>
+
+<section id="s4-1">
+<h3>4.1 Sample quality <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>How do you grade an artist who paints pictures nobody asked for? <span class="t" data-t="fid">FID</span> compares the whole gallery of generated pictures with a gallery of real ones, as clouds of features from a pretrained image network: the closer the clouds, the lower the score. Lower is better; 0 would be indistinguishable.</p>
+<h4>Tiny example</h4>
+<p>Two galleries whose feature clouds have the same shape but whose centres sit 3 units apart score an FID of 3² = 9; move the centres to 1 unit apart and it drops to 1. (FID also compares the clouds' spreads; with equal spreads that part is zero.)</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, CIFAR10, reproduced with attribution (Ho, Jain and Abbeel, 2020). NLL in bits per dimension, test (train)</caption>
+  <thead><tr><th>Model</th><th class="num">Inception score</th><th class="num">FID</th><th class="num">NLL</th></tr></thead>
+  <tbody>
+    <tr><td>BigGAN (conditional)</td><td class="num">9.22</td><td class="num">14.73</td><td class="num"></td></tr>
+    <tr><td>Gated PixelCNN</td><td class="num">4.60</td><td class="num">65.93</td><td class="num">3.03 (2.90)</td></tr>
+    <tr><td>Sparse Transformer</td><td class="num"></td><td class="num"></td><td class="num">2.80</td></tr>
+    <tr><td>NCSN (score matching)</td><td class="num">8.87</td><td class="num">25.32</td><td class="num"></td></tr>
+    <tr><td>StyleGAN2 + ADA (v1)</td><td class="num">9.74</td><td class="num">3.26</td><td class="num"></td></tr>
+    <tr><td>Diffusion, exact bound L</td><td class="num">7.67</td><td class="num">13.51</td><td class="num">≤ 3.70 (3.69)</td></tr>
+    <tr class="hl"><td>Diffusion, L<sub>simple</sub></td><td class="num">9.46</td><td class="num">3.17</td><td class="num">≤ 3.75 (3.72)</td></tr>
+  </tbody>
+</table></div>
+<div class="plot" id="fid-plot"><div id="fid-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one model's FID on unconditional CIFAR10 (BigGAN is class-conditional, so it had extra help), drawn to one scale from 0 to 70; shorter is better. The striped bars are the paper's two diffusion models. Trained on the exact bound, the model sits among earlier methods at 13.51. Trained on L<sub>simple</sub>, it reaches 3.17, just ahead of StyleGAN2 + ADA's 3.26. Its FID against the test set rather than the training set is 5.24. The NLL column shows the other side: the Sparse Transformer's 2.80 bits per dimension beats both diffusion models' 3.70 and 3.75.</p>
+<h4>Why it matters today</h4>
+<p>This table is why diffusion models took off: a likelihood-based model, trained by regression, matching the best GANs on the standard image benchmark. On 256 × 256 LSUN, the paper reports FID 7.89 on churches and 4.90 on bedrooms (larger model).</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Reverse process parameterization and training objective ablation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two knobs, four settings, one winner. Knob one: does the network predict the centre μ̃ or the noise ε? Knob two: train on the exact bound, or on unweighted squared error? And a side question: should the network also learn the width of each step?</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2, unconditional CIFAR10, reproduced with attribution (Ho, Jain and Abbeel, 2020)</caption>
+  <thead><tr><th>Predict</th><th>Objective</th><th class="num">Inception score</th><th class="num">FID</th></tr></thead>
+  <tbody>
+    <tr><td>centre μ̃</td><td>exact bound, learned widths</td><td class="num">7.28</td><td class="num">23.69</td></tr>
+    <tr><td>centre μ̃</td><td>exact bound, fixed widths</td><td class="num">8.06</td><td class="num">13.22</td></tr>
+    <tr><td>noise ε</td><td>exact bound, fixed widths</td><td class="num">7.67</td><td class="num">13.51</td></tr>
+    <tr class="hl"><td>noise ε</td><td>L<sub>simple</sub></td><td class="num">9.46</td><td class="num">3.17</td></tr>
+  </tbody>
+</table></div>
+<h4>What the rows say</h4>
+<ul>
+  <li>Predicting the centre works only on the exact bound; trained with unweighted squared error on the centre it was unstable.</li>
+  <li>Learning the widths made training unstable and samples worse, for both parameterizations.</li>
+  <li>On the exact bound, predicting the noise is about as good as predicting the centre (13.51 against 13.22). With L<sub>simple</sub>, it is far better (3.17).</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>The winning combination is a <em>pair</em>: ε-prediction and the unweighted loss. The paper also mentions trying to predict x<sub>0</sub> directly, which gave worse samples early on. Later work revisited learned widths with a different parameterization, but the ε-prediction, fixed-width recipe of this table is where most implementations start.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Progressive coding <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S4.SS3">original</a></span></h3>
+<blockquote class="quote">“More than half of the lossless codelength describes imperceptible distortions.”<cite>Ho, Jain and Abbeel (2020), §4.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Picture a slow internet connection loading a photo: first a blurry thumbnail, then sharper and sharper. The bound can be read as exactly such a transmission: send x<sub>T</sub>, then x<sub>T−1</sub>, and so on, each costing the bits of one KL term. At any moment the receiver can guess the final picture from what has arrived.</p>
+<h4>Tiny example</h4>
+<p>Midway, the receiver holds the toy's x<sub>t</sub> = 1.9 at a level with ᾱ<sub>t</sub> = 0.64, and the network guesses the noise in it as 0.5. Undoing the shortcut gives the receiver's best guess of the clean value: (1.9 − 0.6 × 0.5) / 0.8 = 2.0.</p>
+<div class="eq" data-tex="\mathbf{x}_0 \approx \htmlData{sym=x0hat}{\hat{\mathbf{x}}_0} = \big(\htmlData{sym=xt}{\mathbf{x}_t} - \htmlData{sym=noiseshare}{\sqrt{1-\bar\alpha_t}}\,\htmlData{sym=epstheta}{\boldsymbol{\epsilon}_\theta(\mathbf{x}_t)}\big)\,/\,\htmlData{sym=sqrtabar}{\sqrt{\bar\alpha_t}}" data-fallback="x_0 ≈ x̂_0 = (x_t − √(1 − ᾱ_t) ε_θ(x_t)) / √ᾱ_t"></div>
+<div class="symtable" data-syms="x0hat,xt,noiseshare,epstheta,sqrtabar"></div>
+<p class="inwords"><strong>In words:</strong> “the best guess of the clean picture is the noisy one with the guessed noise taken out, scaled back up by the surviving signal share.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1.9 − √0.36 × 0.5) / √0.64 = (1.9 − 0.3) / 0.8 = 2.0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x_t, alpha_bar_t, eps_hat = 1.9, 0.64, 0.5
+# x̂_0 = (x_t − √(1 − ᾱ_t) ε_θ) / √ᾱ_t
+round((x_t - math.sqrt(1 - alpha_bar_t) * eps_hat) / math.sqrt(alpha_bar_t), 4)  # → 2.0</code></pre>
+<div class="plot" id="rd-plot">
+  <div class="controls"><span>CIFAR10 test set, from the values in the paper's Table 4.</span></div>
+  <div id="rd-dist"></div>
+  <p class="readout" id="rd-dist-readout">Hover or use the arrow keys to read a point.</p>
+  <div id="rd-rate"></div>
+  <p class="readout" id="rd-rate-readout">Hover or use the arrow keys to read a point.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> both charts share an x-axis, the reverse-process time T − t + 1 as the paper's Table 4 lists it, from step 100 to step 1,000 of generation. The top chart is distortion, the root-mean-squared error of the receiver's guess x̂<sub>0</sub> on a 0 to 255 pixel scale: it falls steadily from 67.6 to 12.0 by step 900 and to 0.95 at the end. The bottom chart is rate, the bits per dimension received so far: almost nothing until step 800 (0.054), 0.12 at step 900, and then a jump to 1.78 in the last hundred steps. So most of the bits buy the last drop in error, from 12 grey levels to under 1: details the eye barely sees. This is Figure 5 of the paper, redrawn from its Table 4.</p>
+<p>The paper's best CIFAR10 model has a rate of 1.78 bits per dimension and a distortion of 1.97 bits per dimension, a root-mean-squared error of 0.95 on the 0 to 255 scale. Its train and test codelengths differ by at most 0.03 bits per dimension, so it is not overfitting.</p>
+<h4>Progressive generation</h4>
+<p>Running the sampler and showing x̂<sub>0</sub> along the way, large features (layout, colour) appear first and fine details last. Freezing x<sub>t</sub> and sampling several endings shows the same thing from the other side: when t is large only the coarse features are shared; when t is small, all but the finest details are.</p>
+<h4>A connection to autoregressive models</h4>
+<p><strong>Tiny example:</strong> take a 3-pixel image and a strange “diffusion” that blanks one pixel per step: step 1 blanks pixel 1, step 2 pixel 2, step 3 pixel 3, ending at a blank image. Running it backwards means predicting pixel 3, then pixel 2 given pixel 3, then pixel 1 given the other two: that is an <span class="t" data-t="autoregressive generation">autoregressive model</span>. The paper shows the bound becomes exactly an autoregressive loss under that choice, and so reads Gaussian diffusion as autoregression along a generalised “bit ordering” that no reordering of pixels could express. T also need not equal the number of pixels: T = 1,000 is less than the 3,072 numbers of a CIFAR10 image.</p>
+<h4>Why it matters today</h4>
+<p>The coarse-to-fine behaviour is why step budgets matter: cut the early steps and the layout suffers, cut the late ones and only fine texture does. It also explains why diffusion models make better pictures than their likelihoods suggest: the likelihood pays for invisible details. The paper notes Algorithms 3 and 4 are a proof of concept, since the coding procedure they assume is not tractable for high-dimensional data.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Interpolation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S4.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Blend two faces by mixing their pixels and you get a ghostly double exposure. Instead, noise both faces part of the way, blend the noisy versions, and let the reverse process clean up the blend: it removes the ghosting and paints a single, plausible face between the two.</p>
+<h4>Tiny example</h4>
+<p>Two pictures noised to the same step (with the same noise, so only the pictures differ) have values 1.9 and −0.5 at one pixel. A quarter of the way from the first to the second: 0.75 × 1.9 + 0.25 × (−0.5) = 1.3. The reverse process then denoises that blended value.</p>
+<div class="eq" data-tex="\htmlData{sym=xbar}{\bar{\mathbf{x}}_t} = (1-\htmlData{sym=lam}{\lambda})\,\htmlData{sym=xtA}{\mathbf{x}_t} + \htmlData{sym=lam}{\lambda}\,\htmlData{sym=xtB}{\mathbf{x}'_t}" data-fallback="x̄_t = (1 − λ) x_t + λ x′_t"></div>
+<div class="symtable" data-syms="xbar,lam,xtA,xtB"></div>
+<p class="inwords"><strong>In words:</strong> “take a share 1 − λ of the first noised picture and a share λ of the second, then run the reverse process from the blend.”</p>
+<p class="inwords"><strong>With the numbers:</strong> λ = 0.25: 0.75 × 1.9 + 0.25 × (−0.5) = 1.3. The printed formula in the paper writes the clean pictures x<sub>0</sub> and x′<sub>0</sub> on the right; the surrounding text (“the linearly interpolated latent”, with the noise fixed so that x<sub>t</sub> and x′<sub>t</sub> stay the same) makes clear the noised versions are meant, as written here.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x_t, x_t_prime, lam = 1.9, -0.5, 0.25
+# x̄_t = (1 − λ) x_t + λ x′_t
+round((1 - lam) * x_t + lam * x_t_prime, 4)  # → 1.3</code></pre>
+<h4>What the paper found</h4>
+<p>On CelebA-HQ faces at t = 500, interpolations vary pose, skin tone, hairstyle, expression and background smoothly, though not eyewear. More noising steps before blending give coarser, more varied interpolations; after 1,000 steps the source pictures are forgotten and the results are new samples.</p>
+<h4>Why it matters today</h4>
+<p>“Noise part of the way, then denoise” became a standard editing tool: image-to-image translation and sketch-to-picture tools use exactly this move, choosing how far to noise as a strength knob.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Diffusion models look like cousins of several families at once: of VAEs (a latent-variable model trained on a bound), of flows (a chain of transformations), and of score-based models (following learned arrows towards the data). The paper places itself among them.</p>
+<h3 class="rung">What it says</h3>
+<ul>
+  <li><strong>Versus VAEs and flows:</strong> the “encoder” q has no parameters, and the top latent x<sub>T</sub> shares almost no information with the data. See the <a href="auto-encoding-variational-bayes.html">VAE companion</a> for the bound both families train on.</li>
+  <li><strong>Versus score matching (NCSN):</strong> the same network idea, but diffusion admits a straightforward log-likelihood and trains its sampler directly by variational inference. Appendix C lists four differences: a U-Net with self-attention; shrinking the data by √(1 − β<sub>t</sub>) each step so the network's inputs stay the same size; a forward process that truly destroys the signal (L<sub>T</sub> ≈ 0) with small β<sub>t</sub>; and sampler coefficients derived from β<sub>t</sub> rather than set by hand.</li>
+  <li><strong>The reverse implication:</strong> a certain weighted form of denoising score matching <em>is</em> variational inference for a Langevin-like sampler.</li>
+</ul>
+<h3 class="rung">Tiny example</h3>
+<p>The shrink matters. Without it, adding noise of variance 0.1 and then 0.2 to a pixel of variance 1 leaves variance 1.3, and after many steps the inputs grow without limit. With it, (1 − 0.1) × 1 + 0.1 = 1 and then (1 − 0.2) × 1 + 0.2 = 1: the variance stays at 1 at every step.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The two views, “chain of denoising steps” and “follow the score”, were soon unified as one family described in continuous time. The <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> covers the score view and its later relative, flow matching.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion and broader impact <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2006.11239#S6">original</a></span></h2>
+<h3 class="rung">What the paper concludes</h3>
+<p>Diffusion models produce high-quality images, and they connect to variational inference for Markov chains, denoising score matching, annealed Langevin dynamics, energy-based models, autoregressive models and progressive lossy compression. The authors expect good inductive biases for image data and look to other data types and to diffusion as a component in other systems.</p>
+<h3 class="rung">Broader impact</h3>
+<p>The paper names the risks directly: generative models make fake images and videos of public figures easier to produce, and they reflect and can reinforce the biases of datasets scraped from the internet. It also names benefits: compression, representation learning for downstream tasks, and creative uses in art, photography and music.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Both halves came true within a few years. Text-to-image, video and audio generators are built on this recipe, and detecting and labelling generated media became a field of its own.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2020</h2>
+<p>The training loop of Algorithm 1 is recognisably the same. Almost everything around it has been tuned:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Choice in the paper</th><th>Common today</th><th>Why</th><th>Where to read</th></tr></thead>
+  <tbody>
+    <tr><td>1,000 sampling steps (Algorithm 2)</td><td>DDIM and other samplers, 20 to 50 steps; distilled models, a handful</td><td>A sample costs one network call per step</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Diffusion on pixels</td><td>Latent diffusion inside a VAE's code</td><td>Tens of times fewer numbers per image</td><td><a href="auto-encoding-variational-bayes.html">VAE companion</a></td></tr>
+    <tr><td>Unconditional samples</td><td>Text conditioning with classifier-free guidance</td><td>Generate what was asked for</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>U-Net denoiser</td><td>Often a transformer over latent patches</td><td>Scales better with size</td><td><a href="attention-is-all-you-need.html">Transformer companion</a></td></tr>
+    <tr><td>Curved noising paths, ε-prediction</td><td>Also flow matching with straight paths</td><td>Fewer steps for the same quality</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Jonathan Ho, Ajay Jain and Pieter Abbeel, <em>Denoising Diffusion Probabilistic Models</em>, NeurIPS 2020. <a href="https://arxiv.org/abs/2006.11239">arXiv:2006.11239</a>. Quotations are brief and attributed; selected table rows are reproduced with attribution and the figures are redrawn. All explanations, diagrams, worked numbers and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // eq 1
+    pjoint: { tex: "p_\\theta(\\mathbf{x}_{0:T})", name: "The reverse process", meaning: "The model's probability for a whole path from noise x_T down to a picture x_0. The subscript 0:T means every step from 0 to T.", shape: "one number per path", example: "log p = −1.8415 for the toy path" },
+    pxT: { tex: "p(\\mathbf{x}_T)", name: "Where sampling starts", meaning: "The standard bell curve N(0, I): pure noise, the same size as a picture. It has no parameters.", shape: "a density over pictures", example: "log N(1.3913; 0, 1) = −1.8867" },
+    prodt: { tex: "\\prod_{t=1}^{T}", name: "Product over steps", meaning: "Multiply what follows for t = 1, 2, …, T. Each step's probability multiplies in, because each step depends only on the one before.", shape: "one number", example: "two steps in the toy chain" },
+    pstep: { tex: "p_\\theta(\\mathbf{x}_{t-1}\\mid\\mathbf{x}_t)", name: "One reverse step", meaning: "The learned probability of the slightly cleaner picture x_{t−1}, given the noisier x_t.", shape: "a density over pictures", example: "N(2.0555; 1.90, 0.2), illustrative" },
+    Ngauss: { tex: "\\mathcal{N}", name: "Normal (Gaussian) density", meaning: "The bell curve: N(x; m, v) is its height at x for centre m and variance v.", shape: "a density", example: "" },
+    mutheta: { tex: "\\boldsymbol{\\mu}_\\theta(\\mathbf{x}_t,t)", name: "The model's centre", meaning: "Where the network says the reverse step should land, computed from the noisy picture and the step number.", shape: "same size as a picture", example: "1.90, illustrative; 1.7997 with a perfect noise guess" },
+    Sigmatheta: { tex: "\\boldsymbol{\\Sigma}_\\theta(\\mathbf{x}_t,t)", name: "The model's width", meaning: "How spread out the reverse step is. The paper fixes it to σ_t² I instead of learning it.", shape: "per pixel", example: "0.2 = β_2 in the toy" },
+    // eq 2
+    qjoint: { tex: "q(\\mathbf{x}_{1:T}\\mid\\mathbf{x}_0)", name: "The forward process", meaning: "The fixed chain that noises a real picture step by step. In VAE terms it is the approximate posterior, but with no parameters.", shape: "a density over paths", example: "2.0 → 2.0555 → 1.3913" },
+    qstep: { tex: "q(\\mathbf{x}_t\\mid\\mathbf{x}_{t-1})", name: "One forward step", meaning: "Shrink the previous value by √(1 − β_t) and add noise of variance β_t.", shape: "a density over pictures", example: "N(1.8974, 0.1) for step 1" },
+    sqrtab: { tex: "\\sqrt{1-\\beta_t}", name: "The shrink", meaning: "How much of the previous value survives this step. It keeps the total variance from growing.", shape: "just under 1", example: "√0.9 = 0.9487" },
+    betat: { tex: "\\beta_t", name: "Noise dose of step t", meaning: "“Beta”: the share of variance this step replaces with noise. The list of all of them is the noise schedule.", shape: "0 … 1, small", example: "0.1 and 0.2 in the toy; 0.0001 to 0.02 in the paper" },
+    I: { tex: "\\mathbf{I}", name: "Identity matrix", meaning: "Says every pixel gets its own independent noise.", shape: "D × D", example: "" },
+    // eq 3
+    Enll: { tex: "\\mathbb{E}[-\\log p_\\theta(\\mathbf{x}_0)]", name: "Negative log-likelihood", meaning: "How surprised the model is by real pictures, on average. Lower is better; it cannot be computed directly.", shape: "one number", example: "" },
+    Eq: { tex: "\\mathbb{E}_q", name: "Average over forward paths", meaning: "The average over real pictures and forward noise draws: run the forward chain many times and average what follows.", shape: "turns random paths into one number", example: "one path in the toy" },
+    sumt: { tex: "\\sum_{t\\ge 1}", name: "Sum over every step", meaning: "Add up one term per step, t = 1 to T.", shape: "one number", example: "−0.4396 + (−0.1125)" },
+    Lbound: { tex: "L", name: "The bound", meaning: "The variational bound on negative log-likelihood. Training pushes it down.", shape: "one number", example: "1.3347 for the toy path" },
+    // eq 4
+    qt0: { tex: "q(\\mathbf{x}_t\\mid\\mathbf{x}_0)", name: "The shortcut", meaning: "The distribution of the noisy picture at step t, straight from the clean one, with no need to run the steps in between.", shape: "a density over pictures", example: "N(1.6971, 0.28) at t = 2" },
+    sqrtabar: { tex: "\\sqrt{\\bar\\alpha_t}", name: "Signal share", meaning: "How much of the clean picture is still in x_t.", shape: "1 down to about 0", example: "√0.72 = 0.8485; √0.64 = 0.8" },
+    oneminusabar: { tex: "1-\\bar\\alpha_t", name: "Noise variance", meaning: "The variance of the noise in x_t.", shape: "0 up to about 1", example: "0.28" },
+    alphat: { tex: "\\alpha_t", name: "Survival share of step t", meaning: "“Alpha”: 1 − β_t, the share of variance step t keeps.", shape: "just under 1", example: "0.9, 0.8" },
+    abar: { tex: "\\bar\\alpha_t", name: "Signal left after t steps", meaning: "“Alpha bar”: the product of every step's survival share so far.", shape: "1 down to about 0", example: "0.72 in the toy; 0.00004 after 1,000 paper steps" },
+    prods: { tex: "\\prod_{s=1}^{t}", name: "Product up to t", meaning: "Multiply for s = 1, 2, …, t.", shape: "one number", example: "0.9 × 0.8" },
+    alphas: { tex: "\\alpha_s", name: "Survival share of step s", meaning: "The share step s keeps.", shape: "just under 1", example: "0.9 then 0.8" },
+    // eq 5
+    DKL: { tex: "D_{KL}", name: "KL divergence", meaning: "How different the first distribution is from the second: 0 only when they match. Between two bell curves it has an exact formula.", shape: "one number, ≥ 0", example: "1.7165 for the toy's L_T" },
+    LT: { tex: "L_T", name: "Prior matching term", meaning: "How far the end of the forward chain is from pure noise. Fixed betas make it a constant.", shape: "one number", example: "1.7165 (toy); ≈ 10⁻⁵ bits per dimension (paper)" },
+    qT0: { tex: "q(\\mathbf{x}_T\\mid\\mathbf{x}_0)", name: "End of the forward chain", meaning: "Where a real picture ends up after all T steps.", shape: "a density", example: "N(1.6971, 0.28) in the toy" },
+    Ltm1: { tex: "L_{t-1}", name: "Middle term for step t", meaning: "How far the model's reverse step is from the true backward step, as a KL between two bell curves.", shape: "one number per step", example: "0.2185 for the toy's step 2" },
+    qpost: { tex: "q(\\mathbf{x}_{t-1}\\mid\\mathbf{x}_t,\\mathbf{x}_0)", name: "True backward step", meaning: "Where x_{t−1} was, given both the current x_t and the clean x_0. Known exactly, because the forward process is Gaussian.", shape: "a bell curve", example: "N(1.7997, 0.0714)" },
+    sumtg1: { tex: "\\sum_{t>1}", name: "Sum over the middle steps", meaning: "Add up one KL per step from t = 2 to T.", shape: "one number", example: "one term in the toy" },
+    L0: { tex: "L_0", name: "Reconstruction term", meaning: "How well the last reverse step rebuilds the real picture. §3.3 makes it discrete.", shape: "one number", example: "−0.2199 with a continuous density" },
+    p0: { tex: "p_\\theta(\\mathbf{x}_0\\mid\\mathbf{x}_1)", name: "The last reverse step", meaning: "The probability of the final picture given the almost-clean x_1.", shape: "a probability", example: "0.256 for one pixel's bin" },
+    // eq 7
+    mutilde: { tex: "\\tilde{\\boldsymbol{\\mu}}_t", name: "True backward centre", meaning: "“Mu tilde”: the centre of the true backward step, a weighted blend of x_0 and x_t.", shape: "same size as a picture", example: "1.7997" },
+    c0: { tex: "\\frac{\\sqrt{\\bar\\alpha_{t-1}}\\,\\beta_t}{1-\\bar\\alpha_t}", name: "Weight on the clean picture", meaning: "How much of x_0 goes into the blend.", shape: "a number", example: "0.6776" },
+    ct: { tex: "\\frac{\\sqrt{\\alpha_t}(1-\\bar\\alpha_{t-1})}{1-\\bar\\alpha_t}", name: "Weight on the noisy picture", meaning: "How much of x_t goes into the blend.", shape: "a number", example: "0.3194" },
+    betatilde: { tex: "\\tilde\\beta_t", name: "True backward variance", meaning: "“Beta tilde”: the spread of the true backward step, slightly smaller than β_t.", shape: "a small number", example: "0.0714" },
+    // eq 8
+    inv2sig: { tex: "\\frac{1}{2\\sigma_t^2}", name: "Weight from the model's width", meaning: "Misses count more when the model's step is narrow.", shape: "a positive number", example: "1 / 0.4 = 2.5" },
+    C: { tex: "C", name: "A constant", meaning: "Everything in the KL that does not depend on the network's weights.", shape: "one number", example: "0.1934" },
+    // eq 11
+    invsqrta: { tex: "\\frac{1}{\\sqrt{\\alpha_t}}", name: "Undo the shrink", meaning: "Scale back up by what this step's forward shrink took away.", shape: "just over 1", example: "1 / √0.8 = 1.118" },
+    xt: { tex: "\\mathbf{x}_t", name: "The current noisy picture", meaning: "The input to the network at step t.", shape: "same size as a picture", example: "1.3913; 1.9" },
+    share: { tex: "\\frac{\\beta_t}{\\sqrt{1-\\bar\\alpha_t}}", name: "This step's share of the noise", meaning: "Only a sliver of all the noise in x_t was added at step t; this is that sliver.", shape: "a small number", example: "0.2 / √0.28 = 0.378" },
+    epstheta: { tex: "\\boldsymbol{\\epsilon}_\\theta", name: "The network's noise guess", meaning: "“Epsilon theta”: the network's estimate of the noise mixed into x_t. The paper's key design choice.", shape: "same size as a picture", example: "−0.5779 (a perfect guess); 0.5" },
+    xtm1: { tex: "\\mathbf{x}_{t-1}", name: "The next, cleaner picture", meaning: "The result of one sampling step.", shape: "same size as a picture", example: "1.1179" },
+    sigmat: { tex: "\\sigma_t", name: "Wobble size", meaning: "The fixed spread of the reverse step: √β_t or √β̃_t.", shape: "a small number", example: "√0.19 = 0.436" },
+    zfresh: { tex: "\\mathbf{z}", name: "Fresh noise", meaning: "A new standard-normal draw at each sampling step; zero on the last step.", shape: "same size as a picture", example: "0.5" },
+    // eq 12
+    Ex0eps: { tex: "\\mathbb{E}_{\\mathbf{x}_0,\\boldsymbol{\\epsilon}}", name: "Average over pictures and noise", meaning: "Average over real pictures and noise draws.", shape: "one number", example: "" },
+    wt: { tex: "\\frac{\\beta_t^2}{2\\sigma_t^2\\alpha_t(1-\\bar\\alpha_t)}", name: "The step's weight", meaning: "How much the exact bound counts a noise-guessing miss at step t. It depends only on the schedule.", shape: "a positive number", example: "0.4464 (toy); 0.5 to 0.0102 (paper)" },
+    epstrue: { tex: "\\boldsymbol{\\epsilon}", name: "The real noise", meaning: "The noise actually drawn to make the training input: the answer the network is graded against.", shape: "same size as a picture", example: "(0.5, −1.0)" },
+    noisy: { tex: "\\sqrt{\\bar\\alpha_t}\\mathbf{x}_0 + \\sqrt{1-\\bar\\alpha_t}\\boldsymbol{\\epsilon}", name: "The noised training input", meaning: "The real picture pushed to step t in one jump: the shortcut.", shape: "same size as a picture", example: "0.8 × 2.0 + 0.6 × 0.5 = 1.9" },
+    // eq 13
+    prodD: { tex: "\\prod_{i=1}^{D}", name: "Product over pixel values", meaning: "Multiply one bin probability per number in the picture; i counts pixels and colour channels.", shape: "one number", example: "D = 3,072 for CIFAR10" },
+    dminus: { tex: "\\delta_-", name: "Bottom of the bin", meaning: "Half a pixel step below the value; minus infinity for the darkest value.", shape: "a number", example: "0.0000" },
+    dplus: { tex: "\\delta_+", name: "Top of the bin", meaning: "Half a pixel step above the value; plus infinity for the brightest value.", shape: "a number", example: "0.0078" },
+    mui: { tex: "\\mu_\\theta^i(\\mathbf{x}_1,1)", name: "Last step's centre, pixel i", meaning: "The model's final centre for this one pixel value.", shape: "one number", example: "0.01, illustrative" },
+    sig1: { tex: "\\sigma_1^2", name: "Last step's variance", meaning: "The fixed variance of the final step.", shape: "a small number", example: "0.0001 (σ₁ = 0.01)" },
+    // eq 14
+    Lsimple: { tex: "L_{\\mathrm{simple}}", name: "The simplified loss", meaning: "The unweighted mean squared error on the noise guess, averaged over random steps: the paper's best objective for sample quality.", shape: "one number", example: "0.05 for one example; 2 for always guessing 0" },
+    Etx0eps: { tex: "\\mathbb{E}_{t,\\mathbf{x}_0,\\boldsymbol{\\epsilon}}", name: "Average over steps, pictures and noise", meaning: "Pick a step uniformly from 1 to T, a real picture and a noise draw; average over all of these. In code, a batch average.", shape: "one number", example: "" },
+    // eq 15
+    x0hat: { tex: "\\hat{\\mathbf{x}}_0", name: "Predicted clean picture", meaning: "“x-zero hat”: the best guess of the finished picture from the current noisy one.", shape: "same size as a picture", example: "2.0" },
+    noiseshare: { tex: "\\sqrt{1-\\bar\\alpha_t}", name: "Noise share", meaning: "How much noise is in x_t, as a spread.", shape: "0 … 1", example: "√0.36 = 0.6" },
+    // 4.4
+    xbar: { tex: "\\bar{\\mathbf{x}}_t", name: "The blended noisy picture", meaning: "The mix of two noised pictures that the reverse process then cleans up.", shape: "same size as a picture", example: "1.3" },
+    lam: { tex: "\\lambda", name: "Blend amount", meaning: "“Lambda”: 0 gives the first picture, 1 the second.", shape: "0 … 1", example: "0.25" },
+    xtA: { tex: "\\mathbf{x}_t", name: "First picture, noised", meaning: "The first source picture after t forward steps.", shape: "same size as a picture", example: "1.9" },
+    xtB: { tex: "\\mathbf{x}'_t", name: "Second picture, noised", meaning: "The second source picture after t forward steps, with the same noise draw.", shape: "same size as a picture", example: "−0.5" },
+  },
+
+  blocks: {
+    // Figure 2
+    xT: { title: "x<sub>T</sub>: pure noise", body: "<p>The end of the forward chain and the start of sampling: after T = 1,000 steps only 0.0064 of the signal is left, so it is drawn from N(0, I).</p>", shape: "same size as the picture (32 × 32 × 3 for CIFAR10)" },
+    dots: { title: "Many steps", body: "<p>The chain has T = 1,000 steps in the paper. Every intermediate x<sub>t</sub> has the same size as the picture.</p>" },
+    xt: { title: "x<sub>t</sub>: a noisy picture", body: "<p>The picture after t forward steps: √ᾱ<sub>t</sub> of the signal plus noise. Training jumps straight here with the shortcut.</p>", lesson: "primer/ml/generative/diffusion.html#add_noise" },
+    xt1: { title: "x<sub>t−1</sub>: one step cleaner", body: "<p>One reverse step produces this from x<sub>t</sub>. The true backward step, given x<sub>0</sub>, is a bell curve with centre μ̃<sub>t</sub> and variance β̃<sub>t</sub>.</p>" },
+    x0: { title: "x<sub>0</sub>: the real picture", body: "<p>The data, scaled to [−1, 1]. Shaded because it is observed during training. At generation time it is what the chain produces.</p>" },
+    parrow: { title: "p<sub>θ</sub>(x<sub>t−1</sub> | x<sub>t</sub>): learned reverse step", body: "<p>A bell curve whose centre comes from the network's noise guess, with a fixed width σ<sub>t</sub>. The solid arrows in the chain are these steps.</p>", lesson: "primer/ml/generative/diffusion.html#ddpm_step" },
+    qarrow: { title: "q(x<sub>t</sub> | x<sub>t−1</sub>): fixed forward step", body: "<p>Shrink by √(1 − β<sub>t</sub>), add noise of variance β<sub>t</sub>. No parameters. The dashed arrow is one of these.</p>", lesson: "primer/ml/generative/diffusion.html#noise_step" },
+    // Algorithms
+    a1x0: { title: "x<sub>0</sub> ~ q(x<sub>0</sub>)", body: "<p>A real picture from the training set.</p>" },
+    a1t: { title: "t ~ Uniform({1, …, T})", body: "<p>A random step, every step equally likely. This uniform choice is what makes the loss unweighted.</p>" },
+    a1eps: { title: "ε ~ N(0, I)", body: "<p>Fresh noise. It is both an ingredient of the input and the answer the network is graded against.</p>" },
+    a1mix: { title: "The shortcut", body: "<p>x<sub>t</sub> = √ᾱ<sub>t</sub> x<sub>0</sub> + √(1 − ᾱ<sub>t</sub>) ε: the noisy picture at step t in one line, no chain simulation.</p>", lesson: "primer/ml/generative/diffusion.html#add_noise" },
+    a1net: { title: "The network ε<sub>θ</sub>(x<sub>t</sub>, t)", body: "<p>Sees only the noisy picture and the step number, and guesses the noise. In the paper a U-Net with 35.7 million parameters for CIFAR10.</p>", lesson: "primer/ml/generative/diffusion.html#DenoiserMLP" },
+    a1loss: { title: "‖ε − ε<sub>θ</sub>‖²", body: "<p>The squared miss: L<sub>simple</sub> for one example.</p>" },
+    a1step: { title: "Gradient step", body: "<p>Backpropagate and update the network (Adam in the paper). Repeat until converged.</p>", lesson: "primer/ml/generative/diffusion.html#train_noise_predictor" },
+    a2xT: { title: "Start from noise", body: "<p>x<sub>T</sub> ~ N(0, I). Different noise gives a different picture.</p>" },
+    a2net: { title: "Guess the noise", body: "<p>Run the trained network on the current picture and step: one network call per step.</p>" },
+    a2mean: { title: "Compute μ<sub>θ</sub>", body: "<p>(x<sub>t</sub> − β<sub>t</sub>/√(1 − ᾱ<sub>t</sub>) · ε<sub>θ</sub>) / √α<sub>t</sub>: remove this step's share of the guessed noise, undo the shrink.</p>", lesson: "primer/ml/generative/diffusion.html#ddpm_step" },
+    a2z: { title: "Add a fresh wobble", body: "<p>+ σ<sub>t</sub> z with z ~ N(0, I), except on the last step. It keeps each sample committed to one possibility instead of drifting to the blurry average.</p>" },
+    a2out: { title: "Return x<sub>0</sub>", body: "<p>After T laps, a new picture. The paper displays μ<sub>θ</sub>(x<sub>1</sub>, 1) without the last noise.</p>", lesson: "primer/ml/generative/diffusion.html#ddpm_sample" },
+  },
+
+  onReady(P) {
+    scheduleChart(P);
+    weightChart(P);
+    fidBars();
+    rdCharts(P);
+  },
+};
+
+/* ---- the paper's linear schedule, with an adjustable last beta ---- */
+function schedule(betaT, T = 1000, beta1 = 1e-4) {
+  const out = [];
+  let ab = 1;
+  for (let i = 0; i < T; i++) {
+    const b = beta1 + ((betaT - beta1) * i) / (T - 1);
+    ab *= 1 - b;
+    out.push({ t: i + 1, beta: b, ab });
+  }
+  return out;
+}
+function scheduleChart(P) {
+  const input = document.getElementById("sched-bT"), out = document.getElementById("sched-readout");
+  const series = (s) => [
+    { name: "signal share √ᾱ", points: s.map((r) => [r.t, Math.sqrt(r.ab)]) },
+    { name: "noise share √(1 − ᾱ)", points: s.map((r) => [r.t, Math.sqrt(1 - r.ab)]) },
+  ];
+  let s = schedule(0.02);
+  const chart = P.lineChart(document.getElementById("sched-chart"), {
+    series: series(s), xLabel: "step t", yLabel: "share", width: 440, height: 250,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2), yMin: 0, yMax: 1,
+    readout: out, ariaLabel: "Signal share and noise share against the step, for the linear schedule",
+  });
+  function draw() {
+    const bT = +input.value;
+    document.getElementById("sched-bTv").textContent = bT.toFixed(3);
+    s = schedule(bT);
+    chart.update(series(s));
+    const cross = s.find((r) => r.ab < 0.5);
+    const last = s[s.length - 1];
+    const bits = (0.5 * (last.ab + (1 - last.ab) - Math.log(1 - last.ab) - 1)) / Math.log(2);
+    out.innerHTML = `β<sub>T</sub> = ${bT.toFixed(3)}: signal and noise cross at step <strong>${cross ? cross.t : "never"}</strong>; the last step keeps signal <strong>${Math.sqrt(last.ab).toFixed(4)}</strong>, and L<sub>T</sub> for a pixel at 1 is ${bits.toExponential(1)} bits.`;
+  }
+  input.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- the exact bound's weight per step, sigma_t^2 = beta_t ---- */
+function weightChart(P) {
+  const s = schedule(0.02);
+  const pts = s.map((r) => [r.t, r.beta / (2 * (1 - r.beta) * (1 - r.ab))]);
+  P.lineChart(document.getElementById("weight-chart"), {
+    series: [{ name: "weight in the exact bound", points: pts }],
+    xLabel: "step t (log scale)", yLabel: "weight", logX: true, width: 440, height: 240,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(3), yMin: 0, yMax: 0.55,
+    readout: document.getElementById("weight-readout"),
+    ariaLabel: "The exact bound's weight on the noise-guessing error at each step",
+  });
+}
+
+/* ---- Table 1 FID bars (selected rows) ---- */
+function fidBars() {
+  const rows = [
+    ["Gated PixelCNN", 65.93, false], ["NCSN", 25.32, false], ["BigGAN (cond.)", 14.73, false],
+    ["Diffusion, exact L", 13.51, true], ["StyleGAN2 + ADA", 3.26, false], ["Diffusion, L_simple", 3.17, true],
+  ];
+  document.getElementById("fid-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">CIFAR10 FID, lower is better (axis 0 to 70). Striped: this paper's diffusion models.</div>` +
+    rows.map(([m, v, ours]) => `<div class="share-row" style="grid-template-columns:8.5rem minmax(0,1fr) 3rem"><span>${m.replace("L_simple", "L<sub>simple</sub>")}</span><div><div class="share-bar" style="width:${((v / 70) * 100).toFixed(1)}%;${ours ? "background:var(--hatch) var(--accent)" : "background:var(--wire)"}"></div></div><span>${v}</span></div>`).join("");
+}
+
+/* ---- Figure 5 from Table 4: rate and distortion against reverse-process time ---- */
+function rdCharts(P) {
+  // Table 4 of the paper: reverse process time (T − t + 1), rate (bits/dim), distortion (RMSE on [0, 255]).
+  const table4 = [
+    [100, 0.0, 67.60125], [200, 0.00013, 60.9717], [300, 0.00081, 54.18826], [400, 0.00282, 46.12765],
+    [500, 0.00716, 38.03236], [600, 0.01507, 30.80948], [700, 0.02866, 24.43656], [800, 0.05415, 18.47482],
+    [900, 0.11994, 12.02277], [1000, 1.77581, 0.95136],
+  ];
+  P.lineChart(document.getElementById("rd-dist"), {
+    series: [{ name: "distortion (RMSE)", points: table4.map((r) => [r[0], r[2]]) }],
+    xLabel: "reverse-process time", yLabel: "RMSE (0 to 255)", width: 440, height: 220,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(1),
+    readout: document.getElementById("rd-dist-readout"), ariaLabel: "Distortion against reverse-process time",
+  });
+  P.lineChart(document.getElementById("rd-rate"), {
+    series: [{ name: "rate (bits/dim)", points: table4.map((r) => [r[0], r[1]]) }],
+    xLabel: "reverse-process time", yLabel: "bits per dimension", width: 440, height: 220,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("rd-rate-readout"), ariaLabel: "Rate against reverse-process time",
+  });
+}
+</script>
+</body>
+</html>

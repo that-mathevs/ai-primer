@@ -244,6 +244,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/regularization.html",
   "term": "benchmark contamination"
  },
+ "bernoulli distribution": {
+  "def": "The distribution of a single yes-or-no outcome, set by one number: the chance of yes. A VAE decoder for black-and-white pixels outputs one per pixel.",
+  "lesson": "primer/ml/losses.html",
+  "term": "bernoulli distribution"
+ },
  "bertscore": {
   "def": "Compares generated and reference text by embedding similarity instead of exact words.",
   "lesson": "primer/ml/metrics.html",
@@ -293,6 +298,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Storing only the sign of each number, as a single bit.",
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "binary quantization"
+ },
+ "bits per dimension": {
+  "def": "A model's negative log-likelihood per number in the data, in bits: how long a code the model needs, on average, for each pixel value. Lower is better.",
+  "lesson": "primer/ml/losses.html",
+  "term": "bits per dimension"
  },
  "blast radius": {
   "def": "How much damage a failure can do before it is noticed and stopped.",
@@ -1089,6 +1099,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/context.html",
   "term": "few-shot prompt"
  },
+ "fid": {
+  "def": "Fréchet Inception Distance: compares a set of generated images with real ones through the statistics of their features in a pretrained image network. Lower is better; 0 means indistinguishable.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "FID"
+ },
  "filter": {
   "def": "In a CNN, the small grid of learned weights a convolution slides over an image; also called a kernel.",
   "lesson": "primer/ml/cnn_rnn.html",
@@ -1669,6 +1684,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/losses.html",
   "term": "label smoothing"
  },
+ "langevin dynamics": {
+  "def": "Sampling by repeatedly taking a small step along the score, towards where data is denser, and adding a little fresh noise. A diffusion sampler has this shape.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "langevin dynamics"
+ },
  "language identification": {
   "def": "Guessing which language a text is in, so a pipeline keeps only the ones it wants.",
   "lesson": "primer/ml/pretraining.html",
@@ -1919,6 +1939,16 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/fine_tuning.html",
   "term": "margin of error"
  },
+ "marginal likelihood": {
+  "def": "How probable a model finds an example, averaged over every hidden cause that could have produced it. With a neural network inside the model that average is an intractable integral, which is why VAEs train on a lower bound instead.",
+  "lesson": "primer/ml/generative/autoencoders.html",
+  "term": "marginal likelihood"
+ },
+ "markov chain": {
+  "def": "A sequence of random steps where each step depends only on the one just before it, not on the whole history.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "markov chain"
+ },
  "master weights": {
   "def": "An fp32 copy of the weights that receives optimizer updates, so tiny updates aren't lost.",
   "lesson": "primer/ml/pretraining.html",
@@ -2038,6 +2068,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Replacing one feed-forward network with many expert networks and a router that sends each token to a few of them.",
   "lesson": "primer/ml/transformer.html",
   "term": "Mixture of Experts"
+ },
+ "mlp": {
+  "def": "Multi-layer perceptron: the plainest neural network, layers of weighted sums each followed by a nonlinearity, with every unit connected to every unit in the next layer.",
+  "lesson": "primer/ml/neural_net.html",
+  "term": "MLP"
  },
  "modality": {
   "def": "One kind of input a model can take: text, images, audio or video.",
@@ -2459,6 +2494,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/positional.html",
   "term": "positional encoding"
  },
+ "posterior": {
+  "def": "What you believe about a hidden quantity after seeing the data: the prior, reweighted by how well each value explains what was observed.",
+  "lesson": "primer/ml/generative/autoencoders.html",
+  "term": "posterior"
+ },
  "posterior collapse": {
   "def": "When a VAE's code carries no information because the KL penalty outweighs what the code saves in rebuild error, so every output is the same average.",
   "lesson": "primer/ml/generative/autoencoders.html",
@@ -2523,6 +2563,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The first, most expensive training stage: predicting the next token over trillions of tokens of text.",
   "lesson": "primer/ml/training_stages.html",
   "term": "pretraining"
+ },
+ "prior": {
+  "def": "What you believe about a hidden quantity before seeing any data. A VAE's prior over codes is the standard normal distribution.",
+  "lesson": "primer/ml/generative/autoencoders.html",
+  "term": "prior"
  },
  "privilege separation": {
   "def": "Splitting work so the part that reads untrusted content can't take dangerous actions.",
@@ -2788,6 +2833,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A wrong answer caused because no relevant document was retrieved.",
   "lesson": "primer/ml/embeddings/operations.html",
   "term": "retrieval failure"
+ },
+ "reverse process": {
+  "def": "The learned half of a diffusion model: a chain of small denoising steps that turns pure noise back into data.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "reverse process"
  },
  "reward": {
   "def": "The single number the environment returns to say how good an action was.",
@@ -3459,6 +3509,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "two-stage retrieval"
  },
+ "u-net": {
+  "def": "An image network that shrinks the picture step by step to see the whole of it, then grows it back, with shortcut links joining matching sizes. The classic diffusion denoiser.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "U-Net"
+ },
  "umap": {
   "def": "A projection to 2-D that keeps each point's neighbours close but distorts other distances.",
   "lesson": "primer/ml/embeddings/clustering.html",
@@ -3523,6 +3578,11 @@ window.PRIMER_GLOSSARY = {
   "def": "An autoencoder whose encoder outputs a fuzzy region (mean and spread) pulled towards the standard normal, so random codes decode to new data.",
   "lesson": "primer/ml/generative/autoencoders.html",
   "term": "variational autoencoder"
+ },
+ "variational inference": {
+  "def": "Approximating a distribution you cannot compute, usually a posterior, with the closest member of a simple family by maximising a lower bound. A VAE does it with a network that outputs the approximation for each example.",
+  "lesson": "primer/ml/generative/autoencoders.html",
+  "term": "variational inference"
  },
  "vector": {
   "def": "A list of numbers, like (3, 1, 2). In AI, a word, sentence or image is represented as a vector.",

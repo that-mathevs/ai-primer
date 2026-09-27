@@ -1,0 +1,3 @@
+# Parallel branches each add glossary terms: keep every added line from both sides.
+# A term both sides added then appears twice, which tests/test_glossary.py fails on.
+primer/glossary.py merge=union

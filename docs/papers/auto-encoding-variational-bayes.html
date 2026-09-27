@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto-Encoding Variational Bayes, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Kingma and Welling (2013), the paper that introduced the variational autoencoder and the reparameterization trick.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="auto-encoding-variational-bayes">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Method</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Problem scenario</a></li>
+          <li><a href="#s2-2">2.2 The variational bound</a></li>
+          <li><a href="#s2-3">2.3 SGVB and AEVB</a></li>
+          <li><a href="#s2-4">2.4 The reparameterization trick</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Example: the variational auto-encoder</a></li>
+      <li><a href="#s4">4 Related work</a></li>
+      <li><a href="#s5">5 Experiments</a></li>
+      <li><a href="#s6">6–7 Conclusion and future work</a></li>
+      <li><a href="#appendix">Appendices A–F</a>
+        <ol>
+          <li><a href="#appa">A The learned manifolds</a></li>
+          <li><a href="#appb">B The Gaussian KL, derived</a></li>
+          <li><a href="#appc">C The encoder and decoder networks</a></li>
+          <li><a href="#appdf">D–F Estimators and full VB</a></li>
+        </ol>
+      </li>
+      <li><a href="#today">What changed since 2013</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Auto-Encoding Variational Bayes, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Kingma and Welling (2013), the paper that introduced the variational autoencoder (VAE) and the reparameterization trick.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1312.6114">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1312.6114">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1312.6114">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, so its figures are redrawn from scratch and its settings appear only as a few attributed facts in this page's own tables. Every worked number on this page comes from a one-number example built here, not from the paper. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols.</li>
+  <li>The diagrams are live: hover or tap any part to see what it does. The sliders recompute everything as you drag.</li>
+</ul>
+<p>Each idea is explained in the same order: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>. The whole page leans on one tiny world, small enough to solve exactly, so you can see every quantity the paper can only approximate:</p>
+<div class="play">
+  <p style="margin:0"><strong>The one-number world.</strong> A hidden number <em>z</em> is drawn from the <span class="t" data-t="standard normal distribution">standard bell curve</span> (centre 0, spread 1). What we observe is <em>x</em> = <em>z</em> plus fresh bell-curve noise of spread 1. We see <strong>x = 2</strong>. Which <em>z</em> produced it? Because this world is so simple, the answer can be worked out exactly: <em>z</em> is most likely around <strong>1</strong>, give or take about 0.7. Real models have millions of numbers in <em>x</em> and a neural network between <em>z</em> and <em>x</em>, and then no exact answer exists. That gap is the problem this paper solves.</p>
+</div>
+<p>The code that builds a VAE from scratch, in NumPy, lives in <a class="lesson" data-lesson="primer/ml/generative/autoencoders.html">the autoencoders lesson</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“How can we perform efficient inference and learning in directed probabilistic models, in the presence of continuous latent variables with intractable posterior distributions, and large datasets?”<cite>Kingma and Welling (2013), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/1312.6114">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A detective sees a footprint and wants to know who made it. Going forwards is easy: pick a person, and you can say what footprint they would leave. Going backwards (footprint to person) is the hard direction. This paper trains two networks together: a <em>forward</em> one that turns hidden causes into data (a decoder) and a <em>backward</em> one that makes a quick educated guess of the causes from the data (an encoder). The guesser is trained so that its guesses make the forward model as good as possible.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A <strong>reparameterization</strong> of the <span class="t" data-t="evidence lower bound">variational lower bound</span> gives an estimate of it that ordinary <span class="t" data-t="stochastic gradient descent">stochastic gradient</span> methods can optimise directly.</li>
+  <li>For a dataset of independent examples, each with its own hidden code, training an <strong>approximate inference model</strong> (a network that guesses the code from the example) with that estimate makes inference fast. With neural networks on both sides, this is the <span class="t" data-t="variational autoencoder">variational autoencoder</span>.</li>
+  <li>The experiments (on handwritten digits and faces) show it trains faster and reaches a better bound than the older wake-sleep algorithm.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The reparameterization trick, <em>z</em> = <em>μ</em> + <em>σ</em>·<em>ε</em>, is now a standard tool for sending gradients through randomness. VAEs themselves became the compressors inside image generators: the autoencoder at both ends of <span class="t" data-t="latent diffusion">latent diffusion</span> is a VAE with a small KL weight.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S1">original</a></span></h2>
+<blockquote class="quote">“When a neural network is used for the recognition model, we arrive at the variational auto-encoder.”<cite>Kingma and Welling (2013), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Before this paper, the standard way to guess hidden causes (<span class="t" data-t="variational inference">variational inference</span>) worked like solving a fresh algebra problem for every single photo: slow, and only possible when the algebra happened to come out neatly. The paper's move is to replace all those individual solutions with one trained guesser that answers for any photo in a single pass. The paper calls it a <span class="t" data-tip-title="Recognition model" data-tip="The paper's name for the network that guesses the hidden code z from an example x. It is the VAE's encoder, and it approximates the true posterior p(z | x).">recognition model</span>; today everyone calls it the encoder.</p>
+<h3 class="rung">Tiny example</h3>
+<p>In the one-number world, the exact backward answer for x = 2 is a bell curve centred at 1 with variance 0.5. For x = 4 it would be centred at 2. A recognition model learns the rule “centre = x / 2, variance = 0.5” once, then applies it to every x for free. In a real model no such neat rule exists, so a neural network learns an approximate one.</p>
+<h3 class="rung">Two names the paper introduces</h3>
+<ul>
+  <li><strong>SGVB</strong> (Stochastic Gradient Variational Bayes): the estimator of the bound, built with the reparameterization trick (§2.3).</li>
+  <li><strong>AEVB</strong> (Auto-Encoding Variational Bayes): the training algorithm that uses SGVB to fit an encoder and a decoder together (Algorithm 1). With neural networks, AEVB trains a VAE.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>Replacing a per-example calculation with a trained network is called <em>amortising</em> the cost, and the idea spread far beyond VAEs. It also avoids slow sampling loops such as <span class="t" data-tip-title="MCMC" data-tip="Markov chain Monte Carlo: drawing samples from a hard distribution by taking many small random steps whose long-run visits match it. Accurate, but it needs many steps for every single example.">MCMC</span> for every example, which is what made these models trainable on large datasets.</p>
+</section>
+
+<section id="s2">
+<h2>2 Method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Think of a story about how every example was made, told in two steps. First, nature rolls some hidden dice: that is the code <em>z</em>. Then it turns the code into the thing you see: that is <em>x</em>. The paper draws this story as a small <span class="t" data-tip-title="Directed graphical model" data-tip="A diagram of how random quantities cause each other: circles are quantities, arrows point from cause to effect. A shaded circle is observed; an open one is hidden.">graphical model</span>, and adds a second, dashed story going backwards: a guess of the dice from what you see.</p>
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 250" role="img" aria-label="The directed graphical model: z causes x inside a plate repeated N times, with parameters theta and phi outside">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker>
+    </defs>
+    <g class="blk frame" data-block="plate"><rect x="90" y="40" width="140" height="190" rx="10"/><text x="212" y="220" text-anchor="middle">N</text></g>
+    <path class="wire" d="M160,93 V162" marker-end="url(#arr)"/>
+    <path class="wire" d="M146,166 C120,140 120,108 146,90" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <path class="wire" d="M262,82 C225,70 200,72 184,76" marker-end="url(#arr)"/>
+    <path class="wire" d="M262,92 C230,130 205,160 184,172" marker-end="url(#arr)"/>
+    <path class="wire" d="M58,82 C90,80 115,80 136,78" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <g class="blk pe" data-block="gm_z"><circle cx="160" cy="75" r="20"/><text x="160" y="80" text-anchor="middle" style="font-size:15px">z</text></g>
+    <g class="blk pe" data-block="gm_x"><circle cx="160" cy="182" r="20" style="fill:var(--ff)"/><text x="160" y="187" text-anchor="middle" style="font-size:15px">x</text></g>
+    <g class="blk pe" data-block="gm_theta"><circle cx="276" cy="86" r="14"/><text x="276" y="91" text-anchor="middle" style="font-size:14px">θ</text></g>
+    <g class="blk pe" data-block="gm_phi"><circle cx="44" cy="82" r="14"/><text x="44" y="87" text-anchor="middle" style="font-size:14px">φ</text></g>
+    <g class="blk plain" data-block="solid"><rect x="4" y="4" width="150" height="24" rx="6"/><path class="wire" d="M12,16 H34"/><text x="92" y="20" text-anchor="middle">generative p</text></g>
+    <g class="blk plain" data-block="dashed"><rect x="164" y="4" width="152" height="24" rx="6"/><path class="wire" d="M172,16 H194" stroke-dasharray="5 4"/><text x="252" y="20" text-anchor="middle">guess q</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a circle, or one of the two keys at the top. Start with <strong>z</strong>, the hidden code.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn: the model the paper considers. Based on Kingma and Welling (2013), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each circle is a quantity. <em>z</em> (open) is hidden and <em>x</em> (shaded) is observed. Solid arrows are the generative story: θ sets how <em>z</em> is drawn and how <em>z</em> becomes <em>x</em>. The dashed arrows are the guess going the other way: φ sets how the encoder reads <em>x</em> and proposes values of <em>z</em>. The rounded box with <em>N</em> in its corner is a <span class="t" data-tip-title="Plate" data-tip="A box in a graphical model meaning 'repeat everything inside, once per example'. Here each of the N data points has its own z and x, while θ and φ outside the box are shared by all.">plate</span>: everything inside happens once per example, while θ and φ, outside it, are shared by all N examples. The paper's key point is that θ and φ are learned together.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Problem scenario <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Suppose a factory makes cakes from a secret recipe card. You only ever see cakes. To judge how good your own guess at the factory's process is, you would like to know: “how likely is this exact cake, averaged over <em>every</em> recipe card the factory might have drawn?” That average over all hidden causes is the <span class="t" data-t="marginal likelihood">marginal likelihood</span>. For a real model it means summing over every possible code, which is hopeless.</p>
+<h4>Tiny example</h4>
+<p>In the one-number world, the chance of seeing x = 2 is the average, over every possible <em>z</em>, of “how likely is <em>z</em>” times “how likely is x = 2 given that <em>z</em>”. Chop the <em>z</em> line into steps of 0.01 from −8 to 8, add up the 1,601 products times the step width, and you get <strong>0.1038</strong>. That is fine for one number. With a 20-number code and just 100 grid points per number you would need 100<sup>20</sup> = 10<sup>40</sup> evaluations of a neural network, for <em>each</em> example.</p>
+<div class="eq" data-tex="\htmlData{sym=px}{p_\theta(\mathbf{x})} = \htmlData{sym=integral}{\int} \htmlData{sym=pz}{p_\theta(\mathbf{z})}\,\htmlData{sym=pxz}{p_\theta(\mathbf{x}\mid\mathbf{z})}\,\htmlData{sym=dz}{d\mathbf{z}}" data-fallback="p_θ(x) = ∫ p_θ(z) p_θ(x | z) dz"></div>
+<div class="symtable" data-syms="px,integral,pz,pxz,dz,theta"></div>
+<p class="inwords"><strong>In words:</strong> “the probability the model gives to an example is the chance of each possible code times the chance that code produces the example, added up over every code.”</p>
+<p class="inwords"><strong>With the numbers:</strong> p(x = 2) = ∫ N(z; 0, 1) · N(2; z, 1) dz = 0.1038, which is exactly the bell curve of spread √2 evaluated at 2 (adding two independent spreads of 1 gives variance 2).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def N(x, mean, var):
+    # the bell-curve density at x
+    return math.exp(-(x - mean) ** 2 / (2 * var)) / math.sqrt(2 * math.pi * var)
+x, dz = 2.0, 0.01
+zs = [-8 + i * dz for i in range(1601)]
+# ∫ p(z) p(x | z) dz, as a sum of thin slices
+p_x = sum(N(z, 0, 1) * N(x, z, 1) * dz for z in zs)
+round(p_x, 4)  # → 0.1038
+# the exact answer: x is the sum of two spreads of 1, so its variance is 2
+round(N(x, 0, 2), 4)  # → 0.1038
+# log p(x), used on the rest of the page
+round(math.log(p_x), 4)  # → -2.2655</code></pre>
+<p>The backward question is answered by <span class="t" data-tip-title="Bayes' rule" data-tip="How to turn 'how likely is the evidence given the cause' into 'how likely is the cause given the evidence': multiply by how likely the cause was to begin with, then divide by how likely the evidence is overall.">Bayes' rule</span>, and the marginal likelihood sits in its denominator, which is why the backward question is just as hopeless:</p>
+<div class="eq" data-tex="\htmlData{sym=pzx}{p_\theta(\mathbf{z}\mid\mathbf{x})} = \frac{\htmlData{sym=pxz}{p_\theta(\mathbf{x}\mid\mathbf{z})}\,\htmlData{sym=pz}{p_\theta(\mathbf{z})}}{\htmlData{sym=px}{p_\theta(\mathbf{x})}}" data-fallback="p_θ(z | x) = p_θ(x | z) p_θ(z) / p_θ(x)"></div>
+<div class="symtable" data-syms="pzx,pxz,pz,px"></div>
+<p class="inwords"><strong>In words:</strong> “how likely a code is, now that we have seen the example, equals how well that code explains the example, times how likely the code was beforehand, divided by how likely the example is overall.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at z = 1, p(z = 1 | x = 2) = N(2; 1, 1) · N(1; 0, 1) / 0.1038 = 0.2420 × 0.2420 / 0.1038 = 0.5642. That is the height at its centre of the bell curve with mean 1 and variance 0.5: the exact <span class="t" data-t="posterior">posterior</span> of this world.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def N(x, mean, var):
+    return math.exp(-(x - mean) ** 2 / (2 * var)) / math.sqrt(2 * math.pi * var)
+x, z = 2.0, 1.0
+p_x = N(x, 0, 2)
+# p(x | z) and p(z)
+round(N(x, z, 1), 4), round(N(z, 0, 1), 4)  # → (0.242, 0.242)
+# Bayes' rule
+round(N(x, z, 1) * N(z, 0, 1) / p_x, 4)  # → 0.5642
+# the posterior is the bell curve N(1, 0.5): same height at z = 1
+round(N(z, 1, 0.5), 4)  # → 0.5642</code></pre>
+<h4>What the paper wants from one method</h4>
+<ol>
+  <li>Good values of θ (maximum likelihood or <span class="t" data-tip-title="MAP estimation" data-tip="Maximum a posteriori: choosing the parameters that best explain the data after also weighing how plausible the parameters were to begin with. In practice, maximum likelihood plus a penalty such as weight decay.">MAP</span>), so the model can generate data that looks real.</li>
+  <li>Fast approximate inference of <em>z</em> from <em>x</em>, useful as a compact code.</li>
+  <li>Approximate marginal inference of <em>x</em>, useful for denoising, inpainting and super-resolution.</li>
+</ol>
+<p>And it wants these when the integral is intractable and the dataset is too large for anything but small random batches. Its answer is a <strong>recognition model</strong> <em>q</em><sub>φ</sub>(<em>z</em> | <em>x</em>), which the paper also calls a <em>probabilistic encoder</em>; <em>p</em><sub>θ</sub>(<em>x</em> | <em>z</em>) is the <em>probabilistic decoder</em>.</p>
+<h4>Why it matters today</h4>
+<p>This two-step story, “draw a simple code, then decode it with a network”, is the template for most generative models since. A diffusion model is the same story told over a thousand small steps; see the <a href="ddpm.html">DDPM companion</a>.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 The variational bound <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“Since this KL-divergence is non-negative, the second RHS term is called the (variational) lower bound on the marginal likelihood of datapoint i”<cite>Kingma and Welling (2013), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You cannot weigh a ship directly, but you can weigh everything you loaded onto it and know the ship weighs <em>at least</em> that much. Push that lower figure up and you are pushing towards the true weight. The <span class="t" data-t="evidence lower bound">evidence lower bound</span> (ELBO) is that lower figure for log <em>p</em>(<em>x</em>). The shortfall is exactly how far the encoder's guess <em>q</em> is from the true posterior, measured by the <span class="t" data-t="kl divergence">KL divergence</span>.</p>
+<h4>Tiny example</h4>
+<p>In the one-number world, log p(x = 2) = −2.2655. Let the encoder guess <em>q</em> = the standard bell curve N(0, 1), a lazy guess that ignores <em>x</em>. Its bound is −3.4189, short by 1.1534. Let it guess the true posterior N(1, 0.5) instead: the bound is −2.2655, short by exactly 0.</p>
+<div class="plot" id="elbo-plot">
+  <div class="controls">
+    <span style="display:flex;gap:.5rem;align-items:center;flex:1 1 15rem"><label for="elbo-m">guess centre m = <strong id="elbo-mv">0.00</strong></label><input type="range" id="elbo-m" min="-1" max="3" step="0.05" value="0"></span>
+    <span style="display:flex;gap:.5rem;align-items:center;flex:1 1 15rem"><label for="elbo-v">guess variance v = <strong id="elbo-vv">1.00</strong></label><input type="range" id="elbo-v" min="0.05" max="2" step="0.05" value="1"></span>
+  </div>
+  <div id="elbo-chart"></div>
+  <div id="elbo-bars"></div>
+  <p class="readout" id="elbo-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the chart shows two bell curves over the hidden number <em>z</em>. The fixed one is the true posterior for x = 2; the one you move is the encoder's guess <em>q</em>. Below it, the bars show sizes, so longer means more negative. The grey bar is log p(x) = −2.2655, which never moves. The solid bar is the ELBO, always at least as long, and the striped bar is the gap: exactly the difference in length between the two, so ELBO + gap = log p(x) whatever you choose. Drag the centre towards 1 and the variance towards 0.5: the striped gap shrinks to nothing and the ELBO rises to meet log p(x). Everything here is computed exactly from the formulas below; nothing is sampled.</p>
+<h4>The math</h4>
+<div class="eq" data-tex="\htmlData{sym=logpx}{\log p_\theta(\mathbf{x}^{(i)})} = \htmlData{sym=DKL}{D_{KL}}\big(\htmlData{sym=qzx}{q_\phi(\mathbf{z}\mid\mathbf{x}^{(i)})}\,\Vert\,\htmlData{sym=pzx}{p_\theta(\mathbf{z}\mid\mathbf{x}^{(i)})}\big) + \htmlData{sym=Lb}{\mathcal{L}(\theta,\phi;\mathbf{x}^{(i)})}" data-fallback="log p_θ(x⁽ⁱ⁾) = D_KL(q_φ(z | x⁽ⁱ⁾) ‖ p_θ(z | x⁽ⁱ⁾)) + L(θ, φ; x⁽ⁱ⁾)"></div>
+<div class="symtable" data-syms="logpx,DKL,qzx,pzx,Lb,phi,xi"></div>
+<p class="inwords"><strong>In words:</strong> “the log-probability of an example splits into two pieces: how far the encoder's guess is from the true posterior, plus the bound. The first piece is never negative, so the bound is never above the log-probability.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the lazy guess N(0, 1): −2.2655 = 1.1534 + (−3.4189). For the perfect guess N(1, 0.5): −2.2655 = 0 + (−2.2655).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x = 2.0
+log_p_x = -0.5 * math.log(2 * math.pi * 2) - x ** 2 / 4
+def elbo(m, v):
+    # E_q[log p(x | z)] minus KL(q ‖ p(z)), both in closed form
+    reconstruction = -0.5 * math.log(2 * math.pi) - ((x - m) ** 2 + v) / 2
+    kl_to_prior = 0.5 * (m ** 2 + v - math.log(v) - 1)
+    return reconstruction - kl_to_prior
+def kl_to_posterior(m, v):
+    # KL(N(m, v) ‖ N(1, 0.5)), the gap
+    return 0.5 * (v / 0.5 + (m - 1) ** 2 / 0.5 - 1 - math.log(v / 0.5))
+round(log_p_x, 4)  # → -2.2655
+# the lazy guess q = N(0, 1): gap plus bound
+round(kl_to_posterior(0, 1), 4), round(elbo(0, 1), 4)  # → (1.1534, -3.4189)
+round(kl_to_posterior(0, 1) + elbo(0, 1), 4)  # → -2.2655
+# the perfect guess q = N(1, 0.5): no gap
+round(kl_to_posterior(1, 0.5), 4), round(elbo(1, 0.5), 4)  # → (0.0, -2.2655)</code></pre>
+<p>The paper then rewrites the bound in the form every VAE trains on:</p>
+<div class="eq" data-tex="\htmlData{sym=Lb}{\mathcal{L}(\theta,\phi;\mathbf{x}^{(i)})} = -\htmlData{sym=DKL}{D_{KL}}\big(\htmlData{sym=qzx}{q_\phi(\mathbf{z}\mid\mathbf{x}^{(i)})}\,\Vert\,\htmlData{sym=pz}{p_\theta(\mathbf{z})}\big) + \htmlData{sym=Eq}{\mathbb{E}_{q_\phi(\mathbf{z}\mid\mathbf{x}^{(i)})}}\big[\htmlData{sym=logpxz}{\log p_\theta(\mathbf{x}^{(i)}\mid\mathbf{z})}\big]" data-fallback="L(θ, φ; x⁽ⁱ⁾) = −D_KL(q_φ(z | x⁽ⁱ⁾) ‖ p_θ(z)) + E_q[log p_θ(x⁽ⁱ⁾ | z)]"></div>
+<div class="symtable" data-syms="Lb,DKL,qzx,pz,Eq,logpxz"></div>
+<p class="inwords"><strong>In words:</strong> “the bound is how well codes drawn from the guess rebuild the example, on average, minus how far the guess strays from the <span class="t" data-t="prior">prior</span>.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the perfect guess N(1, 0.5): the rebuild term is −0.9189 − (1² + 0.5)/2 = −1.6689, the KL to the prior is ½(1 + 0.5 − log 0.5 − 1) = 0.5966, and −0.5966 + (−1.6689) = −2.2655.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x, m, v = 2.0, 1.0, 0.5
+# E_q[log p(x | z)]: the average of −½ log 2π − (x − z)² / 2 over z ~ N(m, v)
+reconstruction = -0.5 * math.log(2 * math.pi) - ((x - m) ** 2 + v) / 2
+round(reconstruction, 4)  # → -1.6689
+# D_KL(q ‖ p(z)) for q = N(m, v) and p(z) = N(0, 1)
+kl = 0.5 * (m ** 2 + v - math.log(v) - 1)
+round(kl, 4)  # → 0.5966
+round(-kl + reconstruction, 4)  # → -2.2655</code></pre>
+<h4>Why not just sample the gradient?</h4>
+<p>To train the encoder you need the gradient of the bound with respect to φ, and φ shapes the very distribution you are averaging over. The textbook trick (the <span class="t" data-tip-title="Score-function estimator" data-tip="A general way to estimate the gradient of an average over random draws: weight each draw's value by the slope of the log-probability of that draw. It works for any distribution but is very noisy; also known as REINFORCE.">score-function estimator</span>) works, but the paper notes that it “exhibits very high variance” and is impractical here. Section 2.4 shows the fix, with a live comparison.</p>
+<h4>Why it matters today</h4>
+<p>The same bound, written the same way, trains every VAE. The <a data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a> uses its negative as the loss, rebuild error plus β times KL, and shows what happens as β varies. The diffusion paper writes an ELBO of exactly this kind over a thousand steps.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 The SGVB estimator and the AEVB algorithm <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To estimate the average height in a city you do not measure everyone: you measure a random handful and scale up. SGVB estimates the bound the same way: the KL part has an exact formula, and the rebuild part is estimated from a few random codes, often just one. Then AEVB repeats: grab a small random batch of examples, estimate, nudge both networks, repeat.</p>
+<h4>Tiny example</h4>
+<p>Take the perfect guess N(1, 0.5) and draw one noise number, ε = 0.5. The code is z = 1 + √0.5 × 0.5 = 1.3536. Its rebuild score is log N(2; 1.3536, 1) = −1.1279. The estimate of the bound is −0.5966 + (−1.1279) = −1.7245. One draw is noisy: the true bound is −2.2655. Averaged over 100,000 draws, the estimate comes to −2.26.</p>
+<div class="eq" data-tex="\htmlData{sym=LB}{\widetilde{\mathcal{L}}^{B}(\theta,\phi;\mathbf{x}^{(i)})} = -\htmlData{sym=DKL}{D_{KL}}\big(\htmlData{sym=qzx}{q_\phi(\mathbf{z}\mid\mathbf{x}^{(i)})}\,\Vert\,\htmlData{sym=pz}{p_\theta(\mathbf{z})}\big) + \htmlData{sym=avgl}{\frac{1}{L}\sum_{l=1}^{L}} \htmlData{sym=logpxz}{\log p_\theta(\mathbf{x}^{(i)}\mid\mathbf{z}^{(i,l)})}, \quad \htmlData{sym=zil}{\mathbf{z}^{(i,l)}} = \htmlData{sym=g}{g_\phi}(\htmlData{sym=epsl}{\boldsymbol{\epsilon}^{(i,l)}}, \mathbf{x}^{(i)})" data-fallback="L̃ᴮ(θ, φ; x⁽ⁱ⁾) = −D_KL(q_φ(z | x⁽ⁱ⁾) ‖ p_θ(z)) + (1/L) Σ_l log p_θ(x⁽ⁱ⁾ | z⁽ⁱ'ˡ⁾),  z⁽ⁱ'ˡ⁾ = g_φ(ε⁽ⁱ'ˡ⁾, x⁽ⁱ⁾)"></div>
+<div class="symtable" data-syms="LB,DKL,avgl,zil,g,epsl"></div>
+<p class="inwords"><strong>In words:</strong> “keep the exact KL, and replace the average rebuild score with the average over L codes, each made by pushing a fresh noise draw through the encoder's recipe.”</p>
+<p class="inwords"><strong>With the numbers:</strong> L = 1 and ε = 0.5: −0.5966 + log N(2; 1.3536, 1) = −0.5966 − 1.1279 = −1.7245.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math, random
+x, m, v = 2.0, 1.0, 0.5
+kl = 0.5 * (m ** 2 + v - math.log(v) - 1)
+def log_p_x_given_z(z):
+    return -0.5 * math.log(2 * math.pi) - (x - z) ** 2 / 2
+# z = g_φ(ε, x) = m + √v · ε, with one noise draw (L = 1)
+z = m + math.sqrt(v) * 0.5
+round(z, 4)  # → 1.3536
+round(-kl + log_p_x_given_z(z), 4)  # → -1.7245
+# (1/L) Σ over many draws: the estimate is right on average
+random.seed(0)
+L = 100_000
+round(-kl + sum(log_p_x_given_z(m + math.sqrt(v) * random.gauss(0, 1)) for _ in range(L)) / L, 2)  # → -2.26</code></pre>
+<p>The paper gives two versions. Estimator A (its equation 6) samples the whole bound; estimator B (above, equation 7) computes the KL exactly and so “typically has less variance”. For a whole dataset of <em>N</em> examples, a random <span class="t" data-t="batch">minibatch</span> of <em>M</em> is scaled up:</p>
+<div class="eq" data-tex="\htmlData{sym=LX}{\mathcal{L}(\theta,\phi;\mathbf{X})} \htmlData{sym=approx}{\simeq} \htmlData{sym=LM}{\widetilde{\mathcal{L}}^{M}(\theta,\phi;\mathbf{X}^{M})} = \htmlData{sym=NoverM}{\frac{N}{M}} \htmlData{sym=sumi}{\sum_{i=1}^{M}} \htmlData{sym=Ltilde}{\widetilde{\mathcal{L}}(\theta,\phi;\mathbf{x}^{(i)})}" data-fallback="L(θ, φ; X) ≃ L̃ᴹ(θ, φ; Xᴹ) = (N / M) Σᵢ L̃(θ, φ; x⁽ⁱ⁾)"></div>
+<div class="symtable" data-syms="LX,approx,LM,NoverM,sumi,Ltilde"></div>
+<p class="inwords"><strong>In words:</strong> “estimate the bound for the whole dataset by adding up the estimates for a random batch and multiplying by how many batches would fit in the dataset.”</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative: a dataset of N = 1,000 examples, all equal to our x = 2, and the paper's batch size M = 100): if the batch's per-example estimates average −2.26, the batch sum is −226 and the dataset estimate is 10 × (−226) = −2,260, close to the true 1,000 × (−2.2655) = −2,265.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>N, M = 1_000, 100
+batch = [-2.26] * M
+# (N / M) Σᵢ L̃(x⁽ⁱ⁾)
+round(N / M * sum(batch), 1)  # → -2260.0
+# the true total, 1,000 × log p(x)
+round(N * -2.2655, 1)  # → -2265.5</code></pre>
+<figure class="ix" id="fig-alg1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 330" role="img" aria-label="Algorithm 1, the AEVB training loop">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M150,38 V56" marker-end="url(#arr2)"/>
+    <path class="wire" d="M150,88 V106" marker-end="url(#arr2)"/>
+    <path class="wire" d="M150,138 V156" marker-end="url(#arr2)"/>
+    <path class="wire" d="M150,188 V206" marker-end="url(#arr2)"/>
+    <path class="wire" d="M150,238 V256" marker-end="url(#arr2)"/>
+    <path class="wire" d="M40,222 H20 V72 H38" marker-end="url(#arr2)"/>
+    <text x="14" y="150" class="lbl" transform="rotate(-90 14 150)" text-anchor="middle">repeat</text>
+    <path class="wire" d="M150,288 V302" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="init"><rect x="60" y="8" width="180" height="30" rx="6"/><text x="150" y="28" text-anchor="middle">initialise θ, φ</text></g>
+    <g class="blk emb" data-block="batch"><rect x="40" y="58" width="220" height="30" rx="6"/><text x="150" y="78" text-anchor="middle">random minibatch of M examples</text></g>
+    <g class="blk pe" data-block="noise"><rect x="40" y="108" width="220" height="30" rx="6" style="fill:var(--card);stroke:var(--wire)"/><text x="150" y="128" text-anchor="middle">fresh noise ε ~ p(ε)</text></g>
+    <g class="blk attn" data-block="grad"><rect x="40" y="158" width="220" height="30" rx="6"/><text x="150" y="178" text-anchor="middle">gradient of the estimate (8)</text></g>
+    <g class="blk lin" data-block="update"><rect x="40" y="208" width="220" height="30" rx="6"/><text x="150" y="228" text-anchor="middle">update θ, φ (SGD or Adagrad)</text></g>
+    <g class="blk norm" data-block="converged"><rect x="60" y="258" width="180" height="30" rx="6"/><text x="150" y="278" text-anchor="middle">until converged</text></g>
+    <g class="blk plain" data-block="ret"><rect x="95" y="302" width="110" height="24" rx="6"/><text x="150" y="318" text-anchor="middle">return θ, φ</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step, starting at the top.</p></div>
+  </div>
+  <figcaption>Algorithm 1 of the paper, redrawn as a loop: minibatch AEVB. Based on Kingma and Welling (2013), Algorithm 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the top. After one initialisation, the loop on the left repeats four steps: pick a random minibatch, draw fresh noise for every example, differentiate the minibatch estimate of the bound with respect to <em>both</em> networks' weights, and take a step. There is no inner loop per example, no sampling chain and no separate phase for the encoder. That single, ordinary training loop is the practical contribution: the paper uses M = 100 and L = 1.</p>
+<h4>The connection to autoencoders</h4>
+<p>Read estimator B again. Its second term asks: encode <em>x</em> to a code, decode the code, and score how well <em>x</em> comes back. That is an <span class="t" data-t="autoencoder">autoencoder's</span> rebuild error, with a minus sign. The first term, the KL, acts as a <span class="t" data-t="regularization">regulariser</span> that the bound itself dictates, rather than one added by hand.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/autoencoders.html#VAE.loss_and_gradients"><code>VAE.loss_and_gradients</code></a> computes both terms for a batch with one noise draw per example, and <a data-lesson="primer/ml/generative/autoencoders.html#train"><code>train</code></a> is Algorithm 1 with Adam as the update.</p>
+<h4>Why it matters today</h4>
+<p>“One sample per example, a big enough batch, and backpropagation” is still how VAEs are trained. The whole method fits in a standard training loop, which is why it spread so fast.</p>
+</section>
+
+<section id="s2-4">
+<h3>2.4 The reparameterization trick <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S2.SS4">original</a></span></h3>
+<blockquote class="quote">“The essential parameterization trick is quite simple.”<cite>Kingma and Welling (2013), §2.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Two ways to pick a random seat in a row. You can close your eyes and point: if someone slides the row one seat left, there is no saying how your pick changes. Or you can roll a die for “how many seats from the middle” and count from wherever the middle now is: slide the row, and your seat slides with it by exactly the same amount. Same randomness, but now the result responds smoothly to the row's position. That is the trick: roll the dice first, as an ordinary input, then build the random code with arithmetic the gradient can pass through.</p>
+<h4>Tiny example</h4>
+<p>The encoder says μ = 1 and σ = 1. The die gives ε = 0.5, so z = 1 + 1 × 0.5 = 1.5. Nudge μ to 1.001 and z becomes 1.501: z moved by exactly the nudge, so ∂z/∂μ = 1. Nudge σ instead and z moves by ε times the nudge, so ∂z/∂σ = ε = 0.5.</p>
+<div class="eq" data-tex="\htmlData{sym=Ef}{\mathbb{E}_{\mathcal{N}(z;\mu,\sigma^2)}\big[f(z)\big]} = \htmlData{sym=Eeps}{\mathbb{E}_{\mathcal{N}(\epsilon;0,1)}}\big[\htmlData{sym=f}{f}(\htmlData{sym=mu}{\mu} + \htmlData{sym=sigma}{\sigma}\htmlData{sym=eps}{\epsilon})\big] \htmlData{sym=approx}{\simeq} \htmlData{sym=avgl}{\frac{1}{L}\sum_{l=1}^{L}} \htmlData{sym=f}{f}(\htmlData{sym=mu}{\mu} + \htmlData{sym=sigma}{\sigma}\htmlData{sym=epsl}{\epsilon^{(l)}})" data-fallback="E_N(z; μ, σ²)[f(z)] = E_N(ε; 0, 1)[f(μ + σε)] ≃ (1/L) Σ_l f(μ + σε⁽ˡ⁾)"></div>
+<div class="symtable" data-syms="Ef,Eeps,f,mu,sigma,eps,approx,avgl,epsl"></div>
+<p class="inwords"><strong>In words:</strong> “averaging f over codes drawn from a bell curve with centre μ and spread σ is the same as averaging f(μ + σε) over standard noise ε, and a handful of noise draws estimates it.”</p>
+<p class="inwords"><strong>With the numbers:</strong> take f(z) = z² with μ = 1 and σ = 1. The exact average is μ² + σ² = 2. The single draw ε = 0.5 gives f(1.5) = 2.25; 100,000 draws give 2.01. Its gradient with respect to μ is 2μ = 2, and each draw's own gradient, 2(μ + σε), averages to 2 as well.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import random
+mu, sigma = 1.0, 1.0
+def f(z):
+    return z ** 2
+# one draw, ε = 0.5
+f(mu + sigma * 0.5)  # → 2.25
+# (1/L) Σ f(μ + σ ε⁽ˡ⁾): many draws approach μ² + σ² = 2
+random.seed(0)
+eps = [random.gauss(0, 1) for _ in range(100_000)]
+round(sum(f(mu + sigma * e) for e in eps) / len(eps), 2)  # → 2.01
+# each draw's gradient with respect to μ is f'(μ + σε) = 2(μ + σε)
+round(sum(2 * (mu + sigma * e) for e in eps) / len(eps), 2)  # → 2.01</code></pre>
+<h4>Try it: two ways to estimate one gradient</h4>
+<p>Both estimators below aim at the same number, the gradient of the average of z² with respect to μ, which is exactly 2μ. The reparameterized one differentiates through z = μ + σε. The score-function one (the “naïve” estimator of §2.2) multiplies each f(z) by (z − μ)/σ², the slope of the log bell curve. Drag the sliders and watch how fast each running average settles.</p>
+<div class="eq" data-tex="\underbrace{\htmlData{sym=fprime}{f'}(\htmlData{sym=mu}{\mu}+\htmlData{sym=sigma}{\sigma}\htmlData{sym=eps}{\epsilon})}_{\text{reparameterized}} \qquad \underbrace{\htmlData{sym=f}{f}(z)\,\htmlData{sym=scorefn}{\frac{z-\mu}{\sigma^2}}}_{\text{score function}}" data-fallback="reparameterized: f′(μ + σε);  score function: f(z)(z − μ)/σ²"></div>
+<div class="symtable" data-syms="fprime,f,scorefn,mu,sigma,eps"></div>
+<p class="inwords"><strong>In words:</strong> “one draw's guess at the gradient is either the slope of f at the drawn code, or f's value at the drawn code times how much the drawn code favours a larger μ.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with μ = σ = 1 and ε = 0.5 (so z = 1.5): the reparameterized guess is 2 × 1.5 = 3 and the score-function guess is 2.25 × 0.5 = 1.125. Both average to 2 over many draws, but their spreads per draw are 2 and 5.48: the score function is almost three times as noisy, and far worse as σ shrinks (5.48 becomes 10.7 at σ = 0.1, while the reparameterized spread falls to 0.2).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+mu, sigma, eps = 1.0, 1.0, 0.5
+z = mu + sigma * eps
+# reparameterized: f'(z) = 2z
+2 * z  # → 3.0
+# score function: f(z) (z − μ) / σ²
+z ** 2 * (z - mu) / sigma ** 2  # → 1.125
+# spread per draw, from the bell curve's moments E[ε²] = 1, E[ε⁴] = 3, E[ε⁶] = 15
+def spreads(a, s):
+    score_var = (a ** 4 + 18 * a ** 2 * s ** 2 + 15 * s ** 4) / s ** 2 - 4 * a ** 2
+    return round(2 * s, 2), round(math.sqrt(score_var), 2)
+spreads(1.0, 1.0)  # → (2.0, 5.48)
+spreads(1.0, 0.1)  # → (0.2, 10.68)</code></pre>
+<div class="plot" id="grad-plot">
+  <div class="controls">
+    <span style="display:flex;gap:.5rem;align-items:center;flex:1 1 15rem"><label for="grad-mu">μ = <strong id="grad-muv">1.0</strong></label><input type="range" id="grad-mu" min="-2" max="2" step="0.1" value="1"></span>
+    <span style="display:flex;gap:.5rem;align-items:center;flex:1 1 15rem"><label for="grad-sigma">σ = <strong id="grad-sigmav">0.30</strong></label><input type="range" id="grad-sigma" min="0.1" max="2" step="0.05" value="0.3"></span>
+    <button type="button" id="grad-redraw">Draw new noise</button>
+  </div>
+  <div id="grad-chart"></div>
+  <p class="readout" id="grad-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis counts noise draws; each line is the running average of one estimator's guesses, using the <em>same</em> draws. The flat dotted line is the true gradient 2μ. The page opens at μ = 1 and σ = 0.3, a small, confident region like the ones a VAE encoder learns. There the reparameterized line (solid) sits on the target almost from the first draw, while the score-function line (dashed) swings and is still visibly off after hundreds of draws: one draw's guess is about 9 times as noisy. Widen σ towards 1 and the two get closer (spreads 2 and 5.48); shrink it to 0.1 and the gap grows to about 50 times. Lines are clipped to ±3 around the target so a wild early swing cannot squash the picture. The draws come from a fixed seed; “Draw new noise” picks another.</p>
+<h4>Which distributions can be reparameterized?</h4>
+<p>The paper lists three recipes for writing a draw as g<sub>φ</sub>(ε, x) with ε from a fixed distribution:</p>
+<ul>
+  <li><strong>Inverse <span class="t" data-tip-title="CDF" data-tip="Cumulative distribution function: for each value, the chance of drawing something at most that value. Its inverse turns a uniform random number between 0 and 1 into a draw from the distribution.">CDF</span>:</strong> draw ε uniformly between 0 and 1 and push it through the inverse CDF. The exponential, Cauchy, logistic and several others work this way.</li>
+  <li><strong>Location and scale:</strong> take the standard version of the distribution and set g = location + scale · ε. The Gaussian, Laplace, Student's t and others.</li>
+  <li><strong>Composition:</strong> build the draw from other reparameterizable draws, as a log-normal is e raised to a Gaussian draw.</li>
+</ul>
+<div class="eq" data-tex="\htmlData{sym=zexp}{z} = -\frac{\htmlData{sym=ln}{\ln}(1-\htmlData{sym=u}{u})}{\htmlData{sym=lam}{\lambda}}, \qquad \htmlData{sym=u}{u} \sim \mathcal{U}(0,1)" data-fallback="z = −ln(1 − u) / λ,  u ~ U(0, 1)"></div>
+<div class="symtable" data-syms="zexp,ln,u,lam"></div>
+<p class="inwords"><strong>In words:</strong> “to draw a waiting time with rate λ, draw a uniform number and push it through the exponential distribution's inverse CDF.”</p>
+<p class="inwords"><strong>With the numbers:</strong> λ = 2 and u = 0.5 give z = ln 2 / 2 = 0.3466. The gradient with respect to λ exists: ∂z/∂λ = ln(1 − u)/λ² = −0.1733, so a faster rate means a shorter wait.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+lam, u = 2.0, 0.5
+# z = −ln(1 − u) / λ
+z = -math.log(1 - u) / lam
+round(z, 4)  # → 0.3466
+# ∂z/∂λ = ln(1 − u) / λ²
+round(math.log(1 - u) / lam ** 2, 4)  # → -0.1733</code></pre>
+<h4>Why it matters today</h4>
+<p>This trick is why VAEs could be trained with plain <span class="t" data-t="backpropagation">backpropagation</span>. The same move (keep the noise as an input, make everything else differentiable) shows up in diffusion models, whose noisy training inputs are written exactly as √ᾱ·x + √(1 − ᾱ)·ε, and in reinforcement learning with continuous actions. Discrete choices cannot be reparameterized this way, which is why training with them stays harder. See the reparameterization section of the <a data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a>.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/autoencoders.html#reparameterize"><code>reparameterize</code></a> is z = μ + σ ⊙ ε, and a test checks the two gradients through it against finite differences.</p>
+</section>
+
+<section id="s3">
+<h2>3 Example: the variational auto-encoder <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Now put neural networks on both sides. The encoder reads a picture and, instead of pinning it to one exact spot on a map, draws a small fuzzy circle: “somewhere around here”. The decoder is handed a random point from inside that circle and must still redraw the picture. Every circle pays rent (the KL) for sitting far from the middle of the map or for shrinking to a pin, so circles crowd together and overlap, and the whole middle of the map ends up decoding to plausible pictures.</p>
+<h3 class="rung">Tiny example</h3>
+<p>A 2-number code. The encoder says μ = (0.5, 0) and log σ² = (log 0.25, 0), so σ = (0.5, 1). Noise ε = (1.2, −0.4) gives z = (0.5 + 0.5 × 1.2, 0 + 1 × (−0.4)) = (1.1, −0.4). The decoder turns z into pixel probabilities; say, for three pixels, y = (0.9, 0.2, 0.6) (illustrative values), and the real pixels are x = (1, 0, 1).</p>
+<figure class="ix" id="fig-vae">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 470" role="img" aria-label="The variational autoencoder: encoder, the two heads, the sampling step, decoder and the two terms of the bound">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M110,438 V412" marker-end="url(#arr3)"/>
+    <path class="wire" d="M110,384 V366 H70 V352 M110,366 H155 V352" marker-end="url(#arr3)"/>
+    <path class="wire" d="M70,326 V296 H100 M155,326 V296 H130" />
+    <path class="wire" d="M115,296 V282" marker-end="url(#arr3)"/>
+    <path class="wire" d="M250,270 H162" marker-end="url(#arr3)"/>
+    <path class="wire" d="M115,256 V226" marker-end="url(#arr3)"/>
+    <path class="wire" d="M115,198 V172" marker-end="url(#arr3)"/>
+    <path class="wire" d="M115,144 V112 H90 V98" marker-end="url(#arr3)"/>
+    <path class="wire" d="M110,438 V428 H20 V112 H60 V98" marker-end="url(#arr3)"/>
+    <path class="wire" d="M190,340 H232 V98" marker-end="url(#arr3)"/>
+    <path class="wire" d="M70,318 H232"/>
+    <path class="wire" d="M90,70 V56 H140 V44 M232,70 V56 H160 V44" marker-end="url(#arr3)"/>
+    <g class="blk plain" data-block="xin"><rect x="60" y="440" width="100" height="24" rx="6"/><text x="110" y="456" text-anchor="middle">picture x</text></g>
+    <g class="blk emb" data-block="enc"><rect x="40" y="384" width="140" height="28" rx="6"/><text x="110" y="403" text-anchor="middle">encoder MLP (φ)</text></g>
+    <g class="blk ff" data-block="mu"><rect x="40" y="326" width="60" height="26" rx="6"/><text x="70" y="344" text-anchor="middle">μ</text></g>
+    <g class="blk ff" data-block="logvar"><rect x="120" y="326" width="70" height="26" rx="6"/><text x="155" y="344" text-anchor="middle">log σ²</text></g>
+    <g class="blk pe" data-block="z"><rect x="70" y="256" width="90" height="26" rx="6" style="fill:var(--card);stroke:var(--wire)"/><text x="115" y="274" text-anchor="middle">z = μ + σ⊙ε</text></g>
+    <g class="blk plain" data-block="eps"><rect x="250" y="258" width="44" height="24" rx="6"/><text x="272" y="275" text-anchor="middle">ε</text></g>
+    <g class="blk lin" data-block="dec"><rect x="45" y="198" width="140" height="28" rx="6"/><text x="115" y="217" text-anchor="middle">decoder MLP (θ)</text></g>
+    <g class="blk soft" data-block="y"><rect x="55" y="144" width="120" height="28" rx="6"/><text x="115" y="163" text-anchor="middle">pixel chances y</text></g>
+    <g class="blk attn" data-block="recon"><rect x="30" y="70" width="120" height="28" rx="6"/><text x="90" y="89" text-anchor="middle">log p(x | z)</text></g>
+    <g class="blk norm" data-block="kl"><rect x="190" y="70" width="84" height="28" rx="6"/><text x="232" y="89" text-anchor="middle">−KL</text></g>
+    <g class="blk plain" data-block="elbo"><rect x="90" y="16" width="120" height="28" rx="6"/><text x="150" y="35" text-anchor="middle">bound L</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start at the bottom with <strong>picture x</strong> and climb.</p></div>
+  </div>
+  <figcaption>The model of §3 and Appendix C, drawn as a diagram. The paper gives these as equations; the layout is this page's own.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> data flows upwards. The encoder reads the picture and has two heads: a centre μ and a size, given as log σ² so that it can be any number. The sampling box turns the fuzzy region into one concrete code, with noise ε coming in from the side as an ordinary input (the trick of §2.4). The decoder turns the code into a chance for every pixel. Two wires reach the top: the long one on the left carries the real picture to be scored against the decoder's chances, and the one on the right carries μ and log σ² straight to the KL, which needs no sampling at all. The bound adds the two.</p>
+<h3 class="rung">The math</h3>
+<p>The paper chooses the prior p<sub>θ</sub>(z) = N(0, I), which has no parameters, and a Gaussian guess with a separate spread for each code number:</p>
+<div class="eq" data-tex="\log \htmlData{sym=qzx}{q_\phi(\mathbf{z}\mid\mathbf{x}^{(i)})} = \log \htmlData{sym=Ngauss}{\mathcal{N}}(\mathbf{z};\, \htmlData{sym=mui}{\boldsymbol{\mu}^{(i)}},\, \htmlData{sym=sigmai}{\boldsymbol{\sigma}^{2(i)}}\htmlData{sym=I}{\mathbf{I}})" data-fallback="log q_φ(z | x⁽ⁱ⁾) = log N(z; μ⁽ⁱ⁾, σ²⁽ⁱ⁾ I)"></div>
+<div class="symtable" data-syms="qzx,Ngauss,mui,sigmai,I"></div>
+<p class="inwords"><strong>In words:</strong> “the encoder's guess for example <em>i</em> is a bell curve for each code number, with a centre and a spread that the encoder network computes from the example.”</p>
+<p class="inwords"><strong>With the numbers:</strong> μ = (0.5, 0) and σ² = (0.25, 1). The log-density of the guess at its own centre is Σ<sub>j</sub> −½ log(2πσ<sub>j</sub>²) = −½ log(2π × 0.25) − ½ log(2π) = −0.2258 − 0.9189 = −1.1447.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+mu, var = [0.5, 0.0], [0.25, 1.0]
+def log_N(z, m, v):
+    return -0.5 * math.log(2 * math.pi * v) - (z - m) ** 2 / (2 * v)
+# log q(z | x) at z = μ: one term per code number, added (σ² I means independent numbers)
+round(sum(log_N(m, m, v) for m, v in zip(mu, var)), 4)  # → -1.1447</code></pre>
+<p>With both prior and guess Gaussian, the KL has a closed form (derived in Appendix B), and the whole estimator for one example is:</p>
+<div class="eq" data-tex="\htmlData{sym=Lb}{\mathcal{L}(\theta,\phi;\mathbf{x}^{(i)})} \htmlData{sym=approx}{\simeq} \htmlData{sym=half}{\frac{1}{2}}\htmlData{sym=sumj}{\sum_{j=1}^{J}}\big(1 + \log(\htmlData{sym=sigj}{(\sigma_j^{(i)})^2}) - \htmlData{sym=muj}{(\mu_j^{(i)})^2} - \htmlData{sym=sigj}{(\sigma_j^{(i)})^2}\big) + \htmlData{sym=avgl}{\frac{1}{L}\sum_{l=1}^{L}}\htmlData{sym=logpxz}{\log p_\theta(\mathbf{x}^{(i)}\mid\mathbf{z}^{(i,l)})}, \quad \htmlData{sym=zil}{\mathbf{z}^{(i,l)}} = \htmlData{sym=mui}{\boldsymbol{\mu}^{(i)}} + \htmlData{sym=sigmavec}{\boldsymbol{\sigma}^{(i)}} \htmlData{sym=odot}{\odot} \htmlData{sym=epsl}{\boldsymbol{\epsilon}^{(l)}}" data-fallback="L ≃ ½ Σ_j (1 + log σ_j² − μ_j² − σ_j²) + (1/L) Σ_l log p_θ(x⁽ⁱ⁾ | z⁽ⁱ'ˡ⁾),  z⁽ⁱ'ˡ⁾ = μ⁽ⁱ⁾ + σ⁽ⁱ⁾ ⊙ ε⁽ˡ⁾"></div>
+<div class="symtable" data-syms="half,sumj,sigj,muj,avgl,logpxz,zil,sigmavec,odot,epsl"></div>
+<p class="inwords"><strong>In words:</strong> “for each code number, add one, plus the log of its variance, minus its squared centre, minus its variance, and halve the total (that is minus the KL); then add the rebuild score of a code made by stretching fresh noise by σ and shifting it by μ.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the first code number gives ½(1 − 1.3863 − 0.25 − 0.25) = −0.4431 and the second ½(1 + 0 − 0 − 1) = 0, so minus the KL is −0.4431. The code is z = (1.1, −0.4), and with the illustrative pixel chances y = (0.9, 0.2, 0.6) the rebuild score is −0.8393 (Appendix C shows how). The estimate is −0.4431 − 0.8393 = −1.2825; a VAE's loss is its negative, 1.2825.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+mu, var, eps = [0.5, 0.0], [0.25, 1.0], [1.2, -0.4]
+# ½ Σ_j (1 + log σ_j² − μ_j² − σ_j²): minus the KL
+neg_kl = 0.5 * sum(1 + math.log(v) - m ** 2 - v for m, v in zip(mu, var))
+round(neg_kl, 4)  # → -0.4431
+# z = μ + σ ⊙ ε
+z = [m + math.sqrt(v) * e for m, v, e in zip(mu, var, eps)]
+[round(z_j, 2) for z_j in z]  # → [1.1, -0.4]
+# the rebuild score log p(x | z) for x = (1, 0, 1) and illustrative y = (0.9, 0.2, 0.6)
+x, y = [1, 0, 1], [0.9, 0.2, 0.6]
+log_p = sum(x_i * math.log(y_i) + (1 - x_i) * math.log(1 - y_i) for x_i, y_i in zip(x, y))
+round(neg_kl + log_p, 4)  # → -1.2825</code></pre>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/autoencoders.html#VAE"><code>VAE</code></a> is this model with a two-headed encoder, <a data-lesson="primer/ml/generative/autoencoders.html#VAE.encode_distribution"><code>VAE.encode_distribution</code></a> returns μ and log σ², and <a data-lesson="primer/ml/generative/autoencoders.html#kl_to_standard_normal"><code>kl_to_standard_normal</code></a> is the KL above, summed over the code numbers. The lesson uses squared error for the rebuild score, which is the Gaussian decoder of Appendix C with the noise level folded into a weight β.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>This section is the recipe every VAE still follows: a standard normal prior, a diagonal Gaussian encoder with μ and log σ² heads, one reparameterized sample, and a closed-form KL. Modern image autoencoders swap the small <span class="t" data-t="mlp">MLPs</span> for deep <span class="t" data-t="convolution">convolutional</span> networks and weight the KL lightly, but the equation is the same.</p>
+</section>
+
+<section id="s4">
+<h2>4 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Before AEVB, the closest method was the <span class="t" data-tip-title="Wake-sleep algorithm" data-tip="An older way (Hinton and colleagues, 1995) to train a generative model together with a recognition model. It alternates a 'wake' phase that trains the generator on the recognizer's guesses and a 'sleep' phase that trains the recognizer on the generator's dreams.">wake-sleep algorithm</span>: two students correcting each other's homework in turns, each with its own marking scheme. AEVB gives both students one shared exam, the bound, so improving either one can only improve the same score.</p>
+<h3 class="rung">What the paper connects</h3>
+<ul>
+  <li><strong>Wake-sleep</strong> also trains a recognition model and costs about the same per example, but it optimises two objectives that together are not a bound on the likelihood. It does handle discrete codes, which AEVB does not.</li>
+  <li><strong>Linear models:</strong> <span class="t" data-t="pca">PCA</span> is the maximum-likelihood solution of a linear-Gaussian model with prior N(0, I) and decoder N(x; Wz, εI), in the limit of vanishing noise ε (a result of Roweis, 1998). The VAE is the nonlinear, variational generalisation of that picture.</li>
+  <li><strong>Regularised autoencoders</strong> (denoising, contractive, sparse) need a hand-tuned penalty to learn useful codes. In the VAE the penalty, the KL, falls out of the bound.</li>
+  <li><strong>Rezende, Mohamed and Wierstra (2014)</strong> found the same connection, with the same reparameterization, independently.</li>
+</ul>
+<h3 class="rung">Tiny example</h3>
+<p>Why does a plain rebuild score not suffice? An autoencoder whose code is as wide as its input can learn to copy, scoring a perfect rebuild while learning nothing. The paper cites the result that the rebuild criterion alone “is in itself not sufficient for learning useful representations”. The KL term stops the copying: every bit of information stored in the code costs rent.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The linear case is worth remembering: the <a data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a> shows a linear autoencoder learning exactly what PCA learns, then what the bends of a nonlinear network add.</p>
+</section>
+
+<section id="s5">
+<h2>5 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A race between three ways of training the same kind of model, judged on two scoreboards: the bound itself, and an independent estimate of the true log-likelihood made by a slow but careful sampling method.</p>
+<h3 class="rung">The setup</h3>
+<div class="tablewrap"><table>
+  <caption>Settings stated in §5 of Kingma and Welling (2013), collected into one table</caption>
+  <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Data</td><td>MNIST (handwritten digits, binary pixels, Bernoulli decoder) and Frey Face (continuous pixels, Gaussian decoder with means squashed into (0, 1))</td></tr>
+    <tr><td>Hidden units per network</td><td>500 for MNIST, 200 for Frey Face (a smaller dataset, to prevent <span class="t" data-t="overfitting">overfitting</span>)</td></tr>
+    <tr><td>Minibatch size M, samples per example L</td><td>100 and 1</td></tr>
+    <tr><td>Optimiser</td><td><span class="t" data-t="adagrad">Adagrad</span>, global step size chosen from {0.01, 0.02, 0.1}, plus a small <span class="t" data-t="weight decay">weight decay</span> (a prior N(0, I) on θ)</td></tr>
+    <tr><td>Initialisation</td><td>every weight drawn from N(0, 0.01)</td></tr>
+    <tr><td>Speed</td><td>about 20 to 40 minutes per million training examples on one CPU at an effective 40 GFLOPS</td></tr>
+  </tbody>
+</table></div>
+<h3 class="rung">What they found</h3>
+<ul>
+  <li><strong>The bound (Figure 2):</strong> compared with wake-sleep at several code sizes, AEVB “converged considerably faster and reached a better solution in all experiments”.</li>
+  <li><strong>No overfitting from extra code numbers:</strong> adding superfluous latent variables did not make things worse, which the paper credits to the regularising KL term.</li>
+  <li><strong>The marginal likelihood (Figure 3):</strong> with a 3-number code and 100 hidden units (where the careful estimate is still reliable), AEVB was compared with wake-sleep and Monte Carlo EM. Monte Carlo EM, which runs a sampling chain per example, cannot be applied efficiently to the full MNIST dataset at all.</li>
+</ul>
+<h3 class="rung">Tiny example: why the careful estimate only works in low dimensions</h3>
+<p>The estimate of log p(x) that judges Figure 3 (Appendix D) fits a density to posterior samples, and the paper notes it is only good below about five code dimensions. The same curse as the grid of §2.1: a grid of 100 points per dimension is 10<sup>6</sup> points in 3 dimensions but 10<sup>20</sup> in 10.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The benchmarks were small by today's standards, but the claim that mattered held up: one ordinary gradient loop beat bespoke inference schemes. The figures' curves are not redrawn here because the paper publishes them only as plots; read them in the original.</p>
+</section>
+
+<section id="s6">
+<h2>6–7 Conclusion and future work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#S6">original</a></span></h2>
+<h3 class="rung">What the paper concludes</h3>
+<p>SGVB is an estimator of the variational bound that ordinary stochastic gradient methods can optimise; AEVB uses it to learn an inference model for datasets with a continuous code per example.</p>
+<h3 class="rung">What it proposed next, and what happened</h3>
+<ul>
+  <li><strong>Deep, convolutional encoders and decoders:</strong> now the norm. The autoencoder inside <span class="t" data-t="latent diffusion">latent diffusion</span> is a deep convolutional VAE.</li>
+  <li><strong>Time-series models:</strong> sequential and recurrent VAEs followed.</li>
+  <li><strong>SGVB for the global parameters</strong> (Appendix F): variational treatment of the weights themselves.</li>
+  <li><strong>Supervised models with latent variables:</strong> conditional VAEs, which generate given a label.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The two things to take away are the bound and the trick. Almost every later latent-variable model, from β-VAE to <span class="t" data-t="vq-vae">VQ-VAE</span> to diffusion, is either a new bound, a new way to push gradients through randomness, or both.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices A–F <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#A1">original</a></span></h2>
+<p>The appendices hold the derivations and details the main text points to. A, B and C get the full treatment; D, E and F are summarised.</p>
+
+<section id="appa">
+<h3>A The learned manifolds <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#A1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>With a 2-number code, the whole code space is a flat map, and you can print a picture for every spot on it. The paper's Figure 4 does exactly that for faces and digits. The only question is where to put the grid, since the map stretches forever in every direction. The answer: make the grid even in <em>probability</em>, not in distance, so each tile covers the same share of the prior.</p>
+<h4>Tiny example</h4>
+<p>Five evenly spaced shares, 0.1, 0.3, 0.5, 0.7 and 0.9, pushed through the inverse of the bell curve's CDF, land at −1.28, −0.52, 0, 0.52 and 1.28. The middle points sit close together and the outer ones spread out, just as the prior's probability does.</p>
+<div class="eq" data-tex="\htmlData{sym=zk}{z_k} = \htmlData{sym=Phiinv}{\Phi^{-1}}(\htmlData{sym=uk}{u_k})" data-fallback="z_k = Φ⁻¹(u_k)"></div>
+<div class="symtable" data-syms="zk,Phiinv,uk"></div>
+<p class="inwords"><strong>In words:</strong> “each grid coordinate is the code value below which the prior puts exactly that share of its probability.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Φ<sup>−1</sup>(0.9) = 1.2816, because a standard bell curve has 90% of its mass below 1.2816.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>from statistics import NormalDist
+u = [0.1, 0.3, 0.5, 0.7, 0.9]
+# Φ⁻¹(u_k): the inverse of the standard normal CDF
+[round(NormalDist().inv_cdf(u_k), 4) for u_k in u]  # → [-1.2816, -0.5244, 0.0, 0.5244, 1.2816]
+# check: 90% of the mass lies below 1.2816
+round(NormalDist().cdf(1.2816), 4)  # → 0.9</code></pre>
+<div class="plot" id="grid-plot">
+  <div class="controls"><label for="grid-n">points per side n = <strong id="grid-nv">7</strong></label><input type="range" id="grid-n" min="3" max="15" step="1" value="7"></div>
+  <div id="grid-svg"></div>
+  <p class="readout" id="grid-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> on the left is the unit square with an even n × n grid of shares, using the midpoints (k + ½)/n so that no point sits on an edge, where the inverse CDF is infinite. (The paper says only “linearly spaced”; the midpoint choice is this page's.) On the right, the same points after the inverse CDF, drawn in code space with circles at radius 1 and 2. The grid bunches up in the middle and stretches at the rim, matching where the prior actually puts its codes. Decoding each right-hand point gives the paper's Figure 4; the <a data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a> draws the same kind of map for its pen strokes.</p>
+<h4>Why it matters today</h4>
+<p>“Decode a grid of codes” remains the quickest way to see whether a latent space is smooth. Figure 5 of the paper also shows random samples from 2, 5, 10 and 20-number codes.</p>
+</section>
+
+<section id="appb">
+<h3>B The Gaussian KL, derived <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#A2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The KL rent looks like magic when written in one line. It is really just two averages subtracted: how surprised the prior is, on average, by codes from the guess, and how surprised the guess is by its own codes. Both averages of a bell curve's log have short answers.</p>
+<h4>Tiny example</h4>
+<p>One code number, guess N(0.5, 0.25), prior N(0, 1). The first average is −1.1689 and the second is −0.7258. Their difference, −0.4431, is minus the KL, the same 0.4431 as in §3.</p>
+<div class="eq" data-tex="-\htmlData{sym=DKL}{D_{KL}}\big(\htmlData{sym=qz}{q_\phi(\mathbf{z})}\,\Vert\,\htmlData{sym=pz}{p_\theta(\mathbf{z})}\big) = \htmlData{sym=integral}{\int} \htmlData{sym=qz}{q_\phi(\mathbf{z})}\big(\log \htmlData{sym=pz}{p_\theta(\mathbf{z})} - \log \htmlData{sym=qz}{q_\phi(\mathbf{z})}\big)\,\htmlData{sym=dz}{d\mathbf{z}} = \htmlData{sym=half}{\frac{1}{2}}\htmlData{sym=sumj}{\sum_{j=1}^{J}}\big(1 + \log \htmlData{sym=sigj}{\sigma_j^2} - \htmlData{sym=muj}{\mu_j^2} - \htmlData{sym=sigj}{\sigma_j^2}\big)" data-fallback="−D_KL(q ‖ p) = ∫ q(z)(log p(z) − log q(z)) dz = ½ Σ_j (1 + log σ_j² − μ_j² − σ_j²)"></div>
+<div class="symtable" data-syms="DKL,qz,pz,integral,dz,half,sumj,sigj,muj"></div>
+<p class="inwords"><strong>In words:</strong> “minus the KL is the guess's average of the prior's log-density minus the guess's average of its own log-density. The first average is −J/2 log 2π − ½Σ(μ<sub>j</sub>² + σ<sub>j</sub>²), the second is −J/2 log 2π − ½Σ(1 + log σ<sub>j</sub>²); the log 2π parts cancel.”</p>
+<p class="inwords"><strong>With the numbers:</strong> −0.9189 − ½(0.25 + 0.25) = −1.1689 and −0.9189 − ½(1 − 1.3863) = −0.7258; −1.1689 − (−0.7258) = −0.4431 = ½(1 − 1.3863 − 0.25 − 0.25).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def N(z, m, v):
+    return math.exp(-(z - m) ** 2 / (2 * v)) / math.sqrt(2 * math.pi * v)
+mu, var, dz = 0.5, 0.25, 0.001
+zs = [-10 + i * dz for i in range(20_001)]
+# ∫ q log p dz and ∫ q log q dz, as sums of thin slices
+q_log_p = sum(N(z, mu, var) * math.log(N(z, 0, 1)) * dz for z in zs)
+q_log_q = sum(N(z, mu, var) * math.log(N(z, mu, var)) * dz for z in zs)
+round(q_log_p, 4), round(q_log_q, 4)  # → (-1.1689, -0.7258)
+round(q_log_p - q_log_q, 4)  # → -0.4431
+# the closed form ½ Σ (1 + log σ² − μ² − σ²)
+round(0.5 * (1 + math.log(var) - mu ** 2 - var), 4)  # → -0.4431</code></pre>
+<h4>Why it matters today</h4>
+<p>Because this KL needs no sampling, it adds no noise to the gradient, which is why estimator B beats estimator A. The same closed-form Gaussian KL is what makes each term of the diffusion bound computable.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/autoencoders.html#kl_to_standard_normal"><code>kl_to_standard_normal</code></a>; a test checks it against a brute-force average over 400,000 samples.</p>
+</section>
+
+<section id="appc">
+<h3>C The encoder and decoder networks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#A3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Both networks are the smallest thing that could work: one <span class="t" data-t="tanh">tanh</span> hidden layer each. The decoder's last step depends on the data. For black-and-white pixels it outputs a probability of “ink” per pixel, a <span class="t" data-t="bernoulli distribution">Bernoulli distribution</span>, and the rebuild score is how much probability it gave to the pixels that actually occurred.</p>
+<h4>Tiny example</h4>
+<p>Three pixels, real values x = (1, 0, 1); the decoder says (0.9, 0.2, 0.6). The chance of exactly this picture is 0.9 × 0.8 × 0.6 = 0.432 (the middle pixel is off, so it scores 1 − 0.2), and its log is −0.8393.</p>
+<div class="eq" data-tex="\htmlData{sym=logpxz}{\log p(\mathbf{x}\mid\mathbf{z})} = \htmlData{sym=sumD}{\sum_{i=1}^{D}} \htmlData{sym=xpix}{x_i}\log \htmlData{sym=ypix}{y_i} + (1-\htmlData{sym=xpix}{x_i})\log(1-\htmlData{sym=ypix}{y_i}), \quad \htmlData{sym=ypix}{\mathbf{y}} = \htmlData{sym=fsig}{f_\sigma}\big(\htmlData{sym=W2}{\mathbf{W}_2}\,\htmlData{sym=tanh}{\tanh}(\htmlData{sym=W1}{\mathbf{W}_1}\mathbf{z} + \htmlData{sym=b1}{\mathbf{b}_1}) + \htmlData{sym=b2}{\mathbf{b}_2}\big)" data-fallback="log p(x | z) = Σᵢ xᵢ log yᵢ + (1 − xᵢ) log(1 − yᵢ),  y = sigmoid(W₂ tanh(W₁ z + b₁) + b₂)"></div>
+<div class="symtable" data-syms="logpxz,sumD,xpix,ypix,fsig,W2,tanh,W1,b1,b2"></div>
+<p class="inwords"><strong>In words:</strong> “the decoder squashes the code through one tanh layer and a sigmoid, giving an ink probability per pixel; the score adds, over pixels, the log of the probability it gave to what each pixel really was.”</p>
+<p class="inwords"><strong>With the numbers:</strong> log 0.9 + log(1 − 0.2) + log 0.6 = −0.1054 − 0.2231 − 0.5108 = −0.8393. Its negative is the <span class="t" data-t="binary cross-entropy">binary cross-entropy</span> of the picture. With a one-number code z = 1.1 and illustrative weights W<sub>1</sub> = 1, b<sub>1</sub> = 0, W<sub>2</sub> = 3, b<sub>2</sub> = −0.2, one pixel's chance is sigmoid(3 tanh(1.1) − 0.2) = 0.9.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x, y = [1, 0, 1], [0.9, 0.2, 0.6]
+# Σ x_i log y_i + (1 − x_i) log(1 − y_i)
+round(sum(x_i * math.log(y_i) + (1 - x_i) * math.log(1 - y_i) for x_i, y_i in zip(x, y)), 4)  # → -0.8393
+# the same as the log of the picture's probability
+round(math.log(0.9 * 0.8 * 0.6), 4)  # → -0.8393
+# one pixel's y from a one-number code, with illustrative weights
+def sigmoid(a):
+    return 1 / (1 + math.exp(-a))
+round(sigmoid(3 * math.tanh(1.0 * 1.1 + 0) - 0.2), 2)  # → 0.9</code></pre>
+<p>For real-valued data (and always for the encoder) the output is a Gaussian instead: a hidden layer h = tanh(W<sub>3</sub>z + b<sub>3</sub>) feeds two linear heads, μ = W<sub>4</sub>h + b<sub>4</sub> and log σ² = W<sub>5</sub>h + b<sub>5</sub>. Used as the encoder, z and x swap places and the weights belong to φ. Predicting log σ² rather than σ keeps the spread positive whatever number the network outputs, the same reason the lesson's encoder does it.</p>
+<h4>Why it matters today</h4>
+<p>The choice of decoder distribution decides the rebuild loss: Bernoulli gives binary cross-entropy, a Gaussian with fixed spread gives squared error. Squared error averages over possibilities, which is the root of the VAE's famous blur, explained in the <a data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a>.</p>
+</section>
+
+<section id="appdf">
+<h3>D–F Estimators and full VB <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1312.6114#A4">original</a></span></h3>
+<ul>
+  <li><strong>D, the marginal likelihood estimator:</strong> sample codes from the true posterior with Hybrid Monte Carlo, fit a density q(z) to them, then average q(z) / (p(z) p(x | z)) over fresh posterior samples and invert. Good only below about 5 code dimensions.</li>
+  <li><strong>E, Monte Carlo EM:</strong> the baseline with no encoder: 10 Hybrid Monte Carlo leapfrog steps per example (step size tuned to a 90% acceptance rate), then 5 weight updates.</li>
+  <li><strong>F, full variational Bayes:</strong> the same trick applied a second time, to a Gaussian guess over the weights θ themselves, reparameterized as θ = μ<sub>θ</sub> + σ<sub>θ</sub> ⊙ ζ. The paper derives it but leaves experiments to future work.</li>
+</ul>
+<p>Appendix F is the seed of later “Bayesian neural network” training by reparameterized weight noise; D and E matter mainly for reading Figure 3.</p>
+</section>
+</section>
+
+<section id="today">
+<h2>What changed since 2013</h2>
+<p>The bound and the trick are unchanged. Almost everything around them has moved:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Choice in the paper</th><th>Common today</th><th>Why</th><th>Where to read</th></tr></thead>
+  <tbody>
+    <tr><td>KL weighted exactly 1</td><td>A weight β, tuned (β-VAE) or tiny (image compressors)</td><td>Trade rebuild sharpness against a smooth, well-packed code</td><td><a data-lesson="primer/ml/generative/autoencoders.html">autoencoders</a></td></tr>
+    <tr><td>One tanh hidden layer</td><td>Deep convolutional or transformer encoders and decoders</td><td>Real images and audio</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Continuous Gaussian codes</td><td>Also discrete codebooks (VQ-VAE)</td><td>Turns images and audio into tokens a transformer can read</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal</a></td></tr>
+    <tr><td>The VAE as the generator</td><td>The VAE as a compressor, with diffusion generating inside its code space</td><td>Squared-error decoders blur; diffusion does not</td><td><a href="ddpm.html">DDPM companion</a></td></tr>
+    <tr><td>Adagrad</td><td>Adam</td><td>Better default for deep networks</td><td><a href="adam.html">Adam companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Diederik P. Kingma and Max Welling, <em>Auto-Encoding Variational Bayes</em>, ICLR 2014. <a href="https://arxiv.org/abs/1312.6114">arXiv:1312.6114</a>. Quotations are brief and attributed; the figures are redrawn and no table is reproduced. All explanations, diagrams, worked numbers and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // 2.1
+    px: { tex: "p_\\theta(\\mathbf{x})", name: "Marginal likelihood", meaning: "How probable the model finds the example x, averaged over every code that could have produced it.", shape: "one number (a density)", example: "p(x = 2) = 0.1038" },
+    integral: { tex: "\\int", name: "Integral", meaning: "Add up over a continuous range: chop it into thin slices, add slice height × slice width, and let the slices get infinitely thin.", shape: "turns a curve into one number", example: "1,601 slices of width 0.01 give 0.1038" },
+    pz: { tex: "p_\\theta(\\mathbf{z})", name: "Prior", meaning: "How likely each code is before seeing any data. In the VAE it is the standard bell curve N(0, I), with no learned parameters.", shape: "a density over codes", example: "N(z; 0, 1): 0.2420 at z = 1" },
+    pxz: { tex: "p_\\theta(\\mathbf{x}\\mid\\mathbf{z})", name: "Likelihood, the decoder", meaning: "How likely the example x is if the code was z. The vertical bar reads “given”. In a VAE a neural network computes it.", shape: "a density over examples, for each z", example: "N(2; z, 1): 0.2420 at z = 1" },
+    dz: { tex: "d\\mathbf{z}", name: "Slice width", meaning: "Marks which quantity the integral runs over (the code z) and stands for the width of each thin slice.", shape: "infinitesimal", example: "0.01 in the Python sum" },
+    theta: { tex: "\\theta", name: "Generative parameters", meaning: "“Theta”: all the decoder's weights (and the prior's, if it had any).", shape: "thousands to millions of numbers", example: "none needed in the one-number world" },
+    pzx: { tex: "p_\\theta(\\mathbf{z}\\mid\\mathbf{x})", name: "True posterior", meaning: "How likely each code is after seeing the example. Exact but intractable in real models, because it divides by p(x).", shape: "a density over codes, for each x", example: "N(1, 0.5) for x = 2" },
+    // 2.2
+    logpx: { tex: "\\log p_\\theta(\\mathbf{x}^{(i)})", name: "Log marginal likelihood", meaning: "The log of how probable example i is under the model. Training wants it high. Logs turn products over examples into sums.", shape: "one number, at most 0 for discrete data", example: "log 0.1038 = −2.2655" },
+    DKL: { tex: "D_{KL}", name: "KL divergence", meaning: "How different the first distribution is from the second: 0 only when they match, positive otherwise. Not symmetric.", shape: "one number, ≥ 0", example: "KL(N(0, 1) ‖ N(1, 0.5)) = 1.1534" },
+    qzx: { tex: "q_\\phi(\\mathbf{z}\\mid\\mathbf{x}^{(i)})", name: "The encoder's guess", meaning: "The recognition model: a distribution over codes that the encoder computes from example i, approximating the true posterior.", shape: "a density over codes", example: "N(m, v); the lazy guess is N(0, 1)" },
+    Lb: { tex: "\\mathcal{L}(\\theta,\\phi;\\mathbf{x}^{(i)})", name: "The bound (ELBO)", meaning: "The variational lower bound on log p(x) for example i. Both networks are trained to push it up; a VAE's loss is its negative.", shape: "one number", example: "−3.4189 for the lazy guess, −2.2655 for the perfect one" },
+    phi: { tex: "\\phi", name: "Variational parameters", meaning: "“Phi”: all the encoder's weights, which set the guess q.", shape: "thousands to millions of numbers", example: "the rule “centre = x / 2” in the one-number world" },
+    xi: { tex: "\\mathbf{x}^{(i)}", name: "Example i", meaning: "The i-th example in the dataset. The superscript in brackets is an index, not a power.", shape: "a vector (a whole picture)", example: "x = 2" },
+    Eq: { tex: "\\mathbb{E}_{q_\\phi(\\mathbf{z}\\mid\\mathbf{x}^{(i)})}", name: "Average over the guess", meaning: "The expected value: the average of what follows over codes drawn from the encoder's guess.", shape: "turns a random quantity into one number", example: "the average of log N(2; z, 1) over z ~ N(1, 0.5) is −1.6689" },
+    logpxz: { tex: "\\log p_\\theta(\\mathbf{x}^{(i)}\\mid\\mathbf{z})", name: "Rebuild score", meaning: "The log-probability the decoder gives to the real example, starting from code z. Its negative is the reconstruction error.", shape: "one number per code", example: "−1.1279 at z = 1.3536; −0.8393 for the three pixels" },
+    // 2.3
+    LB: { tex: "\\widetilde{\\mathcal{L}}^{B}", name: "Estimator B", meaning: "The paper's second SGVB estimator: exact KL plus a sampled rebuild score. The tilde marks an estimate.", shape: "one number, random", example: "−1.7245 with ε = 0.5" },
+    avgl: { tex: "\\frac{1}{L}\\sum_{l=1}^{L}", name: "Average over L noise draws", meaning: "Add up what follows for l = 1, …, L and divide by L. The paper uses L = 1 when the batch is large enough.", shape: "one number", example: "L = 1 in the paper; 100,000 in the check" },
+    zil: { tex: "\\mathbf{z}^{(i,l)}", name: "The l-th code for example i", meaning: "A concrete code made from noise draw l for example i.", shape: "a code vector", example: "1.3536" },
+    g: { tex: "g_\\phi", name: "The sampling recipe", meaning: "A differentiable function that turns noise (and the example) into a code. For a Gaussian guess, g = μ + σ ⊙ ε.", shape: "noise and example in, code out", example: "g(0.5, 2) = 1 + √0.5 × 0.5" },
+    epsl: { tex: "\\boldsymbol{\\epsilon}^{(l)}", name: "Noise draw l", meaning: "Random noise from a fixed distribution that does not depend on φ, usually the standard bell curve.", shape: "same shape as the code", example: "0.5; or (1.2, −0.4)" },
+    LX: { tex: "\\mathcal{L}(\\theta,\\phi;\\mathbf{X})", name: "Bound for the whole dataset", meaning: "The sum of the per-example bounds over all N examples.", shape: "one number", example: "1,000 × (−2.2655) = −2,265.5" },
+    approx: { tex: "\\simeq", name: "Is estimated by", meaning: "The right side is a random estimate whose average equals, or approximates, the left side.", shape: "", example: "" },
+    LM: { tex: "\\widetilde{\\mathcal{L}}^{M}", name: "Minibatch estimate", meaning: "The dataset bound estimated from one random minibatch of M examples.", shape: "one number, random", example: "−2,260" },
+    NoverM: { tex: "\\frac{N}{M}", name: "Scale-up factor", meaning: "How many minibatches fit in the dataset. It makes the minibatch sum an estimate of the full-dataset sum.", shape: "a number", example: "1,000 / 100 = 10" },
+    sumi: { tex: "\\sum_{i=1}^{M}", name: "Sum over the minibatch", meaning: "Add up what follows for each of the M examples in the batch.", shape: "one number", example: "100 × (−2.26) = −226" },
+    Ltilde: { tex: "\\widetilde{\\mathcal{L}}(\\theta,\\phi;\\mathbf{x}^{(i)})", name: "Per-example estimate", meaning: "Estimator A or B for one example.", shape: "one number", example: "−2.26 on average" },
+    // 2.4
+    Ef: { tex: "\\mathbb{E}_{\\mathcal{N}(z;\\mu,\\sigma^2)}[f(z)]", name: "Average of f over the guess", meaning: "What f(z) comes to on average when z is drawn from a bell curve with centre μ and variance σ².", shape: "one number", example: "μ² + σ² = 2 for f(z) = z²" },
+    Eeps: { tex: "\\mathbb{E}_{\\mathcal{N}(\\epsilon;0,1)}", name: "Average over standard noise", meaning: "The same average, but over noise ε from the standard bell curve, which does not depend on μ or σ. That is what lets the gradient pass inside.", shape: "turns a random quantity into one number", example: "" },
+    f: { tex: "f", name: "Any function of the code", meaning: "Whatever you want the average of. In the VAE it is the rebuild score log p(x | z).", shape: "a code in, a number out", example: "f(z) = z²; f(1.5) = 2.25" },
+    mu: { tex: "\\mu", name: "Centre", meaning: "“Mu”: the mean of the guess, output by the encoder.", shape: "one number per code number", example: "1" },
+    sigma: { tex: "\\sigma", name: "Spread", meaning: "“Sigma”: the standard deviation of the guess, output by the encoder (as log σ²).", shape: "one positive number per code number", example: "1" },
+    eps: { tex: "\\epsilon", name: "Standard noise", meaning: "“Epsilon”: a draw from the standard bell curve, rolled before the arithmetic.", shape: "one number per code number", example: "0.5" },
+    fprime: { tex: "f'", name: "Slope of f", meaning: "The derivative of f: how fast f changes as the code changes. Through z = μ + σε, it is also how f changes with μ.", shape: "one number", example: "f′(z) = 2z; 3 at z = 1.5" },
+    scorefn: { tex: "\\frac{z-\\mu}{\\sigma^2}", name: "Slope of the log bell curve", meaning: "How much the log-density of the drawn z would rise if μ moved up. Weighting f(z) by it gives a gradient estimate without differentiating f.", shape: "one number per draw", example: "(1.5 − 1) / 1 = 0.5" },
+    zexp: { tex: "z", name: "Exponential draw", meaning: "A waiting time with rate λ.", shape: "one positive number", example: "0.3466" },
+    ln: { tex: "\\ln", name: "Natural logarithm", meaning: "The power you raise e ≈ 2.718 to in order to get a number.", shape: "", example: "ln 0.5 = −0.6931" },
+    u: { tex: "u", name: "Uniform noise", meaning: "A random number equally likely to be anywhere between 0 and 1.", shape: "0 … 1", example: "0.5" },
+    lam: { tex: "\\lambda", name: "Rate", meaning: "“Lambda”: how often the event happens per unit time. Bigger rate, shorter waits.", shape: "a positive number", example: "2" },
+    // 3
+    Ngauss: { tex: "\\mathcal{N}", name: "Normal (Gaussian) density", meaning: "The bell curve. N(z; m, v) is its height at z when its centre is m and its variance is v.", shape: "a density", example: "" },
+    mui: { tex: "\\boldsymbol{\\mu}^{(i)}", name: "Centre for example i", meaning: "The encoder's first head: one centre per code number.", shape: "J numbers", example: "(0.5, 0)" },
+    sigmai: { tex: "\\boldsymbol{\\sigma}^{2(i)}", name: "Variances for example i", meaning: "The encoder's second head, exponentiated: one variance per code number.", shape: "J positive numbers", example: "(0.25, 1)" },
+    I: { tex: "\\mathbf{I}", name: "Identity matrix", meaning: "Ones on the diagonal, zeros elsewhere. Multiplying the variances by it says the code numbers are independent: no correlations.", shape: "J × J", example: "" },
+    half: { tex: "\\frac{1}{2}", name: "One half", meaning: "A constant that falls out of the bell curve's formula.", shape: "", example: "" },
+    sumj: { tex: "\\sum_{j=1}^{J}", name: "Sum over code numbers", meaning: "Add up what follows for each of the J numbers in the code; J is the code size.", shape: "one number", example: "J = 2: −0.4431 + 0" },
+    sigj: { tex: "\\sigma_j^2", name: "Variance of code number j", meaning: "How wide the guess is along code number j. Its term σ² − log σ² is smallest when σ² = 1.", shape: "a positive number", example: "0.25 and 1" },
+    muj: { tex: "\\mu_j^2", name: "Squared centre of code number j", meaning: "Rent for sitting away from 0.", shape: "≥ 0", example: "0.25 and 0" },
+    sigmavec: { tex: "\\boldsymbol{\\sigma}^{(i)}", name: "Spreads for example i", meaning: "The square roots of the variances.", shape: "J positive numbers", example: "(0.5, 1)" },
+    odot: { tex: "\\odot", name: "Element-wise product", meaning: "Multiply matching entries, one by one.", shape: "keeps the shape", example: "(0.5, 1) ⊙ (1.2, −0.4) = (0.6, −0.4)" },
+    // A
+    zk: { tex: "z_k", name: "Grid coordinate in code space", meaning: "Where the k-th grid line sits along one code number.", shape: "any real number", example: "1.2816 for u = 0.9" },
+    Phiinv: { tex: "\\Phi^{-1}", name: "Inverse normal CDF", meaning: "Φ(z) is the share of the standard bell curve below z; Φ⁻¹ goes the other way, from a share to a value.", shape: "(0, 1) → any number", example: "Φ⁻¹(0.5) = 0" },
+    uk: { tex: "u_k", name: "Evenly spaced share", meaning: "A grid point on the unit square, spaced evenly between 0 and 1.", shape: "0 … 1", example: "0.1, 0.3, 0.5, 0.7, 0.9" },
+    // B
+    qz: { tex: "q_\\phi(\\mathbf{z})", name: "The guess", meaning: "The encoder's Gaussian for one example (the appendix drops the “given x”).", shape: "a density over codes", example: "N(0.5, 0.25)" },
+    // C
+    sumD: { tex: "\\sum_{i=1}^{D}", name: "Sum over pixels", meaning: "Add up over all D pixels (here i counts pixels, not examples).", shape: "one number", example: "D = 3" },
+    xpix: { tex: "x_i", name: "Pixel i", meaning: "The real value of pixel i: 1 for ink, 0 for blank.", shape: "0 or 1", example: "(1, 0, 1)" },
+    ypix: { tex: "y_i", name: "Ink probability for pixel i", meaning: "The decoder's chance that pixel i is inked.", shape: "0 … 1", example: "(0.9, 0.2, 0.6), illustrative" },
+    fsig: { tex: "f_\\sigma", name: "Sigmoid", meaning: "Squashes any number into 0 … 1, so it can be a probability. (This σ is not the spread.)", shape: "keeps the shape", example: "sigmoid(2.2) = 0.9" },
+    W1: { tex: "\\mathbf{W}_1", name: "Decoder hidden weights", meaning: "Learned matrix from the code to the hidden layer.", shape: "hidden × J", example: "1 in the one-number example" },
+    b1: { tex: "\\mathbf{b}_1", name: "Decoder hidden bias", meaning: "Learned numbers added before the tanh.", shape: "hidden", example: "0" },
+    W2: { tex: "\\mathbf{W}_2", name: "Decoder output weights", meaning: "Learned matrix from the hidden layer to one score per pixel.", shape: "D × hidden", example: "3" },
+    b2: { tex: "\\mathbf{b}_2", name: "Decoder output bias", meaning: "Learned numbers added before the sigmoid.", shape: "D", example: "−0.2" },
+    tanh: { tex: "\\tanh", name: "Tanh", meaning: "Squashes any number into −1 … 1; the bend that makes the network more than a straight line.", shape: "keeps the shape", example: "tanh(1.1) = 0.80" },
+  },
+
+  blocks: {
+    // Figure 1
+    gm_z: { title: "z: the hidden code", body: "<p>An unobserved random variable, drawn first. In the VAE it is drawn from the standard bell curve. The paper calls it the <em>latent variable</em>, or the <em>code</em>.</p>", shape: "J numbers (2 to 200 in the paper)", lesson: "primer/ml/generative/autoencoders.html" },
+    gm_x: { title: "x: the observed example", body: "<p>What you actually see: a picture. The shading means observed. It is generated from z by the decoder p<sub>θ</sub>(x | z).</p>", shape: "D numbers (784 pixels for MNIST)" },
+    gm_theta: { title: "θ: the generative parameters", body: "<p>The weights that define the solid arrows: the prior over z and the decoder from z to x. Shared by every example, so they sit outside the plate.</p>" },
+    gm_phi: { title: "φ: the variational parameters", body: "<p>The weights of the recognition model q<sub>φ</sub>(z | x), the dashed arrows. Also shared by every example. Learning φ jointly with θ is the paper's method.</p>", lesson: "primer/ml/generative/autoencoders.html" },
+    plate: { title: "The plate: repeat N times", body: "<p>Everything inside the box happens once per data point: each of the N examples has its own code z<sup>(i)</sup> and its own x<sup>(i)</sup>, all drawn independently.</p>", shape: "N examples" },
+    solid: { title: "Solid arrows: the generative model", body: "<p>p<sub>θ</sub>(z) p<sub>θ</sub>(x | z): first draw a code, then draw the example from it. This is how the model generates new data.</p>" },
+    dashed: { title: "Dashed arrows: the approximate posterior", body: "<p>q<sub>φ</sub>(z | x): a quick guess of which codes could have produced this x. It stands in for the true posterior p<sub>θ</sub>(z | x), which is intractable.</p>" },
+    // Algorithm 1
+    init: { title: "Initialise θ and φ", body: "<p>Random starting weights for both networks. The paper draws every weight from N(0, 0.01).</p>" },
+    batch: { title: "A random minibatch", body: "<p>M examples drawn from the full dataset. The paper uses M = 100. The estimate is scaled by N / M so that it estimates the whole dataset's bound.</p>", shape: "M = 100 examples" },
+    noise: { title: "Fresh noise", body: "<p>One noise vector ε per example (L = 1), from the standard bell curve. Each becomes a code via z = μ + σ ⊙ ε.</p>", shape: "M × J numbers" },
+    grad: { title: "Differentiate the estimate", body: "<p>Backpropagation through decoder, sampling step and encoder at once. The reparameterization is what makes the sampling step differentiable.</p>", lesson: "primer/ml/generative/autoencoders.html" },
+    update: { title: "Update both networks", body: "<p>One step for θ and φ together, with SGD or Adagrad (the paper uses Adagrad). The bound goes up, so the loss, its negative, goes down.</p>", lesson: "primer/ml/optimizers.html" },
+    converged: { title: "Until converged", body: "<p>Repeat until the parameters stop changing much. There is no inner loop per example: that is the efficiency win over Monte Carlo EM.</p>" },
+    ret: { title: "Return θ and φ", body: "<p>The trained decoder generates; the trained encoder infers codes.</p>" },
+    // VAE diagram
+    xin: { title: "The picture x", body: "<p>An example from the dataset, as a vector of pixels.</p>", shape: "D numbers" },
+    enc: { title: "Encoder MLP (weights φ)", body: "<p>One hidden layer, h = tanh(W<sub>3</sub>x + b<sub>3</sub>) in the paper, with 500 hidden units for MNIST.</p>", shape: "D → hidden", lesson: "primer/ml/generative/autoencoders.html#VAE.encode_distribution" },
+    mu: { title: "Head 1: μ", body: "<p>The centre of the fuzzy region, μ = W<sub>4</sub>h + b<sub>4</sub>.</p>", shape: "J numbers" },
+    logvar: { title: "Head 2: log σ²", body: "<p>The log of the region's variance, log σ² = W<sub>5</sub>h + b<sub>5</sub>. A log can be any number, while a variance must be positive.</p>", shape: "J numbers" },
+    z: { title: "z: the code (sampling step)", body: "<p>z = μ + σ ⊙ ε. The noise comes in from the side, so this box is plain arithmetic and gradients reach μ and σ.</p>", shape: "J numbers", lesson: "primer/ml/generative/autoencoders.html#reparameterize" },
+    eps: { title: "ε: the noise input", body: "<p>A fresh draw from N(0, I) each time, independent of the weights. Treated like any other input.</p>", shape: "J numbers" },
+    dec: { title: "Decoder MLP (weights θ)", body: "<p>One tanh hidden layer, then a sigmoid output for binary pixels (Appendix C).</p>", shape: "J → hidden → D" },
+    y: { title: "Pixel chances y", body: "<p>One probability of ink per pixel. At generation time this is the picture.</p>", shape: "D numbers in 0 … 1" },
+    recon: { title: "Rebuild score log p(x | z)", body: "<p>How much probability the decoder gave to the real pixels: Σ x log y + (1 − x) log(1 − y). Its negative is binary cross-entropy.</p>", shape: "one number" },
+    kl: { title: "−KL, in closed form", body: "<p>½ Σ (1 + log σ² − μ² − σ²), computed straight from the two heads. No sampling, so no noise.</p>", shape: "one number", lesson: "primer/ml/generative/autoencoders.html#kl_to_standard_normal" },
+    elbo: { title: "The bound", body: "<p>Rebuild score plus −KL. Training pushes it up; the loss is its negative.</p>", shape: "one number per example", lesson: "primer/ml/generative/autoencoders.html#VAE.loss_and_gradients" },
+  },
+
+  onReady(P) {
+    elboDemo(P);
+    gradDemo(P);
+    gridDemo();
+  },
+};
+
+/* ---- the one-number world: ELBO and gap, computed exactly ---- */
+const X_OBS = 2;
+const LOG_PX = -0.5 * Math.log(2 * Math.PI * 2) - X_OBS * X_OBS / 4;
+function elboParts(m, v) {
+  const rec = -0.5 * Math.log(2 * Math.PI) - ((X_OBS - m) ** 2 + v) / 2;
+  const kl = 0.5 * (m * m + v - Math.log(v) - 1);
+  const gap = 0.5 * (v / 0.5 + (m - 1) ** 2 / 0.5 - 1 - Math.log(v / 0.5));
+  return { rec, kl, elbo: rec - kl, gap };
+}
+function normalPdf(z, m, v) { return Math.exp(-((z - m) ** 2) / (2 * v)) / Math.sqrt(2 * Math.PI * v); }
+function elboDemo(P) {
+  const mIn = document.getElementById("elbo-m"), vIn = document.getElementById("elbo-v");
+  const curve = (m, v) => { const pts = []; for (let z = -3; z <= 4.001; z += 0.05) pts.push([+z.toFixed(2), normalPdf(z, m, v)]); return pts; };
+  const series = (m, v) => [
+    { name: "true posterior N(1, 0.5)", points: curve(1, 0.5) },
+    { name: "encoder's guess q", points: curve(m, v) },
+  ];
+  const chart = P.lineChart(document.getElementById("elbo-chart"), {
+    series: series(0, 1), xLabel: "hidden number z", yLabel: "density",
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2), width: 440, height: 240,
+    ariaLabel: "The true posterior and the encoder's guess, as bell curves over z",
+  });
+  const bars = document.getElementById("elbo-bars"), out = document.getElementById("elbo-readout");
+  function draw() {
+    const m = +mIn.value, v = +vIn.value;
+    document.getElementById("elbo-mv").textContent = m.toFixed(2);
+    document.getElementById("elbo-vv").textContent = v.toFixed(2);
+    chart.update(series(m, v));
+    const p = elboParts(m, v);
+    const scale = 6;
+    const w = (x) => `${Math.min(100, (Math.abs(x) / scale) * 100).toFixed(1)}%`;
+    const row = (label, val, style) => `<div class="share-row" style="grid-template-columns:7.5rem minmax(0,1fr) 4rem"><span>${label}</span><div><div class="share-bar" style="width:${w(val)};${style}"></div></div><span>${val.toFixed(3)}</span></div>`;
+    bars.innerHTML = row("log p(x), fixed", LOG_PX, "background:var(--wire)") + row("ELBO", p.elbo, "") + row("gap (striped)", p.gap, "background:var(--hatch) var(--accent)");
+    out.innerHTML = `q = N(${m.toFixed(2)}, ${v.toFixed(2)}): rebuild term ${p.rec.toFixed(3)}, KL to prior ${p.kl.toFixed(3)}, so <strong>ELBO ${p.elbo.toFixed(3)}</strong>. Gap KL(q ‖ posterior) = <strong>${p.gap.toFixed(3)}</strong>. ELBO + gap = ${(p.elbo + p.gap).toFixed(4)} = log p(x).`;
+  }
+  mIn.addEventListener("input", draw); vIn.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- two gradient estimators on the same noise ---- */
+function mulberry32(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gaussians(seed, n) {
+  const r = mulberry32(seed), out = [];
+  while (out.length < n) { const u = 1 - r(), v = r(); out.push(Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)); }
+  return out;
+}
+function scoreSpread(a, s) { return Math.sqrt((a ** 4 + 18 * a * a * s * s + 15 * s ** 4) / (s * s) - 4 * a * a); }
+function gradDemo(P) {
+  const muIn = document.getElementById("grad-mu"), sgIn = document.getElementById("grad-sigma");
+  const n = 300;
+  let seed = 7, eps = gaussians(seed, n);
+  const clip = (v, t) => Math.max(t - 3, Math.min(t + 3, v));
+  function series() {
+    const mu = +muIn.value, sg = +sgIn.value, target = 2 * mu;
+    let sr = 0, ss = 0; const rep = [], sco = [];
+    eps.forEach((e, i) => {
+      const z = mu + sg * e;
+      sr += 2 * z; ss += (z * z * (z - mu)) / (sg * sg);
+      rep.push([i + 1, clip(sr / (i + 1), target)]); sco.push([i + 1, clip(ss / (i + 1), target)]);
+    });
+    return { mu, sg, target, rep: sr / n, sco: ss / n, s: [
+      { name: "reparameterized", points: rep },
+      { name: "score function", points: sco },
+      { name: "true gradient 2μ", points: [[1, target], [n, target]] },
+    ] };
+  }
+  let d = series();
+  const opts = {
+    series: d.s, xLabel: "noise draws", yLabel: "running average",
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(1), width: 440, height: 260,
+    yMin: d.target - 3, yMax: d.target + 3,
+    ariaLabel: "Running averages of two gradient estimators against the number of noise draws",
+  };
+  const chart = P.lineChart(document.getElementById("grad-chart"), opts);
+  const out = document.getElementById("grad-readout");
+  function draw() {
+    d = series();
+    opts.yMin = d.target - 3; opts.yMax = d.target + 3;
+    document.getElementById("grad-muv").textContent = d.mu.toFixed(1);
+    document.getElementById("grad-sigmav").textContent = d.sg.toFixed(2);
+    chart.update(d.s);
+    out.innerHTML = `True gradient 2μ = <strong>${d.target.toFixed(2)}</strong>. After ${n} draws: reparameterized ${d.rep.toFixed(2)}, score function ${d.sco.toFixed(2)}. Spread of one draw's guess: reparameterized <strong>${(2 * d.sg).toFixed(2)}</strong>, score function <strong>${scoreSpread(d.mu, d.sg).toFixed(2)}</strong>.`;
+  }
+  muIn.addEventListener("input", draw); sgIn.addEventListener("input", draw);
+  document.getElementById("grad-redraw").addEventListener("click", () => { seed += 1; eps = gaussians(seed, n); draw(); });
+  draw();
+}
+
+/* ---- Appendix A: an even grid of shares through the inverse normal CDF ---- */
+function erf(x) {
+  // Abramowitz and Stegun 7.1.26: accurate to about 1e-7, plenty for a picture.
+  const s = Math.sign(x); x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+function normCdf(z) { return 0.5 * (1 + erf(z / Math.SQRT2)); }
+function normInv(u) { let lo = -8, hi = 8; for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (normCdf(mid) < u) lo = mid; else hi = mid; } return (lo + hi) / 2; }
+function gridDemo() {
+  const input = document.getElementById("grid-n"), host = document.getElementById("grid-svg"), out = document.getElementById("grid-readout");
+  const NS = "http://www.w3.org/2000/svg";
+  function draw() {
+    const n = +input.value;
+    document.getElementById("grid-nv").textContent = n;
+    const us = Array.from({ length: n }, (_, k) => (k + 0.5) / n);
+    const zs = us.map(normInv);
+    const W = 360, H = 190, S = 150, L0 = 10, R0 = 200, top = 20, Z = 2.2;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Left: an even grid of ${n} by ${n} shares on the unit square. Right: the same grid after the inverse normal CDF, bunched in the middle and stretched at the rim.">`;
+    svg += `<rect x="${L0}" y="${top}" width="${S}" height="${S}" fill="none" stroke="var(--wire)"/>`;
+    svg += `<text x="${L0 + S / 2}" y="14" text-anchor="middle" class="lbl">shares u (unit square)</text>`;
+    svg += `<text x="${R0 + S / 2}" y="14" text-anchor="middle" class="lbl">codes z = Φ⁻¹(u), from −2.2 to 2.2</text>`;
+    const zx = (z) => R0 + ((z + Z) / (2 * Z)) * S, zy = (z) => top + S - ((z + Z) / (2 * Z)) * S;
+    svg += `<rect x="${R0}" y="${top}" width="${S}" height="${S}" fill="none" stroke="var(--wire)"/>`;
+    for (const r of [1, 2]) svg += `<circle cx="${zx(0)}" cy="${zy(0)}" r="${(r / (2 * Z)) * S}" fill="none" stroke="var(--wire)" stroke-dasharray="3 3"/>`;
+    for (const a of us) for (const b of us) svg += `<circle cx="${L0 + a * S}" cy="${top + S - b * S}" r="2.2" fill="var(--accent)"/>`;
+    for (const a of zs) for (const b of zs) svg += `<circle cx="${zx(a)}" cy="${zy(b)}" r="2.2" fill="var(--accent)"/>`;
+    svg += `</svg>`;
+    host.innerHTML = svg;
+    const gapMid = zs[Math.floor(n / 2)] - zs[Math.floor(n / 2) - 1], gapEdge = zs[n - 1] - zs[n - 2];
+    out.innerHTML = `${n} × ${n} = ${n * n} codes. Outermost grid line at z = ±<strong>${zs[n - 1].toFixed(2)}</strong>. Spacing near the middle ${gapMid.toFixed(2)}, at the rim <strong>${gapEdge.toFixed(2)}</strong>: equal shares of probability, unequal distances.`;
+  }
+  input.addEventListener("input", draw);
+  draw();
+}
+</script>
+</body>
+</html>

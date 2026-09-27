@@ -940,6 +940,7 @@ gap.
   (2020)**: https://arxiv.org/abs/2006.11239. The simple "guess the noise"
   loss and the sampler of Step 3, with the first high-quality image
   results.
+  [Annotated companion](../../../papers/ddpm.html)
 - **Song, Meng and Ermon, *Denoising Diffusion Implicit Models* (2020)**:
   https://arxiv.org/abs/2010.02502. Deterministic sampling with big jumps,
   using the same trained network.
