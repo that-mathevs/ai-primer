@@ -3,7 +3,132 @@ r"""
 
 Run: `python -m primer.ml.classical`
 
-## Why a lesson on trees, in a primer on modern AI
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on overfitting from `primer.ml.regularization` and
+uses the small network from `primer.ml.neural_net` as its sparring partner.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** On a table of data, where each column means something
+on its own, an ensemble of decision trees (a random forest or gradient
+boosting) is usually the model to beat, trains in seconds, needs no feature
+scaling, and should be the first thing you try before any neural network.
+
+**When you need it.** Whenever one input is a row: a customer, a payment, a
+day, a shipment, with columns in their own units (years, dollars, counts, a
+region code). Loan approval, fraud flags, churn, demand forecasting, ad
+ranking on tabular features: these are tree problems. The tell is that a
+domain expert could write some of the rules by hand ("four or more late
+payments"), because a tree asks exactly that kind of question. This
+lesson's loan table shows the gap: gradient boosting scores 96.0% and a
+random forest 95.75% on the raw table, while a small neural network on the
+same raw columns scores 77.75%, which is the score for always predicting
+"fine". Rescaling every column lifts the net to 86.25%; hand-engineering
+the features (log income, one column per region) lifts it to 92.25%, where
+it ties a single depth-5 tree and still trails both ensembles. You do not
+need trees when the input is an image, an audio clip or a text, where the
+meaning lives in the arrangement of thousands of raw values; that is what
+convolutions and attention learn, and where a pretrained network brings
+knowledge a tree starts without.
+
+**Your options.** From the most readable to the most accurate on a table,
+then the cases where the table is not the whole story:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| One shallow decision tree | Asks yes/no questions about one column at a time, chosen greedily by impurity | A model you can print and read as if/else rules | Accuracy: a depth-5 tree scores 92.25% where the ensembles score 96% | scikit-learn's decision trees; rules a compliance team can audit |
+| Random forest | Grows hundreds of deep trees on bootstrap samples with random feature subsets and averages them | Forgiving defaults; more trees never overfit, only cost time; a free out-of-bag error estimate | Not readable; a plateau set by how correlated the trees are | The standard first model on a new table |
+| Gradient-boosted trees | Adds small trees in sequence, each fitted to what the model still gets wrong, shrunk by a learning rate | The best accuracy on most tables of thousands to millions of rows | Two knobs to tune (depth, learning rate) and a stopping round chosen on validation data; more rounds do overfit | XGBoost, LightGBM, CatBoost |
+| A neural network on the table | Learns its own features from combinations of columns | Smooth trends, extrapolation, end-to-end training with other neural parts | Scaling and feature engineering just to get started; more data to pin down its weights; on this lesson's table it still trails | When the table is huge or mixed with text and images |
+| Trees on neural embeddings | A network turns text or images into vectors, which become extra columns for a boosted-tree model | The table's structure and the perceptual data's meaning in one model | Two models to maintain | Common in production ranking and risk systems |
+| A neural network on perceptual or sequential data | Convolutions, attention, pretrained weights | The only option that works: a tree cannot read a photo one pixel at a time | Everything the rest of this primer covers | Images, audio, text |
+
+**How to choose.** The first question is the shape of one input, not what
+is fashionable.
+
+- A row of a table, thousands to millions of rows: gradient-boosted trees,
+  or a random forest if you want something that works untuned. Make any
+  other model beat them on your validation data.
+- The model must be explained to a person, line by line: one shallow tree,
+  and accept the accuracy it costs. A forest's importances are a summary,
+  not an explanation.
+- Values outside the training range matter (prices next year, loads at a
+  new scale): trees predict flat beyond the edge of their data; this
+  lesson's four-house model prices a house of size 40 the same as size 4.
+  Use a model with a slope, or add a trend feature.
+- Pixels, audio samples, words: a neural network, usually pretrained.
+- A table that also carries free text or images: embed those with a
+  network and hand the vectors to the trees.
+- Whatever you pick, tune the tree's depth and the boosting learning rate
+  on validation data, and pick the number of boosting rounds by early
+  stopping. Those two knobs are most of the tuning that matters.
+
+**What it costs.** Training a forest or a boosted model on a table of
+modest size takes seconds on a laptop, with no GPU, no scaling and no
+feature engineering: the trees read dollars, years and region codes as they
+come. A forest grows its trees independently, so it parallelises across
+cores and machines; boosting is sequential, and a smaller learning rate
+buys accuracy with rounds. In this lesson's sweep, a learning rate of 1
+reaches its best validation error (0.122) at round 4, 0.3 reaches 0.112 at
+round 9, and 0.1 reaches the lowest, 0.110, at round 31. A forest's
+accuracy climbs over the first ten or twenty trees and then flattens; past
+the plateau, every extra tree is only prediction time. The cost that
+surprises people is on the neural side: the net needed rescaled inputs and
+hand-made features to reach a score a single tree matched, and Grinsztajn,
+Oyallon and Varoquaux (2022) found tuned tree ensembles still ahead of
+tuned deep learning across 45 tabular datasets of about 10,000 rows.
+
+**What breaks.**
+
+- **A tree grown to purity.** No depth limit gives 100% on training data and
+  the worst validation score in this lesson's sweep (82%, against 89.5% at
+  depth 2). Limit the depth or the leaf size, or use an ensemble.
+- **Too many boosting rounds.** Every learning rate's validation curve
+  bottoms out and climbs; 200 rounds memorise 80 points. Stop early on
+  validation data.
+- **A forest that has stopped improving.** The floor is the correlation
+  between trees: with correlation 0.3, going from 10 trees to 1,000 moves
+  the variance from 0.37 to 0.30. Lower the correlation (fewer features per
+  split) rather than adding trees.
+- **Trusting impurity importance.** It is measured on training data and
+  favours columns with many distinct values: here a column of pure noise
+  gets 11% of the credit. Permutation importance on held-out data gives it
+  0.25 points. Correlated columns split the credit between them, and
+  neither kind measures cause.
+- **Extrapolation.** Leaves hold averages of training values, so a tree
+  never predicts outside the range it saw.
+- **A network on raw columns.** Incomes in the tens of thousands swamp every
+  other column and saturate the neurons; the net learns nothing. Scale
+  first, or use trees.
+- **Diagonal boundaries.** A tree cuts parallel to the axes and can only
+  approximate a slope with a staircase; if the rule is a ratio of two
+  columns, give it that ratio as a feature.
+
+**In the wild.** XGBoost (Chen and Guestrin, 2016), LightGBM and CatBoost
+are the boosting libraries behind most winning tabular models, adding a
+second-order step per leaf, penalties on tree size, histogram-based split
+search and native missing values to the loop this lesson builds.
+scikit-learn's decision trees, random forests and permutation importance
+are the reference implementations for the rest, with its user guides in
+Further reading. The recipe is Breiman's: bagging (1996) and random forests
+(2001), which also introduced out-of-bag error and permutation importance;
+the boosting loop is Friedman's gradient boosting machine (2001); and the
+tree itself is CART (Breiman, Friedman, Olshen and Stone, 1984). Strobl et
+al. (2007) documented the bias in impurity importance that this lesson
+reproduces with its noise column. In `primer.ml.interpretability` the
+question of what a model relies on returns for neural networks, where no
+tree can be printed.
+
+**Go deeper.** Level 2 grows a tree by hand on eight emails, scores every
+candidate question with Gini impurity and entropy, sweeps depth to watch
+overfitting appear, builds a random forest from bootstrap samples and
+derives the correlation floor on its variance, runs gradient boosting on
+four houses one round at a time and shows why the residual is a gradient,
+then stages the loan-table showdown and both kinds of feature importance.
+If you only needed to know which model to reach for on a table, you are
+done.
+
+## Level 2: How it works, from scratch
 
 Most of this primer is about neural networks, because language models are
 neural networks. But open the models that decide whether a loan is approved,

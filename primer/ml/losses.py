@@ -3,7 +3,124 @@ r"""
 
 Run: `python -m primer.ml.losses`
 
-## The idea
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on the training loop from `primer.ml.neural_net`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** A loss function turns "how wrong was this prediction?"
+into one number that training pushes down, and because the model learns
+whatever that number rewards, choosing the loss is choosing the behaviour.
+
+**When you need it.** Every time you train or fine-tune anything, the first
+line of the job is the loss, and every time you read a training curve, a
+model card's perplexity or a fine-tuning API's "training loss" you are
+reading one. The tell that you have the wrong loss, or are reading one
+wrongly: the loss goes down and the thing you care about does not, or one
+example is most of the number. This lesson's regression example shows how
+easily that happens: four predictions off by 1 and one off by 10 give a mean
+squared error of 20.8, of which the single outlier is 96%; the mean absolute
+error is 2.8 and the outlier is 71% of it. In language modelling, three
+tokens at 0.9 and one at 0.001 give a perplexity of 6.09, when the three
+good tokens alone would give about 1.1 (this lesson's `perplexity`). You
+don't need this lesson while you only prompt a hosted model: the vendor
+chose the loss years ago. You need it the day you fine-tune, train an
+embedding model, or have to explain why a loss of 0.69 is a coin flip.
+
+**Your options.** The losses practice reaches for, by what the model
+predicts:
+
+| Option | For predicting | What it pushes the model toward | What its number hides | Where it lives |
+|---|---|---|---|---|
+| Cross-entropy | a class, or the next token | Putting probability on the right answer; a confident miss (1%) costs 44 times a mostly-right one (90%) | An average over tokens, so one catastrophic token dominates the mean | Every classifier, and the pretraining and fine-tuning of every language model |
+| Perplexity (a reading of cross-entropy, not a loss) | the same | Nothing new: it is e raised to the mean loss, "how many doors is the model choosing between" | Whether answers are correct or helpful; comparable only across the same tokenizer and text | Model cards, training dashboards |
+| Mean squared error (MSE) | a number | The mean of the targets; big misses are squared, so the model chases them | A few wild values (96% of the number above) | Regression heads, forecasting, any "predict a quantity" model |
+| Mean absolute error (MAE) | a number | The median; every unit of miss costs the same | How large the largest misses are | The same jobs, when the targets have noise you do not want chased |
+| Huber loss | a number | MSE near zero, MAE far out: a blend | One more knob, the crossover point | Frameworks' regression losses |
+| Contrastive (InfoNCE) | which items belong together | Picking each query's partner out of the batch, every other item a free decoy | Easy rows contribute almost nothing; a hard negative can be most of the loss | Embedding models for search and RAG, CLIP |
+| Label smoothing (a modifier on cross-entropy) | classes or tokens | Never saying 100%: with ε = 0.1 over 4 classes the target is 92.5% on the right answer | The loss can no longer reach zero, so the floor moves | Classifiers, the original transformer |
+
+**How to choose.** Start from what the model outputs, then ask what a wrong
+answer costs you.
+
+- A class or the next token: cross-entropy, computed from the raw scores
+  (logits) in one fused operation. Never take the softmax and then the log
+  yourself; that is the classic source of a loss that reads NaN.
+- A number: decide whether an outlier is signal or noise. If the wild
+  values are real and expensive, MSE chases them for you; if they are bad
+  labels or rare accidents, MAE shrugs them off; when you cannot tell, Huber.
+- Pairs that belong together (a question and the passage that answers it,
+  an image and its caption): InfoNCE with the largest batch you can afford,
+  then mine hard negatives, because that is where the gradient is.
+- A classifier that is confidently wrong too often, or a generator you will
+  decode with beam search: add label smoothing with ε around 0.1.
+- Whatever you pick, the loss is what the model optimises and the metric
+  (`primer.ml.metrics`) is what you care about. Keep both on the same
+  dashboard, and when they disagree, believe the metric.
+
+**What it costs.** Compute is not the cost; a loss is a few operations
+next to a forward pass, and the safe cross-entropy is a max, a sum and one
+logarithm. The real costs are elsewhere. InfoNCE scores every query against
+every passage in the batch, so a batch of N costs an N-by-N grid and the
+number of free negatives is the batch size: memory buys signal, and SimCLR
+reports that contrastive learning wants larger batches and more steps than
+supervised training does. Label smoothing costs nothing at inference and
+raises the loss you will see in training: in this lesson a model that puts
+logit 50 on the right class scores 0 under plain cross-entropy and 3.75
+under smoothing, which is the point. Perplexity is free, being arithmetic
+on a loss you already have. The expensive mistake is choosing a loss that
+optimises the wrong thing and only finding out at evaluation, after the GPU
+bill: MSE on data with a few wild labels moves the model's best constant
+guess from the median 3 to the mean 5 in this lesson's figure.
+
+**What breaks.**
+
+- **NaN or infinite loss.** Softmax then log overflows on large logits and
+  underflows on tiny probabilities. Use the fused version that subtracts the
+  largest logit first (`primer.ml.losses` builds it as `log_sum_exp`).
+- **Loss falls, quality doesn't.** Cross-entropy pays for probability on the
+  reference text, not for a correct or useful answer. A model can lower its
+  perplexity by matching style while getting facts wrong. Evaluate with a
+  metric that reads the answer.
+- **One example is the whole number.** Look at the distribution of
+  per-example losses, not only the mean. A 96% outlier share in MSE means
+  the gradient is almost entirely one row.
+- **Perplexity across models.** A number from a different tokenizer, or on
+  different text, is not comparable. Compare within one setup.
+- **A contrastive loss that stalls.** In this lesson's 4-row batch three
+  rows contribute 0.087, 0.048 and 0.004 while the row with a mined hard
+  negative contributes 2.694. If your batch has no hard rows, the model has
+  nothing left to learn from it; mine harder negatives or grow the batch.
+- **The wrong temperature.** The same two perfectly matched vectors give an
+  InfoNCE loss of 0.3133 at temperature 1 and 0.000045 at 0.1. Too low and
+  the loss saturates on easy pairs; the temperature (or "scale") is a real
+  hyperparameter, not a default to inherit.
+- **Smoothing a teacher.** Müller, Kornblith and Hinton (2019) report that
+  label smoothing improves calibration but makes a smoothed model a much
+  worse teacher for distillation. Skip it on a model you will distil from.
+
+**In the wild.** PyTorch's `torch.nn.functional.cross_entropy` takes
+"predicted unnormalized logits" and has a `label_smoothing` argument, so
+both the fused computation and the modifier are one call. A hosted fine-tuning API's
+"training loss" is this cross-entropy, graded on the reply tokens only
+(`primer.ml.training_stages`). Perplexity is the number on
+language-model training dashboards and, still, on many model cards. In
+retrieval, sentence-transformers' `MultipleNegativesRankingLoss` is InfoNCE
+with in-batch negatives and optional mined hard negatives per query, and its
+documentation describes the scale (the inverse temperature) as a parameter.
+CLIP trained its image and text encoders with a symmetric InfoNCE loss on
+400 million pairs, and SimCLR measured how much the batch size and the
+temperature matter. Label smoothing was used to train the original
+transformer.
+
+**Go deeper.** Level 2 builds each of these from nothing: the −ln p curve
+and why a 1% miss costs 44 times a 90% hit, log-sum-exp and the one-line
+gradient "softmax minus one-hot", perplexity as a count of doors, the
+valleys of MSE and MAE on a toy dataset, the InfoNCE score grid with a
+gradient check, and label smoothing's soft target, every number rerunnable.
+If you only needed to choose a loss and read its number, you are done.
+
+## Level 2: How it works, from scratch
 
 A loss is a scorecard with one number on it. Imagine a coach who, after every
 practice, must summarise the whole team's performance in a single score so

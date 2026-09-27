@@ -3,7 +3,133 @@ r"""
 
 Run: `python -m primer.ml.interpretability`
 
-## Why look inside at all
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on the residual stream of `primer.ml.transformer`
+and on behavioural evaluation in `primer.agents.evals`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Interpretability is the set of tools that read and
+change a model's internal activations to find out what it represents and
+which of those representations cause its answer, as opposed to
+evaluations, which only measure what it says.
+
+**When you need it.** Behavioural testing answers "what does the model
+do?", and for most shipping decisions that is enough. You need to open the
+hood when the question is "why?": a failure you cannot reproduce from the
+outside, a model that may be right for the wrong reason (the classifier
+that detects wolves by the snow behind them), a claim that the model is
+relying on a protected attribute, or a feature you want to turn up or down
+without retraining. The tell is that you are about to explain a model's
+behaviour from its outputs alone and cannot tell two explanations apart.
+This lesson's toy shows why that is dangerous: a probe reads "tense" out
+of the hidden state at 98% accuracy on unseen examples, and flipping tense
+moves the model's output by exactly 0.00, while flipping sentiment moves
+it by 2.00. What is readable inside a model and what the model uses are
+different questions, and only an intervention answers the second. One
+practical limit before anything else: every tool here needs the
+activations of a model you run yourself. A hosted API gives you tokens,
+not hidden states, so for a model behind an API your instrument is still
+the evaluation.
+
+**Your options.** From the cheapest look to the strongest evidence:
+
+| Option | What it does | What it tells you | What it costs | Where it lives |
+|---|---|---|---|---|
+| Behavioural evaluation | Runs the model on your tasks and scores the outputs | What the model does, at scale, for any model including hosted ones | A golden set and a scoring rule | `primer.agents.evals` |
+| Linear probe | Trains a tiny classifier on frozen hidden states to read one property | That the property is linearly present at that layer, if it beats a control task on unseen data | Labelled examples (100 sufficed in this lesson), minutes of training | Your code, on an open-weight model |
+| Logit lens (and tuned lens) | Applies the model's own output layer to the residual stream after each layer | When and where a prediction forms inside the model; no training needed | Nothing beyond a forward pass; a small trained translator per layer for the tuned version | Any residual-stream model you can hook |
+| Activation patching (causal tracing) | Copies one activation from a clean run into a corrupted run and measures how much of the answer returns | Which sites cause the answer: the minimum for a causal claim | Two prompts that differ in one fact, and one forward pass per site tested | Hooking libraries such as TransformerLens |
+| Sparse autoencoder (SAE) features | Learns an overcomplete dictionary so each hidden state is a few interpretable directions | What the model's units of meaning are, in a form you can read and steer | A large training run on activations, a penalty to tune, and 11% of the variance unexplained in this lesson's toy | Released SAE suites for open models, or your own training |
+| Feature steering | Adds a found direction to the residual stream at run time | Whether a feature causes what its name suggests, and a lever without retraining | The feature must exist first; too strong a push degrades the output | Research demos on production models |
+| Circuit analysis | Patches site by site until every step from input to output is accounted for | A complete mechanism for one behaviour | Weeks of expert time for a small model | Research |
+
+**How to choose.** Start from the question, and reach for the cheapest
+tool that answers it.
+
+- "Does the model know X?": a probe, scored on held-out examples against a
+  random-label control. In this lesson the control fits 73% of its
+  training set and scores 50% unseen, which is what a probe that only
+  memorised looks like.
+- "When does it decide?": the logit lens. In the landmark model the fact
+  appears at the subject word after layer 1 and reaches the last word only
+  after layer 2.
+- "Does this part cause the answer?": patching. Reading is not enough: the
+  lens reads "Paris" at 0.995 at a position where patching restores 0%.
+- "What are the features, and can I steer one?": an SAE, followed by a
+  steering experiment to check that the feature means what its label says.
+- "Is the model relying on the wrong thing in production?": a probe or
+  SAE feature to find the candidate, then patching or steering to confirm
+  it, then a behavioural evaluation to measure the effect at scale.
+- Whatever you pick, place the result on the ladder from correlation
+  (probes, the lens) through intervention (patching, steering) to
+  mechanism (a circuit), and claim only the rung you reached.
+
+**What it costs.** Probes and the logit lens cost almost nothing: frozen
+activations, a forward pass, and for a probe a few hundred labelled
+examples and seconds of training. Patching costs one forward pass per site,
+so a full map is layers times positions; the lesson's is 3 by 3, a real
+model's is hundreds by thousands, and it is repeated for every prompt pair
+you try. Sparse autoencoders are the expensive tool: millions of
+activations, a dictionary far wider than the layer, and a sparsity penalty
+whose choice is a trade. In this lesson's sweep, a penalty of 0.3 matches
+every planted feature above 0.99 and leaves 11% of the variance
+unexplained; a penalty of 0.01 rebuilds everything and matches the worst
+feature at only 0.80, so a perfect rebuild score is not evidence that the
+features are real. Circuit-level explanations cost research time measured
+in weeks per behaviour. And all of it presumes access: none of these tools
+runs on a model you only reach through an API.
+
+**What breaks.**
+
+- **Decodable is not used.** The 98%-readable feature with zero effect on
+  the output. Never claim "the model uses X" from a probe; intervene.
+- **A probe that is too clever.** A deep probe can compute the property
+  itself; a probe with no control task can fit noise. Keep probes linear,
+  score them on unseen data, compare with random labels.
+- **Reading a site nothing reads.** The lens can see an answer at a
+  position no later layer consults. Patching restores 0% there.
+- **A choice that shapes the answer.** Patching results depend on how the
+  corrupted prompt is built; SAE features depend on the dictionary's size
+  and penalty, and a bigger dictionary can split one feature into several.
+- **Redundancy.** Models can partly repair themselves when one component
+  is knocked out, so "patching this restores nothing" does not always mean
+  "this plays no role".
+- **The unexplained remainder.** The variance an SAE does not rebuild is
+  model behaviour no feature describes yet, not noise.
+- **Labels that are guesses.** A feature named "Golden Gate Bridge" is a
+  summary of what makes it fire. The name is checked by steering, not by
+  reading.
+- **Polysemantic neurons.** When features outnumber neurons they cannot
+  line up with them, so a single neuron responds to several unrelated
+  things. Look along directions, not at neurons.
+
+**In the wild.** TransformerLens exposes the internal activations of
+thousands of open-weight models and lets you cache, edit and replace them
+as the model runs, which is the plumbing for the lens, probes and
+patching. Causal tracing (Meng et al., 2022) located factual recall in
+middle-layer MLPs at the subject's last token in GPT-style models and
+edited single facts there; Wang et al. (2022) patched their way to a
+complete circuit for indirect-object identification in GPT-2 small. The
+tuned lens (Belrose et al., 2023) fixed the logit lens on early layers.
+Anthropic's *Towards Monosemanticity* (2023) trained SAEs on a small
+transformer, and *Scaling Monosemanticity* (2024) did it inside Claude 3
+Sonnet, where turning up one feature made the model bring up the Golden
+Gate Bridge in almost every answer. Google DeepMind's Gemma Scope releases
+trained SAEs for every layer of the Gemma 2 2B and 9B base models, so a
+practitioner can inspect features without training a dictionary.
+
+**Go deeper.** Level 2 builds each tool on models small enough to check
+by hand: a feature as a direction read back by a dot product, a probe
+trained by gradient descent with a control task, the logit lens verified
+against the real output on `primer.ml.transformer.TinyGPT`, activation
+patching on a two-layer landmark model with a known circuit, superposition
+in a five-features-in-two-neurons toy, and a sparse autoencoder that
+recovers the planted features only when its penalty is right. If you only
+needed to know what these tools can and cannot tell you about a model in
+production, you are done.
+
+## Level 2: How it works, from scratch
 
 **Everyday picture.** A car makes a strange noise. You can take it for a
 test drive and note when the noise happens: that is testing the car's

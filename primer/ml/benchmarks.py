@@ -10,7 +10,130 @@ tasks). Here the question is different: when a model announcement says
 "87.3 on benchmark X", what exactly was measured, and how much of that
 number should you believe?
 
-## The everyday picture
+## Level 1: The practitioner's guide
+
+**In one sentence.** A benchmark score is the average of a model's marks on
+a fixed set of questions under one scoring rule, and reading it well means
+asking what the questions were, how they were marked, how much of the
+number is luck, and whether the model had seen the paper.
+
+**When you need it.** Every time a model card, an announcement or a
+leaderboard is about to decide something for you: which model to build on,
+whether an upgrade is worth the migration, whether a claimed lead is real.
+The tell that you are reading a score naively: you are comparing two
+numbers from two different tables. This lesson's own numbers show how much
+room there is between a score and the truth. A score of 80% on 100
+questions carries a 95% margin of about ±7.8 points; on HumanEval's 164
+problems, ±6.1; on GSM8K's 1,319, a 90% carries ±1.6. Two models at 82% and
+79% on the same 200 questions cannot be told apart. A model that memorised
+30% of a leaked test reports 72% with a true skill of 60%. A lab that picks
+the best of 20 equally good versions by their test score ships a model that
+reads 75.8% on that test and 70.0% on fresh questions. You do not need this
+lesson to test your own system on your own tasks; that is
+`primer.agents.evals`. You need it when the evidence was produced by
+someone else.
+
+**Your options.** The kinds of evidence you can weigh, from the cheapest
+to read to the most trustworthy:
+
+| Evidence | What it measures | What it can tell you | What it costs you | Where it comes from |
+|---|---|---|---|---|
+| A results table in an announcement | Whatever harness, prompt and attempts the authors chose | A claim to check, for tasks like the benchmark's | Nothing but the reading, and the risk of believing it | The model's makers |
+| Multiple-choice knowledge (MMLU: 57 subjects, about 14,000 questions) | Breadth of recall, by likelihood or by a parsed letter | Tight margins (±0.7 points at 80%), but not whether the model can explain or apply | Public and old, so leakage is likely and the top is crowded | Hendrycks et al. (2020) |
+| Exact-match maths (GSM8K: 1,319 problems) | Multi-step arithmetic, by the last number in the answer | Reasoning on word problems; a lucky final number still counts | Depends on the parser and the number of worked examples in the prompt | Cobbe et al. (2021) |
+| Code with unit tests (HumanEval: 164 functions, pass@k) | Whether short functions run | Working code on small tasks; pass@1 and pass@10 are different tests | Wide margins (±6.1 points at 80%) from so few problems | Chen et al. (2021) |
+| A shared open harness run by you | The same questions under one fixed rule, for every model you care about | Like-for-like numbers, with the same shots, parser and attempts | Compute, and the time to run every candidate | EleutherAI's Language Model Evaluation Harness |
+| An arena leaderboard | Which answers people prefer in blind side-by-side votes, fitted with Bradley-Terry | Preference in open conversation, with intervals; style-controlled versions separate length from quality | Nothing to run; it rewards length and tone, and the prompts are whatever users typed | Chiang et al. (2024) |
+| Held-out or fresh questions | Skill on a paper the model cannot have seen | The strongest defence against contamination; scores by date expose memorisation | Someone must write and keep the questions private, or keep writing new ones | Private evaluation sets, continually refreshed benchmarks |
+| Your own evaluation set | Your tasks, your scoring rule, your traffic | The only benchmark that matches your use exactly | Hours of a domain expert's time to build the golden set | `primer.agents.evals` |
+
+**How to choose.** Treat every published number as a claim, and put it
+through the same questions.
+
+- Same test? Same shots, prompt format, room to reason, number of attempts
+  and harness. "5-shot", "CoT" and "maj@32" in a footnote each change the
+  test, and pass@10 beside pass@1 is not a comparison.
+- Gap bigger than the noise? Find the number of questions and compute the
+  margin. On a few hundred questions, a few points is a tie; with the
+  models' answers to the same questions in hand, use a paired comparison,
+  which in this lesson narrows ±7.8 to ±4.5.
+- Below the ceiling? Scores in the 90s are separated by noise and wrong
+  answer keys more than by skill; two models of very different ability sit
+  0.6 points apart on this lesson's easy benchmark and 46 apart on its hard
+  one.
+- Could it have leaked? Was the benchmark public before the training data
+  was collected, and is a contamination check or a fresh-question score
+  reported?
+- Which benchmarks are missing from the table, and who ran the comparison?
+  A number copied from another team's paper came from another harness.
+- Whatever the table says, it is evidence for tasks like the benchmark's.
+  For a decision that matters, score the candidates on your own golden set,
+  on the same questions, with the interval next to the point.
+
+**What it costs.** Reading a table costs an hour with the footnotes and a
+calculator: the margin is a one-line formula in Level 2. Running a shared
+harness yourself costs compute for every candidate on every benchmark you
+care about, and it is the only way to get like-for-like numbers. Building
+your own evaluation costs an expert's time, and it is the cheapest thing on
+this list per unit of confidence. Precision is expensive in questions:
+pinning a score near 50% down to ±1 point takes 9,604 of them, because the
+margin shrinks only with the square root of the count, so halving it
+quadruples the questions. The expensive mistake is a migration decided by a
+2-point gap on 1,000 questions, which this lesson's checklist marks as
+within noise (±3.4 points).
+
+**What breaks.**
+
+- **Different harnesses, same benchmark.** Summed against per-token
+  likelihoods pick different options; a strict parser marks
+  "ninety-five" wrong. Scores are comparable only from the same harness with
+  the same settings.
+- **A ranking without error bars.** In this lesson's five-model
+  leaderboard on 500 questions, every interval overlaps its neighbours, the
+  true third-best lands last, and the true worst lands fourth.
+- **Contamination.** Word-for-word checks catch verbatim copies (overlap
+  1.0) and miss a paraphrase of the same problem (0.06 on five-word runs).
+  Only whoever holds the training data can run the check at all. Prefer
+  fresh questions.
+- **Saturation.** Once scores bunch near the top, the remaining gaps are
+  noise and wrong keys. A score above the key-error ceiling means the model
+  has seen the key.
+- **Goodhart's law.** Choose among versions with the test set and the test
+  score stops meaning what it says; in this lesson six points of a headline
+  were selection, not skill. Keep a private set you consult rarely, and
+  never to choose.
+- **Arena style bias.** A model that writes three times as long jumps from
+  third to first when the fit ignores length; controlling for length puts
+  it back. Read a difference of a few Elo points as a tie, and prefer
+  style-controlled ratings with intervals.
+- **Someone else's tasks.** No public benchmark answers whether the model
+  handles your workload. Only your evaluation does.
+
+**In the wild.** MMLU, GSM8K and HumanEval are the three benchmarks whose
+sizes this lesson uses for its margins, and their founding papers are in
+Further reading; Chen et al. (2021) also introduced the unbiased pass@k
+estimator. The GPT-3 paper (Brown et al., 2020) measured contamination by
+n-gram overlap with its training data and reported clean and dirty subsets
+separately, and BIG-bench embeds a canary string in its task files so that
+trainers can filter them out. Recht et al. (2019) rebuilt ImageNet's test
+set from the original recipe and saw accuracy fall by roughly 11 to 14
+points while the ranking of models barely moved. EleutherAI's Language
+Model Evaluation Harness and HELM (Liang et al., 2022) exist so that many
+benchmarks run under one fixed rule. Chatbot Arena (Chiang et al., 2024)
+fits Bradley-Terry ratings to crowdsourced blind votes, and Miller (2024)
+makes the case that every evaluation score should be published with its
+standard error, paired where the questions are shared.
+
+**Go deeper.** Level 2 opens each box in the pipeline with numbers you can
+rerun: the two ways to mark a multiple-choice paper, pass@k by counting
+draws, the standard error and the bootstrap, the paired comparison and the
+questions it takes to resolve a gap, an n-gram contamination detector,
+item-response curves that show saturation, the winner's curse from choosing
+with the test set, Bradley-Terry ratings fitted from votes, and a checklist
+function that critiques a claimed win. If you only needed to read a model
+card with the right suspicion, you are done.
+
+## Level 2: How it works, from scratch
 
 A benchmark is a school exam for models. Everyone sits the same paper, it is
 marked with the same answer key, and the result is one number you can put in

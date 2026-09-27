@@ -6,7 +6,124 @@ Run: `python -m primer.ml.metrics`
 New to the notation? `primer.notation` explains every symbol used here from
 zero.
 
-## The idea
+## Level 1: The practitioner's guide
+
+**In one sentence.** A metric is the number you use to decide whether a
+model is good enough, as opposed to the loss the model optimises
+(`primer.ml.losses`), and every metric answers exactly one question while
+staying silent on all the others.
+
+**When you need it.** Every time a number decides something: whether a
+model ships, which of two retrievers your RAG system keeps, whether an
+automated judge may replace human review. The tell that you have the wrong
+metric is a number that looks great offline and a system that disappoints.
+This lesson's fraud detector has 94% accuracy and misses 4 frauds in 10; on
+traffic that is 1% fraud, a model that flags nothing scores 99% accuracy
+with recall 0. Its generation example is starker: against the reference
+"the meeting was moved to Friday because the manager is sick", the answer
+that says Monday scores BLEU 0.73 and ROUGE-L 0.91, and the correct
+paraphrase scores 0.16 and 0.26. And a judge that stamps "pass" on
+everything agrees with humans 90% of the time on a sample that is 90%
+passes, with a Cohen's kappa of exactly 0. You do not need this lesson to
+read a training curve; that is the loss. You need it the moment a number
+leaves the training loop and enters a decision.
+
+**Your options.** By the question they answer:
+
+| Metric | The question it answers | What it hides | What it needs | Where it lives |
+|---|---|---|---|---|
+| Accuracy | Of all decisions, what share were right? | Class imbalance: flag nothing on 1% fraud and score 99% | Labels and a threshold | Balanced classification only |
+| Precision, recall, F1 | Of what I flagged, how much was right; of what mattered, how much I found; F1 balances the two | The threshold that produced them, and that F1 prices a miss and a false alarm equally | Labels and a threshold | Every fraud, spam and moderation filter |
+| ROC-AUC | Across every threshold, how often does a random positive outrank a random negative? | On rare events, false alarms can swamp the true positives while the false-positive rate stays tiny | Scores and labels | Comparing models before a threshold is chosen |
+| Precision-recall curve | At each level of recall, what share of the flags are real? | Nothing about ranking below the recall you care about | Scores and labels | Rare-event problems |
+| Cost-weighted threshold | Which cut-off makes misses times their price plus false alarms times theirs smallest? | It needs the prices, which only the business knows | Two prices | The decision itself |
+| recall@k, precision@k, MRR, nDCG@k | Did we find the relevant documents, how much noise came with them, how high is the first hit, are the best ones on top? | Anything the golden set does not cover; nDCG needs graded relevance | A golden set: queries with the ids of the documents that answer them | Search and RAG retrieval |
+| BLEU, ROUGE-L | How much wording does the answer share with a reference? | Truth: a correct paraphrase scores near zero | One or more reference answers | Machine translation, summarisation, legacy pipelines |
+| Embedding similarity (BERTScore) | How close in meaning is the answer to a reference? | It still needs a reference, and closeness is not correctness | A reference and an embedding model | Generation with references |
+| LLM judge, calibrated with Cohen's kappa | Does a rubric-following model agree with human graders beyond chance? | The judge's own biases (position, verbosity, self-enhancement) and chance agreement | A human-labelled sample and a rubric | Open-ended generation and agent evaluation |
+
+**How to choose.** Name the question first, then the metric that answers
+it.
+
+- A classifier with a threshold in production: report precision and recall
+  at that threshold, and pick the threshold by pricing the two errors. In
+  this lesson, pricing a miss at 10 and a false alarm at 1 drops the
+  threshold and lifts recall from 0.30 to 0.88; the reverse prices raise it
+  until precision is 1.00. Never lead with accuracy on imbalanced data.
+- Comparing models before any threshold exists: ROC-AUC. If positives are
+  rare, look at the precision-recall curve as well.
+- Retrieval, including the retrieval half of RAG: recall@k with k set to
+  the number of chunks you actually pass to the model, because the model
+  cannot use what was not retrieved. Add MRR or nDCG when position matters.
+- Generation: a code-based check wherever the answer can be verified (a
+  test passes, a number matches, the JSON parses). Overlap metrics only
+  where the task is nearly verbatim, such as translation. Everything else,
+  an LLM judge with a written rubric, calibrated against people with kappa
+  before it grades anything at scale.
+- Whatever you pick, a metric is meaningless without its conditions: the
+  threshold, the k, the golden set, the sample the judge was checked on.
+  Report them next to the number, every time.
+
+**What it costs.** Metrics cost labels, not compute. Classification needs
+labelled examples and, for the threshold, two prices you must extract from
+whoever owns the consequences. Retrieval needs a golden set of real queries
+paired with the documents that answer them, which is hours of a
+knowledgeable person's time and the single best investment in a RAG system,
+because you can then rerun recall@k after every change to chunking, the
+embedding model or the reranker. Generation costs the most: reference
+answers for overlap metrics, or human labels for the sample a judge is
+calibrated on, plus a model call per graded output for the judge itself,
+and the calibration is repeated every time the judge model or the rubric
+changes. The cost of the wrong metric is the one that matters: it is the
+gap between the dashboard's 94% and the four frauds in ten that walked
+through.
+
+**What breaks.**
+
+- **Accuracy on imbalanced data.** 99% for a model that does nothing. Use
+  precision and recall.
+- **A number with no threshold.** "What's the accuracy?" is incomplete
+  without "at what threshold?"; every classification metric changes when
+  the cut-off moves.
+- **AUC on rare events.** This lesson's classifier has an AUC of 0.89 and,
+  at 80% recall, only about a third of its flags are real against a 10%
+  base rate. Read the precision-recall curve.
+- **F1 when the errors cost differently.** The harmonic mean pulls toward
+  the smaller of the two: precision 1.0 with recall 0.1 gives F1 0.18. If a
+  miss costs ten times a false alarm, F1 is the wrong target; price the
+  errors instead.
+- **recall@k at the wrong k.** Recall@20 is no comfort when you pass five
+  chunks to the model. Measure at the k you serve.
+- **Overlap metrics on paraphrase.** The Monday answer, factually wrong,
+  scores 0.91 on ROUGE-L. Overlap measures wording, not truth.
+- **Raw agreement for a judge.** 90% agreement and kappa 0 describe the
+  same lazy judge. Kappa above about 0.6 is usually read as substantial
+  agreement; below it, fix the rubric, the examples or the judge model.
+- **A judge that drifts.** A new judge model or an edited rubric is a new
+  judge. Re-run the calibration.
+
+**In the wild.** scikit-learn ships the classification family as
+`precision_score`, `recall_score`, `f1_score`, `roc_auc_score`,
+`average_precision_score` and `cohen_kappa_score`, and its metrics guide is
+in Further reading. In retrieval, the BEIR benchmark (Thakur et al., 2021)
+compares lexical, sparse, dense, late-interaction and reranking systems
+across 18 datasets. BLEU (Papineni et al., 2002) and ROUGE (Lin, 2004) are
+still the reported numbers in translation and summarisation, with BERTScore
+(Zhang et al., 2019) as the embedding-based successor. For judging, Zheng
+et al. (2023) found that strong LLM judges reach over 80% agreement with
+humans on MT-Bench, the level humans reach with each other, and named the
+position, verbosity and self-enhancement biases every judge pipeline now
+guards against. `primer.agents.evals` turns these metrics into a release
+gate for an agent.
+
+**Go deeper.** Level 2 builds each family from a hand-sized example: the
+four cells of the confusion matrix and the accuracy trap, the ROC curve as a
+walk whose area counts correctly ordered pairs, the cheapest threshold under
+two prices, the four retrieval metrics on one five-document list, BLEU and
+ROUGE-L on the Monday sentence, and Cohen's kappa on twenty essays. If you
+only needed to pick the metric and read it honestly, you are done.
+
+## Level 2: How it works, from scratch
 
 A loss function is what the model *optimizes* during training; a metric is
 what *you* use to decide whether it's working. Picking the wrong metric is
