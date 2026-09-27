@@ -34,6 +34,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/interpretability.html",
   "term": "activation patching"
  },
+ "active learning": {
+  "def": "Choosing which examples to label next by what the current model is likely to get wrong, so each paid label teaches more.",
+  "lesson": null,
+  "term": "active learning"
+ },
  "actor-critic": {
   "def": "A reinforcement learner in two parts: the actor (the policy) chooses actions, and the critic (a value network) predicts the reward to expect, which serves as the baseline.",
   "lesson": "primer/ml/reinforcement.html",
@@ -84,6 +89,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/agent_loop.html",
   "term": "agent loop"
  },
+ "agent-computer interface": {
+  "def": "The commands an agent can call and the exact form of what comes back to it, designed for a language model the way a code editor is designed for a person.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "agent-computer interface"
+ },
  "agentic rag": {
   "def": "RAG where the model decides whether, what and how often to search.",
   "lesson": "primer/agents/rag.html",
@@ -103,6 +113,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Capability lost as a side effect of training a model to be helpful, honest and harmless.",
   "lesson": "primer/ml/training_stages.html",
   "term": "alignment tax"
+ },
+ "all-gather": {
+  "def": "Every GPU contributes its piece and every GPU ends up with all the pieces, side by side; the second half of a ring all-reduce.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "all-gather"
  },
  "all-reduce": {
   "def": "Summing a value across GPUs so every GPU ends up holding the total.",
@@ -604,6 +619,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/structured_output.html",
   "term": "constrained decoding"
  },
+ "container": {
+  "def": "An isolated copy of an operating system's user space for one program: its own files, processes and network settings, started from an image and thrown away afterwards.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "container"
+ },
  "contamination": {
   "def": "Test questions and answers leaking into a model's training data.",
   "lesson": "primer/ml/benchmarks.html",
@@ -708,6 +728,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Total spend divided by the number of tasks that succeeded, counting retries and cleanup.",
   "lesson": "primer/agents/cost.html",
   "term": "cost per successful task"
+ },
+ "coupling": {
+  "def": "A way of pairing draws from two distributions so that each side, on its own, still has its own distribution. Pairing noise with data at random is one coupling; sending each noise point to one definite data point is another.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "coupling"
  },
  "covariance": {
   "def": "How two quantities vary together: positive when they rise together, negative when one rises as the other falls. For vectors, a matrix holding it for every pair of entries.",
@@ -853,6 +878,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Finding a set of directions, usually more than there are dimensions, such that every data point is a sparse combination of a few of them; also called sparse coding. A sparse autoencoder is one way to do it.",
   "lesson": "primer/ml/interpretability.html",
   "term": "dictionary learning"
+ },
+ "diff": {
+  "def": "A text listing, file by file, which lines to remove (marked −) and which to add (marked +), with a few unchanged lines around each change so a tool can find the spot. Saved to a file, it is a patch that can be applied to another copy of the code.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "diff"
  },
  "diffusion model": {
   "def": "A generator that learns to turn random noise into data by removing a little noise at a time.",
@@ -1064,6 +1094,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/diffusion.html",
   "term": "Euler step"
  },
+ "euler-maruyama step": {
+  "def": "The Euler step for a stochastic differential equation: move by the drift times the time step, then add a fresh random nudge whose size grows with the square root of the time step.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "Euler-Maruyama step"
+ },
  "eval": {
   "def": "A repeatable test of a model or agent's behavior on a fixed set of tasks with known good outcomes.",
   "lesson": "primer/agents/evals.html",
@@ -1144,6 +1179,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/evals.html",
   "term": "faithfulness"
  },
+ "false positive": {
+  "def": "Something flagged as positive that is actually negative, such as a solution graded correct because its final answer matches although its reasoning is wrong.",
+  "lesson": "primer/ml/metrics.html",
+  "term": "false positive"
+ },
  "false-positive rate": {
   "def": "The share of real negatives the model wrongly flags.",
   "lesson": "primer/ml/metrics.html",
@@ -1153,6 +1193,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The number of inputs a neuron adds up.",
   "lesson": "primer/ml/deep_nets.html",
   "term": "fan-in"
+ },
+ "fault localization": {
+  "def": "Finding which files, functions and lines cause a bug, before trying to fix it.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "fault localization"
  },
  "feature": {
   "def": "A property a model tracks, stored as a direction across many neurons.",
@@ -1237,7 +1282,7 @@ window.PRIMER_GLOSSARY = {
  "flow matching": {
   "def": "Training a network to output the velocity along paths from noise to data, then following it to generate.",
   "lesson": "primer/ml/generative/diffusion.html",
-  "term": "Flow Matching"
+  "term": "flow matching"
  },
  "forget gate": {
   "def": "The LSTM dial that decides what to erase from the cell state.",
@@ -1675,7 +1720,7 @@ window.PRIMER_GLOSSARY = {
   "term": "initialization"
  },
  "inpainting": {
-  "def": "Filling a masked or missing region of an image with new content that fits the rest of the picture.",
+  "def": "Filling in a missing or masked part of an image so that it fits the rest; a generative model does it by sampling only the unknown pixels.",
   "lesson": null,
   "term": "inpainting"
  },
@@ -1948,6 +1993,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A sequence model whose update rule is the same at every step, whatever the input; such a model can be computed as one convolution.",
   "lesson": "primer/ml/efficient_architectures.html",
   "term": "linear time invariance"
+ },
+ "linter": {
+  "def": "A program that reads code without running it and reports likely mistakes, such as a syntax error, bad indentation or a name that is never defined.",
+  "lesson": null,
+  "term": "linter"
  },
  "lipschitz": {
   "def": "A function is K-Lipschitz if its output never changes more than K times as fast as its input: a speed limit on its slope everywhere.",
@@ -2277,12 +2327,17 @@ window.PRIMER_GLOSSARY = {
  "model editing": {
   "def": "Changing one specific fact or behaviour inside a trained model by adjusting a few weights directly, without retraining, while leaving everything else as it was.",
   "lesson": "primer/ml/interpretability.html",
-  "term": "Model Editing"
+  "term": "model editing"
  },
  "model merging": {
   "def": "Building one model from several fine-tunes by arithmetic on their weights, with no extra training.",
   "lesson": "primer/ml/fine_tuning.html",
   "term": "model merging"
+ },
+ "model parallelism": {
+  "def": "Splitting one model's weights across GPUs, either inside each layer (tensor parallelism) or by layers (pipeline parallelism). The ZeRO and Megatron-LM papers use it for the first.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "model parallelism"
  },
  "model routing": {
   "def": "Sending each request to the cheapest model that can handle it well.",
@@ -2389,6 +2444,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/guardrails.html",
   "term": "NER"
  },
+ "neural ode": {
+  "def": "A model whose output is found by following an ordinary differential equation whose rate of change is computed by a neural network; it can be run backwards and gives exact probabilities.",
+  "lesson": null,
+  "term": "neural ode"
+ },
  "neuron": {
   "def": "Multiply each input by a weight, add them up with a bias, and pass the result through a nonlinear function.",
   "lesson": "primer/ml/neural_net.html",
@@ -2474,6 +2534,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/optimizers.html",
   "term": "optimizer"
  },
+ "optimizer state": {
+  "def": "The running numbers an optimizer keeps for every weight between steps, such as Adam's two running averages. With an fp32 master copy of the weights it is 12 bytes per parameter, the biggest part of training memory.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "optimizer state"
+ },
  "orchestrator-workers": {
   "def": "One model decides the subtasks, workers handle them, and one model combines the results.",
   "lesson": "primer/agents/orchestration.html",
@@ -2503,6 +2568,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A verifier that scores only the final answer.",
   "lesson": "primer/ml/reasoning.html",
   "term": "outcome reward model"
+ },
+ "outcome supervision": {
+  "def": "Training a reward model from the final result alone: each solution is labelled right or wrong by its answer, never step by step.",
+  "lesson": "primer/ml/reasoning.html",
+  "term": "outcome supervision"
  },
  "outer product": {
   "def": "A column vector times a row vector, giving a table whose entry (m, c) is the product of their m-th and c-th numbers.",
@@ -2618,6 +2688,11 @@ window.PRIMER_GLOSSARY = {
   "def": "One scale per weight row, so a single outlier doesn't coarsen all the others.",
   "lesson": "primer/ml/inference.html",
   "term": "per-channel quantization"
+ },
+ "percentage point": {
+  "def": "The plain difference between two percentages: going from 11% to 18% is a rise of 7 percentage points, which is a 64% relative rise.",
+  "lesson": null,
+  "term": "percentage point"
  },
  "perceptual loss": {
   "def": "A loss that compares two images through the features of a pretrained network rather than pixel by pixel, so it punishes the differences a person would notice. LPIPS is a widely used one.",
@@ -2834,6 +2909,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/reasoning.html",
   "term": "process reward model"
  },
+ "process supervision": {
+  "def": "Training a reward model from labels on each intermediate step, so it learns where a solution went wrong.",
+  "lesson": "primer/ml/reasoning.html",
+  "term": "process supervision"
+ },
  "product quantization": {
   "def": "Compressing a vector by splitting it into chunks and replacing each chunk with the ID of its nearest entry in a small codebook.",
   "lesson": "primer/ml/embeddings/ann.html",
@@ -2863,6 +2943,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Hostile instructions hidden in content the model reads, such as an email or web page, trying to hijack it.",
   "lesson": "primer/agents/guardrails.html",
   "term": "prompt injection"
+ },
+ "pull request": {
+  "def": "A proposed set of changes to a code repository, submitted for review; once merged, the changes become part of the project.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "pull request"
  },
  "pushdown automaton": {
   "def": "A finite-state machine plus a stack: enough to check nested formats like JSON or SQL.",
@@ -2964,6 +3049,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/alignment.html",
   "term": "red-teaming"
  },
+ "reduce-scatter": {
+  "def": "Summing a vector across GPUs so each GPU ends up holding the total for only its own slice; the first half of a ring all-reduce.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "reduce-scatter"
+ },
  "reference model": {
   "def": "A frozen copy of the starting model that DPO and RLHF measure drift against.",
   "lesson": "primer/ml/training_stages.html",
@@ -2973,6 +3063,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Having a model review and revise its own output. Useful, but external checks such as tests are more reliable.",
   "lesson": "primer/agents/planning.html",
   "term": "reflection"
+ },
+ "reflow": {
+  "def": "Retraining a rectified flow on its own (noise, sample) pairs. The new pairs' straight lines rarely cross, so the new flow's paths are straighter and need fewer steps.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "reflow"
  },
  "register": {
   "def": "The tiny storage right beside the arithmetic units, holding the numbers being worked on this instant.",
@@ -3479,6 +3574,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/interpretability.html",
   "term": "steering"
  },
+ "stochastic differential equation": {
+  "def": "A rule for how something changes over time with two parts: a steady drift, and random jitter of a set strength. The noising process of a diffusion model is one, and running it backwards generates data.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "stochastic differential equation"
+ },
  "stochastic gradient descent": {
   "def": "Gradient descent where each step's slope is estimated from a small random batch instead of the whole dataset.",
   "lesson": "primer/ml/optimizers.html",
@@ -3869,6 +3969,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/attention.html",
   "term": "value"
  },
+ "value function": {
+  "def": "A prediction, made partway through a task, of how well it will end from here. A verifier that scores a solution after every token is one.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "value function"
+ },
  "value network": {
   "def": "A second model (the critic) that predicts expected reward, used as PPO's baseline.",
   "lesson": "primer/ml/reinforcement.html",
@@ -4003,6 +4108,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Rescaling vectors so every direction has equal spread and no two directions are correlated.",
   "lesson": "primer/ml/embeddings/similarity.html",
   "term": "whitening"
+ },
+ "wiener process": {
+  "def": "Continuous random jitter, also called Brownian motion: over any short time dt it moves by a fresh bell-curve amount with variance dt, independent of everything before.",
+  "lesson": null,
+  "term": "Wiener process"
  },
  "win rate": {
   "def": "The share of head-to-head comparisons one model wins; 50% means the two are indistinguishable.",
