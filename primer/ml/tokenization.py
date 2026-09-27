@@ -4,7 +4,127 @@ r"""
 Run: `python -m primer.ml.tokenization`
 
 New to the notation (sums, subscripts)? Every symbol is decoded where it
-appears, and `primer.notation` teaches them all from zero.
+appears, and `primer.notation` teaches them all from zero. This lesson
+builds on the embedding table of `primer.ml.big_picture`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** A tokenizer cuts text into pieces from a fixed
+vocabulary and hands the model a number for each piece; every price, rate
+limit, context window and latency figure you meet is counted in those
+pieces, and where their boundaries fall explains a whole family of odd model
+behaviour.
+
+**When you need it.** On every call, because you are billed per token, but
+you feel it on particular days: when you estimate a bill, when a prompt
+overflows the context window, when users who write in Hindi or Japanese
+cost several times what English users cost, when a model miscounts the
+letters in a word or mis-adds two numbers, when a fine-tuning dataset is
+quoted in tokens, or when you switch model generations and the same prompt
+suddenly counts differently. The tell: a number that should be simple (how
+long is this text?) that you cannot answer without running the model's own
+tokenizer. This lesson's toy tokenizer, trained on English, spends 1.73
+characters per token on an English sentence and 0.38 on the same sentence in
+Hindi, 4.5 times as many tokens for the same meaning. You never train a
+tokenizer unless you pretrain a model; you only ever count with one, and
+choose models partly by theirs.
+
+**Your options.** From the quickest estimate to the most committed:
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| A rule of thumb | About 4 characters or 0.75 words per token of English prose | An instant estimate: 1,000 tokens is about 750 words | Wrong by several-fold for code, JSON and non-English text | Your head, and this lesson's `estimate_tokens` |
+| Counting with the model's own tokenizer | Runs the real tokenizer offline (tiktoken, Hugging Face tokenizers, SentencePiece) | Exact counts for any model whose tokenizer ships with its weights | The right tokenizer files per model family; counts do not transfer between families | Your code |
+| Counting through the API | A vendor endpoint counts a whole request: system prompt, tools, images, PDFs | Counts for models whose tokenizer is not published; free on Anthropic's API, with its own rate limit | One request per count; a close estimate rather than the exact bill | The API |
+| Reading usage after each call | Every response reports the input and output tokens it consumed | The exact billed numbers, and the cache reads | Nothing beyond logging it | The API response |
+| Shaping the text | Prefers prose to nested JSON, trims whitespace and decimals, shortens identifiers in tool outputs | Fewer tokens per call at the same meaning | Engineering time, and a risk of hurting clarity | Your prompt and your tool outputs |
+| Choosing the model by its tokenizer | Picks a family whose vocabulary covers your languages | Shorter sequences and lower bills for non-English text | Larger vocabularies cost embedding parameters, paid by the vendor | The model card: `vocab_size` |
+| Training or extending a vocabulary | Learns merges from your own corpus | The shortest sequences for your domain | The model must be trained or retrained with it | Your training stack |
+
+**How to choose.** Start from who runs the tokenizer.
+
+- A hosted model: count before you send when the size matters (context fit,
+  routing between models) and read usage after every call for the bill.
+  Recount when you change model generations: Anthropic's documentation says
+  the tokenizer introduced with Claude Opus 4.7 produces about 30% more
+  tokens for the same text than earlier models did.
+- An open model: the tokenizer ships with the weights; load the pair
+  together and never count with another family's tokenizer, because the
+  pieces and the ids are unrelated.
+- A multilingual product: budget per language with the real tokenizer,
+  never with the English rule of thumb.
+- A task about letters or digits (spelling, counting characters, arithmetic):
+  give the model a tool or spell the item out, because the tokens hide the
+  letters.
+- A model with a chat template: apply it. Instruction-tuned models expect
+  their special tokens in the right places, and a prompt built by hand
+  produces ids the model was not trained on.
+- Whatever you pick, measure with the tokenizer of the model you will
+  actually call. The rule of thumb is for napkins.
+
+**What it costs.** Tokens are the unit of four bills.
+
+- Money. Two meters: this lesson's example call, 2,000 input tokens and a
+  500-token answer at \$3 and \$15 per million, costs \$0.0135, and a million
+  such calls cost \$13,500 (`estimate_cost`). Hosted APIs price output
+  tokens several times higher than input tokens (5× across Anthropic's
+  price list), so a verbose answer costs more than a long prompt.
+- Latency. Each output token is one full step of generation, so answer
+  length sets the wait; `primer.ml.inference` puts the step at about 4.78 ms
+  for an 8-billion-parameter model on one GPU.
+- Context. The window is counted in tokens, so the 4.5× gap between English
+  and Hindi in this lesson's run is also a 4.5× gap in how much text fits.
+- Vocabulary. A bigger kit means shorter sequences but a larger embedding
+  table: GPT-2's 50,257 rows of width 768 are 38.6 million parameters, 32%
+  of its smallest model (`primer.ml.transformer`). Llama 3 grew to a 128K
+  vocabulary, 100K from the tiktoken kit plus 28K for other languages, and
+  its paper reports better compression as a result.
+
+**What breaks.**
+
+- **Letters the model never saw.** " strawberry" is two ids in this lesson's
+  tokenizer, ` straw` and `berry`, not ten letters. Counting the r's means
+  recalling a spelling, not reading one.
+- **Digits that split by length.** " 1234" is one token and " 12345" is two
+  (" 1234", "5"), and "1234" at the start of a line is three, so place
+  values never line up. Some newer tokenizers split digits into groups of at
+  most three to soften this.
+- **A leading space changes the token.** " cat" is id 303 and "cat" is ids
+  99 and 268; the model must learn that both mean cat. A prompt that ends
+  mid-word, or a prefix that gains a trailing space, changes the ids and
+  breaks a cached prefix.
+- **The same meaning at several times the price.** Hindi in this lesson
+  costs 4.5× English; Petrov et al. (2023) measured differences of up to 15
+  times between languages on production tokenizers. Budget per language.
+- **The wrong tokenizer.** Fine-tuning data tokenized with another family's
+  kit trains the model on unrelated ids. Load tokenizer and weights from the
+  same checkpoint.
+- **Estimates carried across generations.** A count measured on one model
+  can be 30% short on its successor. Recount with the model id you will run.
+
+**In the wild.** GPT-2 introduced byte-level BPE with a pre-tokenization
+regex, and most language-model tokenizers still follow that design. OpenAI's
+tiktoken ships the `cl100k_base` and `o200k_base` vocabularies and claims to
+be 3 to 6 times faster than a comparable open-source tokenizer; Hugging Face
+tokenizers and Google's SentencePiece cover the open models, SentencePiece
+writing spaces as the visible symbol `▁`. BERT uses WordPiece and T5 uses
+Unigram. Llama 3's vocabulary is 128K entries, and Mistral's byte-fallback
+tokenizer guarantees that no character ever becomes an unknown token.
+Anthropic's `count_tokens` endpoint counts a full request (system prompt,
+tools, images and PDFs) free of charge, subject to a rate limit of 5,000 to
+20,000 requests per minute by usage tier, and every Messages API response
+reports its `usage`. The papers are linked at the end of the lesson.
+
+**Go deeper.** Level 2 trains a tokenizer by hand on "low lower lowest" in
+three merges, replays the merges to encode a word it never saw, drops to
+bytes so that nothing is ever unknown, meets WordPiece and Unigram, and
+prints the exact pieces behind each quirk above. If you only needed to
+count and budget, you are done.
+
+## Level 2: How it works, from scratch
+
+Level 2 builds the kit of bricks from nothing, starting with what a token
+is.
 
 ## 1. Tokens: building words from a fixed kit of bricks
 

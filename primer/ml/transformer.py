@@ -9,6 +9,132 @@ from zero. This lesson builds on `primer.ml.attention`.
 
 Read alongside the annotated paper: [Attention Is All You Need, annotated](../../papers/attention-is-all-you-need.html).
 
+## Level 1: The practitioner's guide
+
+**In one sentence.** The transformer block (attention, then a feed-forward
+network that works on each token alone, each wrapped in a residual add and
+a normalization) is the unit every modern language model stacks, and
+reading a model's block count, width and expert layout off its card tells
+you its memory, its speed and its training cost before you download it.
+
+**When you need it.** You never build a block; you meet its numbers. The
+day comes when you choose between a dense 70B model and one that calls
+itself "8x7B", size a GPU for a download, estimate what a fine-tune or a
+pretraining run will cost, pick an encoder or a decoder for an embedding or
+classification job, or open a `config.json` and need to turn
+`num_hidden_layers`, `hidden_size`, `intermediate_size` and
+`num_local_experts` into gigabytes and dollars. The rule of thumb behind all
+of it, from this lesson's `gpt_param_count`: parameters are about twelve
+square matrices per block plus the embedding table, 12 · L · d² + V · d. For
+GPT-2 small that gives 123,532,032, within 0.7% of the exact 124,439,808.
+When you call a hosted model by name, the vendor has already made these
+choices; the block then matters only as the reason you pay per token, and
+you can skip to the cost section.
+
+**Your options.** The choices below are the ones a practitioner makes
+around the block: which family, dense or sparse, and how a parameter count
+becomes hardware. From the plainest to the most involved:
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| Encoder-only (BERT) | Every token attends to every token, both directions | One vector per token: classification, embeddings, tagging | Cannot generate; a fixed maximum length | Embedding and classifier models |
+| Encoder-decoder (T5, the 2017 transformer) | An encoder reads the source; a decoder writes the output while attending to it | Translation and summarization with a clean split between reading and writing | Two stacks to train and serve; rarely used for chat | Sequence-to-sequence models |
+| Decoder-only, dense (GPT, Llama, Claude) | Each token sees only the past; every block's feed-forward network runs for every token | Generation, chat, agents; the simplest to serve | About 2N operations per generated token, and all N parameters in memory | The model family you pick |
+| Decoder-only, mixture of experts (Mixtral, DeepSeek-V3) | Each block routes each token to k of E expert feed-forward networks | Far more parameters per unit of compute: Mixtral 8x7B holds about 47B and runs about 13B per token; DeepSeek-V3 holds 671B and runs 37B | Every expert must be loaded, so memory for all E and compute for k; a router and a balancing loss to keep experts busy | The model family; `num_local_experts`, `num_experts_per_tok` |
+| A smaller model trained longer | The vendor picks N below the compute-optimal size and trains far past 20 tokens per parameter | A model that is cheaper to serve forever: Llama 3 8B saw more than 15 trillion tokens | More training compute up front, paid once by the vendor | The card's training-token count |
+| Quantization at load time | Stores each parameter in fewer bits | A 70B model at 4 bits is 35 GB instead of 140 GB and fits one 80 GB GPU | Some quality loss, measured per model (`primer.ml.inference`) | The serving stack |
+
+**How to choose.** Start from the job, then the hardware.
+
+- Generating text, chatting, calling tools: a decoder. Embeddings,
+  classification, tagging: an encoder, or a decoder's final vectors
+  (`primer.ml.embeddings`).
+- Dense or mixture of experts for a model you host: experts win when memory
+  is plentiful and compute per token is the constraint (many concurrent
+  users); dense wins when memory is tight, because Mixtral's 47B parameters
+  must all be resident (about 94 GB at 16 bits) to run its 13B.
+- Sizing memory: parameters times bytes per parameter. 70B at 16 bits is
+  140 GB, more than one 80 GB GPU; at 4 bits it is 35 GB.
+- Estimating a training run: 6 · N · D. A 7B model on its compute-optimal
+  140 billion tokens costs 5.88 × 10²¹ operations, about 4,100 GPU-hours at
+  a sustained 400 teraFLOP/s per GPU (`primer.ml.pretraining`).
+- Reading a config: blocks L, width d, feed-forward width (14,336 against
+  4,096 for Llama 3 8B, about 3.5×), vocabulary V, and the expert counts.
+  With those you can reproduce the parameter count before downloading.
+- Whatever you pick, remember that the block is the same in all of them.
+  The differences of kind are the attention mask and whether the
+  feed-forward network is routed; everything else is size.
+
+**What it costs.** Three currencies: memory, compute and, for experts, the
+gap between the two.
+
+- Memory. Parameters × bytes. GPT-2 ran from 124 million (12 blocks, width
+  768) to 1.56 billion (48 blocks, width 1,600); Llama 3 runs from 8B (32
+  blocks, width 4,096) through 70B (80 blocks, width 8,192) to 405B (126
+  blocks, width 16,384), each with 8 key-value heads. The feed-forward
+  network is always the largest share, and the embedding table shrinks from
+  32% of GPT-2 small to 5% of XL as blocks multiply (`param_breakdown`).
+- Compute. About 2N operations per generated token (a 7B model: 1.4 × 10¹⁰,
+  14 GFLOPs) and about 6 · N · D to train (GPT-3: 3.15 × 10²³, matching the
+  paper's 3.14 × 10²³). Llama 3 405B took 3.8 × 10²⁵ operations over 15.6
+  trillion tokens on up to 16,000 H100 GPUs, and DeepSeek-V3 reports 2.788
+  million H800 GPU-hours over 14.8 trillion tokens.
+- Experts. This lesson's 8 experts of width 16 hold 17,152 parameters while
+  one token touches 4,384: the whole point, and the whole catch. You buy
+  knowledge with memory and pay compute only for what each token uses.
+
+**What breaks.**
+
+- **Reading "8x7B" as 56B or as 7B.** It is neither: about 47B to load,
+  because only the feed-forward networks are multiplied by eight (attention
+  and embeddings are not), and about 13B to run per token. Size the GPU for the first number and the latency for the
+  second.
+- **Experts that starve.** Even an untrained router is lopsided: in this
+  lesson's run experts 3 and 5 receive 75 of 256 tokens each while expert 2
+  receives 51, and in training the imbalance compounds because busy experts
+  improve and attract more traffic. The balancing loss is the fix; Hugging
+  Face's Mixtral config keeps it on with `router_aux_loss_coef` at 0.001.
+  Leave it on when you fine-tune an expert model.
+- **Normalizing after instead of before.** The 2017 layout put the norm
+  after each sub-layer; pre-norm, with the norm before and the residual
+  path untouched, trains more stably (Xiong et al., 2020) and is what modern
+  models use. If you assemble blocks yourself, copy the modern order.
+- **A stack with no skip path.** Replace the residual add with plain
+  replacement and a hundred blocks cannot train; the spec checks that a
+  block with both sub-layers switched off returns its input unchanged.
+- **The wrong mask for the job.** An encoder cannot generate, and a
+  decoder's per-token vectors only ever saw the past, which is why
+  embedding models are usually encoders.
+- **Forgetting the embedding table.** For a small model it is not a
+  rounding error: 38.6 million of GPT-2 small's 124 million parameters, 32%
+  of the total.
+
+**In the wild.** GPT-2 ships in the four sizes counted above, and this
+lesson's count lands on its exact 124,439,808 once the attention biases are
+included. Llama 3's herd (8B, 70B, 405B) uses RMSNorm, SwiGLU feed-forward
+networks and grouped-query attention inside the same block. Mixtral 8x7B
+and DeepSeek-V3 are the reference mixture-of-experts models, and the Switch
+Transformer paper (Fedus, Zoph and Shazeer, 2021) introduced the balancing
+loss built here. Hugging Face configs name the block's numbers directly:
+`num_hidden_layers`, `hidden_size`, `intermediate_size`,
+`num_attention_heads`, `num_key_value_heads`, `vocab_size` and, for
+experts, `num_local_experts` and `num_experts_per_tok`. The 6 · N · D rule
+comes from Kaplan et al. (2020) and the 20-tokens-per-parameter rule from
+Hoffmann et al. (2022). BERT is the canonical encoder and T5 the canonical
+encoder-decoder. The papers are linked at the end of the lesson.
+
+**Go deeper.** Level 2 builds a block on a two-number token, normalizes
+(1, 2, 3, 4) by hand, runs one number through GELU, assembles a 27,328-parameter
+GPT, draws the three families' masks, counts GPT-2 to the exact parameter,
+routes a token through a mixture of experts with its balancing loss, and
+derives the 2N and 6N rules. If you only needed to read a model card or
+size a machine, you are done.
+
+## Level 2: How it works, from scratch
+
+Level 2 assembles the block one piece at a time, starting with the picture
+of a team that meets, then works alone.
+
 ## 1. The block: a meeting, then desk work
 
 **Everyday picture.** A team works in rounds. Each round starts with a

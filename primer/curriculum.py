@@ -282,11 +282,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     # the foundations
 
     # the transformer
-    "primer.ml.attention",
-    "primer.ml.positional",
-    "primer.ml.transformer",
-    "primer.ml.tokenization",
-    "primer.ml.cnn_rnn",
 
     # serving
 

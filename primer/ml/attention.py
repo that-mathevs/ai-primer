@@ -3,9 +3,144 @@ r"""
 
 Run: `python -m primer.ml.attention`
 
-## The everyday picture
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on the vectors and matrix multiplies of
+`primer.ml.neural_net`.
 
-Imagine you're in a meeting and someone says "it's broken, can you fix it?"
+## Level 1: The practitioner's guide
+
+**In one sentence.** Attention is the step in which every token of a
+model's input scores every other token for relevance and rebuilds itself as
+a weighted blend of the ones that matter; because the comparison is
+all-pairs, it sets a model's context limit, the price of a long prompt, and
+the memory a conversation occupies on a GPU.
+
+**When you need it.** You never switch attention on: every transformer you
+call already runs it in every layer. You need to understand it the day a
+decision turns on its cost: picking a model by its context window or by the
+key-value heads on its model card, deciding whether to put 200 pages in one
+prompt or retrieve the relevant three, sizing a GPU for a model you host, or
+explaining why a call with a long history is slow before the first output
+token appears. The tell: latency and cost that grow with the length of the
+conversation rather than the length of the answer. From this lesson's
+`attention_cost`: a 1,000-token prompt builds a score
+matrix of 1,000,000 entries per head per layer, a 2,000-token prompt
+4,000,000, and a 128,000-token prompt 16.4 billion. Doubling the context
+quadruples that part of the work. Below a few thousand tokens you can
+ignore it: the parts of the model that grow linearly dominate (the lesson's
+crossover is at twice the model width, 8,192 tokens for a 4,096-wide model).
+
+**Your options.** Some of these you choose in your prompt or API call; the
+rest you choose by picking a model or a serving stack. From the cheapest to
+the most committed:
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| Short prompts, retrieval for the rest | Puts only the relevant text in the context | Cost that stays flat as the corpus grows | An index to build and a retrieval step that can miss | Your code (`primer.agents.rag`) |
+| Prompt caching | Reuses the keys and values of a prefix that repeats across calls | Cache reads at 0.1× the input price and a faster first token | The prefix must be identical byte for byte; a cache write costs 1.25× | The API, or the serving engine |
+| A long context window | Sends the whole document or history in one call | Nothing to retrieve; exact cross-references over all of it | Quadratic compute, a cache that grows with every token, weaker recall in the middle | The model you pick: up to 1M tokens on current hosted models |
+| A GQA or MQA model | Shares each key-value head among several query heads | A KV cache 4× to 8× smaller, so more conversations fit on one GPU | A small loss of modelling capacity, decided by the model's authors | The model card: `num_key_value_heads` |
+| FlashAttention kernels | Computes the same attention in tiles that stay in fast on-chip memory | The exact result, 2× to 3× faster, and no n × n matrix in slow memory | A supported GPU; nothing to tune | The serving stack: PyTorch, vLLM and the rest |
+| Sliding-window attention | Lets each layer look back a fixed number of tokens | A cache of fixed size per token and linear cost at any length | Exact lookup beyond the window is gone; information hops layer by layer | The model architecture (Mistral 7B: a 4,096-token window) |
+| A paged KV cache | Stores each request's cache in small blocks instead of one reserved strip | 2× to 4× the throughput from the same GPU memory | A serving engine that supports it | vLLM, and most engines since |
+| A linear-time architecture | Replaces attention with a recurrence that carries a fixed-size state | No n² term and a cache that does not grow | Different recall behaviour and fewer mature models | The model architecture (state-space models such as Mamba) |
+
+**How to choose.** Start from what you control.
+
+- A hosted API: you control the prompt. Put the stable part (system prompt,
+  tool definitions, reference documents) first and keep it identical so it
+  caches; put what changes last. Count tokens before you send: input that
+  exceeds the window is rejected, not truncated.
+- Long context or retrieval: long context for one document the model must
+  read exactly (a contract, a codebase), retrieval when the corpus outlives
+  a single prompt or the relevant part is small. Most production systems do
+  both: retrieve, then give the model a generous window of what came back.
+- An open model to host: read `num_attention_heads`, `num_key_value_heads`
+  and `max_position_embeddings` on its card. The cache per token scales with
+  the key-value heads, and that number, not the parameter count, decides how
+  many conversations one GPU carries.
+- Serving it: use an engine that ships FlashAttention and paged caching
+  rather than a loop of your own.
+- Training or fine-tuning: keep the library's score scaling and causal mask
+  as they are; Level 2 measures what happens without them.
+- Whatever you pick, measure quality against context length on your own
+  task, with the answer placed at the start, the middle and the end. A
+  longer advertised window does not make a model better at using the middle
+  of it.
+
+**What it costs.** Four currencies: compute, memory, money and recall.
+
+- Compute. The score-and-mix step is quadratic in tokens and is paid in full
+  when a prompt is first read: that is the pause before the first output
+  token. From `attention_cost` with a 4,096-wide model, at 8,000 tokens the
+  quadratic part equals the linear part; at 128,000 tokens it is about 16
+  times larger.
+- Memory. Every token of every live conversation keeps its keys and values
+  in the KV cache. For a Llama-3-8B-shaped model (32 layers, 8 key-value
+  heads of width 128, 16-bit numbers) that is 131,072 bytes per token, so a
+  32,000-token conversation holds about 4.2 GB, and an 80 GB GPU with 16 GB
+  of weights carries 15 such conversations. At 128,000 tokens, 32 key-value
+  heads would need 67 GB for one request; 8 need 17 GB. The figures are
+  `primer.ml.inference`'s.
+- Money. Hosted APIs bill per token at a flat rate across the window: a
+  100,000-token prompt on a model priced at \$5 per million input tokens
+  costs \$0.50 each time it is sent, and \$0.05 when the whole prompt is a
+  cache read at 0.1×. A 900,000-token request costs the same per token as a
+  9,000-token one (Anthropic's pricing page): the quadratic compute is
+  priced into the flat rate.
+- Recall. In the Lost in the Middle study (Liu et al., 2023), GPT-3.5-Turbo
+  answered 75.8% of questions when the useful document was first among 20
+  and 53.8% when it was tenth, below its 56.1% with no documents at all.
+
+**What breaks.**
+
+- **The answer in the middle.** Accuracy falls when the relevant text sits
+  mid-prompt. Put the most important material first or last, and keep
+  prompts as short as the task allows.
+- **A cache that never hits.** A timestamp or request id near the top of
+  the prompt changes the prefix on every call, and every call pays full
+  price. If the cache-read count in the usage report is zero across
+  identical requests, something volatile sits before the stable part.
+- **Out of memory at long context.** The KV cache, not the weights, is what
+  overflows a GPU on long requests. Prefer a GQA model, cap the context you
+  accept, or run an engine that pages the cache.
+- **A prompt that does not fit.** Input beyond the window is an error; input
+  plus the output budget beyond it stops generation early. Count tokens
+  first and leave room for the answer.
+- **Training instability from unscaled scores.** Without the division by
+  the square root of the head width, this lesson's measurement at width 512
+  puts 0.94 of the attention on one token on average and shrinks the
+  training signal fivefold; the model stops learning what to attend to.
+
+**In the wild.** The original transformer (Vaswani et al., 2017) ran 8 heads
+of width 64 on 512-wide vectors. Anthropic's context-window documentation gives current models a 1M-token
+window and counts everything in the request towards it: system prompt, tool
+definitions, tool results and the model's own thinking. Hugging Face model
+configs expose `num_attention_heads`, `num_key_value_heads` and
+`max_position_embeddings`; Llama 3 pairs 32 query heads with 8 key-value
+heads and reaches 128K tokens, and Mistral 7B uses the same 32-to-8 split
+plus a 4,096-token sliding window whose reach grows to about 131K tokens
+across its 32 layers. The GQA paper converted multi-head checkpoints with 5%
+of the original pretraining compute. PyTorch's
+`scaled_dot_product_attention` chooses among a FlashAttention-2 kernel, a
+memory-efficient kernel and a plain implementation by itself, and vLLM's
+PagedAttention lifted serving throughput 2 to 4 times over earlier engines,
+whose reserved-strip caches held real tokens in only 20% to 38% of their
+memory. The papers are linked at the end of the lesson.
+
+**Go deeper.** Level 2 builds attention from three numbers: softmax on a
+pronoun's scores, queries, keys and values on a four-number example, the
+causal mask that makes caching possible, the square-root scaling measured at
+three widths, multi-head and grouped-query attention in a class you can
+call, and the n² curve. If you only needed to choose a model or shape a
+prompt, you are done.
+
+## Level 2: How it works, from scratch
+
+Level 2 builds the mechanism from nothing, starting with a glance around a
+room.
+
+**The everyday picture.** Imagine you're in a meeting and someone says "it's broken, can you fix it?"
 To know what "it" means, you glance around the room: at the laptop on the
 table, at the person who just walked in, at the whiteboard. You pay a lot of
 attention to the laptop, a little to everything else, and your understanding

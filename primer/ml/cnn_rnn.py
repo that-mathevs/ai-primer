@@ -4,9 +4,129 @@ r"""
 Run: `python -m primer.ml.cnn_rnn`
 
 New to the notation? `primer.notation` explains every symbol used here
-(Σ, ⊙, subscripts, ∂, and so on) from zero.
+(Σ, ⊙, subscripts, ∂, and so on) from zero. This lesson builds on
+`primer.ml.neural_net` and `primer.ml.attention`.
 
-## The idea
+## Level 1: The practitioner's guide
+
+**In one sentence.** Convolutional networks see images by sliding small
+learned pattern detectors across them, recurrent networks read sequences one
+step at a time with a running memory, and knowing what each does well and
+where each breaks tells you when to reach for one, when to reach for a
+transformer instead, and why images cost what they cost in a multimodal
+model.
+
+**When you need it.** Not for a chat product on a hosted model: there the
+transformer has already won and this lesson is background. You need it when
+you have an image or signal problem of your own to solve: a defect detector
+for a production line, a model that must run on a phone or a camera, a time
+series or sensor stream, a legacy system built on LSTMs that you now
+maintain, or a bill for image inputs that you want to predict. The tell: a
+dataset that is not text, or a device that is not a GPU. The number behind
+the first choice, from this lesson's `conv_params` and `dense_params`: 64
+filters of 3 × 3 over a colour image need 1,792 parameters, at any image
+size, while a dense layer mapping a 224 × 224 colour image to an output of
+the same size needs about 483 billion. Built-in assumptions (patterns are
+local, the same pattern matters anywhere) are what make vision affordable
+from little data.
+
+**Your options.** Two families for images, three for sequences, and the
+transformer that now spans both. From the most specialised to the most
+general:
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| A convolutional network (ResNet family) | Slides learned filters over the image, pools, stacks edges into parts into objects | Strong results from modest data and modest hardware; 1,792 parameters for 64 filters | Its locality assumption caps it at the largest scales | Vision libraries and on-device runtimes |
+| A vision transformer (ViT) | Cuts the image into patches, treats each as a token, runs ordinary attention | The best accuracy at scale, on the same stack as text; its paper reports better results than the leading CNNs with substantially less training compute | Needs large pretraining data; 196 tokens for a 224 × 224 image at 16-pixel patches | Vision backbones and multimodal models |
+| An image sent to a multimodal LLM | Patches become tokens beside your text | No model to train; you ask questions about the picture | Billed per patch: Claude counts one visual token per 28 × 28 block, so a 1000 × 1000 image is 1,296 tokens | Hosted APIs |
+| A plain recurrent network | Rewrites one summary vector after every step | The smallest possible state; runs on anything | Forgets: the start's influence is 0.5¹⁰, about a thousandth, ten steps back in this lesson's example | Legacy and tiny embedded models |
+| An LSTM or GRU | Keeps a gated cell state that is edited, not rewritten | Memory across hundreds of steps: the gradient stays near 1 after 50 steps where the plain RNN's is around 10⁻¹⁶ | Sequential training, one step per token; superseded for language | Legacy NLP, time series, small sequence models |
+| A transformer | Compares every token with every other in one parallel step | Parallel training and a one-hop path between any two tokens | Cost that grows with the square of the length (`primer.ml.attention`) | Every modern language model |
+| A state-space model (Mamba) | A selective recurrence that trains in parallel and runs in linear time | 5× the inference throughput of a transformer in its paper, with a fixed-size state | Fewer mature models; some hybrids mix it with attention | Long-stream and hybrid models |
+
+**How to choose.** Start from the data, then the device.
+
+- Images, limited data or a small device: a convolutional network,
+  pretrained if you can get one. Weight sharing and locality mean it learns
+  from less and runs in a fixed budget of parameters.
+- Images at scale, or images beside text: a vision transformer or a
+  multimodal model. Count the tokens an image will cost before you build
+  the pipeline.
+- Sequences of any kind today: a transformer by default. Keep an LSTM or
+  GRU only for tiny streaming models, or where a legacy system already
+  works.
+- Very long streams where throughput matters more than exact recall: a
+  state-space model or a hybrid, measured against a transformer on your
+  data.
+- Anything deep, of any family: residual connections. A 34-layer plain
+  network scored worse than an 18-layer one on ImageNet (28.54% against
+  27.94% top-1 error) until shortcuts took it to 25.03%.
+- Whatever you pick, benchmark at your own scale: the crossover between
+  built-in assumptions and raw data is different for every dataset.
+
+**What it costs.** Parameters, compute, and the sequential steps that
+nobody can parallelize.
+
+- Parameters. A convolution's cost depends on the filter and the channel
+  counts, never on the image size: 1,792 for the 64 filters above. A dense
+  layer on raw pixels is out of the question at 483 billion.
+- Compute. ResNet-152 runs in 11.3 billion operations per image against
+  VGG-16's 15.3 billion, deeper and cheaper at once (the ResNet companion).
+  A 224 × 224 image is 196 tokens of 768 numbers to a vision transformer
+  (`patchify`), and attention over those tokens is the same n² as for text.
+- Sequential steps. An RNN reading 1,000 tokens takes 1,000 steps one after
+  another, and information from the first token reaches the last through
+  999 hand-offs; a transformer layer does it in one step and one hop
+  (`sequential_steps`, `path_length`). That difference is why transformers
+  could train on vastly more data.
+- Memory. An RNN's state is one vector however long the input; a
+  transformer keeps keys and values for every token (`primer.ml.inference`).
+  That is the trade state-space models revisit.
+
+**What breaks.**
+
+- **A summary that forgets the start.** Reading "not very good" one word at
+  a time, this lesson's one-number RNN ends at 0.785, strongly positive,
+  because "not" was rewritten away two steps later. Gates or attention are
+  the fixes.
+- **Gradients that vanish or explode.** Each step back multiplies the
+  training signal by a factor: 0.5 gives 0.00098 after ten steps, 1.5 gives
+  57.7 and diverges. Clip gradients (Pascanu et al., 2012) and use gated
+  cells.
+- **Depth that makes things worse.** Without shortcuts a deeper network can
+  score lower even on its training data; residual connections reverse it
+  and are inside every transformer block.
+- **A view too narrow for the object.** One 3 × 3 layer sees 3 pixels;
+  conv, pool, conv sees 8 (`receptive_field`). A shallow network without
+  pooling never sees a whole object, however many filters it has.
+- **Image bills that scale with pixels.** Every patch is a token: on
+  Anthropic's API an image costs ⌈width / 28⌉ × ⌈height / 28⌉ visual tokens,
+  so a 200 × 200 image is 64 tokens and a 1000 × 1000 image is 1,296, about
+  \$1.30 per thousand images at \$1 per million tokens. Resize before you
+  send.
+- **Patches with no positions.** A vision transformer reads a bag of
+  patches unless positions are added, exactly as text does
+  (`primer.ml.positional`).
+
+**In the wild.** AlexNet won ImageNet in 2012 by training a deep CNN on
+GPUs; VGG showed that stacks of 3 × 3 filters work; ResNet's 152-layer
+network reached 3.57% top-5 error in an ensemble and put the shortcut
+connection into every architecture since. Vision transformers took over
+large-scale vision, and multimodal language models read images the same
+way, as patch tokens. On the sequence side, the LSTM (Hochreiter and
+Schmidhuber, 1997) and the GRU (Cho et al., 2014) carried language modelling
+until attention, and Mamba (Gu and Dao, 2023) reports a 3-billion-parameter
+model matching transformers twice its size at linear cost in length. The
+papers are linked at the end of the lesson.
+
+**Go deeper.** Level 2 runs a 3 × 3 edge filter over a 5 × 5 image by hand,
+pools a 4 × 4 map, counts receptive fields, cuts an image into patch tokens,
+reads "not very good" with a one-number RNN, multiplies out the vanishing
+gradient, pins an LSTM's gates to keep, erase, overwrite and hide a note,
+and counts the steps that decided the contest. If you only needed to choose
+a family, you are done.
+
+## Level 2: How it works, from scratch
 
 Before transformers, two designs dominated deep learning, and both still
 matter. **Convolutional networks (CNNs)** see images by sliding small

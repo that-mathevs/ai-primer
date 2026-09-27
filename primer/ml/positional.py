@@ -5,6 +5,133 @@ Run: `python -m primer.ml.positional`
 
 New to the notation (vectors, dot products, sine and cosine)? Every symbol
 is decoded where it appears, and `primer.notation` teaches them all from zero.
+This lesson builds on `primer.ml.attention`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Positional encoding is how a transformer learns where
+each token sits, since attention on its own treats the input as an unordered
+bag; the scheme a model uses decides how long a context it can read, whether
+that length can be stretched after training, and what happens when you go
+past it.
+
+**When you need it.** You never add positions yourself; the model's authors
+chose a scheme before training and it is baked into the weights. You meet it
+the day a length matters: a model card says 128K tokens and you wonder how
+far to trust it, a self-hosted model produces nonsense past a certain prompt
+length, an embedding model rejects documents longer than its limit, or you
+want to fine-tune a model to read documents longer than it was trained on.
+The tell: quality that is fine at 4,000 tokens and falls off a cliff at
+some longer length, with nothing in the logs. The number behind the whole
+topic, from this lesson's `order_similarity`: with no positions, the pooled
+attention outputs for "dog bites man" and "man bites dog" have cosine
+similarity exactly 1.000. The model cannot tell them apart. Nothing about
+this concerns you when prompts stay well inside the length the model was
+trained at.
+
+**Your options.** The first four are choices the model's authors made; you
+choose among them by choosing a model. The last three are what you or the
+vendor can do about length afterwards. From the simplest to the most
+committed:
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| A learned position table (GPT-2, BERT) | One learned vector per seat, added to the token's vector | Simple and effective inside the trained length | A hard ceiling: no row exists past the table's end (1,024 rows for GPT-2, 512 for BERT) | The architecture; `max_position_embeddings` on the card |
+| Sinusoidal codes (the 2017 transformer) | A fixed sine and cosine fingerprint per position, added to the token | No parameters; a code exists for any position | Position is mixed into content; little used in new models | The architecture |
+| RoPE (Llama, Mistral, Qwen) | Rotates each query and key by an angle that grows with position, so scores depend on the distance between tokens | Relative distance for free, and a context that can be stretched after training | Angles past the trained range are unfamiliar; extension needs scaling | The architecture; `rope_theta` and `rope_parameters` on the card |
+| ALiBi | Subtracts a penalty proportional to distance from each score; no position vectors at all | Trained at 1,024 tokens, it extrapolates to 2,048; 11% faster and 11% less memory than sinusoidal in its paper | A built-in preference for nearby tokens; fewer models use it | The architecture |
+| Inference-time scaling (linear or dynamic NTK) | Rescales positions or the RoPE base when a prompt exceeds the trained length | A modest stretch with no training at all | Quality drops as the stretch grows | The serving engine's config: `rope_type` and `factor` |
+| Extension with a short fine-tune (PI, YaRN) | Scales positions into the trained range, then fine-tunes briefly on long text | 8× longer context: Llama to 32,768 tokens within 1,000 steps (PI); YaRN needs 10× fewer tokens than earlier methods | Long documents to train on, a training run, an evaluation at length | Your training stack |
+| Staged long-context pretraining | The vendor grows the window during pretraining, checking a needle-in-a-haystack test at each stage | The genuine article: Llama 3 went from 8K to 128K in six stages | About 800B training tokens for Llama 3 405B; reaches you as a number on the card | The vendor |
+
+**How to choose.** Start from the model in front of you.
+
+- A hosted API: nothing to choose, but the window on the card is the length
+  the vendor trained and tested, not a promise about your task. Measure at
+  the lengths you will use.
+- Picking an open model: read `max_position_embeddings` and
+  `rope_parameters`. An entry with a `factor` means the model was trained
+  shorter and stretched, and the far end of the stretched range is where
+  quality is weakest.
+- Serving a model beyond its trained length: do not raise the engine's
+  context limit on its own. Set the scaling the checkpoint expects (or a
+  dynamic scaling if none is given), and test before shipping.
+- Documents longer than the model's window, and you can train: position
+  interpolation or YaRN plus a fine-tune on long text, with a
+  needle-in-a-haystack check and your own task at the target length.
+- An encoder or embedding model with a learned table: the limit is hard.
+  Chunk documents to fit (`primer.agents.rag`).
+- Whatever you pick, evaluate at the length you will run, with the answer
+  placed at the start, the middle and the end of the prompt.
+
+**What it costs.** Positions are nearly free to compute; length is what
+costs.
+
+- Parameters and compute. GPT-2's table is 1,024 × 768 = 786,432 numbers,
+  under 1% of its 124 million parameters. RoPE and ALiBi add none, and RoPE
+  is a few element-wise multiplications per query and key, negligible next
+  to attention itself.
+- Stretching. Position interpolation for 4,096 to 32,768 tokens multiplies
+  every position by 1/8 (32,000 becomes 4,000); NTK-aware scaling instead
+  raises the RoPE base from 10,000 to 82,685 for a 128-wide head, leaving
+  the fastest pair untouched and slowing the slowest 8×. Both are followed
+  by a short fine-tune: within 1,000 steps in the PI paper. Llama 3's
+  authors set the base to 500,000 and spent about 800B tokens taking the
+  405B model from 8K to 128K.
+- Quality. RoPE gives nearby tokens a head start (the RoFormer companion's
+  long-term decay), and a stretched model is weakest at the far end of its
+  new range. Both show up as a model that reads the start of a long prompt
+  better than the end.
+
+**What breaks.**
+
+- **Past the table.** A learned-table model has no vector for position
+  1,024 if its table has 1,024 rows: the request fails or the library
+  truncates. Chunk the input.
+- **Past the trained angles.** RoPE degrades silently rather than failing:
+  this lesson's figure shows the slowest pair's angle leaving the trained
+  band right after 4K tokens and reaching 8× its top by 32K. The PI paper
+  reports that plain extrapolation can produce catastrophically large
+  attention scores. Scale, then fine-tune.
+- **A checkpoint served with the wrong scaling.** An extended model whose
+  `rope_parameters` are dropped or mistyped reads positions it never
+  learned. Copy the config with the weights.
+- **Interpolating too far.** Interpolation slows every frequency equally,
+  which also blurs the fast ones that carry local word order. NTK-aware
+  scaling and YaRN keep the fast frequencies, which is why they are
+  preferred for large stretches.
+- **Pooling that forgets order.** Average the token vectors of an
+  order-blind model and "dog bites man" equals "man bites dog" exactly.
+  Order survives only if positions are injected, or an encoding step that
+  is not permutation-blind comes first.
+- **Trusting the causal mask for order.** In a decoder the mask alone lets
+  the sentences differ (cosine 0.524 in this lesson's run), but it is a
+  weak signal, not a position encoding.
+
+**In the wild.** The original transformer (Vaswani et al., 2017) used
+sinusoidal codes; GPT-2 and BERT switched to learned tables, which is why
+each has a fixed maximum length. Llama, Mistral and Qwen use RoPE, and Llama
+3 raised its base to 500,000 with 8 key-value heads beside it. Hugging Face
+model configs carry the scheme as `rope_parameters` with a `rope_type` of
+`linear`, `dynamic`, `yarn`, `longrope` or `llama3`, a `factor` and an
+`original_max_position_embeddings`; vLLM's `--max-model-len` sets the
+served length and `--hf-overrides` changes that config at load time. YaRN
+(Peng et al., 2023) is the extension recipe behind many long-context
+checkpoints, ALiBi (Press et al., 2021) the alternative that extrapolates
+without vectors, and the NoPE study (Kazemnejad et al., 2023) found that a
+decoder can generalize to longer inputs with no explicit positions at all.
+The papers are linked at the end of the lesson.
+
+**Go deeper.** Level 2 shows the bag-of-words problem in three numbers,
+builds sinusoidal codes as a clock with many hands, checks RoPE's distance
+property by hand at positions 3 and 7 and again at 103 and 107, and stretches
+a 4K model to 32K by interpolation and by raising the base. If you only
+needed to read a model card or serve a model safely, you are done.
+
+## Level 2: How it works, from scratch
+
+Level 2 starts with the problem itself, a bag of Scrabble tiles, and adds
+each family of positions in turn.
 
 ## The problem: attention reads a bag, not a sentence
 
