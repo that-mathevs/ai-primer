@@ -1221,3 +1221,17 @@ class TestAPageCanBeSeenAsAPhoneShowsIt:
         # and companions scroll smoothly, which never moves in headless Chrome's virtual time, so the scroll is instant.
         framed = frame_page("papers/hyde.html#fig1", theme="light")
         assert "onload" in framed and 'scrollIntoView({ behavior: "instant" })' in framed
+
+
+class TestLandingABranch:
+    # tools/land.py merges a finished branch; generated files are rebuilt, so only real conflicts need a person.
+
+    def test_given_conflicts_only_in_generated_assets_none_need_a_person(self):
+        from tools.land import conflicts_needing_a_person
+
+        assert conflicts_needing_a_person(["docs/papers/assets/glossary.js", "docs/papers/assets/catalog.js"]) == []
+
+    def test_given_a_conflict_in_a_lesson_it_needs_a_person(self):
+        from tools.land import conflicts_needing_a_person
+
+        assert conflicts_needing_a_person(["docs/papers/assets/glossary.js", "primer/ml/reasoning.py"]) == ["primer/ml/reasoning.py"]

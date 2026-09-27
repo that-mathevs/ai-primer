@@ -11,6 +11,10 @@ locally is a red deploy, so main only moves when the gate is **green**.
 
 ## 1. Merge one branch at a time
 
+`python tools/land.py <branch> "<merge message>"` runs this whole skill for
+one branch (merge, rebuild generated assets, gate, push, remove the worktree)
+and stops at the first thing that needs a person. By hand, it is:
+
 ```bash
 git merge --no-ff <branch> -m "Merge <what it adds>"
 ```
