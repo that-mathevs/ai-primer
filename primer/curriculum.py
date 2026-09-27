@@ -273,11 +273,87 @@ def reading_list(package: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Every lesson opens with "## Level 1: The practitioner's guide" and continues with
-# "## Level 2: How it works, from scratch". These lessons don't yet; each leaves the
-# set in the change that gives it its guide (tests/test_navigation.py holds the bar).
+# "## Level 2: How it works, from scratch". These lessons don't yet; each deletes its
+# own line in the change that gives it its guide (tests/test_navigation.py holds the
+# bar). One group per writer, with a blank line between groups so their edits merge.
 # ---------------------------------------------------------------------------
 
-LEVELS_PENDING: frozenset[str] = frozenset(l.module for l in CURRICULUM) - {"primer.ml.structured_output"}
+LEVELS_PENDING: frozenset[str] = frozenset({
+    # the foundations
+    "primer.notation",
+    "primer.ml.big_picture",
+    "primer.ml.neural_net",
+    "primer.ml.optimizers",
+    "primer.ml.deep_nets",
+
+    # the transformer
+    "primer.ml.attention",
+    "primer.ml.positional",
+    "primer.ml.transformer",
+    "primer.ml.tokenization",
+    "primer.ml.cnn_rnn",
+
+    # training
+    "primer.ml.training_stages",
+    "primer.ml.pretraining",
+    "primer.ml.fine_tuning",
+    "primer.ml.reinforcement",
+    "primer.ml.alignment",
+
+    # serving
+    "primer.ml.inference",
+    "primer.ml.hardware",
+    "primer.ml.efficient_architectures",
+    "primer.ml.reasoning",
+
+    # measuring
+    "primer.ml.losses",
+    "primer.ml.metrics",
+    "primer.ml.benchmarks",
+    "primer.ml.regularization",
+    "primer.ml.classical",
+    "primer.ml.interpretability",
+
+    # embeddings, making them
+    "primer.ml.embeddings.word2vec",
+    "primer.ml.embeddings.similarity",
+    "primer.ml.embeddings.contrastive",
+    "primer.ml.embeddings.compression",
+
+    # embeddings, searching them
+    "primer.ml.embeddings.ann",
+    "primer.ml.embeddings.retrieval",
+    "primer.ml.embeddings.clustering",
+    "primer.ml.embeddings.operations",
+
+    # generative models
+    "primer.ml.generative.autoencoders",
+    "primer.ml.generative.gans",
+    "primer.ml.generative.diffusion",
+    "primer.ml.generative.multimodal",
+
+    # agents, building one
+    "primer.agents.llm",
+    "primer.agents.orchestration",
+    "primer.agents.agent_loop",
+    "primer.agents.tools",
+    "primer.agents.mcp",
+
+    # agents, what they work with
+    "primer.agents.rag",
+    "primer.agents.context",
+    "primer.agents.memory",
+    "primer.agents.planning",
+    "primer.agents.coding_agents",
+
+    # agents, running them
+    "primer.agents.evals",
+    "primer.agents.guardrails",
+    "primer.agents.cost",
+    "primer.agents.observability",
+    "primer.agents.deployment",
+    "primer.agents.failures",
+})
 
 
 # ---------------------------------------------------------------------------
