@@ -1859,6 +1859,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/training_stages.html",
   "term": "KL divergence"
  },
+ "kl penalty": {
+  "def": "A term subtracted from the reward that grows as the tuned model drifts from its starting point, measured by KL divergence: a leash that keeps it near the data the reward model was trained on.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "KL penalty"
+ },
  "kv cache": {
   "def": "Stored keys and values from earlier tokens, so each new token is computed without redoing work. It trades GPU memory for speed.",
   "lesson": "primer/ml/inference.html",
@@ -2593,6 +2598,11 @@ window.PRIMER_GLOSSARY = {
   "def": "When a model memorizes its training data, noise included, and does worse on new data.",
   "lesson": "primer/ml/regularization.html",
   "term": "overfitting"
+ },
+ "overoptimization": {
+  "def": "Optimizing against a learned reward model for so long that the true quality it stood for starts to fall, even as its score keeps rising: Goodhart's law for reward models.",
+  "lesson": "primer/ml/alignment.html",
+  "term": "overoptimization"
  },
  "overthinking": {
   "def": "Spending many reasoning tokens where few would do, wasting cost and time and sometimes losing a right answer.",

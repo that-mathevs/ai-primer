@@ -897,6 +897,7 @@ time against it without the reward drifting away from correctness.
   Overoptimization* (2022)**: https://arxiv.org/abs/2210.10760. Measured how
   true quality rises and then falls as a policy is optimised further against
   a learned reward model.
+  [Annotated companion](../../papers/reward-model-overoptimization.html)
 
 ## Further reading
 

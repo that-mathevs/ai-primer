@@ -409,7 +409,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.alignment"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "reward-model-overoptimization",
@@ -421,7 +421,7 @@ window.PRIMER_PAPERS = [
    "primer.ml.alignment",
    "primer.ml.reinforcement"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "roofline",

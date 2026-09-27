@@ -781,10 +781,12 @@ measurements into a decision made in advance.
   (2023)**: https://arxiv.org/abs/2310.13548. Measured sycophancy across
   assistants and traced part of it to human preference data that favours
   agreeable answers.
+  [Annotated companion](../../papers/sycophancy.html)
 - **Gao, Schulman and Hilton, *Scaling Laws for Reward Model
   Overoptimization* (2022)**: https://arxiv.org/abs/2210.10760. Measured
   Goodhart's law for reward models: the true reward rises then falls as a
   policy is optimized harder against a proxy.
+  [Annotated companion](../../papers/reward-model-overoptimization.html)
 
 ## Further reading
 
