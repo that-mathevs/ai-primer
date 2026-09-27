@@ -70,7 +70,7 @@
   <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
   <li>The <a href="#s5-try">lure explorer</a> lets you change how often a model is right and how often it writes a wrong solution the verifier loves, and shows why sampling more can make things worse.</li>
 </ul>
-<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. This paper came a few months before <a href="chain-of-thought-prompting.html">chain-of-thought prompting</a> and <a href="self-consistency.html">self-consistency</a>, and its dataset is the one both of them report on. Its sequel, <em>Let's Verify Step by Step</em>, asks whether a verifier should judge every step instead of the final answer. The <a class="lesson" data-lesson="primer/ml/reasoning.html">reasoning models lesson</a> builds verifiers and best-of-n from scratch.</p>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. This paper came a few months before <a href="chain-of-thought-prompting.html">chain-of-thought prompting</a> and <a href="self-consistency.html">self-consistency</a>, and its dataset is the one both of them report on. Its sequel, <a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a>, asks whether a verifier should judge every step instead of the final answer. The <a class="lesson" data-lesson="primer/ml/reasoning.html">reasoning models lesson</a> builds verifiers and best-of-n from scratch.</p>
 </section>
 
 <section id="abstract">
@@ -404,7 +404,7 @@ round(g * z_t + b, 2)  # → 0.8</code></pre>
 </div>
 <p class="reading"><strong>Reading it:</strong> in (a) and (b) the x-axis is progress through the verifier's single training epoch and the y-axis the 6B verifier's test solve rate. In (a) the solution-level verifier starts faster, peaks near 35% halfway through, then declines to about 30%: overfitting. The token-level verifier starts slower, because predicting after every token is a harder and noisier task, but keeps climbing to about 39%. In (b), dropping the language-modelling loss costs about 3 points at the end (35.4% against 38.8%). In (c) the x-axis is training problems; a 175B generator with a 6B verifier reaches 52.2%, while a 6B generator with a 175B verifier reaches only 42.1%. A small verifier checking a strong generator beats a strong verifier checking a weak one. Redrawn from the paper's Figure 6; values recovered from the plotted points.</p>
 <h4>Why it matters</h4>
-<p>The paper's own reading of (c) is modest: the verifier may be leaning on coarse cues rather than truly checking. That caution is worth keeping. A learned verifier is a pattern-matcher trained on labels, and the next section shows what happens when you search hard against one. Judging each step, the idea behind (a), is what <em>Let's Verify Step by Step</em> scales up with human labels on every step.</p>
+<p>The paper's own reading of (c) is modest: the verifier may be leaning on coarse cues rather than truly checking. That caution is worth keeping. A learned verifier is a pattern-matcher trained on labels, and the next section shows what happens when you search hard against one. Judging each step, the idea behind (a), is what <a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a> scales up with human labels on every step.</p>
 </section>
 
 <section id="s5">
@@ -461,7 +461,7 @@ vote(6)  # → ({11: 1, 18: 2, 26: 3}, 26)</code></pre>
 </div>
 <p class="reading"><strong>Reading it:</strong> now the verifier ranks a fixed pile of completions, and the x-axis (log scale) is how many of the top-ranked ones get a vote, from 1 (plain best-of-n) to 100. With 100 completions the best is to let the top 3 to 5 vote (39.1%, up from 38.3% for the top one alone); letting all 100 vote falls to 28.4%. Switch to 3,200 completions: the best number of voters grows to about 30 (43.8%), because a bigger pile has more good solutions near the top. Voting also rescues the large piles that hurt plain best-of-n: 3,200 completions with 30 voters beats every setting in the chart above. Redrawn from the paper's Figure 7(b); values recovered from the plotted points.</p>
 <h4>Why it matters</h4>
-<p>Voting among verifier favourites combines the two selection rules that <a href="self-consistency.html">self-consistency</a> and this paper each use alone: agreement protects against one lure, the verifier filters out the obvious junk. The follow-up paper, <em>Let's Verify Step by Step</em>, tries a close cousin: votes weighted by the reward model's score.</p>
+<p>Voting among verifier favourites combines the two selection rules that <a href="self-consistency.html">self-consistency</a> and this paper each use alone: agreement protects against one lure, the verifier filters out the obvious junk. The follow-up paper, <a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a>, tries a close cousin: votes weighted by the reward model's score.</p>
 </section>
 
 <section id="s5-try">
@@ -537,7 +537,7 @@ round(M_big / M_small, 1)  # → 29.2
 verified_6B, finetuned_175B = 38.76, 34.33
 round(verified_6B - finetuned_175B, 1)  # → 4.4</code></pre>
 <h3 class="rung">Why it matters</h3>
-<p>The claim is about <em>scaling</em>: verification's line in Figure 5 is steeper, so the gap should widen with more data and harder problems. The paper expected verification to carry over to harder maths, and the next generation of work did exactly that, with finer-grained checking (<em>Let's Verify Step by Step</em>) and with the check turned into a training signal (<a href="deepseekmath-grpo.html">DeepSeekMath and GRPO</a>).</p>
+<p>The claim is about <em>scaling</em>: verification's line in Figure 5 is steeper, so the gap should widen with more data and harder problems. The paper expected verification to carry over to harder maths, and the next generation of work did exactly that, with finer-grained checking (<a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a>) and with the check turned into a training signal (<a href="deepseekmath-grpo.html">DeepSeekMath and GRPO</a>).</p>
 </section>
 
 <section id="appf">
@@ -577,7 +577,7 @@ round(verified_6B - finetuned_175B, 1)  # → 4.4</code></pre>
   <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
   <tbody>
     <tr><td>GSM8K is hard for the largest models</td><td>Close to saturated; harder sets (MATH and beyond) took over as the frontier test</td><td><a data-lesson="primer/ml/benchmarks.html">benchmarks</a></td></tr>
-    <tr><td>A verifier trained on final-answer labels</td><td>The <span class="t" data-t="outcome reward model">outcome reward model</span>; step-level labels gave the <span class="t" data-t="process reward model">process reward model</span></td><td><em>Let's Verify Step by Step</em> (Lightman et al., 2023)</td></tr>
+    <tr><td>A verifier trained on final-answer labels</td><td>The <span class="t" data-t="outcome reward model">outcome reward model</span>; step-level labels gave the <span class="t" data-t="process reward model">process reward model</span></td><td><a href="lets-verify-step-by-step.html">Let's Verify Step by Step companion</a></td></tr>
     <tr><td>Best-of-100 at test time</td><td>One of several ways to spend <span class="t" data-t="test-time compute">test-time compute</span>, alongside votes, search and long chains</td><td><a data-lesson="primer/ml/reasoning.html#pass_at_n">pass@n</a></td></tr>
     <tr><td>Lures fool the verifier past 400 samples</td><td>Known as reward model over-optimisation; programs that check answers are preferred where they exist</td><td><a data-lesson="primer/ml/reinforcement.html#verify"><code>verify</code></a></td></tr>
     <tr><td>The generator never learns from the verifier</td><td>The check becomes the reward for reinforcement learning, which trains the generator itself</td><td><a href="deepseekmath-grpo.html">DeepSeekMath companion</a></td></tr>

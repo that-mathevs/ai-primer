@@ -34,6 +34,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/interpretability.html",
   "term": "activation patching"
  },
+ "active learning": {
+  "def": "Choosing which examples to label next by what the current model is likely to get wrong, so each paid label teaches more.",
+  "lesson": null,
+  "term": "active learning"
+ },
  "actor-critic": {
   "def": "A reinforcement learner in two parts: the actor (the policy) chooses actions, and the critic (a value network) predicts the reward to expect, which serves as the baseline.",
   "lesson": "primer/ml/reinforcement.html",
@@ -2424,6 +2429,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/reasoning.html",
   "term": "outcome reward model"
  },
+ "outcome supervision": {
+  "def": "Training a reward model from the final result alone: each solution is labelled right or wrong by its answer, never step by step.",
+  "lesson": "primer/ml/reasoning.html",
+  "term": "outcome supervision"
+ },
  "outer product": {
   "def": "A column vector times a row vector, giving a table whose entry (m, c) is the product of their m-th and c-th numbers.",
   "lesson": "primer/ml/efficient_architectures.html",
@@ -2733,6 +2743,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A verifier that scores each intermediate step.",
   "lesson": "primer/ml/reasoning.html",
   "term": "process reward model"
+ },
+ "process supervision": {
+  "def": "Training a reward model from labels on each intermediate step, so it learns where a solution went wrong.",
+  "lesson": "primer/ml/reasoning.html",
+  "term": "process supervision"
  },
  "product quantization": {
   "def": "Compressing a vector by splitting it into chunks and replacing each chunk with the ID of its nearest entry in a small codebook.",
