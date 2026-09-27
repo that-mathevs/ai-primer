@@ -52,7 +52,7 @@ source that says so.
   source), watch it fail, then fix the code.
 - **Prose is wrong**: fix the prose. If a checker could have caught this kind
   of mistake everywhere (a banned phrase, a broken link shape, a missing
-  section), add the check to `tests/` or `tools/sitecheck.py` so the whole
+  section), add the check to [`tests/`](../../../tests) or [`tools/sitecheck.py`](../../../tools/sitecheck.py) so the whole
   class stays fixed.
 - **Teaching gap**: climb the missing rung, following the reference lesson.
 

@@ -5,7 +5,7 @@ description: Merge finished work into main and publish the site: the full gate, 
 
 # Shipping the primer
 
-Every push to `main` publishes the site: `.github/workflows/pages.yml` runs
+Every push to `main` publishes the site: [`.github/workflows/pages.yml`](../../../.github/workflows/pages.yml) runs
 the same gate as below and deploys `docs/html` to GitHub Pages. A red gate
 locally is a red deploy, so main only moves when the gate is **green**.
 
@@ -17,9 +17,9 @@ git merge --no-ff <branch> -m "Merge <what it adds>"
 
 Conflicts come from shared files several branches extend at once:
 
-- `primer/glossary.py`: keep both sides' entries. If both added the same
+- [`primer/glossary.py`](../../../primer/glossary.py): keep both sides' entries. If both added the same
   term, keep the clearer definition, once.
-- `docs/papers/CATALOG.md` and a lesson's `## The papers behind this lesson`:
+- [`docs/papers/CATALOG.md`](../../../docs/papers/CATALOG.md) and a lesson's `## The papers behind this lesson`:
   keep both sides' rows and links.
 
 Run `make test` after each merge, before the next one.

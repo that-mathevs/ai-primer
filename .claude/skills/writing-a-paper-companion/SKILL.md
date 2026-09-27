@@ -14,7 +14,7 @@ bar for done. Work each step to its criterion before starting the next.
 
 ## 1. Claim the paper
 
-Find its row in `docs/papers/CATALOG.md`: slug, title, primary source,
+Find its row in [`docs/papers/CATALOG.md`](../../../docs/papers/CATALOG.md): slug, title, primary source,
 lessons.
 
 **Done when** you hold the slug, the arXiv id or DOI, and the list of lessons.
@@ -43,8 +43,8 @@ redrawing, and each headline result with the section it comes from.
 
 ## 4. Copy the reference
 
-Read `docs/papers/README.md` in full, then the reference companion,
-`docs/papers/attention-is-all-you-need.html`. Start your page from its
+Read [`docs/papers/README.md`](../../../docs/papers/README.md) in full, then the reference companion,
+[`docs/papers/attention-is-all-you-need.html`](../../../docs/papers/attention-is-all-you-need.html). Start your page from its
 skeleton: `<head>`, hero with toolbar and the **About this page** box, table of
 contents, the empty glossary section, footer, and `window.PAPER`.
 
@@ -60,14 +60,14 @@ everyday picture, tiny example, diagram, the math, why it matters today.
   `data-block` parts) or a plot from `onReady`, followed by its
   `<p class="reading"><strong>Reading it:</strong>`. At least one per page.
 - **Every term** a reader might not know is a `data-t` key. A general term
-  missing from `primer/glossary.py` gets an entry there, in the section it
+  missing from [`primer/glossary.py`](../../../primer/glossary.py) gets an entry there, in the section it
   belongs to, pointing at the lesson that teaches it; a term only this paper
   uses gets an inline `data-tip`.
 - **Quotes** are one or two sentences per section at most, in
   `blockquote.quote` with a `<cite>`. Numbers you made up are labelled
   illustrative on the page.
 - House style: colons, commas and parentheses where an em dash would go;
-  prices as `\$2`; the teacher's voice from `CLAUDE.md`.
+  prices as `\$2`; the teacher's voice from [`CLAUDE.md`](../../../CLAUDE.md).
 
 **Done when** every section of the paper has its ladder, and every equation,
 figure and term meets the list above.
@@ -75,10 +75,11 @@ figure and term meets the list above.
 ## 6. Link it from the lessons
 
 In each lesson whose papers section cites this paper, end that entry with
-`[Annotated companion](<up>/papers/<slug>.html)`. `<up>` climbs from the
-built lesson page to the site root: `../..` for a module directly under
-`primer/ml/` or `primer/agents/`, `../../..` one package deeper
-(`primer/ml/embeddings/`, `primer/ml/generative/`). A lesson the page links
+a link climbing from the built lesson page to the site root:
+`[Annotated companion](../../papers/<slug>.html)` for a module directly under
+[`primer/ml/`](../../../primer/ml) or [`primer/agents/`](../../../primer/agents), and
+`[Annotated companion](../../../papers/<slug>.html)` one package deeper
+([`primer/ml/embeddings/`](../../../primer/ml/embeddings), [`primer/ml/generative/`](../../../primer/ml/generative)). A lesson the page links
 must be in the paper's catalog row, because the row builds the page's
 "Lessons that build this" box.
 
