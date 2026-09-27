@@ -6,6 +6,114 @@ Run: `python -m primer.ml.big_picture`
 New to the notation (vectors, sums, logarithms)? Every symbol is decoded
 where it appears, and `primer.notation` teaches them all from zero.
 
+## Level 1: The practitioner's guide
+
+**In one sentence.** A language model is a next-token scorer run in a loop:
+the prompt is cut into tokens, each token becomes a vector, the vectors
+pass through a stack of transformer blocks, the last position is scored
+against the whole vocabulary, one token is drawn, appended, and the loop
+runs again until a stop token or a length limit.
+
+**When you need it.** You need this picture whenever you set a parameter
+you can't explain (`temperature`, `top_p`, `max_tokens`), read a bill that
+counts input and output tokens differently, or debug an answer that was cut
+off, repeats itself, or comes out as gibberish. The tell: you are adjusting
+a sampling knob by trial and error, or estimating cost in words when the
+meter counts tokens. This lesson's toy tokenizer turns "Reset your password"
+into 5 tokens, and " password" is one of them while "Reset" is two, so a
+word count is only an estimate. You don't need this lesson to write a good
+prompt, and you don't need it to pick a model by its benchmark scores; you
+need it the first time a model's behaviour has to be predicted rather than
+observed.
+
+**Your options.** The loop has a few knobs a caller can turn, from the
+cheapest to the most certain:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Leave sampling at its defaults | Draws each token in proportion to the model's probabilities (temperature 1) | The variety the model was trained to produce | Run-to-run variation | The API's defaults |
+| Lower the temperature, down to greedy | Divides the scores before softmax; at 0 it takes the single most likely token | The likely answer more often: at temperature 0.5 this lesson's top token rises from 0.63 to 0.84 | Blander text, and repetition at 0 (Holtzman et al., 2019); still not identical runs | One request parameter |
+| Cut the tail (top-k, top-p) | Keeps only the k most likely tokens, or the smallest set whose probabilities reach p | No draws from the long tail of near-zero tokens | A knob some hosted APIs have withdrawn; open-model servers keep it | One request parameter |
+| Bound the length (`max_tokens`, stop sequences) | Ends the loop at a token limit or at a string you name | A ceiling on cost and latency per call | Truncated answers if the limit is too low; check the stop reason | One request parameter |
+| Reuse the prefix (KV cache, prompt caching) | Keeps the work done on tokens that haven't changed | Each new token costs one position instead of a re-read of everything: 219 positions against 23,900 for 200 tokens after a 20-token prompt | Server memory; caching rules and prices that differ by vendor | The serving stack |
+| Constrain the output (schema, grammar) | Forbids, at every step, any token that cannot lead to a valid shape | A parseable answer by construction | A compiled schema and a small check per token | The model server (`primer.ml.structured_output`) |
+
+**How to choose.** Start from who reads the answer and how long it is.
+
+- Extraction, classification, tool calls: low temperature, a schema where
+  the server offers one, and a `max_tokens` sized to the answer.
+- Writing, brainstorming, dialogue: the default temperature, and a length
+  bound that stops runaway output rather than shaping it.
+- Long documents in the prompt: the input is read in one parallel pass, so
+  it costs money more than time; cache the unchanged prefix when you send
+  it repeatedly.
+- Agents and multi-turn systems: every turn re-sends the whole history, so
+  the prompt grows with the conversation; bound each answer and watch the
+  stop reason, because a truncated tool call is a broken one.
+- Whatever you pick, measure tokens in and out on your own traffic. Output
+  tokens are produced one loop iteration at a time, so the cheapest way to
+  make a call faster is to ask for less.
+
+**What it costs.** Two meters run. Input tokens go through the model in
+one parallel pass, so a long prompt costs money and memory more than
+time. Output tokens are produced one per trip round the loop, so latency is
+proportional to length: this lesson's naive loop reads the prompt plus
+everything generated so far at every step (14 positions to produce 4 tokens
+from a 2-token prompt), and a KV cache turns that into one position per
+token. Context is a hard ceiling: the position table has a fixed number of
+rows (64 in this toy; `max_position_embeddings` in a Hugging Face config,
+where `LlamaConfig` defaults to 2048, and 4k in the Llama 2 paper), and
+prompt plus answer must fit inside it. Quality is measured on the same loop: the training loss is
+the average of −ln p for the real next token, and perplexity is *e* raised
+to it. This lesson's untrained model scores 5.97 against 5.99 for a blind
+guess over 400 tokens (perplexity 393), and training over trillions of
+tokens (2.0T for Llama 2) is what pushes that number down.
+
+**What breaks.**
+
+- **Gibberish.** Random weights give a nearly flat guess over the
+  vocabulary, and the demo's untrained model continues "The cat" with byte
+  fragments. In practice the same symptom comes from a tokenizer that
+  doesn't match the model, so ids fetch the wrong rows of the table. Check
+  the pairing before the weights.
+- **Cut-off answers.** The loop stopped at `max_tokens`, not at a stop
+  token. Claude's API reports `end_turn` when the model finished on its own
+  and another stop reason when your limit or stop sequence ended it; treat
+  anything but a natural end as incomplete.
+- **Temperature 0 that still varies.** Greedy picks the argmax, but Claude's
+  reference says results are not fully deterministic even at 0.0, and the
+  arithmetic on real serving hardware is why.
+- **Repetition.** Always taking the most likely token produces loops of the
+  same phrase; Holtzman et al. (2019) showed it and proposed nucleus
+  sampling as the fix.
+- **A bill that surprised you.** Cost is counted in tokens, not words, and
+  a conversation re-sends its whole history every turn.
+- **A context error.** Prompt plus requested output exceeded the position
+  table. Shorten the prompt or the `max_tokens`, or retrieve less.
+
+**In the wild.** The pipeline is the decoder-only recipe of GPT-2 (Radford
+et al., 2019: byte-level BPE, learned positions, tied embeddings) that
+GPT-3 (Brown et al., 2020) scaled until instructions in the prompt were
+enough. Hugging Face's `generate()` exposes the loop's knobs in a
+`GenerationConfig` (`do_sample`, otherwise greedy; `temperature` 1.0,
+`top_k` 50, `top_p` 1.0, `max_new_tokens`, `repetition_penalty`,
+`num_beams`), and its `LlamaForCausalLM` returns logits of shape (batch,
+sequence, vocabulary) with a `logits_to_keep` option because, as its docs
+put it, only the last token's logits are needed for generation. Claude's
+Messages API offers `temperature` (0.0 to 1.0, default 1.0; models
+released after Claude Opus 4.6 accept only 1.0), `max_tokens`,
+`stop_sequences` and a `stop_reason` on every response, and lets you set
+`max_tokens` to 0 to warm the prompt cache without generating. Karpathy's
+nanoGPT is this lesson at full size, in a few hundred lines. The papers are
+linked at the end of the lesson.
+
+**Go deeper.** Level 2 traces "Reset your password" through every box with
+its shapes, works temperature by hand on three scores, counts the loop's
+positions, and measures the loss of a model that has learned nothing. If you
+only needed to set the knobs, you are done.
+
+## Level 2: How it works, from scratch
+
 This lesson wires the real pieces from the other lessons into one working
 pipeline: the tokenizer from `primer.ml.tokenization`, the transformer from
 `primer.ml.transformer`, and a sampling loop. Keep this one picture in your
