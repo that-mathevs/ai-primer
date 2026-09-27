@@ -11,7 +11,124 @@ practice: **the data** (where trillions of tokens come from and how they are
 cleaned) and **the machine** (how one training run is spread across
 thousands of GPUs without running out of memory, precision or patience).
 
-## The everyday picture
+## Level 1: The practitioner's guide
+
+**In one sentence.** Pretraining is the stage that turns trillions of tokens
+of curated text into a base model on thousands of GPUs; you will almost never
+run it, but every choice made there (which data, how much, how clean) reaches
+you as what a model knows, which languages and code it handles, how well a
+given size performs, and the date its knowledge stops.
+
+**When you need it.** You need this lesson the day you choose a model, and
+again the day you build a corpus of your own. Choosing a model is mostly
+reading the consequences of someone else's pretraining: the knowledge
+cutoff, the languages in the mixture, how many tokens a model of that size
+saw, and whether code was in the diet. Building a corpus (for retrieval,
+for fine-tuning, or for continued pretraining) means running the same belt
+the labs run: language identification, quality rules, exact and
+near-duplicate removal. The tell that you are in pretraining territory:
+the question is "does the model know X?" rather than "does it behave
+well?", or a model is reciting a page of the web word for word. What you
+do not need is to run pretraining yourself: the compute-optimal run for a
+7-billion-parameter model is about 140 billion tokens and 4,100 GPU-hours
+at a realistic 400 teraFLOP/s per GPU (this lesson's `training_flops`),
+and the 405-billion-parameter Llama 3 run used up to 16,384 GPUs for 54
+days with 419 unexpected interruptions (the Llama 3 paper, quoted in
+section 5).
+
+**Your options.** From the cheapest to the most committed:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Use a hosted model as-is | Someone else's pretraining, tuning and serving, behind an API | The best general knowledge you can buy; a cutoff and a mixture you did not choose | Per-token prices, no control over the data | The vendor |
+| Use an open-weights model as-is | Pick a checkpoint whose card states its tokens, mixture and cutoff | The same, with the model on your hardware and the card to read | Serving, and a licence to check | Your servers |
+| Curate your own corpus with the pretraining toolkit | Language ID, quality rules, hashing and MinHash over your documents before they reach retrieval or a fine-tune | No duplicates, no junk, no benchmark leaks in your data | A pipeline run; the filters are cheap, deduplication is the expensive step | Your data pipeline |
+| Continued pretraining on domain text | Keep training an existing base model on billions of tokens of your field, with the next-token loss | Domain vocabulary and facts learned the way general knowledge was; the model still needs its assistant tuning afterwards | GPUs for days or weeks, a data mixture that keeps some general text, evaluations for what it forgot | Your training stack |
+| Train a small model from scratch | Curate, mix, tokenize, then run the parallel training loop | Full control of the data and the cutoff | About 20 tokens per parameter for a compute-optimal model, far more if it will serve billions of requests; the whole engineering of section 2 onwards | A cluster, and a team |
+
+**How to choose.** Start from what the model has to know, then from what it
+will cost to serve.
+
+- Missing knowledge that changes or must be cited: retrieval, not any form
+  of training (`primer.ml.training_stages` makes the case).
+- Choosing between two models of the same size: prefer the one trained on
+  more tokens of cleaner data. Past the compute-optimal 20 tokens per
+  parameter, a smaller model trained longer is cheaper to run forever after,
+  which is why Llama 2 7B saw about 286 tokens per parameter and Llama 3 8B
+  more than 15 trillion tokens (section 1k).
+- A field with its own vocabulary that prompting and a small fine-tune
+  cannot cover (a language of contracts, a scientific literature): continued
+  pretraining, once you hold billions of domain tokens. Gururangan et al.
+  (2020) found a second phase of pretraining on domain text improves the
+  tasks in that domain, across four domains and eight tasks.
+- Any corpus of your own: deduplicate and filter before you train or index.
+  The lesson's toy belt keeps 2 of 7 crawled pages, and the large public
+  pipelines keep only a small fraction of the crawl they start from.
+- Whatever you pick, the rule holds: data decides what the model learns, and
+  compute cannot put back what the data never held.
+
+**What it costs.** Data comes first. FineWeb, an open pipeline over 96
+Common Crawl snapshots, ends at about 15 trillion tokens after filtering and
+deduplication (section 1). Compute follows a rule of thumb from this lesson:
+about six floating-point operations per parameter per token, so the 7B model
+at 140 billion tokens costs 5.88 × 10²¹ operations. Memory is the reason it
+takes a cluster: Adam in mixed precision holds 16 bytes per parameter, 112
+GB for 7B, before any activation, and one 80 GB GPU cannot hold it (section
+2). Sharding the state across 64 GPUs brings it under 2 GB each (the ZeRO
+paper's example), at the price of communication that the frameworks hide.
+Failures are the weather at that scale: with a one-minute checkpoint and a
+failure every three hours, the least you can waste is 10.5% of the run, and
+a ten-second asynchronous save cuts that to 4.3% (section 5d). None of this
+is your bill, but all of it is why a frontier model's price per token is
+what it is, and why open checkpoints are released at the sizes they are.
+
+**What breaks.**
+
+- **Duplicates.** A page kept 100 times is recited: in the lesson's bigram
+  toy, the chance of regurgitating a boilerplate line goes from 0.014 to
+  0.93, and Lee et al. (2021) measured about ten times less memorized text
+  after deduplication. Deduplicate any corpus you train on.
+- **Contamination.** A benchmark question copied across the web ends up in
+  the training data, and the score on it measures recall. Check your
+  evaluation set against your training set with the same near-duplicate
+  tools.
+- **Filters with blind spots.** A quality classifier keeps what resembles
+  its reference set; pick encyclopedia text alone as "good" and you filter
+  out dialects, forums and whole topics (section 1c).
+- **Model collapse.** Training on a model's own outputs loses the rare
+  values first: refitting on 20 samples keeps 95% of the spread per
+  generation, and 200 generations leave 0.0035% of the variance. Keep real
+  data in every mix and filter synthetic data with checks that do not come
+  from the same model.
+- **The cutoff.** A base model's knowledge is frozen at its crawl date.
+  Retrieve what changes.
+- **Numerics, if you do train.** fp16 underflows gradients below about
+  6 × 10⁻⁸ without loss scaling; bf16 keeps fp32's range and became the
+  default. A tiny update rounds away in 16 bits, so the master weights stay
+  in fp32 (section 4).
+
+**In the wild.** Common Crawl is the raw material for nearly every open
+pretraining corpus; FineWeb and FineWeb-Edu (Penedo et al., 2024) are open
+curations of it, built with the datatrove library, whose pipeline blocks
+include filters and MinHash deduplication. The quality rules are the ones
+the Gopher paper published, and fastText's language identifier covers 176
+languages. On the machine side, DeepSpeed implements the ZeRO stages,
+PyTorch FSDP is stage 3, Megatron-LM is the tensor-parallel split, GPipe
+introduced the micro-batch pipeline, and PyTorch's automatic mixed
+precision runs the bf16 loop with its master copy. Llama 3 nests all of
+these with a fourth kind, context parallelism, across 16,384 GPUs;
+DeepSeek-V3 trained largely in fp8. The papers are linked at the end of the
+lesson.
+
+**Go deeper.** Level 2 builds the whole belt on seven crawled pages: a
+stop-word language detector, the Gopher rules, a naive Bayes quality
+classifier, MinHash and locality-sensitive hashing with their S-curve, then
+the memory bill of a 7B model, ring all-reduce, ZeRO's stages, tensor and
+pipeline parallelism with the bubble counted cell by cell, floating-point
+formats bit by bit, and the checkpoint interval as a square root. If you
+only needed to choose a model or clean a corpus, you are done.
+
+## Level 2: How it works, from scratch
 
 Imagine writing an encyclopedia by reading everything ever printed. Two
 problems appear at once.
