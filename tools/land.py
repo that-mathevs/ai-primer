@@ -97,6 +97,7 @@ def main() -> int:
         if f"branch refs/heads/{branch}" in line:
             path = line.split("\n")[0].removeprefix("worktree ")
             wt_branch = git("-C", path, "rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+            git("worktree", "unlock", path, check=False)  # the harness locks agent worktrees
             git("worktree", "remove", "--force", path, check=False)
             name = Path(path).name
             git("branch", "-D", f"worktree-{name}", check=False)
