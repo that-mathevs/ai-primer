@@ -309,6 +309,16 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "binary quantization"
  },
+ "binomial coefficient": {
+  "def": "\"n choose k\", written C(n, k): the number of different groups of k items that can be picked from n, ignoring order. C(10, 5) = 252.",
+  "lesson": "primer/ml/benchmarks.html",
+  "term": "binomial coefficient"
+ },
+ "binomial distribution": {
+  "def": "The chances of getting each possible number of successes in n independent tries that each succeed with the same probability p.",
+  "lesson": "primer/ml/benchmarks.html",
+  "term": "binomial distribution"
+ },
  "bits per dimension": {
   "def": "A model's negative log-likelihood per number in the data, in bits: how long a code the model needs, on average, for each pixel value. Lower is better.",
   "lesson": "primer/ml/losses.html",
@@ -1229,6 +1239,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/training_stages.html",
   "term": "full fine-tune"
  },
+ "functional correctness": {
+  "def": "Judging generated code by running it against tests rather than by comparing its text with a reference solution.",
+  "lesson": "primer/ml/benchmarks.html",
+  "term": "functional correctness"
+ },
  "fused multiply-add": {
   "def": "One instruction that multiplies two numbers and adds the result to a running total.",
   "lesson": "primer/ml/hardware.html",
@@ -1500,7 +1515,7 @@ window.PRIMER_GLOSSARY = {
   "term": "HyDE"
  },
  "hyperparameter": {
-  "def": "A setting people choose before training rather than one the model learns, such as the learning rate, the batch size or PPO's clip range.",
+  "def": "A setting chosen before training rather than learned from data, such as the learning rate, the model size or the number of epochs.",
   "lesson": "primer/ml/optimizers.html",
   "term": "hyperparameter"
  },
@@ -3649,6 +3664,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "UMAP"
  },
+ "unbiased estimator": {
+  "def": "A way of estimating a number from random data whose average, over every dataset you might have drawn, equals the true value: it is not systematically high or low.",
+  "lesson": "primer/ml/benchmarks.html",
+  "term": "unbiased estimator"
+ },
  "underfitting": {
   "def": "When a model is too simple, or undertrained, to capture the pattern at all.",
   "lesson": "primer/ml/regularization.html",
@@ -3663,6 +3683,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A subword tokenizer that starts from a huge vocabulary and repeatedly removes the pieces whose loss hurts least.",
   "lesson": "primer/ml/tokenization.html",
   "term": "unigram tokenizer"
+ },
+ "unit test": {
+  "def": "A small program that runs one piece of code on chosen inputs and checks the outputs, passing or failing automatically.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "unit test"
  },
  "unit vector": {
   "def": "A vector rescaled to length 1, so it only carries a direction.",

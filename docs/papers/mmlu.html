@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MMLU, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Hendrycks et al. (2020), the 57-subject multiple-choice exam that became the standard test of what a language model knows.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="mmlu">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 A multitask test</a>
+        <ol>
+          <li><a href="#s3-groups">3.1 to 3.4 Four groups of subjects</a></li>
+          <li><a href="#s3-try">Try it: is a subject above chance?</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Setup: how a letter is chosen</a></li>
+          <li><a href="#s4-2">4.2 Results: size and fine-tuning</a></li>
+          <li><a href="#s4-3">4.2 Results: lopsided knowledge</a></li>
+          <li><a href="#s4-4">4.2 Results: calibration</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Discussion</a></li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#appa">Appendix A: shots, errors, format</a></li>
+      <li><a href="#appb">Appendix B: was the test memorized?</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Measuring Massive Multitask Language Understanding, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Hendrycks, Burns, Basart, Zou, Mazeika, Song and Steinhardt (2020), the paper that introduced MMLU: 57 subjects of multiple-choice questions, from elementary mathematics to professional law.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2009.03300">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2009.03300">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2009.03300">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its tables are not reproduced: a few of its numbers are restated in this page's own charts and tables, each attributed to the table or section it comes from, and its figures are redrawn from scratch. Where a worked example uses numbers the paper does not give (a letter's probability, a toy set of answers), the page says they are illustrative. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s3-try">chance explorer</a> lets you set a subject's size and score and see whether the score can be told apart from guessing.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> builds the scoring rules, error bars and contamination checks this page keeps pointing at, in plain Python.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We propose a new test to measure a text model's multitask accuracy.”<cite>Hendrycks et al. (2020), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2009.03300">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Imagine a single exam paper stapled together from 57 different exams: a school maths quiz, a medical licensing exam, a bar exam, a college physics final, a world religions test. A person who has read widely would pass some sections and fail others. This paper gives that paper to <span class="t" data-t="llm">language models</span>, without teaching them anything for it first, and asks how much of what they read during <span class="t" data-t="pretraining">pretraining</span> they can actually use.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Most models of 2020 scored close to <strong>random chance</strong>: 25%, since every question has four options.</li>
+  <li>The largest GPT-3 (175 billion <span class="t" data-t="parameters">parameters</span>) reached 43.9%, almost 20 points above chance, but below expert level on every one of the 57 subjects.</li>
+  <li>Knowledge was <strong>lopsided</strong>: about 70% on its best subject, near chance on others, with calculation-heavy subjects and subjects about human values (law, morality) among the worst.</li>
+  <li>Models did not know when they were wrong: their confidence was a poor guide to their accuracy.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>MMLU became a standard yardstick of what a model knows: later papers on this site report it as a matter of course (the <a href="lora.html">QLoRA</a> and <a href="llm-as-judge.html">MT-Bench</a> companions both show 5-shot MMLU scores). Reading that number well means knowing exactly how it is produced, which is what this page takes apart.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S1">original</a></span></h2>
+<blockquote class="quote">“We design the benchmark to measure knowledge acquired during pretraining by evaluating models exclusively in zero-shot and few-shot settings.”<cite>Hendrycks et al. (2020), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Earlier <span class="t" data-t="benchmark">benchmarks</span> were being outgrown within a year: GLUE, then SuperGLUE, reached human-level scores almost as soon as they appeared. The authors argue those tests checked language skills that nearly every child has, while models were reading all of Wikipedia, thousands of books and much of the web. So they built a test of the specialised things people have to <em>study</em> to learn, and they ask it cold: the model sees at most five worked examples in its <span class="t" data-t="prompt">prompt</span>, and is never trained on the test's format.</p>
+<h3 class="rung">Tiny example: one question, asked the paper's way</h3>
+<p>Every question arrives inside the same frame: a one-line header naming the subject, up to five worked examples, the question with its four options, and the word “Answer:”. The model's job is to continue with one letter. Hover or tap each part.</p>
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 466" role="img" aria-label="An MMLU prompt: a subject header, up to five worked examples, a question with four options, and Answer:, fed to a model that gives each letter a probability; the highest, B, is the prediction">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="prompt"><rect x="6" y="4" width="368" height="302" rx="10"/></g>
+    <text x="16" y="22" class="lbl">The prompt</text>
+    <g class="blk norm" data-block="header"><rect x="14" y="30" width="352" height="42" rx="7"/><text x="190" y="47" text-anchor="middle">The following are multiple choice questions</text><text x="190" y="64" text-anchor="middle">(with answers) about elementary mathematics.</text></g>
+    <g class="blk plain" data-block="shots"><rect x="14" y="80" width="352" height="42" rx="7" stroke-dasharray="5 4"/><text x="190" y="97" text-anchor="middle">0 to 5 worked examples from the dev set,</text><text x="190" y="114" text-anchor="middle">each ending “Answer: X”</text></g>
+    <g class="blk emb" data-block="question"><rect x="14" y="130" width="352" height="42" rx="7"/><text x="190" y="147" text-anchor="middle">30 players, exactly 5 on each team. Which statement</text><text x="190" y="164" text-anchor="middle">explains how to find the number of teams needed?</text></g>
+    <g class="blk ff" data-block="options"><rect x="14" y="180" width="352" height="80" rx="7"/><text x="24" y="199">A. Add 5 to 30 to find 35 teams.</text><text x="24" y="216">B. Divide 30 by 5 to find 6 teams.</text><text x="24" y="233">C. Multiply 30 and 5 to find 150 teams.</text><text x="24" y="250">D. Subtract 5 from 30 to find 25 teams.</text></g>
+    <g class="blk norm" data-block="answer"><rect x="14" y="268" width="120" height="30" rx="7"/><text x="74" y="288" text-anchor="middle">Answer:</text></g>
+    <path class="wire" d="M190,306 V320" marker-end="url(#arr)"/>
+    <g class="blk lin" data-block="model"><rect x="110" y="322" width="160" height="30" rx="7"/><text x="190" y="342" text-anchor="middle">Language model</text></g>
+    <path class="wire" d="M190,352 V366" marker-end="url(#arr)"/>
+    <text x="366" y="363" text-anchor="end" class="lbl">Next-token probability</text>
+    <g class="blk soft" data-block="letters"><rect x="14" y="370" width="80" height="30" rx="7"/><text x="54" y="390" text-anchor="middle">A 0.06</text></g>
+    <g class="blk soft" data-block="best"><rect x="104" y="370" width="80" height="30" rx="7" stroke-width="3"/><text x="144" y="390" text-anchor="middle">B 0.81</text></g>
+    <g class="blk soft" data-block="letters"><rect x="194" y="370" width="80" height="30" rx="7"/><text x="234" y="390" text-anchor="middle">C 0.07</text></g>
+    <g class="blk soft" data-block="letters"><rect x="284" y="370" width="80" height="30" rx="7"/><text x="324" y="390" text-anchor="middle">D 0.06</text></g>
+    <path class="wire" d="M144,400 V420" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="pred"><rect x="64" y="422" width="252" height="36" rx="7"/><text x="190" y="445" text-anchor="middle">Prediction: B. Key: B. Scored 1.</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with the <strong>header</strong>, then follow the prompt down to the prediction.</p></div>
+  </div>
+  <figcaption>The prompt format of the paper's Figure 1(a) and §4.1, redrawn with a question from its appendix (the Elementary Mathematics example, Figure 29). The four letter probabilities are illustrative.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read top to bottom. Everything inside the dashed frame is text the model reads; nothing is trained. The header (yellow) names the subject; the dashed box is where up to five solved examples from the small dev set go, and is empty in the zero-shot setting. The question (pink) and its four options (blue) are followed by “Answer:”, so the most natural next token is a letter. The model then assigns each of the four letters a probability (green); the highest, B, is the prediction, and it is compared with the answer key. The model never writes an explanation, and no parser is needed.</p>
+<h3 class="rung">What they found, in one line each</h3>
+<ul>
+  <li>Few-shot GPT-3 models up to 13 billion parameters sit at chance (about 25%); the 175-billion one reaches 43.9%.</li>
+  <li>GPT-3's best subject is almost 70%; several are near chance.</li>
+  <li>Its average confidence can be up to 24 points away from its actual accuracy.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The design choice in the quote is the important one. Because the model is never trained on the test, a score measures what was absorbed from ordinary reading, not what was learned from a large pile of practice questions. That is also why, later, the worry about <span class="t" data-t="contamination">contamination</span> matters so much: if the questions leak into the reading, the test no longer measures what it was built to measure.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A spelling test of “cat” and “dog” cannot tell a ten-year-old from a novelist. Commonsense benchmarks such as HellaSwag, Physical IQA and CosmosQA test what “almost every child has”, and models were already close to human level on them. The paper wants harder, specialised questions.</p>
+<h3 class="rung">Two choices the paper argues for</h3>
+<ul>
+  <li><strong>Few-shot, not fine-tuned.</strong> Earlier practice fine-tuned a model on each task's training set. GPT-3 showed that a large model can do many tasks from a handful of examples in the prompt (<a href="gpt-3.html#s2-0">GPT-3 companion</a>), so a diverse test no longer needs a training set per task, and the model cannot learn the dataset's accidental shortcuts.</li>
+  <li><strong>Multiple choice, not free text.</strong> Generated text is notoriously hard to grade automatically, and has no standard metric. Multiple choice is scored by <span class="t" data-t="accuracy">accuracy</span>, with no judgment calls.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>Both choices bought a simple, cheap, comparable number, and both have a price. Multiple choice measures recognition of the right option, not the ability to explain or apply it. The <a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> sets this kind beside exact-match maths, unit-tested code and human-preference arenas, each measuring something narrower than its name.</p>
+</section>
+
+<section id="s3">
+<h2>3 A multitask test <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S3">original</a></span></h2>
+<blockquote class="quote">“Each subject contains 100 test examples at the minimum, which is longer than most exams designed to assess people.”<cite>Hendrycks et al. (2020), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Students collected the questions by hand from freely available practice material: practice questions for the Graduate Record Examination and the United States Medical Licensing Examination, questions written for undergraduate courses, and questions for readers of Oxford University Press books. Some subjects come at several levels (“High School Psychology” and “Professional Psychology”, for instance).</p>
+<h3 class="rung">Tiny example: where every question goes</h3>
+<p>The paper collected 15,908 questions and split them three ways. The <strong>dev</strong> set holds exactly 5 questions per subject, 5 × 57 = 285, and exists only to supply the worked examples in few-shot prompts. The <strong>validation</strong> set (1,540 questions) is for tuning <span class="t" data-t="hyperparameter">hyperparameters</span>. The <strong>test</strong> set (14,079 questions) produces the score.</p>
+<figure class="ix" id="fig-split">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 300" role="img" aria-label="57 subjects in four groups feed a pool of questions split into a 285-question dev set for prompts, a 1,540-question validation set, and a 14,079-question test set that produces the score">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk emb" data-block="hum"><rect x="8" y="8" width="72" height="44" rx="7"/><text x="44" y="27" text-anchor="middle">Humanities</text><text x="44" y="43" text-anchor="middle">13</text></g>
+    <g class="blk ff" data-block="soc"><rect x="86" y="8" width="72" height="44" rx="7"/><text x="122" y="27" text-anchor="middle">Social sci.</text><text x="122" y="43" text-anchor="middle">12</text></g>
+    <g class="blk attn" data-block="stem"><rect x="164" y="8" width="72" height="44" rx="7"/><text x="200" y="27" text-anchor="middle">STEM</text><text x="200" y="43" text-anchor="middle">19</text></g>
+    <g class="blk lin" data-block="other"><rect x="242" y="8" width="72" height="44" rx="7"/><text x="278" y="27" text-anchor="middle">Other</text><text x="278" y="43" text-anchor="middle">13</text></g>
+    <path class="wire" d="M160,52 V74" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="pool"><rect x="60" y="76" width="200" height="40" rx="7"/><text x="160" y="93" text-anchor="middle">15,908 questions</text><text x="160" y="109" text-anchor="middle">4 options each</text></g>
+    <path class="wire" d="M100,116 V150" marker-end="url(#arr2)"/>
+    <path class="wire" d="M160,116 V150" marker-end="url(#arr2)"/>
+    <path class="wire" d="M220,116 V150" marker-end="url(#arr2)"/>
+    <g class="blk norm" data-block="dev"><rect x="8" y="152" width="96" height="56" rx="7"/><text x="56" y="172" text-anchor="middle">dev</text><text x="56" y="188" text-anchor="middle">5 per subject</text><text x="56" y="202" text-anchor="middle">285</text></g>
+    <g class="blk norm" data-block="val"><rect x="112" y="152" width="96" height="56" rx="7"/><text x="160" y="172" text-anchor="middle">validation</text><text x="160" y="188" text-anchor="middle">tuning</text><text x="160" y="202" text-anchor="middle">1,540</text></g>
+    <g class="blk soft" data-block="test"><rect x="216" y="152" width="96" height="56" rx="7" stroke-width="3"/><text x="264" y="172" text-anchor="middle">test</text><text x="264" y="188" text-anchor="middle">≥ 100 each</text><text x="264" y="202" text-anchor="middle">14,079</text></g>
+    <path class="wire" d="M56,208 V240" marker-end="url(#arr2)"/>
+    <path class="wire" d="M264,208 V240" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="shotsuse"><rect x="8" y="242" width="140" height="50" rx="7"/><text x="78" y="262" text-anchor="middle">worked examples</text><text x="78" y="279" text-anchor="middle">in the prompt</text></g>
+    <g class="blk attn" data-block="score"><rect x="172" y="242" width="140" height="50" rx="7"/><text x="242" y="262" text-anchor="middle">accuracy:</text><text x="242" y="279" text-anchor="middle">the reported score</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box: the four groups at the top, then the three splits.</p></div>
+  </div>
+  <figcaption>The dataset of §3, drawn from the counts in its text and the subject list of its Table 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top row is the 57 subjects sorted into the paper's four groups, with how many subjects each holds (counted from its Table 2). They pour into one pool of four-option questions, which splits three ways. Only the test split (green, thick border) produces the reported score; the dev split's only job is to fill the prompt's worked-example slot in <a href="#fig1">Figure 1</a>, and there is no large training split at all. One small puzzle: 285 + 1,540 + 14,079 = 15,904, four fewer than the 15,908 the paper states.</p>
+<h3 class="rung">The math: what does “random chance” look like on 100 questions?</h3>
+<p>With four options, a model that guesses gets 25% on average. But a subject has only about 100 test questions, so even pure guessing wobbles. The <span class="t" data-t="standard error">standard error</span> says how much.</p>
+<div class="eq" data-tex="\htmlData{sym=SE}{\text{SE}} = \htmlData{sym=sqrt}{\sqrt{\htmlData{sym=frac}{\frac{\htmlData{sym=p}{p}\,(1-\htmlData{sym=p}{p})}{\htmlData{sym=n}{n}}}}}" data-fallback="SE = √( p (1 − p) / n )"></div>
+<div class="symtable" data-syms="p,n,frac,sqrt,SE"></div>
+<p class="inwords"><strong>In words:</strong> “the typical distance between a measured score and the true rate is the square root of the true rate times its complement, divided by the number of questions.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a guesser has p = 0.25; on a 100-question subject, SE = √(0.25 × 0.75 / 100) = 0.043, so 95% of guessing runs land between 25 − 1.96 × 4.3 = 16.5% and 33.5%. A model that scores 30% on such a subject cannot be told apart from a guesser. The full test is different: with 14,079 questions, GPT-3's 43.9% carries a margin of only about ±0.8 points.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# p: a guesser's chance per question; n: questions in one subject
+p, n = 0.25, 100
+SE = math.sqrt(p * (1 - p) / n)
+round(SE, 4)  # → 0.0433
+# the 95% range of a guesser's score on this subject
+round(p - 1.96 * SE, 3), round(p + 1.96 * SE, 3)  # → (0.165, 0.335)
+# the whole test: 43.9% on 14,079 questions, margin in points
+round(100 * 1.96 * math.sqrt(0.439 * 0.561 / 14079), 1)  # → 0.8</code></pre>
+<p>This calculation is ours, not the paper's; it uses the formula the benchmarks lesson builds as <a data-lesson="primer/ml/benchmarks.html#standard_error"><code>standard_error</code></a> and <a data-lesson="primer/ml/benchmarks.html#confidence_interval"><code>confidence_interval</code></a>.</p>
+<h3 class="rung">How good is a person?</h3>
+<p>People hired through Amazon Mechanical Turk, with no special training, scored 34.5%. For experts, the authors take the 95th-percentile score of real test-takers on the exams the subjects come from (about 87% on the US medical licensing exams behind Professional Medicine) and make an educated guess where no such figure exists, arriving at an estimated expert level of about 89.8%.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The two ends of the scale are fixed by design: 25% is knowing nothing, and about 90% is a well-trained human specialist. Any single subject is a small sample, so per-subject scores near chance are noisy; the whole test, with over fourteen thousand questions, pins the average down to within a point.</p>
+</section>
+
+<section id="s3-groups">
+<h3>3.1 to 3.4 Four groups of subjects <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A university prospectus: faculties of humanities, social science and science, and then a long list of professional schools and odd courses that fit nowhere else.</p>
+<h4>Tiny example: a few subjects from each group</h4>
+<div class="tablewrap"><table>
+  <caption>A few of the 57 tasks per group, with the concepts the paper lists for them (its Table 2), in short.</caption>
+  <thead><tr><th>Group</th><th>Some of its tasks</th><th>What they ask for</th></tr></thead>
+  <tbody>
+    <tr><td>Humanities (§3.1)</td><td>Professional Law, Formal Logic, Moral Scenarios, High School European History</td><td>applying rules to messy scenarios; logical fallacies and formal logic; widespread moral intuitions</td></tr>
+    <tr><td>Social science (§3.2)</td><td>High School Microeconomics, Econometrics, Security Studies, Professional Psychology</td><td>a mix of world knowledge, qualitative and quantitative reasoning</td></tr>
+    <tr><td>STEM (§3.3)</td><td>Elementary Mathematics, College Mathematics, Conceptual Physics, Abstract Algebra</td><td>procedural problem solving, from arithmetic word problems to GRE-level maths</td></tr>
+    <tr><td>Other (§3.4)</td><td>Professional Medicine, Professional Accounting, Global Facts, Marketing</td><td>the long tail: business, health, and statistics about the world</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the middle column shows the spread of levels inside each group, from elementary school to professional licensing. The right column shows the kind of skill each group leans on: humanities questions often need a rule applied to a detailed scenario (the paper's Figure 2 is a law question of that kind), and STEM questions often need a calculation carried out, which in text means writing maths with LaTeX or with symbols such as * and ^.</p>
+<h4>Why it matters</h4>
+<p>Because every question carries a subject label, one run of the test produces 57 scores, not one. That granularity is what lets the paper find blind spots, and it is also what makes per-subject noise (the section above) worth keeping in mind.</p>
+</section>
+
+<section id="s3-try">
+<h3>Try it: is a subject above chance?</h3>
+<h4>Everyday picture</h4>
+<p>Toss a coin 10 times and 7 heads is unremarkable; toss it 1,000 times and 700 heads is a scandal. The same score means more on a bigger test.</p>
+<p><strong>Try it:</strong> set a subject's number of questions and a model's score on it. The band is the 95% range the score could have come from by luck alone. Watch whether it covers the chance line at 25%. Start at 30% on 100 questions, then raise the questions to 1,000.</p>
+<div class="plot">
+  <div class="controls ui"><label for="ch-n">Questions in the subject, n = <strong id="ch-n-v">100</strong></label><input type="range" id="ch-n" min="20" max="1500" step="10" value="100"></div>
+  <div class="controls ui"><label for="ch-p">Measured score = <strong id="ch-p-v">30%</strong></label><input type="range" id="ch-p" min="0.15" max="0.95" step="0.01" value="0.30"></div>
+  <div id="chance-line"></div>
+  <p class="readout" id="chance-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the horizontal line runs from 0% to 100%. The dashed marks are fixed: chance at 25% and the paper's estimated expert level at 89.8%. The dot is the measured score and the shaded band its 95% range, score ± 1.96 standard errors. At 30% on 100 questions the band reaches down past 25%, so the result is compatible with guessing; at 1,000 questions the same 30% is clearly above chance. Scores near 50% have the widest bands, and scores near the top the narrowest.</p>
+<h4>Why it matters</h4>
+<p>When a paper says a model is “near random” on a subject, this is the yardstick: a band around the score that still covers 25%. A subject with 100 test questions has a band about ±9 points wide at a score of 30%, so differences of a few points on one subject are usually noise.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Two kinds of student sit the exam. GPT-3, in four sizes, reads a few worked examples and answers. UnifiedQA was trained beforehand on other question-answering datasets (a different set of practice papers) and sits this one without further practice. Three smaller models, RoBERTa, ALBERT and GPT-2, were fine-tuned on UnifiedQA's multiple-choice questions and MMLU's own dev and validation questions.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Setup: how a letter is chosen <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“The model then produces probabilities for the tokens ‘A,’ ‘B,’ ‘C,’ and ‘D,’ and we treat the highest probability option as the prediction.”<cite>Hendrycks et al. (2020), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Instead of letting the student write an essay, you watch which of four buttons their finger drifts toward, and take the one it drifts toward most.</p>
+<h4>Tiny example</h4>
+<p>In <a href="#fig1">Figure 1</a>, after reading the prompt ending in “Answer:”, the model's next-token probabilities for the four letters are (illustratively) A 0.06, B 0.81, C 0.07, D 0.06. The largest is B, so the prediction is B. The key says B: a score of 1 for this question.</p>
+<h4>The math: the prediction</h4>
+<div class="eq" data-tex="\htmlData{sym=yhat}{\hat{y}} = \htmlData{sym=argmax}{\arg\max_{\ell \in \{A,B,C,D\}}}\; \htmlData{sym=P}{P}(\htmlData{sym=ell}{\ell} \htmlData{sym=given}{\mid} \htmlData{sym=x}{x})" data-fallback="ŷ = argmax over ℓ in {A, B, C, D} of P(ℓ | x)"></div>
+<div class="symtable" data-syms="x,ell,P,given,argmax,yhat"></div>
+<p class="inwords"><strong>In words:</strong> “the prediction is whichever of the four letters the model thinks is most likely to come next after the prompt.”</p>
+<p class="inwords"><strong>With the numbers:</strong> P(A | x) = 0.06, P(B | x) = 0.81, P(C | x) = 0.07, P(D | x) = 0.06; the largest is 0.81, at ℓ = B, so ŷ = B.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># P(ℓ | x): the model's next-token probability for each letter (illustrative)
+P = {"A": 0.06, "B": 0.81, "C": 0.07, "D": 0.06}
+# argmax over ℓ
+y_hat = max(P, key=P.get)
+y_hat  # → 'B'</code></pre>
+<p>This is one of the two ways the <a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> scores multiple choice. The other asks how probable each option's <em>full text</em> is (<a data-lesson="primer/ml/benchmarks.html#option_logprob"><code>option_logprob</code></a>, <a data-lesson="primer/ml/benchmarks.html#pick_option"><code>pick_option</code></a>); comparing single letters sidesteps that method's bias toward short options. Only the four letters are compared, so the model cannot “miss” by writing something else: if it would rather write “The”, that probability is simply ignored.</p>
+<h4>The math: the score</h4>
+<div class="eq" data-tex="\htmlData{sym=acc}{\text{acc}} = \htmlData{sym=invN}{\frac{1}{N}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=ind}{\mathbf{1}}(\htmlData{sym=yhati}{\hat{y}_i} = \htmlData{sym=yi}{y_i})" data-fallback="acc = (1/N) Σ_{i=1}^{N} 1(ŷ_i = y_i)"></div>
+<div class="symtable" data-syms="N,yhati,yi,ind,sumi,invN,acc"></div>
+<p class="inwords"><strong>In words:</strong> “accuracy is the share of questions where the predicted letter matches the key.”</p>
+<p class="inwords"><strong>With the numbers:</strong> five illustrative questions with predictions (B, C, A, D, B) and keys (B, A, A, D, C): matches 1, 0, 1, 1, 0, so acc = 3 / 5 = 0.6.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># ŷ_i and y_i for five questions (illustrative)
+y_hat = ["B", "C", "A", "D", "B"]
+y = ["B", "A", "A", "D", "C"]
+N = len(y)
+# (1/N) Σ_i 1(ŷ_i = y_i)
+sum(1 for a, b in zip(y_hat, y) if a == b) / N  # → 0.6</code></pre>
+<h4>Averaging over subjects: which average?</h4>
+<p>The paper computes accuracy “across all examples and tasks”, and its Table 1 calls the result an <span class="t" data-tip-title="Weighted average" data-tip="An average where each item counts in proportion to a weight. Averaging over all questions weights each subject or group by how many questions it has.">average weighted accuracy</span>. A small check shows the weighting is real: for GPT-3 X-Large, the plain mean of the four group scores (40.8, 50.4, 36.7, 48.8) is 44.2, but the Average column says 43.9. Averaging over questions lets big groups count for more.</p>
+<div class="eq" data-tex="\htmlData{sym=accw}{\text{acc}} = \htmlData{sym=wfrac}{\frac{\sum_{g} n_g\, a_g}{\sum_{g} n_g}}" data-fallback="acc = Σ_g n_g a_g / Σ_g n_g"></div>
+<div class="symtable" data-syms="g,ng,ag,wfrac,accw"></div>
+<p class="inwords"><strong>In words:</strong> “the overall accuracy is each group's accuracy weighted by how many questions the group has.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a 100-question group at 60% and a 300-question group at 30%. Weighted: (100 × 0.6 + 300 × 0.3) / 400 = 150 / 400 = 0.375. The plain mean of the two group scores would say 0.45.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># n_g questions and a_g accuracy per group (illustrative)
+n_g = [100, 300]
+a_g = [0.6, 0.3]
+# Σ_g n_g a_g / Σ_g n_g
+sum(n * a for n, a in zip(n_g, a_g)) / sum(n_g)  # → 0.375
+# the plain mean of the group scores, for contrast
+round(sum(a_g) / len(a_g), 2)  # → 0.45
+# Table 1, GPT-3 X-Large: the plain mean of the four columns
+round((40.8 + 50.4 + 36.7 + 48.8) / 4, 1)  # → 44.2</code></pre>
+<h4>Zero-shot and few-shot</h4>
+<p>Zero-shot, the question follows the header directly. Few-shot, up to five dev-set questions <em>with</em> their answers go first. Using the same five fixed examples per subject for every model keeps the comparison fair: the <span class="t" data-t="shots">shots</span> are part of the test, not something each lab picks.</p>
+<h4>Why it matters</h4>
+<p>Every piece of this recipe (the header's wording, the number of shots, letter probabilities versus full-option probabilities, question-weighted versus subject-weighted averaging) moves the final number. Two MMLU scores are comparable only when they were produced the same way, which is why later reports state “5-shot” beside the score, and why shared evaluation harnesses exist.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Results: model size and fine-tuning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>On most earlier benchmarks, bigger models improved gradually, each size a little better than the last. On this exam, three GPT-3 sizes sit at the guessing line, and only the largest lifts off.</p>
+<h4>Tiny example</h4>
+<p>GPT-3 at 2.7, 6.7 and 13 billion parameters scores 25.9%, 24.9% and 26.0% few-shot: all chance. At 175 billion it scores 43.9%. UnifiedQA with 11 billion parameters, smaller than the third GPT-3, scores 48.9% without ever seeing an MMLU question in training.</p>
+<div class="plot" id="fig-size">
+  <div id="size-chart"></div>
+  <p class="readout" id="size-readout">Hover the chart, or tab to it and use the arrow keys, to read each model's score.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of parameters on a log scale (each step is ten times more), and the y-axis is average test accuracy. The flat lines are the two ends of the scale: chance at 25% and the estimated expert level at 89.8%. The GPT-3 line (few-shot) lies on the chance line for three sizes, then jumps at 175 billion: this is the shape of the paper's Figure 1(b), where MMLU, unlike commonsense and language benchmarks, shows no gradual climb. The UnifiedQA line starts above chance even at 60 million parameters (29.3%) and climbs through 3 billion (43.7%) to 11 billion (48.9%). Not drawn: the fine-tuned RoBERTa-base (27.9%), ALBERT-xxlarge (27.1%) and GPT-2 (32.4%). Numbers from Table 1 and Appendix A of Hendrycks et al. (2020); sizes are as the paper states them.</p>
+<h4>What the paper concludes</h4>
+<p>Size is a key ingredient: only the largest GPT-3 moves beyond chance, and zero-shot it also does better (about 37.7%, against about 25% for the smaller ones). But fine-tuning on other question-answering data helps too: UnifiedQA beats GPT-3 X-Large with about a sixteenth of its parameters. In Appendix A the paper adds that UnifiedQA's small variants beat similar-sized fine-tuned models, and suggests the reason is the larger pretraining dataset behind its T5 backbone.</p>
+<h4>Why it matters</h4>
+<p>This was an early, clear example of a capability that looks absent at small scale and appears at large scale, and of how much the surrounding training (here, fine-tuning on other QA formats) can substitute for raw size. It also shows that a benchmark is most useful when models score between chance and the ceiling; the <a data-lesson="primer/ml/benchmarks.html#expected_score"><code>expected_score</code></a> curves in the benchmarks lesson show why a test sorts models only in that middle range.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.2 Results: lopsided knowledge <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“We speculate that is in part because GPT-3 acquires declarative knowledge more readily than procedural knowledge.”<cite>Hendrycks et al. (2020), §4.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A person who has read every encyclopedia but never done an exercise can tell you what the order of operations is called, and still get 3 + 4 × 2 wrong. Knowing <em>that</em> (declarative knowledge) is different from knowing <em>how</em> (procedural knowledge).</p>
+<h4>Tiny example</h4>
+<p>GPT-3 does better on College Medicine (47.4%) and College Mathematics (35.0%) than on Elementary Mathematics (29.9%): harder subjects beat an easier one. The paper checks that GPT-3 can state the PEMDAS rule for the order of operations, and then finds it does not apply it consistently. Nine of its ten lowest-scoring tasks are STEM subjects that stress mathematics or calculation.</p>
+<div class="plot" id="fig-groups">
+  <div id="group-bars"></div>
+  <p class="readout" id="group-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one group of subjects, on an axis from 0 to 100%: plain for GPT-3 X-Large (few-shot), striped for UnifiedQA (transfer, no MMLU training). For both models, STEM is the lowest bar and social science the highest, and the gap between them is about 14 to 16 points. Chance is 25% on every bar. Numbers from Table 1 of Hendrycks et al. (2020).</p>
+<div class="plot" id="fig-subjects">
+  <div id="subject-bars"></div>
+  <p class="readout" id="subject-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> five of GPT-3's 57 subject scores, the ones the paper's text names, on the same 0 to 100% axis. The best, US Foreign Policy, is about 69%; the worst, College Chemistry, about 26%, a hair above chance. The middle three show the “unusual order”: the college subjects beat elementary mathematics. None comes close to the expert level of about 90%. The paper's Figure 6 plots all 57, for both models.</p>
+<h4>Beyond calculation</h4>
+<p>Procedure is not the only weak spot. Two verbal tasks, Moral Scenarios and Professional Law, are also among the lowest, which the authors single out as worrying: future systems will need a good grasp of what is legal and what is ethical.</p>
+<h4>Why it matters</h4>
+<p>An average hides a profile. Two models with the same MMLU score can have very different strengths, so a single number says little about whether a model will do well on <em>your</em> subject. The 57-way breakdown is the useful output; the average is a summary of it.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.2 Results: calibration <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A weather forecaster who says “70% chance of rain” is <span class="t" data-t="calibration">calibrated</span> if it rains on about 70% of those days. A forecaster who always says 90% and is right half the time is overconfident, and you cannot use their numbers.</p>
+<h4>Tiny example (illustrative)</h4>
+<p>Ten answers. For five, the model's top probability was high (0.9, 0.9, 0.95, 0.85, 0.9) and three were right. For the other five it was low (0.4, 0.35, 0.45, 0.4, 0.4) and two were right. Average confidence: 0.65. Accuracy: 5 / 10 = 0.5. The model claims 15 points more than it delivers, all of it in the confident group: 0.9 claimed, 0.6 delivered.</p>
+<figure class="ix" id="fig-calib">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 250" role="img" aria-label="Two confidence bins: the high bin claims 0.9 confidence but is right 0.6 of the time, a gap of 0.3; the low bin claims 0.4 and is right 0.4 of the time">
+    <g class="lbl"><text x="36" y="18" text-anchor="end">1.0</text><text x="36" y="118" text-anchor="end">0.5</text><text x="36" y="218" text-anchor="end">0</text></g>
+    <line x1="42" y1="214" x2="312" y2="214" stroke="var(--wire)"/>
+    <line x1="42" y1="14" x2="42" y2="214" stroke="var(--wire)"/>
+    <line x1="42" y1="114" x2="312" y2="114" stroke="var(--border)" stroke-dasharray="3 3"/>
+    <g class="blk ff" data-block="confhi"><rect x="62" y="34" width="44" height="180" rx="3"/><text x="84" y="28" text-anchor="middle">0.9</text></g>
+    <g class="blk soft" data-block="acchi"><rect x="110" y="94" width="44" height="120" rx="3" style="fill:var(--soft)"/><text x="132" y="88" text-anchor="middle">0.6</text></g>
+    <g class="blk emb" data-block="gap"><rect x="156" y="34" width="14" height="60" rx="2"/><text x="164" y="66" text-anchor="start" dx="10">gap 0.3</text></g>
+    <g class="blk ff" data-block="conflo"><rect x="206" y="134" width="44" height="80" rx="3"/><text x="228" y="128" text-anchor="middle">0.4</text></g>
+    <g class="blk soft" data-block="acclo"><rect x="254" y="134" width="44" height="80" rx="3"/><text x="276" y="128" text-anchor="middle">0.4</text></g>
+    <text x="108" y="234" text-anchor="middle" class="lbl">confident answers</text>
+    <text x="252" y="234" text-anchor="middle" class="lbl">unsure answers</text>
+    <text x="108" y="247" text-anchor="middle" class="lbl">(5 of 10)</text>
+    <text x="252" y="247" text-anchor="middle" class="lbl">(5 of 10)</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a bar. Blue bars are what the model claimed; green bars are how often it was right.</p></div>
+  </div>
+  <figcaption>A reliability picture of the tiny example: answers grouped by confidence, claimed confidence beside actual accuracy. Illustrative numbers; the paper's Figures 8 and 11 plot confidence against accuracy for each of the 57 subjects.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one group of answers, sorted by how confident the model was. In each pair, the left bar (blue) is the average confidence the model claimed and the right bar (green) is the share it actually got right. A calibrated model's pairs would be equal heights. Here the unsure answers are honest (0.4 claimed, 0.4 right) and the confident ones are not (0.9 claimed, 0.6 right): the pink sliver is the gap, and the formulas below turn gaps like it into one number.</p>
+<h4>The math: average confidence against accuracy</h4>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=conf}{\text{conf}} &= \htmlData{sym=invN}{\frac{1}{N}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=maxl}{\max_{\ell}}\, \htmlData{sym=P}{P}(\htmlData{sym=ell}{\ell} \htmlData{sym=given}{\mid} \htmlData{sym=xi}{x_i}) \\ \htmlData{sym=gapc}{\text{gap}} &= \htmlData{sym=abs}{\lvert \text{conf} - \text{acc} \rvert} \end{aligned}" data-fallback="conf = (1/N) Σ_i max_ℓ P(ℓ | x_i);  gap = |conf − acc|"></div>
+<div class="symtable" data-syms="xi,maxl,conf,abs,gapc"></div>
+<p class="inwords"><strong>In words:</strong> “the model's confidence on a question is the probability it gave its chosen letter; average that over the questions and compare it with the accuracy.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the ten confidences sum to 6.5, so conf = 0.65; acc = 0.5; gap = |0.65 − 0.5| = 0.15. The paper measures this gap subject by subject and finds it reaching 24 points for some subjects zero-shot, and 14 points few-shot.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># max_ℓ P(ℓ | x_i): the probability of the chosen letter, per answer (illustrative)
+conf_i = [0.9, 0.9, 0.95, 0.85, 0.9, 0.4, 0.35, 0.45, 0.4, 0.4]
+# 1 if the chosen letter matched the key
+right = [1, 1, 1, 0, 0, 1, 0, 1, 0, 0]
+N = len(right)
+conf, acc = sum(conf_i) / N, sum(right) / N
+round(conf, 2), acc  # → (0.65, 0.5)
+# |conf − acc|
+round(abs(conf - acc), 2)  # → 0.15</code></pre>
+<h4>The math: RMS calibration error</h4>
+<p>The average can hide trouble: overconfidence in one group and underconfidence in another cancel out. The paper also reports the <span class="t" data-tip-title="RMS calibration error" data-tip="Root-mean-square calibration error: group answers by confidence, square each group's gap between accuracy and confidence, average the squares weighted by group size, and take the square root. Zero means perfectly calibrated.">RMS calibration error</span>, which compares confidence and accuracy group by group and squares the gaps so they cannot cancel. The paper names it without writing it out; the formula below is from the paper it cites, Hendrycks, Mazeika and Dietterich (2019), <a href="https://arxiv.org/abs/1812.04606">arXiv:1812.04606</a>, Appendix.</p>
+<div class="eq" data-tex="\htmlData{sym=rms}{\text{RMS}} = \htmlData{sym=sqrt}{\sqrt{\htmlData{sym=sumb}{\sum_{j=1}^{b}} \htmlData{sym=wb}{\frac{|B_j|}{N}} \big(\htmlData{sym=accb}{\text{acc}(B_j)} - \htmlData{sym=confb}{\text{conf}(B_j)}\big)^2}}" data-fallback="RMS = √( Σ_{j=1}^{b} (|B_j| / N) (acc(B_j) − conf(B_j))² )"></div>
+<div class="symtable" data-syms="b,Bj,wb,accb,confb,sumb,rms"></div>
+<p class="inwords"><strong>In words:</strong> “sort the answers into confidence groups, take each group's gap between accuracy and confidence, square it, average the squares with each group weighted by its size, and take the square root.”</p>
+<p class="inwords"><strong>With the numbers:</strong> two groups of 5, weight 5 / 10 = 0.5 each. Confident group: 0.6 − 0.9 = −0.3, squared 0.09. Unsure group: 0.4 − 0.4 = 0. RMS = √(0.5 × 0.09 + 0.5 × 0) = √0.045 = 0.212. That is larger than the 0.15 average gap, because squaring lets the confident group's big miss dominate. The paper's example: Elementary Mathematics has a zero-shot RMS calibration error of 19.4%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+conf_i = [0.9, 0.9, 0.95, 0.85, 0.9, 0.4, 0.35, 0.45, 0.4, 0.4]
+right = [1, 1, 1, 0, 0, 1, 0, 1, 0, 0]
+N = len(right)
+# B_j: the answers in each confidence group (indices)
+bins = [range(0, 5), range(5, 10)]
+# acc(B_j) and conf(B_j) for each group
+acc_b = [sum(right[k] for k in B) / len(B) for B in bins]
+conf_b = [round(sum(conf_i[k] for k in B) / len(B), 2) for B in bins]
+acc_b, conf_b  # → ([0.6, 0.4], [0.9, 0.4])
+# √( Σ_j |B_j|/N (acc − conf)² )
+round(math.sqrt(sum(len(B) / N * (a - c) ** 2 for B, a, c in zip(bins, acc_b, conf_b))), 3)  # → 0.212</code></pre>
+<h4>Why it matters</h4>
+<p>A model that is right 44% of the time is much more useful if it can tell you <em>which</em> 44%. The paper found GPT-3's confidence only weakly related to its accuracy zero-shot (a correlation of 0.63 across subjects, rising to 0.81 few-shot). The same concern runs through later work: agreement between samples as a confidence signal in the <a href="self-consistency.html#s3-5">self-consistency companion</a>, and the <a data-lesson="primer/ml/losses.html">losses lesson</a> on how cross-entropy training pushes probabilities toward calibration.</p>
+</section>
+
+<section id="s5">
+<h2>5 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S5">original</a></span></h2>
+<blockquote class="quote">“Learning the entire law exclusively through a small number of practice tests is implausible, so future models must learn more during pretraining.”<cite>Hendrycks et al. (2020), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>People learn law mostly by reading law, not by memorising thousands of past exam questions; there are not enough past questions to learn it that way. The paper argues models should be tested the same way: read widely, then sit an exam in a format they did not train on.</p>
+<h3 class="rung">Tiny example: more reading helps only a little</h3>
+<p>The authors tried to build a better Professional Law model. RoBERTa-base fine-tuned on about 2,000 extra law questions scored 32.8%. Continuing its pretraining on about 1.6 million legal case summaries first, then fine-tuning, raised that to 36.1%: better, but still far below the expert level.</p>
+<h3 class="rung">The three threads of the discussion</h3>
+<ul>
+  <li><strong>Text only.</strong> Much of what people know comes through images, sound and physical interaction. The test is text-only by design; the authors expect benchmarks to follow models into other modalities.</li>
+  <li><strong>The Internet as the training set.</strong> Dev, validation and test sets exist per task, but no training set. Because the evaluation format differs from anything seen in pretraining, the test avoids <span class="t" data-tip-title="Annotation artifacts" data-tip="Accidental patterns in a dataset's labels (a word that usually appears with one answer, say) that a model can exploit to score well without solving the task.">annotation artifacts</span> of the kind a model can exploit when training and test data come from the same collection.</li>
+  <li><strong>Model limitations.</strong> Poor at calculation, poor at modelling human approval and disapproval (law, morality), and below expert level (90%) on every subject. On scaling: the paper cites the <a href="scaling-laws.html">scaling-law</a> estimate that ten times more parameters needs about five times more data, and notes that far less is written about esoteric subjects than about everyday life.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>“Test on a format the model never trained on” is the core bet of the benchmark. It is also why leaked questions are so damaging: the design assumes the only route to a right answer is knowledge absorbed from reading.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#S6">original</a></span></h2>
+<p>The paper introduced a test of how well text models learn and apply knowledge met during pretraining, across 57 subjects and many levels. In 2020, models had only just begun to make real progress on it; their knowledge was lopsided, their confidence untrustworthy, and they were weakest on calculation and on morality and law. The authors offer the test as a way to see those shortcomings clearly.</p>
+</section>
+
+<section id="appa">
+<h2>Appendix A: shots, errors and format <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#A1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Three small checks a careful examiner makes: does showing more solved examples help, what do the confident mistakes look like, and does the exam's layout change the result?</p>
+<h3 class="rung">More shots, higher scores</h3>
+<p>For GPT-3 X-Large, accuracy rises steadily from zero to five worked examples (its Figure 10), but the whole climb is modest: about 37.7% zero-shot against 43.9% five-shot. Most of what the model knows is available without examples; the examples mostly show it the format.</p>
+<h3 class="rung">Confident mistakes are often answers to a slightly different question</h3>
+<p>Asked how many chromosomes all human somatic cells contain, few-shot GPT-3 answered 23 with 97.5% confidence. The answer is 46; 23 is the number of <em>pairs</em>. Many of its other high-confidence mistakes were likewise right answers to nearby questions.</p>
+<h3 class="rung">Format sensitivity</h3>
+<p>GPT-3's accuracy changed little across formatting choices, but UnifiedQA's did: it expects an input shaped like its training data, ending in an end-of-sequence marker <code>&lt;/s&gt;</code>, and removing that marker cost several points. The Moral Scenarios format hurt UnifiedQA substantially.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The error analysis is a reminder that “wrong” on a benchmark can mean a near miss or a total miss, and accuracy counts both the same. The format result is the practical one: a harness that formats prompts differently from what a model expects can cost it points that have nothing to do with knowledge.</p>
+</section>
+
+<section id="appb">
+<h2>Appendix B: was the test memorized? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2009.03300#A2.SS2">original</a></span></h2>
+<blockquote class="quote">“If they memorized the exact question and answer, then they would attain higher accuracy than their true ability.”<cite>Hendrycks et al. (2020), Appendix B.2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A student who has seen the exam before reads its questions fluently, as if recognising them. If fluency went with high marks, you would suspect a leak.</p>
+<h3 class="rung">Tiny example: the check</h3>
+<p>For each task, the authors measure how probable GPT-3 finds the question text itself (its average <span class="t" data-t="log-probability">log-probability</span>, without the answer): a memorised question should look unusually probable. Then they ask whether tasks with more probable questions are also the tasks with higher accuracy. They are not: the correlation across tasks is −0.43 zero-shot and −0.56 few-shot. A <span class="t" data-tip-title="Correlation" data-tip="A number from −1 to 1 saying how closely two quantities rise and fall together: 1 means in lockstep, 0 means unrelated, negative means one tends to fall as the other rises.">correlation</span> near +1 would have been the warning sign; a negative one is the opposite of what memorisation predicts.</p>
+<h3 class="rung">Why it matters</h3>
+<p>It is an indirect check: it needs only the model, not its training data. The authors add two more reassurances (most questions came from PDFs or web pages with answers on separate pages; they would publish a list of sources) and point to the <a href="gpt-3.html#s4">GPT-3 paper's contamination study</a>. The <a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> builds the direct check, <span class="t" data-t="n-gram overlap">n-gram overlap</span> with the training data (<a data-lesson="primer/ml/benchmarks.html#ngram_overlap"><code>ngram_overlap</code></a>), and simulates what leaked questions do to a score (<a data-lesson="primer/ml/benchmarks.html#simulate_contamination"><code>simulate_contamination</code></a>).</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<p>MMLU became one of the most widely reported benchmarks, and then went through the life cycle the <a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> describes: useful while scores were spread out, then <span class="t" data-tip-title="Saturated benchmark" data-tip="A benchmark on which the best models all score near the top, so the remaining differences are smaller than the noise and it can no longer rank them.">saturated</span>. By 2024, the authors of MMLU-Pro describe performance on it as having begun to plateau, making differences between models hard to see.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>What came later</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Four options per question</td><td>MMLU-Pro (Wang et al., 2024, <a href="https://arxiv.org/abs/2406.01574">arXiv:2406.01574</a>) widened the choice to ten options, removed trivial and noisy questions and added harder reasoning ones; accuracy dropped by 16 to 33 points against MMLU, and scores became less sensitive to prompt wording</td><td><a data-lesson="primer/ml/benchmarks.html#expected_score">saturation</a></td></tr>
+    <tr><td>Expert level estimated at 89.8%</td><td>A re-annotation of 5,700 questions (Gema et al., 2024, <a href="https://arxiv.org/abs/2406.04127">arXiv:2406.04127</a>) estimated that 6.49% of MMLU questions contain errors, which caps any honest score below 100%</td><td><a data-lesson="primer/ml/benchmarks.html#expected_score">wrong answer keys</a></td></tr>
+    <tr><td>Letter probabilities, no explanation</td><td>Later evaluations also let models reason before answering; MMLU-Pro found reasoning first helps on its harder questions, in contrast to findings on the original MMLU</td><td><a href="chain-of-thought-prompting.html">chain-of-thought companion</a></td></tr>
+    <tr><td>An indirect memorisation check</td><td>Direct checks by overlap between test items and training data</td><td><a data-lesson="primer/ml/benchmarks.html#ngram_overlap">n-gram overlap</a></td></tr>
+    <tr><td>One score per subject, one average</td><td>Error bars and paired comparisons before calling a gap between two models real</td><td><a data-lesson="primer/ml/benchmarks.html#paired_bootstrap_difference">paired bootstrap</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song and Jacob Steinhardt, <em>Measuring Massive Multitask Language Understanding</em> (2020; ICLR 2021). <a href="https://arxiv.org/abs/2009.03300">arXiv:2009.03300</a>. Quoted sentences are attributed to their sections; numbers restated from the paper's tables are attributed where they appear; every figure is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    p: { tex: "p", name: "Rate", meaning: "The chance of a right answer on one question. For a guesser with four options, 1/4.", shape: "0 to 1", example: "0.25" },
+    n: { tex: "n", name: "Number of questions", meaning: "How many questions the score is averaged over.", shape: "a whole number", example: "100 for a small subject" },
+    frac: { tex: "\\frac{p(1-p)}{n}", name: "Variance of the average", meaning: "p(1 − p) is how much one right-or-wrong result varies; dividing by n shrinks it, because averaging many questions cancels luck.", shape: "", example: "0.1875 / 100 = 0.001875" },
+    sqrt: { tex: "\\sqrt{\\;}", name: "Square root", meaning: "Undoes squaring, turning a variance back into the units of the score.", shape: "", example: "√0.001875 = 0.0433" },
+    SE: { tex: "\\text{SE}", name: "Standard error", meaning: "The typical distance between a measured score and the true rate. About 1.96 of them either side make a 95% range.", shape: "0 to 0.5", example: "0.043" },
+    x: { tex: "x", name: "The prompt", meaning: "Everything the model reads: header, worked examples, question, options, and “Answer:”.", shape: "text", example: "the prompt in Figure 1" },
+    ell: { tex: "\\ell", name: "A letter", meaning: "One of the four answer letters. Only these four next tokens are compared.", shape: "A, B, C or D", example: "B" },
+    P: { tex: "P", name: "Probability", meaning: "The model's probability for the next token, read from its softmax over the vocabulary.", shape: "0 to 1", example: "0.81 for B (illustrative)" },
+    given: { tex: "\\mid", name: "Given", meaning: "Read “given”: the probability of the letter after the model has read the prompt.", shape: "", example: "" },
+    argmax: { tex: "\\arg\\max_{\\ell}", name: "Argmax over the letters", meaning: "Not the largest probability itself, but the letter that has it.", shape: "", example: "B (0.81)" },
+    yhat: { tex: "\\hat{y}", name: "The prediction", meaning: "The hat marks the model's answer, as opposed to the key.", shape: "a letter", example: "B" },
+    N: { tex: "N", name: "Number of test questions", meaning: "How many questions the accuracy is averaged over.", shape: "a whole number", example: "5 (illustrative); 14,079 for the full test" },
+    yhati: { tex: "\\hat{y}_i", name: "Prediction for question i", meaning: "The letter the model chose on the i-th question.", shape: "a letter", example: "ŷ₂ = C" },
+    yi: { tex: "y_i", name: "Key for question i", meaning: "The correct letter for the i-th question.", shape: "a letter", example: "y₂ = A" },
+    ind: { tex: "\\mathbf{1}(\\cdot)", name: "Indicator", meaning: "1 if the statement inside is true, 0 if false. Summing indicators counts matches.", shape: "0 or 1", example: "1(C = A) = 0" },
+    sumi: { tex: "\\sum_{i=1}^{N}", name: "Sum over questions", meaning: "Add up over every question, from the first to the N-th.", shape: "", example: "1 + 0 + 1 + 1 + 0 = 3" },
+    invN: { tex: "\\frac{1}{N}", name: "Divide by the count", meaning: "Turns a total into an average.", shape: "", example: "3 / 5" },
+    acc: { tex: "\\text{acc}", name: "Accuracy", meaning: "The share of questions answered correctly: the benchmark score.", shape: "0 to 1", example: "0.6" },
+    g: { tex: "g", name: "A group", meaning: "One group of questions: a subject, or one of the four supercategories.", shape: "", example: "STEM" },
+    ng: { tex: "n_g", name: "Questions in group g", meaning: "How many test questions the group has; its weight in the average.", shape: "a whole number", example: "100 and 300" },
+    ag: { tex: "a_g", name: "Accuracy in group g", meaning: "The share of group g's questions answered correctly.", shape: "0 to 1", example: "0.6 and 0.3" },
+    wfrac: { tex: "\\frac{\\sum_g n_g a_g}{\\sum_g n_g}", name: "Weighted average", meaning: "Right answers counted across all groups, divided by all questions: each group counts in proportion to its size.", shape: "", example: "150 / 400" },
+    accw: { tex: "\\text{acc}", name: "Overall accuracy", meaning: "The accuracy over every question pooled together, which the paper reports as its average.", shape: "0 to 1", example: "0.375" },
+    xi: { tex: "x_i", name: "Prompt for question i", meaning: "The full prompt for the i-th question.", shape: "text", example: "" },
+    maxl: { tex: "\\max_{\\ell}", name: "Largest over the letters", meaning: "The probability of the chosen letter (the value, unlike argmax): how sure the model was of its answer.", shape: "0.25 to 1", example: "0.9" },
+    conf: { tex: "\\text{conf}", name: "Average confidence", meaning: "The mean probability the model gave its own chosen answers: the accuracy it implicitly claims.", shape: "0.25 to 1", example: "0.65" },
+    abs: { tex: "\\lvert\\cdot\\rvert", name: "Absolute value", meaning: "The size of a difference, ignoring its sign.", shape: "", example: "|0.65 − 0.5| = 0.15" },
+    gapc: { tex: "\\text{gap}", name: "Calibration gap", meaning: "How far average confidence is from accuracy. Zero for a calibrated model; the paper finds up to 24 points.", shape: "0 to 1", example: "0.15" },
+    b: { tex: "b", name: "Number of confidence groups", meaning: "How many bins the answers are sorted into by confidence. The cited paper uses bins of about 100 answers each.", shape: "a whole number", example: "2" },
+    Bj: { tex: "B_j", name: "Confidence group j", meaning: "The answers whose confidence falls in the j-th bin; |B_j| is how many there are.", shape: "a set of answers", example: "the 5 confident answers" },
+    wb: { tex: "\\frac{|B_j|}{N}", name: "Group weight", meaning: "The group's share of all answers, so big groups count more.", shape: "0 to 1", example: "5 / 10 = 0.5" },
+    accb: { tex: "\\text{acc}(B_j)", name: "Accuracy in the group", meaning: "The share of the group's answers that were right.", shape: "0 to 1", example: "0.6" },
+    confb: { tex: "\\text{conf}(B_j)", name: "Confidence in the group", meaning: "The group's average claimed confidence.", shape: "0 to 1", example: "0.9" },
+    sumb: { tex: "\\sum_{j=1}^{b}", name: "Sum over groups", meaning: "Add up over every confidence group.", shape: "", example: "0.045 + 0" },
+    rms: { tex: "\\text{RMS}", name: "RMS calibration error", meaning: "Root-mean-square gap between accuracy and confidence across groups. Squaring stops over- and under-confidence cancelling.", shape: "0 to 1", example: "0.212" },
+  },
+  blocks: {
+    prompt: { title: "The whole prompt", body: "<p>Everything in the frame is text the model reads. Nothing is trained: the model's weights are the same before and after the test.</p>" },
+    header: { title: "The header", body: "<p>Every prompt begins “The following are multiple choice questions (with answers) about [subject].” It tells the model which of the 57 subjects it is in.</p>" },
+    shots: { title: "Worked examples (shots)", body: "<p>Few-shot: up to 5 dev-set questions with their answers, in the same format, each ending “Answer: X”. Zero-shot: this box is empty. The same 5 fixed examples per subject are used for every model, so the comparison stays fair.</p>", lesson: "primer/ml/benchmarks.html" },
+    question: { title: "The question", body: "<p>From the paper's Elementary Mathematics example: “A total of 30 players will play basketball at a park. There will be exactly 5 players on each team. Which statement correctly explains how to find the number of teams needed?” Shortened in the picture.</p>" },
+    options: { title: "Four options", body: "<p>Every MMLU question has exactly four options, labelled A to D. So a model that picks at random scores 25% on average: the chance line.</p>" },
+    answer: { title: "“Answer:”", body: "<p>All prompts end with this cue, so the most natural next token is a letter.</p>" },
+    model: { title: "The language model", body: "<p>GPT-3 in four sizes, reached through an API. It reads the whole prompt and produces a probability for every possible next token.</p>", lesson: "primer/ml/inference.html" },
+    letters: { title: "Probabilities of the other letters", body: "<p>Only the four letter tokens are compared; the model's probability for any other next token is ignored. Illustrative numbers.</p>" },
+    best: { title: "The most probable letter: B", body: "<p>B has the highest of the four probabilities (0.81, illustrative), so it is the prediction. Its value also serves as the model's confidence, used in the calibration results.</p>" },
+    pred: { title: "Scored against the key", body: "<p>The prediction matches the key, so this question scores 1. The test score is the average of these 1s and 0s over all test questions.</p>", lesson: "primer/ml/benchmarks.html#accuracy" },
+    hum: { title: "Humanities: 13 subjects", body: "<p>Law, philosophy, history, logic and ethics: Professional Law, Jurisprudence, International Law, Formal Logic, Logical Fallacies, Moral Disputes, Moral Scenarios, Philosophy, Prehistory, World Religions, and three high-school history tasks.</p>" },
+    soc: { title: "Social sciences: 12 subjects", body: "<p>Economics (micro, macro, econometrics), psychology, sociology, geography, government and politics, security studies, public relations, human sexuality and US foreign policy.</p>" },
+    stem: { title: "STEM: 19 subjects", body: "<p>Mathematics from elementary to college and abstract algebra, physics, chemistry, biology, computer science, statistics, electrical engineering, astronomy, anatomy, computer security and machine learning.</p>" },
+    other: { title: "Other: 13 subjects", body: "<p>The long tail: medicine (clinical knowledge, college and professional medicine, medical genetics, virology, nutrition, human aging), business (accounting, marketing, management, business ethics), global facts, and a Miscellaneous task.</p>" },
+    pool: { title: "15,908 questions", body: "<p>Collected by hand from freely available practice material. Each has four options and one correct answer.</p>" },
+    dev: { title: "Dev set: 285 questions", body: "<p>Exactly 5 per subject. Their only job is to be the worked examples in few-shot prompts.</p>" },
+    val: { title: "Validation set: 1,540 questions", body: "<p>For choosing hyperparameters, never for the reported score. The paper also fine-tunes its smaller models on dev plus validation.</p>" },
+    test: { title: "Test set: 14,079 questions", body: "<p>At least 100 per subject. The reported accuracy is computed here. (The three splits add to 15,904, four fewer than the stated 15,908.)</p>" },
+    shotsuse: { title: "Into the prompt", body: "<p>The dev questions fill the worked-example slot of the prompt in Figure 1.</p>" },
+    score: { title: "The reported score", body: "<p>Accuracy over the test questions: per subject, per group, and overall.</p>", lesson: "primer/ml/benchmarks.html#accuracy" },
+    confhi: { title: "Confident answers: claimed 0.9", body: "<p>The average probability the model gave its chosen letter on its five most confident answers.</p>" },
+    acchi: { title: "Confident answers: right 0.6", body: "<p>Only 3 of those 5 were right. Overconfident.</p>" },
+    gap: { title: "The gap: 0.3", body: "<p>Claimed minus delivered, in the confident group. RMS calibration error squares gaps like this one, so they cannot be cancelled by a group that errs the other way.</p>" },
+    conflo: { title: "Unsure answers: claimed 0.4", body: "<p>The average confidence on the five least confident answers.</p>" },
+    acclo: { title: "Unsure answers: right 0.4", body: "<p>2 of 5 right: this group is calibrated.</p>" },
+  },
+  onReady(P) { chanceExplorer(); sizeChart(P); groupBars(); subjectBars(); },
+};
+
+/* ---- Try it: a subject's 95% range against the chance line ---- */
+function chanceExplorer() {
+  const ns = document.getElementById("ch-n"), ps = document.getElementById("ch-p");
+  const box = document.getElementById("chance-line"), out = document.getElementById("chance-readout");
+  const W = 340, L = 16, R = 324, X = (v) => L + v * (R - L);
+  function draw() {
+    const n = +ns.value, p = +ps.value;
+    const se = Math.sqrt(p * (1 - p) / n), lo = Math.max(0, p - 1.96 * se), hi = Math.min(1, p + 1.96 * se);
+    document.getElementById("ch-n-v").textContent = String(n);
+    document.getElementById("ch-p-v").textContent = `${Math.round(p * 100)}%`;
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => `<line x1="${X(t)}" y1="58" x2="${X(t)}" y2="64" stroke="var(--wire)"/><text x="${X(t)}" y="78" text-anchor="middle" class="lbl">${t * 100}%</text>`).join("");
+    box.innerHTML =
+      `<svg viewBox="0 0 ${W} 110" role="img" aria-label="Number line from 0 to 100 percent with the chance line at 25 percent, the expert line at 89.8 percent, and the score's 95 percent range">` +
+      `<line x1="${L}" y1="58" x2="${R}" y2="58" stroke="var(--wire)"/>${ticks}` +
+      `<rect x="${X(lo)}" y="36" width="${X(hi) - X(lo)}" height="16" rx="4" style="fill:var(--accent);opacity:.35"/>` +
+      `<circle cx="${X(p)}" cy="44" r="5" style="fill:var(--accent)"/>` +
+      `<line x1="${X(0.25)}" y1="20" x2="${X(0.25)}" y2="58" stroke="var(--active)" stroke-dasharray="4 3"/><text x="${X(0.25)}" y="14" text-anchor="middle" class="lbl">chance</text>` +
+      `<line x1="${X(0.898)}" y1="20" x2="${X(0.898)}" y2="58" stroke="var(--wire)" stroke-dasharray="4 3"/><text x="${X(0.898)}" y="14" text-anchor="middle" class="lbl">expert</text>` +
+      `<text x="${W / 2}" y="100" text-anchor="middle" class="lbl">score, with its 95% range from luck alone</text></svg>`;
+    const covers = lo <= 0.25 && hi >= 0.25;
+    out.textContent = `${Math.round(p * 100)}% on ${n} questions: standard error ${(se * 100).toFixed(1)} points, 95% range ${(lo * 100).toFixed(1)}% to ${(hi * 100).toFixed(1)}%. ` +
+      (covers ? "The range covers 25%, so this score cannot be told apart from guessing." : p > 0.25 ? "The range sits above 25%: clearly better than guessing." : "The range sits below 25%: worse than guessing, which usually means a formatting or key problem.");
+  }
+  ns.addEventListener("input", draw);
+  ps.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- Accuracy against model size: Table 1 and Appendix A ---- */
+function sizeChart(P) {
+  const box = document.getElementById("size-chart");
+  const span = [5e7, 2.5e11];
+  P.lineChart(box, {
+    series: [
+      { name: "GPT-3, few-shot", points: [[2.7e9, 25.9], [6.7e9, 24.9], [1.3e10, 26.0], [1.75e11, 43.9]] },
+      { name: "UnifiedQA, transfer", points: [[6e7, 29.3], [3e9, 43.7], [1.1e10, 48.9]] },
+      { name: "random chance (25%)", points: span.map((x) => [x, 25]) },
+      { name: "expert estimate (89.8%)", points: span.map((x) => [x, 89.8]) },
+    ],
+    logX: true, yMin: 0, yMax: 100, width: Math.max(320, Math.min(640, box.clientWidth)), height: 300,
+    xLabel: "parameters", yLabel: "accuracy (%)",
+    xFmt: (v) => (v >= 1e9 ? `${+(v / 1e9).toPrecision(3)}B` : `${+(v / 1e6).toPrecision(3)}M`), yFmt: (v) => `${v.toFixed(1)}`,
+    readout: document.getElementById("size-readout"),
+    ariaLabel: "MMLU accuracy against number of parameters for GPT-3 and UnifiedQA, with chance and expert lines",
+  });
+}
+
+function groupBars() {
+  // [group, GPT-3 X-Large few-shot, UnifiedQA], Table 1 of Hendrycks et al. (2020)
+  const T1 = [["Humanities", 40.8, 45.6], ["Social science", 50.4, 56.6], ["STEM", 36.7, 40.2], ["Other", 48.8, 54.6], ["Average", 43.9, 48.9]];
+  const el = document.getElementById("group-bars");
+  const cols = "minmax(6.5rem, 40%) minmax(0,1fr) 3.2rem";
+  const row = (label, v, bg) => `<div class="share-row" style="grid-template-columns:${cols}"><span>${label}</span><div><div class="share-bar" style="width:${v}%;background:${bg}"></div></div><span>${v.toFixed(1)}%</span></div>`;
+  el.innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--accent)"></i>GPT-3 X-Large, few-shot</span><span><i class="hatch" style="background:var(--hatch) var(--soft-stroke)"></i>UnifiedQA, transfer (striped)</span><span>axis 0 to 100%</span></div>` +
+    T1.map(([g, a, b]) => row(g, a, "var(--accent)") + row("", b, "var(--hatch) var(--soft-stroke)")).join("");
+  document.getElementById("group-readout").textContent =
+    "Lowest group for both models: STEM (36.7% and 40.2%). Highest: social science (50.4% and 56.6%).";
+}
+
+function subjectBars() {
+  // GPT-3 few-shot accuracy on the five subjects named in §4.2 of Hendrycks et al. (2020)
+  const S = [["US Foreign Policy", 69], ["College Medicine", 47.4], ["College Mathematics", 35.0], ["Elementary Mathematics", 29.9], ["College Chemistry", 26]];
+  const el = document.getElementById("subject-bars");
+  const cols = "minmax(6.5rem, 40%) minmax(0,1fr) 3.2rem";
+  el.innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span>GPT-3 X-Large, few-shot: five of its 57 subjects, axis 0 to 100% (chance is 25%)</span></div>` +
+    S.map(([s, v]) => `<div class="share-row" style="grid-template-columns:${cols}"><span>${s}</span><div><div class="share-bar" style="width:${v}%"></div></div><span>${v.toFixed(1)}%</span></div>`).join("");
+  document.getElementById("subject-readout").textContent =
+    "Best named subject 69.0%, worst 26.0%: a spread of 43 points inside one model.";
+}
+</script>
+</body>
+</html>

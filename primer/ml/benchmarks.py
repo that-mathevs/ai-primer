@@ -1219,9 +1219,11 @@ Bradley-Terry fit separates the style preference from the model's strength.
   (2020)**: https://arxiv.org/abs/2009.03300. Introduced MMLU, a
   multiple-choice test across 57 subjects that became the standard
   knowledge benchmark for language models.
+  [Annotated companion](../../papers/mmlu.html)
 - **Chen et al., *Evaluating Large Language Models Trained on Code*
   (2021)**: https://arxiv.org/abs/2107.03374. Introduced HumanEval and the
   unbiased pass@k estimator taught here.
+  [Annotated companion](../../papers/humaneval-pass-at-k.html)
 - **Brown et al., *Language Models are Few-Shot Learners* (2020)**:
   https://arxiv.org/abs/2005.14165. The GPT-3 paper, which measured
   benchmark contamination by n-gram overlap with the training data and

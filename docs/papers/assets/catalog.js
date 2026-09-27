@@ -689,7 +689,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.benchmarks"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "humaneval-pass-at-k",
@@ -701,7 +701,7 @@ window.PRIMER_PAPERS = [
    "primer.ml.benchmarks",
    "primer.agents.coding_agents"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "imagenet-v2",
