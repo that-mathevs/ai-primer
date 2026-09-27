@@ -5,9 +5,129 @@ Run: `python -m primer.ml.embeddings.clustering`
 
 New to vectors, distances or Σ? `primer.notation` builds them from zero.
 
-## The everyday picture
+## Level 1: The practitioner's guide
 
-Tip a sack of unlabeled mail onto a table and sort it into piles by what
+**In one sentence.** Clustering groups texts by meaning without being told
+what the groups are, and the move behind it, one distance and one threshold,
+also powers four everyday jobs: spotting near-duplicates, routing requests,
+flagging anomalies and caching answers.
+
+**When you need it.** You need clustering when you have a pile of unlabeled
+text (support tickets, feedback, logs, documents) and want to know what
+kinds of things are in it before anyone has named the kinds. You need the
+everyday uses whenever the question is "have I seen something like this
+before?": the same ticket filed twice, a request that belongs to another
+team, an entry that looks like nothing else, a question already answered an
+hour ago. You don't need clustering when the categories are already known
+and labeled: that is classification, and a centroid per class or a trained
+model does it directly. The tell: someone is reading tickets one by one to
+find out what people are asking about, or a model is being called again for
+a question it has already answered.
+
+**Your options.** From the simplest to the most flexible:
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| One distance and a threshold | Embeds the new item and compares it with what is already stored | Near-duplicate detection, routing, anomaly scores and a semantic cache, with no clustering at all | A threshold to calibrate on labeled pairs, plus the guards below | Your code over any embedding model; semantic-router, GPTCache |
+| k-means | Alternates "assign each point to its nearest centre" and "move each centre to the mean of its points" | k crisp groups with a centre each; fast, and scikit-learn lists it for very large collections | You choose k, and it assumes round, similar-sized clusters | scikit-learn, FAISS (it is how IVF indexes cluster a corpus) |
+| DBSCAN | Grows clusters through points with enough neighbours within a reach ε, leaving the rest as noise | The number of clusters found for you, and loners marked as noise | A reach no single value gets right; kinds chain together as it widens | scikit-learn |
+| HDBSCAN | Runs DBSCAN at every reach at once and keeps the clusters that persist longest | Clusters of different densities, no ε to set, noise labelled | A minimum cluster size to pick; listed for large rather than very large collections | scikit-learn, the hdbscan library, BERTopic |
+| Agglomerative (hierarchical) | Merges the closest pair of groups again and again into a tree | Many clusters, a cut at any level, any distance | You still choose where to cut the tree | scikit-learn |
+
+**How to choose.** Start from whether you know how many groups there are
+and whether every item belongs somewhere.
+
+- You know the number of groups, or want a fixed number of buckets (topics
+  for a dashboard, cells for a vector index): k-means, seeded with
+  k-means++. Pick k by the silhouette, not the inertia: inertia falls at
+  every k, while the silhouette peaks at the true number (k = 5 for this
+  lesson's five ticket kinds).
+- You don't know how many groups exist, some items belong nowhere, and the
+  groups differ in shape and density (real tickets, logs): HDBSCAN. Plain
+  DBSCAN is the same idea with one reach you have to guess, and on this
+  lesson's tickets no reach gets everything right.
+- You want a picture: PCA for an honest but lossy shadow (its title tells
+  you what share of the variation you are seeing); UMAP or t-SNE for a
+  prettier map of what is near what, never for measuring distances or
+  cluster sizes.
+- You want an action per item rather than groups: the threshold pattern.
+  Flag near-duplicate pairs above a calibrated cosine, send a request to the
+  route whose centroid clears the threshold, score an anomaly by its
+  distance to the nearest centre, return a cached answer only above a strict
+  threshold.
+- Whatever you pick, calibrate every threshold on labeled pairs from your
+  own data, check the clusters against a sample you have read, and keep the
+  fallback: a router without one sends every unanswerable question
+  somewhere.
+
+**What it costs.** Everything here runs on embeddings you already have, so
+the model cost is one embedding per item. k-means is the cheap one: a few
+rounds of assign-and-move, restarted a few times, with the total squared
+distance only ever falling. DBSCAN's naive form needs every pairwise
+distance, which scikit-learn notes costs n² floats of memory when its tree
+structures can't be used; HDBSCAN does more work than k-means for its freedom
+from ε. The everyday uses cost one comparison against what is stored, and a
+semantic cache pays for itself by skipping a model call on every hit, at the
+risk of a wrong hit: GPTCache's documentation says plainly that a semantic
+cache produces false positives on hits and false negatives on misses. The
+real expense is labeling: a few dozen labeled pairs to calibrate a
+threshold, and a sample of items read by a person to check that the
+clusters mean what you think.
+
+**What breaks.**
+
+- **The wrong k.** Inertia keeps falling as k grows, so the lowest value is
+  useless. Use the silhouette, or the elbow where inertia stops falling
+  steeply.
+- **Chaining.** Widen DBSCAN's reach until real tickets stop being noise and
+  kinds merge through chains of near neighbours: at ε = 0.6 here the noise
+  is exactly the two off-topic tickets, but VPN and printer tickets share a
+  cluster. HDBSCAN keeps the clusters that persist across reaches instead.
+- **Loners forced into a group.** k-means gives every point a cluster,
+  including the coffee-machine and dog tickets that belong to none. Use a
+  density method, or score anomalies by distance to the nearest centre.
+- **Distances read off a UMAP or t-SNE plot.** Gaps between clusters and
+  cluster sizes there don't reflect the real space. Use the map for
+  intuition, measure in the original space.
+- **A cache that answers a different question.** "How do I reset my VPN?"
+  is about 0.46 similar to "How do I reset my password?" here: related, and
+  wrong. Keep the threshold strict and calibrated.
+- **A cache that leaks across users.** "What is my PTO balance?" means
+  something different for each person. Filter by user, tenant and
+  permission scope before the similarity search, so no threshold setting
+  can leak an answer.
+- **Stale hits.** Give every entry a time-to-live so answers age out when
+  the facts change.
+- **A router without a fallback.** Below the threshold, hand the request to
+  a person or a general assistant rather than the least-bad route.
+
+**In the wild.** scikit-learn ships k-means, DBSCAN, HDBSCAN and
+agglomerative clustering with a guide to which fits which data (k-means for
+even cluster sizes and flat geometry, DBSCAN and HDBSCAN for uneven sizes
+and outlier removal, HDBSCAN when densities vary); the hdbscan library and
+umap-learn are the reference implementations of their papers. FAISS runs
+k-means to build the cells of an IVF index. BERTopic discovers topics by
+chaining sentence-transformers embeddings, UMAP, HDBSCAN and a class-based
+TF-IDF. semantic-router defines each route by example utterances, embeds
+them, and returns no route at all when nothing matches, with thresholds you
+can train. GPTCache embeds each query, searches a vector store and lets a
+similarity evaluator decide the hit. The papers behind this lesson
+(k-means++, DBSCAN, HDBSCAN and UMAP) are listed at the end, and Distill's
+*How to Use t-SNE Effectively* shows the misreadings the map warning above
+is about.
+
+**Go deeper.** Level 2 builds k-means, the silhouette, DBSCAN, PCA and all
+four everyday uses by hand, first on four points you can check with a
+pencil and then on thirty support tickets, with every formula decoded and
+every figure explained. If you only needed to choose a method and set its
+thresholds, you are done.
+
+## Level 2: How it works, from scratch
+
+Level 2 builds each of those methods from nothing, starting with a sack of
+mail.
+
+**The everyday picture.** Tip a sack of unlabeled mail onto a table and sort it into piles by what
 each letter is about. Nobody gave you the pile names; you notice that some
 letters are about passwords and others about holidays, and similar letters
 end up together. That's **clustering**: finding groups in data without being
