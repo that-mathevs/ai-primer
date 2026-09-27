@@ -499,6 +499,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/retrieval.html",
   "term": "chunking"
  },
+ "cider": {
+  "def": "A score for a generated caption: how well its words and short phrases match several human-written captions of the same image, with phrases common to captions of many images counting less. Higher is better; values above 100 are normal.",
+  "lesson": null,
+  "term": "CIDEr"
+ },
  "circuit": {
   "def": "A chain of components that together compute one behaviour.",
   "lesson": "primer/ml/interpretability.html",
@@ -522,7 +527,7 @@ window.PRIMER_GLOSSARY = {
  "clip": {
   "def": "A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.",
   "lesson": "primer/ml/embeddings/contrastive.html",
-  "term": "clip"
+  "term": "CLIP"
  },
  "clustering": {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
@@ -1338,6 +1343,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A generator and a discriminator trained against each other, so the generator learns to make samples the discriminator can't tell from real data.",
   "lesson": "primer/ml/generative/gans.html",
   "term": "GAN"
+ },
+ "gated cross-attention": {
+  "def": "Cross-attention layers added inside a frozen language model so its text can look at image features, with each layer's output multiplied by tanh of a learned number that starts at 0, so the model starts out unchanged.",
+  "lesson": "primer/ml/generative/multimodal.html",
+  "term": "gated cross-attention"
  },
  "gaussian": {
   "def": "The bell-curve distribution, set by its mean (where the centre is) and its standard deviation (how wide it is).",
@@ -2653,6 +2663,11 @@ window.PRIMER_GLOSSARY = {
   "def": "One scale per weight row, so a single outlier doesn't coarsen all the others.",
   "lesson": "primer/ml/inference.html",
   "term": "per-channel quantization"
+ },
+ "perceiver resampler": {
+  "def": "A small transformer whose queries are a fixed set of learned vectors: they cross-attend to any number of image or video features and always return that fixed number of visual tokens.",
+  "lesson": "primer/ml/generative/multimodal.html",
+  "term": "Perceiver Resampler"
  },
  "percentage point": {
   "def": "The plain difference between two percentages: going from 11% to 18% is a rise of 7 percentage points, which is a 64% relative rise.",
@@ -3988,6 +4003,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A transformer that treats small image patches as tokens.",
   "lesson": "primer/ml/cnn_rnn.html",
   "term": "Vision Transformer"
+ },
+ "vision-language model": {
+  "def": "A model that reads images (and often video) together with text and writes text; a language model given eyes.",
+  "lesson": "primer/ml/generative/multimodal.html",
+  "term": "vision-language model"
  },
  "visual instruction tuning": {
   "def": "Fine-tuning a vision-language model on images paired with instructions and good answers.",

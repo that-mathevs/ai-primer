@@ -1020,6 +1020,7 @@ split the video and summarise the parts.
   Learning* (2022)**: https://arxiv.org/abs/2204.14198. Connected a frozen
   vision encoder to a frozen language model through new cross-attention
   layers, handling images and video interleaved with text.
+  [Annotated companion](../../../papers/flamingo.html)
 - **Liu et al., *Visual Instruction Tuning* (LLaVA, 2023)**:
   https://arxiv.org/abs/2304.08485. The encode, project and splice recipe,
   trained in two stages: align the projector, then tune on image
