@@ -2332,7 +2332,7 @@ window.PRIMER_GLOSSARY = {
  "model editing": {
   "def": "Changing one specific fact or behaviour inside a trained model by adjusting a few weights directly, without retraining, while leaving everything else as it was.",
   "lesson": "primer/ml/interpretability.html",
-  "term": "model editing"
+  "term": "Model Editing"
  },
  "model merging": {
   "def": "Building one model from several fine-tunes by arithmetic on their weights, with no extra training.",
