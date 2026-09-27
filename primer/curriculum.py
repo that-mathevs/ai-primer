@@ -273,28 +273,11 @@ def reading_list(package: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Every lesson opens with "## Level 1: The practitioner's guide" and continues with
-# "## Level 2: How it works, from scratch". These lessons don't yet; each deletes its
-# own line in the change that gives it its guide (tests/test_navigation.py holds the
-# bar). One group per writer, with a blank line between groups so their edits merge.
+# "## Level 2: How it works, from scratch". A lesson added without its guide goes here
+# until it has one (tests/test_navigation.py holds the bar); the set is empty now.
 # ---------------------------------------------------------------------------
 
-LEVELS_PENDING: frozenset[str] = frozenset({
-    # the foundations
-
-    # the transformer
-
-    # serving
-
-    # measuring
-
-    # embeddings, making them
-
-    # embeddings, searching them
-
-    # generative models
-
-    # agents, running them
-})
+LEVELS_PENDING: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
