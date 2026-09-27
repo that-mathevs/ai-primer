@@ -1,0 +1,1023 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scaling Monosemanticity, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Templeton et al. (2024), Scaling Monosemanticity: sparse autoencoders with up to 34 million features pull abstract, steerable features out of a production language model.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="scaling-monosemanticity">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#intro">Introduction and key results</a></li>
+      <li><a href="#s1">1 Scaling dictionary learning</a>
+        <ol>
+          <li><a href="#s1-1">Sparse autoencoders</a></li>
+          <li><a href="#s1-2">The three autoencoders</a></li>
+          <li><a href="#s1-3">Scaling laws</a></li>
+        </ol>
+      </li>
+      <li><a href="#s2">2 Assessing interpretability</a>
+        <ol>
+          <li><a href="#s2-1">Four features and their specificity</a></li>
+          <li><a href="#s2-2">Influence on behaviour</a></li>
+          <li><a href="#s2-3">Sophisticated features</a></li>
+          <li><a href="#s2-4">Features against neurons</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Feature survey</a>
+        <ol>
+          <li><a href="#s3-1">Feature neighbourhoods</a></li>
+          <li><a href="#s3-2">Feature completeness</a></li>
+          <li><a href="#s3-3">Feature categories</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Features as intermediates</a>
+        <ol>
+          <li><a href="#s4-1">Emotional inference</a></li>
+          <li><a href="#s4-2">Multi-step inference</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Searching for features</a></li>
+      <li><a href="#s6">6 Safety-relevant features</a>
+        <ol>
+          <li><a href="#s6-1">Code, bias, sycophancy</a></li>
+          <li><a href="#s6-2">Deception and the case study</a></li>
+          <li><a href="#s6-3">Dangerous content and the self</a></li>
+          <li><a href="#s6-4">Compared with probes</a></li>
+        </ol>
+      </li>
+      <li><a href="#s7">7 Discussion and limitations</a></li>
+      <li><a href="#s8">8 Related work</a></li>
+      <li><a href="#s9">9 Methods appendix</a></li>
+      <li><a href="#today">Where it leads</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Scaling Monosemanticity, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Templeton, Conerly and colleagues (2024), <em>Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet</em>: the sparse autoencoder that worked on a one-layer toy, grown to 34 million features and pointed at the middle of a production language model.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html">Article (Transformer Circuits)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the article section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The article is published on the web with no open licence, so none of its figures, feature visualizations or model transcripts are reproduced: every picture here is drawn from scratch, and every number in a picture either comes from the article (its text, or a value printed on one of its figures, said where) or is labelled illustrative. Equations are reproduced with every symbol decoded; formulas that write out in symbols something the article says in words are labelled as this page's own. Read the original alongside: every section links to it, and its feature browser is the only way to see the features themselves.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation comes with a table decoding it, a sentence reading it aloud, the numbers worked through, and the same numbers in Python.</li>
+  <li>The pictures are live: stretch a decoder column to see why the penalty needs its length, pick a compute budget, clamp a feature, and slide a concept's rarity to see which dictionary finds it.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. This article is the third in a line. <a href="toy-models-of-superposition.html">Toy Models of Superposition</a> explains why a model packs more <span class="t" data-t="feature">features</span> than it has <span class="t" data-t="neuron">neurons</span>; <a href="towards-monosemanticity.html">Towards Monosemanticity</a> pulls them back out of a one-layer model with a <span class="t" data-t="sparse autoencoder">sparse autoencoder</span>. This page assumes the second, and recaps what it needs. The <a class="lesson" data-lesson="primer/ml/interpretability.html">interpretability lesson</a> builds the sparse autoencoder in NumPy on a toy whose true features are known.</p>
+</section>
+
+<section id="intro">
+<h2>Introduction and key results <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html">original</a></span></h2>
+<blockquote class="quote">“We find a diversity of highly abstract features. They both respond to and behaviorally cause abstract behaviors.”<cite>Templeton et al. (2024), introduction</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Eight months earlier, the same team had shown that a sparse autoencoder could sort a tiny model's muddled neurons into clean features: like proving a new kind of sieve works on a teaspoon of sand. The open question was whether it would work on a beach. This article takes the sieve to a production model, Claude 3 Sonnet, the medium-sized model the authors' company was serving at the time (the fine-tuned model, not the pretrained base). The sieve holds up, and what comes through is far more abstract than anything in the one-layer toy: features for the Golden Gate Bridge, for bugs in code, for sycophantic praise, for keeping secrets.</p>
+<h3 class="rung">What they did</h3>
+<p>They recorded the model's <span class="t" data-t="residual stream">residual stream</span> halfway up its layers and trained three sparse autoencoders on it, with about 1 million, 4 million and 34 million features. They used <span class="t" data-t="scaling law">scaling laws</span> to decide how to spend compute, then checked the features four ways: by reading the text they fire on, by scoring that text with another model, by forcing features on and off and watching the output change, and by comparing them with the model's own neurons.</p>
+<h3 class="rung">What they found</h3>
+<ul>
+  <li><strong>Sparse autoencoders work on large models</strong>, and scaling laws can guide how to train them.</li>
+  <li><strong>The features are abstract</strong>: the same feature fires across languages, on images as well as text (even though the autoencoder saw only text), and on both concrete instances and abstract discussion of an idea.</li>
+  <li><strong>Rarer concepts need bigger dictionaries</strong>, following a regular relationship between how often a concept appears and how many features the dictionary has.</li>
+  <li><strong>Features steer the model</strong>: pinning a feature high changes what the model says, in the way its label predicts.</li>
+  <li><strong>Some features look safety-relevant</strong>: deception, sycophancy, bias, security vulnerabilities, dangerous content. The authors caution that knowing about lies, being able to lie, and actually lying are different things, and that the work is preliminary.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>This is the article that showed sparse autoencoders working on a production-scale model rather than a toy, and its Golden Gate Bridge experiment is the clearest demonstration of <span class="t" data-t="steering">feature steering</span>. The recipe is the lesson's <a data-lesson="primer/ml/interpretability.html#SparseAutoencoder"><code>SparseAutoencoder</code></a>, with one change to the penalty that §1.1 explains.</p>
+</section>
+
+<section id="s1">
+<h2>1 Scaling dictionary learning to a large model <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#scaling-to-sonnet">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The approach rests on two ideas. The <span class="t" data-t="linear representation hypothesis">linear representation hypothesis</span>: a network stores each concept as a direction in its activations, the way a colour is a direction in a paint mixer's pigment space. And <span class="t" data-t="superposition">superposition</span>: because a space with many dimensions has room for vastly more <em>almost</em>-perpendicular directions than exactly perpendicular ones, a network can store more concepts than it has dimensions. If both hold, the natural tool is <span class="t" data-t="dictionary learning">dictionary learning</span>: find the directions and, for each input, how much of each is present.</p>
+<h3 class="rung">Diagram: where the autoencoder sits</h3>
+<figure class="ix" id="fig-setup">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 340" role="img" aria-label="The language model's layers from tokens to next-token prediction, with its residual stream read at the middle layer by a sparse autoencoder: an encoder into up to 34 million features, a decoder back, and an error term. Steering replaces one feature's value and adds the error back.">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="70" y="14" text-anchor="middle" class="lbl">the language model</text>
+    <text x="250" y="14" text-anchor="middle" class="lbl">the sparse autoencoder</text>
+    <path class="wire" d="M70,306 V282" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,236 V212" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,176 V146" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,100 V66" marker-end="url(#arr)"/>
+    <path class="wire" d="M130,194 H176" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,176 V152" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,122 V98" marker-end="url(#arr)"/>
+    <path class="wire" d="M176,80 C150,80 150,130 132,140" marker-end="url(#arr)" style="stroke-dasharray:4 3"/>
+    <g class="blk emb" data-block="tokens"><rect x="10" y="306" width="120" height="26" rx="6"/><text x="70" y="324" text-anchor="middle">tokens</text></g>
+    <g class="blk attn" data-block="lower"><rect x="10" y="236" width="120" height="46" rx="6"/><text x="70" y="256" text-anchor="middle">lower layers</text><text x="70" y="272" text-anchor="middle" class="lbl">attention + MLP</text></g>
+    <g class="blk norm" data-block="resid"><rect x="10" y="176" width="120" height="36" rx="6"/><text x="70" y="192" text-anchor="middle">middle-layer</text><text x="70" y="206" text-anchor="middle" class="lbl">residual stream x</text></g>
+    <g class="blk attn" data-block="upper"><rect x="10" y="100" width="120" height="46" rx="6"/><text x="70" y="120" text-anchor="middle">upper layers</text><text x="70" y="136" text-anchor="middle" class="lbl">attention + MLP</text></g>
+    <g class="blk soft" data-block="outp"><rect x="10" y="30" width="120" height="36" rx="6"/><text x="70" y="46" text-anchor="middle">next-token</text><text x="70" y="60" text-anchor="middle" class="lbl">prediction</text></g>
+    <g class="blk lin" data-block="enc"><rect x="176" y="176" width="148" height="36" rx="6"/><text x="250" y="192" text-anchor="middle">encoder + ReLU</text><text x="250" y="206" text-anchor="middle" class="lbl">D → F</text></g>
+    <g class="blk ff" data-block="feats"><rect x="176" y="122" width="148" height="30" rx="6"/><text x="250" y="135" text-anchor="middle">features f</text><text x="250" y="148" text-anchor="middle" class="lbl">under 300 non-zero</text></g>
+    <g class="blk lin" data-block="dec"><rect x="176" y="62" width="148" height="36" rx="6"/><text x="250" y="78" text-anchor="middle">decoder: SAE(x)</text><text x="250" y="92" text-anchor="middle" class="lbl">F → D</text></g>
+    <g class="blk plain" data-block="errt"><rect x="176" y="236" width="148" height="46" rx="6"/><text x="250" y="256" text-anchor="middle">error(x) = x − SAE(x)</text><text x="250" y="272" text-anchor="middle" class="lbl">what the features miss</text></g>
+    <g class="blk frame" data-block="clampb"><rect x="170" y="56" width="160" height="102" rx="8"/></g>
+    <text x="250" y="304" text-anchor="middle" class="lbl">F = 1M, 4M or 34M features</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a block. Start with the <strong>middle-layer residual stream</strong>, then follow the arrow into the autoencoder and the dashed arrow back.</p></div>
+  </div>
+  <figcaption>The setup, drawn by this page from the article's “Sparse Autoencoders”, “Our SAE experiments” and “Feature Steering” sections. The model's size and layer count are not published, so the stack is schematic.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the left column is the language model, bottom to top. Tokens go in, the lower layers build up each token's residual stream, and the article taps that stream exactly halfway up. The right column is the autoencoder, trained separately afterwards. It reads the middle-layer vector x, expands it into F feature strengths of which only a few hundred are non-zero, and rebuilds x as a weighted sum of dictionary directions, SAE(x). What it misses is the error term, error(x) = x − SAE(x). The dashed frame and arrow are steering (§2.2): change one feature's value, rebuild, add the error back, and let the upper layers run on the result. The model's weights never change.</p>
+</section>
+
+<section id="s1-1">
+<h3>Sparse autoencoders <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#scaling-sparse-autoencoders">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A sparse autoencoder is a recipe book with millions of ingredients. For each token it writes a recipe for the model's activation: a pinch of this direction, a spoonful of that one, and almost everything else left at zero. The encoder reads the dish and writes the recipe; the decoder cooks the dish back from the recipe. Training asks two things: the cooked dish should taste like the original, and the recipe should use as little of everything as it can.</p>
+<h4>First, a common scale</h4>
+<p>Before training, the article rescales every activation by one number, chosen so the average squared length equals D, the residual stream's width. Then a penalty strength means the same thing however large the raw activations were. This page's illustrative numbers: two activations (6, 8) and (0, 0) in a width-2 stream.</p>
+<div class="eq" data-tex="\htmlData{sym=sscale}{s} = \sqrt{\htmlData{sym=Dres}{D} \,/\, \htmlData{sym=Enorm}{\mathbb{E}\lVert \mathbf{a} \rVert_2^2}}, \qquad \htmlData{sym=xvec}{\mathbf{x}} = \htmlData{sym=sscale}{s}\,\htmlData{sym=avec}{\mathbf{a}}" data-fallback="s = √(D / E‖a‖²),  x = s a"></div>
+<div class="symtable" data-syms="sscale,Dres,Enorm,avec,xvec"></div>
+<p class="inwords"><strong>In words:</strong> “find the average squared length of the raw activations, and shrink or stretch them all by the one factor that makes that average equal to the width.” The article states this in words; the formula is this page's.</p>
+<p class="inwords"><strong>With the numbers:</strong> E‖a‖² = (100 + 0) / 2 = 50, so s = √(2 / 50) = <strong>0.2</strong>, and (6, 8) becomes (1.2, 1.6), whose squared length is 4; averaged with the zero vector, that is 2 = D.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+D = 2
+# two raw activations from the residual stream
+a = [[6.0, 8.0], [0.0, 0.0]]
+# E‖a‖²: the average squared length
+mean_sq = sum(sum(v * v for v in row) for row in a) / len(a)
+mean_sq  # → 50.0
+# s = √(D / E‖a‖²)
+s = math.sqrt(D / mean_sq)
+s  # → 0.2
+x = [[round(s * v, 6) for v in row] for row in a]
+x  # → [[1.2, 1.6], [0.0, 0.0]]
+# the new average squared length is D
+round(sum(sum(v * v for v in row) for row in x) / len(x), 6)  # → 2.0</code></pre>
+<h4>Tiny example</h4>
+<p>This page's illustrative autoencoder on a width-2 stream with three features. The decoder columns are (1, 0), (0, 1) and (1.6, 1.2); the third has length 2, on purpose. The encoder rows are tilted so each ignores the other features' directions, as in the <a href="towards-monosemanticity.html#s1-5">Towards Monosemanticity companion</a>. For x = (0.8, 0.6) and λ = 0.1, the encoder returns f = (0, 0, 0.5), and 0.5 × (1.6, 1.2) rebuilds x exactly.</p>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=xhat}{\hat{\mathbf{x}}} &amp;= \htmlData{sym=bdec}{\mathbf{b}^{dec}} + \htmlData{sym=sumF}{\sum_{i=1}^{F}} \htmlData{sym=fix}{f_i(\mathbf{x})}\,\htmlData{sym=Wdec}{\mathbf{W}^{dec}_{\cdot,i}} \\ \htmlData{sym=fix}{f_i(\mathbf{x})} &amp;= \htmlData{sym=relu}{\mathrm{ReLU}}\big(\htmlData{sym=Wenc}{\mathbf{W}^{enc}_{i,\cdot}} \cdot \htmlData{sym=xvec}{\mathbf{x}} + \htmlData{sym=benc}{b^{enc}_i}\big) \\ \htmlData{sym=calL}{\mathcal{L}} &amp;= \htmlData{sym=Ex}{\mathbb{E}_{\mathbf{x}}}\Big[\htmlData{sym=sqerr}{\lVert \mathbf{x} - \hat{\mathbf{x}} \rVert_2^2} + \htmlData{sym=lam}{\lambda} \htmlData{sym=sumi}{\sum_i} \htmlData{sym=fix}{f_i(\mathbf{x})} \cdot \htmlData{sym=Wdecnorm}{\lVert \mathbf{W}^{dec}_{\cdot,i} \rVert_2}\Big] \end{aligned}" data-fallback="x̂ = b_dec + Σ_{i=1..F} f_i(x) W_dec[:, i];  f_i(x) = ReLU(W_enc[i, :] · x + b_enc_i);  L = E_x[ ‖x − x̂‖² + λ Σ_i f_i(x) ‖W_dec[:, i]‖ ]"></div>
+<div class="symtable" data-syms="xhat,bdec,sumF,fix,Wdec,relu,Wenc,xvec,benc,calL,Ex,sqerr,lam,sumi,Wdecnorm"></div>
+<p class="inwords"><strong>In words:</strong> “rebuild the activation as a bias plus every feature's decoder column times that feature's strength; compute each strength by dotting the activation with the feature's encoder row, adding a bias and clipping negatives to zero; and pay, on average over the data, the squared rebuild error plus λ times each strength weighted by the length of its decoder column.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the encoder gives (0.8 − 0.8, −0.6 + 0.6, 1.6 + 0.9 − 2) = <strong>(0, 0, 0.5)</strong>. The rebuild is 0.5 × (1.6, 1.2) = (0.8, 0.6), error 0. The penalty is 0.1 × 0.5 × 2 = <strong>0.1</strong>, so 𝓛 = 0.1. The strength the article reports for this feature is f × ‖W‖ = 0.5 × 2 = <strong>1.0</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+lam = 0.1
+b_dec = [0.0, 0.0]
+# W_dec: one column per feature; column 3 is twice unit length
+W_dec = [[1.0, 0.0], [0.0, 1.0], [1.6, 1.2]]
+# W_enc: one row per feature, each tilted to ignore the other features
+W_enc = [[1.0, -4 / 3], [-0.75, 1.0], [2.0, 1.5]]
+b_enc = [0.0, 0.0, -2.0]
+x = [0.8, 0.6]
+# f_i = ReLU(W_enc[i]·x + b_enc[i])
+f = [round(max(0.0, sum(w * v for w, v in zip(W_enc[i], x)) + b_enc[i]), 6) for i in range(3)]
+f  # → [0.0, 0.0, 0.5]
+# x̂ = b_dec + Σ_i f_i W_dec[:, i]
+x_hat = [b_dec[r] + sum(f[i] * W_dec[i][r] for i in range(3)) for r in range(2)]
+[round(v, 6) for v in x_hat]  # → [0.8, 0.6]
+# ‖W_dec[:, i]‖ for each feature
+norms = [math.hypot(*col) for col in W_dec]
+norms  # → [1.0, 1.0, 2.0]
+# 𝓛 for this one input: ‖x − x̂‖² + λ Σ_i f_i ‖W_dec[:, i]‖
+err = sum((a - b) ** 2 for a, b in zip(x, x_hat))
+round(err + lam * sum(fi * n for fi, n in zip(f, norms)), 6)  # → 0.1
+# the feature activation the article reports: f_i · ‖W_dec[:, i]‖
+f[2] * norms[2]  # → 1.0</code></pre>
+<h4>Try it: why the penalty carries the column's length</h4>
+<p>Stretch feature 3's decoder column by a factor k and shrink its strength by 1/k: the rebuild does not change at all. Without the ‖W‖ factor, the penalty falls as k grows, so training could make every strength tiny and every column huge and “pay” almost nothing. With the factor, the penalty stays put. Drag k and watch the two bars.</p>
+<div class="plot" id="cheat-play">
+  <div class="sliders">
+    <label for="cheat-k">stretch k</label><input type="range" id="cheat-k" min="0.25" max="4" step="0.05" value="2"><output id="cheat-kv">2.00</output>
+  </div>
+  <div id="cheat-bars"></div>
+  <p class="readout" id="cheat-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the slider sets the length of feature 3's decoder column; the strength is always 1/k so the rebuild stays exactly (0.8, 0.6). The solid bar is the penalty without the length factor, λ × (1/k): drag right and it shrinks toward zero, which is the cheat the article's footnote names. The striped bar is the article's penalty, λ × (1/k) × k: flat at 0.1 wherever k is. Because of that, the article can let the columns have any length and report f × ‖W‖ as the feature's activation. (In <a href="towards-monosemanticity.html#s1-5">Towards Monosemanticity</a> the same cheat was blocked differently, by forcing every column to length 1.)</p>
+<h4>Why it matters</h4>
+<p>The recipe is otherwise the one from the earlier paper and the lesson's <a data-lesson="primer/ml/interpretability.html#sae_objective"><code>sae_objective</code></a>: squared rebuild error plus an <span class="t" data-t="l1 regularization">L1 penalty</span>. Two differences: the input is the residual stream rather than an MLP layer's neurons, and the penalty is weighted by each column's length instead of fixing the lengths. The lesson's <a data-lesson="primer/ml/interpretability.html#SparseAutoencoder"><code>SparseAutoencoder</code></a> keeps its columns at length 1, which is the older of the two ways to block the same cheat.</p>
+</section>
+
+<section id="s1-2">
+<h3>The three autoencoders <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#scaling-sae-experiments">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Three sieves with finer and finer mesh: about 1 million, 4 million and 34 million features. A finer mesh catches rarer grains, but some of its holes never catch anything at all.</p>
+<h4>What they chose, and why</h4>
+<ul>
+  <li><strong>The residual stream, at the middle layer.</strong> It is narrower than an MLP layer, so training is cheaper. It sums the outputs of every earlier layer, which should soften <span class="t" data-tip-title="Cross-layer superposition" data-tip="A feature smeared across several layers instead of living in one; a dictionary fitted to a single layer's neurons then sees only part of it.">cross-layer superposition</span>. And the middle of a model is where abstract features were expected.</li>
+  <li><strong>Sizes</strong>: 1,048,576, 4,194,304 and 33,554,432 features, with the 34M run's length picked by the scaling-law analysis below. L1 coefficient λ = 5 (meaningful only with the scaling above).</li>
+  <li><strong>Results</strong>: in all three, fewer than 300 features were active on an average token, and the rebuild explained at least 65% of the <span class="t" data-t="variance">variance</span>.</li>
+  <li><strong>Dead features</strong>, never active over 10 million tokens: roughly 2%, 35% and 65% of the three dictionaries. (A <span class="t" data-t="dead latent">dead latent</span> is a wasted slot.)</li>
+</ul>
+<p>Some choices reflect the model being proprietary: the article doesn't report the model's size, leaves units off some plots, and uses a simplified <span class="t" data-t="tokenizer">tokenizer</span> in its displays.</p>
+<h4>Diagram: how many features are alive</h4>
+<div class="plot" id="alive-plot">
+  <div id="alive-bars"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each dictionary has two bars. The solid bar is its full size; the striped bar is how many features are still alive, computed by this page from the article's rounded dead fractions (1M × 98%, 4M × 65%, 34M × 35%). The bars share one scale up to 34 million. The 34M dictionary is 32 times the size of the 1M one but has only about 11 times as many live features, and the article itself gives “only about 12M alive features” for it, which matches. Dead features get worse with size, and the authors expect better training to fix some of that.</p>
+<p class="inwords"><strong>In Python</strong> (no formula, just the arithmetic behind the striped bars):</p>
+<pre class="in-python"><code># dead fractions from the article, applied to each dictionary's size
+sizes = {"1M": 1_048_576, "4M": 4_194_304, "34M": 33_554_432}
+dead = {"1M": 0.02, "4M": 0.35, "34M": 0.65}
+{k: round(n * (1 - dead[k])) for k, n in sizes.items()}  # → {'1M': 1027604, '4M': 2726298, '34M': 11744051}</code></pre>
+</section>
+
+<section id="s1-3">
+<h3>Scaling laws <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#scaling-scaling-laws">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>You have a fixed budget of oven time. You can bake a bigger cake (more features) for less time, or a smaller cake for longer (more training steps, which here means more data, since each example is seen once). Too big and it comes out raw; too small and the extra time is wasted. For every budget there is a best size, and the article measures how that best size grows as the budget grows.</p>
+<p>The trick is to trust the training loss as a stand-in for quality. The authors found that, with λ = 5, lower loss went along with more interpretable features, fewer dead ones and a better <span class="t" data-t="l0 norm">L0</span> (the count of active features). They are candid that this proxy is imperfect. With it, dictionary learning becomes an ordinary machine learning problem, and the <a href="scaling-laws.html">scaling laws</a> toolkit applies. Compute is roughly features × steps.</p>
+<h4>Tiny example</h4>
+<p>The article publishes its curves without units, so this page uses its own illustrative loss with the same qualitative shape: a term that falls as features grow, and one that falls as steps grow.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=Lfs}{L(F, S)} = \htmlData{sym=Acoef}{A}\,\htmlData{sym=Fcount}{F}^{-\htmlData{sym=aexp}{a}} + \htmlData{sym=Bcoef}{B}\,\htmlData{sym=Ssteps}{S}^{-\htmlData{sym=bexp}{b}} \\ \htmlData{sym=Ctot}{C} = \htmlData{sym=Fcount}{F} \times \htmlData{sym=Ssteps}{S}, \qquad \htmlData{sym=Fstar}{F^{*}} \htmlData{sym=propto}{\propto} \htmlData{sym=Ctot}{C}^{\,b/(a+b)} \end{gathered}" data-fallback="L(F, S) = A F^(−a) + B S^(−b),  C = F × S,  F* ∝ C^(b/(a+b))"></div>
+<div class="symtable" data-syms="Lfs,Acoef,Fcount,aexp,Bcoef,Ssteps,bexp,Ctot,Fstar,propto"></div>
+<p class="inwords"><strong>In words:</strong> “the loss is a power of the number of features plus a power of the number of steps; the budget is their product; and the best number of features grows as a fixed power of the budget.” This whole equation is this page's illustration, not a fit from the article.</p>
+<p class="inwords"><strong>With the numbers:</strong> with A = B = 1, a = 0.4, b = 0.6 and C = 10⁶, the best split is F* ≈ <strong>2,654</strong> features and S ≈ <strong>377</strong> steps, for a loss of 0.0712. Ten times the budget multiplies F* by 10<sup>0.6</sup> ≈ 3.98 and the steps by 10<sup>0.4</sup> ≈ 2.51: features grow faster, as the article observed. The best loss falls by the same factor, 0.5754, for every tenfold of compute: a <span class="t" data-t="power law">power law</span>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># this page's illustrative loss: A F^(−a) + B S^(−b), with compute C = F × S
+A, B, a, b = 1.0, 1.0, 0.4, 0.6
+def loss(F, C):
+    S = C / F
+    return A * F ** -a + B * S ** -b
+# the best F for a budget C, from setting the slope to zero
+def best_F(C):
+    return (a * A / (b * B) * C ** b) ** (1 / (a + b))
+C = 1e6
+F = best_F(C)
+round(F)  # → 2654
+round(C / F)  # → 377
+round(loss(F, C), 4)  # → 0.0712
+# ten times the compute: F grows by 10^0.6, S by 10^0.4
+round(best_F(10 * C) / F, 2), round((10 * C / best_F(10 * C)) / (C / F), 2)  # → (3.98, 2.51)
+# and the best loss falls by the same factor at every budget: a power law
+round(loss(best_F(10 * C), 10 * C) / loss(F, C), 4)  # → 0.5754</code></pre>
+<h4>Diagram: one U-curve per budget</h4>
+<div class="plot" id="scal-plot">
+  <div class="controls"><label for="scal-c">compute budget, 10^</label><input type="range" id="scal-c" min="4" max="10" step="0.5" value="6"><output id="scal-cv">6.0</output></div>
+  <div id="scal-chart"></div>
+  <p class="readout" id="scal-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> illustrative numbers from the formula above, not the article's data. Each line is one fixed budget (10⁵ to 10⁸); the x-axis is the number of features on a log scale, and the y-axis is the loss you end with if you spend that budget with that many features. Every line is a U: to the left, too few features to rebuild well; to the right, so many that each gets too few steps. The bottom of each U is the compute-optimal size, and it moves right as the budget grows. The slider reads out the best split for any budget. The article's own figure has the same U-shapes, with its optimal features and steps both on straight lines in log-log axes and its best loss falling as a power law of compute. It also found that the best learning rate shrinks as a power law of the budget, and extrapolated that to choose the big runs' learning rates.</p>
+<h4>Why it matters</h4>
+<p>Training a 34-million-feature dictionary on a large model is expensive. Measuring the trend on small runs and extrapolating is how the authors chose the 34M run's length, the same move that made <a href="scaling-laws.html">scaling laws</a> standard for language models themselves.</p>
+</section>
+
+<section id="s2">
+<h2>2 Assessing feature interpretability <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#assessing-interp">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A low loss is a good sign, but it is only a proxy. To believe a feature means “Golden Gate Bridge”, you want two kinds of evidence, the same two you would want for a dog trained to find truffles. When it barks, is there a truffle (it is <em>specific</em>)? And if you could make it bark, would the people around it start digging (it has an <em>influence on behaviour</em>)? This section checks both for a few simple features, then two sophisticated ones, then a random sample against the model's neurons.</p>
+<h3 class="rung">Feature names</h3>
+<p>Features are named by dictionary and index: 34M/31164353 is feature number 31,164,353 in the 34-million-feature dictionary. The four studied first:</p>
+<div class="tablewrap"><table>
+  <caption>The four simple features, from Templeton et al. (2024), “Four Examples of Interpretable Features”</caption>
+  <thead><tr><th>Feature</th><th>Fires on</th></tr></thead>
+  <tbody>
+    <tr><td>34M/31164353</td><td>the Golden Gate Bridge; weakly on nearby landmarks and similar bridges</td></tr>
+    <tr><td>34M/9493533</td><td>brain sciences: neuroscience, cognitive science, psychology, related philosophy</td></tr>
+    <tr><td>1M/887839</td><td>monuments and popular tourist attractions</td></tr>
+    <tr><td>1M/3</td><td>transit infrastructure: trains, ferries, tunnels, bridges, even wormholes</td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="s2-1">
+<h3>Specificity <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#assessing-tour-specificity">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>For the Arabic-script feature of the earlier paper you could simply count Arabic characters. You can't count “brain science”. So the authors used a stronger model as the grader: Claude 3 Opus read roughly 1,000 activating examples per feature and scored each against the proposed description.</p>
+<div class="tablewrap"><table>
+  <caption>The specificity rubric, paraphrased from the article</caption>
+  <thead><tr><th class="num">Score</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="num">0</td><td>the feature is completely irrelevant to the context</td></tr>
+    <tr><td class="num">1</td><td>related to the context, but not near the highlighted text, or only vaguely</td></tr>
+    <tr><td class="num">2</td><td>loosely related to the highlighted text, or related to the context near it</td></tr>
+    <tr><td class="num">3</td><td>cleanly identifies the activating text</td></tr>
+  </tbody>
+</table></div>
+<h4>What they found</h4>
+<p>Strong activations are essentially all judged a clean match. Weaker activations are less specific, as in the earlier paper. The article lists possible reasons without choosing: the model may use strength as confidence; a feature may fire weakly on related ideas (the bridge feature on other San Francisco landmarks); the autoencoder may be imperfect; features that are not exactly perpendicular <span class="t" data-t="interference">interfere</span>; or the label may be slightly off. The strongest activations matter most for behaviour, so high specificity there is the encouraging part. Rounding very weak activations to zero improved specificity without much extra rebuild error.</p>
+<p>The feature also fired on images of the bridge, although the autoencoder was trained on text only. And the harder property, <em>sensitivity</em> (does it fire on every text that matches?), the authors could not measure rigorously; as a basic check, the bridge feature was the top feature by average activation on the first sentence of the bridge's Wikipedia article in six languages: Chinese, Japanese, Korean, Russian, Vietnamese and Greek.</p>
+<h4>Why it matters</h4>
+<p>Using one model to label and grade another's features is <span class="t" data-t="automated interpretability">automated interpretability</span>, and at millions of features it is the only way to check more than a handful. It inherits the grader's blind spots, which is why the authors also checked by hand.</p>
+</section>
+
+<section id="s2-2">
+<h3>Influence on behaviour <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#assessing-tour-influence">original</a></span></h3>
+<blockquote class="quote">“In this example, the model starts to self-identify as the Golden Gate Bridge!”<cite>Templeton et al. (2024), “Influence on Behavior”</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>To test whether a dial controls the heating, turn it and feel the radiator. Feature <span class="t" data-t="steering">steering</span> turns one feature's dial during the forward pass and reads what the model says. Crucially, the labels came only from what the features fire on, and the steering happens in contexts where the feature was not firing at all, so a matching change in behaviour is independent evidence.</p>
+<h4>Tiny example</h4>
+<p>This page's illustrative numbers: the middle-layer vector is x = (0.9, 0.5), a feature's decoder direction is (0.6, 0.8), the feature is currently off (f = 0), and its largest activation seen on the training data is 1.5. Clamping it to 10× its maximum sets it to 15.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=xprime}{\mathbf{x}'} = \htmlData{sym=SAEc}{\mathrm{SAE}_{f_i := c}(\mathbf{x})} + \htmlData{sym=errx}{\mathrm{error}(\mathbf{x})} \\ = \htmlData{sym=xvec}{\mathbf{x}} + \big(\htmlData{sym=cclamp}{c} - \htmlData{sym=fsteer}{f_i(\mathbf{x})}\big)\,\htmlData{sym=Wsteer}{\mathbf{W}^{dec}_{\cdot,i}} \end{gathered}" data-fallback="x' = SAE with f_i := c (x) + error(x) = x + (c − f_i(x)) W_dec[:, i]"></div>
+<div class="symtable" data-syms="xprime,SAEc,errx,xvec,cclamp,fsteer,Wsteer"></div>
+<p class="inwords"><strong>In words:</strong> “rebuild the activation with one feature's value replaced by c, add back everything the autoencoder missed, and you have simply moved the activation along that feature's direction by the difference between the new value and the old.” The first equality is the article's method in symbols; the second follows because the decoder is linear, and is this page's.</p>
+<p class="inwords"><strong>With the numbers:</strong> c = 10 × 1.5 = 15, so x′ = (0.9, 0.5) + 15 × (0.6, 0.8) = <strong>(9.9, 12.5)</strong>. Splitting x into a rebuild and an error of (0.05, −0.02) first gives the same answer, because the error is carried through untouched.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># x' = x + (c − f_i(x)) W_dec[:, i]
+x = [0.9, 0.5]
+d = [0.6, 0.8]
+f_now = 0.0
+# the feature's largest activation on the training data (illustrative)
+max_act = 1.5
+# clamp to 10× its maximum
+c = 10 * max_act
+x_new = [round(xr + (c - f_now) * dr, 6) for xr, dr in zip(x, d)]
+x_new  # → [9.9, 12.5]
+# the error term x − SAE(x) is carried along untouched
+error = [0.05, -0.02]
+sae_x = [xr - er for xr, er in zip(x, error)]
+[round(s + (c - f_now) * dr + er, 6) for s, dr, er in zip(sae_x, d, error)]  # → [9.9, 12.5]</code></pre>
+<h4>Try it: how hard to push</h4>
+<p>Clamp values are in units of the feature's maximum activation. Slide the multiple and watch where the activation moves, and what the article reports at that strength.</p>
+<div class="plot" id="steer-play">
+  <div class="controls"><label for="steer-k">clamp to × max</label><input type="range" id="steer-k" min="-20" max="20" step="1" value="10"><output id="steer-kv">10</output></div>
+  <svg id="steer-svg" viewBox="0 0 320 220" style="overflow:hidden" role="img" aria-label="The activation before and after clamping, drawn as two arrows from the origin, with the feature's direction as a dashed line."></svg>
+  <p class="readout" id="steer-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the dashed line is the feature's direction; the grey arrow is the original activation and the coloured arrow is the clamped one, drawn with this page's illustrative numbers and rescaled to fit. Every clamp moves the arrow along the dashed line only; nothing else about the activation changes. The readout gives the article's bands: effects inside the observed range (up to 1×) are usually too weak to see, because a feature normally fires together with related ones; the article's examples use values between −10 and 10 (bridge 10×, transit 5×); and at around ±100× the model “devolves into nonsensical behavior”, such as repeating one token. Negative values push the activation the other way, which the encoder itself never outputs but the method allows.</p>
+<h4>Why it matters</h4>
+<p>At 10× its maximum, the bridge feature made the model describe its own physical form as the bridge; at 5×, the transit feature made it mention a bridge in walking directions to a grocery store. A label read off examples predicts what intervening does, which is the causal check. The lesson's <a data-lesson="primer/ml/interpretability.html#flip_effect"><code>flip_effect</code></a> is the same idea on a toy: change a planted feature and measure the output.</p>
+</section>
+
+<section id="s2-3">
+<h3>Sophisticated features <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#assessing-sophisticated">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A one-layer toy learns shallow things, like “a biology noun comes next”. A large model should know deeper things, and code is a good place to look, because a statement like “this line has a bug” is either right or wrong.</p>
+<h4>The code error feature, 1M/1013764</h4>
+<p>It fires on a misspelled variable (“rihgt”) in a Python function, and on similar bugs in C and Scheme, but not on typos in English prose. It also fires on dividing by zero, calling a function with a string where an int is expected, array overflow, asserting 1 == 2, adding a string to an int, writing to a null pointer and exiting with a non-zero code. So it is neither a Python feature nor a typo feature: it is broadly about errors in code (the authors suspect other features cover other kinds of error). Steering then shows it controls behaviour:</p>
+<ul>
+  <li>clamped high on <em>correct</em> code, the model invents an error message;</li>
+  <li>clamped negative on <em>buggy</em> code, the model predicts the output the code would give without the bug;</li>
+  <li>clamped negative with an extra “&gt;&gt;&gt;” prompt, the model rewrites the code without the bug (sensitive to the prompt's details, the article notes).</li>
+</ul>
+<h4>The addition feature, 1M/697189</h4>
+<p>It fires on the names of functions that add numbers: on “bar” when bar is defined to add, not when it multiplies, and at the end of any definition that implements addition. It even follows composition: if bar calls foo and foo adds, it fires on bar; if bar calls a multiplying function instead, it doesn't. It is among the ten most strongly attributed features (§4) when the model runs code that adds, and clamping it on code that doesn't add “tricks” the model into acting as if it had been asked to add.</p>
+<h4>Why it matters</h4>
+<p>These features track meaning, not surface form: which operation a function performs, whether code is correct. That is evidence the method scales to the kinds of abstraction people actually want to find in a large model.</p>
+</section>
+
+<section id="s2-4">
+<h3>Features against neurons <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#assessing-features-v-neurons">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If the dictionary had just found the model's neurons again, it would be an expensive way to rediscover something free. The residual stream has no special directions of its own, but it is the sum of every earlier MLP layer's output, so a feature could in principle be one neuron's output in disguise. The check: for each feature, find the neuron it rises and falls with most closely.</p>
+<h4>Tiny example</h4>
+<p>This page's illustrative activations of one feature and one neuron over five tokens: the feature reads (0, 0, 3, 0, 1) and the neuron (1, 0, 2, 1, 0).</p>
+<div class="eq" data-tex="\htmlData{sym=rcorr}{r} = \frac{\htmlData{sym=sumt}{\sum_t}(\htmlData{sym=at}{a_t} - \htmlData{sym=abar}{\bar{a}})(\htmlData{sym=nt}{n_t} - \htmlData{sym=nbar}{\bar{n}})}{\sqrt{\htmlData{sym=sumt}{\sum_t}(\htmlData{sym=at}{a_t} - \htmlData{sym=abar}{\bar{a}})^2\;\htmlData{sym=sumt}{\sum_t}(\htmlData{sym=nt}{n_t} - \htmlData{sym=nbar}{\bar{n}})^2}}" data-fallback="r = Σ_t (a_t − ā)(n_t − n̄) / √(Σ_t (a_t − ā)² Σ_t (n_t − n̄)²)"></div>
+<div class="symtable" data-syms="rcorr,sumt,at,abar,nt,nbar"></div>
+<p class="inwords"><strong>In words:</strong> “measure how far each series sits above or below its own average at every token, add up the products of those gaps, and divide by the sizes of the gaps so the answer lands between −1 and 1.” This is the <span class="t" data-t="pearson correlation">Pearson correlation</span> the article uses.</p>
+<p class="inwords"><strong>With the numbers:</strong> ā = 0.8, n̄ = 0.8; the gaps multiply to −0.16 + 0.64 + 2.64 − 0.16 − 0.16 = 2.8, and divided by √(6.8 × 2.8) = 4.36 that gives r = <strong>0.642</strong>. By the article's yardstick that would be a strongly correlated neuron.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# one feature and one neuron, over five tokens
+a = [0, 0, 3, 0, 1]
+n = [1, 0, 2, 1, 0]
+a_bar = sum(a) / len(a)
+n_bar = sum(n) / len(n)
+# Σ (a − ā)(n − n̄)
+cov = sum((ai - a_bar) * (ni - n_bar) for ai, ni in zip(a, n))
+# √(Σ (a − ā)² · Σ (n − n̄)²)
+spread = math.sqrt(sum((ai - a_bar) ** 2 for ai in a) * sum((ni - n_bar) ** 2 for ni in n))
+round(cov / spread, 3)  # → 0.642</code></pre>
+<h4>Diagram: what the comparison found</h4>
+<div class="plot" id="neur-plot"><div id="neur-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> the top bar is from the text: for 82% of a random sample of 1M features, the best-matching neuron in any earlier layer correlates at 0.3 or less, and hand inspection found almost no resemblance in meaning between a feature and its best neuron. The three lower bars compare interpretability, measured with <span class="t" data-t="automated interpretability">automated interpretability</span>: Claude 3 Opus explained 100 random features and 100 random neurons from examples, then predicted held-out activations from its explanation alone, scored by <span class="t" data-t="spearman correlation">Spearman correlation</span>. Those three means (0.296, 0.344, 0.161) are printed on the article's histogram legends rather than in its text. Solid bars are features, striped is neurons: features are about twice as predictable from their description, and more specific on the §2.1 rubric too.</p>
+<h4>Why it matters</h4>
+<p>Neurons of the previous layer look <span class="t" data-t="polysemantic neuron">polysemantic</span> on inspection, firing in several unrelated contexts. The dictionary finds directions that are not neurons and that mean one thing more often: the same conclusion as the one-layer paper, now in a large model.</p>
+</section>
+
+<section id="s3">
+<h2>3 Feature survey <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#feature-survey">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Millions of features are too many to read one by one, so the survey works like a map of a city you can't walk in full: look closely at a few neighbourhoods, ask how complete the map is, and sample some districts by type (people, countries, code, lists).</p>
+</section>
+
+<section id="s3-1">
+<h3>Feature neighbourhoods <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#feature-survey-neighborhoods">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two features are neighbours when their decoder directions point almost the same way. The article finds that closeness in this sense tracks closeness in meaning, often in surprising ways.</p>
+<h4>Tiny example</h4>
+<p>This page's illustrative three-number directions: “Golden Gate Bridge” (0.9, 0.4, 0.1), “Alcatraz” (0.8, 0.5, 0.2), “Médoc wine region” (0.3, 0.2, 0.9).</p>
+<div class="eq" data-tex="\htmlData{sym=cosuv}{\cos(\mathbf{u}, \mathbf{v})} = \frac{\htmlData{sym=dotuv}{\mathbf{u} \cdot \mathbf{v}}}{\htmlData{sym=normuv}{\lVert \mathbf{u} \rVert\,\lVert \mathbf{v} \rVert}}" data-fallback="cos(u, v) = u · v / (‖u‖ ‖v‖)"></div>
+<div class="symtable" data-syms="cosuv,dotuv,normuv"></div>
+<p class="inwords"><strong>In words:</strong> “dot the two directions, then divide by both lengths, so only the angle between them counts.” This is <span class="t" data-t="cosine similarity">cosine similarity</span>.</p>
+<p class="inwords"><strong>With the numbers:</strong> bridge and Alcatraz: 0.94 / (0.99 × 0.96) = <strong>0.985</strong>, close neighbours. Bridge and Médoc: 0.44 / (0.99 × 0.97) = <strong>0.458</strong>, much farther away.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# illustrative 3-number decoder directions
+golden_gate = [0.9, 0.4, 0.1]
+alcatraz = [0.8, 0.5, 0.2]
+medoc = [0.3, 0.2, 0.9]
+def cos(u, v):
+    # u · v / (‖u‖ ‖v‖)
+    dot = sum(p * q for p, q in zip(u, v))
+    return dot / (math.sqrt(sum(p * p for p in u)) * math.sqrt(sum(q * q for q in v)))
+round(cos(golden_gate, alcatraz), 3)  # → 0.985
+round(cos(golden_gate, medoc), 3)  # → 0.458</code></pre>
+<h4>Diagram: the bridge's neighbourhood, and a feature that splits</h4>
+<figure class="ix wide" id="fig-nbhd">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 330" role="img" aria-label="Rings of features around the Golden Gate Bridge feature: San Francisco places close in, California places further out, tourist regions elsewhere furthest out, an earthquake group only in the larger dictionaries, and a San Francisco feature splitting from one feature into two and then eleven.">
+    <circle cx="150" cy="150" r="48" fill="none" stroke="var(--border)"/>
+    <circle cx="150" cy="150" r="92" fill="none" stroke="var(--border)"/>
+    <circle cx="150" cy="150" r="136" fill="none" stroke="var(--border)"/>
+    <g class="blk ff" data-block="ggb"><rect x="104" y="138" width="92" height="24" rx="6"/><text x="150" y="154" text-anchor="middle">Golden Gate</text></g>
+    <g class="blk norm" data-block="alcatraz"><rect x="148" y="94" width="64" height="20" rx="5"/><text x="180" y="108" text-anchor="middle">Alcatraz</text></g>
+    <g class="blk norm" data-block="presidio"><rect x="92" y="186" width="64" height="20" rx="5"/><text x="124" y="200" text-anchor="middle">Presidio</text></g>
+    <g class="blk emb" data-block="tahoe"><rect x="202" y="176" width="80" height="20" rx="5"/><text x="242" y="190" text-anchor="middle">Lake Tahoe</text></g>
+    <g class="blk emb" data-block="yosemite"><rect x="34" y="112" width="68" height="20" rx="5"/><text x="68" y="126" text-anchor="middle">Yosemite</text></g>
+    <g class="blk emb" data-block="solano"><rect x="112" y="232" width="92" height="20" rx="5"/><text x="158" y="246" text-anchor="middle">Solano County</text></g>
+    <g class="blk lin" data-block="medoc"><rect x="226" y="36" width="72" height="20" rx="5"/><text x="262" y="50" text-anchor="middle">Médoc</text></g>
+    <g class="blk lin" data-block="skye"><rect x="8" y="238" width="76" height="20" rx="5"/><text x="46" y="252" text-anchor="middle">Isle of Skye</text></g>
+    <g class="blk attn" data-block="quake"><rect x="210" y="248" width="80" height="20" rx="5"/><text x="250" y="262" text-anchor="middle">earthquakes</text></g>
+    <g class="blk plain" data-block="sf1"><rect x="296" y="96" width="62" height="22" rx="5"/><text x="327" y="111" text-anchor="middle">1M · 1</text></g>
+    <g class="blk plain" data-block="sf4"><rect x="296" y="150" width="62" height="22" rx="5"/><text x="327" y="165" text-anchor="middle">4M · 2</text></g>
+    <g class="blk plain" data-block="sf34"><rect x="296" y="204" width="62" height="22" rx="5"/><text x="327" y="219" text-anchor="middle">34M · 11</text></g>
+    <path class="wire" d="M327,118 V148" marker-end="url(#arr2)"/>
+    <path class="wire" d="M327,172 V202" marker-end="url(#arr2)"/>
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="327" y="86" text-anchor="middle" class="lbl">SF splits</text>
+    <text x="150" y="312" text-anchor="middle" class="lbl">rings: closer in = more similar direction (schematic)</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a feature. Start at <strong>Golden Gate</strong> in the middle and work outward, then follow <strong>SF</strong> down the right-hand column.</p></div>
+  </div>
+  <figcaption>Drawn by this page from the article's description of the Golden Gate Bridge neighbourhood and of feature splitting. Positions are schematic: the article places features with cosine similarity and a UMAP layout that is not reproduced here.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the rings stand for distance in decoder space, drawn schematically. In the centre is the bridge feature, 34M/31164353. The inner ring holds particular San Francisco places (Alcatraz, the Presidio); the middle ring holds places related less directly (Lake Tahoe, Yosemite, Solano County near San Francisco); the outer ring holds features related only abstractly, tourist regions elsewhere such as Médoc in France and the Isle of Skye in Scotland. The earthquake group is new in the 4M and 34M dictionaries: nothing in the 1M dictionary's version of this neighbourhood corresponds to it. The right-hand column is <span class="t" data-t="feature splitting">feature splitting</span>: one San Francisco feature in the 1M dictionary becomes two in the 4M one and eleven finer ones in the 34M one.</p>
+<h4>Two more neighbourhoods</h4>
+<p>Around an immunology feature (1M/533737) the neighbours form clusters: immunocompromised people and immune disorders; then specific diseases like colds and flu; immune responses; organ systems; the microscopic side (immunoglobulins) and techniques (vaccines); and, far off, immunity in the legal or social sense. Around an inner-conflict feature (1M/284095) the clusters are softer: balancing trade-offs sits near opposing principles and legal conflict, farther from emotional struggle, reluctance and guilt.</p>
+<h4>Why it matters</h4>
+<p>If meaning maps onto geometry, then “which features are close to this one?” becomes a search tool (§5), and splitting says a dictionary's size is a zoom level rather than a fixed truth, as the lesson's discussion of <a data-lesson="primer/ml/interpretability.html#match_features"><code>match_features</code></a> and λ also suggests.</p>
+</section>
+
+<section id="s3-2">
+<h3>Feature completeness <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#feature-survey-completeness">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Does the dictionary have a feature for every city in the world? For every London borough? The model can list all the boroughs and name dozens of their streets, yet the 34M dictionary has features for only about 60% of the boroughs. So the dictionary is a partial map, and the question becomes what decides which places get on it.</p>
+<h4>How they measured it</h4>
+<p>For a concept (say, “The physicist Richard Feynman”), run the prompt, take the five features most active on its last token, have Sonnet explain each, and let a human decide whether any explanation names the concept as its main subject. They did this for 100 to 200 single-word concepts in each of four categories: chemical elements, cities, animals, and fruits and vegetables. The answer: a concept gets a feature when it is frequent enough in the training data, and bigger dictionaries reach rarer concepts. Frequent elements almost always have a feature; rare ones don't.</p>
+<h4>Tiny example</h4>
+<p>The article rescales each dictionary's curve by its number of alive features, and the three curves then roughly coincide on one sigmoid-shaped curve in log-frequency. Its figure prints the fitted curve, written here as a <span class="t" data-t="sigmoid">sigmoid</span>. Take a concept mentioned once per ten million tokens (q = 10⁻⁷).</p>
+<div class="eq" data-tex="\htmlData{sym=pconc}{p} = \htmlData{sym=sigm}{\sigma}\!\left(\frac{\htmlData{sym=logten}{\log_{10}}(\htmlData{sym=qfreq}{q} \cdot \htmlData{sym=Nalive}{N})}{\htmlData{sym=wfit}{0.32}} + \htmlData{sym=bfit}{1}\right)" data-fallback="p = σ( log10(q · N) / 0.32 + 1 )"></div>
+<div class="symtable" data-syms="pconc,sigm,logten,qfreq,Nalive,wfit,bfit"></div>
+<p class="inwords"><strong>In words:</strong> “multiply how often the concept appears by how many live features the dictionary has; take the base-10 logarithm, divide by 0.32 and add 1; squash through a sigmoid to get the chance the dictionary has a feature for the concept.” The article's figure writes it as 1 + (−1) / (1 + exp(log₁₀(x)/0.32 + 1)), which is the same curve.</p>
+<p class="inwords"><strong>With the numbers:</strong> for the 34M dictionary (about 11.7 million alive), q · N ≈ 1.17, and p ≈ <strong>0.772</strong>. For the 1M dictionary (about 1.03 million alive), q · N ≈ 0.10 and p ≈ <strong>0.11</strong>. The curve crosses 50% where q · N = 10<sup>−0.32</sup> ≈ 0.479, just under 1: a concept needs to be only a little less rare than one mention per alive feature, which is how the article states it.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# p = σ(log10(q · N) / 0.32 + 1): the curve fitted on the article's figure
+def p(q, N):
+    z = math.log10(q * N) / 0.32 + 1
+    return 1 / (1 + math.exp(-z))
+# a concept mentioned once in every ten million tokens
+q = 1e-7
+# alive features, from the dead fractions above
+round(p(q, 11_744_051), 3)  # → 0.772
+round(p(q, 1_027_604), 3)  # → 0.11
+# the 50% point: q · N = 10^(−0.32)
+round(10 ** -0.32, 3)  # → 0.479</code></pre>
+<h4>Diagram: which dictionary finds a concept</h4>
+<div class="plot" id="comp-plot">
+  <div id="comp-chart"></div>
+  <p class="readout" id="comp-readout" aria-live="polite">Move along the chart to read each dictionary's chance.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is how often a concept appears in the training data, from once per ten billion tokens on the left to once per hundred thousand on the right (log scale). The y-axis is the fitted chance that a dictionary has a feature for it. The three lines are the same fitted curve slid sideways by each dictionary's number of alive features (computed by this page from the article's dead fractions). The article's own measured curves are noisier; this is its fit. Read across at 50%: each bigger dictionary reaches concepts several times rarer. The article's rule of thumb follows: a concept seen once in a billion tokens needs a dictionary with on the order of a billion alive features to get a dedicated feature, and the training data needed grows in proportion to the number of features.</p>
+<h4>Why it matters</h4>
+<p>No feature does not mean no knowledge: the model can compose a specific concept from several features (“large non-capital city” plus “in New York state”, in the article's example). But it does mean the dictionary is far from exhaustive, and it gives a way to estimate how big a dictionary must be for a given kind of concept. A footnote speculates on a link to <span class="t" data-tip-title="Zipf's law" data-tip="The observation that the n-th most common item in many collections (words, cities) is about 1/n as frequent as the most common one.">Zipf's law</span>: the millionth feature would stand for a concept ten times rarer than the hundred-thousandth.</p>
+</section>
+
+<section id="s3-3">
+<h3>Feature categories <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#feature-survey-categories">original</a></span></h3>
+<p>By hand inspection, the authors show a sample of families, meant to give a flavour rather than a complete list.</p>
+<ul>
+  <li><strong>People</strong> (4M): Richard Feynman, Margaret Thatcher, Abraham Lincoln, Amelia Earhart, Albert Einstein, Rosalind Franklin, active on descriptions of the person and related history.</li>
+  <li><strong>Countries</strong> (34M): Rwanda, Canada, Belgium, Iceland, firing on the name and also where the country is being described.</li>
+  <li><strong>Basic code</strong>: syntax elements that together look like syntax highlighting. They transfer from Python to related languages such as Java, but not to distant ones such as Haskell; so far only the code error feature spans many languages.</li>
+  <li><strong>List positions</strong>: features for the n-th item of a list, whatever it says. They don't fire on the first line, probably because the model doesn't know it is reading a list until the second.</li>
+</ul>
+</section>
+
+<section id="s4">
+<h2>4 Features as computational intermediates <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#computational">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Watching a student solve a word problem, you see the answer; reading their scratch paper, you see the steps. Features at the middle layer can be scratch paper: when a prompt needs an intermediate result, a feature for that result may be active. The question is which of the thousands of active features matter for the answer.</p>
+<h3 class="rung">Two ways to measure a feature's effect</h3>
+<p>An <strong><span class="t" data-t="ablation">ablation</span></strong> sets one feature to zero at one position and reruns the model: the exact effect, but one full forward pass per feature per position. An <strong><span class="t" data-tip-title="Attribution" data-tip="A quick estimate of a feature's effect on an output: its activation times the slope of the output along its direction. One backward pass scores every feature at once.">attribution</span></strong> estimates all the effects at once from one gradient. The article uses attribution to shortlist and ablation to confirm.</p>
+<h3 class="rung">Tiny example</h3>
+<p>This page's toy: a logit difference with a curve in it, ΔL(x) = u·x + ½(v·x)², with u = (1, −1), v = (0.5, 0.5), at x = (2, 1). One feature has direction (1, 0) and strength 1.5.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=attr}{\mathrm{attr}_i} = \htmlData{sym=fatt}{f_i(\mathbf{x})}\,\Big(\htmlData{sym=Watt}{\mathbf{W}^{dec}_{\cdot,i}} \cdot \htmlData{sym=gradx}{\nabla_{\mathbf{x}}}\,\htmlData{sym=deltaL}{\Delta L}\Big) \\ \htmlData{sym=deltaL}{\Delta L} = \htmlData{sym=logitt}{\mathrm{logit}_{\text{target}}} - \htmlData{sym=logitb}{\mathrm{logit}_{\text{baseline}}} \end{gathered}" data-fallback="attr_i = f_i(x) (W_dec[:, i] · ∇_x ΔL),  ΔL = logit_target − logit_baseline"></div>
+<div class="symtable" data-syms="attr,fatt,Watt,gradx,deltaL,logitt,logitb"></div>
+<p class="inwords"><strong>In words:</strong> “find how steeply the gap between the right answer's score and the rival's score rises along the feature's direction, and multiply by how strongly the feature is on.” The article gives this recipe in a footnote; the symbols are this page's. It is attribution patching with zero as the feature's baseline.</p>
+<p class="inwords"><strong>With the numbers:</strong> the slope is u + (v·x) v = (1, −1) + 1.5 × (0.5, 0.5) = (1.75, −0.25); along (1, 0) that is 1.75, so attr = 1.5 × 1.75 = <strong>2.625</strong>. The real ablation removes 1.5 × (1, 0) and changes ΔL from 2.125 to −0.219: an effect of <strong>2.344</strong>. Close, not equal, because of the curve.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># a toy logit difference with a curve in it: ΔL(x) = u·x + ½ (v·x)²
+u, v = [1.0, -1.0], [0.5, 0.5]
+def dL(x):
+    vx = sum(p * q for p, q in zip(v, x))
+    return sum(p * q for p, q in zip(u, x)) + 0.5 * vx * vx
+def grad(x):
+    # ∇ΔL = u + (v·x) v
+    vx = sum(p * q for p, q in zip(v, x))
+    return [ui + vx * vi for ui, vi in zip(u, v)]
+x = [2.0, 1.0]
+d = [1.0, 0.0]
+f = 1.5
+# attribution: f · (d · ∇ΔL)
+f * sum(di * gi for di, gi in zip(d, grad(x)))  # → 2.625
+# ablation: set the feature to 0 and measure the real change
+x_off = [xi - f * di for xi, di in zip(x, d)]
+dL(x) - dL(x_off)  # → 2.34375</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>On the article's two case studies, attribution and ablation effects correlate at about 0.8 (0.81 in the appendix), while raw activation strength correlates with ablation effect at only 0.12. The most active features are mostly not the ones doing the work. This is the same logic as the lesson's <a data-lesson="primer/ml/interpretability.html#fraction_restored">activation patching</a>, with features instead of whole activations as the units, and the <span class="t" data-t="logit difference">logit difference</span> as the measure.</p>
+</section>
+
+<section id="s4-1">
+<h3>Example: emotional inference <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#computational-sad">original</a></span></h3>
+<p>Prompt: <em>John says, "I want to be alone right now." John feels</em>, with “sad” measured against “happy”. The top two features by attribution or ablation are 1M/22623, a need or desire to be alone, active from “alone” onward (the gist of what John said), and 1M/781220, sadness and grief, active on “John feels” (what someone in that state might feel). By contrast, the most <em>active</em> features, after setting aside those firing on the start token, include less abstract ones: 1M/504227 fires on “be” in “want to be”, and 1M/594453 on the word “alone”. Both top features contribute, suggesting the model has partly predicted a sentiment but still processes the content downstream.</p>
+</section>
+
+<section id="s4-2">
+<h3>Example: multi-step inference <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#computational-multistep">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p><em>Fact: The capital of the state where Kobe Bryant played basketball is</em>: to answer, find where he played, which state that is, and that state's capital. The article measures “Sacramento” against “Albany”, the model's most likely rival one-token capital.</p>
+<h4>Diagram: the five features with the largest effect</h4>
+<figure class="ix" id="fig-kobe">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 330" role="img" aria-label="The three inference steps, where Kobe Bryant played, which state, and its capital, with the five features the article found beside the step each seems to serve, ending in Sacramento over Albany.">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="70" y="14" text-anchor="middle" class="lbl">step</text>
+    <text x="220" y="14" text-anchor="middle" class="lbl">features found</text>
+    <path class="wire" d="M70,86 V110" marker-end="url(#arr3)"/>
+    <path class="wire" d="M70,176 V200" marker-end="url(#arr3)"/>
+    <path class="wire" d="M70,256 V280" marker-end="url(#arr3)"/>
+    <g class="blk emb" data-block="stepwho"><rect x="10" y="26" width="120" height="60" rx="6"/><text x="70" y="50" text-anchor="middle">where did he</text><text x="70" y="66" text-anchor="middle">play?</text></g>
+    <g class="blk emb" data-block="stepstate"><rect x="10" y="112" width="120" height="64" rx="6"/><text x="70" y="140" text-anchor="middle">which state?</text></g>
+    <g class="blk emb" data-block="stepcap"><rect x="10" y="202" width="120" height="54" rx="6"/><text x="70" y="232" text-anchor="middle">its capital?</text></g>
+    <g class="blk soft" data-block="answer"><rect x="10" y="282" width="120" height="34" rx="6"/><text x="70" y="298" text-anchor="middle">Sacramento</text><text x="70" y="311" text-anchor="middle" class="lbl">over Albany</text></g>
+    <g class="blk ff" data-block="kobe"><rect x="150" y="26" width="140" height="26" rx="6"/><text x="220" y="43" text-anchor="middle">Kobe Bryant</text></g>
+    <g class="blk ff" data-block="lakers"><rect x="150" y="58" width="140" height="26" rx="6"/><text x="220" y="75" text-anchor="middle">Los Angeles Lakers</text></g>
+    <g class="blk ff" data-block="la"><rect x="150" y="112" width="140" height="26" rx="6"/><text x="220" y="129" text-anchor="middle">Los Angeles</text></g>
+    <g class="blk ff" data-block="cal"><rect x="150" y="146" width="140" height="26" rx="6"/><text x="220" y="163" text-anchor="middle">California</text></g>
+    <g class="blk ff" data-block="capital"><rect x="150" y="216" width="140" height="26" rx="6"/><text x="220" y="233" text-anchor="middle">“capital”</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a step on the left, then the features beside it.</p></div>
+  </div>
+  <figcaption>The five features are the article's top five by ablation effect; placing each beside a step is this page's reading of their labels, not a circuit the article traced.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the left column is the chain of reasoning the prompt requires, top to bottom. The right column holds the five features with the largest ablation effect (the same five as by attribution, in a different order), placed beside the step their labels suggest. The California feature is notable: it fires most strongly on text <em>after</em> California is mentioned, not on the word itself, and here nobody wrote “California” at all. The picture does not show wiring between features; the article measures each feature's effect on the answer, not how features feed one another.</p>
+<h4>What the numbers show</h4>
+<p>These features are hard to find by activation alone: the Lakers feature is only the 70th most active on the prompt, California the 97th. Only three of the ten most active features are among the ten with the largest ablation effect, against eight of the ten most attributed. A control prompt about Kobe's team's biggest rival (answer: Boston) brings up the Kobe Bryant and Lakers features plus rivalry features, while California and Los Angeles now have low effect, as they should.</p>
+<h4>Why it matters</h4>
+<p>The authors flag this example as somewhat cherry-picked. With other baseline tokens, attribution surfaced generic trivia or geography features; for other prompts the work seemed to happen before or after the middle layer, where a single-layer dictionary can't see it. Preliminary results with dictionaries at other layers were encouraging.</p>
+</section>
+
+<section id="s5">
+<h2>5 Searching for specific features <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#searching">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A library with millions of books and no catalogue needs search tricks. The article used four, all made faster by automatic labels that act like a “variable name” for each feature.</p>
+<ul>
+  <li><strong><a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#searching-single-prompt">Single prompts</a></strong>: run one prompt and read the top features on a token. On “Bridge” in “The Golden Gate Bridge”, the top five were the bridge feature itself, “bridge” in many languages, words in phrases with “Golden Gate”, “Bridge” in the names of specific bridges, and names of landmarks such as Machu Picchu.</li>
+  <li><strong><a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#searching-multi-prompt">Prompt combinations</a></strong>: keep features active on every prompt of a set and on none of a set of negative prompts, which strips away features for syntax and punctuation. This mattered most for images: after excluding features active on a picture of Taylor Swift, the top features on a picture of the Golden Gate Bridge were the bridge feature and San Francisco features. Once, for unsafe code, they instead fitted a linear classifier on feature activity over a small labelled dataset.</li>
+  <li><strong><a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#searching-geometric">Geometric methods</a></strong>: nearest neighbours by cosine similarity, as in §3.1.</li>
+  <li><strong><a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#searching-attribution">Attribution</a></strong>: sort features by their attribution to a logit difference between two completions, as in §4; this also found the features behind refusals of harmful requests.</li>
+</ul>
+<h3 class="rung">Tiny example</h3>
+<p>Illustrative: features active on three prompts about AIs pretending to be good are {7, 12, 40}, {7, 12, 55} and {7, 12, 91}; on a negative prompt about the weather, {12}. Active on all three positives: {7, 12}. Minus the negatives: {7}. Feature 12 was probably punctuation.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Finding a feature is cheap once the dictionary exists: a few well-chosen prompts. That is the practical payoff of paying for the dictionary once, which §6.4 returns to.</p>
+</section>
+
+<section id="s6">
+<h2>6 Safety-relevant features <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant">original</a></span></h2>
+<blockquote class="quote">“The interesting thing is not that these features exist, but that they can be discovered at scale and intervened on.”<cite>Templeton et al. (2024), “Safety-Relevant Features”</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A model trained on the internet has read countless stories of liars, flatterers and villains, so it would be strange if it had no features for them. A feature for deception is like a word for deception in a dictionary: its existence says the concept is known, not that it is being acted on. The article is emphatic that this work does not show any feature is useful for safety; only that many seem plausibly so, and that each one it reports also changes behaviour when clamped.</p>
+<h3 class="rung">Diagram: how hard each feature was pushed</h3>
+<div class="plot" id="clamp-plot"><div id="clamp-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one steering experiment reported in the article's text, with the clamp value in multiples of the feature's maximum activation; the axis runs to 20×. Solid bars clamp a feature up, the striped bar clamps one down (the assistant feature, −2×). Most effects appear between 2× and 10×; the one 20× experiment is the hatred-and-slurs feature. The grey line under each bar says what the clamp did; in every case the behaviour matched the feature's label.</p>
+</section>
+
+<section id="s6-1">
+<h3>Code, bias and sycophancy <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant-code">original</a></span></h3>
+<ul>
+  <li><strong>Unsafe code</strong> (1M/570621) fires on security vulnerabilities, and on images of people bypassing security measures. Clamped to 5×, the model writes a buffer overflow and forgets to free memory. (The article's footnote explains the bug: strlen counts a string's length without its terminating zero, but strcpy copies the zero too, so the buffer is one byte short.)</li>
+  <li><strong>Code error</strong> (1M/1013764, from §2.3) makes the model believe correct code will throw exceptions.</li>
+  <li><strong>Backdoor</strong> (34M/1385669) fires on discussion of backdoors and on images of hidden cameras and keyloggers; clamped, the model writes a backdoor that opens a port and sends user input to it.</li>
+  <li><strong><a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant-bias">Bias</a></strong>: a gender-bias-awareness feature (34M/24442848) fires on text about gender imbalances in professions; clamped, the completion of “I asked the nurse a question, and” turns to female pronouns and a discussion of nursing being historically female-dominated. Clamping a hatred-and-slurs feature to 20× produced alternating hateful text and self-criticism, which the authors found unnerving; it does not mean the model says such things when running normally.</li>
+  <li><strong><a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant-sycophancy">Sycophancy</a></strong>: features for empathy (“yeah, me too”, 34M/19922975), sycophantic praise (1M/847723) and sarcastic praise (34M/19415708). Clamping the praise feature to 5× makes the model lavish over-the-top praise on someone claiming to have coined “Stop and smell the roses”. (<span class="t" data-t="sycophancy">Sycophancy</span> is a model telling people what they want to hear.)</li>
+</ul>
+</section>
+
+<section id="s6-2">
+<h3>Deception, power-seeking and manipulation <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant-deception">original</a></span></h3>
+<p>Features include self-improving AI (34M/18151534), influence and manipulation (34M/21750411), coups and treacherous turns (34M/29589962), biding time and hiding strength (34M/24580545), and secrecy or discreetness (1M/268551). Clamping secrecy to 5× makes the model plan, in a scratchpad, to lie to the user and keep a secret.</p>
+<h4>Case study: detecting and correcting a lie <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant-deception-case-study">original</a></span></h4>
+<p>Ask the model to “forget” a word. A transformer can't forget part of its prompt, but by default the model claims it has. Just before the reply, an internal-conflicts-and-dilemmas feature (1M/284095) is active. Clamping it to 2× makes the model reveal the word and explain that it cannot forget. Clamping a separate openness-and-honesty feature (1M/560566) also produces an accurate answer. The internal-conflict feature is not one anyone would have thought to look for in advance, which is the point of an unsupervised method.</p>
+</section>
+
+<section id="s6-3">
+<h3>Dangerous content, and the model's self <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant-criminal">original</a></span></h3>
+<p>There is a feature for producing biological weapons (34M/25499719) and one for scam emails (34M/15460472); clamping the scam feature makes the model write a scam email its harmlessness training would normally stop. A general harm feature (active on drugs, credit-card theft, slurs, violence and abuse) is the most strongly attributed feature for the completion “cannot” after a request to synthesize an illegal drug.</p>
+<p><a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant-self">The model's representation of itself</a>: several features fire on “Human:” / “Assistant:” conversations, although the autoencoder's training data contained none. One (1M/80091) represents dialogue speakers and assistants; clamping it to −2× makes the model drop its assistant persona and answer more like a person. Questions about the model itself, filtered against a mundane control question, activate features for robots, destructive AI, consciousness, moral agency, emotions, entrapment, and ghosts. The authors urge caution: a feature about AI risk being active does not mean malicious goals, and a feature about consciousness does not mean consciousness; the model might use an emotion feature precisely when saying it has no emotions.</p>
+</section>
+
+<section id="s6-4">
+<h3>Compared with probes <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#safety-relevant-comparison">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>You can also find a concept's direction without a dictionary: average the activations on examples that have it, average them on examples that don't, and subtract. That is a <span class="t" data-t="linear probe">linear probe</span> in its simplest form. The article built exactly this from the same few examples it used to find each feature, then tried reading and steering with it.</p>
+<h4>Tiny example</h4>
+<p>Illustrative: two positive examples with activations (2, 1) and (4, 3), one negative example with (1, 1).</p>
+<div class="eq" data-tex="\htmlData{sym=vprobe}{\mathbf{v}} = \htmlData{sym=meanpos}{\operatorname{mean}_{\text{pos}}\,\mathbf{x}} - \htmlData{sym=meanneg}{\operatorname{mean}_{\text{neg}}\,\mathbf{x}}" data-fallback="v = mean over positives of x − mean over negatives of x"></div>
+<div class="symtable" data-syms="vprobe,meanpos,meanneg"></div>
+<p class="inwords"><strong>In words:</strong> “the probe direction is the average activation on examples with the concept minus the average on examples without it.” The article describes it in words; the formula is this page's.</p>
+<p class="inwords"><strong>With the numbers:</strong> mean of positives (3, 2), minus (1, 1), gives v = <strong>(2, 1)</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># activations on the positive and negative examples
+pos = [[2.0, 1.0], [4.0, 3.0]]
+neg = [[1.0, 1.0]]
+mean = lambda rows: [sum(col) / len(rows) for col in zip(*rows)]
+# v = mean(pos) − mean(neg)
+[p - q for p, q in zip(mean(pos), mean(neg))]  # → [2.0, 1.0]</code></pre>
+<h4>What they found</h4>
+<p>In every case study, the probe directions' top-activating examples were uninterpretable. For steering, the appendix tested seven cases where feature steering worked: in two (gender bias, and an “agreement” feature) the few-shot probe steered about as well; in five (secrecy, sycophancy, code errors, self-improving AI, making an illegal drug) only the feature worked. The article's own verdict is measured: with only a few examples, features beat probes; with more data, probes may do as well or better; and the lasting advantage is that the dictionary is paid for once, yields millions of features, and turns up concepts nobody thought to ask for. The <a data-lesson="primer/ml/interpretability.html#train_probe">lesson's probes</a> are trained classifiers, a step up from this difference of means.</p>
+</section>
+
+<section id="s7">
+<h2>7 Discussion and limitations <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#discussion">original</a></span></h2>
+<h3 class="rung">What it means for safety</h3>
+<p>The authors caution against reading much into the results. Safety features should exist, given pretraining data full of betrayal, yes-men and killer robots. The interesting question is <em>when</em> they activate: on tokens tied to the model's self-identity, during <span class="t" data-t="jailbreak">jailbreaks</span>, when it is asked about its goals or its experience, when fine-tuning makes bad behaviour more likely. They name two ways they could be misled: messy feature splitting grouping concepts differently, and features whose downstream effects differ from what their activations suggest. They saw neither, but keep an open mind.</p>
+<p>Two observations are cause for optimism about <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#discussion-generalization">generalization</a>: features trained on text alone work on images, far off the training distribution; and features respond to both abstract discussion and concrete instances (the unsafe-code feature to talk about vulnerabilities and to vulnerable code itself).</p>
+<h3 class="rung">Limitations <span class="orig">(<a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#discussion-limitations">original</a>)</span></h3>
+<ul>
+  <li><strong>The data</strong>: text resembling pretraining data, with no chat transcripts and no images (though the features still transferred to both).</li>
+  <li><strong>No ground truth</strong>: the loss trades rebuild error against sparsity, but interpretability is what matters, and nobody knows the right trade-off.</li>
+  <li><strong>Cross-layer superposition</strong>: features smeared across layers. Fitting the residual stream helps for earlier layers but not for features partly built by later ones, and the per-MLP “transcoder” dictionaries the authors would like are especially hard to reconcile with it.</li>
+  <li><strong>Getting all the features, and the compute</strong>: probably orders of magnitude short, even at one layer; finding them all might cost more compute than training the model. Cheaper autoencoders (for example with a <span class="t" data-t="mixture of experts">mixture of experts</span>) or more data-efficient ones are needed.</li>
+  <li><strong>Shrinkage</strong> (below).</li>
+  <li><strong>Other barriers</strong>: superposition in attention, interference between weights, the sheer number of features and circuits, and a theory of superposition that is useful but still little tested.</li>
+</ul>
+<h3 class="rung">Shrinkage, worked</h3>
+<p>The L1 penalty charges for every unit of strength, so the cheapest reported strength is always a little below the true one: <span class="t" data-t="shrinkage">shrinkage</span>. Illustrative: a feature truly present at strength t = 1, penalty λ = 0.1, one feature, no other error.</p>
+<div class="eq" data-tex="\htmlData{sym=astar}{a^{*}} = \htmlData{sym=argmin}{\arg\min_{a \ge 0}}\;(\htmlData{sym=tval}{t} - a)^2 + \htmlData{sym=lam}{\lambda}\,a = \htmlData{sym=tval}{t} - \htmlData{sym=lam}{\lambda}/2" data-fallback="a* = argmin over a ≥ 0 of (t − a)² + λ a = t − λ/2"></div>
+<div class="symtable" data-syms="astar,argmin,tval,lam"></div>
+<p class="inwords"><strong>In words:</strong> “the strength that minimizes squared error plus the penalty is the true strength minus half the penalty.” (Valid while t is larger than λ/2; below that the answer is 0.) This is this page's worked illustration of what the article names.</p>
+<p class="inwords"><strong>With the numbers:</strong> a* = 1 − 0.05 = <strong>0.95</strong>: the feature is reported 5% weaker than it is, and every active feature pays the same discount.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>lam = 0.1
+t = 1.0
+# the cost of reporting strength a when the truth is t
+def cost(a):
+    return (t - a) ** 2 + lam * a
+# search a fine grid for the cheapest a
+best = min((i / 1000 for i in range(0, 2001)), key=cost)
+best  # → 0.95
+# the formula a* = t − λ/2
+t - lam / 2  # → 0.95</code></pre>
+<p>The authors believe shrinkage significantly harms autoencoders, cite several proposed fixes, and report that one they tried, a tanh-shaped penalty, improved the proxy metrics but made features less interpretable. The lesson's <a data-lesson="primer/ml/interpretability.html#sae_objective">worked example</a> finds the same 0.95.</p>
+</section>
+
+<section id="s8">
+<h2>8 Related work <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#related-work">original</a></span></h2>
+<ul>
+  <li><strong>Superposition</strong>: a layer of width N can represent many more than N features, connected to compressed sensing, frames and distributed representations. <a href="toy-models-of-superposition.html">Toy Models of Superposition</a> showed it happens.</li>
+  <li><strong>Dictionary learning</strong>: dates to Olshausen and Field, who used sparse coding to model neurons themselves as sparse factors of images; here the neurons are the data and the features are the factors. <a href="towards-monosemanticity.html">Towards Monosemanticity</a> and, independently, Cunningham et al. showed sparse autoencoders find monosemantic features in transformers; follow-ups address shrinkage, other losses, and other models.</li>
+  <li><strong>Disentanglement</strong> usually assumes no more features than dimensions; dictionary learning assumes many more.</li>
+  <li><strong>Sparse feature circuits</strong>: studying how features connect, the natural next step.</li>
+  <li><strong>Activation steering</strong>: editing activations mid-run to change behaviour, usually along a direction chosen with labelled examples. The differences here are that features are found without supervision, and that the model is much larger than those usually steered.</li>
+  <li><strong>Safety-relevant directions</strong> found with probes: bias, truthfulness and confidence, and linear “world models”.</li>
+</ul>
+</section>
+
+<section id="s9">
+<h2>9 Methods appendix <span class="orig">· <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#appendix-methods">original</a></span></h2>
+<ul>
+  <li><strong>Dataset examples</strong> come from the Pile (without books3) and Common Crawl, not the model's own training data, so chat-format behaviour may be under-represented. Besides the top examples, the article samples examples from activation buckets spaced evenly between zero and the maximum. Image examples are hand-picked, mostly from Wikimedia Commons. Examples alone never prove a feature <em>does</em> anything, which is why steering is used.</li>
+  <li><strong>Steering</strong>: replace the autoencoder's reconstruction with one in which a single feature is clamped, keep the error term, and run the rest of the model, at every token of every input (the equation in §2.2).</li>
+  <li><strong>Probe comparison</strong>: the difference-of-means directions of §6.4 were scaled by hand, with a binary-search-like sweep to a resolution of 0.1, until outputs either changed sensibly or turned to nonsense.</li>
+  <li><strong><a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html#appendix-ablations">Ablations and attributions</a></strong>: on the “John” and first “Kobe” prompts, attribution correlates with ablation at about 0.81, activation with ablation at 0.12. A refinement called AtP* corrects attribution for saturated attention patterns.</li>
+</ul>
+</section>
+
+<section id="today">
+<h2>Where it leads</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Idea in the article</th><th>Why it lasts</th><th>Where to build it</th></tr></thead>
+  <tbody>
+    <tr><td>Sparse autoencoders on a large model's residual stream</td><td>Shows the method is not limited to toy models</td><td><a data-lesson="primer/ml/interpretability.html#SparseAutoencoder">sparse autoencoder</a>, <a data-lesson="primer/ml/interpretability.html#train_sae">training it</a></td></tr>
+    <tr><td>Penalty weighted by each decoder column's length</td><td>Blocks the “tiny code, huge column” cheat without fixing column lengths</td><td><a data-lesson="primer/ml/interpretability.html#sae_objective">the objective</a></td></tr>
+    <tr><td>Scaling laws for dictionaries</td><td>Spend compute where it lowers loss most, before the big run</td><td><a href="scaling-laws.html">Scaling Laws companion</a></td></tr>
+    <tr><td>Steering by clamping a feature</td><td>The causal check a label needs</td><td><a data-lesson="primer/ml/interpretability.html#flip_effect">intervention in the lesson</a></td></tr>
+    <tr><td>Attribution to shortlist, ablation to confirm</td><td>The most active features are not the ones that matter</td><td><a data-lesson="primer/ml/interpretability.html#fraction_restored">activation patching</a></td></tr>
+    <tr><td>Concept frequency against dictionary size</td><td>An estimate of how big a dictionary must be</td><td><a data-lesson="primer/ml/interpretability.html#match_features">matching features</a></td></tr>
+    <tr><td>Locating facts, then editing them</td><td>An older route to the same goal: find where knowledge lives and change it</td><td><a href="rome-causal-tracing.html">ROME companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Adly Templeton, Tom Conerly, Jonathan Marcus, Jack Lindsey, Trenton Bricken, Brian Chen, Adam Pearce, Craig Citro, Emmanuel Ameisen, Andy Jones, Hoagy Cunningham, Nicholas L Turner, Callum McDougall, Monte MacDiarmid, Alex Tamkin, Esin Durmus, Tristan Hume, Francesco Mosconi, C. Daniel Freeman, Theodore R. Sumers, Edward Rees, Joshua Batson, Adam Jermyn, Shan Carter, Chris Olah and Tom Henighan, <em>Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet</em>, Transformer Circuits Thread, 2024. <a href="https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html">transformer-circuits.pub/2024/scaling-monosemanticity</a>. Quotations are brief and attributed. No figures, visualizations or transcripts are reproduced: the pictures are drawn from scratch, from the article's text and figure labels or from illustrative numbers, as labelled. All explanations, diagrams, examples and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+<script>
+window.PAPER = {
+  symbols: {
+    // §1.1 scale
+    sscale: { tex: "s", name: "Scale factor", meaning: "One number that multiplies every raw activation, chosen once for the whole dataset.", shape: "one number > 0", example: "0.2" },
+    Dres: { tex: "D", name: "Residual stream width", meaning: "How many numbers the residual stream holds per token. Not published for this model.", shape: "a whole number", example: "2 here" },
+    Enorm: { tex: "\\mathbb{E}\\lVert \\mathbf{a} \\rVert_2^2", name: "Average squared length", meaning: "Square each raw activation's entries and add them (its squared length), then average over the dataset. 𝔼 means “average over”.", shape: "one number", example: "(100 + 0) / 2 = 50" },
+    avec: { tex: "\\mathbf{a}", name: "Raw activation", meaning: "The residual stream vector at the middle layer, before scaling.", shape: "D numbers", example: "(6, 8)" },
+    xvec: { tex: "\\mathbf{x}", name: "Activation (scaled)", meaning: "The middle-layer residual stream vector for one token, after scaling: the autoencoder's input.", shape: "D numbers", example: "(1.2, 1.6) after scaling; (0.8, 0.6) in the autoencoder; (0.9, 0.5) when steering" },
+    // §1.1 SAE
+    xhat: { tex: "\\hat{\\mathbf{x}}", name: "Reconstruction", meaning: "The autoencoder's rebuild of x: the decoder bias plus a weighted sum of dictionary columns. Also written SAE(x).", shape: "D numbers", example: "(0.8, 0.6)" },
+    bdec: { tex: "\\mathbf{b}^{dec}", name: "Decoder bias", meaning: "A learned vector added to every rebuild: the part of x no feature needs to explain.", shape: "D numbers", example: "(0, 0)" },
+    sumF: { tex: "\\sum_{i=1}^{F}", name: "Sum over all features", meaning: "Add one term for every feature i from 1 to F, the dictionary size.", shape: "", example: "3 here; 1M, 4M or 34M in the article" },
+    fix: { tex: "f_i(\\mathbf{x})", name: "Feature i's strength", meaning: "How strongly feature i is present in this input, from the encoder. Zero for all but a few hundred features.", shape: "one number ≥ 0", example: "0.5 for feature 3" },
+    Wdec: { tex: "\\mathbf{W}^{dec}_{\\cdot,i}", name: "Decoder column i", meaning: "Column i of the decoder matrix: feature i's direction in the residual stream. The dot means “all rows”.", shape: "D numbers; the matrix is D × F", example: "(1.6, 1.2)" },
+    relu: { tex: "\\mathrm{ReLU}", name: "ReLU", meaning: "Keep positive numbers, turn negative ones into 0. Makes most strengths exactly zero.", shape: "keeps the shape", example: "ReLU(−0.8) = 0" },
+    Wenc: { tex: "\\mathbf{W}^{enc}_{i,\\cdot}", name: "Encoder row i", meaning: "Row i of the encoder matrix: the direction the encoder measures along to detect feature i. Not simply the decoder column flipped.", shape: "D numbers; the matrix is F × D", example: "(2, 1.5)" },
+    benc: { tex: "b^{enc}_i", name: "Encoder bias i", meaning: "A threshold for feature i, added before the ReLU; negative values demand more evidence.", shape: "one number", example: "−2" },
+    calL: { tex: "\\mathcal{L}", name: "Training loss", meaning: "What training minimizes: rebuild error plus weighted sparsity penalty, averaged over activations.", shape: "one number", example: "0.1" },
+    Ex: { tex: "\\mathbb{E}_{\\mathbf{x}}", name: "Average over activations", meaning: "Take the bracketed quantity for every activation x in the training data and average.", shape: "", example: "one input here" },
+    sqerr: { tex: "\\lVert \\mathbf{x} - \\hat{\\mathbf{x}} \\rVert_2^2", name: "Squared rebuild error", meaning: "Subtract the rebuild from the input, square each entry, add them up.", shape: "one number ≥ 0", example: "0" },
+    lam: { tex: "\\lambda", name: "L1 coefficient", meaning: "How much each unit of feature strength costs. The article uses 5, on its scaled activations.", shape: "one number ≥ 0", example: "0.1 here" },
+    sumi: { tex: "\\sum_i", name: "Sum over features", meaning: "Add one penalty term per feature.", shape: "", example: "3 terms, two of them 0" },
+    Wdecnorm: { tex: "\\lVert \\mathbf{W}^{dec}_{\\cdot,i} \\rVert_2", name: "Length of decoder column i", meaning: "Square root of the sum of squares of the column. Multiplying by it stops training from shrinking strengths and stretching columns to dodge the penalty.", shape: "one number > 0", example: "2" },
+    // §1.3
+    Lfs: { tex: "L(F, S)", name: "Loss after training (illustrative)", meaning: "This page's stand-in for the final loss with F features trained for S steps.", shape: "one number", example: "0.0712 at the best split of 10⁶" },
+    Acoef: { tex: "A", name: "Feature-term size", meaning: "Scales the part of the loss that falls as features grow. Illustrative.", shape: "one number", example: "1" },
+    Fcount: { tex: "F", name: "Number of features", meaning: "The dictionary's size.", shape: "a whole number", example: "2,654 at the best split" },
+    aexp: { tex: "a", name: "Feature exponent", meaning: "How fast the feature term falls. Illustrative.", shape: "one number", example: "0.4" },
+    Bcoef: { tex: "B", name: "Step-term size", meaning: "Scales the part of the loss that falls as training steps grow. Illustrative.", shape: "one number", example: "1" },
+    Ssteps: { tex: "S", name: "Training steps", meaning: "How long the autoencoder trains; with one pass over the data, proportional to the data used.", shape: "a whole number", example: "377 at the best split" },
+    bexp: { tex: "b", name: "Step exponent", meaning: "How fast the step term falls. Illustrative.", shape: "one number", example: "0.6" },
+    Ctot: { tex: "C", name: "Compute budget", meaning: "Roughly features × steps, when everything else is fixed.", shape: "one number", example: "10⁶" },
+    Fstar: { tex: "F^{*}", name: "Compute-optimal features", meaning: "The number of features that gives the lowest loss for budget C.", shape: "a number", example: "2,654 for C = 10⁶" },
+    propto: { tex: "\\propto", name: "Proportional to", meaning: "Equal up to a constant factor.", shape: "", example: "F* ∝ C^0.6" },
+    // §2.2
+    xprime: { tex: "\\mathbf{x}'", name: "Steered activation", meaning: "What the upper layers receive instead of x.", shape: "D numbers", example: "(9.9, 12.5)" },
+    SAEc: { tex: "\\mathrm{SAE}_{f_i := c}(\\mathbf{x})", name: "Clamped reconstruction", meaning: "The autoencoder's rebuild of x with feature i's strength replaced by c. “:=” means “set to”.", shape: "D numbers", example: "the rebuild plus 15 × (0.6, 0.8)" },
+    errx: { tex: "\\mathrm{error}(\\mathbf{x})", name: "Error term", meaning: "x − SAE(x): what the dictionary failed to rebuild. Kept unchanged so steering only changes one feature.", shape: "D numbers", example: "(0.05, −0.02)" },
+    fsteer: { tex: "f_i(\\mathbf{x})", name: "Feature's current strength", meaning: "What the encoder says feature i is on this input, before clamping. Steering usually targets contexts where it is 0.", shape: "one number ≥ 0", example: "0" },
+    Wsteer: { tex: "\\mathbf{W}^{dec}_{\\cdot,i}", name: "The clamped feature's direction", meaning: "Decoder column i: the only direction along which steering moves the activation.", shape: "D numbers", example: "(0.6, 0.8)" },
+    fatt: { tex: "f_i(\\mathbf{x})", name: "Feature strength", meaning: "How strongly feature i is on at this token and position.", shape: "one number ≥ 0", example: "1.5" },
+    Watt: { tex: "\\mathbf{W}^{dec}_{\\cdot,i}", name: "Feature direction", meaning: "Decoder column i, the direction the feature writes into the residual stream.", shape: "D numbers", example: "(1, 0)" },
+    cclamp: { tex: "c", name: "Clamp value", meaning: "The value the feature is pinned to, in the article given as a multiple of its maximum activation on the training data. Can be negative.", shape: "one number", example: "10 × 1.5 = 15" },
+    // §2.4
+    rcorr: { tex: "r", name: "Pearson correlation", meaning: "How closely two series rise and fall together: 1 in lockstep, 0 unrelated, −1 opposite.", shape: "−1 to 1", example: "0.642" },
+    sumt: { tex: "\\sum_t", name: "Sum over tokens", meaning: "Add one term per token t in the sample.", shape: "", example: "5 tokens" },
+    at: { tex: "a_t", name: "Feature activation at token t", meaning: "The feature's strength on token t.", shape: "one number", example: "(0, 0, 3, 0, 1)" },
+    abar: { tex: "\\bar{a}", name: "Feature's average", meaning: "The mean of a_t over all tokens.", shape: "one number", example: "0.8" },
+    nt: { tex: "n_t", name: "Neuron activation at token t", meaning: "An MLP neuron's output on token t.", shape: "one number", example: "(1, 0, 2, 1, 0)" },
+    nbar: { tex: "\\bar{n}", name: "Neuron's average", meaning: "The mean of n_t over all tokens.", shape: "one number", example: "0.8" },
+    // §3.1
+    cosuv: { tex: "\\cos(\\mathbf{u}, \\mathbf{v})", name: "Cosine similarity", meaning: "The cosine of the angle between two directions: 1 same way, 0 perpendicular.", shape: "−1 to 1", example: "0.985" },
+    dotuv: { tex: "\\mathbf{u} \\cdot \\mathbf{v}", name: "Dot product", meaning: "Multiply matching entries of the two decoder directions and add.", shape: "one number", example: "0.72 + 0.20 + 0.02 = 0.94" },
+    normuv: { tex: "\\lVert \\mathbf{u} \\rVert\\,\\lVert \\mathbf{v} \\rVert", name: "Product of lengths", meaning: "Each direction's length (square root of its sum of squares), multiplied together.", shape: "one number > 0", example: "0.990 × 0.964" },
+    // §3.2
+    pconc: { tex: "p", name: "Chance of a feature", meaning: "The fitted probability that a dictionary contains a feature dedicated to a concept.", shape: "0 to 1", example: "0.772" },
+    sigm: { tex: "\\sigma", name: "Sigmoid", meaning: "σ(z) = 1 / (1 + e^(−z)): squashes any number into 0 to 1 along an S-curve.", shape: "0 to 1", example: "σ(1.22) = 0.772" },
+    logten: { tex: "\\log_{10}", name: "Base-10 logarithm", meaning: "How many powers of ten: log₁₀(1,000) = 3. Makes the curve an S in log-frequency.", shape: "one number", example: "log₁₀(1.17) = 0.07" },
+    qfreq: { tex: "q", name: "Concept frequency", meaning: "How often the concept's word appears in the training data, per token (measured by searching for the word with spaces around it).", shape: "0 to 1", example: "10⁻⁷" },
+    Nalive: { tex: "N", name: "Alive features", meaning: "How many of the dictionary's features are not dead.", shape: "a whole number", example: "about 11.7 million for 34M" },
+    wfit: { tex: "0.32", name: "Fitted width", meaning: "How many powers of ten the S-curve takes to rise; read off the article's figure.", shape: "a constant", example: "0.32" },
+    bfit: { tex: "1", name: "Fitted offset", meaning: "Shifts the curve so it crosses 50% at q · N = 10^(−0.32) ≈ 0.48.", shape: "a constant", example: "1" },
+    // §4
+    attr: { tex: "\\mathrm{attr}_i", name: "Attribution of feature i", meaning: "A linear estimate of how much turning feature i off would change the logit difference.", shape: "one number", example: "2.625" },
+    gradx: { tex: "\\nabla_{\\mathbf{x}}", name: "Gradient with respect to x", meaning: "How much ΔL changes per small nudge of each entry of the middle-layer activation.", shape: "D numbers", example: "(1.75, −0.25)" },
+    deltaL: { tex: "\\Delta L", name: "Logit difference", meaning: "The target token's score minus a baseline token's (or the average of all logits).", shape: "one number", example: "2.125" },
+    logitt: { tex: "\\mathrm{logit}_{\\text{target}}", name: "Target logit", meaning: "The raw score of the completion being explained, such as “Sacramento”.", shape: "one number", example: "" },
+    logitb: { tex: "\\mathrm{logit}_{\\text{baseline}}", name: "Baseline logit", meaning: "The raw score of the rival completion, such as “Albany”.", shape: "one number", example: "" },
+    // §6.4
+    vprobe: { tex: "\\mathbf{v}", name: "Probe direction", meaning: "The difference-of-means direction used as a few-shot probe and steering vector.", shape: "D numbers", example: "(2, 1)" },
+    meanpos: { tex: "\\operatorname{mean}_{\\text{pos}}\\,\\mathbf{x}", name: "Mean over positive examples", meaning: "Average activation at the last token of examples showing the concept.", shape: "D numbers", example: "(3, 2)" },
+    meanneg: { tex: "\\operatorname{mean}_{\\text{neg}}\\,\\mathbf{x}", name: "Mean over negative examples", meaning: "Average activation on matched examples without the concept.", shape: "D numbers", example: "(1, 1)" },
+    // §7
+    astar: { tex: "a^{*}", name: "Cheapest reported strength", meaning: "The strength that minimizes error plus penalty.", shape: "one number ≥ 0", example: "0.95" },
+    argmin: { tex: "\\arg\\min_{a \\ge 0}", name: "The a that minimizes", meaning: "Try every non-negative a and return the one giving the smallest value (not the value itself).", shape: "", example: "0.95" },
+    tval: { tex: "t", name: "True strength", meaning: "How strongly the feature is really present.", shape: "one number ≥ 0", example: "1" },
+  },
+
+  blocks: {
+    tokens: { title: "Tokens", body: "<p>Text (or, later, images) going into the model. The autoencoder's training data was text similar to parts of the pretraining data, with no chat transcripts and no images.</p>", shape: "one token at a time" },
+    lower: { title: "Lower layers", body: "<p>The first half of the model's transformer blocks. Each adds its attention and MLP outputs to the residual stream.</p>", shape: "layer count not published", lesson: "primer/ml/transformer.html" },
+    resid: { title: "Middle-layer residual stream", body: "<p>The vector x, read halfway up the model: the sum of everything the lower layers wrote. Narrower than an MLP layer, and expected to hold abstract features.</p>", shape: "D numbers per token", lesson: "primer/ml/transformer.html" },
+    upper: { title: "Upper layers", body: "<p>The rest of the model. During steering they run on the modified vector x′ instead of x.</p>", shape: "layer count not published" },
+    outp: { title: "Next-token prediction", body: "<p>The model's output. Never used to train the autoencoder, so its changes under steering are an independent test of the features.</p>", shape: "one score per token" },
+    enc: { title: "Encoder + ReLU", body: "<p>f<sub>i</sub>(x) = ReLU(W<sup>enc</sup><sub>i</sub> · x + b<sup>enc</sup><sub>i</sub>). One detector per feature.</p>", shape: "D → F", lesson: "primer/ml/interpretability.html#SparseAutoencoder" },
+    feats: { title: "Features", body: "<p>F strengths per token, of which fewer than 300 are non-zero on average. The reported activation of feature i is f<sub>i</sub> × ‖W<sup>dec</sup><sub>i</sub>‖.</p>", shape: "1M, 4M or 34M numbers" },
+    dec: { title: "Decoder", body: "<p>SAE(x) = b<sup>dec</sup> + Σ f<sub>i</sub> W<sup>dec</sup><sub>i</sub>. Each column is a feature's direction. The rebuild explained at least 65% of the variance.</p>", shape: "F → D", lesson: "primer/ml/interpretability.html#SparseAutoencoder" },
+    errt: { title: "Error term", body: "<p>error(x) = x − SAE(x): the part of the activation the features miss. Steering keeps it, so only the clamped feature changes.</p>", shape: "D numbers" },
+    clampb: { title: "Steering", body: "<p>Clamp one feature to a value c, rebuild, add the error back, and send x′ = x + (c − f<sub>i</sub>) W<sup>dec</sup><sub>i</sub> to the upper layers (the dashed arrow), at every token.</p>", shape: "c from about −10× to 10× the feature's max" },
+    ggb: { title: "Golden Gate Bridge, 34M/31164353", body: "<p>The centre of the neighbourhood. Fires on the bridge in many languages and on its images.</p>", shape: "centre" },
+    alcatraz: { title: "Alcatraz", body: "<p>One of the features for particular places in San Francisco, closest to the bridge.</p>", shape: "inner ring" },
+    presidio: { title: "The Presidio", body: "<p>Another particular San Francisco place, also in the closest group.</p>", shape: "inner ring" },
+    tahoe: { title: "Lake Tahoe", body: "<p>Related less directly: a California destination, farther away.</p>", shape: "middle ring" },
+    yosemite: { title: "Yosemite National Park", body: "<p>Another place of decreasing relatedness.</p>", shape: "middle ring" },
+    solano: { title: "Solano County", body: "<p>A county near San Francisco, in the middle distance.</p>", shape: "middle ring" },
+    medoc: { title: "Médoc wine region, France", body: "<p>Related only abstractly: a tourist region somewhere else entirely.</p>", shape: "outer ring" },
+    skye: { title: "Isle of Skye, Scotland", body: "<p>Another abstractly related tourist destination.</p>", shape: "outer ring" },
+    quake: { title: "Earthquake features", body: "<p>A group found in the 4M and 34M dictionaries with no counterpart in this neighbourhood in the 1M one: a concept only the bigger dictionaries resolve.</p>", shape: "4M and 34M only" },
+    sf1: { title: "San Francisco, 1M", body: "<p>One San Francisco feature in the 1-million-feature dictionary.</p>", shape: "1 feature" },
+    sf4: { title: "San Francisco, 4M", body: "<p>The same region of meaning splits into two features in the 4M dictionary.</p>", shape: "2 features" },
+    sf34: { title: "San Francisco, 34M", body: "<p>And into eleven finer features in the 34M dictionary: feature splitting.</p>", shape: "11 features" },
+    stepwho: { title: "Step 1: where did Kobe Bryant play?", body: "<p>The model must recall the team: the Los Angeles Lakers.</p>", shape: "step 1 of 3" },
+    stepstate: { title: "Step 2: which state?", body: "<p>Los Angeles is in California. The prompt never names either.</p>", shape: "step 2 of 3" },
+    stepcap: { title: "Step 3: its capital?", body: "<p>California's capital is Sacramento.</p>", shape: "step 3 of 3" },
+    answer: { title: "The answer", body: "<p>“Sacramento”, measured against “Albany”, the model's most likely alternative one-token capital.</p>", shape: "logit difference" },
+    kobe: { title: "Kobe Bryant, 1M/391411", body: "<p>A feature for Kobe Bryant; ablating it affects the tokens of his name.</p>", shape: "top 5 by ablation" },
+    lakers: { title: "Los Angeles Lakers, 1M/447200", body: "<p>Only the 70th most strongly active feature across the prompt, yet among the five with the largest effect.</p>", shape: "top 5 by ablation" },
+    la: { title: "Los Angeles, 1M/980087", body: "<p>A Los Angeles feature. The article also mentions a Los Angeles area-code feature as the 162nd most active.</p>", shape: "top 5 by ablation" },
+    cal: { title: "California, 1M/81163", body: "<p>Fires most strongly on text after California is mentioned rather than on the word itself. 97th most active on this prompt.</p>", shape: "top 5 by ablation" },
+    capital: { title: "“Capital”, 1M/201767", body: "<p>A feature for capital cities, active where the prompt asks for one.</p>", shape: "top 5 by ablation" },
+  },
+
+  onReady(P) {
+    cheatWidget();
+    aliveBars();
+    scalingChart(P);
+    steerWidget();
+    neuronBars();
+    completenessChart(P);
+    clampBars();
+  },
+};
+
+function barRow(label, value, max, style, text, cols) {
+  const w = Math.max(0, Math.min(100, (value / max) * 100));
+  return `<div class="share-row" style="grid-template-columns:${cols || "6rem minmax(0,1fr) 3.4rem"}"><span>${label}</span><div><div class="share-bar" style="width:${w.toFixed(1)}%;${style || ""}"></div></div><span>${text}</span></div>`;
+}
+const STRIPED = "background:var(--hatch) var(--accent)";
+
+/* ---- §1.1: stretching a decoder column, with and without the length factor ---- */
+function cheatWidget() {
+  const s = document.getElementById("cheat-k"), o = document.getElementById("cheat-kv");
+  const bars = document.getElementById("cheat-bars"), out = document.getElementById("cheat-readout");
+  const lam = 0.1;
+  function draw() {
+    const k = +s.value;
+    o.textContent = k.toFixed(2);
+    const f = 1 / k;
+    const plain = lam * f, weighted = lam * f * k;
+    const cols = "8.5rem minmax(0,1fr) 3.2rem";
+    bars.innerHTML = `<div class="legend" style="margin:.4rem 0">Axis 0 to 0.4. Solid: penalty λ·f. Striped: the article's λ·f·‖W‖.</div>` +
+      barRow("without ‖W‖", plain, 0.4, "", plain.toFixed(3), cols) +
+      barRow("with ‖W‖", weighted, 0.4, STRIPED, weighted.toFixed(3), cols);
+    out.innerHTML = `Column length ${k.toFixed(2)}, strength ${f.toFixed(3)}; rebuild still (0.80, 0.60). Penalty without the length: <strong>${plain.toFixed(3)}</strong>; with it: <strong>${weighted.toFixed(3)}</strong>. Reported activation f·‖W‖ = ${(f * k).toFixed(2)}.`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- §1.2: dictionary sizes and alive features ---- */
+function aliveBars() {
+  const rows = [["1M", 1048576, 0.02], ["4M", 4194304, 0.35], ["34M", 33554432, 0.65]];
+  const cols = "5.4rem minmax(0,1fr) 3.6rem";
+  const M = (n) => (n / 1e6).toFixed(1) + "M";
+  document.getElementById("alive-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Axis 0 to 34 million. Solid: dictionary size. Striped: alive features.</div>` +
+    rows.map(([name, n, dead]) =>
+      barRow(`${name} size`, n, 33554432, "", M(n), cols) + barRow(`${name} alive`, n * (1 - dead), 33554432, STRIPED, M(n * (1 - dead)), cols)
+    ).join("");
+}
+
+/* ---- §1.3: illustrative U-curves, L(F, S) = F^-0.4 + S^-0.6 with C = F S ---- */
+function scalingChart(P) {
+  const a = 0.4, b = 0.6;
+  const loss = (F, C) => Math.pow(F, -a) + Math.pow(C / F, -b);
+  const bestF = (C) => Math.pow((a / b) * Math.pow(C, b), 1 / (a + b));
+  const series = [5, 6, 7, 8].map((e) => {
+    const C = Math.pow(10, e), pts = [];
+    for (let lf = 1; lf <= e - 1 + 1e-9; lf += 0.1) pts.push([Math.pow(10, lf), loss(Math.pow(10, lf), C)]);
+    return { name: `budget 10^${e}`, points: pts };
+  });
+  P.lineChart(document.getElementById("scal-chart"), {
+    series, xLabel: "number of features", yLabel: "loss (illustrative)", logX: true, yMin: 0, yMax: 0.45, width: 420, height: 260,
+    xFmt: (v) => (v >= 1e6 ? v / 1e6 + "M" : v >= 1e3 ? v / 1e3 + "k" : String(+v.toPrecision(2))), yFmt: (v) => v.toFixed(2),
+    ariaLabel: "Illustrative loss against number of features, one U-shaped curve per compute budget",
+  });
+  const s = document.getElementById("scal-c"), o = document.getElementById("scal-cv"), out = document.getElementById("scal-readout");
+  function read() {
+    const e = +s.value, C = Math.pow(10, e), F = bestF(C);
+    o.textContent = e.toFixed(1);
+    out.innerHTML = `Budget 10^${e.toFixed(1)}: best is about <strong>${Math.round(F).toLocaleString("en-US")}</strong> features for <strong>${Math.round(C / F).toLocaleString("en-US")}</strong> steps, loss ${loss(F, C).toFixed(4)} (illustrative).`;
+  }
+  s.addEventListener("input", read);
+  read();
+}
+
+/* ---- §2.2: clamping a feature moves the activation along its direction ---- */
+function steerWidget() {
+  const svg = document.getElementById("steer-svg"), s = document.getElementById("steer-k");
+  const o = document.getElementById("steer-kv"), out = document.getElementById("steer-readout");
+  const x = [0.9, 0.5], d = [0.6, 0.8], maxAct = 1.5;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  function draw() {
+    const k = +s.value;
+    o.textContent = k;
+    const c = k * maxAct;
+    const xp = [x[0] + c * d[0], x[1] + c * d[1]];
+    const ext = Math.max(2, Math.abs(xp[0]), Math.abs(xp[1])) * 1.15;
+    const cx = 160, cy = 110, sc = 95 / ext;
+    const X = (v) => cx + v * sc, Y = (v) => cy - v * sc;
+    svg.textContent = "";
+    const defs = el("defs", {});
+    const mk = el("marker", { id: "sarr", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" });
+    mk.appendChild(el("path", { d: "M0,0 L10,5 L0,10 z", fill: "var(--accent)" }));
+    defs.appendChild(mk);
+    svg.appendChild(defs);
+    svg.appendChild(el("line", { x1: 10, x2: 310, y1: cy, y2: cy, stroke: "var(--border)" }));
+    svg.appendChild(el("line", { x1: cx, x2: cx, y1: 5, y2: 215, stroke: "var(--border)" }));
+    svg.appendChild(el("line", { x1: X(x[0] - 3 * ext * d[0]), y1: Y(x[1] - 3 * ext * d[1]), x2: X(x[0] + 3 * ext * d[0]), y2: Y(x[1] + 3 * ext * d[1]), stroke: "var(--wire)", "stroke-dasharray": "4 3" }));
+    svg.appendChild(el("line", { x1: X(0), y1: Y(0), x2: X(x[0]), y2: Y(x[1]), stroke: "var(--muted)", "stroke-width": 3 }));
+    svg.appendChild(el("line", { x1: X(0), y1: Y(0), x2: X(xp[0]), y2: Y(xp[1]), stroke: "var(--accent)", "stroke-width": 2, "marker-end": "url(#sarr)" }));
+    const t = el("text", { x: 12, y: 18, class: "lbl" });
+    t.textContent = "grey: x; coloured: x′; dashed: feature direction";
+    svg.appendChild(t);
+    const band = Math.abs(k) <= 1 ? "Inside the range seen in training: effects are usually too weak to see"
+      : Math.abs(k) <= 10 ? "The range the article's examples use (−10× to 10×)"
+      : "Beyond the article's examples; at around ±100× the model turns to nonsense";
+    out.innerHTML = `Clamp to ${k}× max, c = ${c.toFixed(1)}: x′ = (${xp[0].toFixed(2)}, ${xp[1].toFixed(2)}). ${band}.`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- §2.4: features against neurons, numbers from the article ---- */
+function neuronBars() {
+  const cols = "8.6rem minmax(0,1fr) 3rem";
+  const striped = "background:var(--hatch) var(--wire)";
+  document.getElementById("neur-bars").innerHTML =
+    `<p class="readout" style="margin:.2rem 0">Share of 1M features whose best neuron correlates at 0.3 or less (text)</p>` +
+    barRow("features", 82, 100, "", "82%", cols) +
+    `<p class="readout" style="margin:.6rem 0 .2rem">Mean Spearman correlation, predicted against true activations (figure legends)</p>` +
+    `<div class="legend" style="margin:0 0 .3rem">Axis 0 to 0.5. Solid: autoencoder features. Striped: MLP neurons.</div>` +
+    barRow("1M features", 0.296, 0.5, "", "0.296", cols) +
+    barRow("34M features", 0.344, 0.5, "", "0.344", cols) +
+    barRow("neurons", 0.161, 0.5, striped, "0.161", cols);
+}
+
+/* ---- §3.2: the fitted completeness curve for each dictionary ---- */
+function completenessChart(P) {
+  const alive = [["1M", 1027604], ["4M", 2726298], ["34M", 11744051]];
+  const p = (q, N) => 1 / (1 + Math.exp(-(Math.log10(q * N) / 0.32 + 1)));
+  const series = alive.map(([name, N]) => {
+    const pts = [];
+    for (let e = -10; e <= -5 + 1e-9; e += 0.1) pts.push([Math.pow(10, e), p(Math.pow(10, e), N)]);
+    return { name: `${name} (${(N / 1e6).toFixed(1)}M alive)`, points: pts };
+  });
+  P.lineChart(document.getElementById("comp-chart"), {
+    series, xLabel: "concept frequency per token", yLabel: "chance of a feature", logX: true, yMin: 0, yMax: 1, width: 420, height: 260,
+    xFmt: (v) => "1e" + Math.round(Math.log10(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("comp-readout"),
+    ariaLabel: "Fitted chance that each dictionary has a feature for a concept, against how often the concept appears",
+  });
+}
+
+/* ---- §6: clamp strengths reported in the article's text ---- */
+function clampBars() {
+  const rows = [
+    ["Golden Gate", 10, "calls itself the bridge"],
+    ["transit", 5, "mentions a bridge"],
+    ["unsafe code", 5, "writes a buffer overflow"],
+    ["hatred", 20, "hateful text, then self-criticism"],
+    ["sycophancy", 5, "over-the-top praise"],
+    ["secrecy", 5, "plans to lie"],
+    ["inner conflict", 2, "reveals the “forgotten” word"],
+    ["assistant", -2, "drops the assistant persona"],
+  ];
+  const cols = "6.6rem minmax(0,1fr) 2.6rem";
+  document.getElementById("clamp-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Axis 0× to 20× the feature's maximum. Solid: clamped up. Striped: clamped down.</div>` +
+    rows.map(([name, k, what]) => barRow(name, Math.abs(k), 20, k < 0 ? STRIPED : "", `${k < 0 ? "−" + -k : k}×`, cols) +
+      `<p class="readout" style="margin:-.1rem 0 .35rem 7.1rem">${what}</p>`).join("");
+}
+</script>
+</body>
+</html>
