@@ -128,7 +128,7 @@
     <path class="wire" d="M262,92 C230,130 205,160 184,172" marker-end="url(#arr)"/>
     <path class="wire" d="M58,82 C90,80 115,80 136,78" stroke-dasharray="5 4" marker-end="url(#arr)"/>
     <g class="blk pe" data-block="gm_z"><circle cx="160" cy="75" r="20"/><text x="160" y="80" text-anchor="middle" style="font-size:15px">z</text></g>
-    <g class="blk pe" data-block="gm_x"><circle cx="160" cy="182" r="20" style="fill:var(--accent-soft)"/><text x="160" y="187" text-anchor="middle" style="font-size:15px">x</text></g>
+    <g class="blk pe" data-block="gm_x"><circle cx="160" cy="182" r="20" style="fill:var(--ff)"/><text x="160" y="187" text-anchor="middle" style="font-size:15px">x</text></g>
     <g class="blk pe" data-block="gm_theta"><circle cx="276" cy="86" r="14"/><text x="276" y="91" text-anchor="middle" style="font-size:14px">θ</text></g>
     <g class="blk pe" data-block="gm_phi"><circle cx="44" cy="82" r="14"/><text x="44" y="87" text-anchor="middle" style="font-size:14px">φ</text></g>
     <g class="blk plain" data-block="solid"><rect x="4" y="4" width="150" height="24" rx="6"/><path class="wire" d="M12,16 H34"/><text x="92" y="20" text-anchor="middle">generative p</text></g>
@@ -190,7 +190,7 @@ round(N(z, 1, 0.5), 4)  # → 0.5642</code></pre>
 </ol>
 <p>And it wants these when the integral is intractable and the dataset is too large for anything but small random batches. Its answer is a <strong>recognition model</strong> <em>q</em><sub>φ</sub>(<em>z</em> | <em>x</em>), which the paper also calls a <em>probabilistic encoder</em>; <em>p</em><sub>θ</sub>(<em>x</em> | <em>z</em>) is the <em>probabilistic decoder</em>.</p>
 <h4>Why it matters today</h4>
-<p>This two-step story, “draw a simple code, then decode it with a network”, is the template for most generative models since. A diffusion model is the same story told over a thousand small steps; see the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>.</p>
+<p>This two-step story, “draw a simple code, then decode it with a network”, is the template for most generative models since. A diffusion model is the same story told over a thousand small steps; see the <a href="ddpm.html">DDPM companion</a>.</p>
 </section>
 
 <section id="s2-2">
@@ -641,7 +641,7 @@ round(sigmoid(3 * math.tanh(1.0 * 1.1 + 0) - 0.2), 2)  # → 0.9</code></pre>
     <tr><td>KL weighted exactly 1</td><td>A weight β, tuned (β-VAE) or tiny (image compressors)</td><td>Trade rebuild sharpness against a smooth, well-packed code</td><td><a data-lesson="primer/ml/generative/autoencoders.html">autoencoders</a></td></tr>
     <tr><td>One tanh hidden layer</td><td>Deep convolutional or transformer encoders and decoders</td><td>Real images and audio</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
     <tr><td>Continuous Gaussian codes</td><td>Also discrete codebooks (VQ-VAE)</td><td>Turns images and audio into tokens a transformer can read</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal</a></td></tr>
-    <tr><td>The VAE as the generator</td><td>The VAE as a compressor, with diffusion generating inside its code space</td><td>Squared-error decoders blur; diffusion does not</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>The VAE as the generator</td><td>The VAE as a compressor, with diffusion generating inside its code space</td><td>Squared-error decoders blur; diffusion does not</td><td><a href="ddpm.html">DDPM companion</a></td></tr>
     <tr><td>Adagrad</td><td>Adam</td><td>Better default for deep networks</td><td><a href="adam.html">Adam companion</a></td></tr>
   </tbody>
 </table></div>

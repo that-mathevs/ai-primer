@@ -294,6 +294,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "binary quantization"
  },
+ "bits per dimension": {
+  "def": "A model's negative log-likelihood per number in the data, in bits: how long a code the model needs, on average, for each pixel value. Lower is better.",
+  "lesson": "primer/ml/losses.html",
+  "term": "bits per dimension"
+ },
  "blast radius": {
   "def": "How much damage a failure can do before it is noticed and stopped.",
   "lesson": "primer/agents/deployment.html",
@@ -1064,6 +1069,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/context.html",
   "term": "few-shot prompt"
  },
+ "fid": {
+  "def": "Fréchet Inception Distance: compares a set of generated images with real ones through the statistics of their features in a pretrained image network. Lower is better; 0 means indistinguishable.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "FID"
+ },
  "filter": {
   "def": "In a CNN, the small grid of learned weights a convolution slides over an image; also called a kernel.",
   "lesson": "primer/ml/cnn_rnn.html",
@@ -1634,6 +1644,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/losses.html",
   "term": "label smoothing"
  },
+ "langevin dynamics": {
+  "def": "Sampling by repeatedly taking a small step along the score, towards where data is denser, and adding a little fresh noise. A diffusion sampler has this shape.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "langevin dynamics"
+ },
  "language identification": {
   "def": "Guessing which language a text is in, so a pipeline keeps only the ones it wants.",
   "lesson": "primer/ml/pretraining.html",
@@ -1878,6 +1893,11 @@ window.PRIMER_GLOSSARY = {
   "def": "How probable a model finds an example, averaged over every hidden cause that could have produced it. With a neural network inside the model that average is an intractable integral, which is why VAEs train on a lower bound instead.",
   "lesson": "primer/ml/generative/autoencoders.html",
   "term": "marginal likelihood"
+ },
+ "markov chain": {
+  "def": "A sequence of random steps where each step depends only on the one just before it, not on the whole history.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "markov chain"
  },
  "master weights": {
   "def": "An fp32 copy of the weights that receives optimizer updates, so tiny updates aren't lost.",
@@ -2744,6 +2764,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/operations.html",
   "term": "retrieval failure"
  },
+ "reverse process": {
+  "def": "The learned half of a diffusion model: a chain of small denoising steps that turns pure noise back into data.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "reverse process"
+ },
  "reward": {
   "def": "The single number the environment returns to say how good an action was.",
   "lesson": "primer/ml/reinforcement.html",
@@ -3403,6 +3428,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A cheap, wide first pass to shortlist candidates, then an expensive, precise pass over only those.",
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "two-stage retrieval"
+ },
+ "u-net": {
+  "def": "An image network that shrinks the picture step by step to see the whole of it, then grows it back, with shortcut links joining matching sizes. The classic diffusion denoiser.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "U-Net"
  },
  "umap": {
   "def": "A projection to 2-D that keeps each point's neighbours close but distorts other distances.",
