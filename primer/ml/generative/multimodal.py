@@ -3,7 +3,144 @@ r"""
 
 Run: `python -m primer.ml.generative.multimodal`
 
-## The everyday picture
+This lesson builds on the transformer of `primer.ml.transformer`, its
+attention (`primer.ml.attention`) and positions (`primer.ml.positional`),
+and the CLIP image encoder of `primer.ml.embeddings.contrastive`;
+`primer.notation` explains every symbol from zero.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** A multimodal model turns images, audio and video into
+sequences of vectors the same width as a language model's word vectors, so
+one transformer can read (and, with a codebook, write) all of them; for a
+practitioner, every picture, second of sound or frame of video is a number
+of tokens, and that number is the cost, the latency and the limit.
+
+**When you need it.** You need this lesson the moment a model has to read
+something that isn't text: a screenshot, a chart, a scanned form, a voice
+message, a meeting recording, a video clip. Whether you call a hosted
+vision model or build with an open one, the same questions decide the
+outcome: how many tokens each input becomes, at what resolution, in what
+order in the prompt, and whether the model needs the signal at all or only
+its words. You don't need a multimodal model when the words are all that
+matters: a transcript of speech is about 3.2 tokens a second where audio
+tokens are 50 a second (this lesson's rates), and a caption is a few dozen
+tokens where a 336 × 336 image is 576. The number that shows how fast the
+naive approach fails: send a 10-second clip at 30 frames a second with
+256 tokens a frame and it is 76,800 tokens, more than half of a
+128,000-token window, before a single word of the question. Keep one frame
+a second and it is 2,560.
+
+**Your options.** From the cheapest to the most control:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Turn the signal into text first | Transcribe audio (Whisper), caption or OCR an image, then use a text model | The densest input there is: hours of speech in one window | Loses tone, layout, small detail and anything the captioner missed | Your pipeline, ahead of the model |
+| A hosted multimodal API | Send the image or audio in the prompt; the vendor's encoder tokenizes it | No infrastructure; a documented token count per image | Tokens per image by area (a 1000 × 1000 image is 1,296 tokens on one API); resizing above a size limit | The vendor's API |
+| An open vision-language model | A ViT's patch vectors pass through a projector into the prompt (LLaVA's recipe) | Full control of resolution, tiling and prompt layout | A GPU; 196 to 576 or more tokens per image at your chosen resolution | Your server |
+| A compressed-visual family | New cross-attention layers (Flamingo) or a small set of learned queries (BLIP-2's Q-Former) read the image instead of splicing it | A short text sequence however many images; 32 to 64 tokens per image | Some detail lost; a different model family to adopt | The model family you download |
+| Align your own projector | Freeze a vision encoder and a language model, train the small adapter between them on captions, then tune on instructions | A model that speaks your domain's pictures, cheaply (stage 1 runs in hours) | Captioned data, then instruction data; a stage-2 fine-tune for behaviour | Your training loop |
+| Discrete tokens for generation | Snap image or audio vectors to a learned codebook so the model predicts them like words | One model reads and writes every modality with next-token prediction | 1,024 ids for a 256 × 256 image; 600 ids a second for codec audio | A tokenizer plus the language model |
+
+**How to choose.** Start from what the model must get out of the signal,
+then count the tokens.
+
+- Only the words matter (a voicemail, a lecture, a document with plain
+  text): transcribe or OCR to text and use a text model. It is the densest
+  and the cheapest by a wide margin.
+- Layout, tone, colour or small detail matters (a chart, a screenshot, a
+  form, a hesitant customer): send the signal itself, at the smallest
+  resolution that still shows the detail, cropped to the region that
+  matters.
+- Long video: sample frames (one a second for a lecture, more for anything
+  fast), merge neighbouring patch tokens, and send the soundtrack as a
+  transcript alongside.
+- Your own domain, weak results from general models: align a projector on
+  your captions first (cheap and safe, since both big models stay frozen),
+  then instruction-tune.
+- Generating pictures or speech from a language model: discrete codebook
+  tokens for simplicity, or hand the language model's output to a diffusion
+  model (`primer.ml.generative.diffusion`) for finer detail.
+- Whatever you pick, put the image before the question. The language model
+  is causal, so text placed before an image is scored as if the image were
+  not there; the hosted API's own guidance says the same.
+
+**What it costs.** Tokens grow with the square of the side: a 224 × 224
+image in 16-pixel patches is 196 tokens, a 336 × 336 image in 14-pixel
+patches is 576, and a 1008 × 1008 image with 2 × 2 neighbours merged is
+1,296. Hosted APIs bill the same way: on Claude's API each 28 × 28 pixel
+block is a visual token, so a 1000 × 1000 image is 1,296 tokens, larger
+images are downscaled to a long-edge limit (1568 pixels on the standard
+tier), and at \$1 per million input tokens that image costs about \$1.30
+per thousand images. Audio is 50 encoder tokens a second on Whisper's
+design (a log-mel spectrogram at 100 frames a second, halved by a stride-2
+convolution), so a 128,000-token window holds about 43 minutes; speech as
+text holds about 11 hours; video sampled at one frame a second and 256
+tokens a frame holds about 8 minutes, and full-rate video under 20
+seconds. Every one of those tokens lengthens the prefill before the first
+word of the answer and competes with instructions and retrieved documents
+for attention. Training cost is lopsided: stage-1 alignment trains a
+projector of a few million numbers between models of billions (this
+lesson's toy takes 80 pictures from 24% to 99% correct), and BLIP-2 beat
+the 80-billion-parameter Flamingo on zero-shot VQAv2 by 8.7% with 54
+times fewer trainable parameters; it is stage 2, the instruction data,
+that decides how the model behaves.
+
+**What breaks.**
+
+- **Objects that aren't there.** A weakly aligned model describes what
+  pictures like this usually contain; the hosted API warns of the same
+  with low-quality, rotated or very small images (under 200 pixels). Send
+  clear images at a usable size, and verify anything that matters.
+- **The image after the question.** The question's tokens cannot attend
+  forward to an image that follows them. Image first, then the question.
+- **Unreadable small text.** A screenshot downscaled to the size limit
+  loses its small print. Crop to the region, or tile the page, rather than
+  sending one huge image.
+- **The context window full of frames.** 20 minutes of video at one frame
+  a second and 256 tokens a frame is 307,200 tokens, over twice a 128k
+  window. Sample less often, merge tokens, transcribe the audio, or split
+  the clip.
+- **Sampling that misses the moment.** One frame a second is fine for a
+  lecture and useless for a golf swing. Match the frame rate to the speed
+  of what you are looking for.
+- **Transcribing away the signal.** A transcript drops hesitation, tone
+  and who spoke; a caption drops layout. Use text only when the words are
+  enough.
+- **A codebook that fits nothing.** A random codebook is useless at every
+  size (error 0.6 to 2.1 against 0.09 to 0.32 for a learned one in this
+  lesson's sweep); codebooks are learned on the data, and a tokenizer from
+  one domain misbehaves on another.
+
+**In the wild.** The Vision Transformer (Dosovitskiy et al.) is the front
+end: a pure transformer over 16 × 16 patches that matched convolutional
+networks given enough data, and CLIP's ViT (Radford et al.) is the one
+most vision-language models start from. LLaVA (Liu et al.) is the encode,
+project and splice recipe, trained on instruction data generated with a
+language model, scoring 85.1% of GPT-4 on its own multimodal benchmark;
+Flamingo (Alayrac et al.) reads images through new cross-attention layers
+between frozen models and learns tasks from a few examples in the prompt;
+BLIP-2 (Li et al.) compresses each image through a Querying Transformer.
+Whisper (Radford et al.) is the audio side: an encoder over log-mel
+spectrograms and a text decoder trained on 680,000 hours of audio, used
+zero-shot for transcription. For generation, VQ-VAE and DALL-E turned
+images into codebook ids for a transformer, SoundStream and EnCodec do it
+for audio with stacked residual codebooks, and Chameleon trains one model
+on interleaved text and image tokens from the start. Hosted vision APIs
+expose the same arithmetic as a price list: Claude's vision documentation,
+the source of the numbers above, counts each 28 × 28 pixel block as a
+visual token and caps images by long edge and token count. Every paper is
+linked at the end of the lesson.
+
+**Go deeper.** Level 2 builds each front end by hand: a 4 × 4 picture cut
+into four tokens, a Vision Transformer with its projector spliced into a
+tiny language model and aligned on 80 pictures, a Fourier transform and a
+log-mel spectrogram from eight samples upward, a codebook learned by
+k-means with residual stages, and the token arithmetic for video and the
+context budget. If you only needed to count the tokens and choose, you are
+done.
+
+## Level 2: How it works, from scratch
 
 Imagine a brilliant reader who can take in only one thing: a long row of
 index cards, each card holding a short list of numbers. That is a language
