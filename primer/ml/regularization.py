@@ -3,7 +3,127 @@ r"""
 
 Run: `python -m primer.ml.regularization`
 
-## The idea: the student who memorised last year's exam
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on the losses in `primer.ml.losses` and the
+training loop in `primer.ml.neural_net`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Regularization is everything you do to make a model
+learn the pattern in its training data rather than memorise the examples,
+and the way you know it is working is the gap between the error on data
+the model trained on and the error on data it has never seen.
+
+**When you need it.** Whenever you train or fine-tune anything on less data
+than the model could memorise, which in practice is always: a fine-tune on
+a few thousand examples, a classifier on a table of ten thousand rows, a
+forecasting model on a year of history. The tell is a training error that
+keeps falling while the validation error turns and climbs. This lesson's
+polynomial sweep shows the whole story in one table: at degree 5 the
+training error is 0.013 and the validation error 0.057; at degree 9 the
+training error has dropped to 0.004 and the validation error has risen
+twelve-fold to 0.71; at degree 11 the training error is zero and the
+validation error is 7,631. Its over-sized network bottoms out on
+validation near epoch 300 and gets steadily worse for the next 1,700
+epochs while its training loss keeps improving. The other tell is the
+opposite one, and it hides in a good offline score: a model that looked
+superb in evaluation and collapsed in production has usually seen the
+answers, and that is leakage, which the same lesson covers. You do not need
+more regularization when both errors are high; that is underfitting, and it
+wants more capacity, more features or more training, the opposite fix.
+
+**Your options.** From the cheapest to the most involved:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| A held-out validation set (and a test set touched once) | Measures the gap that every other option is judged by | An honest estimate, as long as the test set is not used to choose | 15% to 30% of your data, and discipline | Your data pipeline |
+| Early stopping | Watches validation loss, stops after `patience` bad checks, restores the best weights | You ship the best model seen, not the last | A validation pass per epoch; nothing in the model | The training loop: a callback in every framework |
+| More data, or augmented data | Averages the noise away | Tames variance in flexible models; does nothing for a model too simple to fit the pattern | Collection or labelling time | Your data |
+| L2 penalty (weight decay) | Taxes the square of every weight, so all of them shrink a little | Smaller, smoother weights; nothing is eliminated | One hyperparameter, λ | The optimiser: on by default in AdamW |
+| Dropout | Zeroes each activation with probability p on every training step, scaled so evaluation is a plain pass-through | No neuron becomes indispensable | Slower convergence; a bug if left on at evaluation | The model, between layers |
+| L1 penalty (lasso) | Charges a flat fee per unit of weight, so small weights go to exactly zero | A sparse model that names its features | Harder optimisation; one hyperparameter | Linear and tabular models, feature selection |
+| Less capacity | A smaller model, a lower polynomial degree, fewer features | Less to memorise with | Possibly too little to learn the pattern | The architecture |
+| Cross-validation | Trains k models, each with one fold held out, and averages their scores | A steadier estimate than one split when data is small | k training runs | Small tabular problems; scikit-learn's cross-validation guide |
+| Leak-proof splitting | Deduplicates before splitting, splits by time or by user, drops features unknown at prediction time | An offline score that survives production | Thinking about the timeline of every feature | Your data pipeline, before any training |
+
+**How to choose.** Diagnose first, because the two failures want opposite
+cures.
+
+- Both errors high: underfitting. Add capacity, features or training time.
+  Regularizing further makes it worse.
+- Training low, validation high: overfitting. Early stopping first, because
+  it costs nothing; then weight decay (which you probably already have) and
+  dropout; then more data if you can get it.
+- A tabular model you must explain, or hundreds of features of which a few
+  matter: L1, which in this lesson zeroes 5 of 7 useless weights while L2
+  zeroes none.
+- Fewer than a few thousand examples: cross-validate rather than trust one
+  split.
+- A model that was wonderful offline: before celebrating, check for twins
+  across the split and for columns filled in after the outcome.
+- Whatever you pick, the test set is touched once, at the end. Every
+  decision made by looking at it turns it into a second validation set, and
+  the benchmark version of this failure is Goodhart's law in
+  `primer.ml.benchmarks`.
+
+**What it costs.** Early stopping costs one validation pass per epoch and
+stops training sooner, so it usually saves compute. Weight decay and L1 cost
+nothing at inference and one hyperparameter each; PyTorch's AdamW defaults
+weight decay to 0.01. Dropout slows training, because each step trains a
+thinned network, and the original transformer used p = 0.1 rather than
+anything heavier. Cross-validation multiplies training cost by the number
+of folds. The dear cost is data: the validation and test sets are examples
+you cannot train on, and with 100 examples a 70 / 15 / 15 split leaves 15
+for each. Leakage costs the most of all, late: this lesson's fraud model
+with a future feature scores 98% offline and 49% in production, worse than
+the honest model's 61%.
+
+**What breaks.**
+
+- **Dropout left on at evaluation.** Predictions become noisy and change
+  from call to call. Switch the model to evaluation mode; the lesson's
+  `dropout` passes activations through unchanged there.
+- **Early stopping with no restore.** Stopping is half the job; the weights
+  at the stop are the ones that just failed twice. Keep the snapshot from
+  the best check.
+- **Patience too short.** A noisy validation curve stops training on a
+  blip. Smooth it, or raise the patience.
+- **Tuning against the test set.** Each look fits the model to it a little.
+  Choose with validation, report with test.
+- **Duplicates across the split.** A nearest-neighbour memoriser scores 87%
+  on data whose labels are 30% noise, when no honest model can beat about
+  70%; deduplicated, it scores 50%. Deduplicate before splitting.
+- **A feature from the future.** `chargeback_filed` is recorded after the
+  outcome. Ask of every column: would I know this at prediction time?
+- **A random split on time-ordered data.** Predicting next month from a
+  shuffle of all months is a leak. Split by time when the task is the
+  future, by user when the task is new users.
+- **Regularizing an underfit model.** It cannot get better by learning
+  less. Look at both curves before reaching for the penalty.
+
+**In the wild.** Weight decay is on by default in the optimisers that train
+transformers: `torch.optim.AdamW` takes `weight_decay` with a default of
+0.01, and `primer.ml.optimizers` shows why decoupling it from the gradient
+step mattered. Early stopping is a callback everywhere it is offered;
+Keras's `EarlyStopping` has `patience` and `restore_best_weights`, which
+default to 0 and False, so a naive call gets neither. Dropout (Srivastava
+et al., 2014) trains at p = 0.1 in the original transformer and is switched
+off by `model.eval()` in PyTorch. The lasso is Tibshirani (1996), and
+scikit-learn's cross-validation guide is the standard reference for folds
+that respect groups and time. Kapoor and Narayanan (2022) catalogued the
+kinds of leakage and how widely they inflate published results, and Belkin
+et al. (2018) documented double descent, where very over-parameterised
+models generalise well again, which is why the modern recipe is a large
+model plus regularization rather than a small model.
+
+**Go deeper.** Level 2 fits the memorising cubic by hand, sweeps polynomial
+degree to draw the valley in validation error, replays early stopping on a
+list of losses, splits error into bias and variance over 300 training sets,
+builds dropout and the two penalties in a few lines each, cuts data into
+folds, and reproduces both leaks with a nearest-neighbour memoriser. If you
+only needed to diagnose a curve and pick a fix, you are done.
+
+## Level 2: How it works, from scratch
 
 Two students prepare for an exam. One learns the ideas. The other memorises
 last year's paper, answer by answer, and scores 100% on it in practice. On
