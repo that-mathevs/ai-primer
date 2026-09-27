@@ -6,7 +6,118 @@ Run: `python -m primer.ml.training_stages`
 New to the notation? `primer.notation` explains every symbol used here
 (Σ, log, σ, subscripts, ᵀ, and so on) from zero.
 
-## The idea
+## Level 1: The practitioner's guide
+
+**In one sentence.** An assistant model is built in stages (pretraining for
+knowledge, supervised fine-tuning for the assistant format, preference
+tuning for tone and safety), and knowing which stage produced a behaviour
+tells you which lever (a prompt, retrieval, a small adapter, a full
+fine-tune) will change it.
+
+**When you need it.** You need this map the first time a model does
+something you cannot fix by rewording the prompt, and the question becomes
+"do we fine-tune?". The tell: a behaviour that stays wrong across many
+prompt rewrites (the house style never quite lands, the output format is
+right 95 times in 100 and you need 100), or a system prompt so long that
+sending it with every call is most of your bill. You don't need training
+when the model lacks a fact: a base model's knowledge is frozen at its
+training date (the knowledge cutoff), so a product catalogue that changes
+weekly is a retrieval problem, not a training problem. You also don't need it when a
+clearer instruction or two examples in the prompt already fix the behaviour.
+Most production systems end up as retrieval plus a well-built prompt.
+
+**Your options.** From the cheapest to the most committed:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Prompting and few-shot examples | Describe the behaviour, show one or two examples | Nothing; it raises the odds, and the vendor's SFT and preference tuning did the heavy lifting | Extra input tokens on every call | Your prompt |
+| Retrieval (RAG) | Fetch the facts at request time and put them in the prompt | Current, citable knowledge | An index to build and keep fresh, longer prompts | Your code |
+| Hosted supervised fine-tuning | Train the vendor's model on your prompt-and-reply pairs; only the reply is graded | Consistent format and style without the long prompt | Curated examples, a training job, sometimes a higher per-token price | The vendor's fine-tuning API |
+| LoRA or QLoRA adapter | Train a small low-rank correction beside frozen weights of an open model | Same effect as a fine-tune at under 1% of the trainable parameters; mergeable for no added latency | A GPU you rent or own, data, a model to serve | Your training and serving stack |
+| Preference tuning (DPO) on your own pairs | Show chosen-versus-rejected pairs; the model learns to prefer the chosen kind | Shifts tone, verbosity and refusals that no single "correct answer" captures | Thousands of comparisons, a frozen reference copy, one training loop | Your training stack, or a hosted API that offers it |
+| Full fine-tune | Update every weight on a large dataset | The largest possible shift: a new domain, a new language | Multi-GPU training, a copy of the whole model per variant, real risk of forgetting | Your training stack |
+| Distillation | Train a small student to imitate a big teacher's full probability spread on your traffic | A cheaper, faster model for one narrow task | Millions of teacher outputs, a training run, an eval suite | Your training stack |
+
+**How to choose.** The lesson's `choose_adaptation` walks this order,
+cheapest first, and stops at the first lever that fits.
+
+- Missing or changing knowledge, or answers that must cite a source:
+  retrieval. Fine-tuned knowledge is stale the day the data changes and
+  cannot point at where it came from.
+- Wrong behaviour, format or tone: improve the prompt and add examples.
+  Stop here if it works.
+- Still inconsistent with a good prompt, or the prompt is too long to send
+  every time: a LoRA adapter (or the hosted equivalent). A few thousand
+  excellent examples beat a mountain of mediocre ones; LIMA (Zhou et al.,
+  2023) fine-tuned a 65-billion-parameter model on 1,000 curated examples.
+- A judgement no reference answer captures (which of two drafts is better):
+  preference tuning with DPO, which needs no reward model and no
+  reinforcement-learning loop.
+- A genuine domain shift with millions of examples: a full fine-tune, and
+  only then.
+- Too expensive at volume: distil the working big model into a small one for
+  that task.
+- Whatever you pick, fine-tuning teaches behaviour and retrieval supplies
+  knowledge. Hold an evaluation set out before you train anything, because
+  every stage past prompting can quietly make something else worse.
+
+**What it costs.** Prompting costs tokens, on every call, forever.
+Retrieval costs an index and longer prompts. Fine-tuning costs data first:
+supervised fine-tuning needs thousands to hundreds of thousands of examples
+(this lesson), and each one must be an answer you would be happy to see a
+thousand times. Compute is smaller than people expect once weights are
+frozen: for one 4096 × 4096 layer, a full fine-tune trains 16,777,216
+parameters, a rank-8 LoRA adapter trains 65,536 (0.39%), and the adapter is
+megabytes rather than gigabytes (this lesson's `lora_trainable_params`).
+The LoRA paper reports up to 10,000 times fewer trainable parameters and
+three times less GPU memory than full fine-tuning at the same quality; QLoRA
+stores the frozen base in 4 bits and fine-tunes a 65-billion-parameter model
+on one 48 GB GPU in 24 hours. Merged, an adapter adds no serving latency.
+Pretraining is the one stage you never pay for directly: months of
+multi-GPU time, and a vendor's model card is how its cost reaches you as
+knowledge cutoff, languages covered and coding ability.
+
+**What breaks.**
+
+- **Training on the prompt.** Forget the mask that grades only the reply and
+  the model learns to write user questions too. Hosted APIs mask for you; if
+  you write the loop, `response_mask` is the whole difference.
+- **Fine-tuning for facts.** The model learns the phrasing of your documents
+  more than their content, and is out of date at the next edit. Retrieve.
+- **A rank too small.** In the lesson's toy, a rank-1 adapter plateaus on a
+  task that needs rank 2 while ranks 2 and 4 drive the error to zero. If an
+  adapter stalls, raise r before blaming the data.
+- **Preference tuning that collapses.** The lesson's DPO toy pushes the top
+  answer to 0.995 and everything else to nearly zero, because every pair the
+  winner appears in keeps pushing it up. A larger β keeps the model closer
+  to its starting point; watch for a model that says one thing every time.
+- **Forgetting.** Any fine-tune shifts skills you did not train on. Keep a
+  general evaluation beside your task evaluation.
+- **Base versus instruct.** Fine-tuning a base model gives you a base model
+  that continues text; start from the instruction-tuned checkpoint unless you
+  are prepared to redo SFT yourself.
+
+**In the wild.** The vendor's side of the pipeline is the InstructGPT
+recipe (Ouyang et al., 2022): supervised fine-tuning, a reward model, then
+reinforcement learning; that paper found a 1.3-billion-parameter model
+tuned this way preferred over the 175-billion-parameter GPT-3 it started
+from. Hosted fine-tuning APIs expose supervised fine-tuning and, at some
+vendors, DPO and reinforcement fine-tuning with a grader (OpenAI's model
+optimization guide lists all three). For open models, Hugging Face TRL
+provides SFTTrainer, RewardTrainer, DPOTrainer, GRPOTrainer and a
+DistillationTrainer; PEFT provides LoRA and its relatives; and vLLM
+serves many LoRA adapters on one base model, picking the adapter per request
+(a LoRARequest, bounded by max_loras), which is how one shared server
+carries a fine-tune per customer. The papers are linked at the end of the
+lesson.
+
+**Go deeper.** Level 2 builds each stage in a few lines: the next-token loss
+and the one mask that turns it into SFT, a reward model as a taste test, DPO
+as the same loss read off the policy itself, a LoRA layer you can multiply
+out by hand, and distillation's softened targets, each with a figure you can
+rerun. If you only needed to choose a lever, you are done.
+
+## Level 2: How it works, from scratch
 
 A chat assistant is built in layers, and each layer explains a different
 behaviour you see:
