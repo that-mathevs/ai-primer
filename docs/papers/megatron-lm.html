@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Megatron-LM, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Shoeybi et al. (2019), Megatron-LM: split every transformer layer's matrix multiplies across the GPUs of one server with two all-reduces per layer, and train an 8.3-billion-parameter GPT-2 at 76% scaling efficiency.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>/* page-local: show which toggle is selected */ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--fg);font-weight:600}</style>
+</head>
+<body data-paper="megatron-lm">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background and challenges</a>
+        <ol>
+          <li><a href="#s2-2">2.2 Transformer language models</a></li>
+          <li><a href="#s2-3">2.3 Data and model parallelism</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Model parallel transformers</a>
+        <ol>
+          <li><a href="#s3-1">3.1 The MLP block</a></li>
+          <li><a href="#s3-2">3.2 The attention block</a></li>
+          <li><a href="#s3-3">3.3 Four all-reduces per layer</a></li>
+          <li><a href="#s3-4">3.4 The embedding and the loss</a></li>
+          <li><a href="#s3-5">3.5 Duplicate the cheap parts</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Setup</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Training data</a></li>
+          <li><a href="#s4-2">4.2 Optimization</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Experiments</a>
+        <ol>
+          <li><a href="#s5-1">5.1 Scaling analysis</a></li>
+          <li><a href="#s5-2">5.2 GPT-2 results</a></li>
+          <li><a href="#s5-3">5.3 BERT results</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#appx">Appendices B, D and E</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Megatron-LM, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper and Bryan Catanzaro (2019), <em>Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism</em>: the paper that split each transformer layer across the GPUs of one server with a handful of lines of PyTorch, and trained the largest language model of its day.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1909.08053">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1909.08053">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1909.08053">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper (version 4, March 2020) section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its figures are redrawn from scratch and its tables are not reproduced; a few of their numbers are restated with attribution. Equations are reproduced with every symbol decoded; formulas that write out, in symbols, something the paper says in words are labelled as this page's own. Numbers made up for teaching are labelled illustrative. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap, and so does every symbol in every equation.</li>
+  <li>The heart of the paper is §3. Its redrawn Figure 3 is live, and the split playground next to it lets you cut a weight matrix by rows or by columns and see which one survives the <span class="t" data-t="gelu">GELU</span>.</li>
+</ul>
+<p>Every idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>. This paper is the founding paper of <span class="t" data-t="tensor parallelism">tensor parallelism</span>; the <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> builds its column and row splits in NumPy and checks them against the unsplit answer, and the <a href="zero.html">ZeRO companion</a> covers the other way to spread a model over GPUs, sharding its training state. Running example: <strong>two GPUs</strong> and matrices small enough to multiply by hand.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053">original</a></span></h2>
+<blockquote class="quote">“Our approach does not require a new compiler or library changes, is orthogonal and complimentary to pipeline model parallelism, and can be fully implemented with the insertion of a few communication operations in native PyTorch.”<cite>Shoeybi et al. (2019), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A model too big for one GPU has to be cut up. One way is to give each GPU a few whole layers, like an assembly line. Megatron-LM cuts the other way: every layer is sliced lengthwise and each GPU in a server does its slice of every layer, like several cooks each chopping part of the same pile of onions, meeting briefly after each dish.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A simple <em>intra-layer</em> <span class="t" data-t="model parallelism">model parallelism</span> for transformers: split the matrix multiplies so each layer needs only two <span class="t" data-t="all-reduce">all-reduces</span> in the forward pass and two in the backward.</li>
+  <li>Scaling: an 8.3-billion-parameter GPT-2 on 512 GPUs at 15.1 petaflops, 76% of perfect scaling from a single GPU that itself runs at 39 teraflops (30% of its peak).</li>
+  <li>Results: the 8.3B GPT-2 set records on WikiText103 (<span class="t" data-t="perplexity">perplexity</span> 10.8 against 15.8) and LAMBADA (66.5% against 63.2%); a 3.9B <span class="t" data-t="bert">BERT</span> set a record on RACE (90.9% against 89.4%).</li>
+  <li>A finding about architecture: BERT-style models stop improving with size unless the <span class="t" data-t="layer normalization">layer normalization</span> and the <span class="t" data-t="residual connection">residual connection</span> are rearranged.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The column-then-row split of this paper became the standard way to cut a transformer layer across GPUs, and it is still kept within one server, where the links are fastest. The <a href="zero.html">ZeRO</a> paper, which followed weeks later, built on it.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Bigger language models were getting better, but the memory of one GPU was not growing with them, and optimizers like <span class="t" data-t="adam">Adam</span> add extra memory for every weight. Earlier ways to split a model, GPipe and Mesh-TensorFlow, needed the model rewritten or a new compiler. The authors want something an ordinary PyTorch user can add in an afternoon.</p>
+<h3 class="rung">Tiny example: what 76% means</h3>
+<p>The baseline is a 1.2-billion-parameter model on one 32 GB V100, sustaining 39 teraflops. Perfect scaling to 512 GPUs would be 512 × 39 = 19,968 teraflops, about 20 petaflops. The paper measures 15.1 petaflops: 15.1 / 19.97 = <strong>75.6%</strong>, the “76% scaling efficiency”.</p>
+<div class="eq" data-tex="\htmlData{sym=Eff}{E} = \frac{\htmlData{sym=Fn}{F_n}}{\htmlData{sym=ngpu}{n}\,\htmlData{sym=F1}{F_1}}" data-fallback="E = F_n / (n F_1)"></div>
+<div class="symtable" data-syms="Eff,Fn,ngpu,F1"></div>
+<p class="inwords"><strong>In words:</strong> “scaling efficiency is the throughput you got on n GPUs, divided by n times what one GPU achieved alone.” (This page's formula for what the paper describes in words.)</p>
+<p class="inwords"><strong>With the numbers:</strong> 15.1 × 10<sup>15</sup> / (512 × 39 × 10<sup>12</sup>) = 0.756. The baseline itself is 30% of the GPU's peak, so the whole run delivers about 0.3 × 0.756 ≈ 23% of the cluster's peak arithmetic.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>F_1, n, F_n = 39e12, 512, 15.1e15
+# perfect scaling, in petaflops
+n * F_1 / 1e15  # → 19.968
+# E = F_n / (n F_1)
+E = F_n / (n * F_1)
+round(E, 3)  # → 0.756
+# share of the cluster's peak, given the baseline's 30%
+round(0.3 * E, 2)  # → 0.23</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>A scaling number is only as good as its baseline. Choosing a baseline that already runs at 30% of peak, the authors call it a strong one, is what makes 76% meaningful: it is easy to scale well from a slow single-GPU program.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background and challenges <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>§2.1 recalls where <span class="t" data-t="pretraining">pretraining</span> came from: first reusing learned word vectors, then reusing whole pretrained networks and <span class="t" data-t="fine-tuning">fine-tuning</span> them end to end. Each step moved more of the model, and more of the compute, into pretraining.</p>
+
+<section id="s2-2">
+<h3>2.2 Transformer language models and multi-head attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S2.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The paper works with both families of <span class="t" data-t="transformer">transformer</span>: GPT-2, a decoder that writes left to right, and BERT, an encoder that reads in both directions. Each layer is the same two steps, <span class="t" data-t="self-attention">self-attention</span> (tokens exchange information) then a two-layer feed-forward network (each token alone), each wrapped in a residual connection. Both use GELU, and both normalize the <em>input</em> to each step rather than its output as the <a href="attention-is-all-you-need.html">original transformer</a> did.</p>
+<h4>Tiny example</h4>
+<p>GELU (the paper writes GeLU) is a smooth ReLU: x times the chance that a standard bell-curve variable falls below x. GELU(1) = 1 × 0.841 = 0.841; GELU(−1) = −1 × 0.159 = −0.159; GELU(2) = 1.954. Big positive inputs pass almost unchanged, big negative ones go to almost zero.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def gelu(x):
+    # x times Φ(x), the bell curve's cumulative probability
+    return x * 0.5 * (1 + math.erf(x / math.sqrt(2)))
+round(gelu(1), 3), round(gelu(-1), 3), round(gelu(2), 3)  # → (0.841, -0.159, 1.954)</code></pre>
+<h4>Why it matters</h4>
+<p>That GELU is <em>not</em> linear, GELU(a + b) ≠ GELU(a) + GELU(b), is the fact §3's whole design turns on. The <a class="lesson" data-lesson="primer/ml/transformer.html">transformer lesson</a> builds the layer (<a data-lesson="primer/ml/transformer.html#TransformerBlock"><code>TransformerBlock</code></a>, with <a data-lesson="primer/ml/transformer.html#gelu"><code>gelu</code></a>).</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Data and model parallelism in deep learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p><span class="t" data-t="data parallelism">Data parallelism</span> gives every GPU the whole model and a slice of the batch; growing the batch with the number of GPUs is <span class="t" data-tip-title="Weak scaling" data-tip="Growing the problem with the number of processors, so each processor's share stays the same size, and asking whether time per step stays constant. This paper grows the model with the GPUs rather than the batch.">weak scaling</span>. It has a hard limit: the model must fit on one GPU. Model parallelism removes the limit, in one of two ways: <span class="t" data-t="pipeline parallelism">pipeline parallelism</span> (whole layers per GPU, fed by <span class="t" data-t="micro-batch">micro-batches</span>, with idle bubbles) or distributed tensor computation (each operation split across GPUs), which is this paper's choice.</p>
+<h4>Tiny example</h4>
+<p>A 1.2-billion-parameter model trained with Adam in mixed precision needs about 16 bytes per parameter, 19.2 GB, before activations: it fits on a 32 GB V100. The 8.3B model needs 133 GB: no amount of data parallelism alone will fit it.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># 16 bytes per parameter for Adam in mixed precision (the ZeRO paper's count), in GB
+16 * 1.2e9 / 1e9  # → 19.2
+round(16 * 8.3e9 / 1e9)  # → 133</code></pre>
+<h4>Why it matters</h4>
+<p>The two kinds of model parallelism are complementary, as the paper stresses: pipeline across servers, tensor inside a server. The <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a>'s section 3 builds all three and shows where each belongs.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Model parallel transformers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A transformer layer is two blocks, attention and an <span class="t" data-t="feed-forward network">MLP</span>, and each block is two matrix multiplies (the paper calls them GEMMs) with something in between. The trick is to cut the first multiply one way and the second the other way, so the pieces fit together with no talking in the middle.</p>
+
+<section id="s3-1">
+<h3>3.1 The MLP block <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S3">original</a></span></h3>
+<h4>Tiny example: two ways to cut</h4>
+<p>One token, X = [1, 2], and a weight matrix A = [[1, −1], [−1, 1]]. Unsplit: XA = [1 − 2, −1 + 2] = [−1, 1], and GELU gives [−0.159, 0.841].</p>
+<div class="eq" data-tex="\htmlData{sym=Y}{Y} = \htmlData{sym=GELU}{\mathrm{GELU}}(\htmlData{sym=X}{X}\htmlData{sym=A}{A})" data-fallback="Y = GELU(XA)"></div>
+<div class="symtable" data-syms="Y,GELU,X,A"></div>
+<p class="inwords"><strong>In words:</strong> “multiply the tokens by the first weight matrix, then apply GELU to every number.” (The paper's equation 1.)</p>
+<p><strong>Cut by rows.</strong> GPU 1 takes A's first row and X's first entry; GPU 2 the second row and second entry.</p>
+<div class="eq" data-tex="\htmlData{sym=X}{X} = [\htmlData{sym=X1}{X_1}, \htmlData{sym=X2}{X_2}], \qquad \htmlData{sym=A}{A} = \begin{bmatrix} \htmlData{sym=A1r}{A_1} \\ \htmlData{sym=A2r}{A_2} \end{bmatrix}" data-fallback="X = [X1, X2],  A = [A1; A2]"></div>
+<div class="eq" data-tex="\begin{aligned} &\htmlData{sym=GELU}{\mathrm{GELU}}(\htmlData{sym=X1}{X_1}\htmlData{sym=A1r}{A_1} + \htmlData{sym=X2}{X_2}\htmlData{sym=A2r}{A_2}) \\ &\neq \htmlData{sym=GELU}{\mathrm{GELU}}(\htmlData{sym=X1}{X_1}\htmlData{sym=A1r}{A_1}) + \htmlData{sym=GELU}{\mathrm{GELU}}(\htmlData{sym=X2}{X_2}\htmlData{sym=A2r}{A_2}) \end{aligned}" data-fallback="GELU(X1A1 + X2A2) ≠ GELU(X1A1) + GELU(X2A2)"></div>
+<div class="symtable" data-syms="X1,X2,A1r,A2r"></div>
+<p class="inwords"><strong>In words:</strong> “cut by rows, each GPU gets a partial sum of every output; the partial sums must be added <em>before</em> GELU, because GELU of a sum is not the sum of GELUs.” (Equation 2 and the sentence after it.)</p>
+<p class="inwords"><strong>With the numbers:</strong> GPU 1: 1 × [1, −1] = [1, −1]. GPU 2: 2 × [−1, 1] = [−2, 2]. Added first: [−1, 1], GELU → [−0.159, 0.841], correct. GELU first, then added: [0.841 − 0.046, −0.159 + 1.954] = [0.796, 1.796], wrong. So the GPUs would have to talk before the GELU.</p>
+<p><strong>Cut by columns.</strong> GPU 1 takes A's first column, GPU 2 the second; both need all of X.</p>
+<div class="eq" data-tex="\htmlData{sym=A}{A} = [\htmlData{sym=A1c}{A_1}, \htmlData{sym=A2c}{A_2}]" data-fallback="A = [A1, A2]"></div>
+<div class="eq" data-tex="[\htmlData{sym=Y1}{Y_1}, \htmlData{sym=Y2}{Y_2}] = [\htmlData{sym=GELU}{\mathrm{GELU}}(\htmlData{sym=X}{X}\htmlData{sym=A1c}{A_1}), \htmlData{sym=GELU}{\mathrm{GELU}}(\htmlData{sym=X}{X}\htmlData{sym=A2c}{A_2})]" data-fallback="[Y1, Y2] = [GELU(XA1), GELU(XA2)]"></div>
+<div class="symtable" data-syms="A1c,A2c,Y1,Y2"></div>
+<p class="inwords"><strong>In words:</strong> “cut by columns, each GPU computes some of the output numbers completely, so it can apply GELU to them on its own.” (Equation 3.)</p>
+<p class="inwords"><strong>With the numbers:</strong> GPU 1: X · [1, −1]ᵀ = −1, GELU → −0.159. GPU 2: X · [−1, 1]ᵀ = 1, GELU → 0.841. Side by side: [−0.159, 0.841], exactly the unsplit answer, with no communication.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def gelu(x):
+    return x * 0.5 * (1 + math.erf(x / math.sqrt(2)))
+X = [1, 2]
+A = [[1, -1], [-1, 1]]
+# unsplit: Y = GELU(XA)
+XA = [sum(X[i] * A[i][j] for i in range(2)) for j in range(2)]
+XA  # → [-1, 1]
+[round(gelu(v), 3) for v in XA]  # → [-0.159, 0.841]
+# by rows: X_1 A_1 and X_2 A_2 are partial sums of every output
+p1 = [X[0] * a for a in A[0]]
+p2 = [X[1] * a for a in A[1]]
+p1, p2  # → ([1, -1], [-2, 2])
+# GELU before adding: wrong
+[round(gelu(a) + gelu(b), 3) for a, b in zip(p1, p2)]  # → [0.796, 1.796]
+# by columns: each GPU owns whole outputs, GELU runs locally
+Y1 = gelu(X[0] * A[0][0] + X[1] * A[1][0])
+Y2 = gelu(X[0] * A[0][1] + X[1] * A[1][1])
+round(Y1, 3), round(Y2, 3)  # → (-0.159, 0.841)</code></pre>
+<div class="play" id="split-play">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <span>Cut the first matrix A:</span>
+    <button type="button" data-cut="rows" aria-pressed="false">by rows</button>
+    <button type="button" data-cut="cols" aria-pressed="true">by columns</button>
+  </div>
+  <div id="split-out" style="margin-top:.6rem"></div>
+  <p class="readout" id="split-readout" aria-live="polite"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the playground runs the same example on two simulated GPUs. Each card shows what one GPU holds and computes; the last line compares the result with the unsplit Y = GELU(XA) = [−0.159, 0.841]. Cut <strong>by rows</strong> and each GPU's product is a partial sum of <em>both</em> outputs, so applying GELU locally gives the wrong answer: the GPUs would have to add their partial sums first, a synchronization point. Cut <strong>by columns</strong> and each GPU finishes one whole output, so GELU runs locally and the answer is exact. That is why Megatron-LM cuts the first matrix by columns.</p>
+<h4>The second matrix: cut by rows, add once</h4>
+<p>After GELU, GPU 1 holds Y<sub>1</sub> and GPU 2 holds Y<sub>2</sub>: the output is already split by columns. That is exactly the input a <em>row</em>-split of the second matrix B wants. Each GPU multiplies its piece by its rows of B, and one all-reduce adds the two partial results.</p>
+<div class="eq" data-tex="\htmlData{sym=Z}{Z} = \mathrm{Dropout}(\htmlData{sym=Y}{Y}\htmlData{sym=B}{B})" data-fallback="Z = Dropout(YB)"></div>
+<div class="eq" data-tex="\htmlData{sym=Y}{Y}\htmlData{sym=B}{B} = \htmlData{sym=Y1}{Y_1}\htmlData{sym=B1}{B_1} + \htmlData{sym=Y2}{Y_2}\htmlData{sym=B2}{B_2}" data-fallback="YB = Y1B1 + Y2B2"></div>
+<div class="symtable" data-syms="Z,B,B1,B2"></div>
+<p class="inwords"><strong>In words:</strong> “each GPU multiplies its own half of the hidden units by the matching rows of B; adding the two results (one all-reduce) gives the block's output.” (This page's formula for what the paper's Figure 3a draws.)</p>
+<p class="inwords"><strong>With the numbers:</strong> with B = [[2, 0], [1, 1]]: GPU 1 computes −0.159 × [2, 0] = [−0.317, 0]; GPU 2 computes 0.841 × [1, 1] = [0.841, 0.841]; the all-reduce adds them to [0.524, 0.841], the same as the unsplit YB.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def gelu(x):
+    return x * 0.5 * (1 + math.erf(x / math.sqrt(2)))
+Y1, Y2 = gelu(-1), gelu(1)
+B = [[2, 0], [1, 1]]
+# each GPU: its hidden unit times its row of B
+part1 = [Y1 * b for b in B[0]]
+part2 = [Y2 * b for b in B[1]]
+[round(v, 3) for v in part1], [round(v, 3) for v in part2]  # → ([-0.317, -0.0], [0.841, 0.841])
+# the all-reduce: add the partial results
+[round(a + b, 3) for a, b in zip(part1, part2)]  # → [0.524, 0.841]
+# unsplit Y B, for comparison
+[round(Y1 * B[0][j] + Y2 * B[1][j], 3) for j in range(2)]  # → [0.524, 0.841]</code></pre>
+<figure class="ix wide" id="fig3a">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 220" role="img" aria-label="The MLP block split over two GPUs: f, column-split first matrix, GELU, row-split second matrix, g">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="gpu1"><rect x="84" y="22" width="192" height="68" rx="10"/></g>
+    <g class="blk frame" data-block="gpu2"><rect x="84" y="128" width="192" height="68" rx="10"/></g>
+    <text x="90" y="16" class="lbl">GPU 1</text>
+    <text x="90" y="212" class="lbl">GPU 2</text>
+    <path class="wire" d="M40,110 H50" marker-end="url(#arr)"/>
+    <path class="wire" d="M76,110 H80 V56 H92" marker-end="url(#arr)"/>
+    <path class="wire" d="M80,110 V162 H92" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,56 H158" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,162 H158" marker-end="url(#arr)"/>
+    <path class="wire" d="M202,56 H210" marker-end="url(#arr)"/>
+    <path class="wire" d="M202,162 H210" marker-end="url(#arr)"/>
+    <path class="wire" d="M268,56 H284 V96" marker-end="url(#arr)"/>
+    <path class="wire" d="M268,162 H284 V124" marker-end="url(#arr)"/>
+    <path class="wire" d="M300,110 H312" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="X"><rect x="4" y="92" width="36" height="36" rx="6"/><text x="22" y="115" text-anchor="middle">X</text></g>
+    <g class="blk soft" data-block="f"><rect x="52" y="94" width="24" height="32" rx="6"/><text x="64" y="115" text-anchor="middle">f</text></g>
+    <g class="blk lin" data-block="colA"><rect x="94" y="40" width="56" height="32" rx="6"/><text x="122" y="61" text-anchor="middle">X·A₁</text></g>
+    <g class="blk lin" data-block="colA"><rect x="94" y="146" width="56" height="32" rx="6"/><text x="122" y="167" text-anchor="middle">X·A₂</text></g>
+    <g class="blk ff" data-block="gelu"><rect x="160" y="40" width="42" height="32" rx="6"/><text x="181" y="61" text-anchor="middle">GELU</text></g>
+    <g class="blk ff" data-block="gelu"><rect x="160" y="146" width="42" height="32" rx="6"/><text x="181" y="167" text-anchor="middle">GELU</text></g>
+    <g class="blk lin" data-block="rowB"><rect x="212" y="40" width="56" height="32" rx="6"/><text x="240" y="61" text-anchor="middle">Y₁·B₁</text></g>
+    <g class="blk lin" data-block="rowB"><rect x="212" y="146" width="56" height="32" rx="6"/><text x="240" y="167" text-anchor="middle">Y₂·B₂</text></g>
+    <g class="blk attn" data-block="g"><rect x="272" y="96" width="28" height="28" rx="6"/><text x="286" y="115" text-anchor="middle">g</text></g>
+    <g class="blk plain" data-block="Zout"><rect x="314" y="92" width="42" height="36" rx="6"/><text x="335" y="108" text-anchor="middle">Drop-</text><text x="335" y="121" text-anchor="middle">out, Z</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start with <strong>X</strong> on the left.</p></div>
+  </div>
+  <figcaption>Figure 3a of the paper, redrawn: the MLP block with 2-way model parallelism. Based on Shoeybi et al. (2019), Figure 3a.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> data flows left to right. The same X enters both GPUs (the dashed boxes) through <strong>f</strong>. Each GPU multiplies by its columns of A, applies GELU to the hidden units it owns, and multiplies by its rows of B, all without looking at the other GPU. The two partial outputs meet at <strong>g</strong>, the block's one all-reduce, before dropout. Read f and g as a pair: in the forward pass f does nothing and g adds; in the backward pass g does nothing and f adds the two GPUs' gradients with respect to X. One all-reduce each way per block.</p>
+<h4>f and g, in code</h4>
+<p>The paper's Code 1 defines f as a PyTorch autograd function whose forward returns x unchanged and whose backward all-reduces the gradient; g is the mirror image. They are conjugates: each is the other with forward and backward swapped.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Operator</th><th>Forward pass</th><th>Backward pass</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>f</td><td>identity: pass X to every GPU</td><td>all-reduce: add each GPU's gradient for X</td><td>entry of a parallel block</td></tr>
+    <tr><td>g</td><td>all-reduce: add the partial outputs</td><td>identity: pass the gradient to every GPU</td><td>exit of a parallel block</td></tr>
+  </tbody>
+</table></div>
+<h4>Why it matters today</h4>
+<p>Column-parallel then row-parallel is the tensor-parallel MLP. The <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> builds <a data-lesson="primer/ml/pretraining.html#column_parallel_matmul"><code>column_parallel_matmul</code></a>, <a data-lesson="primer/ml/pretraining.html#row_parallel_matmul"><code>row_parallel_matmul</code></a> and <a data-lesson="primer/ml/pretraining.html#tensor_parallel_mlp"><code>tensor_parallel_mlp</code></a>, and checks that each matches the unsplit answer.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 The attention block <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p><span class="t" data-t="multi-head attention">Multi-head attention</span> is already split: each head is an independent small attention with its own <span class="t" data-t="query">query</span>, <span class="t" data-t="key">key</span> and <span class="t" data-t="value">value</span> projections. Hand each GPU a group of whole heads and it can run them start to finish alone.</p>
+<h4>Tiny example</h4>
+<p>The 8.3B scaling model has 32 heads on 8 GPUs: 4 heads per GPU. The query, key and value projections are cut by columns so that GPU <em>i</em>'s columns are exactly its heads' columns; softmax and the weighted sum stay local. The output projection after attention is cut by rows, and one all-reduce (g) adds the GPUs' partial results, exactly like the MLP.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># heads per GPU, and each head's width, for the 8.3B scaling model
+heads, gpus, hidden = 32, 8, 3072
+heads // gpus, hidden // heads  # → (4, 96)</code></pre>
+<figure class="ix wide" id="fig3b">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 220" role="img" aria-label="The self-attention block split over two GPUs by heads">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="gpu1"><rect x="84" y="22" width="192" height="68" rx="10"/></g>
+    <g class="blk frame" data-block="gpu2"><rect x="84" y="128" width="192" height="68" rx="10"/></g>
+    <text x="90" y="16" class="lbl">GPU 1: heads 1 to h/2</text>
+    <text x="90" y="212" class="lbl">GPU 2: heads h/2 + 1 to h</text>
+    <path class="wire" d="M40,110 H50" marker-end="url(#arr2)"/>
+    <path class="wire" d="M76,110 H80 V56 H92" marker-end="url(#arr2)"/>
+    <path class="wire" d="M80,110 V162 H92" marker-end="url(#arr2)"/>
+    <path class="wire" d="M150,56 H158" marker-end="url(#arr2)"/>
+    <path class="wire" d="M150,162 H158" marker-end="url(#arr2)"/>
+    <path class="wire" d="M202,56 H210" marker-end="url(#arr2)"/>
+    <path class="wire" d="M202,162 H210" marker-end="url(#arr2)"/>
+    <path class="wire" d="M268,56 H284 V96" marker-end="url(#arr2)"/>
+    <path class="wire" d="M268,162 H284 V124" marker-end="url(#arr2)"/>
+    <path class="wire" d="M300,110 H312" marker-end="url(#arr2)"/>
+    <g class="blk emb" data-block="X"><rect x="4" y="92" width="36" height="36" rx="6"/><text x="22" y="115" text-anchor="middle">X</text></g>
+    <g class="blk soft" data-block="f"><rect x="52" y="94" width="24" height="32" rx="6"/><text x="64" y="115" text-anchor="middle">f</text></g>
+    <g class="blk lin" data-block="qkv"><rect x="94" y="40" width="56" height="32" rx="6"/><text x="122" y="61" text-anchor="middle">Q₁ K₁ V₁</text></g>
+    <g class="blk lin" data-block="qkv"><rect x="94" y="146" width="56" height="32" rx="6"/><text x="122" y="167" text-anchor="middle">Q₂ K₂ V₂</text></g>
+    <g class="blk ff" data-block="heads"><rect x="160" y="40" width="42" height="32" rx="6"/><text x="181" y="55" text-anchor="middle">soft-</text><text x="181" y="67" text-anchor="middle">max</text></g>
+    <g class="blk ff" data-block="heads"><rect x="160" y="146" width="42" height="32" rx="6"/><text x="181" y="161" text-anchor="middle">soft-</text><text x="181" y="173" text-anchor="middle">max</text></g>
+    <g class="blk lin" data-block="outproj"><rect x="212" y="40" width="56" height="32" rx="6"/><text x="240" y="61" text-anchor="middle">Y₁·B₁</text></g>
+    <g class="blk lin" data-block="outproj"><rect x="212" y="146" width="56" height="32" rx="6"/><text x="240" y="167" text-anchor="middle">Y₂·B₂</text></g>
+    <g class="blk attn" data-block="g"><rect x="272" y="96" width="28" height="28" rx="6"/><text x="286" y="115" text-anchor="middle">g</text></g>
+    <g class="blk plain" data-block="Zout"><rect x="314" y="92" width="42" height="36" rx="6"/><text x="335" y="108" text-anchor="middle">Drop-</text><text x="335" y="121" text-anchor="middle">out, Z</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. The shape matches the MLP figure above on purpose.</p></div>
+  </div>
+  <figcaption>Figure 3b of the paper, redrawn: the self-attention block with 2-way model parallelism. Based on Shoeybi et al. (2019), Figure 3b.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the same skeleton as the MLP. X enters both GPUs through f. The column-split projections give each GPU the queries, keys and values of its own heads; each GPU runs softmax attention for those heads (with attention dropout) entirely locally; the row-split output projection turns each GPU's heads into a partial output; g adds them. The paper's word for what this does to each block is that it “fuses” two matrix multiplies and removes the synchronization point between them.</p>
+<h4>Why it matters today</h4>
+<p>Splitting by heads puts a ceiling on this kind of parallelism: you cannot use more GPUs than heads, and the heads must divide evenly. The paper's appendix also finds that more, narrower heads scale a little worse (Appendix D, below). The <a href="attention-is-all-you-need.html">Attention Is All You Need companion</a> explains the heads themselves.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Four all-reduces per layer <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Put the two blocks together and a whole transformer layer talks four times per training step: once after attention and once after the MLP on the way forward, and once at the start of each block on the way back.</p>
+<h4>Tiny example</h4>
+<p>Each all-reduce carries one activation tensor: batch × sequence × hidden numbers. For the 8.3B model with 8 sequences of 1,024 tokens at width 3,072, that is 25.2 million numbers, about 50 MB in 16-bit floats. Four per layer, 72 layers: 288 all-reduces per step, 14.5 GB of messages.</p>
+<div class="eq" data-tex="\htmlData{sym=Clayer}{C_{\text{layer}}} = 4 \times \htmlData{sym=bsz}{b}\,\htmlData{sym=seqs}{s}\,\htmlData{sym=hid}{H}" data-fallback="C_layer = 4 × b s H"></div>
+<div class="symtable" data-syms="Clayer,bsz,seqs,hid"></div>
+<p class="inwords"><strong>In words:</strong> “each layer all-reduces four activation-sized messages per step, two forward and two backward.” (This page's formula for the paper's Figure 4.)</p>
+<p class="inwords"><strong>With the numbers:</strong> 4 × 8 × 1,024 × 3,072 = 100.7 million numbers per layer; at 2 bytes, 201 MB; times 72 layers, 14.5 GB of messages per step.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>b, s, H, layers = 8, 1024, 3072, 72
+message = b * s * H
+round(message / 1e6, 1)  # → 25.2
+# C_layer = 4 b s H
+C_layer = 4 * message
+round(C_layer / 1e6, 1)  # → 100.7
+# bytes per step at 2 bytes per number, in GB
+round(C_layer * 2 * layers / 1e9, 1)  # → 14.5</code></pre>
+<h4>Why it matters today</h4>
+<p>Note what the traffic scales with: the activations, not the weights. Tensor parallelism's cost grows with batch and sequence length, and it happens inside every layer on the critical path, which is why it is kept on the fastest links; the <a class="lesson" data-lesson="primer/ml/hardware.html">hardware lesson</a> puts numbers on those links.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 The embedding and the loss <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The vocabulary table is big (GPT-2's has 50,257 rows) and it is used twice: to look tokens up at the input and, with the same weights (<span class="t" data-t="weight tying">weight tying</span>), to score every token at the output. Megatron-LM splits it by vocabulary: each GPU keeps a slice of the tokens.</p>
+<h4>Tiny example</h4>
+<p>At the output, each GPU can score its own slice of the vocabulary. The obvious next step, gathering all the scores (logits) onto every GPU for the <span class="t" data-t="cross-entropy">cross-entropy</span> loss, would move b × s × v numbers. Instead each GPU computes its slice's part of the loss, and only b × s numbers are exchanged. With b = 8, s = 1,024 and the padded vocabulary of 51,200, that is 419 million numbers against 8,192: <strong>51,200 times less</strong>.</p>
+<div class="eq" data-tex="\frac{\htmlData{sym=Vgather}{V_{\text{logits}}}}{\htmlData{sym=Vloss}{V_{\text{loss}}}} = \frac{\htmlData{sym=bsz}{b}\,\htmlData{sym=seqs}{s}\,\htmlData{sym=vocab}{v}}{\htmlData{sym=bsz}{b}\,\htmlData{sym=seqs}{s}} = \htmlData{sym=vocab}{v}" data-fallback="V_logits / V_loss = b s v / (b s) = v"></div>
+<div class="symtable" data-syms="Vgather,Vloss,vocab"></div>
+<p class="inwords"><strong>In words:</strong> “sending losses instead of logits divides the traffic by the size of the vocabulary.” (This page's formula for the paper's §3 argument.)</p>
+<p class="inwords"><strong>With the numbers:</strong> 8 × 1,024 × 51,200 = 419,430,400 logits against 8 × 1,024 = 8,192 losses; the ratio is v = 51,200.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>b, s, v = 8, 1024, 51200
+V_logits = b * s * v
+V_loss = b * s
+V_logits, V_loss  # → (419430400, 8192)
+V_logits // V_loss  # → 51200</code></pre>
+<p>Where does 51,200 come from? For fast matrix multiplies, each GPU's slice of the vocabulary should be a multiple of 128; with up to 8 GPUs, the vocabulary is padded up to a multiple of 128 × 8 = 1,024 (§5.1).</p>
+<div class="eq" data-tex="\htmlData{sym=vpad}{v_{\text{pad}}} = \left\lceil \frac{\htmlData{sym=vocab}{v}}{128\,\htmlData{sym=ngpu}{n}} \right\rceil \times 128\,\htmlData{sym=ngpu}{n}" data-fallback="v_pad = ⌈v / (128 n)⌉ × 128 n"></div>
+<div class="symtable" data-syms="vpad"></div>
+<p class="inwords"><strong>In words:</strong> “round the vocabulary up to the next multiple of 128 times the number of GPUs.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 50,257 / 1,024 = 49.08, rounded up to 50; 50 × 1,024 = 51,200, so 943 padding rows that no real token uses.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+v, n = 50257, 8
+v_pad = math.ceil(v / (128 * n)) * 128 * n
+v_pad, v_pad - v  # → (51200, 943)</code></pre>
+<h4>Why it matters today</h4>
+<p>Vocabularies have since grown several times larger, so the same trick, never gathering all the logits in one place, matters more now; padding the vocabulary to a friendly multiple is routine.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Duplicate the cheap parts <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Some steps are too cheap to be worth splitting: layer norm, dropout and the residual addition. Rather than have one GPU compute them and send the result, every GPU simply computes them itself on its own copy. Arithmetic is cheap; waiting is not.</p>
+<h4>Tiny example</h4>
+<p>A layer norm has 2 × H parameters: 6,144 for H = 3,072, against the roughly 113 million weights of the layer's matrix multiplies (12H², from §5.1 below). Keeping 8 copies of the norm costs almost nothing, and because every GPU holds every value it needs, no updated parameters ever have to be sent: each GPU optimizes its own set.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>H = 3072
+# a layer norm's gain and bias
+2 * H  # → 6144
+# the layer's matrix-multiply weights, about 12 H², in millions
+round(12 * H ** 2 / 1e6)  # → 113</code></pre>
+<h4>Why it matters</h4>
+<p>“Recompute or duplicate rather than communicate” recurs throughout large-scale training: activation checkpointing and the <a href="flashattention.html">FlashAttention</a> backward pass make the same bet.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Before the scaling experiments, the paper fixes the ingredients: which text, cleaned how, and the training recipe for two model families, GPT-2 (left to right) and BERT (masked, both directions).</p>
+
+<section id="s4-1">
+<h3>4.1 Training dataset <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Four large sources (Wikipedia, CC-Stories, RealNews and OpenWebText) are pooled; BERT also gets BooksCorpus, which GPT-2 skips because it overlaps with the LAMBADA test. Wikipedia articles that appear in the WikiText103 test set are removed, so the test stays unseen.</p>
+<h4>Tiny example</h4>
+<p>Two cleaning steps: drop every document under 128 tokens, and remove near-duplicates with <span class="t" data-t="locality-sensitive hashing">locality-sensitive hashing</span> at a <span class="t" data-t="jaccard similarity">Jaccard similarity</span> above 0.7. Two documents whose combined set of distinct word-shingles (short runs of consecutive words) has 10 members, 7 of them in both, have Jaccard similarity 7/10 = 0.7: not above the threshold, so both stay. With 8 in both, one of them goes. What remains: 174 GB of text.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># Jaccard = shared shingles / all distinct shingles
+7 / 10, 8 / 10  # → (0.7, 0.8)
+# removed only when above 0.7
+[j &gt; 0.7 for j in (7 / 10, 8 / 10)]  # → [False, True]</code></pre>
+<h4>Why it matters today</h4>
+<p>The same recipe, MinHash and LSH at a Jaccard threshold around 0.7, is built step by step in the <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a>, whose <a data-lesson="primer/ml/pretraining.html#near_duplicate_pairs"><code>near_duplicate_pairs</code></a> uses 0.7 as its default.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Training optimization and hyperparameters <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The recipe is standard for its time: <span class="t" data-t="mixed precision">mixed precision</span> with dynamic <span class="t" data-t="loss scaling">loss scaling</span>, Adam with <span class="t" data-t="weight decay">weight decay</span> 0.01, <span class="t" data-t="gradient clipping">gradient clipping</span> at a global norm of 1.0, dropout 0.1, and <span class="t" data-t="activation checkpointing">activation checkpointing</span> after every layer. GPT-2 trains on 1,024-token sequences, batch 512, for 300,000 steps, with a peak learning rate of 1.5 × 10<sup>−4</sup> after 3,000 steps of <span class="t" data-t="warmup">warmup</span>, then <span class="t" data-t="cosine decay">cosine decay</span> down to 10<sup>−5</sup>. BERT uses batch 1,024 and a learning rate of 10<sup>−4</sup>, warmed up over 10,000 steps and decayed linearly over 2 million.</p>
+<h4>Tiny example: shrinking the last layer of each block</h4>
+<p>One detail is new. Weights start random with spread 0.02 (the paper writes N(0, 0.02); this page reads 0.02 as the standard deviation), but the weights just before each residual addition are scaled down by 1/√(2N), N being the number of layers. Each layer adds two outputs (attention's and the MLP's) into the residual stream, so 2N contributions pile up. Random contributions add their variances: 144 of them with variance v sum to variance 144v. Scale each by 1/√144 = 1/12 and the sum's variance is back to v.</p>
+<div class="eq" data-tex="\htmlData{sym=sigout}{\sigma_{\text{out}}} = \frac{\htmlData{sym=sig}{\sigma}}{\sqrt{2\htmlData{sym=Nlay}{N}}}" data-fallback="σ_out = σ / √(2N)"></div>
+<div class="symtable" data-syms="sigout,sig,Nlay"></div>
+<p class="inwords"><strong>In words:</strong> “the layers that write into the residual stream start with their spread divided by the square root of how many such writes there are.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the 8.3B model has N = 72 layers, so 2N = 144 residual writes and σ<sub>out</sub> = 0.02 / 12 = 0.00167.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+sigma, N = 0.02, 72
+# 2N writes into the residual stream
+2 * N  # → 144
+sigma_out = sigma / math.sqrt(2 * N)
+round(sigma_out, 5)  # → 0.00167
+# summed variance of 144 writes, before and after scaling
+round(144 * sigma ** 2, 4), round(144 * sigma_out ** 2, 4)  # → (0.0576, 0.0004)</code></pre>
+<h4>Why it matters today</h4>
+<p>Scaling residual-branch outputs by depth is a common way to keep very deep stacks stable at the start of training. The <a class="lesson" data-lesson="primer/ml/deep_nets.html">deep networks lesson</a> explains why the spread of the signal matters (<a data-lesson="primer/ml/deep_nets.html#init_std"><code>init_std</code></a>), and the <a class="lesson" data-lesson="primer/ml/optimizers.html">optimizers lesson</a> builds the schedule (<a data-lesson="primer/ml/optimizers.html#warmup_cosine"><code>warmup_cosine</code></a>) and the clipping (<a data-lesson="primer/ml/optimizers.html#clip_by_global_norm"><code>clip_by_global_norm</code></a>).</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Up to 32 DGX-2H servers, 512 V100 GPUs with 32 GB each. Inside a server GPUs talk over NVSwitch at 300 GB/s; between servers, 8 InfiniBand adapters per server give 100 GB/s. The split in speed decides the split in work.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Each server holds 16 GPUs sharing 100 GB/s to the outside: 6.25 GB/s each, against 300 GB/s inside, <strong>48× slower</strong>. (The <a href="zero.html">ZeRO companion</a> quotes the same network per link: 12.5 GB/s × 8 adapters = 100 GB/s.) Illustratively, the 14.5 GB of tensor-parallel messages per step from §3.3 would take about 0.05 s at 300 GB/s but 2.3 s at 6.25 GB/s, ignoring overlap and the ring's factor of about 2.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># per-GPU share of the links out of a 16-GPU server, GB/s
+100 / 16  # → 6.25
+300 / 6.25  # → 48.0
+# 14.5 GB of messages per step, in seconds (illustrative)
+round(14.5 / 300, 2), round(14.5 / 6.25, 1)  # → (0.05, 2.3)</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>That factor is why the paper keeps model parallelism at 8 GPUs, inside one server, and uses data parallelism across servers.</p>
+
+<section id="s5-1">
+<h3>5.1 Scaling analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S5.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The test is <em>weak scaling of the model</em>: double the GPUs and double the model, about a billion parameters per GPU, and see whether each GPU stays as busy. Four GPT-2 configurations go from 1.2B on 1 GPU to 8.3B on 8, all with 96 numbers per attention head; then each runs again with 64-way data parallelism, up to 512 GPUs.</p>
+<h4>Tiny example: checking the parameter counts</h4>
+<p>A transformer layer holds about 12 × H² weights (4H² in attention, 8H² in the MLP), and the embedding adds v × H. For the largest configuration, 72 layers of H = 3,072 with the padded vocabulary: 12 × 72 × 3,072<sup>2</sup> + 51,200 × 3,072 = 8.15 + 0.16 = <strong>8.31 billion</strong>, the paper's 8.3B. (The rule of thumb is this page's check; the paper gives only the totals.)</p>
+<div class="eq" data-tex="\htmlData{sym=Pcount}{P} \approx 12\,\htmlData{sym=Llay}{L}\,\htmlData{sym=hid}{H}^2 + \htmlData{sym=vocab}{v}\,\htmlData{sym=hid}{H}" data-fallback="P ≈ 12 L H² + v H"></div>
+<div class="symtable" data-syms="Pcount,Llay"></div>
+<p class="inwords"><strong>In words:</strong> “twelve H-squared weights per layer, times the layers, plus one H-wide row per vocabulary entry.”</p>
+<p class="inwords"><strong>With the numbers:</strong> all four rows of the paper's Table 1: (40 layers, H = 1,536) → 1.21B; (54, 1,920) → 2.49B; (64, 2,304) → 4.19B; (72, 3,072) → 8.31B, against the paper's 1.2, 2.5, 4.2 and 8.3.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>v = 51200
+# (layers, hidden size) from Table 1
+configs = [(40, 1536), (54, 1920), (64, 2304), (72, 3072)]
+# P ≈ 12 L H² + v H, in billions
+[round((12 * L * H ** 2 + v * H) / 1e9, 2) for L, H in configs]  # → [1.21, 2.49, 4.19, 8.31]
+# every configuration keeps 96 numbers per head
+[H // heads for H, heads in [(1536, 16), (1920, 20), (2304, 24), (3072, 32)]]  # → [96, 96, 96, 96]</code></pre>
+<h4>The results</h4>
+<div class="tablewrap"><table>
+  <caption>Weak scaling efficiency against the 1-GPU, 1.2B baseline, restated from Shoeybi et al. (2019), §1 and §5.1.1</caption>
+  <thead><tr><th>Setup</th><th class="num">Efficiency</th></tr></thead>
+  <tbody>
+    <tr><td>8.3B, 8-way model parallel (8 GPUs, batch 8)</td><td class="num">77%</td></tr>
+    <tr class="hl"><td>8.3B, 8-way model × 64-way data parallel (512 GPUs, batch 512)</td><td class="num">74% (§5.1.1); 76% (Abstract, §1)</td></tr>
+  </tbody>
+</table></div>
+<p>The paper gives two figures for the same 512-GPU run: 76% in the abstract and introduction, 74% in §5.1.1. The arithmetic from its own throughput numbers (§1 above) gives 75.6%. Either way, data parallelism on top costs only a few points, because gradients are all-reduced once per step while the model-parallel traffic happens inside every layer.</p>
+<h4>Why it matters today</h4>
+<p>Weak scaling of the <em>model</em>, rather than the batch, was the right test for the question people cared about: can a bigger model be trained at nearly the same speed per GPU? The <a href="scaling-laws.html">scaling-laws companion</a> explains why people wanted the bigger model in the first place.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 Language modeling results using GPT-2 <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S5.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Three GPT-2 models, 355M, 2.5B and 8.3B, are trained identically for 300,000 steps. Bigger models learn faster and end lower: the 8.3B reaches a validation perplexity of 9.27.</p>
+<h4>Tiny example: how long is training?</h4>
+<p>One pass over the data (an <span class="t" data-t="epoch">epoch</span>) is 68,507 steps, so 300,000 steps is 4.4 epochs. Each step is 512 sequences of 1,024 tokens, 524,288 tokens, so training sees about 157 billion tokens. For the 8.3B model on 512 GPUs, at 2.10 days per epoch, that is about 9.2 days.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>steps, per_epoch = 300_000, 68_507
+round(steps / per_epoch, 2)  # → 4.38
+# tokens per step, and in total (billions)
+512 * 1024  # → 524288
+round(steps * 512 * 1024 / 1e9)  # → 157
+# days for the 8.3B model at 2.10 days per epoch
+round(2.10 * steps / per_epoch, 1)  # → 9.2</code></pre>
+<div class="play" id="gpt2-bars" aria-label="Zero-shot WikiText103 perplexity and LAMBADA accuracy for the three GPT-2 models and the previous best"></div>
+<p class="reading"><strong>Reading it:</strong> two scores for each model with no fine-tuning (zero-shot), restated from the paper's Table 3. The top group is WikiText103 perplexity, where shorter is better; the bottom group is LAMBADA accuracy, where longer is better. The striped bars are the previous best results. Both scores improve steadily with size, and the 8.3B model passes the previous best on both: perplexity 10.81 against 15.79, accuracy 66.51% against 63.24%. The 2.5B model already beats the old perplexity record.</p>
+<h4>Checking the test was unseen</h4>
+<p>The authors count how many 8-word sequences of each test set also appear in the training data: at most 10.8% for WikiText103 (whose own training set already overlaps its test set by 9.09%) and 1.4% for LAMBADA. The paper judges these consistent with earlier work. The same paragraph notes that Turing-NLG, a 17-billion-parameter model, was later trained with Megatron; the <a href="zero.html">ZeRO companion</a> tells that story.</p>
+<h4>Why it matters today</h4>
+<p>“Bigger is better, and larger models converge faster” is an early instance of what the <a href="scaling-laws.html">scaling laws</a> made quantitative the next year; the <a href="gpt-3.html">GPT-3 companion</a> takes the same curve to 175 billion.</p>
+</section>
+
+<section id="s5-3">
+<h3>5.3 Bi-directional transformer results using BERT <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S5.SS3">original</a></span></h3>
+<blockquote class="quote">“We further investigated this behaviour and empirically demonstrated that rearranging the order of the layer normalization and the residual connections as shown in Figure 7 is critical to enable the scaling of the BERT-style models beyond BERT-Large.”<cite>Shoeybi et al. (2019), §5.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Earlier work (ALBERT) had found that BERT got <em>worse</em> beyond 336M parameters. Megatron-LM finds the culprit is plumbing: where the residual connection branches off. If the skip path carries the normalized signal, every layer re-normalizes the running total; if it carries the raw signal, the total flows untouched from bottom to top.</p>
+<figure class="ix wide" id="fig7">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 300" role="img" aria-label="Two layer arrangements: (a) the residual branches after layer norm, (b) the residual branches before layer norm">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="85" y="294" text-anchor="middle" class="lbl">(a) original BERT</text>
+    <text x="255" y="294" text-anchor="middle" class="lbl">(b) rearranged</text>
+    <!-- (a) -->
+    <path class="wire" d="M85,262 V248" marker-end="url(#arr3)"/>
+    <path class="wire" d="M85,224 V206" marker-end="url(#arr3)"/>
+    <path class="wire" d="M85,180 V162" marker-end="url(#arr3)"/>
+    <path class="wire" d="M85,148 V132" marker-end="url(#arr3)"/>
+    <path class="wire" d="M85,108 V90" marker-end="url(#arr3)"/>
+    <path class="wire" d="M85,64 V46" marker-end="url(#arr3)"/>
+    <path class="wire" d="M85,32 V20" marker-end="url(#arr3)"/>
+    <g class="blk" data-block="skipA"><path class="wire" d="M85,215 H26 V155 H74" marker-end="url(#arr3)" style="stroke-width:2.2"/><path d="M85,99 H26 V39 H74" class="wire" marker-end="url(#arr3)" style="stroke-width:2.2"/><rect x="18" y="150" width="16" height="70" style="fill:transparent;stroke:none"/><rect x="18" y="34" width="16" height="70" style="fill:transparent;stroke:none"/></g>
+    <g class="blk plain" data-block="inputs"><rect x="55" y="262" width="60" height="20" rx="5"/><text x="85" y="276" text-anchor="middle">input</text></g>
+    <g class="blk norm" data-block="lnA"><rect x="45" y="224" width="80" height="24" rx="5"/><text x="85" y="240" text-anchor="middle">LayerNorm</text></g>
+    <g class="blk attn" data-block="attn"><rect x="45" y="180" width="80" height="26" rx="5"/><text x="85" y="197" text-anchor="middle">Attention</text></g>
+    <g class="blk pe" data-block="add"><circle cx="85" cy="155" r="7"/><text x="85" y="159" text-anchor="middle" style="font-size:11px">+</text></g>
+    <g class="blk norm" data-block="lnA"><rect x="45" y="108" width="80" height="24" rx="5"/><text x="85" y="124" text-anchor="middle">LayerNorm</text></g>
+    <g class="blk ff" data-block="mlp"><rect x="45" y="64" width="80" height="26" rx="5"/><text x="85" y="81" text-anchor="middle">MLP</text></g>
+    <g class="blk pe" data-block="add"><circle cx="85" cy="39" r="7"/><text x="85" y="43" text-anchor="middle" style="font-size:11px">+</text></g>
+    <g class="blk plain" data-block="outputs"><rect x="55" y="2" width="60" height="18" rx="5"/><text x="85" y="15" text-anchor="middle">output</text></g>
+    <!-- (b) -->
+    <path class="wire" d="M255,262 V248" marker-end="url(#arr3)"/>
+    <path class="wire" d="M255,224 V206" marker-end="url(#arr3)"/>
+    <path class="wire" d="M255,180 V162" marker-end="url(#arr3)"/>
+    <path class="wire" d="M255,148 V132" marker-end="url(#arr3)"/>
+    <path class="wire" d="M255,108 V90" marker-end="url(#arr3)"/>
+    <path class="wire" d="M255,64 V46" marker-end="url(#arr3)"/>
+    <path class="wire" d="M255,32 V20" marker-end="url(#arr3)"/>
+    <g class="blk" data-block="skipB"><path class="wire" d="M255,255 H196 V155 H244" marker-end="url(#arr3)" style="stroke-width:2.2"/><path d="M255,140 H196 V39 H244" class="wire" marker-end="url(#arr3)" style="stroke-width:2.2"/><rect x="188" y="150" width="16" height="110" style="fill:transparent;stroke:none"/><rect x="188" y="34" width="16" height="110" style="fill:transparent;stroke:none"/></g>
+    <g class="blk plain" data-block="inputs"><rect x="225" y="262" width="60" height="20" rx="5"/><text x="255" y="276" text-anchor="middle">input</text></g>
+    <g class="blk norm" data-block="lnB"><rect x="215" y="224" width="80" height="24" rx="5"/><text x="255" y="240" text-anchor="middle">LayerNorm</text></g>
+    <g class="blk attn" data-block="attn"><rect x="215" y="180" width="80" height="26" rx="5"/><text x="255" y="197" text-anchor="middle">Attention</text></g>
+    <g class="blk pe" data-block="add"><circle cx="255" cy="155" r="7"/><text x="255" y="159" text-anchor="middle" style="font-size:11px">+</text></g>
+    <g class="blk norm" data-block="lnB"><rect x="215" y="108" width="80" height="24" rx="5"/><text x="255" y="124" text-anchor="middle">LayerNorm</text></g>
+    <g class="blk ff" data-block="mlp"><rect x="215" y="64" width="80" height="26" rx="5"/><text x="255" y="81" text-anchor="middle">MLP</text></g>
+    <g class="blk pe" data-block="add"><circle cx="255" cy="39" r="7"/><text x="255" y="43" text-anchor="middle" style="font-size:11px">+</text></g>
+    <g class="blk plain" data-block="outputs"><rect x="225" y="2" width="60" height="18" rx="5"/><text x="255" y="15" text-anchor="middle">output</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Compare where the two thick skip arrows start in (a) and in (b).</p></div>
+  </div>
+  <figcaption>Figure 7 (left) of the paper, redrawn: the two layer arrangements. Based on Shoeybi et al. (2019), Figure 7.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> both columns have the same boxes in the same order, bottom to top: layer norm, attention, add, layer norm, MLP, add. The only difference is where each thick skip arrow leaves the main line. In (a) it leaves <em>after</em> the layer norm, so what is carried forward and added back is the normalized signal: each block re-normalizes the running total. In (b) it leaves <em>before</em> the layer norm, so the raw input travels up untouched and each block only adds a correction to it. The paper's training curves (Figure 7, right) show (a) training well at 336M parameters but becoming unstable at 752M, while (b) is stable and reaches a lower loss.</p>
+<h4>Tiny example: the scores</h4>
+<p>With arrangement (b), bigger is better again. On a 3% held-out set, masked-language-model perplexity falls from 1.58 (336M) to 1.30 (1.3B) to 1.16 (3.9B). On RACE, reading comprehension from exams, the 3.9B model scores 89.5% alone and 90.9% as a 5-model ensemble, against the previous best ensemble's 89.4%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># held-out perplexity for 336M, 1.3B, 3.9B
+ppl = [1.58, 1.30, 1.16]
+# each step's relative improvement
+[round(1 - b / a, 3) for a, b in zip(ppl, ppl[1:])]  # → [0.177, 0.108]
+# RACE ensemble: points above the previous best
+round(90.9 - 89.4, 1)  # → 1.5</code></pre>
+<h4>Why it matters today</h4>
+<p>Arrangement (b) is <span class="t" data-t="pre-norm">pre-norm</span>, the layout almost every large transformer now uses. The <a class="lesson" data-lesson="primer/ml/transformer.html">transformer lesson</a> compares pre-norm and post-norm, and the <a href="layer-norm.html">layer norm companion</a> explains the normalization itself.</p>
+</section>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion and future work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The authors list what comes next: better optimizer memory efficiency, and, for models over 16 billion parameters, more memory than one 16-GPU DGX-2H server offers, so a mix of intra-layer and inter-layer (pipeline) parallelism across servers. Distilling the large models into small ones is on the list too.</p>
+<h3 class="rung">Tiny example</h3>
+<p>16 billion parameters at 16 bytes each is 256 GB of training state, half of the 512 GB that 16 GPUs of 32 GB hold, before any activations. Past that, one server is not enough and some parallelism has to cross the slow links.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># training state for 16B parameters, and the server's memory, in GB
+16 * 16, 16 * 32  # → (256, 512)</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>Both directions happened quickly: ZeRO attacked optimizer memory (see the <a href="zero.html">ZeRO companion</a>), and later Megatron-LM work composed tensor, pipeline and data parallelism across thousands of GPUs.</p>
+</section>
+
+<section id="appx">
+<h2>Appendices B, D and E <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1909.08053#A2">original</a></span></h2>
+<h3 class="rung">B.1 Hybrid model and data parallelism</h3>
+<p><strong>Everyday picture:</strong> 512 GPUs arranged as 64 teams of 8. Each team holds one complete copy of the model, cut 8 ways; a GPU's opposite numbers in the other 63 teams hold the same slice, and they average their gradients together.</p>
+<div class="play" id="grid-play">
+  <div class="sliders">
+    <label for="gpu-pick">GPU number</label>
+    <input type="range" id="gpu-pick" min="1" max="512" step="1" value="9">
+    <output id="gpu-pick-v" for="gpu-pick">9</output>
+  </div>
+  <svg id="grid-svg" viewBox="0 0 340 196" role="img" aria-label="512 GPUs in 64 model-parallel groups of 8; the chosen GPU's model-parallel group and data-parallel group are highlighted" style="width:100%;max-width:420px;display:block;margin-top:.5rem"></svg>
+  <p class="readout" id="grid-readout" aria-live="polite"></p>
+  <div class="legend"><span><i style="background:var(--active)"></i>the chosen GPU</span><span><i style="background:var(--lin-stroke)"></i>its model-parallel group (one copy of the model)</span><span><i style="background:var(--attn-stroke)"></i>its data-parallel group (same slice, other copies)</span></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each small block of 8 cells is one model-parallel group, 64 in all, numbered left to right and top to bottom; the paper's Figure 8 draws the same grouping. Drag the slider to pick a GPU. Its whole block lights purple: the 8 GPUs that together hold one copy of the model and all-reduce inside every layer. The orange cells, one in every block at the same position, are its data-parallel group: the 64 GPUs that hold the same slice of the weights and all-reduce their gradients once per step. For GPU 9 that is GPUs 1, 9, 17, and so on up to 505, as in the paper.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># GPUs numbered 1 to 512, model-parallel groups of 8
+mp = 8
+g = 9
+# which model-parallel group, and which position in it
+group = (g - 1) // mp + 1
+position = (g - 1) % mp + 1
+group, position  # → (2, 1)
+# its data-parallel group: the same position in every model-parallel group
+dp = [position + mp * k for k in range(512 // mp)]
+dp[:3], dp[-1], len(dp)  # → ([1, 9, 17], 505, 64)</code></pre>
+<h3 class="rung">B.2 Random numbers for dropout</h3>
+<p><strong>Everyday picture:</strong> dropout outside the parallel regions (before the residual additions) acts on tensors every GPU holds a full copy of, so all 8 GPUs must drop the <em>same</em> numbers, or their copies drift apart. Dropout inside a parallel region acts on different slices, so each GPU must drop <em>different</em> numbers, or the pattern repeats across slices. The fix: one generator seeded identically on every GPU for the first kind, and a second generator seeded differently per GPU for the second.</p>
+<p><strong>Tiny example (illustrative):</strong> with dropout 0.5 on a 4-number residual on 2 GPUs, both must zero, say, positions 2 and 3; if GPU 1 zeroed 2 and 3 and GPU 2 zeroed 1 and 4, the two copies of the residual would disagree from then on.</p>
+<h3 class="rung">D Further scaling analysis</h3>
+<p><strong>Attention heads:</strong> at 8.3B with 8-way model parallelism, 16 heads of width 192 scale at 82%, 24 heads of 128 at 80%, and 32 heads of 96 at 77% (the paper's Table 7): more heads mean smaller matrix multiplies and bigger softmaxes.</p>
+<p><strong>Strong scaling:</strong> the 1.2B model at a fixed batch of 8, spread over more GPUs. Two GPUs are 1.64× faster; eight, 2.98×.</p>
+<div class="plot" id="strong-plot">
+  <div id="strong-chart"></div>
+  <p class="readout" id="strong-readout">Hover the chart, or focus it and use the arrow keys, to read the speedup at each GPU count.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the horizontal axis is the number of GPUs splitting one fixed 1.2B model, the vertical axis how many times faster a training step runs. The straight line is perfect scaling; the lower curve is the paper's measurement (its Table 8). The gap widens quickly: at 8 GPUs, 2.98× out of a possible 8, 37% efficiency. With the model and batch fixed, each GPU's share of the work shrinks while the all-reduces stay the same size, so talking takes over. That is why the paper's main results use model parallelism to fit bigger models, not to speed up small ones.</p>
+<div class="eq" data-tex="\htmlData{sym=Estrong}{E_{\text{strong}}} = \frac{\htmlData{sym=Sn}{S_n}}{\htmlData{sym=ngpu}{n}}" data-fallback="E_strong = S_n / n"></div>
+<div class="symtable" data-syms="Estrong,Sn"></div>
+<p class="inwords"><strong>In words:</strong> “strong scaling efficiency is the speedup divided by the number of GPUs.” (This page's formula.)</p>
+<p class="inwords"><strong>With the numbers:</strong> 1.64 / 2 = 82%, 2.34 / 4 = 58.5%, 2.98 / 8 = 37.2%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># speedups for 2, 4 and 8 GPUs (Table 8)
+S = {2: 1.64, 4: 2.34, 8: 2.98}
+{n: round(S_n / n, 3) for n, S_n in S.items()}  # → {2: 0.82, 4: 0.585, 8: 0.372}</code></pre>
+<h3 class="rung">E Evaluating perplexity and LAMBADA</h3>
+<p><strong>Everyday picture:</strong> perplexity is e raised to the average surprise per token. But “per token” depends on how you cut the text into tokens: GPT-2's subword tokenizer makes 270,329 tokens of the WikiText103 test set, while earlier models counted 245,566 word-level tokens. To compare fairly, the total surprise is divided by the original count, T<sub>o</sub>.</p>
+<div class="eq" data-tex="\htmlData{sym=PPL}{\mathrm{PPL}} = \exp\!\left(-\frac{1}{\htmlData{sym=To}{T_o}} \htmlData{sym=sumt}{\sum_{t}^{T}} \log \htmlData{sym=Pt}{P(t \mid 0{:}t-1)}\right)" data-fallback="PPL = exp(−(1/T_o) Σ_t^T log P(t | 0:t−1))"></div>
+<div class="symtable" data-syms="PPL,To,sumt,Pt"></div>
+<p class="inwords"><strong>In words:</strong> “add up the surprise, minus the log of the probability the model gave each actual next token, over all T subword tokens; divide by the number of word-level tokens T<sub>o</sub>; and exponentiate.” (The paper's equation 4.)</p>
+<p class="inwords"><strong>With the numbers:</strong> illustratively, if the model's average surprise were 2.2 per subword token, the total over T = 270,329 tokens is 594,724; divided by T<sub>o</sub> = 245,566 that is 2.422 per word, and the perplexity is e<sup>2.422</sup> = 11.27, rather than the e<sup>2.2</sup> = 9.03 a per-subword average would give. Normalizing by T<sub>o</sub> makes the score comparable with word-level models, and higher.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+T, T_o = 270_329, 245_566
+# illustrative: average surprise of 2.2 per subword token
+total = 2.2 * T
+round(total)  # → 594724
+round(total / T_o, 3)  # → 2.422
+# PPL = exp(total / T_o), against the per-subword exp(2.2)
+round(math.exp(total / T_o), 2), round(math.exp(2.2), 2)  # → (11.27, 9.03)</code></pre>
+<p>Two more details. The model sees at most 1,024 tokens of context, so the test text is read in overlapping windows that advance 32 tokens at a time, scoring only each window's last 32 tokens: every scored token has at least 992 tokens of context, at 1/32 of the cost of a fresh window per token. And LAMBADA counts a word as right only if <em>every</em> subword token of it is predicted correctly.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>window, overlap, T = 1024, 32, 270_329
+# context before the first scored token of a window
+window - overlap  # → 992
+# windows needed, against one window per token
+T // overlap + 1  # → 8448</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>Perplexities computed with different tokenizers are not comparable until they are put on the same denominator; this appendix is a clear worked instance. The <a class="lesson" data-lesson="primer/ml/losses.html">losses lesson</a> builds <span class="t" data-t="cross-entropy">cross-entropy</span> and perplexity from scratch.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><a href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM code</a></td><td>The open-source training code the paper released</td></tr>
+    <tr><td><a href="zero.html">ZeRO</a> (Rajbhandari et al., 2019)</td><td>Shards the optimizer state, gradients and weights across data-parallel GPUs, and combines with Megatron-LM's model parallelism to train 100B-parameter models</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2104.04473">Megatron-LM at scale</a> (Narayanan et al., 2021)</td><td>Composes tensor, pipeline and data parallelism to train a trillion-parameter model on 3,072 GPUs at 52% of peak</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2205.05198">Reducing activation recomputation</a> (Korthikanti et al., 2022)</td><td>Counts a tensor-parallel transformer's activation memory and cuts what has to be stored or recomputed</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2002.04745">On layer normalization in the transformer</a> (Xiong et al., 2020)</td><td>Explains why the pre-norm arrangement of Figure 7(b) trains more stably</td></tr>
+  </tbody>
+</table></div>
+<p>To build the pieces yourself, the <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> splits a matrix multiply both ways and assembles the tensor-parallel MLP, then adds pipeline and data parallelism; the <a class="lesson" data-lesson="primer/ml/hardware.html">hardware lesson</a> explains why tensor parallelism lives inside one machine.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper and Bryan Catanzaro, <em>Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism</em> (2019). <a href="https://arxiv.org/abs/1909.08053">arXiv:1909.08053</a>. Quotations are brief and attributed; a few numbers are restated with attribution. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    Eff: { tex: "E", name: "Scaling efficiency", meaning: "How close n GPUs come to n times one GPU's throughput: 1 is perfect.", shape: "a fraction from 0 to 1", example: "0.756 for 512 GPUs" },
+    Fn: { tex: "F_n", name: "Throughput on n GPUs", meaning: "Floating-point operations per second sustained by the whole run.", shape: "FLOP/s", example: "15.1 petaflops" },
+    F1: { tex: "F_1", name: "Throughput on one GPU", meaning: "The baseline: the 1.2B model alone on one V100.", shape: "FLOP/s", example: "39 teraflops" },
+    ngpu: { tex: "n", name: "Number of GPUs", meaning: "GPUs in the run, or in the model-parallel group.", shape: "a whole number", example: "512; 8 for the vocabulary padding" },
+    X: { tex: "X", name: "Input activations", meaning: "The tokens' vectors entering the block, one row per token. With model parallelism every GPU holds all of X.", shape: "tokens × H", example: "[1, 2], one token of width 2" },
+    A: { tex: "A", name: "First weight matrix", meaning: "The MLP's first matrix, which widens each token (to 4H in a real transformer).", shape: "H × 4H", example: "[[1, −1], [−1, 1]]" },
+    Y: { tex: "Y", name: "Hidden activations", meaning: "The MLP's hidden units after GELU.", shape: "tokens × 4H", example: "[−0.159, 0.841]" },
+    GELU: { tex: "\\mathrm{GELU}", name: "GELU", meaning: "Gaussian error linear unit, applied to each number separately: x times the chance a standard bell-curve variable is below x. Nonlinear, so GELU(a + b) is not GELU(a) + GELU(b).", shape: "keeps the shape", example: "GELU(1) = 0.841, GELU(−1) = −0.159" },
+    X1: { tex: "X_1", name: "First block of X's columns", meaning: "With a row split of A, GPU 1 needs only the columns of X that meet its rows of A.", shape: "tokens × H/2", example: "[1]" },
+    X2: { tex: "X_2", name: "Second block of X's columns", meaning: "The columns of X that go to GPU 2 with a row split.", shape: "tokens × H/2", example: "[2]" },
+    A1r: { tex: "A_1", name: "A's top rows (row split)", meaning: "The first half of A's rows, held by GPU 1. X₁A₁ is a partial sum of every output.", shape: "H/2 × 4H", example: "[1, −1]" },
+    A2r: { tex: "A_2", name: "A's bottom rows (row split)", meaning: "The second half of A's rows, held by GPU 2.", shape: "H/2 × 4H", example: "[−1, 1]" },
+    A1c: { tex: "A_1", name: "A's left columns (column split)", meaning: "The first half of A's columns, held by GPU 1. XA₁ is a complete set of hidden units.", shape: "H × 2H", example: "the column (1, −1)" },
+    A2c: { tex: "A_2", name: "A's right columns (column split)", meaning: "The second half of A's columns, held by GPU 2.", shape: "H × 2H", example: "the column (−1, 1)" },
+    Y1: { tex: "Y_1", name: "GPU 1's hidden units", meaning: "The hidden units GPU 1 computed completely: GELU of X times its columns of A.", shape: "tokens × 2H", example: "−0.159" },
+    Y2: { tex: "Y_2", name: "GPU 2's hidden units", meaning: "The hidden units GPU 2 computed completely.", shape: "tokens × 2H", example: "0.841" },
+    Z: { tex: "Z", name: "Block output", meaning: "The MLP block's output after the second matrix and dropout, added to the residual stream.", shape: "tokens × H", example: "[0.524, 0.841] before dropout" },
+    B: { tex: "B", name: "Second weight matrix", meaning: "The MLP's second matrix, which narrows back to width H.", shape: "4H × H", example: "[[2, 0], [1, 1]]" },
+    B1: { tex: "B_1", name: "B's top rows", meaning: "The rows of B matching GPU 1's hidden units: GPU 1 can multiply without receiving anything.", shape: "2H × H", example: "[2, 0]" },
+    B2: { tex: "B_2", name: "B's bottom rows", meaning: "The rows of B matching GPU 2's hidden units.", shape: "2H × H", example: "[1, 1]" },
+    Clayer: { tex: "C_{\\text{layer}}", name: "Messages per layer", meaning: "Numbers all-reduced per transformer layer per training step: two in the forward pass, two in the backward.", shape: "numbers", example: "100.7 million for the 8.3B model" },
+    bsz: { tex: "b", name: "Batch size", meaning: "Sequences per step on one model-parallel group.", shape: "a whole number", example: "8" },
+    seqs: { tex: "s", name: "Sequence length", meaning: "Tokens per sequence.", shape: "a whole number", example: "1,024" },
+    hid: { tex: "H", name: "Hidden size", meaning: "Numbers per token between layers.", shape: "a whole number", example: "3,072 for the 8.3B model" },
+    Vgather: { tex: "V_{\\text{logits}}", name: "Traffic to gather the logits", meaning: "Every token's score for every vocabulary entry, collected on every GPU.", shape: "numbers", example: "419,430,400" },
+    Vloss: { tex: "V_{\\text{loss}}", name: "Traffic with the loss fused in", meaning: "One number per token: each GPU computes its vocabulary slice's part of the loss, so only per-token sums cross GPUs.", shape: "numbers", example: "8,192" },
+    vocab: { tex: "v", name: "Vocabulary size", meaning: "Rows of the embedding table, one per token type.", shape: "a whole number", example: "50,257 for GPT-2; 51,200 padded" },
+    vpad: { tex: "v_{\\text{pad}}", name: "Padded vocabulary", meaning: "The vocabulary rounded up so each GPU's slice is a multiple of 128 rows. ⌈ ⌉ means round up to a whole number.", shape: "a whole number", example: "51,200" },
+    sigout: { tex: "\\sigma_{\\text{out}}", name: "Spread of the output layers", meaning: "Standard deviation of the random starting weights for the layers just before each residual addition.", shape: "a small number", example: "0.00167" },
+    sig: { tex: "\\sigma", name: "Base spread", meaning: "Standard deviation of every other weight at the start (read from the paper's N(0, 0.02)).", shape: "a small number", example: "0.02" },
+    Nlay: { tex: "N", name: "Number of layers", meaning: "Transformer layers, each with an attention block and an MLP block.", shape: "a whole number", example: "72" },
+    Pcount: { tex: "P", name: "Parameter count", meaning: "Total weights in the model, approximately.", shape: "a count", example: "8.31 billion" },
+    Llay: { tex: "L", name: "Layers", meaning: "Transformer layers in the model.", shape: "a whole number", example: "72" },
+    Estrong: { tex: "E_{\\text{strong}}", name: "Strong scaling efficiency", meaning: "Speedup per GPU when the problem stays the same size as GPUs are added.", shape: "a fraction from 0 to 1", example: "0.372 at 8 GPUs" },
+    Sn: { tex: "S_n", name: "Speedup on n GPUs", meaning: "How many times faster a step runs than on one GPU, same model, same batch.", shape: "a number ≥ 1", example: "2.98 at 8 GPUs" },
+    PPL: { tex: "\\mathrm{PPL}", name: "Perplexity", meaning: "e raised to the average surprise per token: roughly how many options the model is torn between.", shape: "a number ≥ 1", example: "10.81 for the 8.3B model" },
+    To: { tex: "T_o", name: "Original token count", meaning: "The number of word-level tokens in the test set, used as the denominator so scores compare with earlier word-level models.", shape: "a count", example: "245,566" },
+    sumt: { tex: "\\sum_t^T", name: "Sum over subword tokens", meaning: "Add up over every one of the T tokens the model actually reads.", shape: "T = 270,329 terms", example: "T = 270,329" },
+    Pt: { tex: "P(t \\mid 0{:}t-1)", name: "Probability of each actual token", meaning: "The probability the model gave token t, given the tokens before it (in practice the last 1,024).", shape: "between 0 and 1", example: "e^(−2.2) = 0.11 in the illustration" },
+  },
+
+  blocks: {
+    X: { title: "X, the block's input", body: "<p>The normalized token vectors. Every GPU gets a full copy: that is what lets the first matrix be split by columns.</p>", shape: "tokens × H" },
+    f: { title: "f: identity forward, all-reduce backward", body: "<p>Going forward, f just passes X to every GPU. Going backward, each GPU has computed its own part of the gradient with respect to X, and f adds them up (an all-reduce).</p>", shape: "one all-reduce, backward only" },
+    g: { title: "g: all-reduce forward, identity backward", body: "<p>Going forward, g adds the GPUs' partial outputs: the block's single forward all-reduce. Going backward, the gradient of a sum is the same for every term, so g just hands it to every GPU.</p>", shape: "one all-reduce, forward only" },
+    colA: { title: "First matrix, split by columns", body: "<p>Each GPU holds half of A's columns and computes half of the hidden units completely. No communication.</p>", shape: "tokens × H → tokens × 2H per GPU", lesson: "primer/ml/pretraining.html" },
+    gelu: { title: "GELU, applied locally", body: "<p>Because each GPU owns whole hidden units, the nonlinearity needs nothing from the other GPU. With a row split it would need the full sum first.</p>", shape: "keeps the shape" },
+    rowB: { title: "Second matrix, split by rows", body: "<p>Each GPU multiplies its own hidden units by the matching rows of B, producing a partial sum of the full output.</p>", shape: "tokens × 2H → tokens × H per GPU", lesson: "primer/ml/pretraining.html" },
+    Zout: { title: "Dropout and output Z", body: "<p>After g every GPU has the same full output, so dropout (with the same random seed on every GPU) and the residual addition run as duplicate copies.</p>", shape: "tokens × H" },
+    gpu1: { title: "GPU 1's half", body: "<p>Everything inside the dashed box runs on GPU 1 alone, from f to g.</p>" },
+    gpu2: { title: "GPU 2's half", body: "<p>The mirror image on GPU 2, with the other half of every weight matrix.</p>" },
+    qkv: { title: "Q, K, V projections, split by columns", body: "<p>The columns for each head stay together on one GPU, so each GPU gets the queries, keys and values of its own heads.</p>", shape: "tokens × H → tokens × H/2 each, per GPU" },
+    heads: { title: "Softmax attention for this GPU's heads", body: "<p>Scores, softmax, attention dropout and the weighted sum of values, for each of this GPU's heads, entirely locally.</p>", lesson: "primer/ml/attention.html" },
+    outproj: { title: "Output projection, split by rows", body: "<p>The matrix after attention, cut by rows to match the heads each GPU holds; each GPU produces a partial output for g to add.</p>", shape: "tokens × H/2 → tokens × H per GPU" },
+    inputs: { title: "Input", body: "<p>The layer's input from the layer below (or the embeddings).</p>" },
+    outputs: { title: "Output", body: "<p>The layer's output, passed to the next layer.</p>" },
+    lnA: { title: "LayerNorm in (a)", body: "<p>Normalizes the signal, and the skip connection starts <em>after</em> it, so the residual path carries the normalized values and every block re-normalizes the running total.</p>", lesson: "primer/ml/deep_nets.html" },
+    lnB: { title: "LayerNorm in (b)", body: "<p>Normalizes only the copy that enters attention or the MLP; the skip connection starts <em>before</em> it, so the raw running total passes untouched. This is pre-norm.</p>", lesson: "primer/ml/transformer.html" },
+    attn: { title: "Self-attention", body: "<p>Identical in both arrangements.</p>", lesson: "primer/ml/attention.html" },
+    mlp: { title: "MLP", body: "<p>The feed-forward network, identical in both arrangements.</p>" },
+    add: { title: "Residual addition", body: "<p>Adds the block's output to whatever the skip connection carried: the normalized signal in (a), the raw one in (b).</p>" },
+    skipA: { title: "Skip connections in (a)", body: "<p>They branch off after each layer norm. The paper found BERT built this way became unstable at 752M parameters.</p>" },
+    skipB: { title: "Skip connections in (b)", body: "<p>They branch off before each layer norm, so the signal has an unnormalized highway from input to output. Stable at every size the paper tried.</p>" },
+  },
+
+  onReady(P) {
+    splitPlay();
+    gpt2Bars();
+    gpuGrid();
+    strongChart(P);
+  },
+};
+
+/* ---- §3.1: cut A by rows or by columns ---- */
+function splitPlay() {
+  const gelu = (x) => x * 0.5 * (1 + erf(x / Math.SQRT2));
+  // Abramowitz and Stegun 7.1.26: accurate to about 1e-7, plenty for three decimals.
+  function erf(x) {
+    const s = Math.sign(x), a = Math.abs(x), t = 1 / (1 + 0.3275911 * a);
+    const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a);
+    return s * y;
+  }
+  const f3 = (v) => (Math.abs(v) < 5e-4 ? 0 : v).toFixed(3);
+  const X = [1, 2], A = [[1, -1], [-1, 1]];
+  const truth = [gelu(-1), gelu(1)];
+  const out = document.getElementById("split-out");
+  const readout = document.getElementById("split-readout");
+  const card = (title, lines) => `<div style="flex:1 1 200px;border:1px solid var(--border);border-radius:8px;padding:.5rem .7rem;background:var(--bg);font-size:.85rem"><strong>${title}</strong><br>${lines.join("<br>")}</div>`;
+  function draw(cut) {
+    let cards, result, ok;
+    if (cut === "rows") {
+      const p1 = A[0].map((a) => X[0] * a), p2 = A[1].map((a) => X[1] * a);
+      result = p1.map((v, j) => gelu(v) + gelu(p2[j]));
+      cards = [
+        card("GPU 1: row 1 of A, X₁ = 1", [`X₁A₁ = [${p1.join(", ")}] (a partial sum of both outputs)`, `GELU locally: [${p1.map((v) => f3(gelu(v))).join(", ")}]`]),
+        card("GPU 2: row 2 of A, X₂ = 2", [`X₂A₂ = [${p2.join(", ")}]`, `GELU locally: [${p2.map((v) => f3(gelu(v))).join(", ")}]`]),
+      ];
+    } else {
+      const c1 = X[0] * A[0][0] + X[1] * A[1][0], c2 = X[0] * A[0][1] + X[1] * A[1][1];
+      result = [gelu(c1), gelu(c2)];
+      cards = [
+        card("GPU 1: column 1 of A, all of X", [`XA₁ = ${c1} (output 1, complete)`, `GELU locally: ${f3(gelu(c1))}`]),
+        card("GPU 2: column 2 of A, all of X", [`XA₂ = ${c2} (output 2, complete)`, `GELU locally: ${f3(gelu(c2))}`]),
+      ];
+    }
+    ok = result.every((v, j) => Math.abs(v - truth[j]) < 1e-6);
+    out.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:.6rem">${cards.join("")}</div>`;
+    readout.innerHTML = cut === "rows"
+      ? `Adding the GPUs' GELU outputs gives [${result.map(f3).join(", ")}], but GELU(XA) is [${truth.map(f3).join(", ")}]: <strong>wrong</strong>. The partial sums must be added before GELU, so the GPUs would have to talk mid-block.`
+      : `Placing the two outputs side by side gives [${result.map(f3).join(", ")}], exactly GELU(XA): <strong>${ok ? "correct" : "wrong"}</strong>, with no communication.`;
+  }
+  document.querySelectorAll("[data-cut]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-cut]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    draw(b.dataset.cut);
+  }));
+  draw("cols");
+}
+
+/* ---- §5.2: Table 3, restated as bars ---- */
+function gpt2Bars() {
+  const ppl = [["355M", 19.31], ["2.5B", 12.76], ["8.3B", 10.81], ["previous best", 15.79]];
+  const acc = [["355M", 45.18], ["2.5B", 61.73], ["8.3B", 66.51], ["previous best", 63.24]];
+  const row = (label, v, max, unit) => `<div class="share-row" style="grid-template-columns:6.5rem minmax(0,1fr) 3.8rem"><span>${label}</span><div><div class="share-bar" style="width:${((v / max) * 100).toFixed(1)}%;${label === "previous best" ? "background:var(--hatch) var(--wire)" : ""}"></div></div><span>${v}${unit}</span></div>`;
+  document.getElementById("gpt2-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .3rem">WikiText103 perplexity, lower is better (axis 0 to 20)</div>` + ppl.map(([l, v]) => row(l, v, 20, "")).join("") +
+    `<div class="legend" style="margin:.7rem 0 .3rem">LAMBADA accuracy, higher is better (axis 0 to 100%)</div>` + acc.map(([l, v]) => row(l, v, 100, "%")).join("");
+}
+
+/* ---- Appendix B.1: 512 GPUs, 64 model-parallel groups of 8 ---- */
+function gpuGrid() {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("grid-svg");
+  const slider = document.getElementById("gpu-pick");
+  const out = document.getElementById("gpu-pick-v");
+  const readout = document.getElementById("grid-readout");
+  const cells = [];
+  // 8 × 8 groups, each drawn as 4 × 2 cells
+  for (let grp = 0; grp < 64; grp++) {
+    const gx = 4 + (grp % 8) * 42, gy = 4 + Math.floor(grp / 8) * 24;
+    for (let k = 0; k < 8; k++) {
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", gx + (k % 4) * 9); r.setAttribute("y", gy + Math.floor(k / 4) * 9);
+      r.setAttribute("width", 8); r.setAttribute("height", 8); r.setAttribute("rx", 1.5);
+      svg.appendChild(r);
+      cells.push(r);
+    }
+  }
+  function draw() {
+    const g = +slider.value;
+    out.textContent = g;
+    const grp = Math.floor((g - 1) / 8), pos = (g - 1) % 8;
+    cells.forEach((r, i) => {
+      const inGroup = Math.floor(i / 8) === grp, samePos = i % 8 === pos;
+      r.setAttribute("fill", i === g - 1 ? "var(--active)" : inGroup ? "var(--lin-stroke)" : samePos ? "var(--attn-stroke)" : "var(--card)");
+      r.setAttribute("stroke", "var(--border)");
+    });
+    const first = grp * 8 + 1;
+    readout.textContent = `GPU ${g} is position ${pos + 1} of model-parallel group ${grp + 1} (GPUs ${first} to ${first + 7}), which together hold one copy of the model. Its data-parallel group is GPUs ${pos + 1}, ${pos + 9}, ${pos + 17}, ..., ${pos + 505}: 64 GPUs holding the same slice, averaging gradients once per step.`;
+  }
+  slider.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- Appendix D: strong scaling of the 1.2B model (Table 8) ---- */
+function strongChart(P) {
+  P.lineChart(document.getElementById("strong-chart"), {
+    series: [
+      { name: "perfect scaling", points: [[1, 1], [2, 2], [4, 4], [8, 8]] },
+      { name: "measured (Table 8)", points: [[1, 1], [2, 1.64], [4, 2.34], [8, 2.98]] },
+    ],
+    xLabel: "GPUs", yLabel: "speedup",
+    width: 420, height: 280,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => `${(+v).toFixed(2)}×`,
+    readout: document.getElementById("strong-readout"),
+    ariaLabel: "Speedup against number of GPUs for the 1.2 billion parameter model at a fixed batch size, measured and perfect",
+  });
+}
+</script>
+</body>
+</html>

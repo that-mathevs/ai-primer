@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZeRO, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Rajbhandari et al. (2019), ZeRO: stop every GPU keeping an identical copy of the training state, share it out instead, and fit models a hundred times bigger for almost no extra communication.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>/* page-local: show which toggle is selected */ button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--fg);font-weight:600}</style>
+</head>
+<body data-paper="zero">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Where did all the memory go?</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Model states</a></li>
+          <li><a href="#s3-2">3.2 Residual memory</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Insights and overview</a></li>
+      <li><a href="#s5">5 Deep dive into ZeRO-DP</a>
+        <ol>
+          <li><a href="#s5-1">5.1 Optimizer state partitioning</a></li>
+          <li><a href="#s5-2">5.2 Gradient partitioning</a></li>
+          <li><a href="#s5-3">5.3 Parameter partitioning</a></li>
+          <li><a href="#s5-4">5.4 Implication on model size</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Deep dive into ZeRO-R</a>
+        <ol>
+          <li><a href="#s6-1">6.1 Partitioned activations</a></li>
+          <li><a href="#s6-2">6.2 Constant-size buffers</a></li>
+          <li><a href="#s6-3">6.3 Defragmentation</a></li>
+        </ol>
+      </li>
+      <li><a href="#s7">7 Communication of ZeRO-DP</a></li>
+      <li><a href="#s8">8 Communication of ZeRO-R</a></li>
+      <li><a href="#s9">9 Towards a trillion parameters</a></li>
+      <li><a href="#s10">10 Implementation and evaluation</a>
+        <ol>
+          <li><a href="#s10-1">10.1 Setup</a></li>
+          <li><a href="#s10-2">10.2 Speed and model size</a></li>
+          <li><a href="#s10-3">10.3 Super-linear scaling</a></li>
+          <li><a href="#s10-4">10.4 Big models without model parallelism</a></li>
+          <li><a href="#s10-5">10.5 Which optimization buys what</a></li>
+          <li><a href="#s10-6">10.6 Turing-NLG</a></li>
+        </ol>
+      </li>
+      <li><a href="#s11">11 Concluding remarks</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>ZeRO, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase and Yuxiong He (2019), <em>ZeRO: Memory Optimizations Toward Training Trillion Parameter Models</em>: the paper that noticed every GPU in data-parallel training keeps an identical copy of everything, and shared that copy out instead.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1910.02054">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1910.02054">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1910.02054">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper (version 3, May 2020) section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its figures are redrawn from scratch and its tables are not reproduced; a few of their numbers are restated, with attribution, and the memory chart is recomputed from the paper's own formulas. Numbers made up for teaching are labelled illustrative. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap, and so does every symbol in every equation.</li>
+  <li>The redrawn Figure 1 in §1 is the whole paper in one picture. The memory chart in §5.4 and the step-by-step schedule in §7 are live: change the model size, press Step, and watch the numbers.</li>
+</ul>
+<p>Every idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>. Two running examples carry the arithmetic:</p>
+<div class="play">
+  <p style="margin:0"><strong>The tiny model</strong> (illustrative, small enough to check by hand): <strong>Ψ = 8 parameters</strong> trained on <strong>4 GPUs</strong>. <strong>The paper's model</strong> (its Figure 1): <strong>Ψ = 7.5 billion parameters</strong> on <strong>64 GPUs</strong>. Both are trained with <span class="t" data-t="adam">Adam</span> in <span class="t" data-t="mixed precision">mixed precision</span>. The <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> builds the memory bill and the three ZeRO stages in NumPy; its section 3 puts them next to <span class="t" data-t="tensor parallelism">tensor</span> and <span class="t" data-t="pipeline parallelism">pipeline parallelism</span>, whose founding paper has its own <a href="megatron-lm.html">Megatron-LM companion</a>.</p>
+</div>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054">original</a></span></h2>
+<blockquote class="quote">“ZeRO eliminates memory redundancies in data- and model-parallel training while retaining low communication volume and high computational granularity, allowing us to scale the model size proportional to the number of devices with sustained high efficiency.”<cite>Rajbhandari et al. (2019), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Sixty-four people are writing one encyclopedia together. Each keeps a complete copy of every volume, every draft and every margin note at their own desk, so the desks overflow long before the encyclopedia is finished. ZeRO says: keep one sixty-fourth of everything each, and borrow a volume from its keeper for the few minutes you need it.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A name for the waste: in <span class="t" data-t="data parallelism">data parallelism</span>, every GPU stores the same weights, gradients and <span class="t" data-t="optimizer state">optimizer state</span>.</li>
+  <li>Three stages that remove it, sharding the optimizer state, then the gradients, then the weights, for 4×, 8× and N<sub>d</sub>× less memory per GPU. The first two cost no extra communication; the third costs 1.5×.</li>
+  <li>A second set of fixes (ZeRO-R) for everything else in memory: activations, temporary buffers and fragmentation.</li>
+  <li>An implementation of the first two stages, ZeRO-100B, that trains models of over 100 billion parameters on 400 GPUs at 15 petaflops: 8× bigger and up to 10× faster than the best system of the day, and up to 13 billion parameters with no model changes at all.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Sharding the training state became a standard ingredient of large training runs: the third stage is what PyTorch's <span class="t" data-t="fsdp">FSDP</span> does, and the paper's 16-bytes-per-parameter accounting is the first sum to do before any run.</p>
+</section>
+
+<section id="s1">
+<h2>1 Extended introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S1">original</a></span></h2>
+<blockquote class="quote">“Basic data parallelism (DP) does not reduce memory per device, and runs out of memory for models with more than 1.4B parameters on current generation of GPUs with 32 GB memory.”<cite>Rajbhandari et al. (2019), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>In 2019 there were two ways to train on many GPUs. <span class="t" data-t="data parallelism">Data parallelism</span> is a set of identical kitchens, each cooking whole meals from its own share of the orders: fast and simple, but each kitchen needs the whole pantry. <span class="t" data-t="model parallelism">Model parallelism</span> splits one recipe across cooks at one bench (the <a href="megatron-lm.html">Megatron-LM</a> approach): the pantry is shared, but the cooks must talk constantly, which only works when they stand side by side. The paper wants data parallelism's speed with model parallelism's small pantry.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Train the tiny model (Ψ = 8 parameters) on 4 GPUs. Mixed-precision Adam keeps 16 bytes per parameter (§3.1 explains them), so plain data parallelism puts 16 × 8 = <strong>128 bytes</strong> on every GPU, 512 bytes in all, of which only 128 are distinct. Three quarters of the cluster's memory holds copies.</p>
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 406" role="img" aria-label="Memory per GPU for four GPUs under plain data parallelism and the three ZeRO stages">
+    <g id="fig1grid"></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a stage's title or a coloured bar. Dashed outlines are memory a GPU no longer holds.</p></div>
+  </div>
+  <div class="legend"><span><i style="background:var(--lin-stroke)"></i>fp16 parameters (2 bytes each)</span><span><i style="background:var(--attn-stroke)"></i>fp16 gradients (2 bytes)</span><span><i style="background:var(--ff-stroke)"></i>optimizer state (12 bytes)</span></div>
+  <figcaption>Figure 1 of the paper, redrawn for 4 GPUs instead of N<sub>d</sub>. Based on Rajbhandari et al. (2019), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each block of four bars is one way of training, and each bar is one GPU's memory, drawn to scale in bytes per parameter: purple for the 16-bit weights (2), orange for their gradients (2), blue for the optimizer state (12). In the top block every GPU holds all 16. Going down, the blue, then the orange, then the purple part is <em>partitioned</em>: each GPU keeps only its own quarter (the filled piece, a different quarter on each GPU) and the dashed outline marks what it dropped. The bars shrink from 16 to 7, 5.5 and finally 4 units: 128, 56, 44 and 32 bytes for the tiny model. Nothing is lost, because the four filled quarters in each column still add up to one complete copy.</p>
+<h3 class="rung">What else the introduction sets out</h3>
+<ul>
+  <li><strong>Model states</strong> (weights, gradients, optimizer state) are fixed by ZeRO-DP; <strong>residual states</strong> (activations, temporary buffers, fragments) by ZeRO-R.</li>
+  <li>ZeRO combines with model parallelism: N<sub>d</sub>-way ZeRO on top of N<sub>m</sub>-way model parallelism divides the model states by up to N<sub>d</sub> × N<sub>m</sub>.</li>
+  <li>Megatron-LM, the model-parallel state of the art, managed about 5 teraflops per GPU (under 5% of peak) on a 40-billion-parameter model split across two servers: talking inside every layer over the network between machines was the bottleneck.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The figure's promise is that memory per GPU falls as GPUs are added. With plain data parallelism, adding GPUs adds speed but never room; with ZeRO, it adds both. The <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> draws the same four stages for a 7B model.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>There were already four ways to squeeze a big model into small GPUs, and each had a catch. Splitting the model by layers (<span class="t" data-t="pipeline parallelism">pipeline parallelism</span>, <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S2.SS1">§2.1</a>) needs many <span class="t" data-t="micro-batch">micro-batches</span> in flight to keep every stage busy. Throwing activations away and recomputing them (<span class="t" data-t="activation checkpointing">activation checkpointing</span>, §2.2.1) saves memory at the price of extra arithmetic. Parking the model states in the CPU's memory (§2.2.2) makes every step wait on the slow link between CPU and GPU: up to half of training time in one earlier system. And optimizers that keep coarser statistics (§2.2.3) save memory but may change how the model learns.</p>
+<h3 class="rung">Tiny example</h3>
+<p>GPipe, the pipeline system of the day, needs a batch that grows with the number of pipeline stages to hide its idle bubble. With 4 stages and 4 micro-batches, each stage idles for (4 − 1)/(4 + 4 − 1) = 3/7 of the time; with 32 micro-batches the idle share falls to 3/35, about 9%, but now 32 micro-batches' activations are in flight.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># pipeline bubble: (p − 1) / (m + p − 1), for p = 4 stages
+p = 4
+round((p - 1) / (4 + p - 1), 3)  # → 0.429
+round((p - 1) / (32 + p - 1), 3)  # → 0.086</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>ZeRO's claim is that it needs none of these trade-offs: the model, the optimizer and the batch size stay exactly as they were, and the result is the same model standard training would produce. Each alternative still has its place, and today's largest runs combine ZeRO-style sharding with pipeline and tensor parallelism; the <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> builds <a data-lesson="primer/ml/pretraining.html#pipeline_schedule"><code>pipeline_schedule</code></a> and <a data-lesson="primer/ml/pretraining.html#bubble_fraction"><code>bubble_fraction</code></a> for the bubble above.</p>
+</section>
+
+<section id="s3">
+<h2>3 Where did all the memory go? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S3">original</a></span></h2>
+<blockquote class="quote">“For example, a 1.5B parameter GPT-2 model requires 3GB of memory for its weights (or parameters) in 16-bit precision, yet, it cannot be trained on a single GPU with 32GB memory using Tensorflow or PyTorch.”<cite>Rajbhandari et al. (2019), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A recipe card fits in your pocket, but learning to cook from it fills a kitchen: the card, your notes on what went wrong, your running averages of how much to adjust, and every half-finished dish you keep to compare against. This section is the paper's audit of the kitchen.</p>
+
+<section id="s3-1">
+<h3>3.1 Model states: optimizer states, gradients and parameters <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Adam keeps two running notes per weight: a running average of its gradients (<span class="t" data-t="momentum">momentum</span>) and a running average of their squares (the <span class="t" data-t="variance">variance</span>). <span class="t" data-t="mixed precision">Mixed precision</span> adds a third: the forward and backward passes use cheap 16-bit weights, but updates are applied to a full 32-bit <span class="t" data-t="master weights">master copy</span>, because a tiny update added to a 16-bit number can round away to nothing.</p>
+<h4>Tiny example</h4>
+<p>For one parameter: 2 bytes for the fp16 weight, 2 for its fp16 gradient, then 4 + 4 + 4 for the fp32 master weight, momentum and variance. The paper lumps the last three together as the optimizer state, K = 12 bytes. Total: 2 + 2 + 12 = <strong>16 bytes</strong>, eight times the 2 bytes the weight itself needs.</p>
+<div class="eq" data-tex="\htmlData{sym=Mstate}{M_{\text{states}}} = \htmlData{sym=p16}{2\Psi} + \htmlData{sym=g16}{2\Psi} + \htmlData{sym=K}{K}\htmlData{sym=Psi}{\Psi} = 16\,\htmlData{sym=Psi}{\Psi}\ \text{bytes}" data-fallback="M_states = 2Ψ + 2Ψ + KΨ = 16Ψ bytes"></div>
+<div class="symtable" data-syms="Mstate,Psi,p16,g16,K"></div>
+<p class="inwords"><strong>In words:</strong> “two bytes per parameter for the working weights, two for their gradients, and K = 12 for the optimizer's fp32 copies: sixteen bytes per parameter before a single activation is stored.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the tiny model: 16 × 8 = 128 bytes. GPT-2 with 1.5 billion parameters: 16 × 1.5 × 10<sup>9</sup> = <strong>24 GB</strong>, against the 3 GB its fp16 weights take. The paper's 7.5B model: <strong>120 GB</strong>, nearly four 32 GB GPUs' worth before any activations.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># bytes per parameter: fp16 weight, fp16 gradient, K for the optimizer state
+K = 4 + 4 + 4
+2 + 2 + K  # → 16
+# the tiny model: Ψ = 8
+16 * 8  # → 128
+# GPT-2, Ψ = 1.5 billion, in GB
+16 * 1.5e9 / 1e9  # → 24.0
+# its fp16 weights alone
+2 * 1.5e9 / 1e9  # → 3.0
+# the paper's Figure 1 model, Ψ = 7.5 billion
+16 * 7.5e9 / 1e9  # → 120.0</code></pre>
+<h4>Why it matters today</h4>
+<p>Sixteen bytes per parameter is still the rule of thumb for Adam in mixed precision (bf16 in place of fp16 changes nothing in the count). It is why a model you can run on one GPU usually cannot be trained on one. The <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> itemizes the same bill in <a data-lesson="primer/ml/pretraining.html#training_memory"><code>training_memory</code></a>, and the <a href="adam.html">Adam companion</a> explains the two running averages.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Residual memory consumption <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Beyond the model states, three things take memory. <strong>Activations</strong>: the forward pass's intermediate results, kept so the backward pass can compute gradients. <strong>Temporary buffers</strong>: scratch space, such as one long flat array that all the gradients are copied into so they can be summed across GPUs in one go. And <strong>fragments</strong>: free memory broken into pieces too small to use, like a car park with plenty of empty spaces but none two spaces wide for a van.</p>
+<h4>Tiny example</h4>
+<p>The paper's footnote counts a GPT-2-like model's activations as about 12 × hidden width × batch × sequence length × layers numbers. Take a toy of width 2, batch 1, sequence 3 and 1 layer: 12 × 2 × 1 × 3 × 1 = 72 numbers, or 144 bytes in fp16. Double the batch and it doubles: activations grow with the work in flight, not with the parameter count.</p>
+<div class="eq" data-tex="\htmlData{sym=Aact}{A} \approx \htmlData{sym=twelve}{12} \times \htmlData{sym=hid}{h} \times \htmlData{sym=bsz}{b} \times \htmlData{sym=seq}{s} \times \htmlData{sym=nL}{L}" data-fallback="A ≈ 12 × h × b × s × L"></div>
+<div class="symtable" data-syms="Aact,twelve,hid,bsz,seq,nL"></div>
+<p class="inwords"><strong>In words:</strong> “each layer keeps about twelve numbers for every hidden unit of every token in the batch.”</p>
+<p class="inwords"><strong>With the numbers:</strong> GPT-2 1.5B has h = 1,600 and L = 48 (the paper's Table 4). At b = 32 and s = 1,024: 12 × 1,600 × 32 × 1,024 × 48 = 30.2 billion numbers; at 2 bytes each that is <strong>60.4 GB</strong>, the paper's “about 60 GB”. Activation checkpointing cuts it to about 8 GB, the paper says. The fp32 buffer that fuses all 1.5 billion gradients adds 1.5 × 10<sup>9</sup> × 4 bytes = <strong>6 GB</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the toy: h = 2, b = 1, s = 3, L = 1
+12 * 2 * 1 * 3 * 1  # → 72
+# GPT-2 1.5B at batch 32, sequence 1,024
+h, b, s, L = 1600, 32, 1024, 48
+A = 12 * h * b * s * L
+round(A / 1e9, 1)  # → 30.2
+# in GB at 2 bytes per fp16 number
+round(A * 2 / 1e9, 1)  # → 60.4
+# one flat fp32 buffer holding every gradient, in GB
+1.5e9 * 4 / 1e9  # → 6.0</code></pre>
+<div class="play" id="gpt2-bill" aria-label="Memory needed to train GPT-2 1.5B, item by item, against one 32 GB GPU"></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one item in the bill for training the 1.5-billion-parameter GPT-2, on a common scale, with the striped bar marking one 32 GB V100 GPU. The weights you would need to <em>run</em> the model are the shortest bar. The model states alone (24 GB) nearly fill the GPU; activations at batch 32 are more than twice the GPU; checkpointing brings them down to 8 GB, and the fused buffer adds 6 GB more. Model states plus checkpointed activations plus the buffer already exceed the 32 GB line, which is the paper's point: the weights are the small part.</p>
+<h4>Fragmentation</h4>
+<p>The paper reports running out of memory with over 30% still free in extreme cases: the free memory was there, but not in one contiguous piece. The <a href="paged-attention.html">PagedAttention companion</a> meets the same problem, <span class="t" data-t="external fragmentation">external fragmentation</span>, in serving.</p>
+<h4>Why it matters today</h4>
+<p>Every large run still budgets these four items. Activations are the one that grows with batch and context length, which is why the <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> counts them per layer in <a data-lesson="primer/ml/pretraining.html#activation_bytes"><code>activation_bytes</code></a>, and why kernels like <a href="flashattention.html">FlashAttention</a> that never store the attention scores matter for training as well as speed.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 ZeRO: insights and overview <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S4">original</a></span></h2>
+<blockquote class="quote">“Both DP and MP keep all the model states needed over the entire training process, but not everything is required all the time.”<cite>Rajbhandari et al. (2019), §4.1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A library does not buy every reader a copy of every book. It keeps one copy, and a book leaves the shelf only while someone is reading it. Training works the same way: layer 30's weights are needed only while layer 30 is computing, and the optimizer state for a weight only at the moment that weight is updated.</p>
+<h3 class="rung">Tiny example: the three insights</h3>
+<ul>
+  <li><strong>(a) Data parallelism scales better.</strong> Splitting a layer across GPUs shrinks each GPU's matrix multiplies and forces a conversation inside every layer. With the tiny model on 4 GPUs, model parallelism leaves each GPU 2 of the 8 weights to multiply by, then a round of talking; data parallelism gives each GPU all 8 weights and a quarter of the batch, and talks once per step.</li>
+  <li><strong>(b) Data parallelism wastes memory.</strong> 512 bytes of state across the cluster to hold 128 bytes of information.</li>
+  <li><strong>(c) Most state is idle most of the time.</strong> In the tiny model, if the 8 weights form 4 layers of 2, then at any moment of the forward pass only 2 of the 8 weights are in use.</li>
+</ul>
+<h3 class="rung">The plan</h3>
+<p><strong>ZeRO-DP</strong> keeps data parallelism's split of the batch (insight a), stores each model state once across the GPUs (b), and fetches each piece only when it is needed (c). <strong>ZeRO-R</strong> handles the residual states: partition the activations that model parallelism duplicates (§6.1), cap the temporary buffers at a constant size (§6.2), and pre-allocate contiguous space so memory does not fragment (§6.3).</p>
+<h3 class="rung">Why it matters</h3>
+<p>Insight (c) is the one that aged best: “fetch just in time, then drop” is how stage 3 and <span class="t" data-t="fsdp">FSDP</span> handle weights, and it is the same trade <span class="t" data-t="activation checkpointing">activation checkpointing</span> makes with activations: keep less, and rebuild what you need when you need it.</p>
+</section>
+
+<section id="s5">
+<h2>5 Deep dive into ZeRO-DP <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Three stages, each removing one kind of copy, cumulatively: first the optimizer state (P<sub>os</sub>), then the gradients (P<sub>os+g</sub>), then the parameters (P<sub>os+g+p</sub>). Today they are usually called ZeRO stages 1, 2 and 3.</p>
+
+<section id="s5-1">
+<h3>5.1 P<sub>os</sub>: optimizer state partitioning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S5.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Four accountants share one ledger of 8 accounts. Instead of all four updating all 8 accounts identically, each takes 2 accounts, keeps only those accounts' notes, updates them, and at the end of the day reads the other six fresh balances out to the others.</p>
+<h4>Tiny example</h4>
+<p>GPU 0 keeps the optimizer state for parameters 1 and 2 only, GPU 1 for 3 and 4, and so on. After the gradients are averaged, each GPU updates only its own 2 parameters, then an <span class="t" data-t="all-gather">all-gather</span> hands every GPU all 8 updated weights. Memory per GPU: 4 × 8 = 32 bytes of fp16 weights and gradients, plus 12 × 8 / 4 = 24 bytes of optimizer state: <strong>56 bytes</strong>, down from 128.</p>
+<div class="eq" data-tex="\htmlData{sym=Mos}{M_{os}} = \htmlData{sym=four}{4\Psi} + \frac{\htmlData{sym=K}{K}\htmlData{sym=Psi}{\Psi}}{\htmlData{sym=Nd}{N_d}}" data-fallback="M_os = 4Ψ + KΨ / N_d"></div>
+<div class="symtable" data-syms="Mos,four,K,Psi,Nd"></div>
+<p class="inwords"><strong>In words:</strong> “every GPU still holds all the 16-bit weights and gradients, but only its own 1/N<sub>d</sub> share of the optimizer state.”</p>
+<p class="inwords"><strong>With the numbers:</strong> tiny model: 32 + 24 = 56 bytes. The paper's model: 4 × 7.5 + 12 × 7.5 / 64 = 30 + 1.41 = <strong>31.4 GB</strong>, against 120 GB. As N<sub>d</sub> grows, the second term vanishes and memory approaches 4Ψ: the paper's “4× reduction”.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>K = 12
+# M_os = 4Ψ + KΨ / N_d, tiny model on 4 GPUs
+Psi, N_d = 8, 4
+4 * Psi + K * Psi / N_d  # → 56.0
+# the paper's model on 64 GPUs, in GB
+Psi, N_d = 7.5e9, 64
+round((4 * Psi + K * Psi / N_d) / 1e9, 1)  # → 31.4
+# reduction against 16Ψ as N_d grows large
+16 / 4  # → 4.0</code></pre>
+<h4>Why it matters today</h4>
+<p>Stage 1 is nearly free: the gradient averaging and weight broadcast it needs cost the same as plain data parallelism (§7), and it removes three quarters of the memory. The <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a>'s <a data-lesson="primer/ml/pretraining.html#zero_memory_per_gpu"><code>zero_memory_per_gpu</code></a> computes this and the next two formulas for any stage.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 P<sub>g</sub>: gradient partitioning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S5.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If each accountant only updates their own 2 accounts, why receive the totals for all 8? Each needs only the totals for their own accounts. So instead of everyone learning every sum, each sum is delivered only to the accountant who owns it.</p>
+<h4>Tiny example</h4>
+<p>Four GPUs each computed a gradient for all 8 parameters. A <span class="t" data-t="reduce-scatter">reduce-scatter</span> sums them so that GPU 0 ends up with the total for parameters 1 and 2 only, GPU 1 for 3 and 4, and so on; each GPU frees the rest. Gradient memory falls from 2 × 8 = 16 bytes to 16 / 4 = 4 bytes: per GPU, 16 + 28 = <strong>44 bytes</strong> in all. A reduce-scatter is the first half of the <span class="t" data-t="ring all-reduce">ring all-reduce</span> that plain data parallelism already runs.</p>
+<div class="eq" data-tex="\htmlData{sym=Mosg}{M_{os+g}} = \htmlData{sym=p16}{2\Psi} + \frac{(2 + \htmlData{sym=K}{K})\,\htmlData{sym=Psi}{\Psi}}{\htmlData{sym=Nd}{N_d}}" data-fallback="M_os+g = 2Ψ + (2 + K)Ψ / N_d"></div>
+<div class="symtable" data-syms="Mosg,p16,K,Psi,Nd"></div>
+<p class="inwords"><strong>In words:</strong> “every GPU keeps all the 16-bit weights, and a 1/N<sub>d</sub> share of the gradients and the optimizer state.”</p>
+<p class="inwords"><strong>With the numbers:</strong> tiny model: 2 × 8 + 14 × 8 / 4 = 16 + 28 = 44 bytes. The paper's model: 15 + 1.64 = <strong>16.6 GB</strong>. For large N<sub>d</sub> memory approaches 2Ψ: the paper's “8× reduction”.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>K = 12
+# M_os+g = 2Ψ + (2 + K)Ψ / N_d, tiny model on 4 GPUs
+Psi, N_d = 8, 4
+2 * Psi + (2 + K) * Psi / N_d  # → 44.0
+# the paper's model on 64 GPUs, in GB
+Psi, N_d = 7.5e9, 64
+round((2 * Psi + (2 + K) * Psi / N_d) / 1e9, 1)  # → 16.6
+# reduction against 16Ψ as N_d grows large
+16 / 2  # → 8.0</code></pre>
+<p>To keep this fast, gradients are gathered into buckets, one per owner, and each bucket is reduced as soon as the backward pass has produced it, so communication overlaps with computation.</p>
+<h4>Why it matters today</h4>
+<p>Stage 2 is still communication-free relative to plain data parallelism, which is why it is a common default when the weights themselves fit. The lesson's <a data-lesson="primer/ml/pretraining.html#ring_all_reduce"><code>ring_all_reduce</code></a> runs the two halves, reduce-scatter and all-gather, separately so you can see each one.</p>
+</section>
+
+<section id="s5-3">
+<h3>5.3 P<sub>p</sub>: parameter partitioning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S5.SS3">original</a></span></h3>
+<blockquote class="quote">“While this may seem to incur significant communication overhead at first glance, we show that this approach only increases the total communication volume of a baseline DP system to 1.5x, while enabling memory reduction proportional to N<sub>d</sub>.”<cite>Rajbhandari et al. (2019), §5.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Now even the ledger itself is split: each accountant keeps only 2 accounts' balances. When the day's work reaches accounts 3 and 4, their keeper reads them out, everyone uses them, and everyone forgets them again.</p>
+<h4>Tiny example</h4>
+<p>Each GPU stores 2 of the 8 parameters, their 2 gradients and their optimizer state: 16 × 2 = <strong>32 bytes</strong>, exactly a quarter of 128. The forward pass reaches layer 2 (parameters 3 and 4), so GPU 1 sends those two weights to the others; all four GPUs compute layer 2 on their own quarter of the batch and discard the weights. §7 animates the whole step.</p>
+<div class="eq" data-tex="\htmlData{sym=Mosgp}{M_{os+g+p}} = \frac{(2 + 2 + \htmlData{sym=K}{K})\,\htmlData{sym=Psi}{\Psi}}{\htmlData{sym=Nd}{N_d}} = \frac{16\,\htmlData{sym=Psi}{\Psi}}{\htmlData{sym=Nd}{N_d}}" data-fallback="M_os+g+p = (2 + 2 + K)Ψ / N_d = 16Ψ / N_d"></div>
+<div class="symtable" data-syms="Mosgp,K,Psi,Nd"></div>
+<p class="inwords"><strong>In words:</strong> “every model state is stored exactly once across the cluster, so each GPU holds a 1/N<sub>d</sub> share of all sixteen bytes per parameter.”</p>
+<p class="inwords"><strong>With the numbers:</strong> tiny model: 128 / 4 = 32 bytes. The paper's model: 120 / 64 = <strong>1.9 GB</strong> (1.88 in the paper's Table 1). A trillion parameters on 1,024 GPUs: 16 × 10<sup>12</sup> / 1,024 = 15.6 GB.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>K = 12
+# M_os+g+p = (2 + 2 + K)Ψ / N_d, tiny model on 4 GPUs
+Psi, N_d = 8, 4
+(2 + 2 + K) * Psi / N_d  # → 32.0
+# the paper's model on 64 GPUs, in GB
+round(16 * 7.5e9 / 64 / 1e9, 2)  # → 1.88
+# a trillion parameters on 1,024 GPUs, in GB
+round(16 * 1e12 / 1024 / 1e9, 1)  # → 15.6</code></pre>
+<h4>Why it matters today</h4>
+<p>With stage 3 there is no model too big for data parallelism, only too few GPUs: memory per GPU falls in proportion to the number of GPUs. The paper describes it but did not implement it (its ZeRO-100B stops at stage 2). PyTorch's <span class="t" data-t="fsdp">FSDP</span> implements the same idea.</p>
+</section>
+
+<section id="s5-4">
+<h3>5.4 Implication on model size <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S5.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If each stage divides some of the bill by the number of GPUs, the question becomes: how many GPUs until the bill fits on one? The paper's Table 1 tabulates it for three model sizes. The chart below recomputes that table from the three formulas above.</p>
+<h4>Tiny example</h4>
+<p>A 32 GB GPU can hold 32 / 16 = 2 billion parameters' worth of model states under plain data parallelism, whatever the number of GPUs. With stage 3 on 64 GPUs it holds 32 × 64 / 16 = 128 billion. The paper's Table 1 marks exactly that: 7.5B fits at N<sub>d</sub> = 64 with P<sub>os</sub>, 128B with P<sub>os+g+p</sub>.</p>
+<div class="plot" id="table1-plot">
+  <div class="controls ui">
+    <span>Model size:</span>
+    <button type="button" data-psi="7.5e9" aria-pressed="true">7.5B</button>
+    <button type="button" data-psi="128e9" aria-pressed="false">128B</button>
+    <button type="button" data-psi="1e12" aria-pressed="false">1T</button>
+  </div>
+  <div id="table1-chart"></div>
+  <p class="readout" id="table1-readout">Hover the chart, or focus it and use the arrow keys, to read the memory per GPU at each number of GPUs.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the horizontal axis is the number of data-parallel GPUs, N<sub>d</sub>, from 1 to 1,024, doubling at each step; the vertical axis is the model-state memory each GPU needs, on a log scale (each gridline is ten times the one below). The flat line at the top is plain data parallelism: 16Ψ no matter how many GPUs. Stages 1 and 2 (P<sub>os</sub> and P<sub>os+g</sub>) fall and then flatten at 4Ψ and 2Ψ, the parts they leave unsharded. Only stage 3 (P<sub>os+g+p</sub>) keeps falling in a straight line. The purple dashed line is one 32 GB V100; wherever a curve drops beneath it, that configuration fits. Switch to 1T: only stage 3 ever crosses the line, at 1,024 GPUs (15.6 GB), which is the paper's “trillion parameters on 1,024 GPUs”. Hovering reproduces the paper's Table 1, for example 52.5, 41.3 and 30 GB for 7.5B on 4 GPUs.</p>
+<h4>Why it matters today</h4>
+<p>This chart is the planning tool for any large run: pick the model, pick the stage, read off the GPUs. Without ZeRO, the largest model data parallelism could train on those GPUs was under 1.5 billion parameters, the paper notes; with all three stages on 1,024 GPUs it is over a trillion.</p>
+</section>
+</section>
+
+<section id="s6">
+<h2>6 Deep dive into ZeRO-R <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>With the model states tidied away, the rest of the mess in the kitchen becomes the problem: half-finished dishes (activations), oversized mixing bowls (buffers) and counter space broken up by clutter (fragmentation). ZeRO-R has one fix for each.</p>
+
+<section id="s6-1">
+<h3>6.1 P<sub>a</sub>: partitioned activation checkpointing <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S6.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>In <span class="t" data-t="model parallelism">model parallelism</span>, the GPUs that share a layer all need the layer's whole input, so each keeps an identical copy of it. Sixteen identical copies of a saved checkpoint are sixteen times the memory for one copy's worth of information. P<sub>a</sub> keeps one sixteenth each and reassembles the whole input with an all-gather only when the backward pass needs it.</p>
+<h4>Tiny example</h4>
+<p>A layer input of 16 numbers, shared by 4 model-parallel GPUs: normally each GPU saves all 16 as its checkpoint. With P<sub>a</sub>, each saves 4, and before recomputing that layer the four GPUs all-gather their pieces back into 16.</p>
+<div class="eq" data-tex="\htmlData{sym=Mact}{M_{a}} = \frac{\htmlData{sym=nL}{L} \times \htmlData{sym=bsz}{b} \times \htmlData{sym=seq}{s} \times \htmlData{sym=hid}{h}}{\htmlData{sym=Nm}{N_m}}" data-fallback="M_a = L × b × s × h / N_m"></div>
+<div class="symtable" data-syms="Mact,nL,bsz,seq,hid,Nm"></div>
+<p class="inwords"><strong>In words:</strong> “keep one checkpoint per layer, the layer's input for every token in the batch, and split it evenly over the model-parallel GPUs.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's 100B model has L = 125 layers of width h = 8,192 (its Table 4 and appendix); at b = 32, s = 1,024 the checkpoints hold 125 × 32 × 1,024 × 8,192 = 33.6 billion numbers, the paper's “about 33 GB”. Split 16 ways: 2.1 billion, the paper's “about 2 GB”. (Stored as 2-byte fp16 values both figures would double; the 16× saving is the same either way.)</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the toy: a 16-number checkpoint split over 4 GPUs
+16 / 4  # → 4.0
+# the 100B model: one checkpoint per layer
+L, b, s, h = 125, 32, 1024, 8192
+round(L * b * s * h / 1e9, 1)  # → 33.6
+# M_a with N_m = 16
+round(L * b * s * h / 16 / 1e9, 1)  # → 2.1</code></pre>
+<p>For very large models the partitioned checkpoints can go one step further, to the CPU's memory (P<sub>a+cpu</sub>), leaving almost no activation memory on the GPU at the cost of moving them over the slow CPU link.</p>
+<h4>Why it matters today</h4>
+<p>Activation memory stayed the next wall once model states were sharded. Later work on Megatron-LM returned to it: Korthikanti et al. (2022), cited in the <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a>, counts a tensor-parallel transformer's activations and cuts how many must be kept or recomputed.</p>
+</section>
+
+<section id="s6-2">
+<h3>6.2 CB: constant-size buffers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S6.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Posting one big parcel is cheaper per item than posting many small letters, so libraries fuse all the gradients into one buffer before summing them across GPUs. But a buffer as big as the model grows with the model. ZeRO uses a fixed-size parcel instead: big enough to be efficient, and no bigger.</p>
+<h4>Tiny example</h4>
+<p>A 3-billion-parameter model in one fused fp32 buffer needs 3 × 10<sup>9</sup> × 4 bytes = <strong>12 GB</strong>, the paper's example. A constant buffer holds the same gradients in several trips, each trip the same size whatever the model.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># a fused fp32 buffer for 3 billion gradients, in GB
+3e9 * 4 / 1e9  # → 12.0</code></pre>
+<h4>Why it matters today</h4>
+<p>Buckets do double duty: a bucket can be sent as soon as its gradients exist, so communication overlaps with the rest of the backward pass, the trick the paper credits to NVIDIA's AMP in §5.2.</p>
+</section>
+
+<section id="s6-3">
+<h3>6.3 MD: memory defragmentation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S6.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Fragmentation comes from mixing things that stay a long time with things that leave quickly. In the forward pass, checkpoints stay until the backward pass while the other activations are discarded; in the backward pass, weight gradients stay while activation gradients vanish. The gaps they leave are scattered. ZeRO copies the long-lived tensors into one pre-allocated contiguous block as they are produced, so the short-lived ones free up whole, reusable stretches.</p>
+<h4>Tiny example</h4>
+<p>Illustrative: 8 slots of memory, alternately filled by a checkpoint (kept) and a temporary (freed). After the temporaries go, 4 slots are free, but none are next to each other, so a request for 2 slots fails. Had the 4 checkpoints been placed in slots 1 to 4, slots 5 to 8 would be one free run of 4.</p>
+<h4>Why it matters today</h4>
+<p>Where a tensor lives, and for how long, is part of the design of a training system: the <a href="https://arxiv.org/abs/2304.11277">PyTorch FSDP paper</a> describes being co-designed with PyTorch's caching memory allocator.</p>
+</section>
+</section>
+
+<section id="s7">
+<h2>7 Communication analysis of ZeRO-DP <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S7">original</a></span></h2>
+<blockquote class="quote">“In other words, we reschedule the parameter all-gather by spreading it across the entire forward propagation, and discarding the parameters once they have been used.”<cite>Rajbhandari et al. (2019), §7.2.2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Saving memory is easy if you are willing to talk more. The surprise of this section is how little extra talking ZeRO needs: none for stages 1 and 2, half as much again for stage 3.</p>
+<h3 class="rung">Tiny example: the baseline</h3>
+<p>Plain data parallelism averages gradients with an <span class="t" data-t="all-reduce">all-reduce</span>, which the ring algorithm runs as a <span class="t" data-t="reduce-scatter">reduce-scatter</span> followed by an <span class="t" data-t="all-gather">all-gather</span>. For the tiny model's 8 gradients on 4 GPUs, the reduce-scatter moves about 8 numbers through each GPU (6 exactly: three steps of two) and the all-gather another 8, so the paper counts <strong>2Ψ</strong> per step (§7.1).</p>
+<h3 class="rung">Stage 3, step by step</h3>
+<div class="play" id="sched">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem">
+    <button type="button" id="sched-step">Step</button>
+    <button type="button" id="sched-play">Play</button>
+    <button type="button" id="sched-reset">Reset</button>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start;margin-top:.6rem">
+    <svg id="sched-svg" viewBox="0 0 300 210" role="img" aria-label="Which parameter shards each of four GPUs holds at each moment of a ZeRO stage 3 training step" style="flex:1 1 240px;max-width:340px"></svg>
+    <div style="flex:1 1 240px">
+      <p class="readout" id="sched-phase" aria-live="polite"></p>
+      <div id="sched-bars"></div>
+      <div class="legend"><span><i style="background:var(--lin-stroke)"></i>shard the GPU owns</span><span><i style="background:var(--active)"></i>shard borrowed for this layer</span><span><i style="background:var(--attn-stroke)"></i>gradient sent to its owner</span></div>
+    </div>
+  </div>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grid's rows are four GPUs and its columns the model's four shards of parameters, one per layer here; GPU <em>i</em> owns shard <em>i</em> (the purple diagonal) and nothing else. Press Step. In the forward pass the owner of each layer's shard sends it to everyone (the column lights up), all four compute that layer on their own quarter of the batch, and the borrowed copies are dropped before the next layer. The backward pass does the same in reverse order, and after each layer's gradients are computed they are summed onto the owner (the orange mark). The bars count what each GPU moves, in units of Ψ: one all-gather of every weight in the forward pass, one more in the backward pass, one reduce-scatter of the gradients. The total, 3Ψ, sits against plain data parallelism's 2Ψ: 1.5×. At no moment does any GPU hold more than its own shard plus one borrowed layer.</p>
+<h3 class="rung">The math</h3>
+<div class="eq" data-tex="\htmlData{sym=VolDP}{V_{\text{DP}}} = \underbrace{\htmlData{sym=Psi}{\Psi}}_{\text{reduce-scatter}} + \underbrace{\htmlData{sym=Psi}{\Psi}}_{\text{all-gather}} = 2\htmlData{sym=Psi}{\Psi}" data-fallback="V_DP = Ψ + Ψ = 2Ψ"></div>
+<div class="eq" data-tex="\htmlData{sym=Vol3}{V_{os+g+p}} = \underbrace{\htmlData{sym=Psi}{\Psi}}_{\text{forward}} + \underbrace{\htmlData{sym=Psi}{\Psi}}_{\text{backward}} + \underbrace{\htmlData{sym=Psi}{\Psi}}_{\text{gradients}} = 3\htmlData{sym=Psi}{\Psi}" data-fallback="V_os+g+p = Ψ + Ψ + Ψ = 3Ψ"></div>
+<div class="symtable" data-syms="VolDP,Vol3,Psi"></div>
+<p class="inwords"><strong>In words:</strong> “plain data parallelism moves each gradient twice, once to sum it and once to share the sum; stage 3 moves each weight in twice, once for the forward pass and once for the backward, and each gradient once, to its owner.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the paper's 7.5-billion-parameter model, 15 billion numbers per GPU per step for plain data parallelism against 22.5 billion for stage 3: <strong>1.5×</strong>. Stages 1 and 2 cost exactly 2Ψ: the reduce-scatter delivers each owner its gradients, and after the update an all-gather shares the new weights (§7.2.1).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>Psi = 7.5e9
+# plain DP: reduce-scatter + all-gather
+V_DP = Psi + Psi
+# stage 3: forward all-gather + backward all-gather + gradient reduce-scatter
+V_3 = Psi + Psi + Psi
+V_DP / 1e9, V_3 / 1e9  # → (15.0, 22.5)
+V_3 / V_DP  # → 1.5</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>This is why sharding won: for the price of half again the traffic, memory per GPU divides by the number of GPUs. In practice the next layer's weights are fetched while the current layer computes, so much of the extra traffic hides behind arithmetic. The <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> derives the ring's traffic in <a data-lesson="primer/ml/pretraining.html#all_reduce_traffic"><code>all_reduce_traffic</code></a>, and the <a class="lesson" data-lesson="primer/ml/hardware.html">hardware lesson</a> turns it into seconds over real links.</p>
+</section>
+
+<section id="s8">
+<h2>8 Communication analysis of ZeRO-R <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S8">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Partitioning activations (§6.1) adds one more conversation: before each layer is recomputed in the backward pass, its checkpoint must be gathered back together. Is that expensive? Only compared with nothing. Compared with the conversations model parallelism already has inside every layer, it is small.</p>
+<h3 class="rung">Tiny example</h3>
+<p>In Megatron-LM with activation checkpointing, each transformer block runs 6 all-reduces (2 in the forward pass, 2 when the forward pass is recomputed, 2 in the backward pass), each of a message the size of the block's input, b × s × h numbers. An all-reduce moves twice its message, so a block moves 12 messages' worth. P<sub>a</sub> adds one all-gather, which moves one message.</p>
+<div class="eq" data-tex="\frac{\htmlData{sym=VPa}{V_{P_a}}}{\htmlData{sym=VMP}{V_{\text{MP}}}} = \frac{\htmlData{sym=bsz}{b}\,\htmlData{sym=seq}{s}\,\htmlData{sym=hid}{h}}{6 \times 2 \times \htmlData{sym=bsz}{b}\,\htmlData{sym=seq}{s}\,\htmlData{sym=hid}{h}} = \frac{1}{12}" data-fallback="V_Pa / V_MP = b s h / (6 × 2 × b s h) = 1/12"></div>
+<div class="symtable" data-syms="VPa,VMP,bsz,seq,hid"></div>
+<p class="inwords"><strong>In words:</strong> “one extra all-gather per block, against six all-reduces that each cost two messages: about 8% more model-parallel traffic.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the 100B model's blocks (width 8,192) at batch 32 and 1,024 tokens, the message is 268 million numbers; Megatron-LM moves 3.2 billion per block and P<sub>a</sub> adds 268 million, <strong>8.3%</strong>, under the paper's “less than 10%”. (The paper writes the per-block total as 12 × seq_length × hidden_dim, leaving the batch size out; the ratio is the same.)</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>b, s, h = 32, 1024, 8192
+message = b * s * h
+round(message / 1e6)  # → 268
+# Megatron-LM: 6 all-reduces, each moving 2 messages
+V_MP = 6 * 2 * message
+round(V_MP / 1e9, 1)  # → 3.2
+# P_a: one all-gather, one message
+round(message / V_MP, 3)  # → 0.083</code></pre>
+<p>The payoff can be larger than the cost. Partitioning activations frees memory for a bigger batch, and the data-parallel gradient traffic per sample falls as the batch grows. With 16-way model parallelism that is up to 16× the batch and an order of magnitude less data-parallel traffic per sample, the paper argues. P<sub>a+cpu</sub> doubles the activation traffic again, to and from the CPU, and is worth it only when the batch would otherwise be tiny.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The habit this section models, putting every communication on one ledger and comparing it against what it enables, is how parallelism strategies are still chosen. The <a href="megatron-lm.html">Megatron-LM companion</a> counts those 4 all-reduces per layer (without checkpointing) from the other side.</p>
+</section>
+
+<section id="s9">
+<h2>9 Step towards 1 trillion parameters <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S9">original</a></span></h2>
+<blockquote class="quote">“It would require an exa-flop system to train a 1T parameter model in a reasonable time.”<cite>Rajbhandari et al. (2019), §9</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>ZeRO solves the storage problem for a trillion parameters: the model fits. It does not solve the time problem: the cooking still takes as long as it takes. This section does both sums.</p>
+<h3 class="rung">Tiny example</h3>
+<p><strong>Fitting:</strong> 16 bytes × 10<sup>12</sup> parameters = 16 TB of model states; over 1,024 GPUs that is about 16 GB each (15.6 exactly), inside a 32 GB V100. Megatron-LM alone topped out around 16 to 20 billion parameters within one 16-GPU DGX-2 server. <strong>Time:</strong> BERT-Large (330 million parameters) trained in 67 minutes on 1,024 GPUs. A trillion-parameter model does about 3,000 times the work per sample, so the same data would take 67 × 3,000 minutes: about <strong>140 days</strong>, and more once data and sequence length grow with the model.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># fitting: 16 bytes per parameter, a trillion parameters, 1,024 GPUs, in GB
+round(16 * 1e12 / 1024 / 1e9, 1)  # → 15.6
+# time: work per sample relative to BERT-Large
+round(1e12 / 330e6)  # → 3030
+# 67 minutes times the paper's 3,000, in days
+round(67 * 3000 / 60 / 24, 1)  # → 139.6</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>The split the section draws, memory solved by systems and time bounded by compute, is the same one the <a href="scaling-laws.html">scaling-laws companion</a> formalizes: compute (about 6 × parameters × tokens) sets the price, and parallelism only decides whether you can pay it.</p>
+</section>
+
+<section id="s10">
+<h2>10 Implementation and evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S10">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The paper implements a subset, <strong>ZeRO-100B</strong>: stages 1 and 2 of ZeRO-DP plus all of ZeRO-R, aimed at models around 100 billion parameters, which fit and train in reasonable time on the hardware of the day. Stage 3 was left for later.</p>
+
+<section id="s10-1">
+<h3>10.1 Implementation and methodology <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S10.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>ZeRO-100B wraps an ordinary PyTorch model, like the standard data-parallel wrapper; the model is not changed. It runs on 400 V100 GPUs (25 DGX-2 servers of 16) with 800 Gbps between servers. Baselines: PyTorch's distributed data parallel without model parallelism, and Megatron-LM (as of September 2019) with it.</p>
+<h4>Tiny example</h4>
+<p>The models are GPT-2-like transformers whose size is set by depth and width. A transformer's weights are about 12 × layers × width², so the 100B configuration, 125 layers of width 8,192, has 12 × 125 × 8,192<sup>2</sup> ≈ 100.7 billion parameters. (The rule of thumb is this page's check, not the paper's; the <a class="lesson" data-lesson="primer/ml/transformer.html">transformer lesson</a> derives it.)</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># parameters ≈ 12 · layers · width², for 125 layers of width 8,192
+round(12 * 125 * 8192 ** 2 / 1e9, 1)  # → 100.7</code></pre>
+<h4>Why it matters</h4>
+<p>Comparing per-GPU throughput keeps the comparison fair across different GPU counts; the paper's appendix notes that the baselines sometimes ran on fewer GPUs (256 or 384), which favours them.</p>
+</section>
+
+<section id="s10-2">
+<h3>10.2 Speed and model size <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S10.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Megatron-LM alone has to stretch its model parallelism across servers once a model outgrows one server's GPUs, and then every layer's conversation crawls over the network. ZeRO keeps model parallelism inside one server and lets sharded data parallelism span the servers.</p>
+<h4>Tiny example</h4>
+<p>Inside a DGX-2, GPUs talk at 300 GB/s per link; between servers, 12.5 GB/s per link: <strong>24× slower</strong>. For 100B models ZeRO-100B sustains over 38 teraflops per GPU; across all 400 GPUs that is about 15 petaflops, over 30% of the hardware's peak.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># link bandwidth inside a server against between servers, GB/s
+300 / 12.5  # → 24.0
+# aggregate throughput: 38 teraflops on each of 400 GPUs, in petaflops
+38e12 * 400 / 1e15  # → 15.2</code></pre>
+<div class="tablewrap"><table>
+  <caption>Headline results, restated from Rajbhandari et al. (2019), §1 and §10.2</caption>
+  <thead><tr><th></th><th>Megatron-LM alone</th><th>ZeRO-100B with Megatron-LM</th></tr></thead>
+  <tbody>
+    <tr><td>Largest model run efficiently on 400 GPUs</td><td>under 40B (§1); 16 to 20B inside one 16-GPU server (§9)</td><td>170B</td></tr>
+    <tr class="hl"><td>Throughput on 100B-parameter models</td><td>far lower: the speedup is up to 10×</td><td>over 38 teraflops per GPU</td></tr>
+    <tr><td>A 40B model across two servers</td><td>about 5 teraflops per GPU</td><td></td></tr>
+  </tbody>
+</table></div>
+<h4>Why it matters today</h4>
+<p>The layout ZeRO argued for, chatty model parallelism on the fast links inside a server and data parallelism across the slower network, is the one the <a class="lesson" data-lesson="primer/ml/hardware.html">hardware lesson</a> derives from the wires themselves.</p>
+</section>
+
+<section id="s10-3">
+<h3>10.3 Super-linear scalability <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S10.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Normally doubling the GPUs at best doubles the speed. With ZeRO, doubling the GPUs also shrinks each GPU's share of the model states, which frees room for a bigger batch per GPU, and bigger batches keep each GPU busier. For a 60-billion-parameter model going from 64 to 400 GPUs, throughput per GPU <em>rises</em>: more than double the speed for double the GPUs.</p>
+<h4>Tiny example</h4>
+<p>The 60B model uses 16-way model parallelism (the paper's appendix), so each model-parallel slice holds 60 / 16 = 3.75 billion parameters. On 64 GPUs that is N<sub>d</sub> = 4 copies; on 400 GPUs, N<sub>d</sub> = 25. With stage 2, model states per GPU fall from 20.6 GB to 9.6 GB, and the appendix shows the batch per model-parallel group growing from 16 to 64.</p>
+<div class="eq" data-tex="\htmlData{sym=Mosg}{M_{os+g}} = \left(2 + \frac{2 + \htmlData{sym=K}{K}}{\htmlData{sym=Nd}{N_d}}\right) \frac{\htmlData{sym=Psi}{\Psi}}{\htmlData{sym=Nm}{N_m}}" data-fallback="M_os+g = (2 + (2 + K)/N_d) Ψ / N_m"></div>
+<div class="symtable" data-syms="Mosg,K,Nd,Psi,Nm"></div>
+<p class="inwords"><strong>In words:</strong> “model parallelism first divides the parameters by N<sub>m</sub>; stage 2 then shares the gradients and optimizer state of each slice over the N<sub>d</sub> data-parallel copies.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (2 + 14/4) × 3.75 = <strong>20.6 GB</strong> at 64 GPUs; (2 + 14/25) × 3.75 = <strong>9.6 GB</strong> at 400. Eleven gigabytes per GPU freed for activations.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>K, Psi, N_m = 12, 60e9, 16
+# data-parallel copies on 64 and on 400 GPUs
+64 // N_m, 400 // N_m  # → (4, 25)
+# M_os+g per GPU, in GB
+def M(N_d):
+    return (2 + (2 + K) / N_d) * Psi / N_m / 1e9
+round(M(4), 1), round(M(25), 1)  # → (20.6, 9.6)</code></pre>
+<h4>Why it matters today</h4>
+<p>Memory and speed are not separate budgets: freed memory buys batch size, and batch size buys utilization. The paper's footnote adds the caveat that batches cannot grow forever before convergence suffers.</p>
+</section>
+
+<section id="s10-4">
+<h3>10.4 Democratizing large model training <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S10.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Model parallelism needs someone to rewrite the model. ZeRO does not: wrap the model and train. The paper's measure of that is the biggest model trainable with no model parallelism at all.</p>
+<h4>Tiny example</h4>
+<p>On 128 GPUs, plain data parallelism tops out at 1.4 billion parameters (16 × 1.4 = 22.4 GB of model states, plus activations, on a 32 GB GPU). ZeRO-100B trains up to <strong>13 billion</strong>: with stage 2, (2 + 14/128) × 13 = 27.4 GB, still under 32. Throughput: over 40 teraflops per GPU on average, against under 20 for the 1.4B baseline.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># plain data parallelism, 1.4 billion parameters, in GB
+round(16 * 1.4, 1)  # → 22.4
+# ZeRO stage 2 on 128 GPUs, 13 billion parameters, in GB
+round((2 + 14 / 128) * 13, 1)  # → 27.4</code></pre>
+<h4>Why it matters today</h4>
+<p>This is the result that made sharding a default: researchers without distributed-systems help could train models ten times bigger, larger than any published model at the time (T5 had 11 billion), on ordinary data-parallel code, and on clusters without the fastest links inside each server.</p>
+</section>
+
+<section id="s10-5">
+<h3>10.5 Memory and performance analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S10.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>An ablation: switch the optimizations on one at a time (the paper's configurations C1 to C5) and see which one buys what.</p>
+<h4>Tiny example</h4>
+<div class="tablewrap"><table>
+  <caption>Largest trainable model with 16-way model parallelism on 400 GPUs, restated from Rajbhandari et al. (2019), §10.5</caption>
+  <thead><tr><th>Configuration</th><th>What changes</th><th class="num">Largest model</th></tr></thead>
+  <tbody>
+    <tr><td>C1</td><td>P<sub>os</sub> with constant buffers and defragmentation</td><td class="num">40B</td></tr>
+    <tr><td>C2</td><td>+ partitioned activations: activation memory ÷ 16</td><td class="num">60B</td></tr>
+    <tr class="hl"><td>C4</td><td>P<sub>os+g</sub> with partitioned activations: model states roughly halved</td><td class="num">140B</td></tr>
+    <tr><td>C5</td><td>+ activations moved to CPU memory</td><td class="num">150B</td></tr>
+  </tbody>
+</table></div>
+<p>Throughput follows memory: every configuration that frees memory allows a bigger batch and runs faster, with one exception. Moving activations to the CPU (C5) costs time on the slow link, so it helps only when the model cannot run without it, as for the 170B model; ZeRO turns it on only then.</p>
+<h4>Why it matters today</h4>
+<p>Offloading became its own line of work (ZeRO-Offload and ZeRO-Infinity, below), each designed around the finding here: the slow link to the CPU is worth using only for what it can move without stalling the GPU.</p>
+</section>
+
+<section id="s10-6">
+<h3>10.6 Turing-NLG <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S10.SS6">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The system result came with a model: Turing-NLG, 17 billion parameters, the largest language model published as of May 2020, trained end to end with ZeRO-100B at 41.4 teraflops per GPU.</p>
+<h4>Tiny example</h4>
+<p>Its <span class="t" data-t="perplexity">perplexity</span> of 10.21 (on the benchmark the paper names Webtext-103) beat the previous best, Megatron-LM's 8.3-billion-parameter model. Perplexity 10.21 means the model is, on average, about as unsure as a choice among 10 equally likely next tokens.</p>
+<h4>Why it matters today</h4>
+<p>A systems paper that trains the record model makes its own case. The <a href="megatron-lm.html">Megatron-LM paper</a> notes that Turing-NLG was trained using Megatron too: ZeRO's sharding across servers, Megatron's model parallelism inside each, the combination §1 proposed.</p>
+</section>
+</section>
+
+<section id="s11">
+<h2>11 Concluding remarks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1910.02054#S11">original</a></span></h2>
+<blockquote class="quote">“Unlike existing approaches such as MP and PP, no model refactoring is necessary, and it is as easy to use as standard DP”<cite>Rajbhandari et al. (2019), §11</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The authors call the implementation “just a tip of the iceberg”: stages 1 and 2 gave 8× bigger models; stage 3 would give another order of magnitude.</p>
+<h3 class="rung">Tiny example</h3>
+<p>On 400 GPUs with 16-way model parallelism (25 data-parallel copies), stage 2 leaves 2 + 14/25 = 2.56 bytes per parameter per slice; stage 3 leaves 16/25 = 0.64. The same memory then holds <strong>4×</strong> the parameters, before counting activations.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># bytes per parameter (per model-parallel slice) with N_d = 25
+stage2 = 2 + 14 / 25
+stage3 = 16 / 25
+stage2, stage3  # → (2.56, 0.64)
+stage2 / stage3  # → 4.0</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The ease-of-use argument won as much as the memory argument: sharded data parallelism is a wrapper around an unchanged model, which is a large part of why it spread.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><a href="https://github.com/microsoft/deepspeed">DeepSpeed</a></td><td>The open-source library the paper released ZeRO in; the later ZeRO systems below are released there too</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2101.06840">ZeRO-Offload</a> (2021)</td><td>Moves data and computation to the CPU as well: over 13 billion parameters trained on a single GPU, with no model changes</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2104.07857">ZeRO-Infinity</a> (2021)</td><td>Uses GPU, CPU and NVMe memory together, enough for models of tens of trillions of parameters on existing clusters</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2304.11277">PyTorch FSDP</a> (Zhao et al., 2023)</td><td>Fully sharded data parallelism built into PyTorch: stage 3 as a standard library feature</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2104.04473">Megatron-LM at scale</a> (Narayanan et al., 2021)</td><td>Tensor, pipeline and data parallelism composed to train a trillion-parameter model on 3,072 GPUs; the <a href="megatron-lm.html">Megatron-LM companion</a> covers the tensor part</td></tr>
+  </tbody>
+</table></div>
+<p>To build the pieces yourself, the <a class="lesson" data-lesson="primer/ml/pretraining.html">pretraining lesson</a> walks from the 16-byte bill through the ZeRO stages to tensor and pipeline parallelism, and the <a class="lesson" data-lesson="primer/ml/hardware.html">hardware lesson</a> explains the links underneath.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase and Yuxiong He, <em>ZeRO: Memory Optimizations Toward Training Trillion Parameter Models</em>, SC 2020. <a href="https://arxiv.org/abs/1910.02054">arXiv:1910.02054</a>. Quotations are brief and attributed; a few numbers are restated in new tables with attribution; the memory chart is recomputed from the paper's formulas. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    Psi: { tex: "\\Psi", name: "Ψ (psi): parameters", meaning: "The number of parameters (weights) in the model. The paper writes every memory amount as a multiple of Ψ.", shape: "a count", example: "8 in the tiny model; 7.5 × 10⁹ in Figure 1" },
+    K: { tex: "K", name: "Optimizer memory multiplier", meaning: "Bytes of optimizer state per parameter. For mixed-precision Adam: a 4-byte fp32 master weight plus 4-byte momentum plus 4-byte variance.", shape: "bytes per parameter", example: "12" },
+    Mstate: { tex: "M_{\\text{states}}", name: "Model-state memory", meaning: "Memory for the parameters, their gradients and the optimizer state, before any activations or buffers.", shape: "bytes", example: "128 bytes (tiny); 120 GB (7.5B)" },
+    p16: { tex: "2\\Psi", name: "fp16 parameters", meaning: "The 16-bit copy of the weights used in the forward and backward passes: 2 bytes each.", shape: "bytes", example: "16 bytes for Ψ = 8; 15 GB for 7.5B" },
+    g16: { tex: "2\\Psi", name: "fp16 gradients", meaning: "One 16-bit gradient per weight, produced by the backward pass: 2 bytes each.", shape: "bytes", example: "16 bytes for Ψ = 8" },
+    four: { tex: "4\\Psi", name: "fp16 parameters and gradients", meaning: "The part stage 1 leaves unsharded: 2 bytes of weight plus 2 bytes of gradient per parameter, on every GPU.", shape: "bytes", example: "32 bytes (tiny); 30 GB (7.5B)" },
+    Nd: { tex: "N_d", name: "Data-parallel degree", meaning: "How many GPUs (or groups of GPUs) share the batch and, with ZeRO, share out the model states.", shape: "a whole number", example: "4 (tiny); 64 (Figure 1)" },
+    Nm: { tex: "N_m", name: "Model-parallel degree", meaning: "How many GPUs split each layer between them (Megatron-style). ZeRO divides on top of this.", shape: "a whole number", example: "16, one DGX-2 server" },
+    Mos: { tex: "M_{os}", name: "Memory at stage 1 (optimizer state sharded)", meaning: "Per-GPU model-state memory when only the optimizer state is partitioned.", shape: "bytes", example: "56 bytes (tiny); 31.4 GB (7.5B)" },
+    Mosg: { tex: "M_{os+g}", name: "Memory at stage 2 (gradients sharded too)", meaning: "Per-GPU model-state memory when the optimizer state and gradients are partitioned.", shape: "bytes", example: "44 bytes (tiny); 16.6 GB (7.5B)" },
+    Mosgp: { tex: "M_{os+g+p}", name: "Memory at stage 3 (everything sharded)", meaning: "Per-GPU model-state memory when everything is partitioned: one N_d-th of the full 16Ψ.", shape: "bytes", example: "32 bytes (tiny); 1.9 GB (7.5B)" },
+    Aact: { tex: "A", name: "Activation count", meaning: "How many numbers the forward pass stores for the backward pass, by the paper's rough count for GPT-2-like models. Multiply by 2 for bytes in fp16.", shape: "numbers", example: "30.2 billion for GPT-2 1.5B at batch 32" },
+    twelve: { tex: "12", name: "Numbers per hidden unit per token", meaning: "The paper's rough constant: about twelve stored numbers per hidden unit, per token, per layer, for a GPT-2-like layer.", shape: "a constant", example: "12" },
+    hid: { tex: "h", name: "Hidden width", meaning: "How many numbers represent each token inside the model.", shape: "a whole number", example: "1,600 (GPT-2 1.5B); 8,192 (100B)" },
+    bsz: { tex: "b", name: "Batch size", meaning: "Sequences processed together in one step.", shape: "a whole number", example: "32" },
+    seq: { tex: "s", name: "Sequence length", meaning: "Tokens per sequence.", shape: "a whole number", example: "1,024" },
+    nL: { tex: "L", name: "Layers", meaning: "Number of transformer layers.", shape: "a whole number", example: "48 (GPT-2 1.5B); 125 (100B)" },
+    Mact: { tex: "M_a", name: "Partitioned checkpoint memory", meaning: "Per-GPU memory for activation checkpoints when each layer's saved input is split across the model-parallel GPUs.", shape: "numbers per GPU", example: "2.1 billion for the 100B model" },
+    VolDP: { tex: "V_{\\text{DP}}", name: "Data-parallel traffic", meaning: "Numbers each GPU moves per step in plain data parallelism: a reduce-scatter and an all-gather of the gradients, Ψ each.", shape: "numbers per GPU per step", example: "15 billion for Ψ = 7.5B" },
+    Vol3: { tex: "V_{os+g+p}", name: "Stage 3 traffic", meaning: "Numbers each GPU moves per step with every state partitioned: weights gathered for the forward pass, again for the backward pass, and gradients reduce-scattered.", shape: "numbers per GPU per step", example: "22.5 billion for Ψ = 7.5B" },
+    VPa: { tex: "V_{P_a}", name: "Extra traffic from partitioned activations", meaning: "The one all-gather per transformer block that rebuilds a partitioned checkpoint before recomputation: one message.", shape: "numbers per block", example: "268 million" },
+    VMP: { tex: "V_{\\text{MP}}", name: "Model-parallel traffic", meaning: "What Megatron-LM already moves per block with checkpointing: 6 all-reduces, each moving twice its message.", shape: "numbers per block", example: "3.2 billion" },
+  },
+
+  blocks: {
+    params: { title: "fp16 parameters (2 bytes each)", body: "<p>The working copy of the weights, used in the forward and backward passes. Plain data parallelism and stages 1 and 2 keep all of it on every GPU; only stage 3 (bottom) partitions it, fetching each layer's weights from their owner just before that layer runs.</p>", shape: "2Ψ bytes, or 2Ψ / N_d with stage 3" },
+    grads: { title: "fp16 gradients (2 bytes each)", body: "<p>One gradient per weight from the backward pass. From stage 2 down, a reduce-scatter delivers each GPU only the summed gradients for the weights it updates, and the rest are freed.</p>", shape: "2Ψ bytes, or 2Ψ / N_d from stage 2" },
+    opt: { title: "Optimizer state (12 bytes each)", body: "<p>The fp32 master weights and Adam's momentum and variance: three quarters of the bill. Stage 1 partitions it first because it is the biggest and it is only touched during the update, which each GPU can do for its own share.</p>", shape: "KΨ = 12Ψ bytes, or 12Ψ / N_d from stage 1" },
+    row0: { title: "Baseline: plain data parallelism", body: "<p>Every GPU holds all 16 bytes per parameter: 128 bytes for the tiny model on each of 4 GPUs, 120 GB for the paper's 7.5B model on each of 64. Adding GPUs adds speed, never room.</p>", shape: "16Ψ per GPU" },
+    row1: { title: "Stage 1, P<sub>os</sub>: partition the optimizer state", body: "<p>4Ψ + 12Ψ/N_d: 32 + 24 = 56 bytes for the tiny model, 31.4 GB for 7.5B on 64 GPUs. No extra communication.</p>", shape: "4Ψ + KΨ / N_d" },
+    row2: { title: "Stage 2, P<sub>os+g</sub>: also partition the gradients", body: "<p>2Ψ + 14Ψ/N_d: 16 + 28 = 44 bytes for the tiny model, 16.6 GB for 7.5B on 64 GPUs. Still no extra communication.</p>", shape: "2Ψ + (2 + K)Ψ / N_d" },
+    row3: { title: "Stage 3, P<sub>os+g+p</sub>: also partition the parameters", body: "<p>16Ψ/N_d: 32 bytes for the tiny model, 1.9 GB for 7.5B on 64 GPUs. Memory falls in proportion to the number of GPUs, for 1.5× the communication.</p>", shape: "(4 + K)Ψ / N_d" },
+  },
+
+  onReady(P) {
+    gpt2Bill();
+    table1(P);
+    schedule();
+  },
+};
+
+/* ---- Figure 1, redrawn: four GPUs under each stage (built before papers.js wires the diagrams) ---- */
+(function figure1() {
+  const NS = "http://www.w3.org/2000/svg";
+  const g = document.getElementById("fig1grid");
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
+  const titles = ["Baseline data parallel: 16 units per GPU", "Stage 1, shard optimizer state: 4 + 12/4 = 7", "Stage 2, and gradients: 2 + 14/4 = 5.5", "Stage 3, and parameters: 16/4 = 4"];
+  // Which parts are partitioned at each stage: [params, grads, opt]
+  const sharded = [[false, false, false], [false, false, true], [false, true, true], [true, true, true]];
+  const parts = [["params", "lin", 0, 2], ["grads", "attn", 2, 2], ["opt", "ff", 4, 12]];
+  const u = 18, x0 = 62, barH = 15, gap = 3, n = 4;
+  for (let r = 0; r < 4; r++) {
+    const y0 = 4 + r * 102;
+    const t = el("g", { class: "blk plain", "data-block": `row${r}` });
+    t.append(el("rect", { x: 2, y: y0, width: 354, height: 18, rx: 5 }), el("text", { x: 10, y: y0 + 13 }, titles[r]));
+    g.appendChild(t);
+    for (let gpu = 0; gpu < n; gpu++) {
+      const y = y0 + 24 + gpu * (barH + gap);
+      g.appendChild(el("text", { x: x0 - 6, y: y + 10, "text-anchor": "end", class: "lbl" }, `GPU ${gpu}`));
+      parts.forEach(([key, cls, start, units], k) => {
+        const seg = el("g", { class: `blk ${cls}`, "data-block": key });
+        const x = x0 + start * u, w = units * u;
+        if (sharded[r][k]) {
+          seg.appendChild(el("rect", { x, y, width: w, height: barH, style: "fill:none;stroke:var(--wire);stroke-dasharray:3 2" }));
+          seg.appendChild(el("rect", { x: x + (gpu * w) / n, y, width: w / n, height: barH }));
+        } else {
+          seg.appendChild(el("rect", { x, y, width: w, height: barH }));
+        }
+        g.appendChild(seg);
+      });
+    }
+  }
+})();
+
+/* ---- §3.2: the GPT-2 1.5B memory bill (numbers from the paper's §3) ---- */
+function gpt2Bill() {
+  const rows = [
+    ["fp16 weights", 3, "var(--lin-stroke)"],
+    ["model states (16Ψ)", 24, "var(--ff-stroke)"],
+    ["activations, batch 32", 60, "var(--attn-stroke)"],
+    ["checkpointed activations", 8, "var(--attn-stroke)"],
+    ["fused fp32 gradient buffer", 6, "var(--soft-stroke)"],
+    ["one V100 GPU (striped)", 32, "var(--hatch) var(--wire)"],
+  ];
+  document.getElementById("gpt2-bill").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Training GPT-2 1.5B: gigabytes per item, from the paper's §3 (axis 0 to 60 GB)</div>` +
+    rows.map(([name, gb, bg]) => `<div class="share-row" style="grid-template-columns:10.5rem minmax(0,1fr) 3.4rem"><span>${name}</span><div><div class="share-bar" style="width:${((gb / 60) * 100).toFixed(1)}%;background:${bg}"></div></div><span>${gb} GB</span></div>`).join("");
+}
+
+/* ---- §5.4: Table 1 recomputed from the three formulas ---- */
+function table1(P) {
+  const K = 12, V100 = 32e9;
+  const Nds = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+  // Plotted as log10 of gigabytes, so each gridline is ten times the one below.
+  const lg = (bytes) => Math.log10(bytes / 1e9);
+  const series = (psi) => [
+    { name: "baseline DP", points: Nds.map((n) => [n, lg((4 + K) * psi)]) },
+    { name: "stage 1", points: Nds.map((n) => [n, lg(4 * psi + (K * psi) / n)]) },
+    { name: "stage 2", points: Nds.map((n) => [n, lg(2 * psi + ((2 + K) * psi) / n)]) },
+    { name: "stage 3", points: Nds.map((n) => [n, lg(((4 + K) * psi) / n)]) },
+    { name: "one 32 GB V100", points: Nds.map((n) => [n, lg(V100)]) },
+  ];
+  const fmtGB = (v) => { const gb = Math.pow(10, v); return gb >= 100 ? `${Math.round(gb).toLocaleString()} GB` : gb >= 10 ? `${gb.toFixed(1)} GB` : `${gb.toFixed(2)} GB`; };
+  const box = document.getElementById("table1-chart");
+  function draw(psi) {
+    box.textContent = "";
+    P.lineChart(box, {
+      series: series(psi),
+      xLabel: "data-parallel GPUs", yLabel: "GB per GPU",
+      logX: true,
+      // one decade of headroom below the smallest value, half a decade above the largest
+      yMin: Math.floor(lg((16 * psi) / 1024)), yMax: Math.ceil(lg(16 * psi) + 0.3),
+      width: 420, height: 300,
+      xFmt: (v) => String(Math.round(v)),
+      yFmt: fmtGB,
+      readout: document.getElementById("table1-readout"),
+      ariaLabel: "Model-state memory per GPU against number of data-parallel GPUs, for plain data parallelism and the three ZeRO stages",
+    });
+  }
+  draw(7.5e9);
+  document.querySelectorAll("[data-psi]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-psi]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    draw(+b.dataset.psi);
+  }));
+}
+
+/* ---- §7: the stage 3 schedule for 4 GPUs and 4 layer shards ---- */
+function schedule() {
+  const NS = "http://www.w3.org/2000/svg";
+  const n = 4;
+  const svg = document.getElementById("sched-svg");
+  const phase = document.getElementById("sched-phase");
+  const bars = document.getElementById("sched-bars");
+  // Steps: 0 start, 1..4 forward layers 1..4, 5..8 backward layers 4..1, 9 update.
+  const last = 2 * n + 1;
+  let step = 0, timer = null;
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
+  const layerAt = (s) => (s >= 1 && s <= n ? s - 1 : s > n && s <= 2 * n ? 2 * n - s : -1);
+  // Traffic in units of Ψ after step s: each layer's all-gather moves Ψ/n, each reduce-scatter Ψ/n.
+  const traffic = (s) => {
+    const fwd = Math.min(s, n) / n;
+    const bwd = Math.max(0, Math.min(s, 2 * n) - n) / n;
+    return { gather: fwd + bwd, scatter: bwd };
+  };
+  function draw() {
+    svg.textContent = "";
+    const x0 = 62, y0 = 26, c = 50;
+    for (let j = 0; j < n; j++) svg.appendChild(el("text", { x: x0 + j * c + c / 2, y: 16, "text-anchor": "middle", class: "lbl" }, `layer ${j + 1}`));
+    const k = layerAt(step);
+    for (let i = 0; i < n; i++) {
+      svg.appendChild(el("text", { x: x0 - 8, y: y0 + i * 44 + 25, "text-anchor": "end", class: "lbl" }, `GPU ${i}`));
+      for (let j = 0; j < n; j++) {
+        let fill = "var(--card)";
+        if (i === j) fill = "var(--lin)";
+        else if (j === k) fill = "var(--active)";
+        svg.appendChild(el("rect", { x: x0 + j * c + 3, y: y0 + i * 44 + 3, width: c - 6, height: 38, rx: 5, fill, stroke: i === j ? "var(--lin-stroke)" : "var(--border)", "fill-opacity": j === k && i !== j ? 0.45 : 1 }));
+        const gradDone = step > n && i === j && j >= layerAt(Math.min(step, 2 * n));
+        if (gradDone) svg.appendChild(el("text", { x: x0 + j * c + c / 2, y: y0 + i * 44 + 27, "text-anchor": "middle", style: "fill:var(--attn-stroke);font-weight:700" }, "Σ∇"));
+      }
+    }
+    const t = traffic(step);
+    const row = (label, v, color) => `<div class="share-row" style="grid-template-columns:8.5rem minmax(0,1fr) 3rem"><span>${label}</span><div><div class="share-bar" style="width:${((100 * v) / 3).toFixed(1)}%;background:${color}"></div></div><span>${v.toFixed(2)}Ψ</span></div>`;
+    bars.innerHTML = `<div class="legend" style="margin:.3rem 0">Numbers each GPU has moved this step (axis 0 to 3Ψ)</div>` +
+      row("all-gathers", t.gather, "var(--active)") + row("reduce-scatter", t.scatter, "var(--attn-stroke)") +
+      row("stage 3 total", t.gather + t.scatter, "var(--lin-stroke)") + row("plain DP, per step", 2, "var(--hatch) var(--wire)");
+    let msg;
+    if (step === 0) msg = "Start of a step. Each GPU holds only its own shard of the weights (the diagonal), plus its quarter of the gradients and optimizer state. Press Step.";
+    else if (step <= n) msg = `Forward pass, layer ${step}: GPU ${step - 1} sends its shard to the other three, all four compute layer ${step} on their own quarter of the batch, then drop the borrowed copy.`;
+    else if (step <= 2 * n) msg = `Backward pass, layer ${2 * n - step + 1}: the shard is gathered again, all four compute its gradients, and a reduce-scatter sums them onto the owner, GPU ${2 * n - step}. Everyone else frees them.`;
+    else msg = "Update: each GPU applies Adam to its own shard with its own quarter of the optimizer state. No communication. Total this step: 3Ψ, against 2Ψ for plain data parallelism.";
+    phase.textContent = msg;
+  }
+  const stop = () => { clearInterval(timer); timer = null; document.getElementById("sched-play").textContent = "Play"; };
+  const advance = () => { if (step < last) { step++; draw(); } else stop(); };
+  document.getElementById("sched-step").addEventListener("click", () => { stop(); advance(); });
+  document.getElementById("sched-reset").addEventListener("click", () => { stop(); step = 0; draw(); });
+  document.getElementById("sched-play").addEventListener("click", (e) => {
+    if (timer) { stop(); return; }
+    if (step >= last) step = 0;
+    e.target.textContent = "Pause";
+    timer = setInterval(advance, 900);
+  });
+  draw();
+}
+</script>
+</body>
+</html>

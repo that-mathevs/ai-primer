@@ -965,6 +965,7 @@ software.
   Models Using Model Parallelism* (2019)**: https://arxiv.org/abs/1909.08053.
   Split each transformer layer's matrix multiplies across the GPUs of one
   machine, the tensor parallelism of section 5.
+  [Annotated companion](../../papers/megatron-lm.html)
 - **Sergeev and Del Balso, *Horovod: fast and easy distributed deep
   learning in TensorFlow* (2018)**: https://arxiv.org/abs/1802.05799.
   Brought the bandwidth-optimal ring all-reduce to deep learning training.

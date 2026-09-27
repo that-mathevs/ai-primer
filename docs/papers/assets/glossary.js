@@ -114,6 +114,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/training_stages.html",
   "term": "alignment tax"
  },
+ "all-gather": {
+  "def": "Every GPU contributes its piece and every GPU ends up with all the pieces, side by side; the second half of a ring all-reduce.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "all-gather"
+ },
  "all-reduce": {
   "def": "Summing a value across GPUs so every GPU ends up holding the total.",
   "lesson": "primer/ml/hardware.html",
@@ -2294,6 +2299,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/fine_tuning.html",
   "term": "model merging"
  },
+ "model parallelism": {
+  "def": "Splitting one model's weights across GPUs, either inside each layer (tensor parallelism) or by layers (pipeline parallelism). The ZeRO and Megatron-LM papers use it for the first.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "model parallelism"
+ },
  "model routing": {
   "def": "Sending each request to the cheapest model that can handle it well.",
   "lesson": "primer/agents/cost.html",
@@ -2483,6 +2493,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The rule that turns gradients into weight updates, such as SGD, momentum or Adam.",
   "lesson": "primer/ml/optimizers.html",
   "term": "optimizer"
+ },
+ "optimizer state": {
+  "def": "The running numbers an optimizer keeps for every weight between steps, such as Adam's two running averages. With an fp32 master copy of the weights it is 12 bytes per parameter, the biggest part of training memory.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "optimizer state"
  },
  "orchestrator-workers": {
   "def": "One model decides the subtasks, workers handle them, and one model combines the results.",
@@ -2988,6 +3003,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Searching systematically for inputs that make a model or its safety checks fail.",
   "lesson": "primer/ml/alignment.html",
   "term": "red-teaming"
+ },
+ "reduce-scatter": {
+  "def": "Summing a vector across GPUs so each GPU ends up holding the total for only its own slice; the first half of a ring all-reduce.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "reduce-scatter"
  },
  "reference model": {
   "def": "A frozen copy of the starting model that DPO and RLHF measure drift against.",

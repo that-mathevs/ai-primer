@@ -1735,10 +1735,12 @@ checkpoints and less waste.
   Trillion Parameter Models* (2019)**: https://arxiv.org/abs/1910.02054.
   Introduced the 16-bytes-per-parameter accounting and the three stages of
   sharding the training state across data-parallel GPUs.
+  [Annotated companion](../../papers/zero.html)
 - **Shoeybi et al., *Megatron-LM: Training Multi-Billion Parameter Language
   Models Using Model Parallelism* (2019)**: https://arxiv.org/abs/1909.08053.
   Split transformer layers across GPUs by columns and rows, with one
   all-reduce per block.
+  [Annotated companion](../../papers/megatron-lm.html)
 - **Huang et al., *GPipe: Efficient Training of Giant Neural Networks using
   Pipeline Parallelism* (2018)**: https://arxiv.org/abs/1811.06965. Split a
   model into stages fed by micro-batches, and analysed the resulting bubble.
