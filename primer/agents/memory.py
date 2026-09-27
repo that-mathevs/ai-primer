@@ -3,6 +3,128 @@ r"""
 
 Run: `python -m primer.agents.memory`
 
+This lesson builds on the assembled prompt from `primer.agents.context`,
+on similarity search from `primer.ml.embeddings.similarity`, and on the
+agent loop from `primer.agents.agent_loop`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** A model remembers nothing between calls, so "memory"
+is the system you build around it: what you keep from a conversation, what
+you store for months, what you put back into the prompt, who may see it,
+and where the state of a long task lives so that a crash doesn't lose it.
+
+**When you need it.** Any product where the second conversation should
+know about the first, or where one conversation runs long enough to
+outgrow the window: assistants that remember preferences, agents that
+resume a multi-step job, support bots with long threads, anything
+multi-tenant. You don't need long-term memory for a one-shot task, and you
+don't need a database for a job that finishes in one call. The tells: users
+repeating themselves every session; a chat that gets slower, dearer and
+vaguer as it goes (this lesson's unmanaged history climbs without end,
+while the managed one levels off just under its 300-token budget from about
+turn 17); an agent that "forgot" a fact the user corrected an hour ago; or
+a job that has to start over because the process died halfway.
+
+**Your options.** From nothing to a full system, each layer added on top
+of the previous one:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| The whole history in the prompt | Resends every turn on every call | Nothing is ever forgotten inside one session | Tokens that grow every turn; quality that fades with length | Your prompt |
+| Short-term memory with a budget | Keeps the last few turns word for word and folds older ones into a summary that only gets the room they leave | The history never exceeds the budget, however long the session | Older detail (in this lesson exchanges 1 and 2 vanish entirely); a summarizer, extractive or a cheap model call | Your code, per conversation |
+| Notes the agent reads on demand | The model writes and reads files or notes outside the window through a tool | Facts and progress survive a reset of the window | Tool calls per read and write, and storage you control | A tool and a directory or table |
+| Long-term memory, typed and recalled by similarity | Stores episodic (events), semantic (keyed facts) and procedural (how-to) records with embeddings, partitioned per tenant and user, and recalls the closest few | The right kind of record comes back for the right question; conflicts are superseded, not overwritten; one user can be exported or erased | An embedding per record, a write policy, a partitioned store, export and deletion paths | A store your code owns |
+| Task state in a database | Keeps the steps of a job in SQLite (or any database); the model proposes updates, code validates and writes them in transactions | A run survives a crash and resumes at the first unfinished step; no step can be skipped | A schema and a validator per task type | A database |
+
+**How to choose.** Decide separately for the conversation, for facts that
+outlive it, and for the state of a job, because they fail differently.
+
+- A chat that runs long: short-term memory with a budget, always. Keep the
+  recent turns verbatim (the order number the user just typed) and
+  summarize the rest.
+- Anything the user would be annoyed to repeat (preferences, corrections,
+  how they like a task done): long-term memory, written selectively. A good
+  assistant's notebook holds "prefers morning meetings", not "said thanks
+  at 3:02pm", and never a password.
+- A job with steps that must happen in order and may outlive a process:
+  task state in a database, with the model proposing and code holding the
+  pen. In this lesson the model's attempt to mark `match` done while
+  `fetch_payments` is still open is refused, and after a crash the new
+  process resumes at `match` from the file, not from a conversation that
+  no longer exists.
+- Many customers on one system: partition the store by tenant and user,
+  chosen by your authentication layer, never by the query. A query that
+  quotes another tenant's secret word for word, with `OR 1=1` appended,
+  returns nothing from outside the caller's partition here, because there
+  is no path to search it.
+- Whatever you pick: the model proposes, your code decides what is
+  written. Arrows into the stores never come straight from the model.
+
+**What it costs.** Short-term memory costs the summarizer (free and crude
+if extractive; a small model call, with less lost, in production) and the
+detail it drops. Long-term memory costs an embedding per record at write
+time, a similarity search per recall, and the engineering around it: a
+write policy, supersession with provenance, per-user export and deletion.
+The last two are not optional where privacy law applies; the GDPR's Article
+17 gives a person the right to erasure "without undue delay". Task state
+costs a schema, a validator and a transaction per update, and buys runs
+that people and monitoring can query. What none of this costs is model
+quality: memory is retrieval over your own history, and it lives entirely
+in your code.
+
+**What breaks.**
+
+- **Context rot.** Quality drops and cost climbs as a session grows.
+  Budget the history, summarize the old turns, promote durable facts to
+  long-term memory, or reset with a written hand-off.
+- **Remembering everything.** Small talk crowds out facts, and a stored
+  secret is read back into every future prompt and every export. Skip
+  chatter, refuse anything that looks like a credential, and strip
+  sensitive data before a note is written.
+- **Silent overwrites.** The user said April, then corrected to July; a
+  store that overwrites cannot explain why the agent ever said April.
+  Supersede under the same key, recall only the current value, and keep
+  the history with its source.
+- **Isolation by filter.** A global index filtered after the search is one
+  bug away from a leak; in this lesson's figure the other tenant's secret
+  scores highest against the adversarial query. Partition first; search
+  inside the partition only; test with adversarial queries.
+- **Progress kept in the conversation.** It is lost on a crash, and it can
+  be summarized, trimmed or misread. Keep it in a database and let code
+  enforce the order of steps.
+- **Paths that escape.** A memory tool that maps names to files must
+  reject `../` and its encodings, or a request for `/memories/../secrets`
+  reads outside the store.
+
+**In the wild.** Park et al. (2023), *Generative Agents*, gave twenty-five
+simulated agents a memory stream of natural-language observations,
+retrieved by relevance, recency and importance and periodically reflected
+into higher-level memories. Packer et al. (2023), *MemGPT*, treat the window
+as fast memory and external storage as slow memory, paging between them
+the way an operating system does. Claude's memory tool is the note-taking
+option as a product: the model issues view, create, replace, insert,
+delete and rename commands against a `/memories` directory that your
+application maps onto storage it controls, its system instruction tells the
+model to assume the window may be reset at any moment, and it pairs with
+server-side compaction. LangGraph names the same split: thread-scoped
+short-term memory held by a checkpointer, long-term memory in a store with
+namespaces, and the semantic, episodic and procedural kinds. SQLite's
+transactions are the all-or-nothing writes the task store relies on.
+
+**Go deeper.** Level 2 builds each store in plain Python: a short-term
+memory whose summary only gets the room the recent turns leave, a long-term
+memory with three kinds of record recalled by cosine similarity, the write
+policy, supersession and per-tenant partitions with the leak that a filter
+would allow drawn as a figure, and a SQLite task store that refuses a
+skipped step and resumes after a crash. If you only needed to choose, you
+are done.
+
+## Level 2: How it works, from scratch
+
+What follows builds the four pieces, each small enough to read in one
+sitting, and shows what each one prevents.
+
 A language model remembers nothing between calls. Every call starts from a
 blank page plus whatever you put in the prompt. "Memory" is therefore
 entirely *your* system: what you keep, where you keep it, what you put back
