@@ -1,0 +1,1102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Score-Based Generative Modeling through SDEs, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Song et al. (2020), the paper that describes diffusion as a continuous noising process, reverses it with the score, and finds a noise-free road with the same crowds along it.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .sd-canvas { display: block; width: 100%; max-width: 560px; height: auto; margin: 0.4rem auto; touch-action: none; }
+  .sd-toggle { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  /* Charts are drawn narrow so their labels stay legible on a phone; on a wide screen they stop growing. */
+  .plot svg[role="slider"] { max-width: 600px; margin: 0 auto; }
+  .note { border-left: 4px solid var(--accent); padding: 0.5rem 0.8rem; background: var(--quote-bg); border-radius: 6px; }
+</style>
+</head>
+<body data-paper="score-sde">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Score matching with Langevin dynamics</a></li>
+          <li><a href="#s2-2">2.2 Denoising diffusion (DDPM)</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Score-based modeling with SDEs</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Perturbing data with an SDE</a></li>
+          <li><a href="#s3-2">3.2 Reversing the SDE</a></li>
+          <li><a href="#s3-3">3.3 Estimating the score</a></li>
+          <li><a href="#s3-4">3.4 VE, VP and sub-VP SDEs</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Solving the reverse SDE</a>
+        <ol>
+          <li><a href="#s4-1">4.1 General-purpose solvers</a></li>
+          <li><a href="#s4-2">4.2 Predictor-corrector samplers</a></li>
+          <li><a href="#s4-3">4.3 Probability flow</a></li>
+          <li><a href="#s4-4">4.4 Architecture improvements</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Controllable generation</a></li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#appendix">Appendices, briefly</a></li>
+      <li><a href="#today">What changed since 2020</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Score-Based Generative Modeling through Stochastic Differential Equations, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Song, Sohl-Dickstein, Kingma, Kumar, Ermon and Poole (2020), the paper that showed two families of generators are one: fade data into noise continuously, learn which way is “more like data” at every moment, and run the fading backwards.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2011.13456">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2011.13456">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2011.13456">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, which does not grant permission to republish its tables, so only a few selected rows appear here, each attributed, and every figure is redrawn from scratch and computed live in your browser. The worked numbers come from a one-pixel toy built on this page, not from the paper, unless a sentence says otherwise. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the numbers of a tiny example, and the same example in a few lines of Python.</li>
+  <li>The pictures are live: press the buttons, drag the sliders, and the readouts say what changed.</li>
+</ul>
+<p>Each idea is explained in the same order: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>.</p>
+<div class="note">
+  <p style="margin:0"><strong>Which way time runs.</strong> In this paper, time <em>t</em> runs from 0 (<strong>data</strong>) to <em>T</em> = 1 (<strong>pure noise</strong>), as in the <a href="ddpm.html">DDPM companion</a>. The <a href="flow-matching.html">flow matching</a> and <a href="rectified-flow.html">rectified flow</a> companions run the other way, from noise at 0 to data at 1. Generating here means running time <em>backwards</em>, from 1 down to 0.</p>
+</div>
+<div class="play">
+  <p style="margin:0"><strong>The one-pixel toy.</strong> A one-pixel image that is either <strong>−1</strong> (black) or <strong>+1</strong> (white), equally often. The paper's “variance preserving” noising (§3.4, with its settings β<sub>min</sub> = 0.1 and β<sub>max</sub> = 20) fades each value and mixes in noise. At <strong>t = 0.2</strong> the two values have faded to <strong>±0.8114</strong> and each is blurred by noise of <span class="t" data-t="variance">variance</span> <strong>0.3416</strong>: two overlapping bell curves. Every worked number below uses this toy, and almost all of them sit at the point <strong>x = 0.5</strong> at that moment. The paper does the same arithmetic on 3,072-number images; the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> builds it from scratch in NumPy on dots in a plane.</p>
+</div>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Creating noise from data is easy; creating data from noise is generative modeling.”<cite>Song et al. (2020), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2011.13456">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Drop ink into a glass of water. Within a minute it has spread into a faint, even cloud: any drop of ink, whatever shape it started as, ends up as the same cloud. Now imagine filming that and playing the film backwards: the cloud gathers itself into a drop. Physics never does this on its own, but it turns out you can play the film backwards if, at every moment, you know one thing: <em>which way is the ink more concentrated?</em> That direction is the <span class="t" data-t="score">score</span>. This paper learns it with a neural network and uses it to run the film backwards, turning noise into images.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Adding noise can be written as one continuous process, a <span class="t" data-t="stochastic differential equation">stochastic differential equation</span> (SDE), and its reverse is another SDE that needs only the score at each moment.</li>
+  <li>The two leading families of the time, score matching with Langevin dynamics and <span class="t" data-t="ddpm">DDPM</span>, are the same idea on two different SDEs.</li>
+  <li>New samplers follow: <strong>predictor-corrector</strong> samplers, and a noise-free <span class="t" data-t="probability flow ode">probability flow ODE</span> that gives exact likelihoods, a reversible code for every image, and fast adaptive sampling.</li>
+  <li>One unconditional model can do class-conditional generation, <span class="t" data-t="inpainting">inpainting</span> and colourisation, with no retraining.</li>
+  <li>Record results on CIFAR-10 (<span class="t" data-t="fid">FID</span> 2.20, <span class="t" data-t="inception score">Inception score</span> 9.89, and 2.99 <span class="t" data-t="bits per dimension">bits per dimension</span>), and the first 1024 × 1024 images from a score-based model.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>This is the paper that gave diffusion models their common language. When later work talks about “the probability flow ODE”, “VP” and “VE” schedules, or solving a diffusion model with an ODE solver, it is using this paper's vocabulary. The <a href="flow-matching.html">flow matching</a> and <a href="rectified-flow.html">rectified flow</a> papers both start from its ODE and ask what happens if you choose the road directly.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S1">original</a></span></h2>
+<blockquote class="quote">“We therefore refer to these two model classes together as score-based generative models.”<cite>Song et al. (2020), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two teams were restoring faded photographs. One team (score matching with Langevin dynamics) blurred photos at a ladder of fixed strengths and learned, at each strength, which way “sharper” lies. The other team (DDPM) faded photos in a thousand tiny steps and learned to undo each step. The paper notices that both are snapshots of one continuous fade, and that the continuous version is easier to reason about and to sample from.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Take the toy pixel at +1. Fade it continuously and it drifts toward 0 while noise piles up: at <em>t</em> = 0.2 it is a bell curve centred at 0.8114 with variance 0.3416, and at <em>t</em> = 1 it is centred at 0.0066 with variance 0.99996, indistinguishable from pure noise. The −1 pixel does the mirror image. Reverse the film and the noise has to decide, somewhere along the way, which of the two it will become.</p>
+<h3 class="rung">Figure 1, redrawn: the film and its reverse</h3>
+<figure class="ix" id="fig1">
+  <div class="plot" style="margin:0;border:0;padding:0">
+    <div class="controls"><span class="sd-toggle" role="group" aria-label="Which process to draw">
+      <button type="button" data-mode="fwd" aria-pressed="true">forward SDE</button>
+      <button type="button" data-mode="rev" aria-pressed="false">reverse SDE</button>
+      <button type="button" data-mode="ode" aria-pressed="false">probability flow ODE</button>
+      <button type="button" id="fig1-new">new random draws</button>
+    </span></div>
+    <canvas id="fig1-canvas" class="sd-canvas" width="640" height="420" aria-label="Paths of the one-pixel toy through time: time runs left to right from data to noise, position runs up and down, and a shaded band shows where the probability is at each time."></canvas>
+    <p class="readout" id="fig1-readout"></p>
+  </div>
+  <figcaption>The one-pixel toy under the paper's variance preserving SDE (β<sub>min</sub> = 0.1, β<sub>max</sub> = 20), simulated live with 400 small steps and the exact score. Based on Song et al. (2020), Figures 1 and 2, redrawn.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> time runs left to right, from data (<em>t</em> = 0) to noise (<em>t</em> = 1); height is the pixel's value. The shading is the crowd <em>p</em><sub><em>t</em></sub>(<em>x</em>) at each moment: two thin bands at ±1 on the left, which fade inwards and merge into one wide band on the right. <strong>Forward SDE:</strong> 12 pixels start on the two data values and jitter their way into the noise band, forgetting where they came from. <strong>Reverse SDE:</strong> 12 pixels start as pure noise on the right and jitter their way leftwards; as they near the left, each settles into one band and ends on −1 or +1 (over many draws, half each; press <strong>new random draws</strong>). <strong>Probability flow ODE:</strong> the same starting noise, but no jitter at all. The paths are smooth and never cross, and every one that starts above 0 ends on +1. They barely move for most of the journey and do nearly all their travelling close to <em>t</em> = 0, a slow-then-rushed pace the <a href="rectified-flow.html#s2-3-1">rectified flow</a> paper later picks on. Given the exact score, both kinds of path trace out the same shading: that is §4.3's claim.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Working in continuous time frees the sampler from the training grid. Any solver, with any number of steps, can follow the reverse process, and the network trained once is reused by all of them.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S2">original</a></span></h2>
+<p>The paper first recalls the two methods it unifies, writing both in the same notation so the resemblance jumps out.</p>
+
+<section id="s2-1">
+<h3>2.1 Denoising score matching with Langevin dynamics (SMLD) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S2.SS1">original</a></span></h3>
+<blockquote class="quote">“For sampling, Song &amp; Ermon 2019 run M steps of Langevin MCMC to get a sample for each p<sub>σ<sub>i</sub></sub>(x) sequentially”<cite>Song et al. (2020), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Picture a hiker in thick fog on a hillside, trying to find the valleys where people live. They can't see the valleys, but they can feel which way the ground slopes. Each step they walk a little downhill toward the crowd, then take a small random stumble. After many steps, hikers who follow this rule end up spread over the valleys in exactly the proportion people live there. That walking rule is <span class="t" data-t="langevin dynamics">Langevin dynamics</span>, and the slope they feel is the score. The trick of SMLD is to start in very thick fog (heavy blur, where the slope is gentle and points toward the middle of everything) and let the fog thin gradually.</p>
+<h4>Tiny example: learning the slope</h4>
+<p>A data point <em>x</em> = 1 is blurred with noise of size σ = 0.5 and a noise draw <em>z</em> = 0.4, giving <em>x̃</em> = 1.2. Around <em>x</em>, the blurred crowd is a bell curve, and its slope at 1.2 points back toward 1 with size (1.2 − 1)/0.5² = 0.8. So the network is told: at 1.2, the answer is <strong>−0.8</strong>. This is <span class="t" data-t="denoising score matching">denoising score matching</span>: the target is the score of the blur around one known data point, which you can write down.</p>
+<div class="eq" data-tex="\htmlData{sym=thetastar}{\boldsymbol{\theta}^*} = \htmlData{sym=argmin}{\operatorname*{arg\,min}_{\boldsymbol{\theta}}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=sigi2}{\sigma_i^2}\, \htmlData{sym=Edata}{\mathbb{E}_{p_{\mathrm{data}}(\mathbf{x})}}\, \htmlData{sym=Epert}{\mathbb{E}_{p_{\sigma_i}(\tilde{\mathbf{x}} \mid \mathbf{x})}} \Big[ \htmlData{sym=sqnorm}{\big\|} \htmlData{sym=stheta}{\mathbf{s}_{\boldsymbol{\theta}}(\tilde{\mathbf{x}}, \sigma_i)} - \htmlData{sym=gradkern}{\nabla_{\tilde{\mathbf{x}}} \log p_{\sigma_i}(\tilde{\mathbf{x}} \mid \mathbf{x})} \htmlData{sym=sqnorm}{\big\|_2^2} \Big]" data-fallback="θ* = argmin_θ Σ_{i=1}^{N} σ_i² E_{p_data(x)} E_{p_σi(x̃|x)} [ ‖s_θ(x̃, σ_i) − ∇_x̃ log p_σi(x̃ | x)‖²₂ ]"></div>
+<div class="symtable" data-syms="thetastar,argmin,sumi,sigi2,Edata,Epert,stheta,gradkern,sqnorm"></div>
+<p class="inwords"><strong>In words:</strong> “find the network weights that, averaged over every noise level, every data point and every way of blurring it, make the network's slope as close as possible to the slope of the blur around that data point; weight each level by its noise variance so every level counts about equally.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>x̃</em> = 1 + 0.5 × 0.4 = 1.2; target −(1.2 − 1)/0.25 = −0.8. A guess of −0.5 scores 0.25 × (−0.5 + 0.8)<sup>2</sup> = <strong>0.0225</strong>. The weight σ<sup>2</sup> turns this into (σ<em>s</em> + <em>z</em>)<sup>2</sup> = (−0.25 + 0.4)<sup>2</sup>, the same 0.0225: a slope guess is a noise guess in disguise, which is why the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> can train on noise and convert with <a data-lesson="primer/ml/generative/diffusion.html#noise_to_score"><code>noise_to_score</code></a>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x, sigma, z = 1.0, 0.5, 0.4
+# x̃ = x + σ z: the blurred point
+x_tilde = x + sigma * z
+x_tilde  # → 1.2
+# ∇ log p_σ(x̃ | x) = −(x̃ − x)/σ²: the slope of the bell curve around x
+target = -(x_tilde - x) / sigma ** 2
+round(target, 4)  # → -0.8
+# σ² ‖s_θ − target‖² for a guess of −0.5
+s_theta = -0.5
+round(sigma ** 2 * (s_theta - target) ** 2, 4)  # → 0.0225
+# the same number written as a noise-guessing error, (σ s_θ + z)²
+round((sigma * s_theta + z) ** 2, 4)  # → 0.0225</code></pre>
+<h4>Tiny example: one Langevin step</h4>
+<p>Blur the toy's two values ±1 with σ = 0.6, and stand at <em>x</em> = 0.5. The blurred crowd has two bumps. The score at 0.5 points toward a <em>weighted</em> centre of the two bumps, weighted by how likely each is to have produced 0.5: that centre is tanh(0.5/0.36) = 0.8828 (the +1 bump is far more likely), so the score is (0.8828 − 0.5)/0.36 = <strong>1.0637</strong>. One Langevin step with step size ε = 0.05 and a stumble <em>z</em> = 0.3 moves the hiker to 0.6481.</p>
+<div class="eq" data-tex="\htmlData{sym=xim}{\mathbf{x}_i^{m}} = \htmlData{sym=ximprev}{\mathbf{x}_i^{m-1}} + \htmlData{sym=epsi}{\epsilon_i}\, \htmlData{sym=sstar}{\mathbf{s}_{\boldsymbol{\theta}^*}(\mathbf{x}_i^{m-1}, \sigma_i)} + \htmlData{sym=sqrt2eps}{\sqrt{2\epsilon_i}}\, \htmlData{sym=zim}{\mathbf{z}_i^{m}}, \qquad m = 1, 2, \dots, M" data-fallback="x_i^m = x_i^(m−1) + ε_i s_θ*(x_i^(m−1), σ_i) + √(2ε_i) z_i^m,  m = 1, …, M"></div>
+<div class="symtable" data-syms="xim,ximprev,epsi,sstar,sqrt2eps,zim"></div>
+<p class="inwords"><strong>In words:</strong> “take a small step along the learned slope, then add a random stumble whose size is the square root of twice the step; repeat M times at this noise level, then move on to a smaller one.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.5 + 0.05 × 1.0637 + √0.1 × 0.3 = 0.5 + 0.0532 + 0.0949 = <strong>0.6481</strong>. The step toward the crowd and the stumble are about the same size: the stumble is what keeps a crowd of hikers spread out instead of piling onto one spot.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+sigma, x = 0.6, 0.5
+# the score of half a bell curve at −1 and half at +1, each of spread σ:
+# (weighted centre − x) / σ², where tanh gives the weighted centre
+s = (-x + math.tanh(x / sigma ** 2)) / sigma ** 2
+round(s, 4)  # → 1.0637
+eps, z = 0.05, 0.3
+# x + ε s + √(2ε) z: one Langevin step
+round(x + eps * s + math.sqrt(2 * eps) * z, 4)  # → 0.6481</code></pre>
+<p><strong>Try it:</strong> start 2,000 hikers from a wide cloud that leans toward white (a bell curve centred at +1 with spread 1, so 83% start above 0), pick a noise level σ, and take <em>M</em> Langevin steps with the exact score. Watch whether the histogram settles onto the target crowd, which has half its people on each side.</p>
+<div class="plot" id="fig-langevin">
+  <div class="controls">
+    <label for="lg-sigma">noise level σ = <strong id="lg-sigmav">0.50</strong></label><input type="range" id="lg-sigma" min="0.2" max="1.5" step="0.05" value="0.5">
+    <label for="lg-m">Langevin steps M = <strong id="lg-mv">200</strong></label><input type="range" id="lg-m" min="0" max="300" step="1" value="200">
+  </div>
+  <div id="lg-chart"></div>
+  <p class="readout" id="lg-hover">Hover or tap the chart, or focus it and use the arrow keys, to read both curves.</p>
+  <p class="readout" id="lg-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the pixel value, the y-axis is how crowded each value is. The solid line is the histogram of 2,000 hikers after <em>M</em> steps; the dashed line is the target, the toy's two values blurred by σ. The step size is ε = 0.1σ², an illustrative choice. Set <em>M</em> to 0 to see the lopsided starting cloud. At σ = 0.5, by about 200 steps the histogram sits on the target, two bumps with half the hikers on each side (the readout measures the gap as the average distance between sorted hikers and sorted exact samples). At σ = 1 the hikers rebalance twice as fast, but the two bumps have blurred into one hump. Now drop σ to 0.2. Each bump sharpens within 20 steps, but 83% of the hikers stay on the white side however many steps you take: in the empty gap between the bumps the slope points back toward whichever bump is nearer, and a stumble of size √(2ε) is far too small to hop the gap. Large noise lets hikers cross between bumps; small noise makes them precise. That is why SMLD starts with a large σ and lowers it level by level, and why §4.2 later uses this very step as its “corrector”.</p>
+<h4>Why it matters today</h4>
+<p>Langevin dynamics needs no knowledge of the crowd except its slope, which a network can learn. Every diffusion sampler still has this shape: a step along what the network says, plus, in the stochastic ones, a little fresh noise.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Denoising diffusion probabilistic models (DDPM) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“The objective Eq. 3 described here is L<sub>simple</sub> in Ho et al. 2020, written in a form to expose more similarity to Eq. 1.”<cite>Song et al. (2020), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>DDPM fades a photo in a thousand small steps, each one shrinking it slightly toward grey and sprinkling in a little noise, and learns to undo one step at a time. The paper rewrites DDPM's loss so that it looks exactly like SMLD's: the only differences are how the blur is made (shrink and add, rather than just add) and the weight of each level.</p>
+<h4>Tiny example</h4>
+<p>This paper's α<sub><em>i</em></sub> is DDPM's running product ᾱ (the signal share left after <em>i</em> steps). With α<sub><em>i</em></sub> = 0.64, the data point <em>x</em> = 1 and noise <em>z</em> = 0.5 become <em>x̃</em> = 0.8 × 1 + 0.6 × 0.5 = 1.1. The slope of the blur around the shrunken point 0.8 is −(1.1 − 0.8)/0.36 = <strong>−0.8333</strong>, which is the noise flipped and divided by its size: −0.5/0.6.</p>
+<div class="eq" data-tex="\htmlData{sym=thetastar}{\boldsymbol{\theta}^*} = \htmlData{sym=argmin}{\operatorname*{arg\,min}_{\boldsymbol{\theta}}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=oneminusalpha}{(1-\alpha_i)}\, \htmlData{sym=Edata}{\mathbb{E}_{p_{\mathrm{data}}(\mathbf{x})}}\, \htmlData{sym=Epertalpha}{\mathbb{E}_{p_{\alpha_i}(\tilde{\mathbf{x}} \mid \mathbf{x})}} \Big[ \htmlData{sym=sqnorm}{\big\|} \htmlData{sym=sthetai}{\mathbf{s}_{\boldsymbol{\theta}}(\tilde{\mathbf{x}}, i)} - \htmlData{sym=gradkernalpha}{\nabla_{\tilde{\mathbf{x}}} \log p_{\alpha_i}(\tilde{\mathbf{x}} \mid \mathbf{x})} \htmlData{sym=sqnorm}{\big\|_2^2} \Big]" data-fallback="θ* = argmin_θ Σ_{i=1}^{N} (1 − α_i) E_{p_data(x)} E_{p_αi(x̃|x)} [ ‖s_θ(x̃, i) − ∇_x̃ log p_αi(x̃ | x)‖²₂ ]"></div>
+<div class="symtable" data-syms="thetastar,argmin,sumi,oneminusalpha,Edata,Epertalpha,sthetai,gradkernalpha,sqnorm"></div>
+<p class="inwords"><strong>In words:</strong> “the same recipe as SMLD, but the blur at step <em>i</em> shrinks the data by √α<sub><em>i</em></sub> before adding noise of variance 1 − α<sub><em>i</em></sub>, and each step is weighted by that noise variance.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>x̃</em> = 1.1, target −0.8333, weight 0.36. The paper points out that both weights, σ<sub><em>i</em></sub><sup>2</sup> and 1 − α<sub><em>i</em></sub>, are proportional to one over the target's typical squared size (here that size is 1/0.36 in one dimension), so both losses give every noise level about an equal say.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha_i, x, z = 0.64, 1.0, 0.5
+# x̃ = √α_i x + √(1 − α_i) z: shrink, then add noise
+x_tilde = math.sqrt(alpha_i) * x + math.sqrt(1 - alpha_i) * z
+round(x_tilde, 4)  # → 1.1
+# ∇ log p_α(x̃ | x) = −(x̃ − √α_i x)/(1 − α_i)
+target = -(x_tilde - math.sqrt(alpha_i) * x) / (1 - alpha_i)
+round(target, 4)  # → -0.8333
+# the same as −z/√(1 − α_i): the noise, flipped and rescaled
+round(-z / math.sqrt(1 - alpha_i), 4)  # → -0.8333</code></pre>
+<p>DDPM samples by walking its chain backwards, one step at a time, with a fresh wobble each step; the paper calls this <strong>ancestral sampling</strong>:</p>
+<div class="eq" data-tex="\htmlData{sym=xprev}{\mathbf{x}_{i-1}} = \frac{1}{\htmlData{sym=sqrtkeep}{\sqrt{1-\beta_i}}}\big(\htmlData{sym=xi}{\mathbf{x}_i} + \htmlData{sym=betai}{\beta_i}\, \htmlData{sym=sstari}{\mathbf{s}_{\boldsymbol{\theta}^*}(\mathbf{x}_i, i)}\big) + \htmlData{sym=sqrtbeta}{\sqrt{\beta_i}}\, \htmlData{sym=zi}{\mathbf{z}_i}, \qquad i = N, N-1, \dots, 1" data-fallback="x_(i−1) = (x_i + β_i s_θ*(x_i, i)) / √(1 − β_i) + √β_i z_i,  i = N, …, 1"></div>
+<div class="symtable" data-syms="xprev,xi,betai,sstari,sqrtkeep,sqrtbeta,zi"></div>
+<p class="inwords"><strong>In words:</strong> “nudge the point along the score by this step's noise dose, undo this step's shrink, and add a small fresh wobble.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with β = 0.02, <em>x</em> = 1.1, score −0.8333 and wobble <em>z</em> = 0.1: (1.1 − 0.0167)/0.98995 + 0.1414 × 0.1 = 1.0943 + 0.0141 = <strong>1.1085</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+beta_i, x_i, s, z = 0.02, 1.1, -0.8333, 0.1
+# (x_i + β_i s) / √(1 − β_i) + √β_i z
+x_prev = (x_i + beta_i * s) / math.sqrt(1 - beta_i) + math.sqrt(beta_i) * z
+round(x_prev, 4)  # → 1.1085</code></pre>
+<h4>Why it matters today</h4>
+<p>Written this way, “guess the noise” (DDPM) and “guess the slope” (SMLD) are the same training problem up to a rescaling. The <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> makes the same point: its <a data-lesson="primer/ml/generative/diffusion.html#train_noise_predictor"><code>train_noise_predictor</code></a> learns the noise, its <a data-lesson="primer/ml/generative/diffusion.html#noise_to_score"><code>noise_to_score</code></a> turns that into the score, and its <a data-lesson="primer/ml/generative/diffusion.html#ddpm_step"><code>ddpm_step</code></a> is the ancestral step above. The <a href="ddpm.html">DDPM companion</a> walks through the original paper.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Score-based generative modeling with SDEs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S3">original</a></span></h2>
+<blockquote class="quote">“Perturbing data with multiple noise scales is key to the success of previous methods.”<cite>Song et al. (2020), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>SMLD used a ladder of fog levels, DDPM a thousand small steps. The paper asks: why not infinitely many, a fog that thickens smoothly with time? Then “the fog level” becomes a clock, and everything else (training, sampling, likelihood) is stated at every tick of that clock at once.</p>
+<h3 class="rung">Tiny example</h3>
+<p>DDPM with 1,000 steps of β<sub><em>i</em></sub> each is a staircase; the continuous version is the ramp the staircase approximates. With the paper's DDPM schedule, the staircase's centre factor √α<sub><em>i</em></sub> and the ramp's e<sup>−½∫β</sup> never differ by more than 0.001 over all 1,000 steps (the paper plots the same check in its Figure 5).</p>
+<h3 class="rung">Figure 2, redrawn: the whole framework</h3>
+<figure class="ix" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 232" role="img" aria-label="The framework: a forward SDE carries data to noise; a reverse SDE and a probability flow ODE carry noise back to data, both driven by a score model trained by denoising score matching">
+    <defs><marker id="arrsd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M92,35 H104" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M254,35 H266" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M268,83 H256" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M106,83 H94" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M92,134 H104" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M166,134 H174" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M215,114 V102" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M215,154 V166" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M268,185 H256" marker-end="url(#arrsd)"/>
+    <path class="wire" d="M106,185 H94" marker-end="url(#arrsd)"/>
+    <g class="blk soft" data-block="sd_data"><rect x="8" y="14" width="84" height="204" rx="8"/><text x="50" y="112" text-anchor="middle">data</text><text x="50" y="130" text-anchor="middle">x(0) ~ p₀</text></g>
+    <g class="blk emb" data-block="sd_noise"><rect x="268" y="14" width="84" height="204" rx="8"/><text x="310" y="112" text-anchor="middle">noise</text><text x="310" y="130" text-anchor="middle">x(T) ~ p_T</text></g>
+    <g class="blk plain" data-block="sd_fwd"><rect x="106" y="18" width="148" height="34" rx="7"/><text x="180" y="39" text-anchor="middle">forward SDE (eq. 5)</text></g>
+    <g class="blk attn" data-block="sd_rev"><rect x="106" y="66" width="148" height="34" rx="7"/><text x="180" y="87" text-anchor="middle">reverse SDE (eq. 6)</text></g>
+    <g class="blk norm" data-block="sd_train"><rect x="106" y="114" width="60" height="40" rx="7"/><text x="136" y="131" text-anchor="middle">train</text><text x="136" y="146" text-anchor="middle">eq. 7</text></g>
+    <g class="blk ff" data-block="sd_score"><rect x="176" y="114" width="78" height="40" rx="7"/><text x="215" y="131" text-anchor="middle">score</text><text x="215" y="146" text-anchor="middle">s_θ(x, t)</text></g>
+    <g class="blk lin" data-block="sd_ode"><rect x="106" y="168" width="148" height="34" rx="7"/><text x="180" y="182" text-anchor="middle">probability flow</text><text x="180" y="196" text-anchor="middle">ODE (eq. 13)</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start with <strong>data</strong> on the left.</p></div>
+  </div>
+  <figcaption>The framework in one picture. Based on Song et al. (2020), Figure 2, redrawn as an explorable diagram.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top lane runs left to right: a fixed forward SDE, with no learning in it, fades data into noise. The two lanes below run right to left, turning noise back into data. Both need one ingredient, the score at every moment, which comes from the score network in the middle; the network is trained (eq. 7) on data faded by the forward SDE, which is why a wire runs from the data to “train”. The reverse SDE (§3.2) keeps adding fresh noise as it goes; the probability flow ODE (§4.3) adds none. Given the same score, both produce the same crowd at every moment.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The picture separates three choices that earlier methods had tied together: how to add noise (which SDE), how to learn the score (which loss), and how to sample (which solver). The rest of the paper explores each one.</p>
+
+<section id="s3-1">
+<h3>3.1 Perturbing data with SDEs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S3.SS1">original</a></span></h3>
+<blockquote class="quote">“This diffusion process can be modeled as the solution to an Itô SDE”<cite>Song et al. (2020), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A leaf floating down a river moves for two reasons: the current carries it steadily (the <strong>drift</strong>), and eddies knock it about at random (the <strong>diffusion</strong>). A stochastic differential equation is a rule that says, at every moment, how strong each is. Over a short time d<em>t</em> the current moves the leaf by (current) × d<em>t</em>, and the eddies move it by a random amount whose spread grows like √d<em>t</em>, the signature of a <span class="t" data-t="wiener process">Wiener process</span>.</p>
+<h4>Tiny example</h4>
+<p>The toy pixel sits at <em>x</em> = 0.5 at <em>t</em> = 0.2, where the paper's schedule gives β = 4.08. Over d<em>t</em> = 0.01 the current pulls it toward 0 by ½ × 4.08 × 0.5 × 0.01 = 0.0102, and an eddy with <em>z</em> = 1 pushes it by √4.08 × √0.01 = 0.2020. It ends at <strong>0.6918</strong>. Over one short step the random kick is twenty times the steady pull: noise dominates locally, and the pull only wins over many steps.</p>
+<div class="eq" data-tex="\htmlData{sym=dx}{\mathrm{d}\mathbf{x}} = \htmlData{sym=fdrift}{\mathbf{f}(\mathbf{x}, t)}\,\htmlData{sym=dt}{\mathrm{d}t} + \htmlData{sym=gdiff}{g(t)}\,\htmlData{sym=dw}{\mathrm{d}\mathbf{w}}" data-fallback="dx = f(x, t) dt + g(t) dw"></div>
+<div class="symtable" data-syms="dx,fdrift,dt,gdiff,dw"></div>
+<p class="inwords"><strong>In words:</strong> “over a tiny time d<em>t</em>, the point moves by the drift times d<em>t</em>, plus the noise strength times a tiny random kick.” Simulating it with small steps like this is an <span class="t" data-t="euler-maruyama step">Euler-Maruyama step</span>.</p>
+<p class="inwords"><strong>With the numbers:</strong> the variance preserving choice (§3.4) is <strong>f</strong> = −½β(<em>t</em>)<em>x</em> and <em>g</em> = √β(<em>t</em>). At <em>t</em> = 0.2, <em>x</em> = 0.5: <strong>f</strong> = −1.02, <em>g</em> = 2.0199, and 0.5 − 1.02 × 0.01 + 2.0199 × 0.1 × 1 = <strong>0.6918</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t, x, dt, z = 0.2, 0.5, 0.01, 1.0
+# β(t) = β_min + t (β_max − β_min): the paper's schedule
+beta = 0.1 + t * (20 - 0.1)
+round(beta, 2)  # → 4.08
+# the VP choice: f(x, t) = −½ β(t) x and g(t) = √β(t)
+f, g = -0.5 * beta * x, math.sqrt(beta)
+round(f, 4), round(g, 4)  # → (-1.02, 2.0199)
+# dw over a step dt is √dt z
+round(x + f * dt + g * math.sqrt(dt) * z, 4)  # → 0.6918</code></pre>
+<h4>Why it matters today</h4>
+<p>Nothing in the forward SDE is learned. It is a fixed recipe for destroying information, chosen so that its end point, <em>p<sub>T</sub></em>, is plain noise you know how to draw. The lesson's <a data-lesson="primer/ml/generative/diffusion.html#add_noise"><code>add_noise</code></a> jumps straight to any time along it.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Generating samples by reversing the SDE <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“A remarkable result from Anderson 1982 states that the reverse of a diffusion process is also a diffusion process, running backwards in time and given by the reverse-time SDE”<cite>Song et al. (2020), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Running the river backwards is not just flipping the current. The eddies still scatter the leaf; to end up back where leaves really started, you must add a second current that pushes toward where leaves are more crowded, strong enough to beat the scattering. That extra current is the score, scaled by the eddies' strength squared.</p>
+<h4>Tiny example</h4>
+<p>At <em>t</em> = 0.2, <em>x</em> = 0.5 in the toy, the score is (0.6733 − 0.5)/0.3416 = <strong>0.5073</strong>: the two faded bumps sit at ±0.8114, and at 0.5 the weighted centre is 0.6733. The reverse drift is −1.02 − 4.08 × 0.5073 = <strong>−3.0896</strong>. Time runs backwards, so d<em>t</em> = −0.01, and the point moves <em>up</em> by 0.0309, toward the +1 bump.</p>
+<div class="eq" data-tex="\htmlData{sym=dx}{\mathrm{d}\mathbf{x}} = \big[\htmlData{sym=fdrift}{\mathbf{f}(\mathbf{x}, t)} - \htmlData{sym=gsq}{g(t)^2}\, \htmlData{sym=scoret}{\nabla_{\mathbf{x}} \log p_t(\mathbf{x})}\big]\,\htmlData{sym=dtneg}{\mathrm{d}t} + \htmlData{sym=gdiff}{g(t)}\,\htmlData{sym=dwbar}{\mathrm{d}\bar{\mathbf{w}}}" data-fallback="dx = [f(x, t) − g(t)² ∇_x log p_t(x)] dt + g(t) dw̄"></div>
+<div class="symtable" data-syms="dx,fdrift,gsq,scoret,dtneg,gdiff,dwbar"></div>
+<p class="inwords"><strong>In words:</strong> “going backwards in time, move by the forward drift minus the noise strength squared times the score, and keep adding random kicks of the same strength as before.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>m</em> = e<sup>−0.209</sup> = 0.8114, <em>v</em> = 1 − e<sup>−0.418</sup> = 0.3416, score 0.5073, drift −3.0896. One step with d<em>t</em> = −0.01 and the random kick set to 0: 0.5 + 0.0309 = <strong>0.5309</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t, x = 0.2, 0.5
+beta = 0.1 + t * (20 - 0.1)
+# ∫₀ᵗ β(s) ds, then each value's faded centre m and noise variance v
+B = 0.1 * t + 0.5 * t * t * (20 - 0.1)
+m, v = math.exp(-B / 2), 1 - math.exp(-B)
+round(m, 4), round(v, 4)  # → (0.8114, 0.3416)
+# the score of the toy's p_t: (weighted centre − x) / v
+score = (-x + m * math.tanh(m * x / v)) / v
+round(score, 4)  # → 0.5073
+# f − g² ∇log p_t: the reverse drift
+drift = -0.5 * beta * x - beta * score
+round(drift, 4)  # → -3.0896
+# one step back in time (dt = −0.01), with the random kick set to 0
+round(x + drift * -0.01, 4)  # → 0.5309</code></pre>
+<p>Press <strong>reverse SDE</strong> in <a href="#fig1">Figure 1</a> to watch this rule, applied 400 times with fresh kicks, turn noise into ±1.</p>
+<h4>Why it matters today</h4>
+<p>The only unknown in the reverse SDE is the score. Everything else, <strong>f</strong> and <em>g</em>, was chosen by hand. So generative modelling reduces to one supervised learning problem: estimate ∇<sub><em>x</em></sub> log <em>p<sub>t</sub></em>(<em>x</em>) for every <em>t</em>.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Estimating scores for the SDE <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S3.SS3">original</a></span></h3>
+<blockquote class="quote">“Note that Eq. 7 uses denoising score matching, but other score matching objectives, such as sliced score matching … and finite-difference score matching … are also applicable here.”<cite>Song et al. (2020), §3.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Training is the SMLD and DDPM recipe with a continuous dial: pick a random moment <em>t</em>, fade a real example to that moment in one jump, and grade the network's slope against the slope of the fade around that one example. The network sees the moment <em>t</em> as an input, so one network covers every moment.</p>
+<h4>Tiny example</h4>
+<p>The white pixel <em>x</em>(0) = 1 faded to <em>t</em> = 0.2 with noise <em>z</em> = 0.5 lands at 0.8114 + 0.5845 × 0.5 = <strong>1.1036</strong>. The target slope is −<em>z</em>/√<em>v</em> = <strong>−0.8554</strong>. A guess of −0.7, weighted by λ = <em>v</em> = 0.3416, scores 0.0083.</p>
+<div class="eq" data-tex="\htmlData{sym=thetastar}{\boldsymbol{\theta}^*} = \htmlData{sym=argmin}{\operatorname*{arg\,min}_{\boldsymbol{\theta}}} \htmlData{sym=Et}{\mathbb{E}_{t}} \Big\{ \htmlData{sym=lambdat}{\lambda(t)}\, \htmlData{sym=Ex0}{\mathbb{E}_{\mathbf{x}(0)}}\, \htmlData{sym=Extx0}{\mathbb{E}_{\mathbf{x}(t) \mid \mathbf{x}(0)}} \Big[ \htmlData{sym=sqnorm}{\big\|} \htmlData{sym=sthetat}{\mathbf{s}_{\boldsymbol{\theta}}(\mathbf{x}(t), t)} - \htmlData{sym=gradkernt}{\nabla_{\mathbf{x}(t)} \log p_{0t}(\mathbf{x}(t) \mid \mathbf{x}(0))} \htmlData{sym=sqnorm}{\big\|_2^2} \Big] \Big\}" data-fallback="θ* = argmin_θ E_t { λ(t) E_x(0) E_x(t)|x(0) [ ‖s_θ(x(t), t) − ∇ log p_0t(x(t) | x(0))‖²₂ ] }"></div>
+<div class="symtable" data-syms="thetastar,argmin,Et,lambdat,Ex0,Extx0,sthetat,gradkernt,sqnorm"></div>
+<p class="inwords"><strong>In words:</strong> “draw a moment uniformly, a real example, and a faded version of it at that moment; grade the network's slope against the slope of the fade around that example; weight moments so they count equally; average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>x</em>(<em>t</em>) = 1.1036, target −(1.1036 − 0.8114)/0.3416 = −0.8554, loss 0.3416 × (−0.7 + 0.8554)<sup>2</sup> = <strong>0.0083</strong>. With enough data and a big enough network, the paper notes, the best possible answer is the true score of the whole crowd, not of the one example: averaging over every example that could have faded to 1.1036 takes care of that.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t, x0, z = 0.2, 1.0, 0.5
+B = 0.1 * t + 0.5 * t * t * (20 - 0.1)
+m, v = math.exp(-B / 2), 1 - math.exp(-B)
+# x(t) drawn from the fade around x(0): N(m x(0), v)
+xt = m * x0 + math.sqrt(v) * z
+round(xt, 4)  # → 1.1036
+# ∇ log p_0t(x(t) | x(0)) = −(x(t) − m x(0)) / v
+target = -(xt - m * x0) / v
+round(target, 4)  # → -0.8554
+# λ(t) = v, the usual weighting, times the squared error of a guess of −0.7
+round(v * (-0.7 - target) ** 2, 4)  # → 0.0083</code></pre>
+<h4>Why it matters today</h4>
+<p>To use this loss you must be able to jump straight to any moment, which needs the fade's formula (its <em>perturbation kernel</em>). For the SDEs of §3.4 that formula is a simple bell curve. That is why the paper sticks to drifts that simply rescale <em>x</em>, and why the flow matching and rectified flow papers after it choose paths whose fades are bell curves too: it keeps training to one network call per example.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Examples: VE, VP and sub-VP SDEs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S3.SS4">original</a></span></h3>
+<blockquote class="quote">“Due to this difference, we hereafter refer to Eq. 9 as the Variance Exploding (VE) SDE, and Eq. 11 the Variance Preserving (VP) SDE.”<cite>Song et al. (2020), §3.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Two ways to hide a photo in static. <strong>Variance exploding</strong>: never touch the photo, just pile on louder and louder static until the photo is a whisper in a storm. <strong>Variance preserving</strong>: turn the photo's volume down as you turn the static up, so the total loudness stays the same. The paper shows SMLD is the first, DDPM the second, and invents a third, <strong>sub-VP</strong>, which adds a little less static than VP at every moment.</p>
+<h4>Tiny example</h4>
+<p>The toy's pixels, ±1 equally often, have variance exactly 1. Under VE (with σ<sub>min</sub> = 0.01 and σ<sub>max</sub> = 2, the largest distance between the two data values, following the rule the paper borrows from its predecessor) the variance climbs to 1 + 4 = 5. Under VP it stays at 1 the whole way. Under sub-VP it dips, to 0.7751 at <em>t</em> = 0.2, and comes back to 1 at the end.</p>
+<div class="eq" data-tex="\text{VE:}\quad \htmlData{sym=dx}{\mathrm{d}\mathbf{x}} = \htmlData{sym=dsigma2}{\sqrt{\frac{\mathrm{d}[\sigma^2(t)]}{\mathrm{d}t}}}\;\htmlData{sym=dw}{\mathrm{d}\mathbf{w}}" data-fallback="VE: dx = √(d[σ²(t)]/dt) dw"></div>
+<div class="symtable" data-syms="dx,dsigma2,dw"></div>
+<p class="inwords"><strong>In words:</strong> “no drift at all; the noise strength is whatever makes the total noise variance grow along σ<sup>2</sup>(<em>t</em>).” SMLD's geometric noise levels become σ(<em>t</em>) = σ<sub>min</sub>(σ<sub>max</sub>/σ<sub>min</sub>)<sup><em>t</em></sup> (Appendix C).</p>
+<p class="inwords"><strong>With the numbers:</strong> at <em>t</em> = 0.5, σ = 0.01 × 200<sup>0.5</sup> = 0.1414, and d[σ<sup>2</sup>]/d<em>t</em> = 2σ<sup>2</sup> ln 200, so the noise strength is <strong>0.4604</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+s_min, s_max, t = 0.01, 2.0, 0.5
+# σ(t) = σ_min (σ_max/σ_min)^t: SMLD's noise levels, made continuous
+sigma = s_min * (s_max / s_min) ** t
+round(sigma, 4)  # → 0.1414
+# d[σ²]/dt = 2 σ² ln(σ_max/σ_min); the noise strength is its square root
+g = math.sqrt(2 * sigma ** 2 * math.log(s_max / s_min))
+round(g, 4)  # → 0.4604</code></pre>
+<div class="eq" data-tex="\text{VP:}\quad \htmlData{sym=dx}{\mathrm{d}\mathbf{x}} = -\tfrac{1}{2}\htmlData{sym=betat}{\beta(t)}\,\htmlData{sym=xvec}{\mathbf{x}}\,\htmlData{sym=dt}{\mathrm{d}t} + \sqrt{\htmlData{sym=betat}{\beta(t)}}\;\htmlData{sym=dw}{\mathrm{d}\mathbf{w}}" data-fallback="VP: dx = −½ β(t) x dt + √β(t) dw"></div>
+<div class="symtable" data-syms="dx,betat,xvec,dt,dw"></div>
+<p class="inwords"><strong>In words:</strong> “shrink the point toward zero at rate ½β(<em>t</em>) while adding noise of strength √β(<em>t</em>): the shrinking removes exactly as much variance as the noise adds, when the variance is 1.” DDPM's discrete chain, with 1,000 steps, becomes this with β(<em>t</em>) = 0.1 + 19.9<em>t</em>.</p>
+<p class="inwords"><strong>With the numbers:</strong> the fade from <em>x</em>(0) to <em>t</em> = 0.2 is a bell curve with centre e<sup>−0.209</sup><em>x</em>(0) = 0.8114 <em>x</em>(0) and variance 1 − e<sup>−0.418</sup> = 0.3416 (Appendix B, equation 29). A crowd of variance 1 keeps variance 1; a crowd of variance 4 is pulled down to 2.9751 by <em>t</em> = 0.2, on its way to 1.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t = 0.2
+B = 0.1 * t + 0.5 * t * t * (20 - 0.1)
+# the VP fade from x(0): centre e^(−B/2) x(0), variance 1 − e^(−B)
+round(math.exp(-B / 2), 4), round(1 - math.exp(-B), 4)  # → (0.8114, 0.3416)
+# Σ_VP(t) = 1 + e^(−B)(Σ(0) − 1), for data of variance 1 and of variance 4
+for sigma0 in (1.0, 4.0):
+    print(round(1 + math.exp(-B) * (sigma0 - 1), 4))  # → 1.0 2.9751</code></pre>
+<div class="eq" data-tex="\text{sub-VP:}\quad \htmlData{sym=dx}{\mathrm{d}\mathbf{x}} = -\tfrac{1}{2}\htmlData{sym=betat}{\beta(t)}\,\htmlData{sym=xvec}{\mathbf{x}}\,\htmlData{sym=dt}{\mathrm{d}t} + \sqrt{\htmlData{sym=betat}{\beta(t)}\big(1 - e^{-2\htmlData{sym=intbeta}{\int_0^t \beta(s)\,\mathrm{d}s}}\big)}\;\htmlData{sym=dw}{\mathrm{d}\mathbf{w}}" data-fallback="sub-VP: dx = −½ β(t) x dt + √(β(t)(1 − e^(−2∫₀ᵗβ(s)ds))) dw"></div>
+<div class="symtable" data-syms="dx,betat,xvec,dt,intbeta,dw"></div>
+<p class="inwords"><strong>In words:</strong> “the same shrinking as VP, but the noise is turned down by a factor that is 0 at the start and approaches 1 later, so early on much less noise is added.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at <em>t</em> = 0.2 the sub-VP noise strength is √(4.08 × (1 − e<sup>−0.836</sup>)) = <strong>1.5204</strong>, against VP's 2.0199.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t = 0.2
+beta = 0.1 + t * (20 - 0.1)
+B = 0.1 * t + 0.5 * t * t * (20 - 0.1)
+# sub-VP noise strength √(β(1 − e^(−2B))) against VP's √β
+round(math.sqrt(beta * (1 - math.exp(-2 * B))), 4), round(math.sqrt(beta), 4)  # → (1.5204, 2.0199)</code></pre>
+<p>Appendix B works out how the variance of the whole crowd evolves under each. For VP and sub-VP:</p>
+<div class="eq" data-tex="\htmlData{sym=SigVP}{\boldsymbol{\Sigma}_{\text{VP}}(t)} = \htmlData{sym=ident}{\mathbf{I}} + e^{-\htmlData{sym=intbeta}{\int_0^t \beta(s)\,\mathrm{d}s}}\big(\htmlData{sym=Sig0}{\boldsymbol{\Sigma}(0)} - \htmlData{sym=ident}{\mathbf{I}}\big), \qquad \htmlData{sym=SigSub}{\boldsymbol{\Sigma}_{\text{sub-VP}}(t)} = \htmlData{sym=ident}{\mathbf{I}} + e^{-2\htmlData{sym=intbeta}{\int_0^t \beta(s)\,\mathrm{d}s}}\htmlData{sym=ident}{\mathbf{I}} + e^{-\htmlData{sym=intbeta}{\int_0^t \beta(s)\,\mathrm{d}s}}\big(\htmlData{sym=Sig0}{\boldsymbol{\Sigma}(0)} - 2\htmlData{sym=ident}{\mathbf{I}}\big)" data-fallback="Σ_VP(t) = I + e^(−∫β)(Σ(0) − I),  Σ_sub-VP(t) = I + e^(−2∫β) I + e^(−∫β)(Σ(0) − 2I)"></div>
+<div class="symtable" data-syms="SigVP,SigSub,ident,intbeta,Sig0"></div>
+<p class="inwords"><strong>In words:</strong> “VP pulls any starting variance toward 1 exponentially fast; sub-VP does the same but always sits at or below VP, and both reach 1 in the end.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the toy (Σ(0) = 1) at <em>t</em> = 0.2: VP gives 1 + e<sup>−0.418</sup> × 0 = <strong>1</strong>; sub-VP gives 1 + 0.4334 − 0.6584 = <strong>0.7751</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t, sigma0 = 0.2, 1.0
+B = 0.1 * t + 0.5 * t * t * (20 - 0.1)
+vp = 1 + math.exp(-B) * (sigma0 - 1)
+sub_vp = 1 + math.exp(-2 * B) + math.exp(-B) * (sigma0 - 2)
+round(vp, 4), round(sub_vp, 4)  # → (1.0, 0.7751)</code></pre>
+<div class="plot" id="fig-var">
+  <div class="controls"><label for="var-s0">data variance Σ(0) = <strong id="var-s0v">1.00</strong></label><input type="range" id="var-s0" min="0.25" max="3" step="0.25" value="1"></div>
+  <div id="var-chart"></div>
+  <p class="readout" id="var-readout">Hover or tap the chart, or focus it and use the arrow keys, to read the three curves.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is time from data (0) to noise (1); the y-axis is the variance of the whole crowd at that moment. The three lines are VE (σ<sub>min</sub> = 0.01, σ<sub>max</sub> = 2), VP and sub-VP, all with the paper's β schedule, computed from Appendix B's formulas. At Σ(0) = 1 (the toy) the VP line is perfectly flat: that is the name. Slide the data variance to 3: VP now falls, and to 0.25: it rises, but either way it ends at 1. Sub-VP always stays under VP and meets it at the end. VE ignores the data's variance and keeps climbing, “exploding”, off the top of the chart: it ends at Σ(0) + 4, five times the toy's variance.</p>
+<h4>Why it matters today</h4>
+<p>These names stuck. “VP” is the DDPM family, including the lesson's <a data-lesson="primer/ml/generative/diffusion.html#linear_schedule"><code>linear_schedule</code></a>; “VE” is the SMLD family; and Table 2 below shows sub-VP gave the best likelihoods. Every one of them is a bell-curve fade, so all train with the one-jump loss of §3.3.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Solving the reverse SDE <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Once the score network is trained, sampling is a driving problem: the reverse SDE is the road, and a numerical solver is the driver. This section tries four drivers: a general-purpose one, a new one that copies the forward recipe, a driver who stops to check the map after every step (predictor-corrector), and a driver on a noise-free road (the probability flow ODE).</p>
+
+<section id="s4-1">
+<h3>4.1 General-purpose numerical SDE solvers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“Ancestral sampling, the sampling method of DDPM (Eq. 4), actually corresponds to one special discretization of the reverse-time VP SDE (Eq. 11)”<cite>Song et al. (2020), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Any recipe for stepping through an SDE will do, the simplest being the Euler-Maruyama step of §3.1 run backwards. The paper adds a “reverse diffusion” sampler: take the forward SDE's own step formula and mirror it. It is easy to write down for any SDE, where deriving DDPM-style ancestral steps can be hard.</p>
+<h4>Tiny example</h4>
+<p>With the §2.2 numbers (β = 0.02, <em>x</em> = 1.1, score −0.8333, wobble 0.1), DDPM's ancestral step lands at 1.10847 and the reverse diffusion step at 1.10853. Two different discretisations of the same SDE, agreeing to four decimals for a small step (Appendix E shows they agree as β → 0).</p>
+<div class="eq" data-tex="\htmlData{sym=xiprime}{\mathbf{x}_i'} = \big(2 - \htmlData{sym=sqrtkeepnext}{\sqrt{1 - \beta_{i+1}}}\big)\,\htmlData{sym=xnext}{\mathbf{x}_{i+1}} + \htmlData{sym=betanext}{\beta_{i+1}}\, \htmlData{sym=sstarnext}{\mathbf{s}_{\boldsymbol{\theta}^*}(\mathbf{x}_{i+1}, i+1)}, \qquad \htmlData{sym=xinew}{\mathbf{x}_i} = \htmlData{sym=xiprime}{\mathbf{x}_i'} + \sqrt{\htmlData{sym=betanext}{\beta_{i+1}}}\,\htmlData{sym=zfresh}{\mathbf{z}}" data-fallback="x_i′ = (2 − √(1 − β_(i+1))) x_(i+1) + β_(i+1) s_θ*(x_(i+1), i+1);  x_i = x_i′ + √β_(i+1) z"></div>
+<div class="symtable" data-syms="xiprime,sqrtkeepnext,xnext,betanext,sstarnext,xinew,zfresh"></div>
+<p class="inwords"><strong>In words:</strong> “undo the forward step's shrink to first order, step along the score by the noise dose, then add a fresh kick of the forward step's own size.” This is the predictor of the paper's Algorithm 3.</p>
+<p class="inwords"><strong>With the numbers:</strong> (2 − 0.98995) × 1.1 − 0.02 × 0.8333 + 0.1414 × 0.1 = 1.11105 − 0.01667 + 0.01414 = <strong>1.10853</strong>, against ancestral sampling's 1.10847.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+beta, x, s, z = 0.02, 1.1, -0.8333, 0.1
+# DDPM's ancestral step, equation 4
+ancestral = (x + beta * s) / math.sqrt(1 - beta) + math.sqrt(beta) * z
+# the reverse diffusion step: Algorithm 3's predictor
+reverse_diffusion = (2 - math.sqrt(1 - beta)) * x + beta * s + math.sqrt(beta) * z
+round(ancestral, 5), round(reverse_diffusion, 5)  # → (1.10847, 1.10853)</code></pre>
+<h4>Why it matters today</h4>
+<p>The paper's Table 1 shows reverse diffusion slightly beating ancestral sampling in every column (4.79 against 4.98 for the VE model with 1,000 steps, for example). The deeper point is the one in the quote: DDPM's sampler was an SDE solver all along, so better solvers could replace it without retraining. That is the door DDIM and every later fast sampler walked through.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Predictor-corrector samplers <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“Specifically, at each time step, the numerical SDE solver first gives an estimate of the sample at the next time step, playing the role of a “predictor”.”<cite>Song et al. (2020), §4.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A hiker descending in stages: at each stage, first stride down to the next contour line (predictor), then shuffle around a little on that contour until the group is spread out the way people on that contour really are (corrector). The corrector is §2.1's Langevin step, which needs only the score, and the score is exactly what we have. This kind of alternation is borrowed from numerical methods called <span class="t" data-tip-title="Predictor-corrector methods" data-tip="Numerical methods that alternate a cheap step that guesses the next value (the predictor) with a step that refines the guess (the corrector). The paper borrows the name for a solver step followed by Langevin steps.">predictor-corrector methods</span>.</p>
+<h4>Tiny example</h4>
+<p>At <em>t</em> = 0.2 and <em>x</em> = 0.5, the score is 0.5073. With the paper's “signal-to-noise ratio” <em>r</em> = 0.16 (the value it uses for VE models), the corrector's step size comes out as ε = 0.131, and the pull alone moves the point to 0.5665. The ratio of that pull to the size of the random kick is <em>r</em> times √α<sub><em>i</em></sub>: 0.1298.</p>
+<figure class="ix" id="fig-pc">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 300" role="img" aria-label="Predictor-corrector sampling: start from noise, then repeat a predictor step and some corrector steps until the last level, then return the sample">
+    <defs><marker id="arrpc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M180,44 V62" marker-end="url(#arrpc)"/>
+    <path class="wire" d="M180,108 V126" marker-end="url(#arrpc)"/>
+    <path class="wire" d="M180,172 V190" marker-end="url(#arrpc)"/>
+    <path class="wire" d="M130,208 H40 V86 H68" marker-end="url(#arrpc)"/>
+    <text x="46" y="200" class="lbl">no</text>
+    <path class="wire" d="M180,224 V244" marker-end="url(#arrpc)"/>
+    <text x="186" y="238" class="lbl">yes</text>
+    <g class="blk emb" data-block="pc_start"><rect x="70" y="10" width="220" height="34" rx="7"/><text x="180" y="31" text-anchor="middle">start: x ~ p_T, level N</text></g>
+    <g class="blk attn" data-block="pc_pred"><rect x="70" y="64" width="220" height="44" rx="7"/><text x="180" y="82" text-anchor="middle">predictor</text><text x="180" y="99" text-anchor="middle">one reverse-SDE step down</text></g>
+    <g class="blk ff" data-block="pc_corr"><rect x="70" y="128" width="220" height="44" rx="7"/><text x="180" y="146" text-anchor="middle">corrector</text><text x="180" y="163" text-anchor="middle">M Langevin steps at this level</text></g>
+    <g class="blk plain" data-block="pc_check"><rect x="130" y="192" width="100" height="32" rx="7"/><text x="180" y="212" text-anchor="middle">level 0?</text></g>
+    <g class="blk soft" data-block="pc_out"><rect x="70" y="246" width="220" height="44" rx="7"/><text x="180" y="264" text-anchor="middle">x₀: a new sample</text><text x="180" y="281" text-anchor="middle">(after one denoising step)</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start with <strong>start</strong> at the top.</p></div>
+  </div>
+  <figcaption>Algorithm 1 of the paper (predictor-corrector sampling), drawn as a flowchart for this page.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the top. The sampler starts from noise at the last level and loops: one predictor step moves it down one level (any SDE solver: ancestral, reverse diffusion, or the probability flow of §4.3), then <em>M</em> corrector steps shuffle it at that level. The “no” arrow returns to the predictor until level 0. The paper's two older methods are special cases: SMLD is “corrector only” (the predictor does nothing but switch the level), and DDPM is “predictor only” (<em>M</em> = 0). The paper uses <em>M</em> = 1 almost everywhere.</p>
+<p>The corrector's step size is set so that the pull and the random kick keep a fixed ratio <em>r</em> (Appendix G, Algorithm 5):</p>
+<div class="eq" data-tex="\htmlData{sym=epscorr}{\epsilon} = 2\,\htmlData{sym=alphai}{\alpha_i}\,\Big(\htmlData{sym=rsnr}{r}\,\frac{\htmlData{sym=znorm}{\|\mathbf{z}\|_2}}{\htmlData{sym=gnorm}{\|\mathbf{g}\|_2}}\Big)^2" data-fallback="ε = 2 α_i (r ‖z‖₂ / ‖g‖₂)²"></div>
+<div class="symtable" data-syms="epscorr,alphai,rsnr,znorm,gnorm"></div>
+<p class="inwords"><strong>In words:</strong> “choose the Langevin step so that the score's pull is <em>r</em> times the size of the random kick (scaled by the signal share √α<sub><em>i</em></sub> for VP models).” A bigger score means a smaller step, which keeps the corrector from overshooting where the crowd is steep.</p>
+<p class="inwords"><strong>With the numbers:</strong> α<sub><em>i</em></sub> = 0.8114<sup>2</sup> = 0.6584, ‖<strong>z</strong>‖ replaced by √<em>d</em> = 1 in one dimension (as Appendix G suggests for small batches), ‖<strong>g</strong>‖ = 0.5073: ε = 2 × 0.6584 × (0.16/0.5073)<sup>2</sup> = <strong>0.131</strong>. The pull is 0.131 × 0.5073 = 0.0665 and the kick √(2 × 0.131) = 0.5119; their ratio is <strong>0.1298</strong> = 0.16 × 0.8114.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t, x, r = 0.2, 0.5, 0.16
+B = 0.1 * t + 0.5 * t * t * (20 - 0.1)
+m, v = math.exp(-B / 2), 1 - math.exp(-B)
+# α_i: DDPM's signal share of variance at this level
+alpha_i = m * m
+# g: the score at the current point
+g = (-x + m * math.tanh(m * x / v)) / v
+# ε = 2 α_i (r ‖z‖ / ‖g‖)², with ‖z‖ = √d = 1 in one dimension
+eps = 2 * alpha_i * (r * 1.0 / abs(g)) ** 2
+round(eps, 4)  # → 0.131
+# the pull alone (the kick set to 0)
+round(x + eps * g, 4)  # → 0.5665
+# the pull's size over the kick's size √(2ε) ‖z‖
+round(eps * abs(g) / math.sqrt(2 * eps), 4)  # → 0.1298</code></pre>
+<h4>The results</h4>
+<div class="tablewrap"><table>
+  <caption>Selected rows and columns of Table 1, reproduced with attribution (Song et al., 2020): FID on CIFAR-10 (lower is better) for the variance exploding (SMLD) model, mean of five sampling runs. “P”: predictor only; “C”: corrector only; “PC1000”: 1,000 predictor and 1,000 corrector steps</caption>
+  <thead><tr><th>Predictor</th><th class="num">P1000</th><th class="num">P2000</th><th class="num">C2000</th><th class="num">PC1000</th></tr></thead>
+  <tbody>
+    <tr><td>reverse diffusion</td><td class="num">4.79</td><td class="num">4.74</td><td class="num">20.43</td><td class="num">3.60</td></tr>
+    <tr class="hl"><td>probability flow</td><td class="num">15.41</td><td class="num">10.54</td><td class="num">20.43</td><td class="num">3.51</td></tr>
+  </tbody>
+</table></div>
+<p>Compare the last three columns: they cost the same number of network calls (2,000). Doubling the predictor steps (P2000) helps a little; spending everything on the corrector (C2000) is much worse; one of each (PC1000) is best, for every predictor. The corrector-only number belongs to no predictor, so the paper prints it once across the rows. For the variance preserving (DDPM) model the gains are smaller: reverse diffusion goes from 3.21 to 3.18.</p>
+<h4>Why it matters today</h4>
+<p>The lasting idea is the split itself: some network calls move the samples down the levels, others fix the crowd at a level, and the two can be traded against each other for the same budget. The next section opens the other route, dropping the noise altogether.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Probability flow and connection to neural ODEs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S4.SS3">original</a></span></h3>
+<blockquote class="quote">“For all diffusion processes, there exists a corresponding deterministic process whose trajectories share the same marginal probability densities {p<sub>t</sub>(x)} as the SDE.”<cite>Song et al. (2020), §4.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Think of a crowd leaving a stadium. Each person wanders a bit at random, but the crowd as a whole flows smoothly out of the gates. You could replace every wanderer with a sleepwalker who follows the crowd's average flow exactly: individuals take different paths, but a photograph of the crowd at any moment looks the same. The probability flow ODE is that crowd of sleepwalkers. It is an <span class="t" data-t="ordinary differential equation">ordinary differential equation</span>: no randomness at all after the starting point.</p>
+<h4>Tiny example</h4>
+<p>At <em>t</em> = 0.2, <em>x</em> = 0.5, the reverse SDE's drift was −3.0896 plus random kicks. The probability flow uses only <em>half</em> the score term and no kicks: −1.02 − ½ × 4.08 × 0.5073 = <strong>−2.0548</strong>. Why half? The kicks spread the crowd out; the SDE needs the extra half of the score pull to undo that spreading. Without kicks, there is nothing to undo.</p>
+<div class="eq" data-tex="\htmlData{sym=dx}{\mathrm{d}\mathbf{x}} = \Big[\htmlData{sym=fdrift}{\mathbf{f}(\mathbf{x}, t)} - \htmlData{sym=half}{\tfrac{1}{2}}\, \htmlData{sym=gsq}{g(t)^2}\, \htmlData{sym=scoret}{\nabla_{\mathbf{x}} \log p_t(\mathbf{x})}\Big]\,\htmlData{sym=dt}{\mathrm{d}t}" data-fallback="dx = [f(x, t) − ½ g(t)² ∇_x log p_t(x)] dt"></div>
+<div class="symtable" data-syms="dx,fdrift,half,gsq,scoret,dt"></div>
+<p class="inwords"><strong>In words:</strong> “move by the forward drift minus half the noise strength squared times the score, and nothing else.” It runs forwards (data to noise) or backwards (noise to data) equally well.</p>
+<p class="inwords"><strong>With the numbers:</strong> drift −2.0548; one step back with d<em>t</em> = −0.01 moves 0.5 to <strong>0.5205</strong>, a smaller move than the SDE's 0.5309 (before its kick).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t, x = 0.2, 0.5
+beta = 0.1 + t * (20 - 0.1)
+B = 0.1 * t + 0.5 * t * t * (20 - 0.1)
+m, v = math.exp(-B / 2), 1 - math.exp(-B)
+score = (-x + m * math.tanh(m * x / v)) / v
+# f − ½ g² ∇log p_t: half the reverse SDE's score pull, and no kicks
+drift = -0.5 * beta * x - 0.5 * beta * score
+round(drift, 4)  # → -2.0548
+round(x + drift * -0.01, 4)  # → 0.5205</code></pre>
+<p>Press <strong>probability flow ODE</strong> in <a href="#fig1">Figure 1</a>: the paths are smooth, never cross, and fill the same shading as the SDE's jittery ones. Because the ODE is smooth, a solver can take much bigger steps along it:</p>
+<div class="plot" id="fig-steps">
+  <div id="steps-chart"></div>
+  <p class="readout" id="steps-readout">Hover or tap the chart, or focus it and use the arrow keys, to compare the two samplers at each step count.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of equal time steps (network calls per sample), on a log scale; the y-axis is how far 1,500 samples are from the toy's data, measured as the average distance between the sorted samples and a sorted list of half −1s and half +1s. Lower is better, the floor near 0.01 is the tiny noise left at the paper's stopping time ε = 0.001, and anything worse than 1.2 is drawn at the top edge: with 2 or 3 big steps the SDE's kicks throw samples far off. The solid line is the reverse SDE (Euler-Maruyama steps); the dashed line is the probability flow ODE (Euler steps), both with the exact score. With 10 steps the ODE is already within 0.1 of the data while the SDE is still about 0.5 away; the SDE needs roughly ten times as many steps to catch up. This is an illustrative toy with a perfect score: with a learned score and 1,000 steps, the paper found the SDE samplers <em>better</em> (Table 1 above, by a wide margin for the VE model), and it is at small step counts that the ODE shines.</p>
+<h4>Exact likelihood</h4>
+<p>Because the ODE is reversible and smooth, it can also say exactly how probable any image is, as other <span class="t" data-t="neural ode">neural ODEs</span> do. Follow the image forward to noise, and add up how much the flow stretched space on the way: the <em>divergence</em> of the drift, which measures how fast nearby points spread apart. Tiny example: data drawn from a bell curve of variance 0.25, and the point <em>x</em>(0) = 0.3. The flow carries it to 0.6 (the crowd's width doubles), space is stretched by a factor of 2 in total (ln 2 = 0.6931 added up), and the formula returns log <em>p</em><sub>0</sub>(0.3) = −0.4058, exactly the bell curve's own value.</p>
+<div class="eq" data-tex="\htmlData{sym=logp0}{\log p_0(\mathbf{x}(0))} = \htmlData{sym=logpT}{\log p_T(\mathbf{x}(T))} + \htmlData{sym=intT}{\int_0^T} \htmlData{sym=divf}{\nabla \cdot \tilde{\mathbf{f}}_{\boldsymbol{\theta}}(\mathbf{x}(t), t)}\, \htmlData{sym=intT}{\mathrm{d}t}" data-fallback="log p_0(x(0)) = log p_T(x(T)) + ∫₀ᵀ ∇·f̃_θ(x(t), t) dt"></div>
+<div class="symtable" data-syms="logp0,logpT,intT,divf"></div>
+<p class="inwords"><strong>In words:</strong> “the log-probability of a data point is the log-probability of the noise it flows to, plus the total amount the flow stretched space along the way.” (Appendix D.2, equation 39; stretching makes the noise end less dense, so it has to be added back.)</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>x</em>(<em>T</em>) = 0.6, log <em>p<sub>T</sub></em>(0.6) = −1.0989, total stretch 0.6931, sum <strong>−0.4058</strong>; the data's own bell curve gives −0.4058 at 0.3.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# data: a bell curve of variance 0.25, faded by the VP SDE as before
+s2 = 0.25
+def B(t):
+    return 0.1 * t + 0.5 * t * t * (20 - 0.1)
+def beta(t):
+    return 0.1 + t * (20 - 0.1)
+def Sigma(t):
+    # the crowd's variance at time t (Appendix B)
+    return 1 + math.exp(-B(t)) * (s2 - 1)
+def log_normal(x, var):
+    return -0.5 * math.log(2 * math.pi * var) - x * x / (2 * var)
+# follow the probability flow from x(0) = 0.3 to t = 1, adding up ∇·f̃ on the way
+x, total, n = 0.3, 0.0, 10_000
+h = 1 / n
+for i in range(n):
+    # for a bell-curve crowd, f̃ = k x with k = −½β(1 − 1/Σ), so ∇·f̃ = k
+    k = -0.5 * beta(i * h) * (1 - 1 / Sigma(i * h))
+    total += k * h
+    x += k * x * h
+round(x, 4), round(total, 4)  # → (0.6, 0.6931)
+round(log_normal(x, Sigma(1.0)), 4)  # → -1.0989
+# log p_0(x(0)) = log p_T(x(T)) + ∫ ∇·f̃ dt
+round(log_normal(x, Sigma(1.0)) + total, 4)  # → -0.4058
+# the exact answer, from the data's own bell curve
+round(log_normal(0.3, s2), 4)  # → -0.4058</code></pre>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2, reproduced with attribution (Song et al., 2020): negative log-likelihood on CIFAR-10 test images in bits per dimension, and FID of samples from the ODE; lower is better. * DDPM's own numbers are upper bounds, on discrete data</caption>
+  <thead><tr><th>Model</th><th class="num">NLL</th><th class="num">FID (ODE)</th></tr></thead>
+  <tbody>
+    <tr><td>Flow++ (a normalizing flow)</td><td class="num">3.29</td><td class="num">-</td></tr>
+    <tr><td>DDPM (L<sub>simple</sub>), as published</td><td class="num">≤ 3.75*</td><td class="num">3.17</td></tr>
+    <tr><td>the same DDPM, likelihood via the ODE</td><td class="num">3.28</td><td class="num">3.37</td></tr>
+    <tr><td>DDPM, continuous training (VP)</td><td class="num">3.21</td><td class="num">3.69</td></tr>
+    <tr><td>DDPM, continuous training (sub-VP)</td><td class="num">3.05</td><td class="num">3.56</td></tr>
+    <tr class="hl"><td>DDPM++ continuous (deep, sub-VP)</td><td class="num">2.99</td><td class="num">2.92</td></tr>
+  </tbody>
+</table></div>
+<p>Read down: the very same trained DDPM scores 3.28 instead of its bound of 3.75 once the likelihood is computed exactly; training with the continuous loss helps; sub-VP beats VP every time; and the best model reaches 2.99, a record for this kind of evaluation, without ever being trained to maximise likelihood. The paper also notes three other gifts of the ODE: every image has a <strong>latent code</strong> (where it flows to at <em>t</em> = <em>T</em>) that can be interpolated or rescaled; that code is <strong>uniquely identifiable</strong>, since the forward SDE has nothing learned in it, so two differently built models trained well give nearly the same code (Appendix D.5 checks this); and a black-box adaptive ODE solver can cut network calls by over 90% without visibly harming samples (Figure 3 of the paper).</p>
+<h4>Why it matters today</h4>
+<p>This section is the root of fast diffusion sampling. DDIM, derived independently, turns out to step along this same ODE (see the <a href="ddim.html">DDIM companion</a>, Proposition 1, and the lesson's <a data-lesson="primer/ml/generative/diffusion.html#ddim_step"><code>ddim_step</code></a>). And once sampling is “solve an ODE”, the next question is obvious: why not train the ODE's road directly, and make it straight? That is the <a href="flow-matching.html">flow matching</a> and <a href="rectified-flow.html">rectified flow</a> papers, whose samplers are the lesson's <a data-lesson="primer/ml/generative/diffusion.html#euler_step"><code>euler_step</code></a>.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Architecture improvements <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S4.SS4">original</a></span></h3>
+<blockquote class="quote">“Surprisingly, we can achieve better FID than the previous best conditional generative model without requiring labeled data.”<cite>Song et al. (2020), §4.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A better recipe also deserves a better oven. The authors rebuilt DDPM's <span class="t" data-t="u-net">U-Net</span> with parts borrowed from the best image GANs, searched over the combinations, and named the winners after the method each served: <strong>NCSN++</strong> for the VE SDE and <strong>DDPM++</strong> for VP and sub-VP.</p>
+<h4>What changed in the network</h4>
+<ul>
+  <li>Smoother up- and down-sampling of images (anti-aliased filters, as in StyleGAN2).</li>
+  <li>Skip connections scaled down by 1/√2, which keeps the sum of two paths at the same size as each.</li>
+  <li>BigGAN's <span class="t" data-t="residual connection">residual</span> blocks, and 4 of them per resolution instead of 2 (8 in the “deep” models).</li>
+  <li>For continuous training, the time <em>t</em> enters through random Fourier features instead of DDPM's <span class="t" data-t="sinusoidal positional encoding">sinusoidal step embedding</span>.</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 3, reproduced with attribution (Song et al., 2020): CIFAR-10 sample quality. FID lower is better, Inception score (IS) higher is better</caption>
+  <thead><tr><th>Model</th><th class="num">FID</th><th class="num">IS</th></tr></thead>
+  <tbody>
+    <tr><td>StyleGAN2-ADA, conditional (given the class)</td><td class="num">2.42</td><td class="num">10.14</td></tr>
+    <tr><td>StyleGAN2-ADA, unconditional</td><td class="num">2.92</td><td class="num">9.83</td></tr>
+    <tr><td>DDPM</td><td class="num">3.17</td><td class="num">9.46</td></tr>
+    <tr><td>DDPM++ continuous (deep, VP)</td><td class="num">2.41</td><td class="num">9.68</td></tr>
+    <tr class="hl"><td>NCSN++ continuous (deep, VE)</td><td class="num">2.20</td><td class="num">9.89</td></tr>
+  </tbody>
+</table></div>
+<p>On FID the best VE model beat every listed model, including a GAN that was told which class to draw. The trade-off the paper reports is consistent: VE gave the best samples, VP and sub-VP the best likelihoods, so “practitioners likely need to experiment with different SDEs”. The same recipe produced the first 1024 × 1024 face images from a score-based model (Appendix H.3), with visible flaws such as imperfect facial symmetry.</p>
+<h4>Why it matters today</h4>
+<p>Much of the jump from DDPM's 3.17 to 2.20 is architecture and training, not the SDE view itself; the paper is careful to separate the two (Table 3 lists the old-objective NCSN++ at 2.45). The lesson that bigger, better-conditioned denoisers matter carried straight on into transformer denoisers.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Controllable generation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S5">original</a></span></h2>
+<blockquote class="quote">“The continuous structure of our framework allows us to not only produce data samples from p<sub>0</sub>, but also from p<sub>0</sub>(x(0) | y) if p<sub>t</sub>(y | x(t)) is known.”<cite>Song et al. (2020), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>You want not just any photo but a photo of a horse. The score says “toward any photo”; a classifier that can recognise horses in noisy images says “toward more horse”. Add the two arrows and follow the sum. Because the score is a slope of a <em>logarithm</em>, and the log of a product is a sum, Bayes' rule becomes plain addition of arrows. This is the idea behind <span class="t" data-t="classifier guidance">classifier guidance</span>.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Give the toy a label: <em>y</em> = +1 means “white”. At <em>t</em> = 0.2 and <em>x</em> = 0.5, a perfect noisy-image classifier says the pixel is white with probability 0.9149; the slope of its log is 0.4042. The unconditional score was 0.5073. Their sum, 0.9115, is exactly the score of the white bump alone, (0.8114 − 0.5)/0.3416: the classifier has deleted the black bump from the map.</p>
+<div class="eq" data-tex="\htmlData{sym=dx}{\mathrm{d}\mathbf{x}} = \Big\{\htmlData{sym=fdrift}{\mathbf{f}(\mathbf{x}, t)} - \htmlData{sym=gsq}{g(t)^2}\big[\htmlData{sym=scoret}{\nabla_{\mathbf{x}} \log p_t(\mathbf{x})} + \htmlData{sym=classgrad}{\nabla_{\mathbf{x}} \log p_t(\mathbf{y} \mid \mathbf{x})}\big]\Big\}\,\htmlData{sym=dtneg}{\mathrm{d}t} + \htmlData{sym=gdiff}{g(t)}\,\htmlData{sym=dwbar}{\mathrm{d}\bar{\mathbf{w}}}" data-fallback="dx = {f(x, t) − g(t)² [∇_x log p_t(x) + ∇_x log p_t(y | x)]} dt + g(t) dw̄"></div>
+<div class="symtable" data-syms="dx,fdrift,gsq,scoret,classgrad,dtneg,gdiff,dwbar"></div>
+<p class="inwords"><strong>In words:</strong> “the reverse SDE of §3.2, with the score replaced by the score plus the slope of the classifier's log-probability for the wanted label.” The replacement is exact because of Appendix I's one-line identity: ∇ log <em>p<sub>t</sub></em>(<strong>x</strong> | <strong>y</strong>) = ∇ log <em>p<sub>t</sub></em>(<strong>x</strong>) + ∇ log <em>p<sub>t</sub></em>(<strong>y</strong> | <strong>x</strong>).</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>p<sub>t</sub></em>(white | 0.5) = 0.9149, slope 0.4042, sum 0.9115 = (0.8114 − 0.5)/0.3416. The reverse drift becomes −1.02 − 4.08 × 0.9115 = <strong>−4.7388</strong>, a stronger pull toward white than the unconditional −3.0896.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+t, x = 0.2, 0.5
+beta = 0.1 + t * (20 - 0.1)
+B = 0.1 * t + 0.5 * t * t * (20 - 0.1)
+m, v = math.exp(-B / 2), 1 - math.exp(-B)
+# ∇log p_t(x): the unconditional score
+uncond = (-x + m * math.tanh(m * x / v)) / v
+# p_t(y = white | x): the share of the crowd at x that came from +1
+p_white = 1 / (1 + math.exp(-2 * m * x / v))
+round(p_white, 4)  # → 0.9149
+# ∇log p_t(y = white | x): the slope of the classifier's log-probability
+grad = 2 * m / v * (1 - p_white)
+round(uncond, 4), round(grad, 4)  # → (0.5073, 0.4042)
+# their sum is the score of the white bump alone, (m − x)/v
+round(uncond + grad, 4), round((m - x) / v, 4)  # → (0.9115, 0.9115)
+# the conditional reverse drift f − g² (score + slope)
+round(-0.5 * beta * x - beta * (uncond + grad), 4)  # → -4.7388</code></pre>
+<div class="plot" id="fig-cond">
+  <div class="controls"><label for="cond-t">time t = <strong id="cond-tv">0.15</strong></label><input type="range" id="cond-t" min="0.1" max="1" step="0.01" value="0.15"></div>
+  <div id="cond-chart"></div>
+  <p class="readout" id="cond-readout">Hover or tap the chart, or focus it and use the arrow keys, to read the three arrows at any pixel value.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the pixel value; the y-axis is the size of an arrow (positive means “push up, toward white”). At <em>t</em> = 0.15 the crowd still has two bumps, centred at ±0.89. The solid curve is the unconditional score: between the bumps it points toward whichever is nearer (positive just above 0, negative just below), and beyond them it points back in. The dashed curve is the classifier's slope for “white”: always positive, largest where the pixel looks black, and fading to 0 where the classifier is already sure it is white. The dotted line is their sum, the conditional score: a straight line that crosses 0 exactly at the white bump's centre, so every pixel is pushed toward white. Drag <em>t</em> past about 0.25 and the two bumps merge into one hump: the plain score now points toward 0 everywhere, while the conditional score still points at white. Toward <em>t</em> = 1 everything flattens, because at pure noise there is little left to push toward.</p>
+<h3 class="rung">Imputation and colourisation</h3>
+<p>Inpainting is conditioning on part of the image itself. Tiny example: a two-pixel image where the first pixel is known. At each reverse step, fade the known pixel to the current noise level with the forward SDE (you know its fade exactly), paste it in, and let the reverse SDE update only the unknown pixel using the score of the pasted-together image (Appendix I.2). For colourisation, the known part is the grey level, which is a mix of all three colour channels; an orthogonal change of colour axes (one axis is the grey level, the other two carry colour) makes it a plain “known channel”, and inpainting does the rest (Appendix I.3). No retraining is needed for either.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Adding a classifier's slope to the score is the ancestor of the guidance used in every text-to-image model. The later refinement removes the separate classifier entirely: see the <a href="classifier-free-guidance.html">classifier-free guidance companion</a> and the lesson's <a data-lesson="primer/ml/generative/diffusion.html#guided_noise"><code>guided_noise</code></a>.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#S6">original</a></span></h2>
+<blockquote class="quote">“While our proposed sampling approaches improve results and enable more efficient sampling, they remain slower at sampling than GANs (Goodfellow et al. 2014) on the same datasets.”<cite>Song et al. (2020), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The paper finishes with a map and an honest note. The map: every earlier score-based and diffusion method is a point on one landscape of SDEs, losses and solvers. The note: walking that landscape still takes hundreds of steps where a <span class="t" data-t="gan">GAN</span> takes one, and the many samplers bring many knobs to tune.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Both open problems became research programmes: faster samplers and distillation into few-step students for the first; principled design spaces for the second. The <a href="rectified-flow.html">rectified flow</a> paper attacks the first by straightening the road until one step is enough.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices, briefly <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2011.13456#Ax1">original</a></span></h2>
+<h3 class="rung">What they contain</h3>
+<ul>
+  <li><strong>A, more general SDEs.</strong> The noise strength may be a matrix that depends on <strong>x</strong>; the reverse SDE and the probability flow gain one extra term each.</li>
+  <li><strong>B, the three SDEs derived.</strong> The limits of SMLD's and DDPM's chains as the number of steps grows, the variance formulas drawn above, and the bell-curve fades (equation 29).</li>
+  <li><strong>C, settings.</strong> VP uses β̄<sub>min</sub> = 0.1 and β̄<sub>max</sub> = 20 to match DDPM. Solvers stop at a small time ε rather than 0 (10<sup>−5</sup> for VE; for VP, 10<sup>−3</sup> when sampling and 10<sup>−5</sup> for training and likelihoods), because VE's noise level jumps at <em>t</em> = 0 and VP's variance vanishes there.</li>
+  <li><strong>D, probability flow.</strong> The derivation uses the <span class="t" data-tip-title="Fokker-Planck equation" data-tip="The equation for how a crowd's density changes under an SDE: the drift carries density along, and the noise spreads it out. Rewriting the spreading as one more drift turns it into a noise-free flow with the same densities.">Fokker-Planck equation</span>: fold the noise's spreading into the drift and the SDE becomes an ODE with the same crowd at every moment. Likelihoods use an adaptive Runge-Kutta solver and the trace estimator below. D.5 compares two differently built models' codes for the same image and finds them nearly identical.</li>
+  <li><strong>E and F, reverse diffusion and ancestral sampling.</strong> The reverse diffusion rule for any SDE, and DDPM-style ancestral steps adapted to SMLD models.</li>
+  <li><strong>G, predictor-corrector details.</strong> Algorithms 2 to 5, the step-size rule above, and a final <strong>denoising</strong> step using <span class="t" data-tip-title="Tweedie's formula" data-tip="A formula for the average clean value behind a noisy observation: the noisy value plus the noise variance times the score. Applied once at the end, it removes the last trace of noise in one step.">Tweedie's formula</span> at the end of sampling, which the paper finds matters a lot for FID.</li>
+  <li><strong>H, architectures and training.</strong> 1.3 million iterations, an <span class="t" data-tip-title="Exponential moving average (EMA) of weights" data-tip="Keeping a slowly updated average of the network's weights over training and sampling with that average. It smooths out the noise of individual updates.">exponential moving average</span> of the weights (0.999 for VE, 0.9999 for VP), and the 1024 × 1024 model.</li>
+  <li><strong>I, controllable generation.</strong> The identity used in §5, and a general recipe for inverse problems when a forward model <em>p</em>(<strong>y</strong> | <strong>x</strong>) is known.</li>
+</ul>
+<h3 class="rung">The trace trick, decoded</h3>
+<p>Computing the divergence ∇·<strong>f̃</strong> exactly means adding up the diagonal of a <em>d</em> × <em>d</em> matrix of slopes (the Jacobian), one network pass per dimension: 3,072 passes for a CIFAR-10 image. The paper instead uses the Skilling-Hutchinson estimator: squeeze the matrix between a random vector and itself.</p>
+<div class="eq" data-tex="\htmlData{sym=divf}{\nabla \cdot \tilde{\mathbf{f}}_{\boldsymbol{\theta}}(\mathbf{x}, t)} = \htmlData{sym=Eeps}{\mathbb{E}_{p(\boldsymbol{\epsilon})}}\big[\htmlData{sym=epsvec}{\boldsymbol{\epsilon}}^{\top}\, \htmlData{sym=jacf}{\nabla \tilde{\mathbf{f}}_{\boldsymbol{\theta}}(\mathbf{x}, t)}\, \htmlData{sym=epsvec}{\boldsymbol{\epsilon}}\big]" data-fallback="∇·f̃_θ(x, t) = E_p(ε)[εᵀ ∇f̃_θ(x, t) ε]"></div>
+<div class="symtable" data-syms="divf,Eeps,epsvec,jacf"></div>
+<p class="inwords"><strong>In words:</strong> “the sum of the diagonal equals the average, over random vectors with mean 0 and identity covariance, of the vector times the matrix times the vector.” One backward pass computes εᵀ times the matrix, so each estimate costs about one network call, and the estimate is an <span class="t" data-t="unbiased estimator">unbiased estimator</span>.</p>
+<p class="inwords"><strong>With the numbers:</strong> take the 2 × 2 matrix [[2, 1], [0, 3]], whose diagonal sums to 5. The four sign vectors (±1, ±1) give εᵀ<strong>A</strong>ε = 6, 4, 4 and 6; the average is exactly <strong>5</strong>. The off-diagonal 1 appears with sign +1 half the time and −1 half the time, and cancels.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># A: a 2 × 2 matrix of slopes whose diagonal sums to 2 + 3 = 5
+A = [[2, 1], [0, 3]]
+# εᵀ A ε for every random sign vector ε in {−1, +1}²
+values = []
+for e1 in (-1, 1):
+    for e2 in (-1, 1):
+        e = [e1, e2]
+        values.append(sum(e[i] * A[i][j] * e[j] for i in range(2) for j in range(2)))
+values  # → [6, 4, 4, 6]
+# their average is the diagonal's sum exactly
+sum(values) / len(values)  # → 5.0</code></pre>
+<h3 class="rung">Two small slips in the source</h3>
+<p>In Appendix A's sliced score matching loss (equation 19) the second term is printed as <strong>v</strong><sup>⊤</sup><strong>s</strong><sub>θ</sub><strong>v</strong>, a vector times a vector times a vector; for sliced score matching it has to be <strong>v</strong><sup>⊤</sup>∇<strong>s</strong><sub>θ</sub><strong>v</strong>, with the Jacobian of the score in the middle, exactly the shape of the trace trick above. And in Appendix I.4's equation 50, the integral is written over d<strong>y</strong> where the variable being integrated is <strong>y</strong>(<em>t</em>). Neither affects anything else in the paper.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2020</h2>
+<p>The framework stuck; many of its specific choices moved on.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>Predictor-corrector SDE sampling with 1,000 to 2,000 steps</td><td>Deterministic ODE solvers (DDIM and its successors) with tens of steps</td><td>Sampling cost is paid on every image</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>The ODE's road inherited from a noising SDE</td><td>The road chosen directly, and often straight: flow matching and rectified flow</td><td>Straighter roads need fewer solver steps</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>A separate noisy-image classifier for conditioning</td><td>Classifier-free guidance from one network</td><td>No second network to train, and it works with text</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>A U-Net on 32 × 32 pixels</td><td>Transformers over patches of an autoencoder's latent</td><td>Cheaper per image, and they scale</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Predicting the score (or the noise)</td><td>Predicting the noise, the clean image, or a velocity, which are related by simple rescalings</td><td>Different targets balance the noise levels differently</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Yang Song, Jascha Sohl-Dickstein, Diederik P. Kingma, Abhishek Kumar, Stefano Ermon and Ben Poole, <em>Score-Based Generative Modeling through Stochastic Differential Equations</em>, ICLR 2021. <a href="https://arxiv.org/abs/2011.13456">arXiv:2011.13456</a>. Quotations are brief and attributed, and only selected rows of the paper's tables are reproduced, with attribution. Figures are redrawn from scratch and computed live; all explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §2.1
+    thetastar: { tex: "\\boldsymbol{\\theta}^*", name: "The best weights", meaning: "The network weights that make the loss after the arg min as small as possible.", shape: "all the network's parameters", example: "whatever training converges to" },
+    argmin: { tex: "\\arg\\min_{\\theta}", name: "Arg min", meaning: "“The θ that makes what follows smallest”: not the smallest value itself, but where it is reached.", shape: "picks one set of weights", example: "the weights with the lowest average loss" },
+    sumi: { tex: "\\sum_{i=1}^{N}", name: "Sum over noise levels", meaning: "Add up the term that follows for every noise level i from 1 to N.", shape: "N terms into one number", example: "N = 1,000 in the paper's experiments" },
+    sigi2: { tex: "\\sigma_i^2", name: "Weight of level i (SMLD)", meaning: "The noise variance at level i, used as that level's weight so that big-noise and small-noise levels count about equally.", shape: "one positive number per level", example: "0.25 for σ = 0.5" },
+    Edata: { tex: "\\mathbb{E}_{p_{\\mathrm{data}}(\\mathbf{x})}", name: "Average over the data", meaning: "An expectation: draw real examples from the training set and average what follows.", shape: "turns many numbers into one", example: "x = 1, the white pixel" },
+    Epert: { tex: "\\mathbb{E}_{p_{\\sigma_i}(\\tilde{\\mathbf{x}}\\mid\\mathbf{x})}", name: "Average over blurs", meaning: "For one data point x, draw blurred copies x̃ = x + σ_i z with z a standard bell-curve draw, and average.", shape: "turns many numbers into one", example: "z = 0.4 gives x̃ = 1.2" },
+    stheta: { tex: "\\mathbf{s}_{\\boldsymbol{\\theta}}(\\tilde{\\mathbf{x}}, \\sigma_i)", name: "The score network (SMLD)", meaning: "The network's guess of the slope of log-crowdedness at x̃, told which noise level it is at.", shape: "same size as x", example: "a guess of −0.5" },
+    gradkern: { tex: "\\nabla_{\\tilde{\\mathbf{x}}}\\log p_{\\sigma_i}(\\tilde{\\mathbf{x}}\\mid\\mathbf{x})", name: "The target slope", meaning: "The score of the bell curve of blurs around the one data point x: −(x̃ − x)/σ². It points from x̃ back to x.", shape: "same size as x", example: "−(1.2 − 1)/0.25 = −0.8" },
+    sqnorm: { tex: "\\|\\cdot\\|_2^2", name: "Squared length", meaning: "Square each entry of the difference and add them up: the squared distance between two arrows.", shape: "one number", example: "(−0.5 + 0.8)² = 0.09" },
+    xim: { tex: "\\mathbf{x}_i^{m}", name: "The hiker after step m", meaning: "The sample at noise level i after m Langevin steps.", shape: "same size as x", example: "0.6481" },
+    ximprev: { tex: "\\mathbf{x}_i^{m-1}", name: "The hiker before the step", meaning: "The sample at noise level i after m − 1 steps; the first one comes from the previous level.", shape: "same size as x", example: "0.5" },
+    epsi: { tex: "\\epsilon_i", name: "Step size", meaning: "How far each Langevin step moves along the score at level i. Smaller is more accurate and slower.", shape: "one small positive number", example: "0.05" },
+    sstar: { tex: "\\mathbf{s}_{\\boldsymbol{\\theta}^*}(\\mathbf{x}, \\sigma_i)", name: "The trained score", meaning: "The trained network's slope at the current point: which way the crowd is denser, and how steeply.", shape: "same size as x", example: "1.0637 at x = 0.5, σ = 0.6" },
+    sqrt2eps: { tex: "\\sqrt{2\\epsilon_i}", name: "Stumble size", meaning: "How big the random stumble is: tied to the step size so that, over many steps, the hikers spread exactly like the crowd.", shape: "one number", example: "√0.1 = 0.3162" },
+    zim: { tex: "\\mathbf{z}_i^{m}", name: "A random stumble", meaning: "A fresh draw from the standard bell curve for every step.", shape: "same size as x", example: "0.3" },
+    // §2.2
+    oneminusalpha: { tex: "(1 - \\alpha_i)", name: "Weight of step i (DDPM)", meaning: "The noise variance at step i, used as that step's weight, as σ_i² is in SMLD.", shape: "between 0 and 1", example: "0.36" },
+    Epertalpha: { tex: "\\mathbb{E}_{p_{\\alpha_i}(\\tilde{\\mathbf{x}}\\mid\\mathbf{x})}", name: "Average over fades", meaning: "Draw faded copies x̃ = √α_i x + √(1 − α_i) z of one data point and average. Here α_i is DDPM's ᾱ: the signal share left after i steps.", shape: "turns many numbers into one", example: "z = 0.5 gives x̃ = 1.1" },
+    sthetai: { tex: "\\mathbf{s}_{\\boldsymbol{\\theta}}(\\tilde{\\mathbf{x}}, i)", name: "The score network (DDPM)", meaning: "The same network, told the step number i instead of the noise level.", shape: "same size as x", example: "any guess, graded against −0.8333" },
+    gradkernalpha: { tex: "\\nabla_{\\tilde{\\mathbf{x}}}\\log p_{\\alpha_i}(\\tilde{\\mathbf{x}}\\mid\\mathbf{x})", name: "The target slope (DDPM)", meaning: "The score of the fade around one data point: −(x̃ − √α_i x)/(1 − α_i), which is the noise z flipped and divided by √(1 − α_i).", shape: "same size as x", example: "−0.8333" },
+    xprev: { tex: "\\mathbf{x}_{i-1}", name: "One step cleaner", meaning: "The sample after one ancestral step back.", shape: "same size as x", example: "1.1085" },
+    xi: { tex: "\\mathbf{x}_i", name: "The current sample", meaning: "The sample at step i, on the way from noise (step N) to data (step 0).", shape: "same size as x", example: "1.1" },
+    betai: { tex: "\\beta_i", name: "Noise dose of step i", meaning: "How much noise the forward chain added at step i.", shape: "a small number between 0 and 1", example: "0.02" },
+    sstari: { tex: "\\mathbf{s}_{\\boldsymbol{\\theta}^*}(\\mathbf{x}_i, i)", name: "The trained score at step i", meaning: "The network's slope at the current sample.", shape: "same size as x", example: "−0.8333" },
+    sqrtkeep: { tex: "\\sqrt{1-\\beta_i}", name: "This step's shrink", meaning: "The forward step multiplied the signal by this; dividing by it undoes the shrink.", shape: "just under 1", example: "0.98995" },
+    sqrtbeta: { tex: "\\sqrt{\\beta_i}", name: "Wobble size", meaning: "The size of the fresh noise added on the way back.", shape: "one number", example: "0.1414" },
+    zi: { tex: "\\mathbf{z}_i", name: "Fresh noise", meaning: "A new standard bell-curve draw at every step.", shape: "same size as x", example: "0.1" },
+    // §3.1
+    dx: { tex: "\\mathrm{d}\\mathbf{x}", name: "A tiny change in x", meaning: "How much the point moves over the tiny time dt.", shape: "same size as x", example: "0.1918 over dt = 0.01 in §3.1" },
+    fdrift: { tex: "\\mathbf{f}(\\mathbf{x}, t)", name: "Drift", meaning: "The steady current: a velocity for every place and time. For VP it is −½β(t)x, a pull toward 0.", shape: "same size as x", example: "−½ × 4.08 × 0.5 = −1.02" },
+    dt: { tex: "\\mathrm{d}t", name: "A tiny time step", meaning: "A short stretch of time. In a simulation it is the step size.", shape: "one small number", example: "0.01" },
+    gdiff: { tex: "g(t)", name: "Noise strength (diffusion coefficient)", meaning: "How hard the random kicks hit at time t. It does not depend on x in this paper's main text.", shape: "one number per t", example: "√4.08 = 2.0199 for VP at t = 0.2" },
+    dw: { tex: "\\mathrm{d}\\mathbf{w}", name: "A tiny random kick", meaning: "The change in a Wiener process over dt: a bell-curve draw with variance dt, so √dt times a standard draw z.", shape: "same size as x", example: "√0.01 × 1 = 0.1" },
+    // §3.2
+    gsq: { tex: "g(t)^2", name: "Noise strength squared", meaning: "How strongly the score must pull to undo the noise's spreading; it is the rate at which the noise adds variance.", shape: "one number per t", example: "4.08" },
+    scoret: { tex: "\\nabla_{\\mathbf{x}}\\log p_t(\\mathbf{x})", name: "The score at time t", meaning: "The slope of the logarithm of the crowd's density at time t: the direction in which the crowd gets denser fastest. The network s_θ(x, t) learns it.", shape: "same size as x", example: "0.5073 at x = 0.5, t = 0.2" },
+    dtneg: { tex: "\\mathrm{d}t", name: "A tiny step backwards in time", meaning: "In the reverse SDE time runs from T down to 0, so dt is negative.", shape: "one small negative number", example: "−0.01" },
+    dwbar: { tex: "\\mathrm{d}\\bar{\\mathbf{w}}", name: "A tiny random kick, time running backwards", meaning: "A Wiener process whose clock runs from T to 0: still a fresh bell-curve draw of variance |dt| at every step.", shape: "same size as x", example: "set to 0 in the worked step" },
+    // §3.3
+    Et: { tex: "\\mathbb{E}_{t}", name: "Average over time", meaning: "Draw the moment t uniformly between 0 and T and average.", shape: "turns many numbers into one", example: "t = 0.2" },
+    lambdat: { tex: "\\lambda(t)", name: "Weighting over time", meaning: "A positive weight for each moment. The usual choice is the fade's variance, so every moment counts about equally.", shape: "one positive number per t", example: "v = 0.3416" },
+    Ex0: { tex: "\\mathbb{E}_{\\mathbf{x}(0)}", name: "Average over data", meaning: "Draw real examples x(0) from the data.", shape: "turns many numbers into one", example: "x(0) = 1" },
+    Extx0: { tex: "\\mathbb{E}_{\\mathbf{x}(t)\\mid\\mathbf{x}(0)}", name: "Average over fades to time t", meaning: "Fade the example to time t in one jump, using the forward SDE's known formula, and average over the noise.", shape: "turns many numbers into one", example: "z = 0.5 gives x(t) = 1.1036" },
+    sthetat: { tex: "\\mathbf{s}_{\\boldsymbol{\\theta}}(\\mathbf{x}(t), t)", name: "The time-dependent score network", meaning: "One network for every moment: it is given the faded point and the time t.", shape: "same size as x", example: "a guess of −0.7" },
+    gradkernt: { tex: "\\nabla_{\\mathbf{x}(t)}\\log p_{0t}(\\mathbf{x}(t)\\mid\\mathbf{x}(0))", name: "The target: the fade's slope", meaning: "The score of the bell curve of fades around the one example x(0). The perturbation kernel p_0t is known exactly for the SDEs of §3.4.", shape: "same size as x", example: "−0.8554" },
+    // §3.4
+    dsigma2: { tex: "\\sqrt{\\mathrm{d}[\\sigma^2(t)]/\\mathrm{d}t}", name: "VE noise strength", meaning: "The square root of how fast the noise variance σ²(t) grows: chosen so that after time t the total added variance is σ²(t).", shape: "one number per t", example: "0.4604 at t = 0.5" },
+    betat: { tex: "\\beta(t)", name: "Noise rate", meaning: "How fast noise is added at time t. The paper's VP and sub-VP use a straight line from 0.1 at t = 0 to 20 at t = 1.", shape: "one positive number per t", example: "4.08 at t = 0.2" },
+    xvec: { tex: "\\mathbf{x}", name: "The current point", meaning: "Where the sample is now; the drift pulls it toward 0 in proportion to how far out it is.", shape: "a vector (one number per pixel)", example: "0.5" },
+    intbeta: { tex: "\\int_0^t \\beta(s)\\,\\mathrm{d}s", name: "Accumulated noise", meaning: "The total noise rate added up from time 0 to t (an integral, the continuous version of a sum).", shape: "one non-negative number", example: "0.418 at t = 0.2" },
+    SigVP: { tex: "\\boldsymbol{\\Sigma}_{\\text{VP}}(t)", name: "Crowd variance under VP", meaning: "The covariance of x(t) when data are faded by the VP SDE: how spread out the whole crowd is at time t.", shape: "d × d (one number in 1-D)", example: "1 for the toy" },
+    SigSub: { tex: "\\boldsymbol{\\Sigma}_{\\text{sub-VP}}(t)", name: "Crowd variance under sub-VP", meaning: "The same, for the sub-VP SDE. It is never above the VP value.", shape: "d × d (one number in 1-D)", example: "0.7751 for the toy at t = 0.2" },
+    Sig0: { tex: "\\boldsymbol{\\Sigma}(0)", name: "Data variance", meaning: "How spread out the data themselves are, before any noise.", shape: "d × d (one number in 1-D)", example: "1 for pixels at ±1" },
+    ident: { tex: "\\mathbf{I}", name: "Identity matrix", meaning: "The variance of pure standard noise: 1 in every direction, no tilt.", shape: "d × d", example: "1 in one dimension" },
+    // §4.1
+    xiprime: { tex: "\\mathbf{x}_i'", name: "Before the kick", meaning: "The reverse diffusion step's deterministic part, before fresh noise is added.", shape: "same size as x", example: "1.09438" },
+    sqrtkeepnext: { tex: "\\sqrt{1-\\beta_{i+1}}", name: "The forward step's shrink", meaning: "How much the forward step from level i to i + 1 shrank the signal; 2 minus it undoes that shrink to first order.", shape: "just under 1", example: "0.98995" },
+    xnext: { tex: "\\mathbf{x}_{i+1}", name: "The noisier sample", meaning: "The sample at level i + 1, one step closer to noise.", shape: "same size as x", example: "1.1" },
+    betanext: { tex: "\\beta_{i+1}", name: "Noise dose of the forward step", meaning: "The noise the forward chain added going from level i to i + 1.", shape: "a small number", example: "0.02" },
+    sstarnext: { tex: "\\mathbf{s}_{\\boldsymbol{\\theta}^*}(\\mathbf{x}_{i+1}, i+1)", name: "The trained score at level i + 1", meaning: "The network's slope at the noisier sample.", shape: "same size as x", example: "−0.8333" },
+    xinew: { tex: "\\mathbf{x}_i", name: "The new sample", meaning: "The sample at level i after the predictor step.", shape: "same size as x", example: "1.10853" },
+    zfresh: { tex: "\\mathbf{z}", name: "Fresh noise", meaning: "A new standard bell-curve draw.", shape: "same size as x", example: "0.1" },
+    // §4.2
+    epscorr: { tex: "\\epsilon", name: "Corrector step size", meaning: "How far the Langevin corrector steps along the score; recomputed at every step.", shape: "one small positive number", example: "0.131" },
+    alphai: { tex: "\\alpha_i", name: "Signal share", meaning: "DDPM's ᾱ at this level: the share of variance that is still signal. It scales the step down at noisy levels.", shape: "between 0 and 1", example: "0.8114² = 0.6584" },
+    rsnr: { tex: "r", name: "The corrector's “signal-to-noise ratio”", meaning: "How big the score's pull is, relative to the random kick, in each corrector step. The paper tunes it per sampler.", shape: "a small positive number", example: "0.16 (VE models)" },
+    znorm: { tex: "\\|\\mathbf{z}\\|_2", name: "Size of the kick", meaning: "The length of the fresh noise vector; for small batches the paper replaces it with √d.", shape: "one number", example: "1 in one dimension" },
+    gnorm: { tex: "\\|\\mathbf{g}\\|_2", name: "Size of the score", meaning: "The length of the score vector g = s_θ*(x, i) at the current point, averaged over the batch.", shape: "one number", example: "0.5073" },
+    // §4.3
+    half: { tex: "\\tfrac{1}{2}", name: "Half", meaning: "The probability flow uses half the reverse SDE's score term, because it adds no noise that would need undoing.", shape: "a constant", example: "½ × 4.08 × 0.5073 = 1.0348" },
+    logp0: { tex: "\\log p_0(\\mathbf{x}(0))", name: "Log-probability of the data point", meaning: "How probable the model finds this image, as a logarithm. Converted to bits per dimension for Table 2.", shape: "one number", example: "−0.4058 for x(0) = 0.3" },
+    logpT: { tex: "\\log p_T(\\mathbf{x}(T))", name: "Log-probability of its noise", meaning: "The log-density of the noise the image flows to, which is easy: p_T is a plain bell curve.", shape: "one number", example: "−1.0989 at x(T) = 0.6" },
+    intT: { tex: "\\int_0^T \\ldots\\,\\mathrm{d}t", name: "Add up along the path", meaning: "An integral over time: add up the quantity inside at every moment of the journey from data to noise.", shape: "one number", example: "computed with 10,000 small steps" },
+    divf: { tex: "\\nabla\\cdot\\tilde{\\mathbf{f}}_{\\boldsymbol{\\theta}}", name: "Divergence of the flow", meaning: "How fast the probability flow spreads nearby points apart at this place and time: the sum of the diagonal of its matrix of slopes. f̃_θ is the ODE's drift with the network in place of the score.", shape: "one number per point and time", example: "adds up to ln 2 = 0.6931 in the example" },
+    // §5
+    classgrad: { tex: "\\nabla_{\\mathbf{x}}\\log p_t(\\mathbf{y}\\mid\\mathbf{x})", name: "The classifier's slope", meaning: "Which way to move a noisy sample to make the wanted label y more probable, according to a classifier trained on noisy inputs at time t.", shape: "same size as x", example: "0.4042 for “white” at x = 0.5" },
+    // Appendix D
+    Eeps: { tex: "\\mathbb{E}_{p(\\boldsymbol{\\epsilon})}", name: "Average over random probes", meaning: "Draw random vectors with mean 0 and identity covariance (such as random ±1 signs) and average.", shape: "turns many numbers into one", example: "the four sign vectors of a 2-D example" },
+    epsvec: { tex: "\\boldsymbol{\\epsilon}", name: "A random probe vector", meaning: "A vector of random entries with mean 0 and variance 1, independent of each other.", shape: "d numbers", example: "(1, −1)" },
+    jacf: { tex: "\\nabla\\tilde{\\mathbf{f}}_{\\boldsymbol{\\theta}}", name: "Jacobian of the flow", meaning: "The d × d matrix of slopes: entry (i, j) is how fast output i changes when input j is nudged.", shape: "d × d", example: "[[2, 1], [0, 3]]" },
+  },
+
+  blocks: {
+    sd_data: { title: "Data, x(0) ~ p₀", body: "<p>Real training examples at time 0: in the toy, pixels at −1 and +1. We can draw from this crowd but cannot write it down.</p>", shape: "one image (or one pixel)" },
+    sd_noise: { title: "Noise, x(T) ~ p_T", body: "<p>The crowd at the final time: plain noise with a known formula (a standard bell curve for VP, a very wide one for VE). Generation starts by drawing from it.</p>", shape: "same shape as the data" },
+    sd_fwd: { title: "Forward SDE (equation 5)", body: "<p>A fixed, unlearned recipe: a drift plus random kicks that fades any data into noise by time T. Choosing it is choosing VE, VP or sub-VP.</p>", lesson: "primer/ml/generative/diffusion.html#add_noise" },
+    sd_rev: { title: "Reverse SDE (equation 6)", body: "<p>The same process run backwards: the forward drift, minus the noise strength squared times the score, plus fresh random kicks. Simulated by ancestral, reverse diffusion or predictor-corrector sampling.</p>", lesson: "primer/ml/generative/diffusion.html#ddpm_step" },
+    sd_train: { title: "Training (equation 7)", body: "<p>Fade real examples to a random time in one jump and grade the network's slope against the fade's slope: denoising score matching, in continuous time.</p>", lesson: "primer/ml/generative/diffusion.html#train_noise_predictor" },
+    sd_score: { title: "Score model s_θ(x, t)", body: "<p>One network that, given a point and a time, returns the slope of log-crowdedness there. It is the only learned part, and both reverse lanes use it.</p>", shape: "point and time in, a vector of the same size out", lesson: "primer/ml/generative/diffusion.html#noise_to_score" },
+    sd_ode: { title: "Probability flow ODE (equation 13)", body: "<p>A noise-free road with the same crowd at every moment: forward drift minus half the noise strength squared times the score. Reversible, so it also encodes data into noise and gives exact likelihoods.</p>", lesson: "primer/ml/generative/diffusion.html#ddim_step" },
+    pc_start: { title: "Start", body: "<p>Draw a sample from the noise distribution p_T and begin at the last level, N.</p>", shape: "one noise sample" },
+    pc_pred: { title: "Predictor", body: "<p>One step of any reverse-time solver, moving from level i + 1 to level i: ancestral sampling, reverse diffusion, or a probability flow step.</p>", lesson: "primer/ml/generative/diffusion.html#ddpm_step" },
+    pc_corr: { title: "Corrector", body: "<p>M Langevin steps at the new level, using only the score: they nudge the samples toward the right crowd for that level. The paper mostly uses M = 1.</p>" },
+    pc_check: { title: "Reached level 0?", body: "<p>If not, go back to the predictor for the next level. N levels cost N predictor calls and N × M corrector calls.</p>", shape: "N (1 + M) network calls" },
+    pc_out: { title: "A new sample", body: "<p>The sample at level 0, cleaned by one last denoising step with Tweedie's formula (Appendix G).</p>", shape: "one generated image" },
+  },
+
+  onReady(P) {
+    pathsFigure(P);
+    langevinFigure(P);
+    varianceFigure(P);
+    stepsFigure(P);
+    conditionFigure(P);
+  },
+};
+
+/* ---- shared toy: pixels at ±1 under the VP SDE with β from 0.1 to 20 ---- */
+const SD = (() => {
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const BMIN = 0.1, BMAX = 20, EPS = 1e-3;
+  const B = (t) => BMIN * t + 0.5 * t * t * (BMAX - BMIN);
+  const beta = (t) => BMIN + t * (BMAX - BMIN);
+  // m: the faded centre of each value; v: the noise variance around it
+  const mv = (t) => { const b = B(t); return [Math.exp(-0.5 * b), -Math.expm1(-b)]; };
+  const score = (x, t) => { const [m, v] = mv(t); return (-x + m * Math.tanh((m * x) / v)) / v; };
+  const density = (x, t) => {
+    const [m, v] = mv(t), k = 1 / Math.sqrt(2 * Math.PI * v);
+    return 0.5 * k * (Math.exp(-((x - m) ** 2) / (2 * v)) + Math.exp(-((x + m) ** 2) / (2 * v)));
+  };
+  // A seeded generator, so every reader sees the same noise.
+  function rng(seed) {
+    return () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let r = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(r) {
+    const u = 1 - r(), w = r();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w);
+  }
+  // Average distance between sorted samples and a sorted list of half −1s and half +1s.
+  function w1(xs) {
+    const s = [...xs].sort((a, b) => a - b), n = s.length;
+    return s.reduce((acc, x, i) => acc + Math.abs(x - (i < n / 2 ? -1 : 1)), 0) / n;
+  }
+  // Run one reverse sampler with N equal time steps from t = 1 to EPS.
+  function sample(kind, N, starts, r) {
+    const h = (1 - EPS) / N;
+    return starts.map((x0) => {
+      let x = x0;
+      for (let i = 0; i < N; i++) {
+        const t = 1 - i * h, b = beta(t), s = score(x, t), f = -0.5 * b * x;
+        if (kind === "sde") x = x - (f - b * s) * h + Math.sqrt(b * h) * gauss(r);
+        else x = x - (f - 0.5 * b * s) * h;
+      }
+      return x;
+    });
+  }
+  return { css, EPS, B, beta, mv, score, density, rng, gauss, w1, sample };
+})();
+
+/* ---- Figure 1: forward SDE, reverse SDE and probability flow paths over the crowd ---- */
+function pathsFigure(P) {
+  const canvas = document.getElementById("fig1-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const L = 64, R = 16, T = 12, Bm = 52, Y = 3;
+  const X = (t) => L + t * (W - L - R);
+  const Yp = (x) => T + ((Y - x) / (2 * Y)) * (H - T - Bm);
+  const readout = document.getElementById("fig1-readout");
+  let mode = "fwd", seed = 11;
+  const STEPS = 400, NPATH = 12;
+  function paths() {
+    // starting noise from one generator and kicks from another, so the SDE and the ODE start from the same points
+    const r0 = SD.rng(seed), r = SD.rng(seed + 1000);
+    const out = [];
+    for (let k = 0; k < NPATH; k++) {
+      const pts = [];
+      if (mode === "fwd") {
+        let x = k % 2 ? 1 : -1;
+        const h = 1 / STEPS;
+        for (let i = 0; i <= STEPS; i++) {
+          const t = i * h;
+          pts.push([t, x]);
+          const b = SD.beta(t);
+          x = x - 0.5 * b * x * h + Math.sqrt(b * h) * SD.gauss(r);
+        }
+      } else {
+        let x = SD.gauss(r0);
+        const h = (1 - SD.EPS) / STEPS;
+        for (let i = 0; i <= STEPS; i++) {
+          const t = 1 - i * h;
+          pts.push([t, x]);
+          if (i === STEPS) break;
+          const b = SD.beta(t), s = SD.score(x, t), f = -0.5 * b * x;
+          x = mode === "rev" ? x - (f - b * s) * h + Math.sqrt(b * h) * SD.gauss(r) : x - (f - 0.5 * b * s) * h;
+        }
+      }
+      out.push(pts);
+    }
+    return out;
+  }
+  function draw() {
+    const fg = SD.css("--fg"), muted = SD.css("--muted"), shade = SD.css("--accent") || "#4a7";
+    const line = mode === "fwd" ? SD.css("--attn-stroke") : mode === "rev" ? SD.css("--ff-stroke") : SD.css("--active");
+    ctx.fillStyle = SD.css("--card") || "#fff"; ctx.fillRect(0, 0, W, H);
+    // the crowd p_t(x), each column scaled to its own peak so both ends are visible
+    const cols = 120, rows = 100;
+    ctx.fillStyle = shade;
+    for (let c = 0; c < cols; c++) {
+      const t = Math.max(SD.EPS, (c + 0.5) / cols);
+      const col = Array.from({ length: rows }, (_, k) => SD.density(Y - ((k + 0.5) / rows) * 2 * Y, t));
+      const peak = Math.max(...col);
+      // whole-pixel cell edges, so neighbouring cells never overlap and double their shade
+      const x0 = Math.round(X(c / cols)), x1 = Math.round(X((c + 1) / cols));
+      col.forEach((d, k) => {
+        const y0 = Math.round(Yp(Y - (k / rows) * 2 * Y)), y1 = Math.round(Yp(Y - ((k + 1) / rows) * 2 * Y));
+        ctx.globalAlpha = 0.45 * Math.sqrt(d / peak);
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      });
+    }
+    ctx.globalAlpha = 1;
+    // axes and labels
+    ctx.strokeStyle = muted; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, H - Bm); ctx.lineTo(W - R, H - Bm); ctx.stroke();
+    ctx.fillStyle = fg; ctx.font = "26px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "right";
+    [-2, -1, 0, 1, 2].forEach((v) => ctx.fillText(String(v).replace("-", "−"), L - 8, Yp(v) + 9));
+    ctx.textAlign = "left"; ctx.fillText("t = 0 (data)", L + 4, H - 14);
+    ctx.textAlign = "right"; ctx.fillText("t = 1 (noise)", W - R, H - 14);
+    ctx.textAlign = "left";
+    // the paths
+    const ps = paths();
+    ctx.strokeStyle = line; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.9;
+    ps.forEach((pts) => { ctx.beginPath(); pts.forEach(([t, x], i) => { const px = X(t), py = Yp(Math.max(-Y, Math.min(Y, x))); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.stroke(); });
+    ctx.globalAlpha = 1;
+    const ends = ps.map((p) => p[p.length - 1][1]);
+    if (mode === "fwd") {
+      const sd = Math.sqrt(ends.reduce((a, x) => a + x * x, 0) / ends.length);
+      readout.innerHTML = `Forward SDE: ${NPATH} pixels start on −1 and +1 and end at t = 1 spread like noise (their spread is <strong>${sd.toFixed(2)}</strong>; pure noise has 1). Nothing about where each started survives.`;
+    } else {
+      const up = ends.filter((x) => x > 0).length;
+      const err = ends.reduce((a, x) => a + Math.min(Math.abs(x - 1), Math.abs(x + 1)), 0) / ends.length;
+      readout.innerHTML = `${mode === "rev" ? "Reverse SDE" : "Probability flow ODE"}: ${NPATH} pixels start as noise at t = 1 and end with <strong>${up}</strong> near +1 and <strong>${ends.length - up}</strong> near −1, on average <strong>${err.toFixed(3)}</strong> from a data value.`;
+    }
+  }
+  document.querySelectorAll("#fig1 [data-mode]").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.mode;
+    document.querySelectorAll("#fig1 [data-mode]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    draw();
+  }));
+  document.getElementById("fig1-new").addEventListener("click", () => { seed += 1; draw(); });
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- §2.1: Langevin steps settling onto the blurred toy ---- */
+function langevinFigure(P) {
+  const n = 2000, bins = 40, lo = -3, hi = 3, bw = (hi - lo) / bins;
+  const sl = document.getElementById("lg-sigma"), ml = document.getElementById("lg-m");
+  const readout = document.getElementById("lg-readout");
+  const target = (x, s) => 0.5 * (Math.exp(-((x - 1) ** 2) / (2 * s * s)) + Math.exp(-((x + 1) ** 2) / (2 * s * s))) / (s * Math.sqrt(2 * Math.PI));
+  function run(s, M) {
+    const r = SD.rng(5);
+    // a lopsided start: a bell curve centred at +1 with spread 1
+    let xs = Array.from({ length: n }, () => 1 + SD.gauss(r));
+    const eps = 0.1 * s * s;
+    for (let m = 0; m < M; m++) xs = xs.map((x) => x + eps * ((-x + Math.tanh(x / (s * s))) / (s * s)) + Math.sqrt(2 * eps) * SD.gauss(r));
+    return xs;
+  }
+  function exact(s) {
+    const r = SD.rng(9);
+    return Array.from({ length: n }, (_, i) => (i % 2 ? 1 : -1) + s * SD.gauss(r));
+  }
+  function series(s, M) {
+    const xs = run(s, M), counts = new Array(bins).fill(0);
+    xs.forEach((x) => { const k = Math.floor((x - lo) / bw); if (k >= 0 && k < bins) counts[k]++; });
+    const centres = counts.map((_, k) => lo + (k + 0.5) * bw);
+    const a = [...xs].sort((p, q) => p - q), b = exact(s).sort((p, q) => p - q);
+    const gap = a.reduce((acc, x, i) => acc + Math.abs(x - b[i]), 0) / n;
+    readout.innerHTML = `After <strong>${M}</strong> Langevin step${M === 1 ? "" : "s"} at σ = ${s.toFixed(2)} (step size ε = ${(0.1 * s * s).toFixed(4)}): the hikers are on average <strong>${gap.toFixed(3)}</strong> from exact samples of the target, and ${Math.round((100 * xs.filter((x) => x > 0).length) / n)}% are above 0.`;
+    return [
+      { name: `Langevin samples after ${M} steps (histogram)`, points: centres.map((c, k) => [c, counts[k] / (n * bw)]) },
+      { name: "target p_σ(x)", points: centres.map((c) => [c, target(c, s)]) },
+    ];
+  }
+  const chart = P.lineChart(document.getElementById("lg-chart"), { width: 420, height: 280,
+    series: series(+sl.value, +ml.value), xLabel: "pixel value x", yLabel: "density", yMin: 0,
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2), readout: document.getElementById("lg-hover"),
+    ariaLabel: "Histogram of Langevin samples against the target density",
+  });
+  const update = () => {
+    document.getElementById("lg-sigmav").textContent = (+sl.value).toFixed(2);
+    document.getElementById("lg-mv").textContent = ml.value;
+    chart.update(series(+sl.value, +ml.value));
+  };
+  sl.addEventListener("input", update);
+  ml.addEventListener("input", update);
+}
+
+/* ---- §3.4: how the crowd's variance evolves under VE, VP and sub-VP ---- */
+function varianceFigure(P) {
+  const slider = document.getElementById("var-s0");
+  const ts = Array.from({ length: 101 }, (_, i) => i / 100);
+  const smin = 0.01, smax = 2;
+  const series = (s0) => [
+    // VE climbs to Σ(0) + 4; it is cut off at the top of the chart so the other two stay readable
+    { name: "VE (cut off at 3.2)", points: ts.map((t) => [t, Math.min(3.2, s0 + (smin * (smax / smin) ** t) ** 2)]) },
+    { name: "VP", points: ts.map((t) => [t, 1 + Math.exp(-SD.B(t)) * (s0 - 1)]) },
+    { name: "sub-VP", points: ts.map((t) => [t, 1 + Math.exp(-2 * SD.B(t)) + Math.exp(-SD.B(t)) * (s0 - 2)]) },
+  ];
+  const chart = P.lineChart(document.getElementById("var-chart"), { width: 420, height: 280,
+    series: series(+slider.value), xLabel: "time t", yLabel: "variance of x(t)", yMin: 0, yMax: 3.2,
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(2), readout: document.getElementById("var-readout"),
+    ariaLabel: "Variance of the crowd over time under the VE, VP and sub-VP SDEs",
+  });
+  slider.addEventListener("input", () => {
+    document.getElementById("var-s0v").textContent = (+slider.value).toFixed(2);
+    chart.update(series(+slider.value));
+  });
+}
+
+/* ---- §4.3: reverse SDE against probability flow ODE, by number of steps ---- */
+function stepsFigure(P) {
+  const Ns = [2, 3, 4, 5, 6, 8, 10, 13, 16, 20, 25, 32, 40, 50, 64, 80, 100, 128, 160, 200, 256, 320, 400];
+  const starts = (() => { const r = SD.rng(21); return Array.from({ length: 1500 }, () => SD.gauss(r)); })();
+  // Values above the top of the chart are drawn at the top, so a blow-up at 2 or 3 steps stays readable.
+  const cap = 1.2;
+  const sde = Ns.map((N) => [N, Math.min(cap, SD.w1(SD.sample("sde", N, starts, SD.rng(100 + N))))]);
+  const ode = Ns.map((N) => [N, Math.min(cap, SD.w1(SD.sample("ode", N, starts, null)))]);
+  P.lineChart(document.getElementById("steps-chart"), { width: 420, height: 280,
+    series: [{ name: "reverse SDE (Euler-Maruyama)", points: sde }, { name: "probability flow ODE (Euler)", points: ode }],
+    xLabel: "time steps (network calls)", yLabel: "distance to data", yMin: 0, yMax: cap, logX: true,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("steps-readout"),
+    ariaLabel: "Distance between samples and data against the number of steps, for the reverse SDE and the probability flow ODE",
+  });
+}
+
+/* ---- §5: unconditional score, classifier slope and conditional score ---- */
+function conditionFigure(P) {
+  const slider = document.getElementById("cond-t");
+  const xs = Array.from({ length: 121 }, (_, i) => -2 + i / 30);
+  const series = (t) => {
+    const [m, v] = SD.mv(t);
+    const pw = (x) => 1 / (1 + Math.exp((-2 * m * x) / v));
+    return [
+      { name: "score ∇log p_t(x)", points: xs.map((x) => [x, SD.score(x, t)]) },
+      { name: "classifier slope ∇log p_t(white | x)", points: xs.map((x) => [x, ((2 * m) / v) * (1 - pw(x))]) },
+      { name: "conditional score (their sum)", points: xs.map((x) => [x, SD.score(x, t) + ((2 * m) / v) * (1 - pw(x))]) },
+    ];
+  };
+  const chart = P.lineChart(document.getElementById("cond-chart"), { width: 420, height: 280,
+    series: series(+slider.value), xLabel: "pixel value x", yLabel: "arrow size",
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(2), readout: document.getElementById("cond-readout"),
+    ariaLabel: "The unconditional score, the classifier's slope and their sum, against the pixel value",
+  });
+  slider.addEventListener("input", () => {
+    document.getElementById("cond-tv").textContent = (+slider.value).toFixed(2);
+    chart.update(series(+slider.value));
+  });
+}
+</script>
+</body>
+</html>

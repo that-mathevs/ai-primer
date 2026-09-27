@@ -949,6 +949,7 @@ gap.
   Differential Equations* (2020)**: https://arxiv.org/abs/2011.13456. Showed
   diffusion and score-based models are one family, described as continuous
   time processes.
+  [Annotated companion](../../../papers/score-sde.html)
 - **Ho and Salimans, *Classifier-Free Diffusion Guidance* (2022)**:
   https://arxiv.org/abs/2207.12598. Guidance from one network trained with
   and without the label, no separate classifier needed.
@@ -971,6 +972,7 @@ gap.
   https://arxiv.org/abs/2209.03003. Straight-line paths, and retraining on
   the model's own pairs to straighten the learned flow for few-step
   sampling.
+  [Annotated companion](../../../papers/rectified-flow.html)
 - **Esser et al., *Scaling Rectified Flow Transformers for High-Resolution
   Image Synthesis* (2024)**: https://arxiv.org/abs/2403.03206. Rectified
   flow with a transformer denoiser at scale: Stable Diffusion 3.

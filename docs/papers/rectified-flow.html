@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Straight and Fast (Rectified Flow), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Liu, Gong and Liu (2022), the paper that learns a flow along straight lines from noise to data, then retrains it on its own pairs until one step is enough.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .rf-canvas { display: block; width: 100%; max-width: 520px; height: auto; margin: 0.4rem auto; touch-action: none; }
+  .rf-toggle { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  /* Charts are drawn narrow so their labels stay legible on a phone; on a wide screen they stop growing. */
+  .plot svg[role="slider"] { max-width: 600px; margin: 0 auto; }
+  .note { border-left: 4px solid var(--accent); padding: 0.5rem 0.8rem; background: var(--quote-bg); border-radius: 6px; }
+</style>
+</head>
+<body data-paper="rectified-flow">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Method</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Overview</a></li>
+          <li><a href="#s2-2">2.2 Main results and properties</a></li>
+          <li><a href="#s2-3">2.3 A nonlinear extension</a></li>
+          <li><a href="#s2-3-1">2.3.1 Probability flow ODEs and DDIM</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Theoretical analysis</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Marginals are preserved</a></li>
+          <li><a href="#s3-2">3.2 Convex costs go down</a></li>
+          <li><a href="#s3-3">3.3 The straightening effect</a></li>
+          <li><a href="#s3-4">3.4 Straight versus optimal</a></li>
+          <li><a href="#s3-5">3.5 Diffusion ODEs as rectified flows</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Related work and discussion</a></li>
+      <li><a href="#s5">5 Experiments</a>
+        <ol>
+          <li><a href="#s5-1">5.1 Toy examples</a></li>
+          <li><a href="#s5-2">5.2 Image generation</a></li>
+          <li><a href="#s5-3">5.3 Image-to-image translation</a></li>
+          <li><a href="#s5-4">5.4 Domain adaptation</a></li>
+        </ol>
+      </li>
+      <li><a href="#appendix">Appendix, briefly</a></li>
+      <li><a href="#today">What changed since 2022</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Flow Straight and Fast: Rectified Flow, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Liu, Gong and Liu (2022), the paper that trains a flow to follow straight lines between noise and data, then retrains it on its own (noise, sample) pairs until the lines stop crossing and a single step lands on the data.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2209.03003">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2209.03003">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2209.03003">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, which does not grant permission to republish its tables, so only a few selected rows appear here, each attributed, and every figure is redrawn from scratch and computed live in your browser. The worked numbers come from small toys built on this page, not from the paper, unless a sentence says otherwise. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the numbers of a tiny example, and the same example in a few lines of Python.</li>
+  <li>The pictures are live: press the buttons, drag the sliders, and the readouts say what changed.</li>
+</ul>
+<p>Each idea is explained in the same order: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>.</p>
+<div class="note">
+  <p style="margin:0"><strong>Which way time runs.</strong> Here <em>X</em><sub>0</sub> is drawn from the starting distribution π<sub>0</sub> (for generation, <strong>noise</strong>) and <em>X</em><sub>1</sub> from the target π<sub>1</sub> (the <strong>data</strong>), and time runs from 0 to 1. That matches the <a href="flow-matching.html">flow matching companion</a> and the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>'s Step 4, and is the opposite of the <a href="score-sde.html">score SDE</a> and <a href="ddpm.html">DDPM</a> companions, where time runs from data to noise.</p>
+</div>
+<div class="play">
+  <p style="margin:0"><strong>The one-dimensional toy.</strong> A crowd of noise, π<sub>0</sub>, is a bell curve centred at 0 with spread 1; the “data”, π<sub>1</sub>, is a bell curve centred at <strong>3</strong> with spread <strong>0.5</strong>. Pair them at random and the average squared distance between partners is 3<sup>2</sup> + 1 + 0.25 = <strong>10.25</strong>. Everything about this toy can be worked out exactly, so §2 and §3 use it for their numbers. The pictures also use a two-dimensional toy of four blobs, and the noise-to-three-clusters toy of the paper's Figures 4 and 5.</p>
+</div>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“The idea of rectified flow is to learn the ODE to follow the straight paths connecting the points drawn from π<sub>0</sub> and π<sub>1</sub> as much as possible.”<cite>Liu, Gong and Liu (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2209.03003">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>You have to move a crowd from one side of a square to the other, and at first you pair people with destinations at random. Everyone walks in a straight line to their destination, but the lines cross everywhere. Now watch the <em>traffic</em>: at each spot and moment, people are moving in some average direction. Replace everyone with sleepwalkers who simply follow the traffic. The sleepwalkers never bump into each other, still arrive at the same set of destinations, and walk less in total. Pair each starting spot with where its sleepwalker ended up, and do it again: the lines barely cross any more, and a single stride gets everyone home.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Training a flow to follow straight lines between paired points is a plain least-squares problem, with no adversarial game and no likelihood to compute.</li>
+  <li>The learned flow (the <span class="t" data-t="rectified flow">rectified flow</span>) turns any pairing, or <span class="t" data-t="coupling">coupling</span>, into a deterministic one that costs no more to transport, for every convex cost at once.</li>
+  <li>Repeating the procedure on the flow's own pairs, called <span class="t" data-t="reflow">reflow</span>, provably straightens the paths, so few or even one <span class="t" data-t="euler step">Euler step</span> is enough.</li>
+  <li>The same recipe does generation and unpaired domain transfer. On CIFAR-10 a distilled one-step model reaches <span class="t" data-t="fid">FID</span> 4.85, a record for one-step diffusion and flow models at the time.</li>
+  <li>The probability flow ODEs and DDIM of diffusion models are special cases with curved paths.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Straight-line training is how several of today's image generators are built, Stable Diffusion 3 among them (Esser et al., 2024). The <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> builds the straight-line recipe from scratch, and the <a href="flow-matching.html">flow matching companion</a> covers the closely related paper that appeared at the same time.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S1">original</a></span></h2>
+<blockquote class="quote">“All these tasks can be framed unifiedly as finding a transport map between two distributions”<cite>Liu, Gong and Liu (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Generating images and translating photos into paintings look like different jobs. The paper sees one job: you have a pile of examples of one kind (noise, or photos) and a pile of another (images, or paintings), with no pairing between them, and you want a rule that turns any example of the first kind into a believable example of the second. That rule is a <strong>transport map</strong>, and the pairing it creates is a <span class="t" data-t="coupling">coupling</span>. <span class="t" data-t="gan">GANs</span> learn such maps with an unstable game, likelihood models need restrictive designs, and <span class="t" data-t="diffusion model">diffusion models</span> learn them well but need many steps to run. The paper wants the stability of diffusion and the speed of a one-step map.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Two starting points, −1 and +1, and two destinations, 2 and 4. Pair them in order (−1→2, +1→4) and each travels 3: an average squared distance of <strong>9</strong>. Pair them crossed (−1→4, +1→2) and they travel 5 and 1: an average of <strong>13</strong>. Both pairings deliver the same set of destinations; the crossed one simply wastes effort, and its lines cross. Pairing at random mixes the two and averages 11.</p>
+<div class="eq" data-tex="\htmlData{sym=Ecost}{\mathbb{E}}\big[\htmlData{sym=cfun}{c}(\htmlData{sym=Z1}{Z_1} - \htmlData{sym=Z0}{Z_0})\big]" data-fallback="E[c(Z_1 − Z_0)]"></div>
+<div class="symtable" data-syms="Ecost,cfun,Z1,Z0"></div>
+<p class="inwords"><strong>In words:</strong> “the transport cost of a coupling: over all pairs, the average of a cost of the jump from start to destination.” <span class="t" data-t="optimal transport">Optimal transport</span> looks for the coupling that makes it smallest.</p>
+<p class="inwords"><strong>With the numbers:</strong> with <em>c</em>(<em>x</em>) = <em>x</em><sup>2</sup>, the ordered pairing costs (3<sup>2</sup> + 3<sup>2</sup>)/2 = <strong>9</strong> and the crossed pairing (5<sup>2</sup> + 1<sup>2</sup>)/2 = <strong>13</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>starts, ends = [-1, 1], [2, 4]
+# c(x) = x²: the squared length of each jump
+def c(x):
+    return x ** 2
+# E[c(Z_1 − Z_0)] for the ordered and the crossed pairings
+ordered = sum(c(z1 - z0) for z0, z1 in zip(starts, ends)) / 2
+crossed = sum(c(z1 - z0) for z0, z1 in zip(starts, ends[::-1])) / 2
+ordered, crossed  # → (9.0, 13.0)</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>Framing generation as transport gives a yardstick beyond “do the samples look right”: how far, and how straight, each point travels. Straight, short journeys are exactly what make a sampler fast, which is the paper's real target.</p>
+</section>
+
+<section id="s2">
+<h2>2 Method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S2">original</a></span></h2>
+<p>The method is short enough to state in one section; §3 then proves its properties. The paper's own order is followed here: the recipe (§2.1), what it guarantees (§2.2), and how diffusion's ODEs fit in (§2.3).</p>
+
+<section id="s2-1">
+<h3>2.1 Overview <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S2.SS1">original</a></span></h3>
+<blockquote class="quote">“By fitting the drift v with X<sub>1</sub> − X<sub>0</sub>, the rectified flow causalizes the paths of linear interpolation X<sub>t</sub>, yielding an ODE flow that can be simulated without seeing the future.”<cite>Liu, Gong and Liu (2022), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Draw a straight line from each starting point to its partner. A point moving along its line needs to know where it is going: that is “seeing the future”, and a generator can't. So train a network to look only at <em>where</em> a point is and <em>when</em>, and to guess the line's direction. Where several lines pass through the same spot, the network can only give their average. Following those averaged arrows is an <span class="t" data-t="ordinary differential equation">ordinary differential equation</span> that anyone can run forwards from noise, with no knowledge of partners.</p>
+<h4>Tiny example</h4>
+<p>Noise <em>X</em><sub>0</sub> = −1 paired with data <em>X</em><sub>1</sub> = 2. A quarter of the way along, at <em>t</em> = 0.25, the line passes −0.25, and it moves at 2 − (−1) = 3 the whole way. The network is shown the point −0.25 and the time 0.25 and asked for 3; a guess of 2.5 costs (3 − 2.5)<sup>2</sup> = 0.25. These are the same numbers as the diffusion lesson's flow matching step, because it is the same loss.</p>
+<div class="eq" data-tex="\htmlData{sym=minv}{\min_{v}} \htmlData{sym=int01}{\int_0^1} \htmlData{sym=Eexp}{\mathbb{E}}\Big[\htmlData{sym=sqnorm}{\big\|}(\htmlData{sym=X1}{X_1} - \htmlData{sym=X0}{X_0}) - \htmlData{sym=vfun}{v\big(X_t, t\big)}\htmlData{sym=sqnorm}{\big\|^2}\Big]\,\htmlData{sym=int01}{\mathrm{d}t}, \qquad \htmlData{sym=Xt}{X_t = tX_1 + (1-t)X_0}" data-fallback="min_v ∫₀¹ E[‖(X_1 − X_0) − v(X_t, t)‖²] dt,  with X_t = t X_1 + (1 − t) X_0"></div>
+<div class="symtable" data-syms="minv,int01,Eexp,X1,X0,vfun,Xt,sqnorm"></div>
+<p class="inwords"><strong>In words:</strong> “find the velocity field that, averaged over every pair and every moment, best matches the straight line's direction at the point where the line is at that moment.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>X<sub>t</sub></em> = 0.25 × 2 + 0.75 × (−1) = −0.25; target 2 − (−1) = 3; a guess of 2.5 scores <strong>0.25</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x0, x1, t = -1.0, 2.0, 0.25
+# X_t = t X_1 + (1 − t) X_0: where the line is at time t
+x_t = t * x1 + (1 - t) * x0
+x_t  # → -0.25
+# X_1 − X_0: the line's direction, the same at every t
+target = x1 - x0
+target  # → 3.0
+# a guess of 2.5, graded by squared error
+(target - 2.5) ** 2  # → 0.25</code></pre>
+<figure class="ix" id="fig-alg">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 492" role="img" aria-label="Algorithm 1: training on random pairs, simulating the learned flow, then optionally reflowing on the flow's own pairs or distilling it into one step">
+    <defs><marker id="arrrf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="rf_train" aria-label="Training frame"><rect x="6" y="34" width="348" height="232" rx="12"/></g>
+    <text x="14" y="27" class="lbl">Training (one step)</text>
+    <g class="blk frame" data-block="rf_sample" aria-label="Sampling frame"><rect x="6" y="296" width="348" height="190" rx="12"/></g>
+    <text x="14" y="289" class="lbl">Sampling, then optional reflow or distillation</text>
+    <path class="wire" d="M91,80 V106" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M230,80 V94 H200 V106" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M300,80 V106" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M121,144 V164" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M121,202 V220" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M300,146 V238 H292" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M180,352 V372" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M116,410 V428" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M290,410 V428" marker-end="url(#arrrf)"/>
+    <path class="wire" d="M16,448 H2 V8 H269 V44" marker-end="url(#arrrf)"/>
+    <text x="150" y="20" class="lbl">reflow: new pairs</text>
+    <g class="blk plain" data-block="rf_time"><rect x="16" y="46" width="150" height="34" rx="7"/><text x="91" y="67" text-anchor="middle">time t ~ U[0, 1]</text></g>
+    <g class="blk emb" data-block="rf_pairs"><rect x="194" y="46" width="150" height="34" rx="7"/><text x="269" y="67" text-anchor="middle">pairs (X₀, X₁)</text></g>
+    <g class="blk norm" data-block="rf_point"><rect x="16" y="106" width="210" height="38" rx="7"/><text x="121" y="129" text-anchor="middle">point Xₜ = tX₁ + (1 − t)X₀</text></g>
+    <g class="blk lin" data-block="rf_target"><rect x="236" y="106" width="108" height="40" rx="7"/><text x="290" y="122" text-anchor="middle">target</text><text x="290" y="138" text-anchor="middle">X₁ − X₀</text></g>
+    <g class="blk ff" data-block="rf_net"><rect x="16" y="164" width="210" height="38" rx="7"/><text x="121" y="187" text-anchor="middle">network v_θ(Xₜ, t)</text></g>
+    <g class="blk attn" data-block="rf_loss"><rect x="60" y="220" width="230" height="34" rx="7"/><text x="175" y="241" text-anchor="middle">loss ‖X₁ − X₀ − v_θ‖²</text></g>
+    <g class="blk emb" data-block="rf_sim"><rect x="16" y="310" width="328" height="42" rx="7"/><text x="180" y="327" text-anchor="middle">simulate dZₜ = v_θ(Zₜ, t) dt</text><text x="180" y="344" text-anchor="middle">from Z₀ ~ π₀ to get Z₁</text></g>
+    <g class="blk soft" data-block="rf_newpairs"><rect x="16" y="372" width="328" height="38" rx="7"/><text x="180" y="395" text-anchor="middle">new pairs (Z₀, Z₁): the rectified coupling</text></g>
+    <g class="blk ff" data-block="rf_reflow"><rect x="16" y="428" width="200" height="40" rx="7"/><text x="116" y="445" text-anchor="middle">reflow: train again</text><text x="116" y="460" text-anchor="middle">on the new pairs</text></g>
+    <g class="blk lin" data-block="rf_distill"><rect x="226" y="428" width="118" height="40" rx="7"/><text x="285" y="445" text-anchor="middle">distill into</text><text x="285" y="460" text-anchor="middle">one step</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start with <strong>pairs</strong> at the top right.</p></div>
+  </div>
+  <figcaption>Algorithm 1 of the paper (rectified flow, with its optional reflow and distillation), drawn as a flowchart for this page.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top box is one training step, and it contains no simulation: a random pair and a random time give a point on the pair's line and the line's direction, the network sees only the point and the time, and the squared error is the loss. The bottom box starts once the network is trained: follow its arrows from fresh noise to get a sample, which pairs each starting point Z₀ with an end point Z₁. Those new pairs can go round again (the long wire back to the top, “reflow”), which makes the next flow straighter, or be distilled into a network that jumps from Z₀ to Z₁ in one call.</p>
+<h4>Figure 2, redrawn: crossing lines, rewired paths</h4>
+<figure class="ix" id="fig2">
+  <div class="plot" style="margin:0;border:0;padding:0">
+    <div class="controls">
+      <span class="rf-toggle" role="group" aria-label="What to draw">
+        <button type="button" data-mode="pairs0" aria-pressed="true">random pairs</button>
+        <button type="button" data-mode="flow1" aria-pressed="false">1-rectified flow</button>
+        <button type="button" data-mode="pairs1" aria-pressed="false">its new pairs</button>
+        <button type="button" data-mode="flow2" aria-pressed="false">2-rectified flow</button>
+        <button type="button" data-mode="flow3" aria-pressed="false">3-rectified flow</button>
+      </span>
+      <label for="fig2-n">Euler steps N = <strong id="fig2-nv">60</strong></label><input type="range" id="fig2-n" min="1" max="60" step="1" value="60">
+    </div>
+    <canvas id="fig2-canvas" class="rf-canvas" width="640" height="480" aria-label="Two blobs of starting points on the left are carried to two blobs of end points on the right, either along straight lines between random pairs or along the paths of a learned rectified flow."></canvas>
+    <div class="legend"><span><i style="background:var(--attn-stroke)"></i>starts in the upper-left blob (solid)</span><span><i class="hatch" style="background:var(--hatch) var(--ff-stroke)"></i>starts in the lower-left blob (dashed)</span></div>
+    <p class="readout" id="fig2-readout"></p>
+  </div>
+  <figcaption>250 random pairs between two left blobs and two right blobs; each flow is estimated from its pairs with the paper's kernel estimator (equation 5, bandwidth 0.2) and simulated live. Based on Liu, Gong and Liu (2022), Figures 2 and 3, redrawn.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> hollow circles are starting points (π<sub>0</sub>, two blobs on the left), filled dots are where they end (π<sub>1</sub>, two blobs on the right); 40 of the 250 journeys are drawn, solid if they start in the upper blob and dashed if in the lower. <strong>Random pairs:</strong> half the lines cross over to the far blob, making a big X in the middle. <strong>1-rectified flow:</strong> the learned paths never cross; at the crossing they are “rewired”, each staying on its own side and bending to the nearer target blob. <strong>Its new pairs:</strong> join each start to where its flow ended, with straight lines: almost no crossings left. <strong>2-rectified flow:</strong> the flow trained on those pairs is nearly straight. Now drag <em>N</em> down to 1. The 1-rectified flow's single step sends each point to the average end of the few training lines that start near it; with random pairs those ends are half up and half down, so the samples land in the empty gap between the two right blobs, scattered up and down and crossing each other. The 2-rectified flow's single step lands close to where its 60-step paths end. The readout gives each picture's average squared jump length (its transport cost) and its straightness (0 means perfectly straight).</p>
+<h4>Why it matters today</h4>
+<p>The loss is the same one the <a href="flow-matching.html">flow matching</a> paper arrived at independently, with its tiny σ<sub>min</sub> set to 0. The lesson trains it in <a data-lesson="primer/ml/generative/diffusion.html#train_velocity_predictor"><code>train_velocity_predictor</code></a>, with <a data-lesson="primer/ml/generative/diffusion.html#flow_point"><code>flow_point</code></a> as <em>X<sub>t</sub></em> and <a data-lesson="primer/ml/generative/diffusion.html#flow_target"><code>flow_target</code></a> as <em>X</em><sub>1</sub> − <em>X</em><sub>0</sub>, and its figure of crossing training lines and bending learned paths is the picture above.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Main results and properties <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“It is not recommended to apply too many reflow steps as it may accumulate estimation error on v<sup>X</sup>.”<cite>Liu, Gong and Liu (2022), §2.2</cite></blockquote>
+<h4>The best possible arrow: an average</h4>
+<p><strong>Everyday picture:</strong> at a busy crossroads, people heading many ways pass the same spot at the same moment. A single signpost there can only point the average way. <strong>Tiny example:</strong> in the one-dimensional toy, many lines pass through 2 at <em>t</em> = 0.5: from 0 to 4 (speed 4), from 1 to 3 (speed 2), from −1 to 5 (speed 6), and so on. Weighted by how likely each pairing is, their average speed is exactly <strong>2.4</strong>.</p>
+<div class="eq" data-tex="\htmlData{sym=vX}{v^X(x, t)} = \htmlData{sym=Econd}{\mathbb{E}\big[\,\cdot \mid X_t = x\big]}\big[\htmlData{sym=X1}{X_1} - \htmlData{sym=X0}{X_0}\big]" data-fallback="v^X(x, t) = E[X_1 − X_0 | X_t = x]"></div>
+<div class="symtable" data-syms="vX,Econd,X1,X0"></div>
+<p class="inwords"><strong>In words:</strong> “the best velocity at a place and time is the average direction of all the lines that pass through that place at that time” (the paper's equation 2, written with the average's condition pulled out front).</p>
+<p class="inwords"><strong>With the numbers:</strong> for two independent bell curves the average is a straight-line function of <em>x</em>: <em>v</em><sup><em>X</em></sup>(<em>x</em>, <em>t</em>) = 3 + (<em>c</em>/<em>q</em>)(<em>x</em> − 3<em>t</em>), where <em>q</em> = (1 − <em>t</em>)<sup>2</sup> + 0.25<em>t</em><sup>2</sup> is the spread of <em>X<sub>t</sub></em> squared and <em>c</em> = 0.25<em>t</em> − (1 − <em>t</em>) is how <em>X</em><sub>1</sub> − <em>X</em><sub>0</sub> moves with <em>X<sub>t</sub></em>. At <em>t</em> = 0.5, <em>x</em> = 2: <em>q</em> = 0.3125, <em>c</em> = −0.375, so <em>v</em> = 3 − 1.2 × 0.5 = <strong>2.4</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>t, x = 0.5, 2.0
+# three of the many lines through x = 2 at t = 0.5, and their speeds
+for x0, x1 in [(0, 4), (1, 3), (-1, 5)]:
+    print((1 - t) * x0 + t * x1, x1 - x0)  # → 2.0 4 2.0 2 2.0 6
+# the exact average for noise N(0, 1) paired at random with data N(3, 0.5²):
+# q is the variance of X_t, c its covariance with X_1 − X_0
+q = (1 - t) ** 2 + 0.25 * t * t
+c = 0.25 * t - (1 - t)
+q, c  # → (0.3125, -0.375)
+3 + c / q * (x - 3 * t)  # → 2.4</code></pre>
+<h4>Marginals are preserved, couplings get cheaper</h4>
+<p>Following the average arrows keeps the crowd at every moment exactly as the straight lines had it (Theorem 3.3, §3.1): same spread of positions at <em>t</em> = 0.25, 0.5, 0.9, everything. So the flow still carries π<sub>0</sub> onto π<sub>1</sub>. And it gets there more cheaply (Theorem 3.5). The paper's picture proof, for the cost “distance travelled”, redrawn:</p>
+<figure class="ix" id="fig-rewire">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 190" role="img" aria-label="Three panels: two crossing lines between random pairs, the same pieces rewired at the crossing, and the straight lines between the new pairs">
+    <g class="blk attn" data-block="rw_cross" aria-label="The crossing lines">
+      <line x1="24" y1="44" x2="104" y2="84" stroke="var(--attn-stroke)" stroke-width="3"/>
+      <line x1="24" y1="84" x2="104" y2="44" stroke="var(--attn-stroke)" stroke-width="3" stroke-dasharray="7 5"/>
+    </g>
+    <g class="blk ff" data-block="rw_rewired" aria-label="The rewired paths">
+      <path d="M142,44 L182,64 L222,44" fill="none" stroke="var(--ff-stroke)" stroke-width="3"/>
+      <path d="M142,84 L182,64 L222,84" fill="none" stroke="var(--ff-stroke)" stroke-width="3" stroke-dasharray="7 5"/>
+    </g>
+    <g class="blk lin" data-block="rw_straight" aria-label="The straight lines between the new pairs">
+      <line x1="260" y1="44" x2="340" y2="44" stroke="var(--active)" stroke-width="3"/>
+      <line x1="260" y1="84" x2="340" y2="84" stroke="var(--active)" stroke-width="3" stroke-dasharray="7 5"/>
+    </g>
+    <g class="blk plain" data-block="rw_A"><circle cx="24" cy="44" r="5"/><text x="13" y="48" text-anchor="middle">A</text><circle cx="142" cy="44" r="5"/><text x="131" y="48" text-anchor="middle">A</text><circle cx="260" cy="44" r="5"/><text x="249" y="48" text-anchor="middle">A</text></g>
+    <g class="blk plain" data-block="rw_B"><circle cx="24" cy="84" r="5"/><text x="13" y="88" text-anchor="middle">B</text><circle cx="142" cy="84" r="5"/><text x="131" y="88" text-anchor="middle">B</text><circle cx="260" cy="84" r="5"/><text x="249" y="88" text-anchor="middle">B</text></g>
+    <g class="blk soft" data-block="rw_C"><circle cx="104" cy="44" r="5"/><text x="115" y="48" text-anchor="middle">C</text><circle cx="222" cy="44" r="5"/><text x="233" y="48" text-anchor="middle">C</text><circle cx="340" cy="44" r="5"/><text x="351" y="48" text-anchor="middle">C</text></g>
+    <g class="blk soft" data-block="rw_D"><circle cx="104" cy="84" r="5"/><text x="115" y="88" text-anchor="middle">D</text><circle cx="222" cy="84" r="5"/><text x="233" y="88" text-anchor="middle">D</text><circle cx="340" cy="84" r="5"/><text x="351" y="88" text-anchor="middle">D</text></g>
+    <g class="blk pe" data-block="rw_P"><circle cx="64" cy="64" r="5"/><circle cx="182" cy="64" r="5"/></g>
+    <text x="64" y="122" text-anchor="middle" class="lbl">random pairs</text>
+    <text x="64" y="140" text-anchor="middle" class="lbl">4.47 + 4.47 = 8.94</text>
+    <text x="182" y="122" text-anchor="middle" class="lbl">rewired at P</text>
+    <text x="182" y="140" text-anchor="middle" class="lbl">4.47 + 4.47 = 8.94</text>
+    <text x="300" y="122" text-anchor="middle" class="lbl">new pairs, straight</text>
+    <text x="300" y="140" text-anchor="middle" class="lbl">4 + 4 = 8</text>
+    <text x="180" y="172" text-anchor="middle" class="lbl">A = (0, 2), B = (0, 0), C = (4, 2), D = (4, 0), P = (2, 1)</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with <strong>the crossing lines</strong>.</p></div>
+  </div>
+  <figcaption>The paper's graphical proof of Theorem 3.5 for the cost c(x) = ‖x‖, redrawn with numbers for this page.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each panel has two starting points, A and B, on its left and two destinations, C and D, on its right; the solid line is A's journey and the dashed line B's. <strong>Left:</strong> the random pairing sends A to D and B to C; the lines cross at P, each 4.47 long, 8.94 together. <strong>Middle:</strong> a flow cannot let paths cross, so at P each path turns: A ends at C and B at D. The rewired paths are the same four half-lines rearranged, so the total is still 8.94: that is the “(**)” step of the paper's proof. <strong>Right:</strong> the new pairs, A with C and B with D, joined straight. A straight line is never longer than a bent one, so these are 4 each, 8 together: the “(*)” step, the triangle inequality.</p>
+<div class="eq" data-tex="\htmlData{sym=normZ}{\mathbb{E}\|Z_1 - Z_0\|} \;\le\; \htmlData{sym=rewired}{L_{\text{rewired}}} \;=\; \htmlData{sym=normX}{\mathbb{E}\|X_1 - X_0\|}" data-fallback="E‖Z_1 − Z_0‖ ≤ L_rewired = E‖X_1 − X_0‖"></div>
+<div class="symtable" data-syms="normZ,rewired,normX"></div>
+<p class="inwords"><strong>In words:</strong> “the new pairs are no farther apart, on average, than the lengths of the flow's paths, which are the old straight lines cut and re-joined, so no longer than the old pairs.”</p>
+<p class="inwords"><strong>With the numbers:</strong> old pairs √(4<sup>2</sup> + 2<sup>2</sup>) = 4.472 each; rewired paths 2 × √(2<sup>2</sup> + 1<sup>2</sup>) = 4.472 each; new pairs 4 each. Average: 4 ≤ 4.472 = 4.472.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+A, B, C, D, P = (0, 2), (0, 0), (4, 2), (4, 0), (2, 1)
+# the random pairs A→D and B→C, as straight lines
+old = (math.dist(A, D) + math.dist(B, C)) / 2
+# the rewired paths A→P→C and B→P→D: the same pieces
+rewired = (math.dist(A, P) + math.dist(P, C) + math.dist(B, P) + math.dist(P, D)) / 2
+# the new pairs A→C and B→D, straight
+new = (math.dist(A, C) + math.dist(B, D)) / 2
+round(new, 3), round(rewired, 3), round(old, 3)  # → (4.0, 4.472, 4.472)</code></pre>
+<h4>Straightness, and why reflow gives it</h4>
+<p><strong>Everyday picture:</strong> a path is straight when the direction you are moving at every moment is the same as the direction from start to finish. <strong>Tiny example:</strong> the path <em>z<sub>t</sub></em> = <em>t</em><sup>2</sup> goes from 0 to 1, so the overall direction is 1, but its speed at time <em>t</em> is 2<em>t</em>: slow, then fast. Its straightness score is the average of (1 − 2<em>t</em>)<sup>2</sup> over the journey: <strong>1/3</strong>. The straight path <em>z<sub>t</sub></em> = <em>t</em> scores 0.</p>
+<div class="eq" data-tex="\htmlData{sym=SZ}{S(\boldsymbol{Z})} = \htmlData{sym=int01}{\int_0^1} \htmlData{sym=Eexp}{\mathbb{E}}\Big[\htmlData{sym=sqnorm}{\big\|}(\htmlData{sym=Z1}{Z_1} - \htmlData{sym=Z0}{Z_0}) - \htmlData{sym=Zdot}{\dot{Z}_t}\htmlData{sym=sqnorm}{\big\|^2}\Big]\,\htmlData{sym=int01}{\mathrm{d}t}" data-fallback="S(Z) = ∫₀¹ E[‖(Z_1 − Z_0) − Ż_t‖²] dt"></div>
+<div class="symtable" data-syms="SZ,int01,Eexp,Z1,Z0,Zdot,sqnorm"></div>
+<p class="inwords"><strong>In words:</strong> “straightness is the average squared gap between the velocity at each moment and the overall start-to-finish direction; zero means every path is a straight line travelled at constant speed.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for <em>z<sub>t</sub></em> = <em>t</em><sup>2</sup>, the integral of (1 − 2<em>t</em>)<sup>2</sup> from 0 to 1 is <strong>1/3</strong>. For the one-dimensional toy's 1-rectified flow, whose paths bend (§3.4), it is <strong>0.2146</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>n = 100_000
+# the path z_t = t²: overall direction 1, velocity 2t at time t
+S = sum((1 - 2 * ((i + 0.5) / n)) ** 2 for i in range(n)) / n
+round(S, 4)  # → 0.3333</code></pre>
+<p>Theorem 3.7 promises that reflow drives straightness toward zero, at a guaranteed pace:</p>
+<div class="eq" data-tex="\htmlData{sym=minK}{\min_{k \in \{0,\dots,K\}}} \htmlData{sym=SZk}{S(\boldsymbol{Z}^k)} \;\le\; \frac{\htmlData{sym=costX}{\mathbb{E}\big[\|X_1 - X_0\|^2\big]}}{\htmlData{sym=Ksteps}{K}}" data-fallback="min_{k ∈ {0,…,K}} S(Z^k) ≤ E[‖X_1 − X_0‖²] / K"></div>
+<div class="symtable" data-syms="minK,SZk,costX,Ksteps"></div>
+<p class="inwords"><strong>In words:</strong> “after <em>K</em> rounds of reflow, at least one of the flows has straightness no worse than the original pairs' average squared distance divided by <em>K</em>.” The total straightness you can ever remove is bounded by the starting cost, because each round's straightening is paid for by a drop in cost (§3.3).</p>
+<p class="inwords"><strong>With the numbers:</strong> the toy starts at 10.25, so the bound is 10.25 after one round, 5.125 after two, 1.025 after ten. It is a guarantee, and loose: the toy's first flow already has straightness 0.2146, and its second is exactly straight (§3.4).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># E‖X_1 − X_0‖² for noise N(0, 1) paired at random with data N(3, 0.5²)
+cost = 3 ** 2 + 1 + 0.5 ** 2
+cost  # → 10.25
+[cost / K for K in (1, 2, 10)]  # → [10.25, 5.125, 1.025]</code></pre>
+<figure class="ix" id="fig3">
+  <div class="plot" style="margin:0;border:0;padding:0">
+    <div id="fig3-chart"></div>
+    <p class="readout" id="fig3-readout">Hover or tap the chart, or focus it and use the arrow keys, to read both curves.</p>
+  </div>
+  <figcaption>Straightness and transport cost against the number of rectifications, on the two-dimensional toy of Figure 2, computed live. Based on Liu, Gong and Liu (2022), Figure 3(d), redrawn.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the x-axis counts rectifications: 0 is the random pairing, 1 the 1-rectified flow, and so on. The y-axis is relative: the solid line is the straightness of each flow as a share of the first flow's, and the dashed line the transport cost of each coupling as a share of the random pairing's. Straightness collapses after one reflow (to a few percent of where it started) and creeps down after that; the cost drops once, when the crossing lines are removed, and then hardly moves. That matches the paper's advice that one or two reflows are enough, and that too many can pile up estimation error.</p>
+<p><strong>Burgers' equation.</strong> A flow is exactly straight when every point keeps its velocity for the whole trip. That makes the velocity field special: it must satisfy the <span class="t" data-tip-title="Inviscid Burgers' equation" data-tip="An equation from fluid dynamics for a velocity field whose particles never speed up, slow down or turn: the change of velocity in time is cancelled by the change you see by moving with the flow.">inviscid Burgers' equation</span>.</p>
+<div class="eq" data-tex="\htmlData{sym=dtv}{\partial_t v} + \htmlData{sym=dzv}{(\partial_z v)}\,\htmlData{sym=vfun}{v} = 0" data-fallback="∂_t v + (∂_z v) v = 0"></div>
+<div class="symtable" data-syms="dtv,dzv,vfun"></div>
+<p class="inwords"><strong>In words:</strong> “if you ride along with the flow, the velocity you feel never changes: the change at a fixed spot is exactly cancelled by the change from moving to a new spot.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the field <em>v</em>(<em>z</em>, <em>t</em>) = <em>z</em>/(1 + <em>t</em>) carries each point along a straight line <em>z<sub>t</sub></em> = <em>z</em><sub>0</sub>(1 + <em>t</em>). At <em>z</em> = 2, <em>t</em> = 0.5: ∂<sub><em>t</em></sub><em>v</em> = −0.8889 and (∂<sub><em>z</em></sub><em>v</em>)<em>v</em> = +0.8889; they cancel.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def v(z, t):
+    return z / (1 + t)
+z, t, d = 2.0, 0.5, 1e-6
+# ∂_t v and ∂_z v by small finite differences
+dv_dt = (v(z, t + d) - v(z, t - d)) / (2 * d)
+dv_dz = (v(z + d, t) - v(z - d, t)) / (2 * d)
+round(dv_dt, 4), round(dv_dz * v(z, t), 4)  # → (-0.8889, 0.8889)
+abs(dv_dt + dv_dz * v(z, t)) &lt; 1e-6  # → True</code></pre>
+<h4>Distillation, and learning the arrows without a network</h4>
+<p>After <em>k</em> rounds, a network can be trained to jump from <em>Z</em><sub>0</sub> to <em>Z</em><sub>1</sub> in one call: <span class="t" data-t="distillation">distillation</span>. Taking the jump as <em>z</em><sub>0</sub> + <em>v</em>(<em>z</em><sub>0</sub>, 0) turns its loss into the rectified flow loss at <em>t</em> = 0 alone. The paper stresses the difference: distillation copies a coupling faithfully, while rectification <em>changes</em> the coupling to a cheaper, straighter one, so distillation belongs at the very end.</p>
+<p>For low-dimensional toys the paper replaces the network with a smoothing formula that averages the lines near a point, the <span class="t" data-tip-title="Nadaraya-Watson (kernel) estimator" data-tip="An average of nearby examples' answers, each weighted by how close it is to the query: a smooth stand-in for a trained network in low dimensions.">Nadaraya-Watson estimator</span> (equation 5). Every picture on this page that learns a flow uses it.</p>
+<div class="eq" data-tex="\htmlData{sym=vXh}{v^{X,h}(z, t)} = \htmlData{sym=Eexp}{\mathbb{E}}\Big[\frac{\htmlData{sym=X1}{X_1} - \htmlData{sym=zq}{z}}{1 - t}\;\htmlData{sym=omegah}{\omega_h(X_t, z)}\Big], \qquad \htmlData{sym=omegah}{\omega_h(X_t, z)} = \frac{\htmlData{sym=kappah}{\kappa_h(X_t, z)}}{\mathbb{E}\big[\htmlData{sym=kappah}{\kappa_h(X_t, z)}\big]}" data-fallback="v^{X,h}(z, t) = E[(X_1 − z)/(1 − t) · ω_h(X_t, z)],  ω_h = κ_h(X_t, z) / E[κ_h(X_t, z)]"></div>
+<div class="symtable" data-syms="vXh,zq,X1,omegah,kappah"></div>
+<p class="inwords"><strong>In words:</strong> “to guess the arrow at <em>z</em>, look at every training line's position at time <em>t</em>; for each, the direction that would carry <em>z</em> to that line's end point in the time left; average those directions, weighting lines that pass close to <em>z</em> far more.” The kernel κ<sub><em>h</em></sub>(<em>x</em>, <em>z</em>) = exp(−‖<em>x</em> − <em>z</em>‖<sup>2</sup>/2<em>h</em><sup>2</sup>) sets what “close” means.</p>
+<p class="inwords"><strong>With the numbers:</strong> three training pairs (0, 4), (1, 2), (−2, 3) sit at 2, 1.5 and 0.5 at <em>t</em> = 0.5. At <em>z</em> = 1.8 with <em>h</em> = 0.5, their weights are 0.923, 0.835 and 0.034, and the directions to their end points are 4.4, 0.4 and 2.4. The weighted average is <strong>2.498</strong>: mostly the two nearby lines, split nearly evenly.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+pairs = [(0, 4), (1, 2), (-2, 3)]
+t, z, h = 0.5, 1.8, 0.5
+# κ_h(X_t, z): how close each line passes to z at time t
+kappa = [math.exp(-(((1 - t) * x0 + t * x1) - z) ** 2 / (2 * h * h)) for x0, x1 in pairs]
+[round(k, 3) for k in kappa]  # → [0.923, 0.835, 0.034]
+# (X_1 − z)/(1 − t): the direction that reaches each end point in the time left
+aims = [(x1 - z) / (1 - t) for x0, x1 in pairs]
+[round(a, 1) for a in aims]  # → [4.4, 0.4, 2.4]
+# ω_h = κ_h / Σ κ_h, then the weighted average
+round(sum(k * a for k, a in zip(kappa, aims)) / sum(kappa), 3)  # → 2.498</code></pre>
+<h4>Why it matters today</h4>
+<p>This section is the reason “one or two steps” is possible at all. Every sampler takes straight steps; straight paths are the only ones such steps follow without error. Reflow comes with a guarantee that learned paths get straighter, and distilling a straightened flow is a route to one-step generators with no adversarial training.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 A nonlinear extension <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S2.SS3">original</a></span></h3>
+<blockquote class="quote">“Such generalized rectified flows can still transport π<sub>0</sub> to π<sub>1</sub> (Theorem 3.3), but no longer guarantee to decrease convex transport costs, or have the straightening effect.”<cite>Liu, Gong and Liu (2022), §2.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Nothing forces the roads between partners to be straight. Any smooth curve from <em>X</em><sub>0</sub> to <em>X</em><sub>1</sub> works, and averaging its direction still gives a flow that moves the crowd correctly. What you lose is the two guarantees above, cheaper couplings and straightening, which relied on straight lines being the shortest roads.</p>
+<h4>Tiny example</h4>
+<p>Take the road <em>X<sub>t</sub></em> = <em>t</em><sup>2</sup><em>X</em><sub>1</sub> + (1 − <em>t</em><sup>2</sup>)<em>X</em><sub>0</sub>. It is the same straight line as before, but travelled slow-then-fast. With <em>X</em><sub>0</sub> = −1 and <em>X</em><sub>1</sub> = 2, at <em>t</em> = 0.5 it is at −0.25 (where the steady road was at <em>t</em> = 0.25) and moving at speed 3.</p>
+<div class="eq" data-tex="\htmlData{sym=minv}{\min_{v}} \htmlData{sym=int01}{\int_0^1} \htmlData{sym=Eexp}{\mathbb{E}}\Big[\htmlData{sym=wt}{w_t}\htmlData{sym=sqnorm}{\big\|}\htmlData{sym=vfun}{v(X_t, t)} - \htmlData{sym=Xdot}{\dot{X}_t}\htmlData{sym=sqnorm}{\big\|^2}\Big]\,\htmlData{sym=int01}{\mathrm{d}t}, \qquad \htmlData{sym=Xgen}{X_t = \alpha_t X_1 + \beta_t X_0}, \quad \htmlData{sym=Xdot}{\dot{X}_t} = \htmlData{sym=alphadot}{\dot{\alpha}_t}X_1 + \htmlData{sym=betadot}{\dot{\beta}_t}X_0" data-fallback="min_v ∫₀¹ E[w_t ‖v(X_t, t) − Ẋ_t‖²] dt,  X_t = α_t X_1 + β_t X_0,  Ẋ_t = α̇_t X_1 + β̇_t X_0"></div>
+<div class="symtable" data-syms="minv,int01,Eexp,wt,vfun,Xdot,Xgen,alphadot,betadot,sqnorm"></div>
+<p class="inwords"><strong>In words:</strong> “the same loss with any road: match the road's velocity at the road's position, weighting each moment by <em>w<sub>t</sub></em>.” With α<sub><em>t</em></sub> = <em>t</em>, β<sub><em>t</em></sub> = 1 − <em>t</em> and <em>w<sub>t</sub></em> = 1 it is equation 1 again.</p>
+<p class="inwords"><strong>With the numbers:</strong> α = 0.25, β = 0.75, α̇ = 1, β̇ = −1 at <em>t</em> = 0.5: <em>X<sub>t</sub></em> = 0.5 − 0.75 = <strong>−0.25</strong>, <em>Ẋ<sub>t</sub></em> = 2 + 1 = <strong>3</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>t, x0, x1 = 0.5, -1.0, 2.0
+# α_t = t², β_t = 1 − t², and their rates of change
+alpha, beta = t * t, 1 - t * t
+alpha_dot, beta_dot = 2 * t, -2 * t
+alpha * x1 + beta * x0, alpha_dot * x1 + beta_dot * x0  # → (-0.25, 3.0)</code></pre>
+<h4>Why it matters today</h4>
+<p>This one generalisation is enough to fit diffusion's samplers inside the framework, as the next subsection shows, and to compare roads on equal terms.</p>
+</section>
+
+<section id="s2-3-1">
+<h3>2.3.1 Probability flow ODEs and DDIM <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S2.SS3.SSS1">original</a></span></h3>
+<blockquote class="quote">“The linear rectified flow yields nearly straight trajectories with one step of reflow. But the trajectories of VP ODE and sub-VP ODE are curved and can not be straightened by reflowing.”<cite>Liu, Gong and Liu (2022), Figure 4 caption</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The <a href="score-sde.html">score SDE paper</a>'s <span class="t" data-t="probability flow ode">probability flow ODEs</span>, and <a href="ddim.html">DDIM</a>, turn out to be rectified flows along curved, unevenly paced roads. The shape of the road was never chosen for sampling: it was inherited from a noising process designed years earlier for stochastic models.</p>
+<h4>Tiny example</h4>
+<p>Halfway along the VP road (<em>t</em> = 0.5), the moving point is only 28% data and 96% noise (for VP the squares of the two shares add to 1, not the shares). On the straight road it is 50% of each.</p>
+<div class="eq" data-tex="\htmlData{sym=alphaVP}{\alpha_t} = \exp\!\Big(-\tfrac{1}{4}\htmlData{sym=acoef}{a}(1-t)^2 - \tfrac{1}{2}\htmlData{sym=bcoef}{b}(1-t)\Big), \qquad \htmlData{sym=betaVP}{\beta_t^{\text{VP}}} = \sqrt{1 - \alpha_t^2}, \qquad \htmlData{sym=betaSub}{\beta_t^{\text{sub-VP}}} = 1 - \alpha_t^2" data-fallback="α_t = exp(−¼ a (1 − t)² − ½ b (1 − t)),  β_t^VP = √(1 − α_t²),  β_t^sub-VP = 1 − α_t²"></div>
+<div class="symtable" data-syms="alphaVP,acoef,bcoef,betaVP,betaSub"></div>
+<p class="inwords"><strong>In words:</strong> “the data share rises slowly and then steeply toward 1, following the exponential fade of the score SDE's VP noising read backwards; the noise share is set so the two shares' squares add to 1 (VP), or so it shrinks faster (sub-VP).” The defaults <em>a</em> = 19.9 and <em>b</em> = 0.1 are the score SDE paper's β<sub>max</sub> − β<sub>min</sub> and β<sub>min</sub>.</p>
+<p class="inwords"><strong>With the numbers:</strong> at <em>t</em> = 0.5: α = e<sup>−1.26875</sup> = <strong>0.2812</strong>; VP β = <strong>0.9597</strong>; sub-VP β = <strong>0.9209</strong>. The straight road has α = β = 0.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+a, b, t = 19.9, 0.1, 0.5
+# α_t = exp(−¼ a (1 − t)² − ½ b (1 − t))
+alpha = math.exp(-0.25 * a * (1 - t) ** 2 - 0.5 * b * (1 - t))
+round(alpha, 4)  # → 0.2812
+# β for VP (squares add to 1) and for sub-VP
+round(math.sqrt(1 - alpha ** 2), 4), round(1 - alpha ** 2, 4)  # → (0.9597, 0.9209)</code></pre>
+<div class="plot" id="fig6">
+  <div class="controls"><span class="rf-toggle" role="group" aria-label="Which share to plot"><button type="button" data-share="alpha" aria-pressed="true">data share α_t</button><button type="button" data-share="beta" aria-pressed="false">noise share β_t</button></span></div>
+  <div id="fig6-chart"></div>
+  <p class="readout" id="fig6-readout">Hover or tap the chart, or focus it and use the arrow keys, to read the curves.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is time from noise (0) to data (1). With <strong>data share α<sub>t</sub></strong> selected, the straight line is rectified flow, rising steadily from 0 to 1; the dashed curve is the shared α of VP and sub-VP, which stays below 0.2 until about <em>t</em> = 0.4 and then shoots up. With <strong>noise share β<sub>t</sub></strong> selected, rectified flow falls steadily, while VP and sub-VP hold near 1 for the first half. Both pictures say the same thing: the diffusion roads do almost nothing early and everything late, the uneven pace the paper objects to. Based on Liu, Gong and Liu (2022), Figure 6, redrawn from equations 7 and 8.</p>
+<h4>Figures 4 and 5, redrawn: the same noise, four roads, N steps</h4>
+<figure class="ix" id="fig5">
+  <div class="plot" style="margin:0;border:0;padding:0">
+    <div class="controls">
+      <span class="rf-toggle" role="group" aria-label="Which road">
+        <button type="button" data-road="rf" aria-pressed="true">rectified flow</button>
+        <button type="button" data-road="vp" aria-pressed="false">VP ODE</button>
+        <button type="button" data-road="subvp" aria-pressed="false">sub-VP ODE</button>
+        <button type="button" data-road="vpc" aria-pressed="false">VP ODE, α = t</button>
+      </span>
+      <label for="fig5-n">Euler steps N = <strong id="fig5-nv">2</strong></label><input type="range" id="fig5-n" min="1" max="30" step="1" value="2">
+    </div>
+    <canvas id="fig5-canvas" class="rf-canvas" width="640" height="640" aria-label="Samples from standard noise carried toward three tight clusters by N Euler steps along one of four roads, with some of their journeys drawn."></canvas>
+    <p class="readout" id="fig5-readout"></p>
+  </div>
+  <figcaption>π<sub>0</sub> = N(0, I) and π<sub>1</sub> a mixture of three tight bell curves (spread 0.3) on a circle of radius 3. Each road's exact averaged velocity is computed in closed form and followed with N equal Euler steps. Based on Liu, Gong and Liu (2022), Figures 4 and 5, redrawn.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the three outlined squares are the target clusters; dots are 300 samples, all starting from the same noise, after <em>N</em> Euler steps; faint lines are 40 of their journeys. <strong>Rectified flow, N = 1:</strong> everything lands on the centre, the mean of the data, exactly as the paper says a single step of a 1-rectified flow must. At N = 2 the samples have already split toward the three clusters, and by 3 to 5 steps they sit on them. <strong>VP ODE:</strong> at N = 1 or 2 the samples have barely left the noise, because the road hardly moves during the early steps; it needs about 10 steps to match what rectified flow does in 3 to 5. <strong>Sub-VP</strong> is a little better than VP. <strong>VP ODE with α = t</strong> follows VP's curved roads at a steadier pace in α, as the paper proposes; on this toy that alone does not help (at 5 steps it lands further off than VP), because the roads still bend sharply near the end. The readout gives the average distance to the nearest cluster centre; about 0.37 is the floor set by the clusters' own spread.</p>
+<h4>The VE ODE</h4>
+<p>The variance exploding ODE uses α<sub><em>t</em></sub> = 1 and a noise share that shrinks from σ<sub>max</sub> to almost 0, so its starting crowd is a very wide bell curve. Its roads are straight (the direction ξ never changes) but travelled at a very uneven pace; the paper leaves it out of its toys because it cannot start from the standard bell curve.</p>
+<h4>Why it matters today</h4>
+<p>The paper's conclusion is a design rule that stuck: the ODE can be learned directly, any road can be chosen, the starting distribution is free, and the canonical choice is the straight line at constant speed. Its <a href="score-sde.html">score SDE</a> ancestor derived its ODE from an SDE; this paper, and <a href="flow-matching.html">flow matching</a>, choose the road first.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Theoretical analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S3">original</a></span></h2>
+<p>Every result below is illustrated on the one-dimensional toy: noise N(0, 1) paired at random with data N(3, 0.5<sup>2</sup>). For this toy the rectified flow can be solved exactly: a point starting at <em>z</em><sub>0</sub> is at <em>Z<sub>t</sub></em> = 3<em>t</em> + <em>z</em><sub>0</sub>√<em>q</em>(<em>t</em>), with <em>q</em>(<em>t</em>) = (1 − <em>t</em>)<sup>2</sup> + 0.25<em>t</em><sup>2</sup>, and so it ends at <em>Z</em><sub>1</sub> = 3 + 0.5<em>z</em><sub>0</sub>.</p>
+
+<section id="s3-1">
+<h3>3.1 The marginal preserving property <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S3.SS1">original</a></span></h3>
+<blockquote class="quote">“Because Z<sub>t</sub> is driven by the same velocity field v<sup>X</sup>, its marginal law Law(Z<sub>t</sub>) solves the very same equation with the same initial condition (Z<sub>0</sub> = X<sub>0</sub>).”<cite>Liu, Gong and Liu (2022), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Film a crowd crossing a square from above and blur the individuals: you see a smooth density moving. That density only changes as fast as people flow in and out of each spot, and the flow at each spot is the density times the average velocity there (the <a href="flow-matching.html#appendix-b">continuity equation</a>). The straight-line walkers and the sleepwalkers have the same average velocity everywhere, by construction, and start as the same crowd. So the film looks the same, frame by frame, even though individuals take different routes.</p>
+<h4>Tiny example</h4>
+<p>At <em>t</em> = 0.5, the straight lines' crowd <em>X</em><sub>0.5</sub> = 0.5<em>X</em><sub>0</sub> + 0.5<em>X</em><sub>1</sub> has mean 1.5 and variance 0.25 + 0.0625 = <strong>0.3125</strong>. Push 10,000 noise samples through the rectified flow to <em>t</em> = 0.5 with small Euler steps: their mean is 1.5 and their variance 0.31.</p>
+<div class="eq" data-tex="\htmlData{sym=LawZ}{\mathrm{Law}(Z_t)} = \htmlData{sym=LawX}{\mathrm{Law}(X_t)}, \qquad \forall\, t \in [0, 1]" data-fallback="Law(Z_t) = Law(X_t) for all t in [0, 1]"></div>
+<div class="symtable" data-syms="LawZ,LawX"></div>
+<p class="inwords"><strong>In words:</strong> “at every moment, the flow's crowd is distributed exactly as the straight lines' crowd”; at <em>t</em> = 1 that means the flow delivers exactly the data distribution (Theorem 3.3).</p>
+<p class="inwords"><strong>With the numbers:</strong> mean 1.5 and variance 0.3125 for the lines; 1.5 and 0.31 for 10,000 simulated flow paths (the small gap is sampling noise and step error).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import random
+random.seed(0)
+# q(t) = Var X_t and c(t) = Cov(X_1 − X_0, X_t) for the toy
+def q(t):
+    return (1 - t) ** 2 + 0.25 * t * t
+def c(t):
+    return 0.25 * t - (1 - t)
+zs = [random.gauss(0, 1) for _ in range(10_000)]
+steps = 200
+h = 0.5 / steps
+# follow v^X(z, t) = 3 + (c/q)(z − 3t) from t = 0 to 0.5
+for i in range(steps):
+    t = i * h
+    zs = [z + h * (3 + c(t) / q(t) * (z - 3 * t)) for z in zs]
+mean = sum(zs) / len(zs)
+var = sum((z - mean) ** 2 for z in zs) / len(zs)
+round(mean, 2), round(var, 2), q(0.5)  # → (1.5, 0.31, 0.3125)</code></pre>
+<h4>Why it matters today</h4>
+<p>This is the property that makes any of it a generator: the flow is guaranteed to deliver π<sub>1</sub> if the averaged velocity is learned well. It holds for every road, straight or not, which is why diffusion's ODEs work too.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Reducing convex transport costs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“The proof is based on elementary applications of Jensen's inequality.”<cite>Liu, Gong and Liu (2022), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A <span class="t" data-t="convex">convex</span> cost punishes long jumps at least in proportion: squared distance, plain distance, distance to the fourth power. The proof uses one fact twice, <span class="t" data-tip-title="Jensen's inequality" data-tip="For a bowl-shaped (convex) function, the function of an average is never more than the average of the function: squaring the mean of 1 and 3 gives 4, while the mean of their squares is 5.">Jensen's inequality</span>: averaging first and then paying the cost is never dearer than paying the cost first and then averaging. The flow averages directions, so its pairs can only be cheaper.</p>
+<h4>Tiny example</h4>
+<p>In the toy, random pairs cost 10.25 in squared distance; the rectified pairs (<em>z</em><sub>0</sub>, 3 + 0.5<em>z</em><sub>0</sub>) cost 3<sup>2</sup> + 0.25 = <strong>9.25</strong>. In plain distance, 3.0025 against <strong>3.0000</strong>: smaller again, though barely, because both jumps are mostly the same 3 to the right.</p>
+<div class="eq" data-tex="\htmlData{sym=Ecost}{\mathbb{E}}\big[\htmlData{sym=cfun}{c}(\htmlData{sym=Z1}{Z_1} - \htmlData{sym=Z0}{Z_0})\big] \;\le\; \htmlData{sym=Ecost}{\mathbb{E}}\big[\htmlData{sym=cfun}{c}(\htmlData{sym=X1}{X_1} - \htmlData{sym=X0}{X_0})\big]" data-fallback="E[c(Z_1 − Z_0)] ≤ E[c(X_1 − X_0)]"></div>
+<div class="symtable" data-syms="Ecost,cfun,Z1,Z0,X1,X0"></div>
+<p class="inwords"><strong>In words:</strong> “for any convex cost at all, the rectified pairs cost no more than the pairs you started with” (Theorem 3.5). No particular cost is being minimised: all of them go down together.</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>X</em><sub>1</sub> − <em>X</em><sub>0</sub> is a bell curve with mean 3 and variance 1.25; <em>Z</em><sub>1</sub> − <em>Z</em><sub>0</sub> = 3 − 0.5<em>z</em><sub>0</sub> has mean 3 and variance 0.25. Squared: 10.25 ≥ 9.25. Absolute: 3.0025 ≥ 3.0000.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# E[c] for a bell curve of mean mu and spread s, for c(x) = x² and c(x) = |x|
+def e_square(mu, s):
+    return mu ** 2 + s ** 2
+def e_abs(mu, s):
+    tail = 0.5 * (1 + math.erf(-mu / s / math.sqrt(2)))
+    return s * math.sqrt(2 / math.pi) * math.exp(-mu ** 2 / (2 * s ** 2)) + mu * (1 - 2 * tail)
+# X_1 − X_0 ~ N(3, 1.25) for random pairs; Z_1 − Z_0 = 3 − 0.5 z_0 ~ N(3, 0.25) after rectifying
+old, new = (3, math.sqrt(1.25)), (3, 0.5)
+round(e_square(*new), 4), round(e_square(*old), 4)  # → (9.25, 10.25)
+round(e_abs(*new), 4), round(e_abs(*old), 4)  # → (3.0, 3.0025)</code></pre>
+<h4>Why it matters today</h4>
+<p>Cheaper couplings mean shorter journeys, and deterministic ones mean each noise sample has one definite image: a usable <span class="t" data-t="latent space">latent space</span> for editing, which the paper uses in §5.2.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 The straightening effect <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S3.SS3">original</a></span></h3>
+<blockquote class="quote">“Then, we prove that recursive rectification straightens the coupling and its related flow with a O(1/k) rate, where k is the number of rectification steps.”<cite>Liu, Gong and Liu (2022), §3.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A coupling is <strong>straight</strong> when rectifying it changes nothing: its straight lines never cross, so the average arrow at every spot is the one line through it, and the flow simply follows the lines. Each round of reflow removes crossings, and every bit of crossing it removes is paid for from a fixed budget, the starting cost. A budget that only goes down cannot keep paying forever, so the crossings, and the bending, must fade.</p>
+<h4>Tiny example</h4>
+<p>In the toy, one rectification lowers the squared cost from 10.25 to 9.25, a drop of exactly 1. That drop splits into two parts: how much the new flow bends, <em>S</em> = 1 − π/4 = <strong>0.2146</strong>, and how much the old straight lines crossed, <em>V</em> = π/4 = <strong>0.7854</strong>.</p>
+<div class="eq" data-tex="\htmlData{sym=VX}{V\big((X_0, X_1)\big)} = \htmlData{sym=int01}{\int_0^1} \htmlData{sym=Eexp}{\mathbb{E}}\Big[\big\|\htmlData{sym=X1}{X_1} - \htmlData{sym=X0}{X_0} - \htmlData{sym=Econd}{\mathbb{E}\big[\,\cdot \mid X_t\big]}[X_1 - X_0]\big\|^2\Big]\,\htmlData{sym=int01}{\mathrm{d}t}, \qquad \htmlData{sym=costdrop}{\mathbb{E}\|X_1 - X_0\|^2 - \mathbb{E}\|Z_1 - Z_0\|^2} = \htmlData{sym=SZ}{S(\boldsymbol{Z})} + \htmlData{sym=VX}{V\big((X_0, X_1)\big)}" data-fallback="V((X_0, X_1)) = ∫₀¹ E[‖X_1 − X_0 − E[X_1 − X_0 | X_t]‖²] dt;  E‖X_1 − X_0‖² − E‖Z_1 − Z_0‖² = S(Z) + V((X_0, X_1))"></div>
+<div class="symtable" data-syms="VX,Econd,costdrop,SZ,int01,Eexp,X1,X0"></div>
+<p class="inwords"><strong>In words:</strong> “<em>V</em> measures how much the straight lines disagree with their own average where they meet, which is zero exactly when no two lines cross; and one round of rectification lowers the squared cost by the new flow's bending plus the old lines' crossing.” Summing this over rounds gives Theorem 3.7's bound.</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>V</em> integrates 1.25 − <em>c</em><sup>2</sup>/<em>q</em>; <em>S</em> integrates (0.5 + <em>c</em>/√<em>q</em>)<sup>2</sup>. They come to 0.7854 and 0.2146, and add to <strong>1.0</strong> = 10.25 − 9.25.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def q(t):
+    return (1 - t) ** 2 + 0.25 * t * t
+def c(t):
+    return 0.25 * t - (1 - t)
+n = 100_000
+ts = [(i + 0.5) / n for i in range(n)]
+# V: variance of X_1 − X_0 (1.25) minus the part the average arrow explains, c²/q
+V = sum(1.25 - c(t) ** 2 / q(t) for t in ts) / n
+# S: the flow's velocity c/√q · z_0 + 3 against its overall direction 3 − 0.5 z_0
+S = sum((0.5 + c(t) / math.sqrt(q(t))) ** 2 for t in ts) / n
+round(V, 4), round(S, 4), round(V + S, 4)  # → (0.7854, 0.2146, 1.0)
+round(math.pi / 4, 4)  # → 0.7854</code></pre>
+<p>A note on the source: equation 13 in the paper prints the cost drop without the squares, as E‖<em>X</em><sub>1</sub> − <em>X</em><sub>0</sub>‖ − E‖<em>Z</em><sub>1</sub> − <em>Z</em><sub>0</sub>‖; the sentence before it (take <em>c</em>(<em>x</em>) = ‖<em>x</em>‖<sup>2</sup>) and the equation after it both have them, and only the squared version is true. The toy confirms it: the plain-distance drop is 0.0025, nowhere near 1.</p>
+<div class="plot" id="fig-1d">
+  <div class="controls"><span class="rf-toggle" role="group" aria-label="Which paths to draw">
+    <button type="button" data-paths="lines" aria-pressed="true">random pairs</button>
+    <button type="button" data-paths="rf1" aria-pressed="false">1-rectified flow</button>
+    <button type="button" data-paths="rf2" aria-pressed="false">2-rectified flow</button>
+  </span></div>
+  <canvas id="fig-1d-canvas" class="rf-canvas" width="640" height="420" aria-label="Paths of the one-dimensional toy through time: noise at time 0 on the left carried to data around 3 at time 1 on the right."></canvas>
+  <p class="readout" id="fig-1d-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> time runs left to right; height is position. Nine noise samples, evenly spread from −2 to 2, start on the left; the data crowd is centred at 3 with spread 0.5. <strong>Random pairs:</strong> each start is joined by a straight line to a random data point; the lines criss-cross. <strong>1-rectified flow:</strong> the exact flow from the formula above. The paths never cross; they first squeeze together (the crowd narrows from spread 1 toward 0.45 around <em>t</em> = 0.8) and then fan out again to spread 0.5, so they bend. The order of the starts is kept: the lowest noise goes to the lowest data. <strong>2-rectified flow:</strong> the same starts and the same ends, joined straight, because in one dimension the ordered pairing's lines never cross: one reflow makes the flow exactly straight.</p>
+<h4>Why it matters today</h4>
+<p>The straightening theorem is why reflow works in practice: the paper's CIFAR-10 flows go from recognisable-but-blurry images at one step to clear ones after a single reflow (§5.2).</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Straight vs. optimal couplings <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S3.SS4">original</a></span></h3>
+<blockquote class="quote">“Hence, it is “easier” to find a straight coupling than a c-optimal couplings.”<cite>Liu, Gong and Liu (2022), §3.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Straight and optimal are different goals. Optimal means the cheapest pairing for one chosen cost. Straight only means no two lines cross. Every optimal pairing is straight (if two lines crossed, swapping partners would be cheaper), but not every straight pairing is optimal, except on a line.</p>
+<h4>Tiny example</h4>
+<p>On a line (one dimension), a pairing is straight exactly when it keeps the order: the lowest start goes to the lowest destination, and so on. That ordered pairing is the cheapest for every convex cost at once. The toy's rectified pairing, <em>z</em><sub>0</sub> → 3 + 0.5<em>z</em><sub>0</sub>, keeps the order, so it is both straight and optimal: 9.25 is the least squared cost any pairing of these two crowds can reach. In two or more dimensions, rectification finds <em>a</em> straight pairing, which need not be the cheapest; the paper points to follow-up work that restricts the velocity to the gradient of a function to reach the squared-cost optimum.</p>
+<h4>Why it matters today</h4>
+<p>For fast sampling, any straight pairing is as good as any other: all of them can be followed exactly in one step. The paper argues that chasing exact optimal transport is therefore unnecessary for generation, and also shows that an earlier conjecture, that DDIM's pairing is optimal for the squared cost, was already known to be false.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Denoising diffusion models and probability flow ODEs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S3.SS5">original</a></span></h3>
+<blockquote class="quote">“We prove that the probability flow ODEs (PF-ODEs) of [73] can be viewed as nonlinear rectified flows in (6) with X<sub>t</sub> = α<sub>t</sub>X<sub>1</sub> + β<sub>t</sub>ξ.”<cite>Liu, Gong and Liu (2022), §3.5</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A diffusion model's ODE is trained with a target written in the language of noise processes: a shrink rate η<sub><em>t</em></sub> and a noise strength σ<sub><em>t</em></sub>. Proposition 3.11 translates that target into road language, and finds it is exactly the velocity of the road <em>X<sub>t</sub></em> = α<sub><em>t</em></sub><em>X</em><sub>1</sub> + β<sub><em>t</em></sub>ξ: the diffusion ODE was a rectified flow all along.</p>
+<h4>Tiny example</h4>
+<p>On the VP road at <em>t</em> = 0.5, with data <em>X</em><sub>1</sub> = 1 and noise ξ = 0.5: the road's own velocity is α̇<em>X</em><sub>1</sub> + β̇ξ = 1.4129 − 0.2070 = <strong>1.2059</strong>. The diffusion ODE's training target, built from η<sub>0.5</sub> = −5.025 and σ<sub>0.5</sub><sup>2</sup> = 10.05, is also <strong>1.2059</strong>. (That σ<sup>2</sup> is the score SDE paper's β(0.5), read in reversed time.)</p>
+<div class="eq" data-tex="\htmlData{sym=Ytilde}{\tilde{Y}_t} = -\htmlData{sym=eta}{\eta_t}\,\htmlData{sym=Xgen}{X_t} - \frac{\htmlData{sym=sig2}{\sigma_t^2}}{2\htmlData{sym=betaVP}{\beta_t}}\,\htmlData{sym=xi}{\xi}, \qquad \htmlData{sym=eta}{\eta_t} = -\frac{\htmlData{sym=alphadot}{\dot{\alpha}_t}}{\alpha_t}, \quad \htmlData{sym=sig2}{\sigma_t^2} = 2\beta_t^2\Big(\frac{\htmlData{sym=alphadot}{\dot{\alpha}_t}}{\alpha_t} - \frac{\htmlData{sym=betadot}{\dot{\beta}_t}}{\beta_t}\Big) \;\;\Longrightarrow\;\; \htmlData{sym=Ytilde}{\tilde{Y}_t} = \htmlData{sym=alphadot}{\dot{\alpha}_t}X_1 + \htmlData{sym=betadot}{\dot{\beta}_t}\,\htmlData{sym=xi}{\xi}" data-fallback="Ỹ_t = −η_t X_t − σ_t²/(2β_t) ξ,  η_t = −α̇_t/α_t,  σ_t² = 2β_t²(α̇_t/α_t − β̇_t/β_t)  ⟹  Ỹ_t = α̇_t X_1 + β̇_t ξ"></div>
+<div class="symtable" data-syms="Ytilde,eta,Xgen,sig2,betaVP,xi,alphadot,betadot"></div>
+<p class="inwords"><strong>In words:</strong> “the probability flow's training target, a shrink term plus a noise term, equals the road's velocity once the shrink rate and noise strength are written in terms of the road's two shares.”</p>
+<p class="inwords"><strong>With the numbers:</strong> α = 0.2812, α̇ = 1.4129, β = 0.9597, β̇ = −0.4140; η = −5.025, σ<sup>2</sup> = 10.05; <em>X<sub>t</sub></em> = 0.2812 + 0.4798 = 0.7610; Ỹ = 5.025 × 0.7610 − (10.05/1.9193) × 0.5 = <strong>1.2059</strong>, the same as α̇ × 1 + β̇ × 0.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+a, b, t = 19.9, 0.1, 0.5
+u = 1 - t
+# the VP road: α, β and their rates of change
+alpha = math.exp(-0.25 * a * u * u - 0.5 * b * u)
+alpha_dot = alpha * (0.5 * a * u + 0.5 * b)
+beta = math.sqrt(1 - alpha ** 2)
+beta_dot = -alpha * alpha_dot / beta
+# η and σ² written in terms of the road
+eta = -alpha_dot / alpha
+sigma2 = 2 * beta ** 2 * (alpha_dot / alpha - beta_dot / beta)
+round(eta, 3), round(sigma2, 2)  # → (-5.025, 10.05)
+x1, xi = 1.0, 0.5
+x_t = alpha * x1 + beta * xi
+# the diffusion ODE's target and the road's velocity
+y_tilde = -eta * x_t - sigma2 / (2 * beta) * xi
+round(y_tilde, 4), round(alpha_dot * x1 + beta_dot * xi, 4)  # → (1.2059, 1.2059)</code></pre>
+<p>Two notes on the source. The proof's second line writes the shrink rate with a dot (η̇<sub><em>t</em></sub>) where the rest of the section, and the computation above, use η<sub><em>t</em></sub> itself; and the nonlinear rectified flow's definition in §2.3 prints E[Ẋ<sub><em>t</em></sub> | <em>X<sub>t</sub></em> = <em>t</em>] where the condition must be <em>X<sub>t</sub></em> = <em>z</em>. Both read as typos; neither changes a result.</p>
+<h4>Why it matters today</h4>
+<p>Seen this way, the difference between a diffusion ODE and a rectified flow is only the road: curved and unevenly paced, or straight and steady. That is the whole case for training on straight roads, and it is why the <a href="ddim.html">DDIM companion</a>'s sampler and the lesson's <a data-lesson="primer/ml/generative/diffusion.html#euler_step"><code>euler_step</code></a> are the same kind of step on different roads.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Related works and discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S4">original</a></span></h2>
+<blockquote class="quote">“The success of the denoising diffusion models may be mainly attributed to the simple and stable optimization-based training procedure that allows us to avoid the instability issues and the need of case-by-case tuning of GANs, rather than the presence of diffusion noises.”<cite>Liu, Gong and Liu (2022), §4</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The discussion places rectified flow among the ways to learn a transport map, and then makes a provocative argument: the noise in diffusion models was a means, not the point. What made them work was a stable regression loss, and an ODE can have that without the noise.</p>
+<h3 class="rung">The main comparisons</h3>
+<ul>
+  <li><strong>One-step models.</strong> GANs are unstable and can <span class="t" data-t="mode collapse">mode-collapse</span>; <span class="t" data-t="variational autoencoder">VAEs</span> and <span class="t" data-tip-title="Normalizing flow" data-tip="A generator built from invertible steps whose effect on probability can be computed exactly; the price is restrictive network designs.">normalizing flows</span> need approximations or constrained designs. Reflow plus distillation is offered as a fourth route.</li>
+  <li><strong>Training ODEs by likelihood</strong> (neural ODEs) needs the ODE simulated in every training step and back-propagation through all of it, and is under-specified: infinitely many ODEs deliver the same final distribution. Fixing the road in advance, as rectified flow does, removes both problems.</li>
+  <li><strong>Probability flow ODEs and DDIM</strong> avoid those costs but inherit roads from SDE theory that are “unnecessarily restrictive and complicated”.</li>
+  <li><strong>ODEs versus SDEs.</strong> ODEs are simpler, faster to simulate, as easy to run backwards as forwards, give deterministic pairs (a useful latent space), are no harder to train, and represent the same crowds; SDEs may still suit truly noisy data or time-correlation structure.</li>
+  <li><strong>Optimal versus straight transport.</strong> For fast inference any straight coupling is as good as the optimal one.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Whether or not the noise was ever essential, this is the framing the <a href="flow-matching.html">flow matching companion</a> and the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> use: an ODE trained by regression, with diffusion's roads as one choice among several. The lesson teaches DDPM, DDIM and flow matching side by side as one family.</p>
+</section>
+
+<section id="s5">
+<h2>5 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S5">original</a></span></h2>
+<p>Every experiment follows Algorithm 1: train on independent pairs, simulate the flow to get new pairs, reflow, and optionally distill. Flows are simulated with plain Euler steps of size 1/<em>N</em>, or with an adaptive solver (RK45) for full-quality numbers.</p>
+
+<section id="s5-1">
+<h3>5.1 Toy examples <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S5.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To see the theory without a neural network's quirks, the toys use the kernel estimator of equation 5, averaged over the 100 nearest training lines with bandwidth 1 (the paper finds results insensitive to both). A small network also works (two hidden layers of 64), fitting the averaged arrows a little less crisply; the paper finds that stronger <span class="t" data-t="l2 regularization">L2 regularization</span>, which makes the network smoother, helps straighten the flow further.</p>
+<h4>How straightness and cost were measured</h4>
+<p>Straightness is equation 3 estimated from simulated paths, as in <a href="#fig2">Figure 2</a> above. For cost, the paper compares each coupling with the best possible pairing of the same end points, found by solving the discrete optimal transport problem, and notes a trap: in high dimensions that relative cost is near zero even for a random network, which is how an earlier study came to believe DDIM was optimal.</p>
+<h4>Why it matters today</h4>
+<p>Low-dimensional pictures like these are still the fastest way to see what a sampler does to paths; the redrawn figures on this page are built the same way.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 Unconditioned image generation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S5.SS2">original</a></span></h3>
+<blockquote class="quote">“In particular, the distilled 2-rectified flow achieves an FID of 4.85, beating the best known one-step generative model with U-net architecture, 8.91 (TDPM, Table 1 (b)).”<cite>Liu, Gong and Liu (2022), §5.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>On CIFAR-10 the paper uses the score SDE paper's DDPM++ <span class="t" data-t="u-net">U-Net</span> and code, so the comparison with the VP and sub-VP ODEs is like for like: same network, different road. Quality is measured by FID and <span class="t" data-t="inception score">Inception score</span>, and diversity by <span class="t" data-tip-title="Recall (for generators)" data-tip="The share of real images that lie close to some generated image: high when the generator covers all the kinds of data, low when it produces only a few kinds.">recall</span>.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1(a), reproduced with attribution (Liu, Gong and Liu, 2022): CIFAR-10, all with the DDPM++ network. NFE is the number of network calls per image. In the one-step rows, the number in brackets is after distillation</caption>
+  <thead><tr><th>Method</th><th class="num">NFE</th><th class="num">FID ↓</th><th class="num">Recall ↑</th></tr></thead>
+  <tbody>
+    <tr><td>1-rectified flow, one Euler step</td><td class="num">1</td><td class="num">378 (6.18)</td><td class="num">0.0 (0.45)</td></tr>
+    <tr class="hl"><td>2-rectified flow, one Euler step</td><td class="num">1</td><td class="num">12.21 (4.85)</td><td class="num">0.34 (0.50)</td></tr>
+    <tr><td>3-rectified flow, one Euler step</td><td class="num">1</td><td class="num">8.15 (5.21)</td><td class="num">0.41 (0.51)</td></tr>
+    <tr><td>VP ODE, one Euler step</td><td class="num">1</td><td class="num">451 (16.23)</td><td class="num">0.0 (0.29)</td></tr>
+    <tr><td>1-rectified flow, adaptive solver</td><td class="num">127</td><td class="num">2.58</td><td class="num">0.57</td></tr>
+    <tr><td>VP ODE, adaptive solver</td><td class="num">140</td><td class="num">3.93</td><td class="num">0.51</td></tr>
+    <tr><td>VP SDE, 2,000 Euler steps</td><td class="num">2000</td><td class="num">2.55</td><td class="num">0.58</td></tr>
+  </tbody>
+</table></div>
+<p>Read the one-step rows first: without reflow, one step is useless (FID 378, the blurred average image of <a href="#fig5">Figure 5</a>'s first panel); after one reflow it is 12.21 without any distillation, and 4.85 with it. With a full solver, the 1-rectified flow is the best ODE on the page (FID 2.58 with 127 calls) and close to the 2,000-step SDE. The paper also reports the trade-off honestly: reflow helps a lot below about 80 steps but slightly hurts with many steps, because each round adds some estimation error.</p>
+<h4>Seeing straightness in pictures</h4>
+<p>Figure 10 of the paper extrapolates from the middle of a path to its end with one straight jump. On a straight path that guess never changes as you move along it.</p>
+<div class="eq" data-tex="\htmlData{sym=z1hat}{\hat{z}_1^{\,t}} = \htmlData{sym=zt}{z_t} + (1 - t)\,\htmlData{sym=vfun}{v(z_t, t)}" data-fallback="ẑ₁ᵗ = z_t + (1 − t) v(z_t, t)"></div>
+<div class="symtable" data-syms="z1hat,zt,vfun"></div>
+<p class="inwords"><strong>In words:</strong> “from where the path is now, jump straight to the end, at the current velocity, for all the time that is left.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the one-dimensional toy, the 1-rectified flow from <em>z</em><sub>0</sub> = 1 is at 2.0590 at <em>t</em> = 0.5 with velocity 2.3292, so the guess is <strong>3.2236</strong>, though the path really ends at 3.5. On the 2-rectified flow the path is the straight line from 1 to 3.5, and the guess is 3.5 at every <em>t</em>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def q(t):
+    return (1 - t) ** 2 + 0.25 * t * t
+def c(t):
+    return 0.25 * t - (1 - t)
+t, z0 = 0.5, 1.0
+# the 1-rectified flow: z_t = 3t + z_0 √q(t), velocity 3 + (c/q)(z_t − 3t)
+z_t = 3 * t + z0 * math.sqrt(q(t))
+v = 3 + c(t) / q(t) * (z_t - 3 * t)
+round(z_t, 4), round(v, 4)  # → (2.059, 2.3292)
+round(z_t + (1 - t) * v, 4), 3 + 0.5 * z0  # → (3.2236, 3.5)
+# the 2-rectified flow is the straight line from z_0 to 3.5
+z2 = (1 - t) * z0 + t * 3.5
+z2 + (1 - t) * (3.5 - z0)  # → 3.5</code></pre>
+<p>On cat faces, the 2-rectified flow's extrapolated image hardly changes along the path, and even the 1-rectified flow's is recognisable by <em>t</em> ≈ 0.1, where the sub-VP ODE's needs <em>t</em> ≈ 0.6. The paper also shows 256 × 256 images (bedrooms, churches, faces, cats) from the 1-rectified flow, and simple edits: run the flow backwards from a stitched-together image to its noise, nudge the noise toward more probable values, and run forwards again.</p>
+<h4>Why it matters today</h4>
+<p>This table is the evidence behind “reflow, then distill” as a route to few-step generation, and the backwards-then-forwards edit shows the practical value of a deterministic, low-cost coupling.</p>
+</section>
+
+<section id="s5-3">
+<h3>5.3 Image-to-image translation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S5.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Set π<sub>0</sub> to photos of cats and π<sub>1</sub> to photos of wild animals, with no pairs, and the same algorithm learns to turn one into the other. There is no need for the cycle-consistency penalty of <span class="t" data-tip-title="CycleGAN" data-tip="An earlier method for unpaired image translation: two GANs map each way, and a penalty requires that going there and back returns the original image.">CycleGAN</span>, because an ODE run backwards returns exactly where it started. But the goal here is not an exact match to π<sub>1</sub>: it is to change the style while keeping the subject, so the loss only counts errors that change the style.</p>
+<h4>Tiny example</h4>
+<p>A two-number “image” whose first number is its style and second its content. A pair moves from (0, 0) to (2, 1); the network guesses the velocity (1.5, 3.0). The plain loss counts both errors: 0.5<sup>2</sup> + 2<sup>2</sup> = 4.25. With the style feature <em>h</em>(<em>x</em>) = first number, whose slope is (1, 0), only the style error counts: 0.5<sup>2</sup> = <strong>0.25</strong>.</p>
+<div class="eq" data-tex="\htmlData{sym=minv}{\min_{v}} \htmlData{sym=int01}{\int_0^1} \htmlData{sym=Eexp}{\mathbb{E}}\Big[\big\|\htmlData{sym=gradh}{\nabla h(X_t)^{\top}}\big(\htmlData{sym=X1}{X_1} - \htmlData{sym=X0}{X_0} - \htmlData{sym=vfun}{v(X_t, t)}\big)\big\|_2^2\Big]\,\htmlData{sym=int01}{\mathrm{d}t}" data-fallback="min_v ∫₀¹ E[‖∇h(X_t)ᵀ (X_1 − X_0 − v(X_t, t))‖²] dt"></div>
+<div class="symtable" data-syms="minv,int01,Eexp,gradh,X1,X0,vfun"></div>
+<p class="inwords"><strong>In words:</strong> “the rectified flow loss, but measured only in the directions that change the style features, weighted by how much they change them.” The paper takes <em>h</em> from a classifier trained to tell the two domains apart.</p>
+<p class="inwords"><strong>With the numbers:</strong> the error is (0.5, −2.0); plain loss 4.25; style-weighted loss (1 × 0.5 + 0 × (−2.0))<sup>2</sup> = <strong>0.25</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x0, x1, v = (0.0, 0.0), (2.0, 1.0), (1.5, 3.0)
+# ∇h: the style feature is the first number, so its slope is (1, 0)
+grad_h = (1.0, 0.0)
+err = [x1[i] - x0[i] - v[i] for i in range(2)]
+err  # → [0.5, -2.0]
+# the plain loss, and the loss seen through ∇h
+sum(e * e for e in err), sum(g * e for g, e in zip(grad_h, err)) ** 2  # → (4.25, 0.25)</code></pre>
+<h4>Why it matters today</h4>
+<p>Generation and translation become the same algorithm with a different π<sub>0</sub>, which is the paper's unifying claim made concrete. The results (cats to wild animals, faces to painted portraits and back) are shown as images, one step being enough after one reflow.</p>
+</section>
+
+<section id="s5-4">
+<h3>5.4 Domain adaptation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#S5.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A classifier trained on photos stumbles on sketches. Instead of retraining it, move the sketches' features into the photos' feature distribution with a rectified flow, and classify the moved features. Here π<sub>0</sub> and π<sub>1</sub> are the test and training features from a pretrained model's last hidden layer, and the flow is run with 100 Euler steps.</p>
+<div class="tablewrap"><table>
+  <caption>Selected columns of Table 2, reproduced with attribution (Liu, Gong and Liu, 2022): accuracy (%) of the transferred test data; higher is better. ERM is plain training; CORAL is the strongest baseline listed</caption>
+  <thead><tr><th>Dataset</th><th class="num">ERM</th><th class="num">CORAL</th><th class="num">1-rectified flow</th></tr></thead>
+  <tbody>
+    <tr><td>OfficeHome</td><td class="num">66.5 ± 0.3</td><td class="num">68.7 ± 0.3</td><td class="num">69.2 ± 0.5</td></tr>
+    <tr><td>DomainNet</td><td class="num">40.9 ± 0.1</td><td class="num">41.5 ± 0.2</td><td class="num">41.4 ± 0.1</td></tr>
+  </tbody>
+</table></div>
+<p>The paper's own wording is careful: “better or on par with” the best baseline. On DomainNet the difference is inside the error bars.</p>
+<h4>Why it matters today</h4>
+<p>It shows that the recipe is not tied to images or to noise: any two piles of vectors can be transported, with no pairs and no adversary.</p>
+</section>
+</section>
+
+<section id="appendix">
+<h2>Appendix, briefly <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2209.03003#A1">original</a></span></h2>
+<h3 class="rung">What it contains</h3>
+<ul>
+  <li><strong>CIFAR-10.</strong> <span class="t" data-t="adam">Adam</span> at learning rate 2 × 10<sup>−4</sup>, dropout 0.15, and an exponential moving average of the weights with rate 0.999999. For each reflow, 4 million (<em>z</em><sub>0</sub>, <em>z</em><sub>1</sub>) pairs are generated and the previous model is fine-tuned on them for 300,000 steps.</li>
+  <li><strong>Few-step distillation.</strong> To make a <em>k</em>-step generator, training times are drawn only from {0, 1/<em>k</em>, …, (<em>k</em> − 1)/<em>k</em>}; for one step, the squared error is replaced by <span class="t" data-tip-title="LPIPS" data-tip="A distance between images measured in the features of a pretrained network, which tracks what people see as similar better than pixel-by-pixel differences do.">LPIPS</span>, which worked better.</li>
+  <li><strong>Translation and adaptation.</strong> <span class="t" data-t="adamw">AdamW</span> with weight decay 0.1, 512 × 512 images, 80% of each dataset for training; extra figures of latent interpolation, editing and reconstruction.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The reflow data cost is real: millions of full simulations of the previous flow before retraining. That price is paid once, at training time, in exchange for cheap sampling forever after.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2022</h2>
+<p>The straight-line loss became a standard; the surrounding recipe kept moving.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>A U-Net on 32 × 32 pixels</td><td>A transformer over patches of an autoencoder's latent, trained with the straight-line loss (Stable Diffusion 3, Esser et al., 2024)</td><td>The recipe scales and conditions on text easily</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Reflow on millions of simulated pairs</td><td>Reflow and distillation among several ways to reach few-step sampling</td><td>Sampling cost is paid on every image</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Rectified flow and flow matching as separate papers</td><td>Taught as one method: regress the velocity of a straight road</td><td>The losses are the same</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Xingchao Liu, Chengyue Gong and Qiang Liu, <em>Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow</em>, 2022. <a href="https://arxiv.org/abs/2209.03003">arXiv:2209.03003</a>. Quotations are brief and attributed, and only selected rows of the paper's tables are reproduced, with attribution. Figures are redrawn from scratch and computed live; all explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §1
+    Ecost: { tex: "\\mathbb{E}", name: "Average over pairs", meaning: "An expectation: draw pairs from the coupling and average the cost of their jumps.", shape: "turns many numbers into one", example: "the two pairs of the tiny example, each with weight ½" },
+    cfun: { tex: "c", name: "Cost function", meaning: "How much a jump of a given size and direction costs. Convex costs (squared distance, distance) punish long jumps at least in proportion.", shape: "a vector in, one number out", example: "c(x) = x²" },
+    Z1: { tex: "Z_1", name: "Destination", meaning: "Where a point ends up at time 1: a point of π₁. For a rectified flow, where the flow carries Z₀.", shape: "a point (one number in 1-D)", example: "2 or 4; 3 + 0.5 z₀ in the 1-D toy" },
+    Z0: { tex: "Z_0", name: "Starting point", meaning: "Where a point starts at time 0: a draw from π₀.", shape: "a point", example: "−1 or +1; z₀ in the 1-D toy" },
+    // §2.1
+    minv: { tex: "\\min_{v}", name: "Minimise over velocity fields", meaning: "Search over all velocity fields v (in practice, a network's weights) for the one that makes what follows smallest.", shape: "picks one function", example: "the averaged arrow v^X is the winner" },
+    int01: { tex: "\\int_0^1 \\ldots\\,\\mathrm{d}t", name: "Average over time", meaning: "An integral over t from 0 to 1: the continuous version of averaging over many moments. In training, t is drawn uniformly at random.", shape: "one number out", example: "t = 0.25 is one draw" },
+    Eexp: { tex: "\\mathbb{E}", name: "Average over pairs", meaning: "Draw pairs (X₀, X₁) from the coupling (independent draws at first) and average.", shape: "turns many numbers into one", example: "X₀ = −1, X₁ = 2 is one draw" },
+    X1: { tex: "X_1", name: "Target point", meaning: "A draw from π₁: a data point in generation, or an image of the target domain in translation.", shape: "a point", example: "2" },
+    X0: { tex: "X_0", name: "Starting point", meaning: "A draw from π₀: noise in generation, or an image of the source domain.", shape: "a point", example: "−1" },
+    vfun: { tex: "v(X_t, t)", name: "The velocity field", meaning: "What the network (or estimator) says the velocity is at position X_t and time t. It never sees X₀ or X₁ directly.", shape: "same size as a point", example: "a guess of 2.5" },
+    Xt: { tex: "X_t = tX_1 + (1-t)X_0", name: "The point on the line", meaning: "Where the straight line from X₀ to X₁ is at time t: a weighted mix, more X₁ the later.", shape: "a point", example: "−0.25 at t = 0.25" },
+    sqnorm: { tex: "\\|\\cdot\\|^2", name: "Squared length", meaning: "Square each entry of the difference and add them up.", shape: "one number", example: "(3 − 2.5)² = 0.25" },
+    // §2.2
+    vX: { tex: "v^X(x, t)", name: "The averaged arrow", meaning: "The exact best velocity for the coupling X: the average direction of the lines through x at time t. The rectified flow follows it.", shape: "same size as a point", example: "2.4 at x = 2, t = 0.5 in the 1-D toy" },
+    Econd: { tex: "\\mathbb{E}[\\,\\cdot \\mid X_t = x]", name: "Average over the lines through x", meaning: "A conditional expectation: average only over the pairs whose line is at x at time t, weighted by how likely each is.", shape: "one number (or vector) out", example: "lines from 0 to 4, 1 to 3, −1 to 5, …" },
+    normZ: { tex: "\\mathbb{E}\\|Z_1 - Z_0\\|", name: "Average distance of the new pairs", meaning: "How far apart the rectified pairs are, on average: the straight-line distance from each start to where its flow path ends.", shape: "one number", example: "4 in the picture" },
+    rewired: { tex: "L_{\\text{rewired}}", name: "Length of the flow's paths", meaning: "How long the flow's actual paths are. They are the old straight lines cut at their crossings and re-joined, so they have the same total length.", shape: "one number", example: "4.472 per path" },
+    normX: { tex: "\\mathbb{E}\\|X_1 - X_0\\|", name: "Average distance of the old pairs", meaning: "How far apart the original, randomly paired points are, on average.", shape: "one number", example: "4.472 in the picture" },
+    SZ: { tex: "S(\\boldsymbol{Z})", name: "Straightness", meaning: "How much a flow's paths bend or change speed: the average squared gap between each moment's velocity and the overall start-to-finish direction. 0 means straight at constant speed.", shape: "one non-negative number", example: "1/3 for z_t = t²; 0.2146 for the toy's 1-rectified flow" },
+    Zdot: { tex: "\\dot{Z}_t", name: "Velocity along the path", meaning: "How fast, and which way, the path is moving at time t (the dot means rate of change in time).", shape: "same size as a point", example: "2t for z_t = t²" },
+    minK: { tex: "\\min_{k \\in \\{0,\\dots,K\\}}", name: "The best of the first K rounds", meaning: "The smallest value among the flows from round 0 to round K.", shape: "one number out", example: "K = 1, 2 or 10" },
+    SZk: { tex: "S(\\boldsymbol{Z}^k)", name: "Straightness after k rounds", meaning: "The straightness of the k-rectified flow: the flow obtained after k rounds of rectification.", shape: "one non-negative number", example: "0 for the toy's 2-rectified flow" },
+    costX: { tex: "\\mathbb{E}\\|X_1 - X_0\\|^2", name: "Starting cost", meaning: "The average squared distance between the original pairs: the budget every round of straightening is paid from.", shape: "one number", example: "10.25" },
+    Ksteps: { tex: "K", name: "Number of reflow rounds", meaning: "How many times rectification is repeated.", shape: "a whole number", example: "1, 2 or 10" },
+    dtv: { tex: "\\partial_t v", name: "Change in time", meaning: "How fast the velocity at a fixed spot changes as time passes (a partial derivative).", shape: "one number per spot", example: "−0.8889 at z = 2, t = 0.5" },
+    dzv: { tex: "\\partial_z v", name: "Change across space", meaning: "How fast the velocity changes as you move to a nearby spot, at a fixed time.", shape: "one number per spot (a matrix in many dimensions)", example: "1/1.5 = 0.6667 at t = 0.5" },
+    vXh: { tex: "v^{X,h}(z, t)", name: "Kernel-estimated arrow", meaning: "The averaged arrow at z, estimated from finitely many training lines by weighting the ones that pass close to z.", shape: "same size as a point", example: "2.498 at z = 1.8, t = 0.5" },
+    zq: { tex: "z", name: "Query point", meaning: "The place where we want to know the arrow.", shape: "a point", example: "1.8" },
+    omegah: { tex: "\\omega_h(X_t, z)", name: "Normalised weight", meaning: "How much a training line counts at z: its closeness divided by the total closeness of all lines, so the weights add to 1.", shape: "between 0 and 1", example: "0.515, 0.466 and 0.019" },
+    kappah: { tex: "\\kappa_h(X_t, z)", name: "Kernel (closeness)", meaning: "exp(−‖X_t − z‖² / 2h²): 1 when the line passes exactly through z, falling off over a distance of about h, the bandwidth.", shape: "between 0 and 1", example: "0.923 for the line at 2, with h = 0.5" },
+    // §2.3
+    wt: { tex: "w_t", name: "Time weighting", meaning: "A positive weight for each moment; 1 by default.", shape: "one positive number per t", example: "1" },
+    Xdot: { tex: "\\dot{X}_t", name: "The road's velocity", meaning: "How fast, and which way, the point on the chosen road moves at time t.", shape: "same size as a point", example: "3 at t = 0.5 on the road t²X₁ + (1 − t²)X₀" },
+    Xgen: { tex: "X_t = \\alpha_t X_1 + \\beta_t X_0", name: "A general road", meaning: "Any mix of the two end points whose shares change smoothly with time: α goes from 0 to 1, β from 1 to 0 (for diffusion's roads, only approximately).", shape: "a point", example: "−0.25 at t = 0.5 with α = t², β = 1 − t²" },
+    alphadot: { tex: "\\dot{\\alpha}_t", name: "Rate of change of the data share", meaning: "How fast α_t grows at time t.", shape: "one number per t", example: "2t = 1 for α = t² at t = 0.5; 1.4129 for VP" },
+    betadot: { tex: "\\dot{\\beta}_t", name: "Rate of change of the noise share", meaning: "How fast β_t shrinks at time t (negative).", shape: "one number per t", example: "−1 for β = 1 − t² at t = 0.5; −0.4140 for VP" },
+    // §2.3.1
+    alphaVP: { tex: "\\alpha_t", name: "Data share of the (sub-)VP road", meaning: "The share of the data point in the moving point at time t, inherited from the score SDE paper's VP noising read backwards. Nearly 0 at the start, 1 at the end.", shape: "between 0 and 1", example: "0.2812 at t = 0.5" },
+    acoef: { tex: "a", name: "Schedule slope", meaning: "How steeply the noise rate rises in the original SDE; the default matches DDPM's schedule.", shape: "a constant", example: "19.9" },
+    bcoef: { tex: "b", name: "Schedule start", meaning: "The noise rate at the clean end of the original SDE.", shape: "a constant", example: "0.1" },
+    betaVP: { tex: "\\beta_t", name: "Noise share (VP)", meaning: "√(1 − α²): chosen so the squares of the two shares add to 1, which keeps the variance fixed for unit-variance data.", shape: "between 0 and 1", example: "0.9597 at t = 0.5" },
+    betaSub: { tex: "\\beta_t^{\\text{sub-VP}}", name: "Noise share (sub-VP)", meaning: "1 − α²: a little less noise than VP at every moment.", shape: "between 0 and 1", example: "0.9209 at t = 0.5" },
+    // §3
+    LawZ: { tex: "\\mathrm{Law}(Z_t)", name: "The flow's crowd at time t", meaning: "The distribution of the flow's points at time t: where all of them are, as a density.", shape: "a distribution", example: "mean 1.5, variance 0.31 at t = 0.5 (simulated)" },
+    LawX: { tex: "\\mathrm{Law}(X_t)", name: "The lines' crowd at time t", meaning: "The distribution of the straight lines' points at time t.", shape: "a distribution", example: "mean 1.5, variance 0.3125 at t = 0.5" },
+    VX: { tex: "V((X_0, X_1))", name: "Crossing measure", meaning: "How much the lines through each point disagree with their average there. Zero exactly when no two lines ever cross (a straight coupling).", shape: "one non-negative number", example: "π/4 = 0.7854 for the toy's random pairs" },
+    costdrop: { tex: "\\mathbb{E}\\|X_1 - X_0\\|^2 - \\mathbb{E}\\|Z_1 - Z_0\\|^2", name: "Drop in squared cost", meaning: "How much cheaper, in average squared distance, the rectified pairs are than the old ones.", shape: "one non-negative number", example: "10.25 − 9.25 = 1" },
+    // §3.5
+    Ytilde: { tex: "\\tilde{Y}_t", name: "The probability flow's target", meaning: "What the diffusion ODE's network is trained to output, written in noise-process terms.", shape: "same size as a point", example: "1.2059" },
+    eta: { tex: "\\eta_t", name: "Shrink rate", meaning: "How fast the noising process pulls points toward 0, in the diffusion derivation.", shape: "one number per t", example: "−5.025 at t = 0.5" },
+    sig2: { tex: "\\sigma_t^2", name: "Noise strength squared", meaning: "How fast the noising process adds variance at time t.", shape: "one positive number per t", example: "10.05 at t = 0.5" },
+    xi: { tex: "\\xi", name: "Standard noise", meaning: "A draw from N(0, I), playing the role of X₀ on diffusion's roads.", shape: "a point", example: "0.5" },
+    // §5
+    z1hat: { tex: "\\hat{z}_1^{\\,t}", name: "Extrapolated end point", meaning: "Where the path would end if, from time t on, it went straight at its current velocity.", shape: "a point (an image in the paper)", example: "3.2236 for the 1-rectified flow; 3.5 for the 2-rectified" },
+    zt: { tex: "z_t", name: "Where the path is now", meaning: "The point on a simulated path at time t.", shape: "a point", example: "2.0590" },
+    gradh: { tex: "\\nabla h(X_t)^{\\top}", name: "Style directions", meaning: "The slopes of the style features h at X_t: they project an error onto the directions that change the style, ignoring the rest.", shape: "features × dimensions", example: "(1, 0) when the style is the first number" },
+  },
+
+  blocks: {
+    rf_train: { title: "Training: one step", body: "<p>Everything in this box is one training step, with no simulation: one network call and one squared error. Repeat for many random draws.</p>", lesson: "primer/ml/generative/diffusion.html#train_velocity_predictor" },
+    rf_sample: { title: "Sampling, reflow and distillation", body: "<p>After training, follow the learned arrows. The start and end of each journey form a new pair; those pairs can train the next flow (reflow) or a one-step network (distillation).</p>" },
+    rf_time: { title: "Time t", body: "<p>A random moment between 0 and 1, drawn uniformly.</p>", shape: "one number in [0, 1]" },
+    rf_pairs: { title: "Pairs (X₀, X₁)", body: "<p>Draws from a coupling of π₀ and π₁. The first time, independent draws: any noise with any data point. After reflow, the previous flow's (Z₀, Z₁).</p>", shape: "two points per pair" },
+    rf_point: { title: "The point on the line", body: "<p>Xₜ = tX₁ + (1 − t)X₀: where the straight line is at time t.</p>", shape: "one point", lesson: "primer/ml/generative/diffusion.html#flow_point" },
+    rf_target: { title: "The target", body: "<p>X₁ − X₀: the line's direction and speed, the same at every t. It needs both ends, which is why it is only available in training.</p>", shape: "one vector", lesson: "primer/ml/generative/diffusion.html#flow_target" },
+    rf_net: { title: "The network v_θ", body: "<p>Sees only the point and the time. Where many lines pass through the same point, its best answer is their average, v<sup>X</sup>.</p>", shape: "point and time in, velocity out", lesson: "primer/ml/generative/diffusion.html#VelocityPredictor" },
+    rf_loss: { title: "Squared error", body: "<p>Equation 1: ‖X₁ − X₀ − v_θ(Xₜ, t)‖², averaged over the batch. Plain least squares.</p>", shape: "one number" },
+    rf_sim: { title: "Simulate the flow", body: "<p>Start from Z₀ drawn from π₀ and follow the arrows to t = 1 with an ODE solver: Euler steps of size 1/N, or an adaptive solver.</p>", lesson: "primer/ml/generative/diffusion.html#euler_sample" },
+    rf_newpairs: { title: "The rectified coupling (Z₀, Z₁)", body: "<p>Each start paired with where its path ended. Deterministic (one end per start), no more costly than the old pairs for any convex cost, and with fewer crossings.</p>" },
+    rf_reflow: { title: "Reflow", body: "<p>Train a new flow on the pairs (Z₀, Z₁), going round the loop again. Each round straightens the paths; one or two rounds are usually enough.</p>" },
+    rf_distill: { title: "Distill", body: "<p>Train a network to jump from Z₀ to Z₁ in one call. Best done last, on an already straight flow, because it copies the coupling rather than improving it.</p>" },
+    rw_cross: { title: "The crossing lines", body: "<p>Random pairs A→D and B→C, as straight lines. They cross at P. Each is √(4² + 2²) = 4.472 long.</p>" },
+    rw_rewired: { title: "The rewired paths", body: "<p>A flow cannot split at P, so each path turns there: A→P→C and B→P→D. They are the same four half-lines, so their total length is unchanged: 8.944.</p>" },
+    rw_straight: { title: "The new pairs, straight", body: "<p>The rectified coupling pairs A with C and B with D. Straight lines between them are 4 long each: shorter, by the triangle inequality.</p>" },
+    rw_A: { title: "A = (0, 2)", body: "<p>A starting point, upper left.</p>" },
+    rw_B: { title: "B = (0, 0)", body: "<p>A starting point, lower left.</p>" },
+    rw_C: { title: "C = (4, 2)", body: "<p>A destination, upper right.</p>" },
+    rw_D: { title: "D = (4, 0)", body: "<p>A destination, lower right.</p>" },
+    rw_P: { title: "The crossing point P = (2, 1)", body: "<p>Where the two random lines meet halfway. Here the averaged arrow is horizontal, the average of “up-right” and “down-right”, and the paths are rewired.</p>" },
+  },
+
+  onReady(P) {
+    fig2(P);
+    fig6(P);
+    fig5(P);
+    fig1d(P);
+  },
+};
+
+/* ---- shared helpers ---- */
+const RF = (() => {
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  // A seeded generator, so every reader sees the same noise.
+  function rng(seed) {
+    return () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let r = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(r) {
+    const u = 1 - r(), w = r();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w);
+  }
+  function arrowless(ctx, pts, toPx) {
+    ctx.beginPath();
+    pts.forEach((p, i) => { const [x, y] = toPx(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke();
+  }
+  return { css, rng, gauss, line: arrowless };
+})();
+
+/* ---- Figure 2 and Figure 3(d): rectifying two blobs onto two blobs ---- */
+const TOY2 = (() => {
+  const n = 250, H = 0.2, FINE = 60;
+  const r = RF.rng(3);
+  const blob = (cs) => { const c = cs[Math.floor(r() * cs.length)]; return [c[0] + 0.5 * RF.gauss(r), c[1] + 0.5 * RF.gauss(r)]; };
+  const X0 = Array.from({ length: n }, () => blob([[-4, 1.5], [-4, -1.5]]));
+  const X1 = Array.from({ length: n }, () => blob([[4, 3.5], [4, -3.5]]));
+  // Equation 5: a kernel-weighted average of (x1 − z)/(1 − t) over the training lines.
+  function velocity(z, t, a, b) {
+    let wsum = 0, vx = 0, vy = 0, best = Infinity;
+    const d2s = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const px = (1 - t) * a[i][0] + t * b[i][0] - z[0], py = (1 - t) * a[i][1] + t * b[i][1] - z[1];
+      d2s[i] = px * px + py * py;
+      if (d2s[i] < best) best = d2s[i];
+    }
+    for (let i = 0; i < n; i++) {
+      const w = Math.exp(-(d2s[i] - best) / (2 * H * H));
+      wsum += w; vx += w * b[i][0]; vy += w * b[i][1];
+    }
+    return [(vx / wsum - z[0]) / (1 - t), (vy / wsum - z[1]) / (1 - t)];
+  }
+  function simulate(starts, a, b, steps) {
+    return starts.map((z0) => {
+      const path = [z0];
+      let z = z0;
+      for (let i = 0; i < steps; i++) {
+        const v = velocity(z, i / steps, a, b);
+        z = [z[0] + v[0] / steps, z[1] + v[1] / steps];
+        path.push(z);
+      }
+      return path;
+    });
+  }
+  const cost = (a, b) => a.reduce((s, p, i) => s + (b[i][0] - p[0]) ** 2 + (b[i][1] - p[1]) ** 2, 0) / a.length;
+  function straightness(paths) {
+    let s = 0, m = 0;
+    paths.forEach((p) => {
+      const N = p.length - 1, dx = p[N][0] - p[0][0], dy = p[N][1] - p[0][1];
+      for (let i = 0; i < N; i++) { s += ((p[i + 1][0] - p[i][0]) * N - dx) ** 2 + ((p[i + 1][1] - p[i][1]) * N - dy) ** 2; m++; }
+    });
+    return s / m;
+  }
+  // couplings[k] holds the training pairs of flow k + 1; flows[k] its fine simulation
+  const couplings = [[X0, X1]], flows = [];
+  for (let k = 0; k < 3; k++) {
+    const [a, b] = couplings[k];
+    const paths = simulate(a, a, b, FINE);
+    flows.push(paths);
+    couplings.push([paths.map((p) => p[0]), paths.map((p) => p[FINE])]);
+  }
+  const costs = couplings.map(([a, b]) => cost(a, b));
+  const straight = flows.map(straightness);
+  return { n, FINE, X0, X1, couplings, flows, costs, straight, simulate };
+})();
+
+function fig2(P) {
+  const canvas = document.getElementById("fig2-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, Hh = canvas.height;
+  const toPx = (x, y) => [((x + 6) / 12) * W, ((4.5 - y) / 9) * Hh];
+  const slider = document.getElementById("fig2-n");
+  const readout = document.getElementById("fig2-readout");
+  let mode = "pairs0";
+  const SHOW = Array.from({ length: 40 }, (_, i) => Math.floor((i * TOY2.n) / 40));
+  function draw() {
+    const N = +slider.value;
+    document.getElementById("fig2-nv").textContent = String(N);
+    const fg = RF.css("--fg"), c1 = RF.css("--attn-stroke"), c2 = RF.css("--ff-stroke"), muted = RF.css("--muted");
+    ctx.fillStyle = RF.css("--card") || "#fff"; ctx.fillRect(0, 0, W, Hh);
+    let starts, ends, paths, text;
+    if (mode.startsWith("pairs")) {
+      const k = +mode.slice(5);
+      [starts, ends] = TOY2.couplings[k];
+      paths = starts.map((s, i) => [s, ends[i]]);
+      text = k === 0
+        ? `Random pairs: average squared jump <strong>${TOY2.costs[0].toFixed(1)}</strong>; the straight lines cross wherever a start is paired with the far blob.`
+        : `The 1-rectified flow's pairs as straight lines: average squared jump <strong>${TOY2.costs[1].toFixed(1)}</strong>, down from ${TOY2.costs[0].toFixed(1)} for random pairs.`;
+    } else {
+      const k = +mode.slice(4) - 1;
+      const [a, b] = TOY2.couplings[k];
+      const fine = TOY2.flows[k];
+      paths = N === TOY2.FINE ? fine : TOY2.simulate(fine.map((p) => p[0]), a, b, N);
+      starts = paths.map((p) => p[0]); ends = paths.map((p) => p[p.length - 1]);
+      const gap = paths.reduce((s, p, i) => s + Math.hypot(p[p.length - 1][0] - fine[i][TOY2.FINE][0], p[p.length - 1][1] - fine[i][TOY2.FINE][1]), 0) / paths.length;
+      text = `${k + 1}-rectified flow: straightness <strong>${TOY2.straight[k].toFixed(3)}</strong>, average squared jump ${TOY2.costs[k + 1].toFixed(1)}. With N = ${N} Euler step${N > 1 ? "s" : ""}, samples end on average <strong>${gap.toFixed(2)}</strong> from where the ${TOY2.FINE}-step paths end.`;
+    }
+    // journeys: upper-blob starts solid, lower-blob starts dashed
+    ctx.lineWidth = 3; ctx.globalAlpha = 0.8;
+    SHOW.forEach((i) => {
+      const upper = starts[i][1] > 0;
+      ctx.strokeStyle = upper ? c1 : c2;
+      ctx.setLineDash(upper ? [] : [10, 7]);
+      RF.line(ctx, paths[i], toPx);
+    });
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    starts.forEach((s) => { const [x, y] = toPx(s[0], s[1]); ctx.strokeStyle = muted; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 5, 0, 2 * Math.PI); ctx.stroke(); });
+    ctx.fillStyle = fg;
+    ends.forEach((e) => { const [x, y] = toPx(e[0], e[1]); ctx.beginPath(); ctx.arc(x, y, 5, 0, 2 * Math.PI); ctx.fill(); });
+    readout.innerHTML = text;
+  }
+  document.querySelectorAll("#fig2 [data-mode]").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.mode;
+    document.querySelectorAll("#fig2 [data-mode]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    draw();
+  }));
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+  // Figure 3(d): both measures relative to where they started
+  P.lineChart(document.getElementById("fig3-chart"), { width: 420, height: 260,
+    series: [
+      { name: "straightness S, relative to the 1-rectified flow", points: TOY2.straight.map((s, k) => [k + 1, s / TOY2.straight[0]]) },
+      { name: "transport cost, relative to random pairs", points: TOY2.costs.slice(0, 4).map((c, k) => [k, c / TOY2.costs[0]]) },
+    ],
+    xLabel: "rectifications k", yLabel: "relative value", yMin: 0, yMax: 1.05,
+    xFmt: (v) => (Number.isInteger(v) ? String(v) : ""), yFmt: (v) => v.toFixed(3), readout: document.getElementById("fig3-readout"),
+    ariaLabel: "Straightness and transport cost against the number of rectifications",
+  });
+}
+
+/* ---- Figure 6: the data and noise shares of each road ---- */
+function fig6(P) {
+  const A = 19.9, Bc = 0.1;
+  const ts = Array.from({ length: 101 }, (_, i) => i / 100);
+  const al = (t) => Math.exp(-0.25 * A * (1 - t) ** 2 - 0.5 * Bc * (1 - t));
+  const series = (which) => which === "alpha"
+    ? [{ name: "rectified flow: α = t", points: ts.map((t) => [t, t]) }, { name: "VP and sub-VP: equation 7", points: ts.map((t) => [t, al(t)]) }]
+    : [{ name: "rectified flow: β = 1 − t", points: ts.map((t) => [t, 1 - t]) }, { name: "VP: √(1 − α²)", points: ts.map((t) => [t, Math.sqrt(1 - al(t) ** 2)]) }, { name: "sub-VP: 1 − α²", points: ts.map((t) => [t, 1 - al(t) ** 2]) }];
+  const chart = P.lineChart(document.getElementById("fig6-chart"), { width: 420, height: 260,
+    series: series("alpha"), xLabel: "time t", yLabel: "share", yMin: 0, yMax: 1.02,
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(3), readout: document.getElementById("fig6-readout"),
+    ariaLabel: "The data share and noise share of each road against time",
+  });
+  document.querySelectorAll("#fig6 [data-share]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#fig6 [data-share]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    chart.update(series(b.dataset.share));
+  }));
+}
+
+/* ---- Figures 4 and 5: four roads from noise to three tight clusters ---- */
+function fig5(P) {
+  const A = 19.9, Bc = 0.1, S = 0.3;
+  const MU = [90, 210, 330].map((d) => [3 * Math.cos((d * Math.PI) / 180), 3 * Math.sin((d * Math.PI) / 180)]);
+  // Each road's shares and their rates of change at time t.
+  function road(kind, t) {
+    if (kind === "rf") return [t, 1 - t, 1, -1];
+    if (kind === "vpc") { const b = Math.sqrt(1 - t * t); return [t, b, 1, -t / b]; }
+    const u = 1 - t, al = Math.exp(-0.25 * A * u * u - 0.5 * Bc * u), ad = al * (0.5 * A * u + 0.5 * Bc);
+    if (kind === "vp") { const b = Math.sqrt(1 - al * al); return [al, b, ad, (-al * ad) / b]; }
+    return [al, 1 - al * al, ad, -2 * al * ad];
+  }
+  // The exact averaged velocity E[α̇ X₁ + β̇ ξ | X_t = x] for a mixture of round bell curves.
+  function velocity(kind, x, t) {
+    const [al, be, ad, bd] = road(kind, t), vr = al * al * S * S + be * be;
+    const parts = MU.map((m) => {
+      const dx = x[0] - al * m[0], dy = x[1] - al * m[1];
+      const lw = -(dx * dx + dy * dy) / (2 * vr);
+      const k1 = (al * S * S) / vr, k2 = be / vr;
+      return { lw, v: [ad * (m[0] + k1 * dx) + bd * k2 * dx, ad * (m[1] + k1 * dy) + bd * k2 * dy] };
+    });
+    const top = Math.max(...parts.map((p) => p.lw));
+    const ws = parts.map((p) => Math.exp(p.lw - top)), W = ws.reduce((a, b) => a + b, 0);
+    return [0, 1].map((d) => parts.reduce((s, p, i) => s + (ws[i] / W) * p.v[d], 0));
+  }
+  const r = RF.rng(7);
+  const starts = Array.from({ length: 300 }, () => [RF.gauss(r), RF.gauss(r)]);
+  const canvas = document.getElementById("fig5-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height, R = 4.2;
+  const toPx = (x, y) => [((x + R) / (2 * R)) * W, ((R - y) / (2 * R)) * H];
+  const slider = document.getElementById("fig5-n");
+  const readout = document.getElementById("fig5-readout");
+  const names = { rf: "Rectified flow", vp: "VP ODE", subvp: "Sub-VP ODE", vpc: "VP ODE with α = t" };
+  let kind = "rf";
+  function run(k, N) {
+    return starts.map((x0) => {
+      const path = [x0];
+      let x = x0;
+      for (let i = 0; i < N; i++) { const v = velocity(k, x, i / N); x = [x[0] + v[0] / N, x[1] + v[1] / N]; path.push(x); }
+      return path;
+    });
+  }
+  const err = (paths) => paths.reduce((s, p) => { const e = p[p.length - 1]; return s + Math.min(...MU.map((m) => Math.hypot(e[0] - m[0], e[1] - m[1]))); }, 0) / paths.length;
+  function draw() {
+    const N = +slider.value;
+    document.getElementById("fig5-nv").textContent = String(N);
+    const paths = run(kind, N);
+    const fg = RF.css("--fg"), c = RF.css("--ff-stroke"), wire = RF.css("--wire");
+    ctx.fillStyle = RF.css("--card") || "#fff"; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = wire; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.45;
+    paths.slice(0, 40).forEach((p) => RF.line(ctx, p, toPx));
+    ctx.globalAlpha = 1; ctx.fillStyle = c;
+    paths.forEach((p) => { const [x, y] = toPx(...p[p.length - 1]); ctx.beginPath(); ctx.arc(x, y, 4, 0, 2 * Math.PI); ctx.fill(); });
+    MU.forEach((m) => { const [x, y] = toPx(m[0], m[1]); ctx.strokeStyle = fg; ctx.lineWidth = 3; ctx.strokeRect(x - 13, y - 13, 26, 26); });
+    readout.innerHTML = `${names[kind]}, ${N} Euler step${N > 1 ? "s" : ""}: samples end on average <strong>${err(paths).toFixed(2)}</strong> from the nearest cluster centre (about 0.37 is the floor).`;
+  }
+  document.querySelectorAll("#fig5 [data-road]").forEach((b) => b.addEventListener("click", () => {
+    kind = b.dataset.road;
+    document.querySelectorAll("#fig5 [data-road]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    draw();
+  }));
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- §3.3: the 1-D toy's paths, random pairs against the exact 1- and 2-rectified flows ---- */
+function fig1d(P) {
+  const canvas = document.getElementById("fig-1d-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height, L = 64, Rm = 16, T = 12, Bm = 52, lo = -3, hi = 5;
+  const X = (t) => L + t * (W - L - Rm);
+  const Y = (z) => T + ((hi - z) / (hi - lo)) * (H - T - Bm);
+  const readout = document.getElementById("fig-1d-readout");
+  const q = (t) => (1 - t) ** 2 + 0.25 * t * t;
+  const z0s = Array.from({ length: 9 }, (_, i) => -2 + i * 0.5);
+  const r = RF.rng(4);
+  const partners = z0s.map(() => 3 + 0.5 * RF.gauss(r));
+  let which = "lines";
+  function draw() {
+    const fg = RF.css("--fg"), muted = RF.css("--muted"), c = which === "lines" ? RF.css("--attn-stroke") : which === "rf1" ? RF.css("--ff-stroke") : RF.css("--active");
+    ctx.fillStyle = RF.css("--card") || "#fff"; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = muted; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, H - Bm); ctx.lineTo(W - Rm, H - Bm); ctx.stroke();
+    ctx.fillStyle = fg; ctx.font = "26px ui-sans-serif, system-ui, sans-serif"; ctx.textAlign = "right";
+    [-2, 0, 2, 4].forEach((v) => ctx.fillText(String(v).replace("-", "−"), L - 8, Y(v) + 9));
+    ctx.textAlign = "left"; ctx.fillText("t = 0 (noise)", L + 4, H - 14);
+    ctx.textAlign = "right"; ctx.fillText("t = 1 (data)", W - Rm, H - 14); ctx.textAlign = "left";
+    ctx.strokeStyle = c; ctx.lineWidth = 3;
+    z0s.forEach((z0, i) => {
+      const pts = Array.from({ length: 101 }, (_, k) => {
+        const t = k / 100;
+        if (which === "lines") return [t, (1 - t) * z0 + t * partners[i]];
+        if (which === "rf1") return [t, 3 * t + z0 * Math.sqrt(q(t))];
+        return [t, (1 - t) * z0 + t * (3 + 0.5 * z0)];
+      });
+      ctx.beginPath(); pts.forEach(([t, z], k) => (k ? ctx.lineTo(X(t), Y(z)) : ctx.moveTo(X(t), Y(z)))); ctx.stroke();
+    });
+    const ends = which === "lines" ? partners : z0s.map((z) => 3 + 0.5 * z);
+    const order = ends.every((e, i) => i === 0 || e >= ends[i - 1]);
+    const cost = z0s.reduce((s, z, i) => s + (ends[i] - z) ** 2, 0) / z0s.length;
+    readout.innerHTML = `${which === "lines" ? "Random pairs" : which === "rf1" ? "1-rectified flow" : "2-rectified flow"}: the nine paths ${order ? "keep their order (no crossings)" : "cross each other"}; their average squared jump is <strong>${cost.toFixed(2)}</strong>.`;
+  }
+  document.querySelectorAll("#fig-1d [data-paths]").forEach((b) => b.addEventListener("click", () => {
+    which = b.dataset.paths;
+    document.querySelectorAll("#fig-1d [data-paths]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    draw();
+  }));
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+</script>
+</body>
+</html>
