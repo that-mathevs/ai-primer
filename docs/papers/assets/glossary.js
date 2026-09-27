@@ -349,6 +349,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/autoencoders.html",
   "term": "bottleneck"
  },
+ "bounding box": {
+  "def": "A rectangle, given by its corner coordinates, that marks where one object sits in an image.",
+  "lesson": null,
+  "term": "bounding box"
+ },
  "bpe": {
   "def": "Byte pair encoding: build a vocabulary by repeatedly merging the most frequent adjacent pair of symbols.",
   "lesson": "primer/ml/tokenization.html",
@@ -1189,6 +1194,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/multimodal.html",
   "term": "frame sampling"
  },
+ "freezing": {
+  "def": "Keeping some of a model's weights fixed during training, so only the rest learn and the frozen part keeps what it already knew.",
+  "lesson": "primer/ml/fine_tuning.html",
+  "term": "freezing"
+ },
  "frobenius norm": {
   "def": "The size of a whole matrix: square every entry, add them up, take the square root.",
   "lesson": "primer/notation.html",
@@ -1553,6 +1563,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The LSTM dial that decides what new information to write into the cell state.",
   "lesson": "primer/ml/cnn_rnn.html",
   "term": "input gate"
+ },
+ "instruction tuning": {
+  "def": "Fine-tuning a pretrained model on many tasks written as instructions paired with good responses, so it learns to follow instructions it has never seen.",
+  "lesson": "primer/ml/training_stages.html",
+  "term": "instruction tuning"
  },
  "instrumentation": {
   "def": "Code that records spans or metrics around the work a program does.",
@@ -3333,6 +3348,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A model changing its answer to agree with a view the user states.",
   "lesson": "primer/ml/alignment.html",
   "term": "sycophancy"
+ },
+ "synthetic data": {
+  "def": "Training examples written by a model rather than collected from people.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "synthetic data"
  },
  "system prompt": {
   "def": "Standing instructions sent before the conversation that set a model's role, rules and style.",

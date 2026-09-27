@@ -568,7 +568,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.generative.multimodal"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "whisper",

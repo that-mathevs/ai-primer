@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visual Instruction Tuning (LLaVA), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Liu, Li, Wu and Lee (2023), the paper that joined a CLIP image encoder to a chat language model with one matrix and taught the pair to follow instructions about pictures.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .seq { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.6rem 0 0.4rem; }
+  .seq .tok { padding: 0.3rem 0.5rem; font-size: 0.85rem; min-width: 0; }
+  .seq .tok.target { background: var(--soft); border-color: var(--soft-stroke); border-width: 2px; font-weight: 600; }
+  .seq .tok.img { background: var(--lin); border-color: var(--lin-stroke); }
+  .mode { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+  .bars .share-row { grid-template-columns: 8.5rem minmax(0, 1fr) 3.4rem; }
+  .bars .share-bar.alt { background: var(--hatch) var(--wire); }
+  .status-note { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+</style>
+</head>
+<body data-paper="llava">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Data from a text-only teacher</a></li>
+      <li><a href="#s4">4 Visual instruction tuning</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Architecture</a></li>
+          <li><a href="#s4-2">4.2 Training</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Experiments</a>
+        <ol>
+          <li><a href="#s5-1">5.1 Multimodal chatbot</a></li>
+          <li><a href="#s5-2">5.2 ScienceQA</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#appendix">Appendices, briefly</a></li>
+      <li><a href="#today">What changed since 2023</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Visual Instruction Tuning, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Liu, Li, Wu and Lee (2023), the paper that joined a ready-made image encoder to a ready-made chat model with a single matrix, wrote its own training conversations with a language-only teacher, and called the result LLaVA: Large Language and Vision Assistant.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2304.08485">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2304.08485">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2304.08485">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is published on arXiv under a <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 licence</a> (CC BY 4.0), which allows its tables to be reproduced with attribution: the result tables below are reproduced from it, each credited in its caption. Its figures are redrawn from scratch, and the worked numbers come from tiny examples built on this page unless a sentence says otherwise. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the numbers of a tiny example, and the same example in a few lines of Python.</li>
+  <li>The pictures are live: hover or tap the parts of the architecture and the data pipeline, switch the architecture between its two training stages, and step through a training conversation to see which tokens the model is graded on.</li>
+</ul>
+<p>The code that builds each piece from scratch lives in the <a class="lesson" data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a>, whose toy vision-language model is a miniature LLaVA: a vision encoder, a projector, and a language model that reads the projected image as extra tokens.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We present the first attempt to use language-only GPT-4 to generate multimodal language-image instruction-following data.”<cite>Liu et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2304.08485">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A chat model is a brilliant conversationalist who has never seen anything. A <span class="t" data-t="clip">CLIP</span> image encoder is a sharp-eyed observer who cannot hold a conversation. LLaVA puts them in the same room with a small interpreter between them, then gives the pair a few weeks of practice conversations about photos. The twist is where the practice conversations come from: a second chat model that <em>also</em> cannot see wrote them, working only from written descriptions of each photo.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>Data:</strong> a text-only GPT-4, shown captions and object boxes instead of pixels, can write 158,000 useful image conversations, descriptions and reasoning questions.</li>
+  <li><strong>Model:</strong> a frozen CLIP vision encoder, one trainable matrix, and the Vicuna chat model, tuned end to end on that data, becomes a <span class="t" data-t="multimodal model">multimodal</span> assistant: LLaVA.</li>
+  <li><strong>Results:</strong> on a synthetic benchmark, LLaVA's answers score 85.1% of the score a text-only GPT-4 gets when it is handed the ground-truth description; fine-tuned on ScienceQA, LLaVA combined with GPT-4 as a judge reaches 92.53%, a new best at the time.</li>
+  <li><strong>Openness:</strong> the data, the model, the code and two new benchmarks are all released.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>“Encode the image, project it, splice it into the prompt, then tune on image conversations” became the default recipe for open vision-language models. It is the design the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> builds and trains.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S1">original</a></span></h2>
+<blockquote class="quote">“In this paper, we present visual instruction-tuning, the first attempt to extend instruction-tuning to the language-image multimodal space, to pave the way towards building a general-purpose visual assistant.”<cite>Liu et al. (2023), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Before this paper, vision models were like appliances with one button each: a classifier names objects, a captioner writes a caption, a detector draws boxes. Language models had just shown a different kind of interface: one text box where you say what you want. The trick that made them follow requests is <span class="t" data-t="instruction tuning">instruction tuning</span>: fine-tuning on many examples of an instruction followed by a good response. The paper asks whether the same trick works when some of the instruction is a picture.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The same photo, three instructions, three different jobs: “What vehicle is this?” wants a short fact; “Describe this photo in detail” wants a paragraph; “What challenges do these people face?” wants reasoning. A one-button captioner gives the same caption to all three. An instruction-tuned model reads the request and switches task.</p>
+<h3 class="rung">The four contributions</h3>
+<ol>
+  <li><strong>Data:</strong> a pipeline that turns ordinary image-caption pairs into instruction-following conversations, using ChatGPT or GPT-4 as the writer (§3).</li>
+  <li><strong>Model:</strong> a <span class="t" data-tip-title="Large multimodal model (LMM)" data-tip="The paper's name for a large language model that also takes other kinds of input, here images. The same thing is often called a vision-language model.">large multimodal model</span> made by connecting CLIP's open-set image encoder to the Vicuna language decoder, fine-tuned end to end (§4).</li>
+  <li><strong>Benchmark:</strong> LLaVA-Bench, two small, hard test sets of images, questions and detailed annotations (§5.1).</li>
+  <li><strong>Release:</strong> data, code, checkpoints and a chat demo.</li>
+</ol>
+<h3 class="rung">Why it matters</h3>
+<p>Instruction tuning is the step that turns a base language model into an assistant (see the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> and the <a href="instructgpt.html">InstructGPT companion</a>). This paper is where that step first reached images in a cheap, open, reproducible form.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S2">original</a></span></h2>
+<blockquote class="quote">“Finally, note that visual instruction tuning is different from visual prompt tuning: the former aims to improve the model’s instruction-following abilities, while the latter aims to improve the parameter-efficiency in model adaptation.”<cite>Liu et al. (2023), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>There were two ways to build a visual assistant. One is to train a single model end to end for one kind of task, such as following directions through a house or editing a photo on request. The other is a <em>switchboard</em>: a language model that calls separate vision tools (a captioner here, a detector there) and stitches their outputs together, as Visual ChatGPT and MM-REACT did. LLaVA is the first kind, but general: one model trained end to end for many tasks.</p>
+<h3 class="rung">What sits nearby</h3>
+<ul>
+  <li><strong>Flamingo</strong> joined a frozen image encoder to a frozen language model through new <span class="t" data-t="cross-attention">cross-attention</span> layers and showed strong <span class="t" data-t="in-context learning">in-context learning</span>; the paper calls it “the GPT-3 moment in the multimodal domain”.</li>
+  <li><strong>BLIP-2</strong> compressed each image into a few tokens with a small learned module (the Q-Former) before handing it to the language model.</li>
+  <li><strong>OpenFlamingo</strong> and <strong>LLaMA-Adapter</strong> gave the open LLaMA model image inputs.</li>
+</ul>
+<p>The gap the paper names: none of these were tuned on vision-language <em>instruction</em> data, and their multimodal performance lagged their text-only performance.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The three families in the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> map onto this section: splice projected tokens into the prompt (LLaVA), add cross-attention layers (Flamingo), or compress to a fixed few tokens first (BLIP-2).</p>
+</section>
+
+<section id="s3">
+<h2>3 GPT-assisted visual instruction data <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S3">original</a></span></h2>
+<blockquote class="quote">“This symbolic representation allows us to encode the image as an LLM-recognizable sequence.”<cite>Liu et al. (2023), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>You want practice conversations about thousands of photos, and you have a brilliant writer who is blindfolded. So you read the writer a description of each photo: five one-line captions, plus a list of every object and the rectangle it sits in. Show the writer a few hand-made example conversations, and ask for more like them. The writer never sees a pixel, yet the conversations it writes are about the photo.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The paper's own example (its Table 1) is a photo of people packing luggage into a black SUV in an underground garage. What the writer is given:</p>
+<ul>
+  <li><strong>Captions</strong>, such as “People try to fit all of their luggage in an SUV.”</li>
+  <li><strong><span class="t" data-t="bounding box">Boxes</span></strong>, one line per object: <code>person: [0.681, 0.242, 0.774, 0.694]</code>, <code>backpack: [0.384, 0.696, 0.485, 0.914]</code>, and so on. The four numbers are the box's corners as fractions of the image's width and height, so the writer can tell left from right and near from far.</li>
+</ul>
+<p>From that, it writes three kinds of response: a <strong>conversation</strong> (“What type of vehicle is featured in the image?” “The image features a black sport utility vehicle (SUV).”), a <strong>detailed description</strong>, and a <strong>complex reasoning</strong> answer (“What challenges do these people face?”, answered with the difficulty of fitting all that luggage in).</p>
+<p>The cheapest possible version, used later for stage 1, needs no writer at all: pick a question such as “Describe the image concisely.” and use the image's caption as the answer. The paper writes it as <span class="m" data-tex="\texttt{Human}: \mathbf{X}_{\texttt{q}}\ \mathbf{X}_{\texttt{v}}\texttt{&lt;STOP&gt;}\ \texttt{Assistant}: \mathbf{X}_{\texttt{c}}\texttt{&lt;STOP&gt;}" data-fallback="Human: X_q X_v &lt;STOP&gt; Assistant: X_c &lt;STOP&gt;"></span>: question and image in, caption out. Cheap, but every answer is one caption long.</p>
+
+<figure class="ix wide" id="fig-data">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 300" role="img" aria-label="The data pipeline: a COCO image's captions and boxes, plus a few hand-written examples, go to a text-only GPT-4, which writes three kinds of response; each response is paired back with the image">
+    <defs><marker id="arrd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M96,25 H118" stroke-dasharray="3 3" marker-end="url(#arrd)"/>
+    <path class="wire" d="M170,40 V116" marker-end="url(#arrd)"/>
+    <path class="wire" d="M293,40 V116" marker-end="url(#arrd)"/>
+    <path class="wire" d="M99,92 V116" marker-end="url(#arrd)"/>
+    <path class="wire" d="M92,152 V188" marker-end="url(#arrd)"/>
+    <path class="wire" d="M196,152 V188" marker-end="url(#arrd)"/>
+    <path class="wire" d="M300,152 V188" marker-end="url(#arrd)"/>
+    <path class="wire" d="M92,230 V260" marker-end="url(#arrd)"/>
+    <path class="wire" d="M196,230 V260" marker-end="url(#arrd)"/>
+    <path class="wire" d="M300,230 V260" marker-end="url(#arrd)"/>
+    <path class="wire" d="M16,40 V260" marker-end="url(#arrd)"/>
+    <text x="36" y="160" class="lbl" text-anchor="middle" transform="rotate(-90 36 160)">the image skips GPT-4</text>
+    <g class="blk plain" data-block="img"><rect x="8" y="10" width="88" height="30" rx="6"/><text x="52" y="29" text-anchor="middle">COCO image</text></g>
+    <g class="blk emb" data-block="caps"><rect x="120" y="10" width="100" height="30" rx="6"/><text x="170" y="29" text-anchor="middle">5 captions</text></g>
+    <g class="blk emb" data-block="boxes"><rect x="238" y="10" width="110" height="30" rx="6"/><text x="293" y="29" text-anchor="middle">object boxes</text></g>
+    <g class="blk plain" data-block="seed"><rect x="44" y="64" width="110" height="28" rx="6"/><text x="99" y="82" text-anchor="middle">seed examples</text></g>
+    <g class="blk attn" data-block="gpt"><rect x="44" y="118" width="304" height="34" rx="7"/><text x="196" y="139" text-anchor="middle">text-only GPT-4</text></g>
+    <g class="blk soft" data-block="conv"><rect x="44" y="190" width="96" height="40" rx="6"/><text x="92" y="207" text-anchor="middle">conversation</text><text x="92" y="223" text-anchor="middle" class="lbl">58K</text></g>
+    <g class="blk soft" data-block="detail"><rect x="148" y="190" width="96" height="40" rx="6"/><text x="196" y="207" text-anchor="middle">description</text><text x="196" y="223" text-anchor="middle" class="lbl">23K</text></g>
+    <g class="blk soft" data-block="reason"><rect x="252" y="190" width="96" height="40" rx="6"/><text x="300" y="207" text-anchor="middle">reasoning</text><text x="300" y="223" text-anchor="middle" class="lbl">77K</text></g>
+    <g class="blk lin" data-block="final"><rect x="8" y="262" width="340" height="30" rx="6"/><text x="178" y="281" text-anchor="middle">LLaVA-Instruct-158K: image + response</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with <strong>the image</strong> at the top left and notice which wire goes around GPT-4.</p></div>
+  </div>
+  <figcaption>The data pipeline of §3, drawn for this page from the paper's description and its Table 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> start at the top. A COCO photo comes with human-written annotations (the dashed arrow): five captions and a list of object boxes. Those two texts, plus a few hand-written example conversations, go into a text-only GPT-4, the long box in the middle. GPT-4 writes one of three kinds of response (the three green boxes, with how many of each were kept). The photo itself travels down the left edge and never enters GPT-4; it only rejoins its text at the bottom, where each response is paired with its image to make a training example for LLaVA. The seed examples are the only human annotation in the whole pipeline.</p>
+
+<h3 class="rung">The numbers</h3>
+<p>158K samples in total: 58K conversations, 23K detailed descriptions and 77K reasoning answers. Reasoning is the largest share, almost half. The paper also tried ChatGPT as the writer and found GPT-4 “consistently provides higher quality” data, especially for spatial reasoning.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># samples written by GPT-4, in thousands
+conversation, detail, reasoning = 58, 23, 77
+conversation + detail + reasoning  # → 158
+# each type's share of the total
+[round(100 * k / 158, 1) for k in (conversation, detail, reasoning)]  # → [36.7, 14.6, 48.7]</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>This is <span class="t" data-t="distillation">distillation</span> through a text bottleneck: a stronger model's language skill is poured into training data for a weaker one, and the image is described rather than shown. <span class="t" data-t="synthetic data">Synthetic data</span> written by a stronger model is now a standard ingredient of instruction tuning. Its limit is visible too: the writer can only talk about what the captions and boxes mention, so whatever the annotations miss, the conversations miss.</p>
+</section>
+
+<section id="s4">
+<h2>4 Visual instruction tuning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Two parts: how the picture gets into the language model (4.1, one matrix), and how the pair is taught (4.2, two stages, graded only on the assistant's replies).</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Architecture <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“We consider a simple linear layer to connect image features into the word embedding space.”<cite>Liu et al. (2023), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The vision encoder writes its notes in its own shorthand; the language model reads only its own vocabulary of word vectors. The <span class="t" data-t="projector">projector</span> is a plug adapter between them: it reshapes each of the encoder's vectors into something the language model treats like a word. After that the language model reads the picture the way it reads a sentence.</p>
+<h4>Tiny example</h4>
+<p>Say the encoder describes one patch of the image with the two numbers (1, 2), and the language model's word vectors have three numbers. A 3 × 2 matrix <strong>W</strong> with rows (1, 0), (0, 1) and (1, 1) turns (1, 2) into (1, 2, 3): a vector of the right width, ready to sit in the prompt. The <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> works this same example (it writes the matrix the other way round, as a row vector times a 2 × 3 matrix; the numbers are the same).</p>
+
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 360" role="img" aria-label="The LLaVA architecture: an image goes through a vision encoder and a projection to become visual tokens; the instruction becomes word tokens; the language model reads both and writes the response">
+    <defs><marker id="arra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M180,70 V38" marker-end="url(#arra)"/>
+    <path class="wire" d="M100,150 V120" marker-end="url(#arra)"/>
+    <path class="wire" d="M256,150 V120" marker-end="url(#arra)"/>
+    <path class="wire" d="M100,206 V178" marker-end="url(#arra)"/>
+    <path class="wire" d="M100,262 V238" marker-end="url(#arra)"/>
+    <path class="wire" d="M100,322 V298" marker-end="url(#arra)"/>
+    <path class="wire" d="M256,206 V178" marker-end="url(#arra)"/>
+    <path class="wire" d="M256,322 V238" marker-end="url(#arra)"/>
+    <text x="106" y="254" class="lbl">Z<tspan dy="3" font-size="9">v</tspan></text>
+    <text x="20" y="168" class="lbl">H<tspan dy="3" font-size="9">v</tspan></text>
+    <text x="304" y="168" class="lbl">H<tspan dy="3" font-size="9">q</tspan></text>
+    <g class="blk plain" data-block="resp"><rect x="100" y="8" width="160" height="28" rx="6"/><text x="180" y="26" text-anchor="middle">Response X<tspan dy="3" font-size="9">a</tspan></text></g>
+    <g class="blk attn" data-block="lm"><rect x="30" y="70" width="300" height="48" rx="8"/><text x="180" y="91" text-anchor="middle">Language model f<tspan dy="3" font-size="9">φ</tspan><tspan dy="-3"> (Vicuna)</tspan></text><text id="st-lm" x="180" y="110" text-anchor="middle" class="lbl">frozen</text></g>
+    <g class="blk lin" data-block="hv">
+      <rect x="40" y="150" width="24" height="26" rx="4"/><rect x="68" y="150" width="24" height="26" rx="4"/><rect x="96" y="150" width="24" height="26" rx="4"/><rect x="124" y="150" width="24" height="26" rx="4"/>
+    </g>
+    <g class="blk emb" data-block="hq">
+      <rect x="216" y="150" width="24" height="26" rx="4"/><rect x="244" y="150" width="24" height="26" rx="4"/><rect x="272" y="150" width="24" height="26" rx="4"/>
+    </g>
+    <g class="blk ff" data-block="proj"><rect x="44" y="206" width="112" height="32" rx="6"/><text x="100" y="220" text-anchor="middle">Projection W</text><text id="st-proj" x="100" y="233" text-anchor="middle" class="lbl">trained</text></g>
+    <g class="blk emb" data-block="emb"><rect x="190" y="206" width="132" height="32" rx="6"/><text x="256" y="226" text-anchor="middle">word embeddings</text></g>
+    <g class="blk norm" data-block="enc"><rect x="36" y="262" width="128" height="36" rx="6"/><text x="100" y="277" text-anchor="middle">Vision encoder g</text><text id="st-enc" x="100" y="291" text-anchor="middle" class="lbl">frozen</text></g>
+    <g class="blk plain" data-block="img"><rect x="52" y="322" width="96" height="30" rx="6"/><text x="100" y="341" text-anchor="middle">Image X<tspan dy="3" font-size="9">v</tspan></text></g>
+    <g class="blk plain" data-block="instr"><rect x="196" y="322" width="120" height="30" rx="6"/><text x="256" y="341" text-anchor="middle">Instruction X<tspan dy="3" font-size="9">q</tspan></text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with <strong>the image</strong> at the bottom left and follow it up. Then switch stages below and watch which parts learn.</p></div>
+  </div>
+  <div class="mode" role="group" aria-label="Training stage">
+    <span>Show training stage:</span>
+    <button type="button" data-stage="1" aria-pressed="true">Stage 1: feature alignment</button>
+    <button type="button" data-stage="2" aria-pressed="false">Stage 2: end to end</button>
+  </div>
+  <p class="readout" id="stage-readout"></p>
+  <figcaption>Figure 1 of the paper, redrawn, with the frozen and trained parts of §4.2 marked. Based on Liu et al. (2023), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> two roads lead up into one language model. On the left, the image goes through CLIP's vision encoder <em>g</em>, whose grid of patch vectors <strong>Z</strong><sub>v</sub> the projection <strong>W</strong> turns into visual tokens <strong>H</strong><sub>v</sub> (the four squares on the left). On the right, the instruction's words are looked up in the language model's own embedding table to give word tokens <strong>H</strong><sub>q</sub> (the three squares on the right). The language model reads both rows as one sequence and writes the response at the top. The small labels say which parts learn. Switch to stage 2 and the language model starts learning too; the vision encoder never does.</p>
+
+<h4>The math: one matrix</h4>
+<div class="eq" data-tex="\htmlData{sym=Hv}{\mathbf{H}_{\texttt{v}}} = \htmlData{sym=Wproj}{\mathbf{W}} \cdot \htmlData{sym=Zv}{\mathbf{Z}_{\texttt{v}}}, \quad \text{with} \quad \htmlData{sym=Zv}{\mathbf{Z}_{\texttt{v}}} = \htmlData{sym=genc}{g}(\htmlData{sym=Xv}{\mathbf{X}_{\texttt{v}}})" data-fallback="H_v = W · Z_v, with Z_v = g(X_v)"></div>
+<div class="symtable" data-syms="Xv,genc,Zv,Wproj,Hv"></div>
+<p class="inwords"><strong>In words:</strong> “run the image through the frozen vision encoder to get one feature vector per patch, then multiply each by one learned matrix so it has the width of the language model's word vectors.” The paper writes <strong>W</strong> on the left, so each feature is a column; the <a data-lesson="primer/ml/generative/multimodal.html#Projector">lesson's code</a> keeps features as rows and multiplies on the right. Same arithmetic.</p>
+<p class="inwords"><strong>With the numbers:</strong> W · (1, 2) = (1·1 + 0·2, 0·1 + 1·2, 1·1 + 1·2) = (1, 2, 3). At full size: CLIP's ViT-L/14 reads a 224 × 224 image (CLIP paper, Table 20) in 14-pixel patches, a 16 × 16 grid, so <strong>Z</strong><sub>v</sub> holds 256 vectors, each 1,024 wide. Vicuna-13B is a fine-tuned LLaMA-13B, whose word vectors are 5,120 wide (LLaMA paper, Table 2). So <strong>W</strong> is 5,120 × 1,024: 5,242,880 learned numbers, turning one image into 256 visual tokens. (The paper names the encoder and the language model but not these widths; they come from the two models' own papers.)</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># Z_v: one patch feature, as a column
+z = [1, 2]
+# W: 3 rows (the language model's width), 2 columns (the encoder's width)
+W = [[1, 0], [0, 1], [1, 1]]
+# W · z: dot each row of W with z
+[sum(W[r][c] * z[c] for c in range(2)) for r in range(3)]  # → [1, 2, 3]
+# full size: a 224-pixel image in 14-pixel patches
+grid = (224 // 14) ** 2
+grid  # → 256
+# W is d_LM × d_vision
+print(f"{5120 * 1024:,}")  # → 5,242,880
+# as a share of Vicuna's 13 billion weights, in percent
+round(100 * 5120 * 1024 / 13.0e9, 2)  # → 0.04</code></pre>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/multimodal.html#Projector"><code>Projector</code></a> is this matrix (and, given a hidden width, the two-layer version later LLaVAs switched to); <a data-lesson="primer/ml/generative/multimodal.html#worked_example_projection"><code>worked_example_projection</code></a> computes the (1, 2, 3) above; <a data-lesson="primer/ml/generative/multimodal.html#VisionEncoder"><code>VisionEncoder</code></a> plays the part of <em>g</em>; and <a data-lesson="primer/ml/generative/multimodal.html#VisionLanguageModel.splice"><code>VisionLanguageModel.splice</code></a> puts the projected tokens where the image placeholder sits in the prompt.</p>
+
+<h4>Which features, exactly?</h4>
+<p>The encoder is CLIP's (see the <a href="clip.html">CLIP companion</a>), a <span class="t" data-t="vision transformer">Vision Transformer</span> (see the <a href="vit.html">ViT companion</a> for how an image becomes a grid of patch vectors). LLaVA takes the <em>grid</em> of patch features, not CLIP's single summary vector, and the paper tries the grid from the last layer and from the layer before it. For ScienceQA, the layer before the last wins (§5.2): 90.92% against 89.96%. The authors' guess is that CLIP's last layer is trained to summarise the whole image to match a caption, while the layer before still keeps local detail.</p>
+<h4>Why it matters today</h4>
+<p>The authors chose the plainest possible connector on purpose, because it “allows us to iterate data centric experiments quickly”, and name richer options (Flamingo's gated cross-attention, BLIP-2's Q-Former) as future work. It turned out that the plain connector was enough: most open vision-language models still splice projected patch tokens into the prompt.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Training <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“This stage can be understood as training a compatible visual tokenizer for the frozen LLM.”<cite>Liu et al. (2023), §4.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Every training example is a chat transcript with a photo taped into the first message. The model reads the whole transcript but is only marked on the assistant's lines, the way a language teacher reads your whole essay but only corrects the part you wrote. The course comes in two terms: first the interpreter alone learns the vocabulary, then interpreter and writer practise real conversations together.</p>
+
+<h4>Building the transcript</h4>
+<p><strong>Tiny example:</strong> a three-turn conversation about the SUV photo has questions <strong>X</strong><sub>q</sub><sup>1</sup>, <strong>X</strong><sub>q</sub><sup>2</sup>, <strong>X</strong><sub>q</sub><sup>3</sup> and answers <strong>X</strong><sub>a</sub><sup>1</sup>, <strong>X</strong><sub>a</sub><sup>2</sup>, <strong>X</strong><sub>a</sub><sup>3</sup>. The image goes into the first turn only, and a coin flip decides whether it comes before or after the first question.</p>
+<div class="eq" data-tex="\htmlData{sym=Xinst}{\mathbf{X}^{t}_{\texttt{instruct}}} = \begin{cases} \text{randomly } [\htmlData{sym=Xq}{\mathbf{X}^1_{\texttt{q}}}, \htmlData{sym=Xv}{\mathbf{X}_{\texttt{v}}}] \text{ or } [\htmlData{sym=Xv}{\mathbf{X}_{\texttt{v}}}, \htmlData{sym=Xq}{\mathbf{X}^1_{\texttt{q}}}], & \htmlData{sym=tturn}{t} = 1 \\ \htmlData{sym=Xq}{\mathbf{X}^{t}_{\texttt{q}}}, & \htmlData{sym=tturn}{t} > 1 \end{cases}" data-fallback="X_instruct^t = randomly [X_q^1, X_v] or [X_v, X_q^1] if t = 1; X_q^t if t > 1"></div>
+<div class="symtable" data-syms="Xinst,tturn,Xq,Xv,Tturns"></div>
+<p class="inwords"><strong>In words:</strong> “the user's message in the first turn is the first question together with the image, in a random order; in every later turn it is just that turn's question.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with T = 3 turns and the coin landing “image first”, the three user messages are [image, “What vehicle is this?”], [“How many people are there?”], [“What are they doing?”]. The image is attached once, and every later answer can still see it, because it sits earlier in the same sequence.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>questions = ["What vehicle is this?", "How many people are there?", "What are they doing?"]
+T = len(questions)
+# X_instruct^t: the image joins the first question, in an order set by a coin flip
+def instruct(t, image_first):
+    if t == 1:
+        return ["&lt;image&gt;", questions[0]] if image_first else [questions[0], "&lt;image&gt;"]
+    return [questions[t - 1]]
+[instruct(t, image_first=True) for t in range(1, T + 1)]  # → [['&lt;image&gt;', 'What vehicle is this?'], ['How many people are there?'], ['What are they doing?']]
+instruct(1, image_first=False)  # → ['What vehicle is this?', '&lt;image&gt;']</code></pre>
+<p>The random order is there so the model does not learn to expect the picture in one fixed place. The turns are then laid out one after another, each user message and each answer followed by a stop marker (the paper uses <code>###</code>), after a fixed <span class="t" data-t="system prompt">system message</span> borrowed from Vicuna.</p>
+
+<p><strong>Try it:</strong> the strip below is the paper's Table 2 as one flat sequence. Switch between a stage-1 example (one question, the caption as answer) and a stage-2 conversation, and tap any piece to see what it is. Highlighted pieces are the ones the loss counts.</p>
+<div class="play" id="fig-seq">
+  <div class="mode" role="group" aria-label="Which kind of training example">
+    <button type="button" data-seq="1" aria-pressed="false">Stage 1 example</button>
+    <button type="button" data-seq="2" aria-pressed="true">Stage 2 conversation</button>
+  </div>
+  <div class="seq" id="seq-strip" role="group" aria-label="The training sequence, piece by piece"></div>
+  <p class="readout" id="seq-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> every piece is part of one long input that the language model reads left to right. The shaded piece labelled “image” is the image: 256 visual tokens in reality, one chip here. Plain pieces are context the model reads but is never graded on: the system message, the “Human:” and “Assistant:” labels, the user's questions and the image. Highlighted pieces are the targets: each answer <em>and</em> the <code>###</code> that ends it, because the model must learn where to stop as well as what to say. In the stage-1 example the only target is the original caption; in the stage-2 conversation, every answer is.</p>
+
+<h4>The objective: predict the answers, token by token</h4>
+<p><strong>Tiny example:</strong> the answer “black SUV” followed by the stop marker is three tokens. Say the model gives the right first token probability 0.6, the right second token 0.5 (given the first), and the stop marker 0.9 (given both). The probability of the whole answer is the product: 0.6 × 0.5 × 0.9 = 0.27.</p>
+<div class="eq" data-tex="\htmlData{sym=pXa}{p(\mathbf{X}_{\texttt{a}} \mid \mathbf{X}_{\texttt{v}}, \mathbf{X}_{\texttt{instruct}})} = \htmlData{sym=prodi}{\prod_{i=1}^{L}} \htmlData{sym=ptheta}{p_{\boldsymbol{\theta}}}(\htmlData{sym=xi}{\boldsymbol{x}_i} \mid \htmlData{sym=Xv}{\mathbf{X}_{\texttt{v}}}, \htmlData{sym=Xinstlt}{\mathbf{X}_{\texttt{instruct},&lt;i}}, \htmlData{sym=Xalt}{\mathbf{X}_{\texttt{a},&lt;i}})" data-fallback="p(X_a | X_v, X_instruct) = Π_{i=1}^{L} p_θ(x_i | X_v, X_instruct,&lt;i, X_a,&lt;i)"></div>
+<div class="symtable" data-syms="pXa,prodi,Lseq,ptheta,xi,Xv,Xinstlt,Xalt"></div>
+<p class="inwords"><strong>In words:</strong> “the probability of all the answers is the product, over the answer tokens, of the probability the model gives each correct token, given the image, the instructions so far, and the answer tokens before it.” Training makes this number as large as possible, which is the same as making its negative logarithm (the <span class="t" data-t="cross-entropy">cross-entropy</span>) as small as possible. The product runs over positions 1 to <em>L</em>, but only the highlighted target tokens of Table 2 contribute a factor; the paper also leaves the system message and earlier stop markers out of the conditions “for better readability”.</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.6 × 0.5 × 0.9 = 0.27. As a loss: −log 0.27 = 1.309, or 0.436 per answer token. A perfect model would give each token probability 1, a product of 1 and a loss of 0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# p_θ(x_i | ...) for the three target tokens: "black", "SUV", "###"
+p = [0.6, 0.5, 0.9]
+# Π over the target tokens
+round(math.prod(p), 2)  # → 0.27
+# the loss: −log of that product, in total and per token
+round(-math.log(math.prod(p)), 3)  # → 1.309
+round(-sum(math.log(q) for q in p) / len(p), 3)  # → 0.436</code></pre>
+<p><strong>In code:</strong> the lesson's loss section computes exactly this average over the answer positions only (the <span class="t" data-t="loss mask">loss mask</span>), and <a data-lesson="primer/ml/losses.html#cross_entropy_from_prob"><code>cross_entropy_from_prob</code></a> is the −log of one probability.</p>
+
+<h4>Two stages: what learns when</h4>
+<p><strong>Everyday picture:</strong> first term, the interpreter studies alone while both experts keep doing exactly what they already do. Second term, the writer is allowed to change too. The photographer (the vision encoder) never changes.</p>
+<div class="eq" data-tex="\text{stage 1: } \htmlData{sym=theta}{\boldsymbol{\theta}} = \htmlData{sym=Wproj}{\mathbf{W}}, \qquad \text{stage 2: } \htmlData{sym=theta}{\boldsymbol{\theta}} = \{\htmlData{sym=Wproj}{\mathbf{W}}, \htmlData{sym=phi}{\boldsymbol{\phi}}\}" data-fallback="stage 1: θ = W;  stage 2: θ = {W, φ}"></div>
+<div class="symtable" data-syms="theta,Wproj,phi"></div>
+<p class="inwords"><strong>In words:</strong> “in stage 1 only the projection matrix learns; in stage 2 the projection and every weight of the language model learn; the vision encoder is frozen throughout.”</p>
+<p class="inwords"><strong>With the numbers:</strong> stage 1 trains 5,242,880 numbers; stage 2 trains those plus Vicuna-13B's roughly 13.0 billion, a jump of about 2,500 times.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># θ in stage 1: W only
+W = 5120 * 1024
+# φ: the language model's weights (LLaMA-13B size, LLaMA paper Table 2)
+phi = 13.0e9
+print(f"{W:,}")  # → 5,242,880
+# θ in stage 2: W and φ, as a multiple of stage 1
+round((W + phi) / W)  # → 2481</code></pre>
+<ul>
+  <li><strong>Stage 1, pre-training for feature alignment.</strong> 595K image-caption pairs filtered from CC3M (Conceptual Captions, a set of about three million web images with captions; the filter is in Appendix E below), turned into single-turn examples with the cheap “describe briefly” recipe of §3. <span class="t" data-t="freezing">Frozen</span> encoder, frozen language model, trainable <strong>W</strong>. The paper's phrase for it: “training a compatible visual tokenizer for the frozen LLM”.</li>
+  <li><strong>Stage 2, fine-tuning end to end.</strong> The encoder stays frozen; <strong>W</strong> and the language model learn. Two uses: a <strong>chatbot</strong> trained on the 158K samples of §3 (the three types sampled uniformly), and a <strong>ScienceQA</strong> model trained on that benchmark's questions, with the reasoning and answer as the target.</li>
+</ul>
+<p><strong>How long each stage is:</strong> stage 1 runs one pass over 595K pairs in batches of 128; stage 2 runs three passes over 158K samples in batches of 32 (§5). On eight A100 GPUs, stage 1 took under 4 hours and stage 2 under 10 (Appendix C).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# stage 1: 1 epoch over 595K pairs, batch 128
+math.ceil(595_000 / 128)  # → 4649
+# stage 2: 3 epochs over 158K samples, batch 32
+math.ceil(158_000 * 3 / 32)  # → 14813</code></pre>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/multimodal.html#align_projector"><code>align_projector</code></a> is stage 1 in miniature: the vision encoder and language model of <a data-lesson="primer/ml/generative/multimodal.html#build_toy_vlm"><code>build_toy_vlm</code></a> stay frozen and only the projector learns, from 80 toy pictures and their one-word captions; <a data-lesson="primer/ml/generative/multimodal.html#caption_accuracy"><code>caption_accuracy</code></a> measures the result. Stage 2 is ordinary <span class="t" data-t="sft">supervised fine-tuning</span>, as in the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a>.</p>
+<h4>Why it matters today</h4>
+<p>Stage 1 is cheap and safe: it touches a few million weights and cannot damage what either big model knows. The paper's ablation (§5.2) shows it is not optional: skipping it costs 5.11 points on ScienceQA. The two-stage split, align a small connector first and then tune on instructions, survives in most vision-language recipes.</p>
+</section>
+
+<section id="s5">
+<h2>5 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Two tests: can LLaVA hold a useful conversation about a picture (a chatbot, judged by another model), and can it answer science questions with pictures in them (ScienceQA, graded right or wrong)? All training used eight A100 GPUs with Vicuna's hyperparameters: stage 1 at a <span class="t" data-t="learning rate">learning rate</span> of 2e-3, stage 2 at 2e-5.</p>
+</section>
+
+<section id="s5-1">
+<h3>5.1 Multimodal chatbot <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S5.SS1">original</a></span></h3>
+<h4>Everyday picture: the ironing man</h4>
+<p>The paper opens with a photo from the GPT-4 technical report: a man ironing clothes on a board fixed to the back of a yellow taxi in traffic. Asked “What is unusual about this image?”, LLaVA explains that ironing on a moving vehicle is not where one usually irons and is unsafe. BLIP-2 answers with a caption (“a man is sitting on the back of a yellow cab”); OpenFlamingo says the man is drying his clothes on the hood of his car. The difference is not eyesight but following the instruction: the other two describe, LLaVA answers the question. The paper notes LLaVA was trained on only about 80K unique images, and this photo is not among them.</p>
+
+<h4>How do you score an open-ended answer?</h4>
+<p><strong>Everyday picture:</strong> you can't mark a free-form answer against an answer key, so you hire an examiner. Here the examiner is a text-only GPT-4. It gets the question, a written description of the image, and two answers: the candidate's (LLaVA's, which saw the image) and a reference written by text-only GPT-4 from the ground-truth description. It rates each answer from 1 to 10 for helpfulness, relevance, accuracy and detail, with an explanation. See the <a href="llm-as-judge.html">LLM-as-a-judge companion</a> for what such examiners get right and wrong.</p>
+<p><strong>Tiny example:</strong> the judge gives the candidate 7 and the reference 8. The candidate's relative score is 7 / 8 = 87.5%.</p>
+<div class="eq" data-tex="\htmlData{sym=srel}{s_{\text{rel}}} = \frac{\htmlData{sym=Scand}{S_{\text{cand}}}}{\htmlData{sym=Sref}{S_{\text{ref}}}} \times 100\%" data-fallback="s_rel = S_cand / S_ref × 100%"></div>
+<div class="symtable" data-syms="srel,Scand,Sref"></div>
+<p class="inwords"><strong>In words:</strong> “the candidate's score as a percentage of the reference's score, both given by the same judge.” The paper reports “relative scores w.r.t. the text-only GPT-4 model” without printing a formula; this is the plain reading of that phrase, and the one that makes a headline like “85.1%” mean what it says.</p>
+<p class="inwords"><strong>With the numbers:</strong> 7 / 8 × 100% = 87.5%. Over a benchmark, the scores are totalled over all questions first.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the judge's ratings, 1 to 10
+S_cand, S_ref = 7, 8
+S_cand / S_ref * 100  # → 87.5</code></pre>
+<p>The reference is a strong one: it answers from the ground-truth annotations, so it cannot misread the picture. A relative score near 100% means “as good as a strong model that was told exactly what is in the image”.</p>
+
+<h4>LLaVA-Bench (COCO): which data matters?</h4>
+<p>30 COCO validation images, each with one question of each of the three types: 90 questions. The images are of the same kind as the training data, so this test isolates the effect of the <em>training data mix</em>.</p>
+<div class="tablewrap"><table>
+  <caption>Table 4, reproduced (Liu et al., 2023, CC BY 4.0). Relative score, %, on LLaVA-Bench (COCO); change from full data in brackets</caption>
+  <thead><tr><th>Training data</th><th class="num">Conversation</th><th class="num">Detail</th><th class="num">Reasoning</th><th class="num">All</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>Full data</td><td class="num">83.1</td><td class="num">75.3</td><td class="num">96.5</td><td class="num">85.1</td></tr>
+    <tr><td>Detail + Complex</td><td class="num">81.5 (−1.6)</td><td class="num">73.3 (−2.0)</td><td class="num">90.8 (−5.7)</td><td class="num">81.9 (−3.2)</td></tr>
+    <tr><td>Conv + 5% Detail + 10% Complex</td><td class="num">81.0 (−2.1)</td><td class="num">68.4 (−7.1)</td><td class="num">91.5 (−5.0)</td><td class="num">80.5 (−4.4)</td></tr>
+    <tr><td>Conversation</td><td class="num">76.5 (−6.6)</td><td class="num">59.8 (−16.2)</td><td class="num">84.9 (−12.4)</td><td class="num">73.8 (−11.3)</td></tr>
+    <tr><td>No instruction tuning</td><td class="num">22.0 (−61.1)</td><td class="num">24.0 (−51.3)</td><td class="num">18.5 (−78.0)</td><td class="num">21.5 (−63.6)</td></tr>
+  </tbody>
+</table></div>
+<div class="plot bars" id="fig-mix"><div id="mix-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one training mix's overall relative score on the same 90 questions. The shortest bar is the model after stage 1 only: it can caption, but asked a question it scores 21.5%. Any instruction tuning adds over 50 points. Among the tuned models, conversation data alone reaches 73.8%; adding just a little description and reasoning data (5% and 10% of it) adds about 7 points, and even improves the conversation column, from 76.5 to 81.0. All three types together are best, at 85.1%. Reasoning questions score highest of the three columns: the judge rewards the long, careful answers GPT-4-written data teaches.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># overall relative score, %
+full, conv_only, conv_plus, untuned = 85.1, 73.8, 80.5, 21.5
+# what instruction tuning adds over stage 1 alone
+round(full - untuned, 1)  # → 63.6
+# what a little detail and reasoning data adds to conversation data
+round(conv_plus - conv_only, 1)  # → 6.7</code></pre>
+
+<h4>LLaVA-Bench (In-the-Wild): harder pictures</h4>
+<p>24 new images (indoor and outdoor scenes, memes, paintings, sketches) with 60 questions and very detailed hand-written descriptions for the judge.</p>
+<div class="tablewrap"><table>
+  <caption>Table 5, reproduced (Liu et al., 2023, CC BY 4.0). Relative score, %, on LLaVA-Bench (In-the-Wild), mean ± standard deviation</caption>
+  <thead><tr><th>Model</th><th class="num">Conversation</th><th class="num">Detail</th><th class="num">Reasoning</th><th class="num">All</th></tr></thead>
+  <tbody>
+    <tr><td>OpenFlamingo</td><td class="num">19.3 ± 0.5</td><td class="num">19.0 ± 0.5</td><td class="num">19.1 ± 0.7</td><td class="num">19.1 ± 0.4</td></tr>
+    <tr><td>BLIP-2</td><td class="num">54.6 ± 1.4</td><td class="num">29.1 ± 1.2</td><td class="num">32.9 ± 0.7</td><td class="num">38.1 ± 1.0</td></tr>
+    <tr class="hl"><td>LLaVA</td><td class="num">57.3 ± 1.9</td><td class="num">52.5 ± 6.3</td><td class="num">81.7 ± 1.8</td><td class="num">67.3 ± 2.0</td></tr>
+    <tr><td>LLaVA†</td><td class="num">58.8 ± 0.6</td><td class="num">49.2 ± 0.8</td><td class="num">81.4 ± 0.3</td><td class="num">66.7 ± 0.3</td></tr>
+  </tbody>
+</table></div>
+<div class="plot bars" id="fig-wild"><div id="wild-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> overall relative scores on the harder set. LLaVA's bar is about 29 points longer than BLIP-2's and 48 longer than OpenFlamingo's; the paper writes these gaps as “+29%” and “+48%”, but they are differences in percentage points. The ± is the spread over three runs. For the first three rows, the three runs are three separate generations by the model; for LLaVA† (the striped bar), one set of LLaVA answers is judged three times, and its small spread (± 0.3) shows the judge is consistent with itself. The striking column is reasoning: 81.7% of the reference's score, while detailed description is the weakest, at 52.5%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>llava, blip2, openflamingo = 67.3, 38.1, 19.1
+# the gaps, in percentage points
+round(llava - blip2, 1), round(llava - openflamingo, 1)  # → (29.2, 48.2)</code></pre>
+
+<h4>Limitations: a bag of patches</h4>
+<blockquote class="quote">“This indicates that, at times, LLaVA perceives the image as a “bag of patches”, failing to grasp the complex semantics within the image.”<cite>Liu et al. (2023), §5.1</cite></blockquote>
+<p>Two of the hard examples show where it breaks. Naming the restaurant from a photo of a ramen bowl needs broad knowledge and multilingual understanding. Reading the brand on a yogurt in a crowded fridge needs a high-resolution view, and LLaVA sees every photo at 224 pixels a side. And asked whether there is strawberry-flavoured yogurt in the fridge, LLaVA says yes, when the fridge holds yogurt and, separately, strawberries. Both words' patches are present; the relation between them is not. It is the image version of a <span class="t" data-t="bag of words">bag of words</span>, and a clean example of visual <span class="t" data-t="hallucination">hallucination</span>.</p>
+<h4>Why it matters today</h4>
+<p>The judge-based relative score became a common way to evaluate open-ended multimodal chat, with its known weaknesses (a judge that only reads a text description of the image, a single reference). The failures named here, fine detail at low resolution and relations between objects, are the ones later models attacked with higher resolutions and more varied data.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 ScienceQA <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S5.SS2">original</a></span></h3>
+<blockquote class="quote">“To the best of our knowledge, this is the first time that GPT-4 is used for model ensembling.”<cite>Liu et al. (2023), §5.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A school science exam with multiple-choice questions, some with a diagram or a photo, each with a worked explanation. ScienceQA has about 21,000 such questions across 3 subjects, 26 topics, 127 categories and 379 skills. LLaVA is fine-tuned on its training split and asked to write its reasoning first, then its answer: a trained-in <span class="t" data-t="chain of thought">chain of thought</span> (see the <a href="chain-of-thought-prompting.html">chain-of-thought companion</a>).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># train, validation and test examples
+splits = [12726, 4241, 4241]
+sum(splits)  # → 21208</code></pre>
+
+<h4>The results</h4>
+<div class="tablewrap"><table>
+  <caption>Selected rows and columns of Table 7, reproduced (Liu et al., 2023, CC BY 4.0). Accuracy, %. IMG: questions with an image as context; NO: questions with no context. † text-only GPT-4</caption>
+  <thead><tr><th>Method</th><th class="num">IMG</th><th class="num">NO</th><th class="num">Average</th></tr></thead>
+  <tbody>
+    <tr><td>Human</td><td class="num">87.50</td><td class="num">88.10</td><td class="num">88.40</td></tr>
+    <tr><td>GPT-3.5 with chain of thought</td><td class="num">67.43</td><td class="num">79.93</td><td class="num">75.17</td></tr>
+    <tr><td>LLaMA-Adapter</td><td class="num">80.32</td><td class="num">86.90</td><td class="num">85.19</td></tr>
+    <tr><td>MM-CoT (Large), previous best</td><td class="num">88.80</td><td class="num">92.89</td><td class="num">91.68</td></tr>
+    <tr><td>GPT-4† (2-shot)</td><td class="num">70.75</td><td class="num">90.73</td><td class="num">82.69</td></tr>
+    <tr><td>LLaVA</td><td class="num">88.00</td><td class="num">90.66</td><td class="num">90.92</td></tr>
+    <tr><td>LLaVA + GPT-4† (complement)</td><td class="num">87.80</td><td class="num">91.08</td><td class="num">90.97</td></tr>
+    <tr class="hl"><td>LLaVA + GPT-4† (judge)</td><td class="num">88.99</td><td class="num">93.52</td><td class="num">92.53</td></tr>
+  </tbody>
+</table></div>
+<p>LLaVA alone reaches 90.92%, close to the previous best of 91.68%. GPT-4 without images, shown two examples, reaches 82.69%; it often fails by saying it lacks the image. Its IMG column (70.75%) is well above chance, because some questions with an image do not actually need it. Two ways to combine the models:</p>
+<ol>
+  <li><strong>Complement:</strong> use GPT-4's answer, and fall back to LLaVA's whenever GPT-4 gives none. 90.97%: almost exactly LLaVA alone.</li>
+  <li><strong>GPT-4 as the judge:</strong> when the two answers differ, show GPT-4 the question and both answers (with their reasoning) and ask it for a final answer. 92.53%, a new best, and better than LLaVA in every question category.</li>
+</ol>
+
+<figure class="ix" id="fig-judge">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 256" role="img" aria-label="GPT-4 as the judge: LLaVA and a text-only GPT-4 each answer; if they agree the answer stands, otherwise GPT-4 sees both and picks">
+    <defs><marker id="arrj" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M150,38 V48 H75 V58 M150,48 H225 V58"/>
+    <path class="wire" d="M75,90 L137,115" marker-end="url(#arrj)"/>
+    <path class="wire" d="M225,90 L163,115" marker-end="url(#arrj)"/>
+    <path class="wire" d="M150,141 V212" marker-end="url(#arrj)"/>
+    <path class="wire" d="M166,126 H243 V156" marker-end="url(#arrj)"/>
+    <path class="wire" d="M243,188 V229 H208" marker-end="url(#arrj)"/>
+    <text x="156" y="182" class="lbl">agree</text>
+    <text x="186" y="120" class="lbl">differ</text>
+    <g class="blk plain" data-block="q"><rect x="80" y="8" width="140" height="30" rx="6"/><text x="150" y="27" text-anchor="middle">question (+ image)</text></g>
+    <g class="blk lin" data-block="llava"><rect x="20" y="60" width="110" height="30" rx="6"/><text x="75" y="79" text-anchor="middle">LLaVA</text></g>
+    <g class="blk attn" data-block="gpt4"><rect x="170" y="60" width="110" height="30" rx="6"/><text x="225" y="79" text-anchor="middle">GPT-4, text only</text></g>
+    <g class="blk pe" data-block="same"><circle cx="150" cy="126" r="15"/><text x="150" y="130" text-anchor="middle">=?</text></g>
+    <g class="blk attn" data-block="judge"><rect x="196" y="158" width="94" height="30" rx="6"/><text x="243" y="177" text-anchor="middle">GPT-4 judges</text></g>
+    <g class="blk soft" data-block="final2"><rect x="92" y="214" width="116" height="30" rx="6"/><text x="150" y="233" text-anchor="middle">final answer</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with <strong>the question</strong> at the top.</p></div>
+  </div>
+  <figcaption>The “GPT-4 as the judge” ensemble of §5.2, drawn for this page from the paper's description.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> both models answer the same question; only LLaVA sees the image. The circle compares their final choices. If they agree, that answer stands (the wire straight down). If they differ, GPT-4 is asked again, now with both answers and their reasoning in front of it, and its pick is final. The judge helps in two ways the paper describes: on questions that don't really need the image, GPT-4's knowledge can overrule a LLaVA mistake, and it can spot reasoning that doesn't hold up. An <span class="t" data-t="ensemble">ensemble</span> usually averages models; this one lets the stronger reasoner arbitrate.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the ensemble rule, with the judge as a function of both answers
+def ensemble(llava, gpt4, judge):
+    return llava if llava == gpt4 else judge(llava, gpt4)
+ensemble("A", "A", judge=lambda a, b: b)  # → 'A'
+ensemble("B", "A", judge=lambda a, b: b)  # → 'A'
+# the new best over the old one, and over LLaVA alone, in points
+round(92.53 - 91.68, 2), round(92.53 - 90.92, 2)  # → (0.85, 1.61)</code></pre>
+<p>The appendix's worked example (Table 10) is a rocking chair: LLaVA reasons that its seat is silk and answers (B); GPT-4, without the image, answers wood, (A); the judge finds silk implausible and picks (A), correctly. In its explanation the judge credits the right answer to “Assistant 1”, though it was Assistant 2 who said wood: a slip in GPT-4's own output that the paper prints as it came, and a small reminder that a judge's reasons deserve the same scrutiny as its verdicts.</p>
+
+<h4>Ablations</h4>
+<div class="tablewrap"><table>
+  <caption>Table 8, reproduced (Liu et al., 2023, CC BY 4.0). ScienceQA accuracy, %, change from the best variant in brackets</caption>
+  <thead><tr><th>Variant</th><th class="num">Features before the last layer</th><th class="num">Last-layer features</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>Best variant (reasoning, then answer)</td><td class="num">90.92</td><td class="num">89.96 (−0.96)</td></tr>
+    <tr><td>Predict the answer first</td><td class="num">n/a</td><td class="num">89.77 (−1.15)</td></tr>
+    <tr><td>Training from scratch (no stage 1)</td><td class="num">85.81 (−5.11)</td><td class="num">n/a</td></tr>
+    <tr><td>7B model size</td><td class="num">89.84 (−1.08)</td><td class="num">n/a</td></tr>
+  </tbody>
+</table></div>
+<div class="plot bars" id="fig-abl"><div id="abl-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is how many points of ScienceQA accuracy a variant loses against the best 13B model (90.92%). Skipping stage 1 costs by far the most, 5.11 points: the alignment stage is doing real work. The other bars are each about a point: last-layer instead of second-to-last features (0.96), a 7B language model instead of 13B (1.08), and answering before reasoning (1.15). Look at the table before reading too much into that last bar: the answer-first run also used last-layer features, so its 1.15 mixes two changes. Against reasoning-first with the same last-layer features (89.96%), answering first costs only 0.19 points.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>best, last_layer, answer_first = 90.92, 89.96, 89.77
+round(best - answer_first, 2)  # → 1.15
+# the answer-order effect alone, both runs on last-layer features
+round(last_layer - answer_first, 2)  # → 0.19</code></pre>
+<p><strong>A sentence that doesn't match the table:</strong> describing this ablation, the text says “answer-first reports the best number 89.77% accuracy in 12 epochs, while reasoning-first can quickly reach 89.77% accuracy in 6 epochs, but no further improvement with more training.” Read literally, both orders stop at 89.77%. Table 8 has reasoning-first at 89.96% with the same features, and at 90.92% for the best variant. The likely meaning is that reasoning-first matched answer-first's best score in half the epochs; the paper's conclusion is that reasoning first “can largely improve convergence, but contributes relatively little to the final performance”. This page follows the table's numbers.</p>
+<h4>Why it matters today</h4>
+<p>Two lessons outlived the leaderboard. A tuned small open model plus a strong general model as arbiter beat either alone. And writing the reasoning before the answer mostly sped up learning here, rather than raising the ceiling: a useful counterpoint to the idea that chain of thought always helps.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#S6">original</a></span></h2>
+<blockquote class="quote">“This paper is an initial step in visual instruction tuning, and mainly focuses on real-life tasks.”<cite>Liu et al. (2023), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Take two models that already exist, connect them with the thinnest possible adapter, and spend the effort on the practice material instead. The paper's bet was that data, not architecture, was the missing piece for visual assistants.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The follow-up the conclusion points to, “improved baselines with visual instruction tuning” (LLaVA-1.5), kept the recipe and changed only the parts named as weaknesses here: a two-layer <span class="t" data-t="mlp">MLP</span> projector, a CLIP encoder at 336 pixels, and academic question-answering data added to the mix.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices, briefly <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#A1">original</a></span></h2>
+<h3 class="rung">What they contain</h3>
+<ul>
+  <li><strong>A, broader impact:</strong> user text is filtered with a moderation API and images with a not-safe-for-work filter; the model can hallucinate and inherits biases from CLIP and LLaMA/Vicuna.</li>
+  <li><strong>B, more results:</strong> LLaVA writes HTML and JavaScript for a joke website from a hand-drawn sketch (after one small fix), explains memes, recognises the Mona Lisa, and reads text in images (<span class="t" data-t="ocr">OCR</span>), which is “rarely covered” in its training data. It recognises Elon Musk, who appears in neither stage's training data; the paper's reading is that CLIP had seen him and the language model generalises to the new visual concept.</li>
+  <li><strong>C, training details:</strong> <span class="t" data-t="adam">Adam</span> with no <span class="t" data-t="weight decay">weight decay</span>, a <span class="t" data-t="cosine decay">cosine</span> learning rate with 3% <span class="t" data-t="warmup">warmup</span>, <span class="t" data-t="fsdp">FSDP</span> and gradient checkpointing to fit memory, <span class="t" data-t="bf16">BF16</span>. Stage 1 under 4 hours, stage 2 under 10, ScienceQA under 4, all on 8 A100s.</li>
+  <li><strong>E, data:</strong> the question lists used for brief and detailed descriptions (such as “Describe the image concisely.”), and the CC3M filter, below.</li>
+  <li><strong>F, prompts:</strong> the system prompt and few-shot layout used to make GPT-4 write the conversations.</li>
+</ul>
+
+<section id="appendix-e">
+<h3>Appendix E: choosing 595K captions from CC3M <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2304.08485#A5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>You want a small caption set that still covers as many different things as possible. So count how often each noun phrase (“a red bus”, “the beach”) appears across all captions, ignore the very rare ones, and then go through the phrases from rarest to most common, adding captions that mention each one, but never more than a fixed number per phrase. Rare concepts get all their captions; common ones are capped.</p>
+<h4>Tiny example</h4>
+<p>The paper's rule, with its thresholds: skip phrases seen fewer than 3 times; take at most 100 captions per phrase, chosen at random. Below, the same rule on seven toy captions with the cap lowered to 3 so it bites: “dog” appears in 5 captions, “cat” in 3, “bus” in 1. “bus” is too rare to count. “cat” is rarer than “dog”, so it goes first and keeps all three of its captions. “dog” has five, more than the cap, so three are drawn at random. Caption 4 survives because it also mentions a dog; caption 3, a plain dog caption that was not drawn, is left out: 6 of 7 kept.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import random
+from collections import Counter
+captions = {1: ["dog"], 2: ["dog", "cat"], 3: ["dog"], 4: ["dog", "bus"], 5: ["cat"], 6: ["cat"], 7: ["dog"]}
+def filter_captions(captions, min_count=3, cap=100, seed=0):
+    rng = random.Random(seed)
+    counts = Counter(p for phrases in captions.values() for p in phrases)
+    pool = set()
+    # rarest phrases first, skipping those seen fewer than min_count times
+    for phrase in sorted((p for p in counts if counts[p] &gt;= min_count), key=lambda p: counts[p]):
+        having = [c for c, phrases in captions.items() if phrase in phrases]
+        if len(having) &gt; cap:
+            having = rng.sample(having, cap)
+        pool.update(having)
+    return sorted(pool)
+Counter(p for phrases in captions.values() for p in phrases)  # → Counter({'dog': 5, 'cat': 3, 'bus': 1})
+filter_captions(captions, cap=3)  # → [1, 2, 4, 5, 6, 7]</code></pre>
+<p>The paper says the filter keeps “a good coverage of concepts whose frequency is higher from 3” with far fewer pairs (its Figure 7), ending at about 595K of CC3M's roughly three million.</p>
+<h4>Why it matters today</h4>
+<p>Stage 1 only has to teach the projector a vocabulary, so breadth of concepts matters more than repetition. Selecting for coverage rather than size is a cheap way to cut data, and the same idea appears in <span class="t" data-t="deduplication">deduplication</span> and data-mixture choices for pre-training.</p>
+</section>
+</section>
+
+<section id="today">
+<h2>What changed since 2023</h2>
+<p>The recipe, encode with a pretrained vision encoder, project, splice into the prompt, tune on instructions, is still the backbone of open vision-language models. Around it:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common since</th><th>Why</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>One linear projection</td><td>A small two-layer MLP (from LLaVA-1.5 on)</td><td>A little more capacity in the adapter, at negligible cost</td><td><a data-lesson="primer/ml/generative/multimodal.html#Projector">multimodal</a></td></tr>
+    <tr><td>224-pixel images, 256 tokens</td><td>Higher resolutions, images cut into tiles, neighbouring tokens merged</td><td>Fine detail (brands, text) needs pixels; tokens grow with the square of the side</td><td><a data-lesson="primer/ml/generative/multimodal.html#count_image_tokens">multimodal</a></td></tr>
+    <tr><td>158K GPT-4-written samples from COCO</td><td>Much larger and more varied instruction mixes, including academic question answering</td><td>The ablation above: data variety drives quality</td><td><a data-lesson="primer/ml/training_stages.html">training stages</a></td></tr>
+    <tr><td>A text-only GPT-4 as the judge</td><td>Judges that can see the image, and benchmarks with fixed answers</td><td>A judge reading only a description can't check visual claims</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Haotian Liu, Chunyuan Li, Qingyang Wu and Yong Jae Lee, <em>Visual Instruction Tuning</em>, NeurIPS 2023. <a href="https://arxiv.org/abs/2304.08485">arXiv:2304.08485</a>, distributed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Tables 4, 5 and 8 and selected rows of Table 7 are reproduced from the paper with attribution; quotations are brief and attributed. Figures are redrawn from scratch; all explanations, diagrams and interactive elements are original to this primer. Model widths not stated in the paper come from Radford et al. (2021), <a href="https://arxiv.org/abs/2103.00020">CLIP</a>, Table 20, and Touvron et al. (2023), <a href="https://arxiv.org/abs/2302.13971">LLaMA</a>, Table 2.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // equation 1
+    Xv: { tex: "\\mathbf{X}_{\\texttt{v}}", name: "The image", meaning: "The input picture (v for vision). In a training transcript it appears once, in the first user turn.", shape: "224 × 224 pixels × 3 colours", example: "the SUV photo" },
+    genc: { tex: "g", name: "Vision encoder", meaning: "CLIP's ViT-L/14 image encoder, pretrained and frozen: it cuts the image into 14-pixel patches and returns one feature vector per patch.", shape: "image → 256 × 1024", example: "never trained by LLaVA" },
+    Zv: { tex: "\\mathbf{Z}_{\\texttt{v}}", name: "Visual features", meaning: "The encoder's grid of patch vectors, taken from its last layer or the layer before (the paper tries both).", shape: "256 vectors, each 1,024 wide", example: "(1, 2) for one patch in the tiny example" },
+    Wproj: { tex: "\\mathbf{W}", name: "Projection matrix", meaning: "The only new weights in LLaVA: one matrix that turns each visual feature into a vector as wide as the language model's word embeddings.", shape: "d_LM × d_vision (3 × 2 here; 5,120 × 1,024 at full size)", example: "rows (1, 0), (0, 1), (1, 1)" },
+    Hv: { tex: "\\mathbf{H}_{\\texttt{v}}", name: "Visual tokens", meaning: "The projected features: vectors the language model reads exactly like word embeddings.", shape: "256 vectors, each 5,120 wide", example: "(1, 2, 3)" },
+    // equation 2
+    Xinst: { tex: "\\mathbf{X}^{t}_{\\texttt{instruct}}", name: "User message, turn t", meaning: "What the human says in turn t of the training conversation: the first question plus the image in turn 1, just the question after that.", shape: "a sequence of tokens", example: "[image, “What vehicle is this?”] for t = 1" },
+    tturn: { tex: "t", name: "Turn number", meaning: "Which question-and-answer exchange of the conversation this is, counting from 1.", shape: "1 to T", example: "1, 2 or 3" },
+    Tturns: { tex: "T", name: "Number of turns", meaning: "How many question-and-answer exchanges the conversation has. Conversations have several; descriptions and reasoning samples have one.", shape: "a whole number", example: "3" },
+    Xq: { tex: "\\mathbf{X}^{t}_{\\texttt{q}}", name: "Question, turn t", meaning: "The human's question in turn t (q for question).", shape: "a sequence of tokens", example: "“How many people are there?”" },
+    // equation 3
+    pXa: { tex: "p(\\mathbf{X}_{\\texttt{a}} \\mid \\mathbf{X}_{\\texttt{v}}, \\mathbf{X}_{\\texttt{instruct}})", name: "Probability of the answers", meaning: "How likely the model finds all the assistant's answers (a for answer), given ( | ) the image and the user's messages. Training pushes it up.", shape: "a number between 0 and 1", example: "0.27" },
+    prodi: { tex: "\\prod_{i=1}^{L}", name: "Product over positions", meaning: "Multiply together one factor per position i, from 1 to L. Only the target (answer) positions contribute a factor.", shape: "one number out", example: "0.6 × 0.5 × 0.9" },
+    Lseq: { tex: "L", name: "Sequence length", meaning: "The length of the whole training sequence in tokens: system message, questions, image tokens and answers.", shape: "a whole number", example: "the product's upper limit" },
+    ptheta: { tex: "p_{\\boldsymbol{\\theta}}", name: "The model's prediction", meaning: "The probability the model, with parameters θ, gives a particular next token: one entry of its softmax over the vocabulary.", shape: "between 0 and 1", example: "0.6 for “black”" },
+    theta: { tex: "\\boldsymbol{\\theta}", name: "Trainable parameters", meaning: "The weights allowed to change: W alone in stage 1, W and the language model's φ in stage 2.", shape: "5.2 million, then about 13 billion", example: "θ = W in stage 1" },
+    phi: { tex: "\\boldsymbol{\\phi}", name: "Language model weights", meaning: "All the weights of the language model f_φ (Vicuna), including its word-embedding table.", shape: "about 13.0 billion numbers", example: "frozen in stage 1, trained in stage 2" },
+    xi: { tex: "\\boldsymbol{x}_i", name: "Target token", meaning: "The correct token at position i: a token of an answer, or the stop marker that ends it (green in the paper's Table 2).", shape: "one token", example: "“SUV”" },
+    Xinstlt: { tex: "\\mathbf{X}_{\\texttt{instruct},<i}", name: "Earlier user messages", meaning: "Every user message before position i, in every earlier turn and this one.", shape: "tokens", example: "the first question" },
+    Xalt: { tex: "\\mathbf{X}_{\\texttt{a},<i}", name: "Earlier answer tokens", meaning: "The answer tokens before position i, from earlier answers and from the current answer so far.", shape: "tokens", example: "“black” when predicting “SUV”" },
+    // relative score
+    srel: { tex: "s_{\\text{rel}}", name: "Relative score", meaning: "The candidate's judged score as a percentage of the reference's. 100% means “as good as the reference”.", shape: "a percentage", example: "87.5%" },
+    Scand: { tex: "S_{\\text{cand}}", name: "Candidate's score", meaning: "The judge's 1 to 10 rating of the model being tested (LLaVA), totalled over the questions.", shape: "a number", example: "7" },
+    Sref: { tex: "S_{\\text{ref}}", name: "Reference score", meaning: "The same judge's rating of the reference answer, written by text-only GPT-4 from the ground-truth description.", shape: "a number", example: "8" },
+  },
+
+  blocks: {
+    // the data pipeline
+    img: { title: "A COCO image", body: "<p>A photo from the COCO dataset, which comes with human-written captions and labelled object boxes. The photo itself is never sent to GPT-4; it is paired with GPT-4's text at the end.</p>", shape: "one image" },
+    caps: { title: "Five captions", body: "<p>Short human descriptions of the scene from different angles, such as “People try to fit all of their luggage in an SUV.” They tell the writer what is in the picture.</p>", shape: "5 sentences" },
+    boxes: { title: "Object boxes", body: "<p>One line per object: its name and four numbers giving its rectangle as fractions of the image size, such as person: [0.681, 0.242, 0.774, 0.694]. They tell the writer <em>where</em> things are, which captions rarely do.</p>", shape: "one line per object" },
+    seed: { title: "Seed examples", body: "<p>A few conversations written by hand for each response type. They are shown to GPT-4 as examples in the prompt (in-context learning), and they are the only human annotation the pipeline needs.</p>", shape: "a few per type" },
+    gpt: { title: "Text-only GPT-4", body: "<p>The writer. It reads the captions and boxes as if describing an image it is looking at, and writes new examples in the style of the seeds. The paper also tried ChatGPT and found GPT-4's data better.</p>", shape: "text in, text out" },
+    conv: { title: "Conversation (58K)", body: "<p>Several turns of questions and answers about the image: object types, counts, actions, positions. Only questions with a definite answer are kept.</p>", shape: "multi-turn" },
+    detail: { title: "Detailed description (23K)", body: "<p>A rich, thorough description, in answer to one question sampled from a list such as “Describe the following image in detail”.</p>", shape: "single turn" },
+    reason: { title: "Complex reasoning (77K)", body: "<p>A question that goes beyond what is visible, such as “What challenges do these people face?”, answered step by step.</p>", shape: "single turn" },
+    final: { title: "LLaVA-Instruct-158K", body: "<p>Each written response, paired back with its image: the training data for stage 2. 158K samples over about 80K unique images.</p>", shape: "158K samples" },
+    // the architecture
+    resp: { title: "The response", body: "<p>What LLaVA writes, one token at a time, like any chat model: the answer X<sub>a</sub>.</p>", shape: "tokens" },
+    lm: { title: "Language model f<sub>φ</sub> (Vicuna)", body: "<p>Vicuna, an open chat model fine-tuned from LLaMA, chosen for having the best instruction following among public checkpoints. It reads visual tokens and word tokens as one sequence and never learns that some came from a picture. Frozen in stage 1, trained in stage 2.</p>", shape: "13B parameters", lesson: "primer/ml/transformer.html#TinyGPT" },
+    hv: { title: "Visual tokens H<sub>v</sub>", body: "<p>The projected patch features: one vector per patch, as wide as a word embedding. 256 of them for a 224-pixel image (four drawn).</p>", shape: "256 × 5,120" },
+    hq: { title: "Word tokens H<sub>q</sub>", body: "<p>The instruction's tokens, looked up in the language model's embedding table as usual.</p>", shape: "one row per token", lesson: "primer/ml/tokenization.html" },
+    proj: { title: "Projection W", body: "<p>One learned matrix, equation 1. It is the only part trained in stage 1, and it keeps learning in stage 2.</p>", shape: "1,024 → 5,120", lesson: "primer/ml/generative/multimodal.html#Projector" },
+    emb: { title: "Word embeddings", body: "<p>The language model's own table of token vectors. It is part of the language model's weights φ, so it is frozen or trained along with it.</p>", shape: "vocabulary × 5,120" },
+    enc: { title: "Vision encoder g", body: "<p>CLIP's ViT-L/14. It turns the image into a 16 × 16 grid of patch features. LLaVA never trains it.</p>", shape: "224 × 224 image → 256 × 1,024", lesson: "primer/ml/generative/multimodal.html#VisionEncoder" },
+    instr: { title: "The instruction X<sub>q</sub>", body: "<p>The user's question in words, such as “What is unusual about this image?”.</p>", shape: "text" },
+    // the judge ensemble
+    q: { title: "A ScienceQA question", body: "<p>Multiple choice, sometimes with an image as context. LLaVA gets the image; GPT-4 gets only the text.</p>", shape: "question + options" },
+    llava: { title: "LLaVA", body: "<p>The fine-tuned model: 90.92% on its own. It writes its reasoning, then its choice.</p>", shape: "reasoning + answer" },
+    gpt4: { title: "GPT-4, text only", body: "<p>Prompted with two examples: 82.69% on its own. It often fails by saying it needs the image.</p>", shape: "reasoning + answer" },
+    same: { title: "Do they agree?", body: "<p>If the two final choices match, that answer stands and no judge is needed.</p>", shape: "yes or no" },
+    judge: { title: "GPT-4 as the judge", body: "<p>Shown the question and both answers with their reasoning, GPT-4 gives its own final answer. The ensemble reaches 92.53%.</p>", shape: "one final answer" },
+    final2: { title: "Final answer", body: "<p>The ensemble's choice.</p>", shape: "one option" },
+  },
+
+  onReady(P) {
+    stageToggle();
+    sequenceStrip();
+    bars("mix-bars", [["Full data", 85.1], ["Detail + Complex", 81.9], ["Conv + 5% D + 10% C", 80.5], ["Conversation only", 73.8], ["No instruction tuning", 21.5]], 0, 100, "relative score on LLaVA-Bench (COCO), %, axis 0 to 100");
+    bars("wild-bars", [["OpenFlamingo", 19.1], ["BLIP-2", 38.1], ["LLaVA", 67.3], ["LLaVA† (judged 3 times)", 66.7, true]], 0, 100, "relative score on LLaVA-Bench (In-the-Wild), %, axis 0 to 100 · striped: the same answers judged three times");
+    bars("abl-bars", [["Last-layer features", 0.96], ["7B model", 1.08], ["Answer first (and last layer)", 1.15], ["No stage 1", 5.11]], 0, 6, "points below the best variant's 90.92% on ScienceQA, axis 0 to 6", "");
+  },
+};
+
+/* ---- §4.1 and §4.2: which parts learn in each stage ---- */
+function stageToggle() {
+  const readout = document.getElementById("stage-readout");
+  const set = (stage) => {
+    document.getElementById("st-lm").textContent = stage === 1 ? "frozen" : "trained";
+    document.getElementById("st-proj").textContent = "trained";
+    document.getElementById("st-enc").textContent = "frozen";
+    document.querySelectorAll("#fig1 [data-stage]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.stage === stage)));
+    readout.innerHTML = stage === 1
+      ? "Stage 1: only the projection W learns, <strong>5,242,880</strong> numbers, from 595K image-caption pairs (one epoch, learning rate 2e-3)."
+      : "Stage 2: W and the whole language model learn, about <strong>13 billion</strong> numbers, from 158K instruction samples (three epochs, learning rate 2e-5). The vision encoder stays frozen.";
+  };
+  document.querySelectorAll("#fig1 [data-stage]").forEach((b) => b.addEventListener("click", () => set(+b.dataset.stage)));
+  set(1);
+}
+
+/* ---- §4.2, Table 2: the training sequence and its loss mask ---- */
+function sequenceStrip() {
+  const strip = document.getElementById("seq-strip");
+  const readout = document.getElementById("seq-readout");
+  const SYS = ["system message", "", "A fixed preamble borrowed from Vicuna, describing a helpful assistant. Read, never graded."];
+  const STOP = (target) => ["###", target ? "target" : "", target ? "The stop marker after an answer. Graded: the model must learn where its answer ends." : "The stop marker after a user message. Read, never graded."];
+  const HUMAN = ["Human:", "", "A role label. Read, never graded."];
+  const ASSIST = ["Assistant:", "", "A role label. After it, the model is expected to answer."];
+  const IMG = ["image", "img", "The 256 visual tokens H_v, shown as one chip. Read, never graded: the model is not asked to predict the picture."];
+  const examples = {
+    1: [SYS, STOP(false), HUMAN, ["Describe the image concisely.", "", "A brief-description question, sampled at random from a fixed list (Appendix E)."], IMG, STOP(false), ASSIST,
+        ["People try to fit all of their luggage in an SUV.", "target", "The image's original caption, used as the answer. Graded, token by token."], STOP(true)],
+    2: [SYS, STOP(false), HUMAN, IMG, ["What vehicle is this?", "", "Turn 1's question. The coin flip put the image first this time."], STOP(false), ASSIST,
+        ["A black SUV.", "target", "Answer 1. Graded, token by token."], STOP(true), HUMAN,
+        ["How many people are there?", "", "Turn 2's question. No image this time: it is already earlier in the sequence."], STOP(false), ASSIST,
+        ["Three people.", "target", "Answer 2. Graded, token by token."], STOP(true)],
+  };
+  let current = 2;
+  function draw(which) {
+    current = which;
+    strip.textContent = "";
+    const pieces = examples[which];
+    pieces.forEach(([text, kind, note]) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tok" + (kind ? " " + kind : "");
+      b.textContent = text;
+      b.setAttribute("aria-label", `${text}: ${kind === "target" ? "target, counted in the loss" : "context, not counted"}`);
+      const show = () => { readout.innerHTML = `<strong>${text}</strong>: ${note}`; };
+      b.addEventListener("click", show);
+      b.addEventListener("focus", show);
+      b.addEventListener("mouseenter", show);
+      strip.appendChild(b);
+    });
+    const graded = pieces.filter((p) => p[1] === "target").length;
+    readout.innerHTML = `${pieces.length} pieces; <strong>${graded}</strong> are targets (highlighted), counted in the loss. Tap a piece to see what it is.`;
+    document.querySelectorAll("#fig-seq [data-seq]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.seq === which)));
+  }
+  document.querySelectorAll("#fig-seq [data-seq]").forEach((b) => b.addEventListener("click", () => draw(+b.dataset.seq)));
+  draw(current);
+}
+
+/* ---- §5: horizontal bars for the paper's tables ---- */
+function bars(id, rows, lo, hi, legend, unit = "%") {
+  const el = document.getElementById(id);
+  el.innerHTML = `<div class="legend" style="margin:0 0 .4rem">${legend}</div>` + rows.map(([name, v, striped]) => {
+    const w = Math.max(1, ((v - lo) / (hi - lo)) * 100);
+    return `<div class="share-row"><span>${name}</span><div><div class="share-bar${striped ? " alt" : ""}" style="width:${w.toFixed(1)}%"></div></div><span>${v}${unit}</span></div>`;
+  }).join("");
+}
+</script>
+</body>
+</html>
