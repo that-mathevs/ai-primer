@@ -840,6 +840,7 @@ into full-size pixels once, at the end.
   Learning* (2017)**: https://arxiv.org/abs/1711.00937. Introduced the
   VQ-VAE, which snaps codes to a learned codebook and so turns images and
   audio into tokens.
+  [Annotated companion](../../../papers/vq-vae.html)
 - **Rombach et al., *High-Resolution Image Synthesis with Latent Diffusion
   Models* (2021)**: https://arxiv.org/abs/2112.10752. Ran diffusion inside a
   lightly regularized autoencoder's code space, the design behind Stable

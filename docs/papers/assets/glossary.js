@@ -564,6 +564,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/observability.html",
   "term": "collector"
  },
+ "commitment loss": {
+  "def": "A training term that pulls an encoder's output towards the codebook entry it snapped to, so the encoder commits to its entries instead of drifting away from them.",
+  "lesson": null,
+  "term": "commitment loss"
+ },
  "common crawl": {
   "def": "A nonprofit's public archive of the web, released as regular snapshots of billions of pages; the raw material of most pretraining data.",
   "lesson": "primer/ml/pretraining.html",
@@ -3533,6 +3538,16 @@ window.PRIMER_GLOSSARY = {
   "def": "Why a model response ended: finished, wants a tool, hit the length limit, or declined.",
   "lesson": "primer/agents/agent_loop.html",
   "term": "stop reason"
+ },
+ "stop-gradient": {
+  "def": "An operation that passes its input through unchanged but blocks gradients from flowing back into it, so training treats that input as a constant.",
+  "lesson": null,
+  "term": "stop-gradient"
+ },
+ "straight-through estimator": {
+  "def": "A way to train through a step that has no useful gradient, such as rounding or snapping to a codebook: use the step going forward, and pass the gradient back as if the step were not there.",
+  "lesson": null,
+  "term": "straight-through estimator"
  },
  "strict mode": {
   "def": "A tool or output option that guarantees the model's JSON fits a given schema.",

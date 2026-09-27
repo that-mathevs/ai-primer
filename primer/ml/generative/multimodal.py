@@ -1034,6 +1034,7 @@ split the video and summarise the parts.
   Learning* (VQ-VAE, 2017)**: https://arxiv.org/abs/1711.00937. Learned a
   codebook inside an autoencoder, turning images and audio into discrete
   tokens.
+  [Annotated companion](../../../papers/vq-vae.html)
 - **Zeghidour et al., *SoundStream: An End-to-End Neural Audio Codec*
   (2021)**: https://arxiv.org/abs/2107.03312. Residual vector quantization
   for audio: a stack of codebooks, each encoding the previous one's error.
