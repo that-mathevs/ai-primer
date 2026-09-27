@@ -1,0 +1,884 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REINFORCE (Williams 1992), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Williams (1992), the paper that introduced REINFORCE: learning from a reward by making what was just done more or less likely.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="reinforce">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Networks of random units</a></li>
+      <li><a href="#s3">3 The goal: expected reinforcement</a></li>
+      <li><a href="#s4">4 REINFORCE algorithms</a>
+        <ol>
+          <li><a href="#s4-thm">Theorem 1: uphill on average</a></li>
+          <li><a href="#s4-cases">Old algorithms in the family</a></li>
+          <li><a href="#s4-rc">Reinforcement comparison</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Episodic REINFORCE</a></li>
+      <li><a href="#s6">6 Units with two knobs: the Gaussian</a></li>
+      <li><a href="#s7">7 Compatibility with backpropagation</a>
+        <ol>
+          <li><a href="#s7-1">7.1 Deterministic hidden units</a></li>
+          <li><a href="#s7-2">7.2 Through a random number generator</a></li>
+        </ol>
+      </li>
+      <li><a href="#s8">8 Performance and other issues</a>
+        <ol>
+          <li><a href="#s8-1">8.1 Convergence</a></li>
+          <li><a href="#s8-2">8.2 How a Gaussian unit searches</a></li>
+          <li><a href="#s8-3">8.3 Choosing the baseline</a></li>
+          <li><a href="#s8-4">8.4 Other eligibilities</a></li>
+          <li><a href="#s8-5">8.5 Other gradient estimates</a></li>
+        </ol>
+      </li>
+      <li><a href="#s9">9 Conclusion</a></li>
+      <li><a href="#appendix">Appendices: why it works</a></li>
+      <li><a href="#today">What changed since 1992</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>REINFORCE, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Ronald J. Williams (1992), <em>Simple Statistical Gradient-Following Algorithms for Connectionist Reinforcement Learning</em>, the paper that introduced REINFORCE.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://link.springer.com/article/10.1007/BF00992696">Paper at Springer</a>
+    <a class="btn" href="https://doi.org/10.1007/BF00992696">DOI</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. The paper appeared in the journal <em>Machine Learning</em>, volume 8, pages 229 to 256 (1992), and is not published under an open licence, so this page quotes at most a sentence or two per section (clearly marked) and explains everything in its own words. The equations are reproduced with every symbol decoded. The paper has no figures or tables; every diagram and chart here is new, built from its equations, and every number in a worked example is our own unless it says otherwise. The section numbers follow the paper. The journal offers no links to individual sections, so each section's “original” link opens the article page.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The diagrams are live: hover or tap a part to read what it does. Two charts respond to you: one shows how a random unit's search narrows and widens, the other lets you watch a learner without a baseline lock onto the wrong answer.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it matters</strong> today. One small example runs through the whole page: a single random unit with two inputs, learning which of two actions pays better. The <a class="lesson" data-lesson="primer/ml/reinforcement.html">reinforcement learning lesson</a> builds the same algorithm from scratch on a row of slot machines.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<blockquote class="quote">“These algorithms, called REINFORCE algorithms, are shown to make weight adjustments in a direction that lies along the gradient of expected reinforcement …”<cite>Williams (1992), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A dog learning a trick cannot be shown the answer. It tries something, gets a treat or doesn't, and does more of whatever earned treats. This paper turns that into arithmetic for a network of units that each flip a weighted coin: after every try, nudge each unit's weights so that <em>what it just did</em> becomes more likely, by an amount proportional to how good the outcome was. The paper proves that this simple nudge climbs, on average, exactly the hill we care about: the <span class="t" data-t="expected value">expected</span> reward.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A whole family of learning rules, all of the form <em>step = rate × (reward − baseline) × eligibility</em>, whose average step points along the <span class="t" data-t="gradient">gradient</span> of expected reward (Theorem 1).</li>
+  <li>The rules need no model of the world and never compute the gradient explicitly: each unit uses only its own input, output and one broadcast reward number.</li>
+  <li>It extends to rewards that arrive at the end of an episode (Theorem 2), to units whose randomness has several knobs, such as a bell curve with a mean and a spread, and it combines with <span class="t" data-t="backpropagation">backpropagation</span>.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>This is the root of every <span class="t" data-t="policy gradient">policy-gradient</span> method. When a language model is tuned with <span class="t" data-t="rlhf">RLHF</span> or trained to reason with <span class="t" data-t="grpo">GRPO</span>, the gradient at the heart of the update is this paper's: reward, minus a baseline, times the gradient of the log-probability of what the model wrote.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<blockquote class="quote">“Perhaps a more informative adjective would be non-model-based.”<cite>Williams (1992), §1, on why the algorithms are called simple</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Picture a vending machine that takes a coin and a button press and sometimes gives a snack. You can learn which button works best without ever opening the machine to see how it decides: you only need to try buttons and count snacks. The paper studies learners like that. They never build a model of the machine; they climb towards better behaviour using only the snacks.</p>
+<h3 class="rung">The setting, in the paper's words decoded</h3>
+<ul>
+  <li><strong><span class="t" data-tip-title="Associative task" data-tip="A task where the best action depends on the input: the learner must map each situation to its own best response, not just find one best action overall.">Associative</span>:</strong> the learner maps inputs to outputs, so the best action can depend on the situation.</li>
+  <li><strong><span class="t" data-tip-title="Immediate reinforcement" data-tip="The reward for a trial depends only on that trial's input and output, and arrives straight away. Its opposite, delayed reinforcement, arrives later and may depend on many earlier actions.">Immediate reinforcement</span>:</strong> each reward depends only on the latest input and output. Section 5 relaxes this.</li>
+  <li><strong>Search by randomness:</strong> the learner <span class="t" data-t="exploration">explores</span> by being random: its outputs are drawn from a distribution its weights control.</li>
+  <li><strong>Gradient-following:</strong> the learning rules climb the gradient of a performance measure, on average, without ever writing the gradient down.</li>
+</ul>
+<p>The introduction also places the work next to its neighbours: learners that pair an immediate-reward rule with a learned predictor, the <span class="t" data-t="critic">critic</span>, using <span class="t" data-tip-title="Temporal-difference methods" data-tip="Learning to predict future reward from the difference between successive predictions (Sutton, 1988), rather than waiting for the final outcome.">temporal-difference methods</span>; and <span class="t" data-tip-title="Q-learning" data-tip="A reinforcement learning method (Watkins, 1989) that learns the expected long-run reward of each action in each situation, then picks the action with the best estimate.">Q-learning</span>. REINFORCE is the immediate-reward half of such systems, studied on its own.</p>
+<h3 class="rung">Why it matters</h3>
+<p>“Non-model-based” is still the defining property. A language model trained with a policy gradient never learns how the grader works; it only learns which of its own outputs the grader liked. That is why the same recipe works whether the reward comes from a unit test, a human, or another model.</p>
+</section>
+
+<section id="s2">
+<h2>2 Reinforcement-learning connectionist networks <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Each unit in the network is a coin whose bias you can adjust. The unit adds up its inputs, each multiplied by a weight, squashes the total into a probability, and flips a coin with that probability of heads. Heads means “output 1”, tails “output 0”. The environment sees the outputs and hands back one number, the reward, to every unit.</p>
+<h3 class="rung">Tiny example: one unit, two inputs</h3>
+<p>The unit gets inputs x = (1, 2). The first input is always 1, so its weight acts as a <span class="t" data-t="bias">bias</span>. The weights are w = (−1, 1). The weighted sum is s = (−1)(1) + (1)(2) = 1. The <span class="t" data-t="sigmoid">logistic function</span> squashes it: p = 1 / (1 + e<sup>−1</sup>) = <strong>0.731</strong>. The unit then outputs 1 with probability 0.731 and 0 with probability 0.269. On this trial the coin comes up 1.</p>
+<figure class="ix" id="fig-unit">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 372" role="img" aria-label="One Bernoulli-logistic unit: inputs, weights, sum, logistic squash, coin flip, environment and reward on the left; baseline, eligibility and weight update on the right">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="85" y="14" class="lbl" text-anchor="middle">acting</text>
+    <text x="252" y="14" class="lbl" text-anchor="middle">learning</text>
+    <path class="wire" d="M50,48 V64" marker-end="url(#arr)"/>
+    <path class="wire" d="M120,48 V64" marker-end="url(#arr)"/>
+    <path class="wire" d="M85,92 V108" marker-end="url(#arr)"/>
+    <path class="wire" d="M85,144 V160" marker-end="url(#arr)"/>
+    <path class="wire" d="M85,196 V212" marker-end="url(#arr)"/>
+    <path class="wire" d="M85,248 V264" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,179 H172 V198 H192" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,231 H172 V214 H192" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,283 H192" marker-end="url(#arr)"/>
+    <path class="wire" d="M255,318 V302" marker-end="url(#arr)"/>
+    <path class="wire" d="M252,188 V146" marker-end="url(#arr)"/>
+    <path class="wire" d="M310,283 H322 V127 H312" marker-end="url(#arr)"/>
+    <path class="wire" d="M252,110 V79 H152" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="inputs"><rect x="20" y="22" width="60" height="26" rx="6"/><text x="50" y="40" text-anchor="middle">x₀ = 1</text><rect x="90" y="22" width="60" height="26" rx="6"/><text x="120" y="40" text-anchor="middle">x₁ = 2</text></g>
+    <g class="blk lin" data-block="weights"><rect x="20" y="66" width="130" height="26" rx="6"/><text x="85" y="84" text-anchor="middle">weights w = (−1, 1)</text></g>
+    <g class="blk norm" data-block="sum"><rect x="20" y="110" width="130" height="34" rx="7"/><text x="85" y="132" text-anchor="middle">sum: s = 1</text></g>
+    <g class="blk soft" data-block="squash"><rect x="20" y="162" width="130" height="34" rx="7"/><text x="85" y="184" text-anchor="middle">logistic: p = 0.731</text></g>
+    <g class="blk emb" data-block="coin"><rect x="20" y="214" width="130" height="34" rx="7"/><text x="85" y="236" text-anchor="middle">coin flip: y = 1</text></g>
+    <g class="blk ff" data-block="env"><rect x="20" y="266" width="130" height="34" rx="7"/><text x="85" y="288" text-anchor="middle">environment: r = 1</text></g>
+    <g class="blk lin" data-block="update"><rect x="194" y="110" width="116" height="34" rx="7"/><text x="252" y="125" text-anchor="middle">Δw = α(r − b)e</text><text x="252" y="138" text-anchor="middle" class="lbl">α = 0.1</text></g>
+    <g class="blk attn" data-block="elig"><rect x="194" y="188" width="116" height="34" rx="7"/><text x="252" y="203" text-anchor="middle">eligibility</text><text x="252" y="216" text-anchor="middle">e = (y − p) x</text></g>
+    <g class="blk norm" data-block="offset"><rect x="194" y="266" width="116" height="34" rx="7"/><text x="252" y="288" text-anchor="middle">r − b = 0.5</text></g>
+    <g class="blk plain" data-block="baseline"><rect x="210" y="320" width="90" height="26" rx="6"/><text x="255" y="337" text-anchor="middle">baseline b</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Go down the left column (acting), then up the right one (learning).</p></div>
+  </div>
+  <figcaption>One Bernoulli-logistic unit acting and learning on a single trial. Drawn for this page from the paper's equations 1 to 3 and its REINFORCE rule; the paper itself has no figures.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the left column is the unit acting, top to bottom. Inputs meet weights, the sum is squashed into a probability, a coin is flipped with that probability, and the environment scores what came out. The right column is the unit learning, bottom to top. The reward is compared with a baseline (r − b), the unit works out its <em>eligibility</em> from its own output and probability, the two are multiplied, and the result, scaled by a small rate α, is added to the weights. Notice what the learning column needs: the unit's own input, output and probability, plus one number broadcast from the environment. Nothing else in the network has to be known.</p>
+<h3 class="rung">The math: a stochastic semilinear unit</h3>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=pi}{p_i} = \htmlData{sym=fi}{f_i}(\htmlData{sym=si}{s_i}) \\[6pt] \htmlData{sym=si}{s_i} = \htmlData{sym=sumj}{\sum_j} \htmlData{sym=wij}{w_{ij}} \htmlData{sym=xj}{x_j} \\[6pt] \htmlData{sym=fi}{f_i}(\htmlData{sym=si}{s_i}) = \frac{1}{1 + \htmlData{sym=e}{e}^{-\htmlData{sym=si}{s_i}}} \end{gathered}" data-fallback="p_i = f_i(s_i),  s_i = Σ_j w_ij x_j,  f_i(s_i) = 1 / (1 + e^(−s_i))"></div>
+<div class="symtable" data-syms="xj,wij,sumj,si,fi,e,pi"></div>
+<p class="inwords"><strong>In words:</strong> “multiply each input by its weight and add them up; squash the total with the logistic function; the result is the chance the unit outputs 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> s = (−1)(1) + (1)(2) = 1, and p = 1 / (1 + e<sup>−1</sup>) = 1 / 1.368 = 0.731.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x = [1, 2]
+w = [-1, 1]
+# s_i = Σ_j w_ij x_j
+s = sum(w_j * x_j for w_j, x_j in zip(w, x))
+s  # → 1
+# p_i = f_i(s_i), the logistic squash
+p = 1 / (1 + math.exp(-s))
+round(p, 3)  # → 0.731</code></pre>
+<p>The paper calls this a <span class="t" data-tip-title="Stochastic semilinear unit" data-tip="A unit that computes a weighted sum of its inputs (the semilinear part), turns it into one parameter with a smooth squashing function, and then draws its output at random using that parameter.">stochastic semilinear unit</span>: a weighted sum, a smooth squash, then a random draw. With a coin flip as the draw it is a <em>Bernoulli semilinear unit</em>, and with the logistic squash, a <em>Bernoulli-logistic unit</em>. The chance of each output is written g:</p>
+<div class="eq" data-tex="\htmlData{sym=gi}{g_i}(\htmlData{sym=xi}{\xi}, \htmlData{sym=wvec}{\mathbf{w}^i}, \htmlData{sym=xvec}{\mathbf{x}^i}) = \begin{cases} 1 - \htmlData{sym=pi}{p_i} & \text{if } \htmlData{sym=xi}{\xi} = 0 \\ \htmlData{sym=pi}{p_i} & \text{if } \htmlData{sym=xi}{\xi} = 1 \end{cases}" data-fallback="g_i(ξ, w^i, x^i) = 1 − p_i if ξ = 0, and p_i if ξ = 1"></div>
+<div class="symtable" data-syms="gi,xi,wvec,xvec"></div>
+<p class="inwords"><strong>In words:</strong> “the chance that unit i produces the output ξ is p<sub>i</sub> if ξ is 1, and 1 − p<sub>i</sub> if ξ is 0.” This is a <span class="t" data-tip-title="Bernoulli distribution" data-tip="A weighted coin: an outcome that is 1 with probability p and 0 otherwise. Named after Jacob Bernoulli.">Bernoulli distribution</span>: a weighted coin.</p>
+<p class="inwords"><strong>With the numbers:</strong> g(1) = 0.731 and g(0) = 1 − 0.731 = 0.269. They add to 1, as the chances of all possible outputs must.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+p = 1 / (1 + math.exp(-1))
+# g_i(ξ): the chance of each output ξ
+g = {0: 1 - p, 1: p}
+round(g[1], 3), round(g[0], 3)  # → (0.731, 0.269)
+round(g[0] + g[1], 3)  # → 1.0</code></pre>
+<p>The paper adds a useful observation: a unit that outputs 1 whenever its sum plus some random noise is positive (the form used by Barto and colleagues) is secretly the same kind of unit, with squashing function f(s) = 1 − Ψ(−s), where Ψ is the noise's cumulative distribution. So the results cover those learners too.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Swap “coin” for “die with one face per word” and this unit is a language model's output layer: a weighted sum per token (the <span class="t" data-t="logits">logits</span>), a squash into probabilities (<span class="t" data-t="softmax">softmax</span>), and a random draw of the next token. The <a data-lesson="primer/ml/reinforcement.html#grad_log_prob"><code>grad_log_prob</code></a> function in the lesson is the many-sided version of this unit's eligibility.</p>
+</section>
+
+<section id="s3">
+<h2>3 The expected reinforcement performance criterion <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A single snack from the vending machine tells you little: you might have been lucky. What you care about is how many snacks a button gives <em>on average</em>, over many tries. The paper's goal for learning is exactly that average: the expected reward, as a function of the weights.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Say our environment pays reward 1 with chance 0.8 when the unit outputs 1, and with chance 0.4 when it outputs 0; otherwise it pays 0. Output 1 is the better action. With p = 0.731 the unit earns, on average, 0.731 × 0.8 + 0.269 × 0.4 = 0.585 + 0.108 = <strong>0.692</strong> per trial. Always choosing 1 would earn 0.8.</p>
+<h3 class="rung">The math</h3>
+<p>The paper writes the goal as E{r | <strong>W</strong>}: the expected reward given the weights. Splitting it over the unit's possible outputs (the first step of its Appendix A) shows what it is made of:</p>
+<div class="eq" data-tex="\htmlData{sym=Er}{E\{r \mid \mathbf{W}\}} = \htmlData{sym=sumxi}{\sum_{\xi}} \htmlData{sym=gi}{g_i}(\htmlData{sym=xi}{\xi}) \; \htmlData{sym=Erxi}{E\{r \mid \mathbf{W}, y_i = \xi\}}" data-fallback="E{r | W} = Σ_ξ g_i(ξ) · E{r | W, y_i = ξ}"></div>
+<div class="symtable" data-syms="Er,Wmat,sumxi,Erxi"></div>
+<p class="inwords"><strong>In words:</strong> “the average reward is, for each output the unit could produce, the chance of producing it times the average reward it brings, added up.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.731 × 0.8 + 0.269 × 0.4 = 0.692.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+p = 1 / (1 + math.exp(-1))
+g = {0: 1 - p, 1: p}
+# E{r | W, y = ξ}: the chance each output pays 1
+reward_if = {0: 0.4, 1: 0.8}
+# Σ_ξ g(ξ) E{r | W, y = ξ}
+round(sum(g[xi] * reward_if[xi] for xi in (0, 1)), 3)  # → 0.692</code></pre>
+<p>The paper notes this is only a fixed function of the weights if the world is steady: inputs drawn independently from a distribution that doesn't change, and rewards from a fixed rule. Under those assumptions learning is a search over weights for the highest point of this function, a function the learner can never see directly.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Modern papers write the same quantity as J(θ), the expected reward of a policy with parameters θ. The <a data-lesson="primer/ml/reinforcement.html#expected_reward"><code>expected_reward</code></a> function in the lesson is this equation for a row of slot machines.</p>
+</section>
+
+<section id="s4">
+<h2>4 REINFORCE algorithms <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<blockquote class="quote">“The name is an acronym for ‘REward Increment = Nonnegative Factor times Offset Reinforcement times Characteristic Eligibility,’ which describes the form of the algorithm.”<cite>Williams (1992), §4</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A football coach reviews the tape. For each player, the coach asks two questions: was the result better or worse than usual, and how much would this player have to change to make what they just did more likely? Multiply the answers, and that is the player's adjustment. Players who did something unusual in a good game change the most.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Our unit output y = 1 with p = 0.731 and the environment paid r = 1. Take a baseline b = 0.5 (a guess at the typical reward) and rate α = 0.1. The eligibility of each weight turns out to be (y − p) × its input (derived in <a href="#s4-cases">the special cases</a>): (1 − 0.731) × (1, 2) = (0.269, 0.538). The update is 0.1 × (1 − 0.5) × (0.269, 0.538) = <strong>(0.0134, 0.0269)</strong>. Both weights rise, which raises s and so raises the chance of output 1 next time.</p>
+<figure class="ix" id="fig-acronym">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 138" role="img" aria-label="The acronym REINFORCE spelled out above the four parts of the update rule">
+    <g class="blk lin" data-block="a_ri"><rect x="4" y="8" width="72" height="50" rx="7"/><text x="40" y="29" text-anchor="middle">REward</text><text x="40" y="45" text-anchor="middle">Increment</text><rect x="4" y="84" width="72" height="36" rx="7"/><text x="40" y="107" text-anchor="middle">Δw<tspan baseline-shift="sub" font-size="9">ij</tspan></text></g>
+    <text x="84" y="107" text-anchor="middle">=</text>
+    <text x="84" y="37" text-anchor="middle">=</text>
+    <g class="blk norm" data-block="a_nf"><rect x="92" y="8" width="72" height="50" rx="7"/><text x="128" y="29" text-anchor="middle">Nonneg.</text><text x="128" y="45" text-anchor="middle">Factor</text><rect x="92" y="84" width="72" height="36" rx="7"/><text x="128" y="107" text-anchor="middle">α<tspan baseline-shift="sub" font-size="9">ij</tspan></text></g>
+    <text x="172" y="107" text-anchor="middle">×</text>
+    <text x="172" y="37" text-anchor="middle">×</text>
+    <g class="blk soft" data-block="a_or"><rect x="180" y="8" width="72" height="50" rx="7"/><text x="216" y="29" text-anchor="middle">Offset</text><text x="216" y="45" text-anchor="middle">Reinf.</text><rect x="180" y="84" width="72" height="36" rx="7"/><text x="216" y="107" text-anchor="middle">r − b<tspan baseline-shift="sub" font-size="9">ij</tspan></text></g>
+    <text x="260" y="107" text-anchor="middle">×</text>
+    <text x="260" y="37" text-anchor="middle">×</text>
+    <g class="blk attn" data-block="a_ce"><rect x="268" y="8" width="68" height="50" rx="7"/><text x="302" y="29" text-anchor="middle">Charact.</text><text x="302" y="45" text-anchor="middle">Eligibility</text><rect x="268" y="84" width="68" height="36" rx="7"/><text x="302" y="107" text-anchor="middle">e<tspan baseline-shift="sub" font-size="9">ij</tspan></text></g>
+    <text x="170" y="75" class="lbl" text-anchor="middle">the name (top) is the formula (bottom)</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a word or a symbol: each word of the name lights up the piece of the formula it names.</p></div>
+  </div>
+  <figcaption>The acronym REINFORCE, decoded. Drawn for this page from the paper's definition in §4.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read the top row as a sentence and the bottom row as an equation; each column is one idea. The first column is what gets computed, the change to one weight. The other three are multiplied to make it: a step size that is never negative, the reward measured against a baseline, and the eligibility, which is where the unit's own randomness enters. Hover the third column and notice that it is the only one that depends on how the trial went, and the fourth the only one that depends on what this particular unit did.</p>
+<h3 class="rung">The math: the REINFORCE update</h3>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=dw}{\Delta w_{ij}} = \htmlData{sym=alpha}{\alpha_{ij}}\,(\htmlData{sym=r}{r} - \htmlData{sym=bij}{b_{ij}})\,\htmlData{sym=eij}{e_{ij}} \\[6pt] \htmlData{sym=eij}{e_{ij}} = \frac{\htmlData{sym=partial}{\partial} \htmlData{sym=ln}{\ln} \htmlData{sym=gi}{g_i}}{\htmlData{sym=partial}{\partial} \htmlData{sym=wij}{w_{ij}}} \end{gathered}" data-fallback="Δw_ij = α_ij (r − b_ij) e_ij,  e_ij = ∂ ln g_i / ∂w_ij"></div>
+<div class="symtable" data-syms="dw,alpha,r,bij,eij,partial,ln"></div>
+<p class="inwords"><strong>In words:</strong> “change each weight by a step size, times how much better than the baseline the reward was, times how strongly that weight could raise the log-probability of the output the unit just produced.”</p>
+<p class="inwords"><strong>With the numbers:</strong> e = (0.269, 0.538), r − b = 1 − 0.5 = 0.5, α = 0.1, so Δw = 0.1 × 0.5 × (0.269, 0.538) = (0.0134, 0.0269).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x, w = [1, 2], [-1, 1]
+p = 1 / (1 + math.exp(-sum(w_j * x_j for w_j, x_j in zip(w, x))))
+# this trial: output 1, reward 1, baseline 0.5, rate 0.1
+y, r, b, alpha = 1, 1, 0.5, 0.1
+# e_ij = ∂ ln g_i / ∂ w_ij, which for this unit is (y − p) x_j
+e = [(y - p) * x_j for x_j in x]
+[round(e_j, 3) for e_j in e]  # → [0.269, 0.538]
+# Δw_ij = α (r − b) e_ij
+[round(alpha * (r - b) * e_j, 4) for e_j in e]  # → [0.0134, 0.0269]</code></pre>
+<p>The rules: α must not be negative and may depend only on the unit's weights and on time; b may be anything that does not depend on the unit's current output. Everything with this shape is a REINFORCE algorithm.</p>
+<h3 class="rung">Why it matters</h3>
+<p>This is the update in <a data-lesson="primer/ml/reinforcement.html#reinforce_step"><code>reinforce_step</code></a>, and, summed over the tokens of an answer, the core of every policy-gradient update used on language models. The <span class="t" data-t="log-derivative trick">log</span> is what makes it work: dividing by the probability means a rare output that paid off gets a bigger push than a common one, which is exactly what keeps the average honest.</p>
+</section>
+
+<section id="s4-thm">
+<h3>Theorem 1: the average step points uphill <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A hiker in fog cannot see the slope, but can take a step in a random-looking direction after each clue. Theorem 1 says: however jittery each step, the <em>average</em> step points uphill, and if everyone uses the same stride, the average step is exactly the slope times the stride.</p>
+<h4>Tiny example</h4>
+<p>Average our unit's update over everything random on a trial: which output it draws, and whether that output pays. The true slope of the expected reward is (0.0786, 0.1573) (the gap between the two actions' payouts, 0.4, times p(1 − p) = 0.197, times each input). The average update, with α = 0.1, comes out at (0.00786, 0.01573): exactly 0.1 times the slope. And it comes out the same with b = 0.5 or b = 0.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=EdW}{E\{\Delta\mathbf{W} \mid \mathbf{W}\}}\htmlData{sym=T}{^{\mathsf{T}}}\, \htmlData{sym=grad}{\nabla_{\mathbf{W}}} \htmlData{sym=Er}{E\{r \mid \mathbf{W}\}} \htmlData{sym=geq}{\ge 0} \\[6pt] \htmlData{sym=EdW}{E\{\Delta\mathbf{W} \mid \mathbf{W}\}} = \htmlData{sym=alpha}{\alpha}\, \htmlData{sym=grad}{\nabla_{\mathbf{W}}} \htmlData{sym=Er}{E\{r \mid \mathbf{W}\}}  \end{gathered}" data-fallback="E{ΔW | W}ᵀ ∇_W E{r | W} ≥ 0, and E{ΔW | W} = α ∇_W E{r | W}"></div>
+<div class="symtable" data-syms="EdW,T,grad,geq"></div>
+<p class="inwords"><strong>In words:</strong> “the average update never points downhill on the expected reward (it is zero only at a flat spot), and with one shared step size it is exactly the step size times the uphill direction.” Equivalently, each (r − b) e<sub>ij</sub> is an <span class="t" data-t="unbiased estimate">unbiased estimate</span> of the slope for w<sub>ij</sub>.</p>
+<p class="inwords"><strong>With the numbers:</strong> the slope is (0.0786, 0.1573); the average update is (0.00786, 0.01573) = 0.1 × the slope; their dot product is 0.00309, positive.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x = [1, 2]
+p = 1 / (1 + math.exp(-1))
+alpha = 0.1
+# chance of reward 1 after output 1 and after output 0
+q1, q0 = 0.8, 0.4
+# ∇ E{r|W}: payout gap × ∂p/∂w_j, and ∂p/∂w_j = p(1 − p) x_j
+grad = [(q1 - q0) * p * (1 - p) * x_j for x_j in x]
+[round(g_j, 4) for g_j in grad]  # → [0.0786, 0.1573]
+# E{ΔW | W}: average α(r − b)(y − p)x over y = 1 (chance p) and y = 0 (chance 1 − p)
+def average_update(b):
+    return [alpha * (p * (q1 - b) * (1 - p) + (1 - p) * (q0 - b) * (0 - p)) * x_j for x_j in x]
+[round(v, 5) for v in average_update(0.5)]  # → [0.00786, 0.01573]
+[round(v, 5) for v in average_update(0.0)]  # → [0.00786, 0.01573]
+# E{ΔW}ᵀ ∇E{r|W}
+round(sum(a * g_j for a, g_j in zip(average_update(0.5), grad)), 5)  # → 0.00309</code></pre>
+<h4>Why it matters</h4>
+<p>This is the guarantee every policy-gradient method leans on, and the reason the baseline is free: it changes how noisy each step is, never where the steps point on average. The <a href="#appendix">appendix section</a> below shows why in one line. The lesson's <a data-lesson="primer/ml/reinforcement.html#gradient_estimate_stats"><code>gradient_estimate_stats</code></a> computes the same exact average and the noise around it.</p>
+</section>
+
+<section id="s4-cases">
+<h3>Old algorithms that turn out to be REINFORCE <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Several learning rules already in use in 1992 had been invented separately, each with its own story. The paper shows that some of them are the same rule with particular choices of step size and baseline, so Theorem 1 covers them all at once.</p>
+<h4>A coin with no inputs: the learning automaton</h4>
+<p>First, a unit with no inputs at all, whose only adjustable number is p itself. The eligibility of p follows from the log of g:</p>
+<div class="eq" data-tex="\begin{gathered} \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=ln}{\ln}\htmlData{sym=gi}{g_i}}{\htmlData{sym=partial}{\partial}\htmlData{sym=pi}{p_i}} = \frac{\htmlData{sym=yi}{y_i} - \htmlData{sym=pi}{p_i}}{\htmlData{sym=pi}{p_i}(1 - \htmlData{sym=pi}{p_i})} \\[6pt] \htmlData{sym=dp}{\Delta p_i} = \htmlData{sym=rho}{\rho_i}\, \htmlData{sym=r}{r}\, (\htmlData{sym=yi}{y_i} - \htmlData{sym=pi}{p_i}) \end{gathered}" data-fallback="∂ ln g_i / ∂p_i = (y_i − p_i) / (p_i (1 − p_i)),  Δp_i = ρ_i r (y_i − p_i)"></div>
+<div class="symtable" data-syms="yi,dp,rho"></div>
+<p class="inwords"><strong>In words:</strong> “the eligibility of p is 1/p after a 1 and −1/(1 − p) after a 0, which is one expression, (y − p)/(p(1 − p)). Choose the step size ρ p(1 − p) and baseline 0, and the p(1 − p) cancels: move p towards the output just produced, in proportion to the reward.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at p = 0.731 the eligibility is (1 − 0.731)/0.197 = 1.368 after a 1, and (0 − 0.731)/0.197 = −3.718 after a 0. With ρ = 0.1, reward 1 and output 1, p moves up by 0.1 × 1 × 0.269 = 0.0269.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+p = 1 / (1 + math.exp(-1))
+# ∂ ln g / ∂p = (y − p) / (p (1 − p)), after a 1 and after a 0
+[round((y - p) / (p * (1 - p)), 3) for y in (1, 0)]  # → [1.368, -3.718]
+# Δp = ρ r (y − p)
+rho, r, y = 0.1, 1, 1
+round(rho * r * (y - p), 4)  # → 0.0269</code></pre>
+<p>With rewards of only 0 or 1, this is the two-action <span class="t" data-tip-title="Linear reward-inaction automaton" data-tip="A classic learning automaton (written L with subscript R−I): after a reward it moves its action probabilities towards the action taken; after no reward it does nothing. Hence reward, inaction.">linear reward-inaction automaton</span> (L<sub>R−I</sub>) from the learning-automata literature: reward moves p towards what was done; no reward, no move.</p>
+<h4>The logistic unit</h4>
+<p>Now give the unit inputs and weights. The <span class="t" data-t="chain rule">chain rule</span> multiplies three slopes: log g by p, p by s (for the logistic, p(1 − p)), and s by w<sub>ij</sub> (just x<sub>j</sub>). The p(1 − p) on top cancels the one underneath:</p>
+<div class="eq" data-tex="\begin{gathered} \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=ln}{\ln}\htmlData{sym=gi}{g_i}}{\htmlData{sym=partial}{\partial}\htmlData{sym=wij}{w_{ij}}} = (\htmlData{sym=yi}{y_i} - \htmlData{sym=pi}{p_i})\,\htmlData{sym=xj}{x_j} \\[6pt] \htmlData{sym=dw}{\Delta w_{ij}} = \htmlData{sym=alpha}{\alpha}\, \htmlData{sym=r}{r}\, (\htmlData{sym=yi}{y_i} - \htmlData{sym=pi}{p_i})\, \htmlData{sym=xj}{x_j} \end{gathered}" data-fallback="∂ ln g_i / ∂w_ij = (y_i − p_i) x_j,  Δw_ij = α r (y_i − p_i) x_j"></div>
+<div class="symtable" data-syms="yi,xj,dw"></div>
+<p class="inwords"><strong>In words:</strong> “for a Bernoulli-logistic unit, a weight's eligibility is the surprise in the output (what happened minus what was expected) times that weight's input. With baseline 0, the update is rate times reward times that.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1 − 0.731) × (1, 2) = (0.269, 0.538); the chain-rule product for the second weight is 1.368 × 0.197 × 2 = 0.538, the same. With α = 0.1 and r = 1, Δw = (0.0269, 0.0538).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x, y = [1, 2], 1
+p = 1 / (1 + math.exp(-1))
+# chain rule for w_1: ∂lng/∂p × ∂p/∂s × ∂s/∂w_1
+round((y - p) / (p * (1 - p)) * p * (1 - p) * x[1], 3)  # → 0.538
+# the shortcut: (y − p) x_j
+[round((y - p) * x_j, 3) for x_j in x]  # → [0.269, 0.538]
+# Δw_ij = α r (y − p) x_j
+alpha, r = 0.1, 1
+[round(alpha * r * (y - p) * x_j, 4) for x_j in x]  # → [0.0269, 0.0538]</code></pre>
+<p>This is the <span class="t" data-tip-title="Associative reward-inaction rule" data-tip="Written A with subscript R−I. The associative reward-penalty rule (A R−P) of Barto and colleagues, with its penalty term switched off (λ = 0): after a reward it moves towards the output produced; after no reward it does nothing.">associative reward-inaction</span> rule of Barto and colleagues: their reward-penalty rule with its penalty term switched off (λ = 0) reduces to exactly this update, so it is a REINFORCE algorithm and Theorem 1 covers it.</p>
+<h4>Why it matters</h4>
+<p>“Surprise times input” is the same shape as the error signal in ordinary supervised learning, (target − prediction) × input, with the sampled output playing the target. REINFORCE is supervised learning on your own samples, weighted by how well they turned out. The softmax version, one-hot minus probabilities, is <a data-lesson="primer/ml/reinforcement.html#grad_log_prob"><code>grad_log_prob</code></a>.</p>
+</section>
+
+<section id="s4-rc">
+<h3>Reinforcement comparison: a baseline that learns <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A student who always scores between 70 and 80 learns nothing from “you got 76” unless they know their usual score is 74. Keep a running average of past rewards, and judge each new reward against it.</p>
+<h4>Tiny example</h4>
+<p>The running average stands at r̄ = 0.5. This trial pays r = 1, so the unit learns from r − r̄ = 0.5, exactly the update we computed earlier with b = 0.5. Only then does the average absorb the new reward: with γ = 0.2 it becomes 0.2 × 1 + 0.8 × 0.5 = 0.6.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=dw}{\Delta w_{ij}} = \htmlData{sym=alpha}{\alpha}\,(\htmlData{sym=r}{r} - \htmlData{sym=rbar}{\bar{r}})\,(\htmlData{sym=yi}{y_i} - \htmlData{sym=pi}{p_i})\,\htmlData{sym=xj}{x_j} \\[6pt] \htmlData{sym=rbar}{\bar{r}}(\htmlData{sym=t}{t}) = \htmlData{sym=gamma}{\gamma}\, \htmlData{sym=r}{r}(\htmlData{sym=t}{t} - 1) + (1 - \htmlData{sym=gamma}{\gamma})\, \htmlData{sym=rbar}{\bar{r}}(\htmlData{sym=t}{t} - 1) \end{gathered}" data-fallback="Δw_ij = α (r − r̄)(y_i − p_i) x_j,  r̄(t) = γ r(t − 1) + (1 − γ) r̄(t − 1)"></div>
+<div class="symtable" data-syms="rbar,gamma,t"></div>
+<p class="inwords"><strong>In words:</strong> “use the running average of earlier rewards as the baseline; after each trial, move that average a fraction γ of the way towards the reward just received.”</p>
+<p class="inwords"><strong>With the numbers:</strong> r − r̄ = 1 − 0.5 = 0.5, so Δw = 0.1 × 0.5 × 0.269 × (1, 2) = (0.0134, 0.0269); then r̄ becomes 0.2 × 1 + 0.8 × 0.5 = 0.6.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x, y = [1, 2], 1
+p = 1 / (1 + math.exp(-1))
+alpha, gamma, r, r_bar = 0.1, 0.2, 1, 0.5
+# Δw = α (r − r̄)(y − p) x_j, using the average from before this trial
+[round(alpha * (r - r_bar) * (y - p) * x_j, 4) for x_j in x]  # → [0.0134, 0.0269]
+# r̄(t) = γ r(t − 1) + (1 − γ) r̄(t − 1)
+r_bar = gamma * r + (1 - gamma) * r_bar
+round(r_bar, 2)  # → 0.6</code></pre>
+<p>It stays a REINFORCE algorithm as long as r̄ is never computed from the current output or the current reward, which is why the average is updated only <em>after</em> the step. The paper notes that the analysis offers no basis for comparing baselines, but that reinforcement comparison is generally believed to perform better; Section 8.3 returns to this.</p>
+<h4>Why it matters</h4>
+<p>A learned baseline became the <span class="t" data-t="critic">critic</span> of <span class="t" data-t="actor-critic">actor-critic</span> methods and the <span class="t" data-t="value network">value network</span> of <span class="t" data-t="ppo">PPO</span>. GRPO goes back to something closer to this paper: the baseline is simply the average reward of other answers to the same prompt. The lesson's <a data-lesson="primer/ml/reinforcement.html#train_reinforce"><code>train_reinforce</code></a> uses a running-average baseline.</p>
+</section>
+
+<section id="s5">
+<h2>5 Episodic REINFORCE algorithms <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A chess player learns only at the end of the game whether they won. Which moves deserve the credit? With no other information, a fair rule is: every move shares the verdict, and each move's own “how would I make this more likely” is added up over the game. That is the <span class="t" data-t="credit assignment">credit assignment</span> the paper proposes when a single reward arrives at the end of an <span class="t" data-tip-title="Episode" data-tip="One complete run from start to finish (a game, a maze run, one generated answer), with its reward tallied at the end.">episode</span>.</p>
+<h3 class="rung">Tiny example</h3>
+<p>An episode lasts k = 3 steps. A weight's eligibilities at the three steps are 0.3, −0.2 and 0.4, collected as the network runs. The episode ends with r = 1 against a baseline of 0.4. With α = 0.1, the weight changes by 0.1 × (1 − 0.4) × (0.3 − 0.2 + 0.4) = 0.1 × 0.6 × 0.5 = <strong>0.03</strong>.</p>
+<figure class="ix" id="fig-episode">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 296" role="img" aria-label="A network with a loop unfolded into three copies, one per time step, whose eligibilities are summed and multiplied by the single reward at the end">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="net"><rect x="6" y="8" width="110" height="80" rx="10"/></g>
+    <text x="61" y="26" class="lbl" text-anchor="middle">network N</text>
+    <g class="blk attn" data-block="unit"><rect x="26" y="36" width="70" height="30" rx="7"/><text x="61" y="56" text-anchor="middle">unit, w</text></g>
+    <path class="wire" d="M96,46 C120,30 120,76 96,60" marker-end="url(#arr2)"/>
+    <path class="wire" d="M122,48 H146" marker-end="url(#arr2)"/>
+    <text x="226" y="20" class="lbl" text-anchor="middle">unfolded N*: one copy per step</text>
+    <g class="blk attn" data-block="copies"><rect x="150" y="32" width="50" height="30" rx="7"/><text x="175" y="52" text-anchor="middle">t = 1</text><rect x="214" y="32" width="50" height="30" rx="7"/><text x="239" y="52" text-anchor="middle">t = 2</text><rect x="278" y="32" width="46" height="30" rx="7"/><text x="301" y="52" text-anchor="middle">t = 3</text></g>
+    <path class="wire" d="M200,47 H212" marker-end="url(#arr2)"/>
+    <path class="wire" d="M264,47 H276" marker-end="url(#arr2)"/>
+    <path class="wire" d="M175,62 V96" marker-end="url(#arr2)"/>
+    <path class="wire" d="M239,62 V96" marker-end="url(#arr2)"/>
+    <path class="wire" d="M301,62 V96" marker-end="url(#arr2)"/>
+    <g class="blk soft" data-block="eligt"><rect x="150" y="98" width="50" height="26" rx="6"/><text x="175" y="116" text-anchor="middle">0.3</text><rect x="214" y="98" width="50" height="26" rx="6"/><text x="239" y="116" text-anchor="middle">−0.2</text><rect x="278" y="98" width="46" height="26" rx="6"/><text x="301" y="116" text-anchor="middle">0.4</text></g>
+    <text x="140" y="116" class="lbl" text-anchor="end">e(t)</text>
+    <path class="wire" d="M175,124 V146 H235 M239,124 V146 H235 M301,124 V146 H235 V158" marker-end="url(#arr2)"/>
+    <g class="blk norm" data-block="accum"><rect x="146" y="160" width="178" height="30" rx="7"/><text x="235" y="180" text-anchor="middle">accumulator: Σ e(t) = 0.5</text></g>
+    <g class="blk ff" data-block="endreward"><rect x="14" y="160" width="120" height="30" rx="7"/><text x="74" y="180" text-anchor="middle">reward at end: r = 1</text></g>
+    <path class="wire" d="M235,190 V222" marker-end="url(#arr2)"/>
+    <path class="wire" d="M74,190 V246 H144" marker-end="url(#arr2)"/>
+    <g class="blk lin" data-block="epupdate"><rect x="146" y="224" width="178" height="44" rx="7"/><text x="235" y="242" text-anchor="middle">Δw = α(r − b) Σ e(t)</text><text x="235" y="259" text-anchor="middle">= 0.1 × 0.6 × 0.5 = 0.03</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with the network on the left, then follow its copies.</p></div>
+  </div>
+  <figcaption>Unfolding in time: a network with a loop becomes a chain of copies, one per time step. Drawn for this page from the paper's §5.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> on the left is a network whose unit feeds back into itself, so its output at one step affects the next. The paper's trick is to <span class="t" data-tip-title="Unfolding in time" data-tip="Turning a network with loops that runs for k steps into an equivalent loop-free network with k copies, one per step, all sharing the same weights.">unfold it in time</span>: draw one copy per step, all sharing the same weights, so the loop becomes a straight chain (right). Each copy works out its eligibility as it runs, and a single accumulator per weight adds them up, needing nothing from the future. Only at the end does the reward arrive, and the whole sum is multiplied by it once.</p>
+<h3 class="rung">The math</h3>
+<div class="eq" data-tex="\htmlData{sym=dw}{\Delta w_{ij}} = \htmlData{sym=alpha}{\alpha_{ij}}\,(\htmlData{sym=r}{r} - \htmlData{sym=bij}{b_{ij}}) \htmlData{sym=sumt}{\sum_{t=1}^{k}} \htmlData{sym=eijt}{e_{ij}(t)}" data-fallback="Δw_ij = α_ij (r − b_ij) Σ_{t=1}^{k} e_ij(t)"></div>
+<div class="symtable" data-syms="k,sumt,eijt"></div>
+<p class="inwords"><strong>In words:</strong> “add up a weight's eligibility over every step of the episode, then scale the total by the rate and by how much better than the baseline the final reward was.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Σ e = 0.3 − 0.2 + 0.4 = 0.5; Δw = 0.1 × (1 − 0.4) × 0.5 = 0.03.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># e_ij(t) for t = 1, 2, 3, accumulated as the episode runs
+e = [0.3, -0.2, 0.4]
+alpha, r, b = 0.1, 1, 0.4
+# Σ_t e_ij(t)
+round(sum(e), 2)  # → 0.5
+# Δw = α (r − b) Σ_t e_ij(t)
+round(alpha * (r - b) * sum(e), 3)  # → 0.03</code></pre>
+<p><strong>Theorem 2</strong> says the same as Theorem 1 for this episodic rule: the average update never points downhill, and with a shared rate it is the rate times the gradient. For rewards that arrive at every step, the paper suggests replacing r with the sum of rewards over the episode, and hints that when rewards depend only on the past, credit could be assigned more finely.</p>
+<h3 class="rung">Why it matters</h3>
+<p>A generated answer is an episode: one token per step, one reward at the end. Summing the eligibilities over the steps is summing the gradients of every token's log-probability, which is exactly what policy-gradient training of language models does. The paper also names the weakness honestly: spreading the verdict evenly over every step is slow, which is why later methods add a critic that judges each step, and why GRPO normalises the one final reward against a group of answers.</p>
+</section>
+
+<section id="s6">
+<h2>6 REINFORCE with multiparameter distributions <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A treasure hunter with a metal detector chooses two things: <em>where</em> to dig and <em>how wide</em> a patch to try around that spot. A unit whose output is drawn from a bell curve has both knobs: the mean says where, the <span class="t" data-t="standard deviation">standard deviation</span> says how widely it explores. Learning can turn both.</p>
+<h3 class="rung">Tiny example</h3>
+<p>A Gaussian unit has mean μ = 0 and spread σ = 1. It draws y = 0.5, close to the mean. The eligibility of μ is (0.5 − 0)/1 = 0.5 (moving μ towards 0.5 makes it likelier). The eligibility of σ is (0.25 − 1)/1 = −0.75: <em>shrinking</em> the spread makes a close draw likelier. Had it drawn y = 2, far out, the eligibilities would be 2 and +3: widening makes far draws likelier.</p>
+<div class="eq" data-tex="\begin{gathered} \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=ln}{\ln}\htmlData{sym=gG}{g}}{\htmlData{sym=partial}{\partial}\htmlData{sym=mu}{\mu}} = \frac{\htmlData{sym=y}{y} - \htmlData{sym=mu}{\mu}}{\htmlData{sym=sigma}{\sigma}^2} \\[6pt] \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=ln}{\ln}\htmlData{sym=gG}{g}}{\htmlData{sym=partial}{\partial}\htmlData{sym=sigma}{\sigma}} = \frac{(\htmlData{sym=y}{y} - \htmlData{sym=mu}{\mu})^2 - \htmlData{sym=sigma}{\sigma}^2}{\htmlData{sym=sigma}{\sigma}^3} \end{gathered}" data-fallback="∂ ln g/∂μ = (y − μ)/σ²,  ∂ ln g/∂σ = ((y − μ)² − σ²)/σ³"></div>
+<div class="symtable" data-syms="gG,y,mu,sigma"></div>
+<p class="inwords"><strong>In words:</strong> “the mean's eligibility is how far the draw landed from the mean, divided by the variance; the spread's eligibility is positive when the draw landed further out than one standard deviation and negative when it landed closer in.”</p>
+<p class="inwords"><strong>With the numbers:</strong> y = 0.5 gives (0.5, −0.75); y = 2 gives (2, 3). The REINFORCE updates are then Δμ = α<sub>μ</sub>(r − b<sub>μ</sub>) × the first and Δσ = α<sub>σ</sub>(r − b<sub>σ</sub>) × the second; the paper suggests α<sub>μ</sub> = α<sub>σ</sub> = ασ² and a reinforcement-comparison baseline. With α = 0.1, σ = 1 and a draw at y = 0.5 that beat the baseline by 1, μ moves up 0.05 and σ shrinks by 0.075.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>mu, sigma = 0.0, 1.0
+def eligibilities(y):
+    # ∂ ln g/∂μ = (y − μ)/σ², ∂ ln g/∂σ = ((y − μ)² − σ²)/σ³
+    return (y - mu) / sigma**2, ((y - mu) ** 2 - sigma**2) / sigma**3
+eligibilities(0.5)  # → (0.5, -0.75)
+eligibilities(2.0)  # → (2.0, 3.0)
+# Δμ, Δσ with α_μ = α_σ = α σ², and r − b = 1
+alpha, advantage = 0.1, 1.0
+e_mu, e_sigma = eligibilities(0.5)
+round(alpha * sigma**2 * advantage * e_mu, 3), round(alpha * sigma**2 * advantage * e_sigma, 3)  # → (0.05, -0.075)</code></pre>
+<p>A footnote warns that nothing stops σ from being pushed below zero; learning log σ instead of σ keeps it positive.</p>
+<h4>Proposition 1: one pattern for many distributions</h4>
+<p>The mean's eligibility (y − μ)/σ² has the same shape as the Bernoulli unit's (y − p)/(p(1 − p)): output minus mean, over variance. The paper proves this is no accident. Every distribution of the <span class="t" data-tip-title="Exponential family" data-tip="A large class of distributions whose log-probability is a simple (linear) function of the outcome, including the normal, Bernoulli, Poisson and exponential distributions.">exponential-family</span> form below, with μ its mean, has this eligibility.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=gG}{g}(\htmlData{sym=y}{y}, \htmlData{sym=mu}{\mu}, \htmlData{sym=thetas}{\theta_2, \ldots, \theta_k}) \\[6pt] = \htmlData{sym=exp}{\exp}\big[\htmlData{sym=Qf}{Q}(\htmlData{sym=mu}{\mu}, \htmlData{sym=thetas}{\ldots})\,\htmlData{sym=y}{y} + \htmlData{sym=Df}{D}(\htmlData{sym=mu}{\mu}, \htmlData{sym=thetas}{\ldots}) + \htmlData{sym=Sf}{S}(\htmlData{sym=y}{y})\big] \\[6pt] \Rightarrow\; \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=ln}{\ln}\htmlData{sym=gG}{g}}{\htmlData{sym=partial}{\partial}\htmlData{sym=mu}{\mu}} = \frac{\htmlData{sym=y}{y} - \htmlData{sym=mu}{\mu}}{\htmlData{sym=sigma2}{\sigma^2}} \end{gathered}" data-fallback="g(y, μ, θ_2…θ_k) = exp[Q(μ, …) y + D(μ, …) + S(y)]  ⇒  ∂ ln g/∂μ = (y − μ)/σ²"></div>
+<div class="symtable" data-syms="thetas,exp,Qf,Df,Sf,sigma2"></div>
+<p class="inwords"><strong>In words:</strong> “if the log-probability of an outcome is a straight-line function of the outcome (plus terms that don't involve both), then the eligibility of the mean is always output minus mean, divided by the variance.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a Poisson unit with mean μ = 2 (its variance is also 2) outputs y = 3. The formula gives (3 − 2)/2 = 0.5. Differentiating its log-probability, y ln μ − μ − ln y!, directly gives y/μ − 1 = 1.5 − 1 = 0.5. They agree.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# a Poisson unit: ln g = y ln μ − μ − ln y!, and its variance equals its mean
+def ln_g(mu, y):
+    return y * math.log(mu) - mu - math.lgamma(y + 1)
+mu, y = 2.0, 3
+# the proposition: (y − μ) / σ²
+(y - mu) / mu  # → 0.5
+# the slope of ln g in μ, measured numerically
+h = 1e-6
+round((ln_g(mu + h, y) - ln_g(mu - h, y)) / (2 * h), 6)  # → 0.5</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>Controlling the spread separately is controlling exploration separately: a unit can search widely in one place and narrowly in another. Continuous-action policies in robotics still use this Gaussian eligibility, usually learning log σ, just as the footnote suggests.</p>
+</section>
+
+<section id="s7">
+<h2>7 Compatibility with backpropagation <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>REINFORCE on its own is like a team where every member experiments independently and watches the scoreboard, ignoring how their work feeds into each other's. Backpropagation is the opposite: a manager who knows exactly how each person's work flows into the final product. The paper shows how to use the manager wherever the flow is known, and the scoreboard only where there is genuine chance.</p>
+</section>
+
+<section id="s7-1">
+<h3>7.1 Networks using deterministic hidden units <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Put all the randomness at the end: the hidden layers compute ordinary, predictable functions, and only the output units flip coins. Randomness at the outputs is enough exploration, and everything before them can be trained with the chain rule.</p>
+<h4>Tiny example</h4>
+<p>One hidden unit computes h = v × x with x = 1 and v = 0.5, so h = 0.5. The output is a Bernoulli-logistic unit with weight u = 2, so s = 1 and p = 0.731 again. It outputs y = 1. The eligibility of the <em>hidden</em> weight v is ∂ln g/∂p × ∂p/∂v = (1/0.731) × (0.197 × 2 × 1) = 1.368 × 0.393 = <strong>0.538</strong>, which is (y − p) × u × x = 0.269 × 2.</p>
+<div class="eq" data-tex="\frac{\htmlData{sym=partial}{\partial}\htmlData{sym=ln}{\ln}\htmlData{sym=gG}{g}}{\htmlData{sym=partial}{\partial}\htmlData{sym=wij}{w_{ij}}} = \htmlData{sym=sumO}{\sum_{k \in O}} \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=ln}{\ln}\htmlData{sym=gk}{g_k}}{\htmlData{sym=partial}{\partial}\htmlData{sym=pk}{p_k}}\, \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=pk}{p_k}}{\htmlData{sym=partial}{\partial}\htmlData{sym=wij}{w_{ij}}}" data-fallback="∂ ln g/∂w_ij = Σ_{k∈O} (∂ ln g_k/∂p_k)(∂p_k/∂w_ij)"></div>
+<div class="symtable" data-syms="sumO,gk,pk"></div>
+<p class="inwords"><strong>In words:</strong> “because the output units flip their coins independently, the log-probability of the whole output is a sum over output units; so any weight's eligibility is, for each output unit, the Bernoulli eligibility (y − p)/(p(1 − p)) injected at that unit, carried back to the weight by backpropagation.”</p>
+<p class="inwords"><strong>With the numbers:</strong> one output unit: 1.368 × 0.393 = 0.538.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x, v, u, y = 1.0, 0.5, 2.0, 1
+h = v * x
+p = 1 / (1 + math.exp(-u * h))
+# ∂ ln g_k / ∂p_k, injected just after the output's squash
+inject = (y - p) / (p * (1 - p))
+# ∂p_k / ∂v by the chain rule: p(1 − p) × u × x
+dp_dv = p * (1 - p) * u * x
+round(inject, 3), round(dp_dv, 3)  # → (1.368, 0.393)
+round(inject * dp_dv, 3)  # → 0.538</code></pre>
+<h4>Why it matters</h4>
+<p>This is how every modern policy is trained: a deep deterministic network computes logits, only the final draw is random, and one backward pass from “(one-hot − probabilities) × advantage” reaches every weight. The paper also notes the result extends to any mix of random and deterministic units: REINFORCE at each random unit, backpropagation everywhere else.</p>
+</section>
+
+<section id="s7-2">
+<h3>7.2 Backpropagating through random number generators <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<blockquote class="quote">“Suppose instead that it were possible to somehow ‘backpropagate through a random number generator.’”<cite>Williams (1992), §7.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A coin flip has no slope: nudging the coin's bias a little does not nudge a heads into a slightly-more heads. But a bell-curve draw can be rewritten as “the mean, plus the spread times a fixed random number”. With the random number held still, the output moves smoothly with the mean and the spread, so ordinary backpropagation can pass through it.</p>
+<h4>Tiny example</h4>
+<p>Mean μ = 1, spread σ = 0.5, and the random number z = 0.8 from a standard bell curve. The output is y = 1 + 0.5 × 0.8 = 1.4. Nudge μ up by 0.01 with z held still: y rises by exactly 0.01. Nudge σ up by 0.01: y rises by 0.008, that is, by z.</p>
+<figure class="ix" id="fig-routes">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 262" role="img" aria-label="Two ways to get a gradient through a Gaussian unit: the REINFORCE route uses only the reward's value; the backpropagation route writes the draw as mean plus spread times noise and uses the reward's slope">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="8" y="16" class="lbl">REINFORCE route: only the value of J is needed</text>
+    <g class="blk plain" data-block="params"><rect x="8" y="26" width="70" height="36" rx="7"/><text x="43" y="48" text-anchor="middle">μ, σ</text></g>
+    <path class="wire" d="M78,44 H100" marker-end="url(#arr3)"/>
+    <g class="blk emb" data-block="draw"><rect x="102" y="26" width="96" height="36" rx="7"/><text x="150" y="42" text-anchor="middle">random draw</text><text x="150" y="56" text-anchor="middle">y ~ N(μ, σ²)</text></g>
+    <path class="wire" d="M198,44 H220" marker-end="url(#arr3)"/>
+    <g class="blk ff" data-block="J"><rect x="222" y="26" width="100" height="36" rx="7"/><text x="272" y="48" text-anchor="middle">score J(y)</text></g>
+    <g class="blk attn" data-block="sfgrad"><rect x="40" y="76" width="250" height="34" rx="7"/><text x="165" y="97" text-anchor="middle">estimate: J(y) × (y − μ)/σ²</text></g>
+    <line x1="4" y1="128" x2="326" y2="128" stroke="var(--rule)" stroke-dasharray="5 4"/>
+    <text x="8" y="148" class="lbl">Backprop route (§7.2): the slope of J is needed</text>
+    <g class="blk plain" data-block="noise"><rect x="8" y="158" width="70" height="36" rx="7"/><text x="43" y="174" text-anchor="middle">noise</text><text x="43" y="188" text-anchor="middle">z ~ N(0, 1)</text></g>
+    <path class="wire" d="M78,176 H100" marker-end="url(#arr3)"/>
+    <g class="blk lin" data-block="reparam"><rect x="102" y="158" width="96" height="36" rx="7"/><text x="150" y="180" text-anchor="middle">y = μ + σz</text></g>
+    <path class="wire" d="M198,176 H220" marker-end="url(#arr3)"/>
+    <g class="blk ff" data-block="J"><rect x="222" y="158" width="100" height="36" rx="7"/><text x="272" y="180" text-anchor="middle">score J(y)</text></g>
+    <g class="blk attn" data-block="pwgrad"><rect x="40" y="210" width="250" height="34" rx="7"/><text x="165" y="231" text-anchor="middle">estimate: J′(y) × ∂y/∂μ = J′(y)</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Compare the two estimates at the bottom of each route.</p></div>
+  </div>
+  <figcaption>Two ways to get the slope of an average through a random draw. Drawn for this page from the paper's §6 and §7.2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> both routes want the same thing, how the average score changes as μ changes. The top route treats the draw as a black box and uses REINFORCE: it needs only the <em>value</em> of the score, which is why it works for coin flips and for graders with no slope at all. The bottom route moves the randomness to the side (the noise z) and makes the rest a smooth function, so it can use the score's <em>slope</em> directly. The shared J box lights up in both routes: the difference is not the score but how much each route asks of it.</p>
+<h4>The math</h4>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=y}{y} = \htmlData{sym=mu}{\mu} + \htmlData{sym=sigma}{\sigma}\htmlData{sym=z}{z} \\[6pt] \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=y}{y}}{\htmlData{sym=partial}{\partial}\htmlData{sym=mu}{\mu}} = 1 \\[6pt] \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=y}{y}}{\htmlData{sym=partial}{\partial}\htmlData{sym=sigma}{\sigma}} = \htmlData{sym=z}{z} = \frac{\htmlData{sym=y}{y} - \htmlData{sym=mu}{\mu}}{\htmlData{sym=sigma}{\sigma}} \end{gathered}" data-fallback="y = μ + σz,  ∂y/∂μ = 1,  ∂y/∂σ = z = (y − μ)/σ"></div>
+<div class="symtable" data-syms="z"></div>
+<p class="inwords"><strong>In words:</strong> “write the draw as mean plus spread times a standard random number; then the output's slope with respect to the mean is 1, and with respect to the spread it is the random number itself.”</p>
+<p class="inwords"><strong>With the numbers:</strong> y = 1 + 0.5 × 0.8 = 1.4; ∂y/∂σ = 0.8 = (1.4 − 1)/0.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>mu, sigma, z = 1.0, 0.5, 0.8
+# y = μ + σz
+y = mu + sigma * z
+round(y, 2)  # → 1.4
+# nudge μ, then σ, by 0.01 with z held still
+round((mu + 0.01 + sigma * z) - y, 4), round((mu + (sigma + 0.01) * z) - y, 4)  # → (0.01, 0.008)
+# ∂y/∂σ = z = (y − μ)/σ
+round((y - mu) / sigma, 2)  # → 0.8</code></pre>
+<h4>Worked comparison: why the second route is quieter</h4>
+<p>This is our example, not the paper's. Take the score J(y) = y², so the true slope of its average with respect to μ is 2μ = 2. Both routes estimate 2 on average, but one draw at a time they wobble very differently.</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=gRF}{\hat{g}_{\text{RF}}} = \htmlData{sym=J}{J}(\htmlData{sym=y}{y})\,\frac{\htmlData{sym=y}{y} - \htmlData{sym=mu}{\mu}}{\htmlData{sym=sigma}{\sigma}^2} \\[6pt] \htmlData{sym=gBP}{\hat{g}_{\text{BP}}} = \htmlData{sym=Jp}{J'}(\htmlData{sym=y}{y})\,\frac{\htmlData{sym=partial}{\partial}\htmlData{sym=y}{y}}{\htmlData{sym=partial}{\partial}\htmlData{sym=mu}{\mu}} \end{gathered}" data-fallback="ĝ_RF = J(y)(y − μ)/σ²,  ĝ_BP = J′(y) ∂y/∂μ"></div>
+<div class="symtable" data-syms="J,Jp,gRF,gBP"></div>
+<p class="inwords"><strong>In words:</strong> “the REINFORCE estimate multiplies the score by the mean's eligibility; the backprop estimate multiplies the score's slope by how the output moves with the mean.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with μ = 1 and σ = 0.5, both average 2. The REINFORCE estimate's <span class="t" data-t="variance">variance</span> is 21.75; the backprop estimate's is 1.0, about 22 times smaller.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>mu, sigma = 1.0, 0.5
+# moments of a standard normal z: E[z²] = 1, E[z⁴] = 3, E[z⁶] = 15 (odd ones are 0)
+Ez2, Ez4, Ez6 = 1, 3, 15
+# REINFORCE: J(y)(y − μ)/σ² with y = μ + σz is (a z + b z² + c z³)/σ
+a, b, c = mu**2, 2 * mu * sigma, sigma**2
+second_moment = (a * a * Ez2 + b * b * Ez4 + c * c * Ez6 + 2 * a * c * Ez4) / sigma**2
+# variance = E[ĝ²] − (true slope 2μ)²
+second_moment - (2 * mu) ** 2  # → 21.75
+# backprop: J′(y) = 2y = 2μ + 2σz, whose variance is (2σ)² E[z²]
+(2 * sigma) ** 2 * Ez2  # → 1.0</code></pre>
+<h4>Why it matters</h4>
+<p>Two decades later this became the <span class="t" data-t="reparameterization trick">reparameterization trick</span> that makes <span class="t" data-t="vae">variational autoencoders</span> trainable (the <a data-lesson="primer/ml/generative/autoencoders.html#reparameterize"><code>reparameterize</code></a> function in the autoencoders lesson). The split in this figure is still the basic choice: the backprop route is far quieter when the score has a slope, and REINFORCE is the only option when it doesn't, as with a language model's discrete tokens scored by a grader.</p>
+</section>
+
+<section id="s8">
+<h2>8 Algorithm performance and other issues <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Knowing that a compass points north on average does not tell you whether you will reach the pole, or how long it takes. Theorem 1 is the compass. Section 8 is the honest travel report: what simulations showed, where the learners get stuck, and which design choices the theory leaves open.</p>
+</section>
+
+<section id="s8-1">
+<h3>8.1 Convergence properties <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A drunk walker on a narrow bridge drifts, on average, towards the far end. But each step is random, and a few bad steps near the start can send them over the near edge. Drifting the right way on average does not guarantee arriving.</p>
+<h4>What the paper reports</h4>
+<ul>
+  <li>No general convergence theory exists; simulations are the main evidence. If a REINFORCE learner converges, one expects a <span class="t" data-tip-title="Local maximum" data-tip="A point higher than everything near it, though not necessarily the highest point overall. Gradient-following methods can stop at one.">local maximum</span>, but it need not converge at all.</li>
+  <li>REINFORCE with reinforcement comparison beat every other algorithm in Sutton's 1984 study of single units.</li>
+  <li>The two-action L<sub>R−I</sub> automaton converges to always choosing one action, and, even though its average motion always favours the better action, it has a nonzero chance of settling on the worse one: the biased random walk on the bridge. The <a href="#s8-3">explorer in 8.3</a> shows this happening.</li>
+  <li>REINFORCE is “generally very slow even when it succeeds”, and the episodic version especially slow, because it spreads credit uniformly over every past step.</li>
+  <li>Williams and Peng (1991) found that REINFORCE variants tend to converge to local optima, as any gradient-following method might; one variant that added an <span class="t" data-t="entropy">entropy</span> term to the reinforcement signal helped certain networks on tasks where some hierarchical organisation during the search was useful.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>Every item on this list is still true of plain policy gradients, and each has a modern repair: baselines and critics for the noise, clipped steps (<span class="t" data-t="ppo">PPO</span>) for stability, entropy bonuses to keep exploring, and, for language models, starting from a pretrained model that is already good enough that the right answers get sampled.</p>
+</section>
+
+<section id="s8-2">
+<h3>8.2 Gaussian unit search behavior <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Searching for the top of a hill in the dark with a flashlight whose beam you can widen or narrow. Find a better spot close to where you stand: narrow the beam and settle in. Find a better spot far away: widen it. Find worse spots close by: widen, you are probably not at the top.</p>
+<h4>Tiny example</h4>
+<p>With μ = 0, σ = 1 and a sample that did better than usual (r − b &gt; 0): a draw at y = 0.5 moves μ towards 0.5 and shrinks σ (eligibility −0.75); a draw at y = 2 moves μ towards 2 and grows σ (eligibility +3). A worse-than-usual draw reverses both.</p>
+<p><strong>Try it:</strong> hover the chart, or tab to it and use the arrow keys, to read both eligibilities at any draw. Watch where the dashed curve crosses zero.</p>
+<div class="plot">
+  <div id="elig-chart"></div>
+  <p class="readout" id="elig-readout">Hover the chart, or tab to it and use the arrow keys, to read both eligibilities at a draw.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is where the draw y landed, for a unit with μ = 0 and σ = 1, so it also counts standard deviations from the mean. The solid line is the mean's eligibility, (y − μ)/σ²: a straight line through zero, so μ always moves towards a good draw, harder the further away it was. The dashed line is the spread's eligibility, ((y − μ)² − σ²)/σ³: a U that is negative between −1 and +1 and positive outside. Multiplied by a positive r − b, a good draw inside one standard deviation narrows the search and a good draw outside widens it; a negative r − b flips the sign. Since draws land inside one standard deviation about twice as often as outside, a unit sitting on a hilltop, where most nearby draws are worse, keeps narrowing until it settles, which is the behaviour the paper describes.</p>
+<h4>What the paper found</h4>
+<p>Simulations with and without noise in the reward confirmed this: σ narrows onto a local peak. On a very flat peak σ can shrink until sampling worse values becomes vanishingly rare, and then stop changing. And if rewards are never negative and no baseline is used, σ can collapse to 0 before μ reaches any peak: the continuous cousin of the lock-in in 8.1. Gullapalli's alternative sets σ from the reward instead (wide when doing badly, narrow when doing well), and Schmidhuber and Huber reported Gaussian output units trained by backpropagating through the random number generator of 7.2.</p>
+<h4>Why it matters</h4>
+<p>This is automatic exploration control: the spread shrinks where confidence is earned and widens where it is not, driven by the same one-line rule. Modern continuous-control methods still learn a spread per action this way.</p>
+</section>
+
+<section id="s8-3">
+<h3>8.3 Choice of reinforcement baseline <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<blockquote class="quote">“The use of an adaptive reinforcement baseline incorporating something like the reinforcement comparison strategy can greatly enhance convergence speed, and, in some cases, can lead to a big difference in qualitative behavior as well.”<cite>Williams (1992), §8.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>If every dish you cook gets at least four stars, “four stars” sounds like praise, and you might keep cooking the mediocre dish you tried first. Only compared with your usual score does a four-star dish reveal itself as your worst.</p>
+<h4>Tiny example: the paper's single-unit case</h4>
+<p>A unit with only a bias weight chooses between two outputs. Output 1 always pays c + 1 and output 0 always pays c, so output 1 is better by 1 whatever c is. With no baseline and c = 4, a trial that happens to produce 0 still earns 4, and the update pushes firmly <em>towards</em> 0. With a running-average baseline, the average settles between 4 and 5, output 0 always scores below it, and every trial pushes towards output 1.</p>
+<p><strong>Try it:</strong> drag the learning rate. Watch the solid line (no baseline) against the dashed one (reinforcement comparison) as every reward is raised by the amount on the x-axis.</p>
+<div class="plot">
+  <div class="controls ui"><label for="lk-alpha">Learning rate, α = <strong id="lk-alpha-v">0.5</strong></label><input type="range" id="lk-alpha" min="0.1" max="1" step="0.1" value="0.5"></div>
+  <div id="lock-chart"></div>
+  <p class="readout" id="lock-readout">Hover the chart, or tab to it and use the arrow keys, to read the share of runs that lock onto the worse output.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each point summarises 200 simulated runs of 300 trials, all starting at p = 0.5; the runs are seeded, so the chart is the same every time. The x-axis is the offset c added to both rewards (at c = 0 the rewards are 1 and 0; at c = 4, 5 and 4). The y-axis is the share of runs that, after 300 trials, still prefer the worse output. The solid line, REINFORCE with no baseline, sits at zero while c is small (at c = 0 the worse output earns nothing, so it is never pushed up) and then rises: at the starting rate of 0.5, nearly a quarter of the runs (23.5%) prefer the worse output at c = 4, and a third at c = 6. The dashed line, with a running-average baseline (γ = 0.1, started at the first reward), stays at zero everywhere. Raise α and the solid line climbs faster: bigger steps make an early unlucky streak harder to escape. Both learners share Theorem 1's guarantee; only their noise differs, and noise is what locks the solid learner in.</p>
+<h4>Beyond the average reward</h4>
+<p>Any baseline between the two rewards fixes this example, so the theory does not single one out. One principled choice is the baseline that makes the updates least noisy (considered by Williams in 1986 and studied by Dayan in 1990); it turns out not to be the mean reward but something harder to estimate, and Dayan's simulations suggested only a slight speed-up over the mean.</p>
+<h4>Why it matters</h4>
+<p>This is why every practical policy-gradient method uses a baseline, and why the lesson's <a data-lesson="primer/ml/reinforcement.html#sampled_gradient_variance"><code>sampled_gradient_variance</code></a> measures the noise it removes (the lesson's figure shows the same lock-in on a three-armed bandit with rewards offset by 5). GRPO's group mean is a baseline in exactly this sense.</p>
+</section>
+
+<section id="s8-4">
+<h3>8.4 Alternate forms for eligibility <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The eligibility measures surprise: what the unit did minus what it was expected to do. REINFORCE uses the unit's own probability as the expectation. An alternative uses what the unit has <em>actually been doing lately</em>, a running average of its outputs.</p>
+<h4>Tiny example</h4>
+<p>A bias-only unit has recently output 1 about 60% of the time (ȳ = 0.6). It outputs 1 and the reward beats its average by 0.5. With α = 0.1 the weight changes by 0.1 × 0.5 × (1 − 0.6) = 0.02. Then ȳ moves to 0.2 × 1 + 0.8 × 0.6 = 0.68 (γ = 0.2).</p>
+<div class="eq" data-tex="\begin{gathered} \htmlData{sym=dw}{\Delta w} = \htmlData{sym=alpha}{\alpha}\,(\htmlData{sym=r}{r} - \htmlData{sym=rbar}{\bar{r}})\,(\htmlData{sym=y}{y} - \htmlData{sym=ybar}{\bar{y}}) \\[6pt] \htmlData{sym=ybar}{\bar{y}}(\htmlData{sym=t}{t}) = \htmlData{sym=gamma}{\gamma}\, \htmlData{sym=y}{y}(\htmlData{sym=t}{t} - 1) + (1 - \htmlData{sym=gamma}{\gamma})\,\htmlData{sym=ybar}{\bar{y}}(\htmlData{sym=t}{t} - 1) \end{gathered}" data-fallback="Δw = α (r − r̄)(y − ȳ),  ȳ(t) = γ y(t − 1) + (1 − γ) ȳ(t − 1)"></div>
+<div class="symtable" data-syms="ybar"></div>
+<p class="inwords"><strong>In words:</strong> “replace the unit's probability in the eligibility with a running average of its recent outputs, updated the same way as the reward average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Δw = 0.1 × 0.5 × (1 − 0.6) = 0.02; ȳ becomes 0.68.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>alpha, gamma = 0.1, 0.2
+r_minus_r_bar, y, y_bar = 0.5, 1, 0.6
+# Δw = α (r − r̄)(y − ȳ)
+round(alpha * r_minus_r_bar * (y - y_bar), 3)  # → 0.02
+# ȳ(t) = γ y(t − 1) + (1 − γ) ȳ(t − 1)
+round(gamma * y + (1 - gamma) * y_bar, 2)  # → 0.68</code></pre>
+<p>Studied by Sutton and others only on tasks with no input (the paper says it is unclear how to extend it to the associative case), this variant was found to converge faster and more reliably than REINFORCE. It is <em>not</em> a REINFORCE algorithm, so Theorem 1 does not cover it; the paper offers a possible justification in 8.5 but says it has not been fully analysed.</p>
+<h4>Why it matters</h4>
+<p>It shows the two factors of the rule can be tuned separately, which later work did extensively: centring the reward is a baseline, and centring the eligibility is a close relative of the tricks that keep gradient estimates small and steady.</p>
+</section>
+
+<section id="s8-5">
+<h3>8.5 Use of other local gradient estimates <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>You can learn which route to work is fastest either by trying routes and remembering how you felt (REINFORCE), or by building a map with travel times and planning on it (a model). The map costs effort but can answer questions you have never tried.</p>
+<h4>The paper's point</h4>
+<p>REINFORCE is “simple” in three senses: the rules are short, easy to derive for almost any random unit, and they climb the gradient without ever estimating it or storing what an estimate would need. The alternatives are <span class="t" data-tip-title="Model-based" data-tip="Learning an explicit model of how the environment (here, the reward) responds, then using that model to decide how to act or how to change the weights.">model-based</span>: learn a model of how the reward depends on the network's input and output, globally (Munro's backpropagation through a model) or locally at each unit (Thathachar and Sastry's automata that track each action's average reward, and, in a per-state sense, Q-learning). An interesting local option: at each unit, regress the reward on the unit's output; the paper suspects the ȳ variant of 8.4 is related.</p>
+<h4>Why it matters</h4>
+<p>This fork runs through all of reinforcement learning: model-free policy gradients on one side, learned value functions and world models on the other. A learned <span class="t" data-t="reward model">reward model</span> in RLHF is a model of exactly this kind, and its flaws are what <span class="t" data-t="reward hacking">reward hacking</span> exploits.</p>
+</section>
+
+<section id="s9">
+<h2>9 Conclusion <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<blockquote class="quote">“The main disadvantages are the lack of a general convergence theory applicable to this class of algorithms and, as with all gradient algorithms, an apparent susceptibility to convergence to false optima.”<cite>Williams (1992), §9</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The paper hands over a recipe, not a finished dish: a way to derive a sensible learning rule for almost any random unit, which plugs into backpropagation because it is a gradient method.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The recipe outlived its setting. “Connectionist networks of stochastic units” became “neural network policies”, the reward broadcast to every unit became the reward for a whole generated answer, and the baseline became a critic, then a group average. The disadvantages it names, noise and local optima, are the problems every successor was built to fix.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices A and B: why it works <span class="orig">· <a href="https://link.springer.com/article/10.1007/BF00992696">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Imagine pushing up on every option of a menu at once. The chances must still add up to 1, so if you raise one option's chance, others must fall. Push them all “up” together and nothing can move. That single fact is why a baseline never biases the average update.</p>
+<h3 class="rung">Tiny example</h3>
+<p>For our unit, raising w<sub>1</sub> a little raises g(1) at the rate p(1 − p) × x<sub>1</sub> = 0.393 and lowers g(0) at exactly the same rate, −0.393. Their sum is 0. So the baseline's contribution to the average update, b × (0.393 − 0.393), is 0 whatever b is.</p>
+<div class="eq" data-tex="\begin{aligned} &\htmlData{sym=sumxi}{\sum_{\xi}} \frac{\htmlData{sym=partial}{\partial}\htmlData{sym=gi}{g_i}(\htmlData{sym=xi}{\xi})}{\htmlData{sym=partial}{\partial}\htmlData{sym=wij}{w_{ij}}} \\[6pt] &= \frac{\htmlData{sym=partial}{\partial}}{\htmlData{sym=partial}{\partial}\htmlData{sym=wij}{w_{ij}}} \htmlData{sym=sumxi}{\sum_{\xi}} \htmlData{sym=gi}{g_i}(\htmlData{sym=xi}{\xi}) \\[6pt] &= \frac{\htmlData{sym=partial}{\partial}\, 1}{\htmlData{sym=partial}{\partial}\htmlData{sym=wij}{w_{ij}}} = 0 \end{aligned}" data-fallback="Σ_ξ ∂g_i(ξ)/∂w_ij = ∂/∂w_ij Σ_ξ g_i(ξ) = ∂1/∂w_ij = 0"></div>
+<div class="symtable" data-syms="sumxi,gi,xi,partial,wij"></div>
+<p class="inwords"><strong>In words:</strong> “the chances of all outputs add up to 1 whatever the weights are, so their slopes add up to 0.” This is the paper's Fact 2.</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.393 + (−0.393) = 0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x1 = 2
+p = 1 / (1 + math.exp(-1))
+# ∂g(1)/∂w_1 = ∂p/∂w_1 and ∂g(0)/∂w_1 = ∂(1 − p)/∂w_1
+dg1 = p * (1 - p) * x1
+dg0 = -p * (1 - p) * x1
+round(dg1, 3), round(dg0, 3)  # → (0.393, -0.393)
+# Σ_ξ ∂g(ξ)/∂w_1
+dg1 + dg0  # → 0.0</code></pre>
+<h3 class="rung">The proof in four steps</h3>
+<ol>
+  <li><strong>Fact 1.</strong> The expected reward's slope is Σ<sub>ξ</sub> E{r | y = ξ} × ∂g(ξ)/∂w: once the output is fixed, the weight has no further influence on the reward.</li>
+  <li><strong>Lemma 1.</strong> Write the eligibility as (1/g) ∂g/∂w and average the update over outputs: the g's cancel, the reward part becomes α times Fact 1, and the baseline part is b × Σ ∂g/∂w = 0 by Fact 2 (above). So for each fixed input, the average update is α times the slope.</li>
+  <li><strong>Lemma 2.</strong> Average over inputs as well. The unit's input does not depend on its own weights (the weight sits downstream), so the averages combine: the average update is α times the slope of E{r | W} (Fact 3).</li>
+  <li><strong>Theorem 1.</strong> The inner product of the average update with the gradient is Σ α<sub>ij</sub> × (slope)<sup>2</sup>, a sum of non-negative terms. Theorem 2 repeats the argument on the unfolded network, where each weight's slope is the sum of its copies' slopes (Fact 4). Appendix B proves Proposition 1 by the same move: Σ g ∂ln g/∂μ = 0 and Σ (y − μ) g ∂ln g/∂μ = 1 pin down the eligibility as (y − μ)/σ².</li>
+</ol>
+<h3 class="rung">Why it matters</h3>
+<p>Every modern derivation of the policy gradient, including the one in the <a data-lesson="primer/ml/reinforcement.html">reinforcement learning lesson</a>, is this argument: ∇π = π ∇log π turns a sum weighted by probabilities into an average over samples, and probabilities summing to 1 makes the baseline free.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 1992</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>A network of coin-flipping units</td><td>A neural network policy with a softmax over actions or tokens; the eligibility is one-hot minus probabilities</td><td><a data-lesson="primer/ml/reinforcement.html#grad_log_prob">grad_log_prob</a></td></tr>
+    <tr><td>Reinforcement comparison, r − r̄</td><td>Baselines everywhere: a learned critic (actor-critic, PPO's value network) or the group mean of GRPO</td><td><a data-lesson="primer/ml/reinforcement.html#group_advantages">group_advantages</a></td></tr>
+    <tr><td>Episodic REINFORCE, one reward at the end</td><td>Sequence-level rewards for whole generated answers, with every token sharing its answer's advantage</td><td><a data-lesson="primer/ml/reasoning.html">reasoning lesson</a></td></tr>
+    <tr><td>Backpropagating through a random number generator</td><td>The reparameterization trick in variational autoencoders and continuous-control policies</td><td><a data-lesson="primer/ml/generative/autoencoders.html#reparameterize">reparameterize</a></td></tr>
+    <tr><td>Slow and noisy; no convergence theory</td><td>Clipped steps (PPO), a leash to a reference model, entropy bonuses and large batches</td><td><a data-lesson="primer/ml/reinforcement.html#kl_penalised_reward">kl_penalised_reward</a></td></tr>
+    <tr><td>A reward from the environment</td><td>A reward from a learned model of human preference, or from a program that checks the answer</td><td><a href="instructgpt.html">InstructGPT companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Ronald J. Williams, <em>Simple Statistical Gradient-Following Algorithms for Connectionist Reinforcement Learning</em>, Machine Learning 8, 229 to 256 (1992). <a href="https://doi.org/10.1007/BF00992696">doi:10.1007/BF00992696</a>. Quotations are brief and attributed; the paper has no figures or tables, and every diagram, chart and worked number here is original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    xj: { tex: "x_j", name: "Input j", meaning: "The j-th number arriving at the unit, from the environment or from another unit. Here x₀ is always 1, so its weight acts as a bias.", shape: "one number per input line", example: "x = (1, 2)" },
+    wij: { tex: "w_{ij}", name: "Weight", meaning: "The adjustable number on the line from input j into unit i. Learning changes only these.", shape: "one number per input line", example: "w = (−1, 1)" },
+    sumj: { tex: "\\sum_j", name: "Sum over inputs", meaning: "Add up over every input line j feeding the unit.", shape: "", example: "two terms" },
+    si: { tex: "s_i", name: "Weighted sum", meaning: "Unit i's inputs, each multiplied by its weight, added up. Called semilinear because this part is linear.", shape: "any number", example: "(−1)(1) + (1)(2) = 1" },
+    fi: { tex: "f_i", name: "Squashing function", meaning: "A smooth function that turns any number into a probability between 0 and 1. Here the logistic function.", shape: "any number → 0 to 1", example: "f(1) = 0.731" },
+    e: { tex: "e", name: "Euler's number", meaning: "About 2.718. The logistic function uses e to the power −s, which shrinks quickly as s grows.", shape: "constant", example: "e^(−1) = 0.368" },
+    pi: { tex: "p_i", name: "Firing probability", meaning: "The chance that unit i outputs 1 on this trial: the bias of its coin.", shape: "0 to 1", example: "0.731" },
+    gi: { tex: "g_i", name: "Output distribution", meaning: "The probability that unit i produces a given output, as a function of its weights and inputs. For a coin-flipping unit it is a two-entry table.", shape: "one probability per possible output", example: "g(1) = 0.731, g(0) = 0.269" },
+    xi: { tex: "\\xi", name: "A possible output", meaning: "The Greek letter xi, standing for one value the unit's output could take.", shape: "0 or 1 here", example: "ξ = 1" },
+    wvec: { tex: "\\mathbf{w}^i", name: "Unit i's weights", meaning: "All the weights on unit i's input lines, as one list. Bold means a vector.", shape: "one number per input", example: "(−1, 1)" },
+    xvec: { tex: "\\mathbf{x}^i", name: "Unit i's input pattern", meaning: "All the inputs arriving at unit i on this trial, as one list.", shape: "one number per input", example: "(1, 2)" },
+    Er: { tex: "E\\{r \\mid \\mathbf{W}\\}", name: "Expected reinforcement", meaning: "The average reward the network earns per trial with weights W, averaged over every source of chance: inputs, outputs and rewards. The quantity learning should increase; modern papers call it J(θ).", shape: "one number", example: "0.692" },
+    Wmat: { tex: "\\mathbf{W}", name: "All the weights", meaning: "Every weight in the network, collected together. The bar | means “given”.", shape: "one number per weight", example: "(−1, 1) for our one unit" },
+    sumxi: { tex: "\\sum_{\\xi}", name: "Sum over outputs", meaning: "Add up over every output the unit could produce.", shape: "", example: "over ξ = 0 and ξ = 1" },
+    Erxi: { tex: "E\\{r \\mid \\mathbf{W}, y_i = \\xi\\}", name: "Expected reward given the output", meaning: "The average reward if unit i happens to produce output ξ.", shape: "one number per output", example: "0.8 after a 1, 0.4 after a 0" },
+    dw: { tex: "\\Delta w_{ij}", name: "Weight change", meaning: "How much this trial's update adds to weight w<sub>ij</sub>. Δ (delta) means “change in”.", shape: "one number per weight", example: "(0.0134, 0.0269)" },
+    alpha: { tex: "\\alpha_{ij}", name: "Learning rate factor", meaning: "A step size that is never negative. It may depend on the unit's weights and on time, but not on its output. Usually one shared constant α.", shape: "0 or more", example: "0.1" },
+    r: { tex: "r", name: "Reinforcement", meaning: "The one number the environment returns for the trial, broadcast to every unit: the reward.", shape: "one number", example: "1" },
+    bij: { tex: "b_{ij}", name: "Reinforcement baseline", meaning: "A comparison level subtracted from the reward. Anything is allowed as long as it does not depend on the unit's current output.", shape: "one number", example: "0.5" },
+    eij: { tex: "e_{ij}", name: "Characteristic eligibility", meaning: "How strongly raising w<sub>ij</sub> would raise the log-probability of the output the unit just produced. It depends only on the unit's own output, inputs and weights.", shape: "one number per weight", example: "(0.269, 0.538)" },
+    partial: { tex: "\\partial", name: "Partial derivative", meaning: "The slope with respect to one variable while holding every other variable still.", shape: "", example: "" },
+    ln: { tex: "\\ln", name: "Natural logarithm", meaning: "The log to base e. Its slope is (slope of g) divided by g, so rare outputs get a bigger eligibility than common ones.", shape: "", example: "ln 0.731 = −0.313" },
+    EdW: { tex: "E\\{\\Delta\\mathbf{W} \\mid \\mathbf{W}\\}", name: "Average update", meaning: "The update REINFORCE makes, averaged over everything random on a trial: the input, the output drawn and the reward.", shape: "one number per weight", example: "(0.00786, 0.01573)" },
+    T: { tex: "^{\\mathsf{T}}", name: "Transpose", meaning: "Here it turns “average update times gradient” into their dot product: multiply matching entries and add.", shape: "", example: "0.00786 × 0.0786 + 0.01573 × 0.1573 = 0.00309" },
+    grad: { tex: "\\nabla_{\\mathbf{W}}", name: "Gradient with respect to W", meaning: "One slope per weight: how fast the expected reward rises as each weight rises. It points uphill.", shape: "one number per weight", example: "(0.0786, 0.1573)" },
+    geq: { tex: "\\ge 0", name: "Never negative", meaning: "The average update never points downhill. It is 0 only where the gradient is 0 (when every rate is positive).", shape: "", example: "0.00309 ≥ 0" },
+    yi: { tex: "y_i", name: "Output of unit i", meaning: "What unit i actually produced on this trial.", shape: "0 or 1", example: "1" },
+    dp: { tex: "\\Delta p_i", name: "Change in probability", meaning: "How much this trial moves the unit's probability of outputting 1, for a unit whose only parameter is p itself.", shape: "", example: "0.0269" },
+    rho: { tex: "\\rho_i", name: "Rate (rho)", meaning: "A step size between 0 and 1 for the learning automaton. The REINFORCE rate is chosen as ρ p (1 − p) so that p(1 − p) cancels.", shape: "0 to 1", example: "0.1" },
+    rbar: { tex: "\\bar{r}", name: "Running average reward", meaning: "An average of past rewards, used as the baseline. The bar means “average”. It must not use the current trial's reward.", shape: "one number", example: "0.5, then 0.6" },
+    gamma: { tex: "\\gamma", name: "Averaging rate (gamma)", meaning: "How far the running average moves towards each new value: between 0 (never moves) and 1 (jumps to it).", shape: "0 to 1", example: "0.2" },
+    t: { tex: "t", name: "Time step", meaning: "Which trial (or which step of an episode) a value belongs to; t − 1 is the one before.", shape: "1, 2, 3, …", example: "" },
+    k: { tex: "k", name: "Episode length", meaning: "How many time steps the episode lasts before its single reward arrives.", shape: "a whole number", example: "3" },
+    sumt: { tex: "\\sum_{t=1}^{k}", name: "Sum over time steps", meaning: "Add up over every step of the episode, from the first to the k-th.", shape: "", example: "0.3 − 0.2 + 0.4" },
+    eijt: { tex: "e_{ij}(t)", name: "Eligibility at step t", meaning: "The weight's eligibility worked out from the unit's input, output and probability at time step t. It is known as soon as the step happens.", shape: "one number per step", example: "0.3, −0.2, 0.4" },
+    gG: { tex: "g", name: "Output probability or density", meaning: "For a unit with a continuous output, the density of each value y: how likely draws near y are.", shape: "0 or more", example: "the bell curve" },
+    y: { tex: "y", name: "The unit's output", meaning: "The value the unit actually drew on this trial.", shape: "any number for a Gaussian unit", example: "0.5 or 2" },
+    mu: { tex: "\\mu", name: "Mean (mu)", meaning: "The centre of the unit's output distribution: where it is searching.", shape: "any number", example: "0" },
+    sigma: { tex: "\\sigma", name: "Standard deviation (sigma)", meaning: "The spread of the unit's output distribution: how widely it explores around the mean.", shape: "above 0", example: "1" },
+    thetas: { tex: "\\theta_2, \\ldots, \\theta_k", name: "Other parameters", meaning: "Any further knobs the distribution has besides its mean (theta 2 up to theta k).", shape: "", example: "σ for a Gaussian" },
+    exp: { tex: "\\exp", name: "Exponential", meaning: "e raised to the power in the brackets. Its log is the bracket itself, which is why the proof works on ln g.", shape: "", example: "" },
+    Qf: { tex: "Q", name: "Coefficient function Q", meaning: "A function of the parameters that multiplies the outcome y. The whole class is defined by this straight-line dependence on y.", shape: "", example: "ln μ for a Poisson unit" },
+    Df: { tex: "D", name: "Parameter-only term D", meaning: "A function of the parameters alone, not of y.", shape: "", example: "−μ for a Poisson unit" },
+    Sf: { tex: "S", name: "Outcome-only term S", meaning: "A function of the outcome alone, not of the parameters.", shape: "", example: "−ln y! for a Poisson unit" },
+    sigma2: { tex: "\\sigma^2", name: "Variance", meaning: "The average squared distance of the output from its mean.", shape: "above 0", example: "2 for a Poisson unit with mean 2; p(1 − p) for a coin" },
+    sumO: { tex: "\\sum_{k \\in O}", name: "Sum over output units", meaning: "Add up over every unit k in O, the set of the network's random output units. (This k counts units, not time steps.)", shape: "", example: "one output unit here" },
+    gk: { tex: "g_k", name: "Output unit k's distribution", meaning: "The chance of output unit k's output. The network's whole output is the product of these, so its log is their sum.", shape: "", example: "g(1) = 0.731" },
+    pk: { tex: "p_k", name: "Output unit k's probability", meaning: "The firing probability of output unit k, used as a stepping stone in the chain rule.", shape: "0 to 1", example: "0.731" },
+    z: { tex: "z", name: "Standard normal draw", meaning: "A random number from a bell curve with mean 0 and spread 1, drawn separately so the rest of the computation is smooth.", shape: "any number, usually between −2 and 2", example: "0.8" },
+    J: { tex: "J", name: "Score function", meaning: "Some score that depends on the unit's output. We want the slope of its average with respect to μ.", shape: "", example: "J(y) = y²" },
+    Jp: { tex: "J'", name: "Slope of the score", meaning: "How fast J changes as its input y changes. The backprop route needs it; REINFORCE does not.", shape: "", example: "J′(y) = 2y" },
+    gRF: { tex: "\\hat{g}_{\\text{RF}}", name: "REINFORCE estimate", meaning: "A one-draw estimate of the slope using only the score's value and the mean's eligibility. The hat marks an estimate.", shape: "one number per draw", example: "averages 2, variance 21.75" },
+    gBP: { tex: "\\hat{g}_{\\text{BP}}", name: "Backprop estimate", meaning: "A one-draw estimate of the slope that passes the score's slope back through y = μ + σz.", shape: "one number per draw", example: "averages 2, variance 1.0" },
+    ybar: { tex: "\\bar{y}", name: "Running average output", meaning: "An average of the unit's recent outputs, used in place of p as the unit's expected output.", shape: "0 to 1 for a coin", example: "0.6, then 0.68" },
+  },
+  blocks: {
+    inputs: { title: "Inputs", body: "<p>The numbers arriving at the unit: x₀ = 1 is a constant (so its weight works as a bias) and x₁ = 2 comes from the environment or another unit.</p>", shape: "x = (1, 2)" },
+    weights: { title: "Weights", body: "<p>One adjustable number per input line. They are the only thing learning changes. Follow the long wire from the update box on the right: that is where each trial's change lands.</p>", shape: "w = (−1, 1)" },
+    sum: { title: "Weighted sum", body: "<p>s = Σ w<sub>j</sub> x<sub>j</sub> = (−1)(1) + (1)(2) = 1. The semilinear part of the unit.</p>" },
+    squash: { title: "Logistic squash", body: "<p>p = 1 / (1 + e<sup>−s</sup>) = 0.731: the chance this unit outputs 1. A bigger sum means a more confident unit.</p>" },
+    coin: { title: "Coin flip", body: "<p>The unit draws its output at random: 1 with chance 0.731, 0 with chance 0.269. This randomness is how it explores. On this trial it came up 1.</p>" },
+    env: { title: "Environment", body: "<p>Scores the output and broadcasts one number back. Here output 1 pays 1 with chance 0.8 and output 0 with chance 0.4. The unit never sees these chances, only the reward: r = 1 this time.</p>" },
+    baseline: { title: "Baseline", body: "<p>A comparison level, such as a running average of past rewards. It must not depend on this trial's output. Here b = 0.5.</p>" },
+    offset: { title: "Offset reinforcement", body: "<p>r − b = 1 − 0.5 = 0.5: how much better than typical this trial went. Positive means “do more of that”; negative means “less”.</p>" },
+    elig: { title: "Characteristic eligibility", body: "<p>How to change each weight to make the output just produced more likely: (y − p) × input = 0.269 × (1, 2) = (0.269, 0.538). It uses only the unit's own input, output and probability.</p>", lesson: "primer/ml/reinforcement.html#grad_log_prob" },
+    update: { title: "Weight update", body: "<p>Δw = α(r − b)e = 0.1 × 0.5 × (0.269, 0.538) = (0.0134, 0.0269), added to the weights. Both weights rise, so output 1 becomes a little more likely.</p>", lesson: "primer/ml/reinforcement.html#reinforce_step" },
+    a_ri: { title: "REward Increment: Δw<sub>ij</sub>", body: "<p>The change made to one weight after a trial: the thing the rule computes.</p>" },
+    a_nf: { title: "Nonnegative Factor: α<sub>ij</sub>", body: "<p>A step size that can never be negative, so it never flips the direction of the step. It may depend on the weights and on time, never on the output.</p>" },
+    a_or: { title: "Offset Reinforcement: r − b<sub>ij</sub>", body: "<p>The reward shifted by a baseline. The only factor that knows how the trial went.</p>" },
+    a_ce: { title: "Characteristic Eligibility: e<sub>ij</sub>", body: "<p>∂ ln g / ∂w: the only factor that knows what this particular unit did, and how its weight could make that likelier.</p>" },
+    net: { title: "A network with a loop", body: "<p>A unit whose output at one step feeds back as input at the next, so its early choices affect its later ones. The reward comes only when the episode ends.</p>" },
+    unit: { title: "The unit and its weight", body: "<p>One weight w, used at every step. The loop arrow is the feedback from one step to the next.</p>" },
+    copies: { title: "Unfolded in time", body: "<p>One copy of the network per step, all sharing the same weight. The loop has become a chain with no cycles, so the one-step theory applies to each copy.</p>" },
+    eligt: { title: "Eligibility at each step", body: "<p>Each copy computes its eligibility e(t) from that step's input, output and probability, as it happens: 0.3, −0.2, 0.4.</p>" },
+    accum: { title: "Accumulator", body: "<p>One running total per weight, updated every step: Σ e(t) = 0.5. It needs nothing from the future, which is what makes the rule practical to run online.</p>" },
+    endreward: { title: "Reward at the end", body: "<p>A single reward r = 1 arrives when the episode finishes. Every step shares it equally.</p>" },
+    epupdate: { title: "Episodic update", body: "<p>Δw = α(r − b) Σ e(t) = 0.1 × (1 − 0.4) × 0.5 = 0.03. Theorem 2: on average this climbs the expected reward too.</p>" },
+    params: { title: "Mean and spread", body: "<p>The unit's two knobs: μ = 1 and σ = 0.5 in the tiny example.</p>" },
+    draw: { title: "A black-box draw", body: "<p>The output is drawn from the bell curve. Nudging μ changes which values are likely, but any single draw has no slope.</p>" },
+    J: { title: "The score J(y)", body: "<p>Whatever judges the output. The same function in both routes; in the worked comparison, J(y) = y².</p>" },
+    sfgrad: { title: "REINFORCE estimate", body: "<p>Score times the mean's eligibility, (y − μ)/σ². Needs only the value of J, so it works even when J has no slope. Noisy: variance 21.75 in the worked comparison.</p>", lesson: "primer/ml/reinforcement.html" },
+    noise: { title: "Noise, drawn first", body: "<p>z from a standard bell curve (mean 0, spread 1), drawn separately and then held fixed. All the randomness lives here.</p>" },
+    reparam: { title: "y = μ + σz", body: "<p>A smooth function of μ and σ once z is fixed: ∂y/∂μ = 1 and ∂y/∂σ = z. Now backpropagation can pass through the draw.</p>", lesson: "primer/ml/generative/autoencoders.html#reparameterize" },
+    pwgrad: { title: "Backprop estimate", body: "<p>The score's slope times ∂y/∂μ = 1. Needs J to have a slope, but is much quieter: variance 1.0 in the worked comparison.</p>" },
+  },
+  onReady(P) { eligChart(P); lockExplorer(P); },
+};
+
+/* ---- §8.2: the Gaussian unit's two eligibilities against where the draw landed (μ = 0, σ = 1) ---- */
+function eligChart(P) {
+  const box = document.getElementById("elig-chart");
+  const ys = Array.from({ length: 121 }, (_, i) => -3 + i * 0.05);
+  P.lineChart(box, {
+    series: [
+      { name: "eligibility of μ: (y − μ)/σ²", points: ys.map((y) => [y, y]) },
+      { name: "eligibility of σ: ((y − μ)² − σ²)/σ³", points: ys.map((y) => [y, y * y - 1]) },
+    ],
+    width: Math.max(320, Math.min(640, box.clientWidth)), height: 280,
+    yMin: -3, yMax: 8,
+    xLabel: "where the draw landed, y (μ = 0, σ = 1)", yLabel: "eligibility",
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("elig-readout"),
+    ariaLabel: "Eligibility of the mean and of the spread against where the draw landed",
+  });
+}
+
+/* ---- §8.3: how often a bias-only unit locks onto the worse output, with and without a baseline ---- */
+// A small seeded generator, so every reader sees the same 200 runs.
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// One run: p = logistic(w); output 1 pays c + 1, output 0 pays c. Returns p after `trials` updates.
+function lockRun(c, alpha, comparison, seed, trials = 300, gamma = 0.1) {
+  const rand = mulberry32(seed);
+  let w = 0, rbar = null;
+  for (let t = 0; t < trials; t++) {
+    const p = 1 / (1 + Math.exp(-w));
+    const y = rand() < p ? 1 : 0;
+    const r = c + y;
+    // Reinforcement comparison: the average of earlier rewards; on the first trial there is none, so r is its own baseline.
+    const b = comparison ? (rbar === null ? r : rbar) : 0;
+    w += alpha * (r - b) * (y - p);
+    if (comparison) rbar = rbar === null ? r : gamma * r + (1 - gamma) * rbar;
+  }
+  return 1 / (1 + Math.exp(-w));
+}
+function lockShare(c, alpha, comparison, runs = 200) {
+  let worse = 0;
+  for (let s = 1; s <= runs; s++) if (lockRun(c, alpha, comparison, s) < 0.5) worse++;
+  return worse / runs;
+}
+function lockExplorer(P) {
+  const slider = document.getElementById("lk-alpha");
+  const box = document.getElementById("lock-chart");
+  const cs = Array.from({ length: 13 }, (_, i) => i * 0.5);
+  const series = (alpha) => [
+    { name: "no baseline (b = 0)", points: cs.map((c) => [c, lockShare(c, alpha, false)]) },
+    { name: "reinforcement comparison (b = average reward)", points: cs.map((c) => [c, lockShare(c, alpha, true)]) },
+  ];
+  const chart = P.lineChart(box, {
+    series: series(+slider.value), yMin: 0, yMax: 0.5,
+    width: Math.max(320, Math.min(640, box.clientWidth)), height: 280,
+    xLabel: "offset c added to both rewards", yLabel: "share of runs preferring the worse output",
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("lock-readout"),
+    ariaLabel: "Share of runs that lock onto the worse output against the reward offset, with and without a baseline",
+  });
+  const redraw = () => {
+    const alpha = +slider.value;
+    document.getElementById("lk-alpha-v").textContent = alpha.toFixed(1);
+    const s = series(alpha);
+    chart.update(s);
+    const at = (i, c) => s[i].points.find((pt) => pt[0] === c)[1];
+    document.getElementById("lock-readout").textContent =
+      `Learning rate ${alpha.toFixed(1)}: with rewards offset by 4, ${(100 * at(0, 4)).toFixed(1)}% of runs with no baseline end up preferring the worse output (${(100 * at(0, 6)).toFixed(1)}% at offset 6); ` +
+      `with reinforcement comparison, ${(100 * at(1, 4)).toFixed(1)}%.`;
+  };
+  slider.addEventListener("input", redraw);
+  redraw();
+}
+</script>
+</body>
+</html>

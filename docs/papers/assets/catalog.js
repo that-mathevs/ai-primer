@@ -500,7 +500,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.reinforcement"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "ppo",

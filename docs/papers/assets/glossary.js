@@ -34,6 +34,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/interpretability.html",
   "term": "activation patching"
  },
+ "actor-critic": {
+  "def": "A reinforcement learning setup in two parts: the actor (the policy) chooses actions, and the critic learns to predict how well they will turn out, supplying the baseline.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "actor-critic"
+ },
  "adagrad": {
   "def": "An optimizer that divides each weight's step by the square root of the sum of all its past squared gradients, so steps only ever shrink.",
   "lesson": "primer/ml/optimizers.html",
@@ -3408,6 +3413,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A projection to 2-D that keeps each point's neighbours close but distorts other distances.",
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "UMAP"
+ },
+ "unbiased estimate": {
+  "def": "An estimate that is right on average: any single one may be off, but the errors cancel over many tries.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "unbiased estimate"
  },
  "underfitting": {
   "def": "When a model is too simple, or undertrained, to capture the pattern at all.",

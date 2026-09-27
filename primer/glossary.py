@@ -553,6 +553,7 @@ GLOSSARY: dict[str, Entry] = {
     # Added with the lessons on training at scale, reasoning, generation, and more.
     'activation checkpointing': _E("Keeping only each layer's input and recomputing the rest during the backward pass.", 'primer.ml.pretraining'),
     'activation patching': _E('Copying one activation from a clean run into a corrupted run to measure how much of the right answer returns; also called causal tracing.', 'primer.ml.interpretability'),
+    'actor-critic': _E('A reinforcement learning setup in two parts: the actor (the policy) chooses actions, and the critic learns to predict how well they will turn out, supplying the baseline.', 'primer.ml.reinforcement'),
     'advantage': _E('How much better an action did than typical: reward minus baseline.', 'primer.ml.reinforcement', scope=('primer/ml/reinforcement',)),
     'alignment': _E("Making a model's behaviour match what we want (helpful, honest, harmless), not just the measurements we optimize.", 'primer.ml.alignment', scope=('primer/ml/alignment',)),
     'all-reduce': _E('Summing a value across GPUs so every GPU ends up holding the total.', 'primer.ml.hardware'),
@@ -766,6 +767,7 @@ GLOSSARY: dict[str, Entry] = {
     'tuned lens': _E('A logit lens with a small learned translator per layer.', 'primer.ml.interpretability'),
     'two time-scale update rule': _E('Giving the generator and discriminator different learning rates so the game converges.', 'primer.ml.generative.gans'),
     'underflow': _E('A number too small for its format, rounded to zero.', 'primer.ml.pretraining', scope=('primer/ml/pretraining',)),
+    'unbiased estimate': _E('An estimate that is right on average: any single one may be off, but the errors cancel over many tries.', 'primer.ml.reinforcement'),
     'vae': _E('Variational autoencoder: an autoencoder whose codes are pulled towards a bell curve, so random codes decode to new data.', 'primer.ml.generative.autoencoders'),
     'value network': _E("A second model (the critic) that predicts expected reward, used as PPO's baseline.", 'primer.ml.reinforcement'),
     'variational autoencoder': _E('An autoencoder whose encoder outputs a fuzzy region (mean and spread) pulled towards the standard normal, so random codes decode to new data.', 'primer.ml.generative.autoencoders'),
