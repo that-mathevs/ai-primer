@@ -384,6 +384,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/retrieval.html",
   "term": "BM25"
  },
+ "boosting": {
+  "def": "Building a strong model from many weak ones trained one after another, each concentrating on what the ones before it still get wrong.",
+  "lesson": "primer/ml/classical.html",
+  "term": "boosting"
+ },
  "bootstrap": {
   "def": "Measuring uncertainty by rescoring many with-replacement resamples of your own data.",
   "lesson": "primer/ml/benchmarks.html",
@@ -1574,6 +1579,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/hardware.html",
   "term": "host memory"
  },
+ "huber loss": {
+  "def": "A loss that is squared for small errors and grows only in proportion to the error beyond a threshold δ, so a few wild outliers cannot dominate the fit.",
+  "lesson": "primer/ml/losses.html",
+  "term": "Huber loss"
+ },
  "huffman tree": {
   "def": "A binary tree that gives frequent items short codes and rare items long ones.",
   "lesson": "primer/ml/embeddings/word2vec.html",
@@ -1728,6 +1738,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Storing each weight as an 8-bit integer times a shared scale.",
   "lesson": "primer/ml/inference.html",
   "term": "int8 quantization"
+ },
+ "interaction effect": {
+  "def": "Part of a prediction that depends on how two or more inputs combine, beyond what each contributes on its own: size mattering more in one city than another.",
+  "lesson": null,
+  "term": "interaction effect"
  },
  "interference": {
   "def": "Signals getting in each other's way: other features leaking into one feature's reading (superposition), or merged task vectors changing the same weights in opposite directions (model merging).",
@@ -1954,6 +1969,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/guardrails.html",
   "term": "lethal trifecta"
  },
+ "line search": {
+  "def": "Having picked a direction to move in, trying different step lengths along it and keeping the one that lowers the loss most.",
+  "lesson": null,
+  "term": "line search"
+ },
  "linear attention": {
   "def": "Attention variants that avoid scoring every pair of tokens, so cost grows in proportion to n instead of n².",
   "lesson": "primer/ml/attention.html",
@@ -2023,6 +2043,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A spectrogram pooled into mel bands with loudness on a log scale: what speech models read.",
   "lesson": "primer/ml/generative/multimodal.html",
   "term": "log-mel spectrogram"
+ },
+ "log-odds": {
+  "def": "The logarithm of p / (1 − p): 0 for a 50% chance, positive when more likely than not. A sigmoid turns log-odds back into a probability.",
+  "lesson": "primer/ml/classical.html",
+  "term": "log-odds"
  },
  "log-probability": {
   "def": "The logarithm of a probability; for a whole response, the sum of its tokens' log-probabilities.",
@@ -2229,6 +2254,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/similarity.html",
   "term": "mean-centering"
  },
+ "median": {
+  "def": "The middle value once numbers are sorted (the average of the two middle ones for an even count). Unlike the mean, one extreme value barely moves it.",
+  "lesson": null,
+  "term": "median"
+ },
  "mel scale": {
   "def": "A relabelling of frequency so equal steps sound equally far apart to human ears.",
   "lesson": "primer/ml/generative/multimodal.html",
@@ -2424,6 +2454,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/neural_net.html",
   "term": "neuron"
  },
+ "newton's method": {
+  "def": "A step that uses the curvature (second derivative) as well as the slope: divide the slope by the curvature to jump to the bottom of the parabola that matches the loss at the current point.",
+  "lesson": null,
+  "term": "Newton's method"
+ },
  "nf4": {
   "def": "4-bit NormalFloat: a 4-bit number format whose 16 levels are spaced to match the bell-curve shape of neural network weights.",
   "lesson": "primer/ml/inference.html",
@@ -2613,6 +2648,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Matching small chunks but returning the larger section around them.",
   "lesson": "primer/agents/rag.html",
   "term": "parent-child retrieval"
+ },
+ "partial dependence plot": {
+  "def": "A plot of a model's average prediction as one or two inputs are set to each value in turn, with every other input left as it is in the data.",
+  "lesson": null,
+  "term": "partial dependence plot"
  },
  "pass-to-pass test": {
   "def": "A hidden test that passed before a fix and must still pass after it.",
@@ -2928,6 +2968,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A rule or classifier that throws out low-quality pages before training.",
   "lesson": "primer/ml/pretraining.html",
   "term": "quality filter"
+ },
+ "quantile": {
+  "def": "The value below which a given share of the data falls: the 0.5 quantile is the median, the 0.9 quantile has 90% of values below it.",
+  "lesson": null,
+  "term": "quantile"
  },
  "quantization": {
   "def": "Storing numbers with fewer bits (say 8 or 4 instead of 16 or 32), which shrinks memory with a small loss of precision.",

@@ -982,6 +982,7 @@ or when the model must be trained end to end with other neural parts.
   Annals of Statistics 29 (2001)**: https://doi.org/10.1214/aos/1013203451.
   Framed boosting as gradient descent in function space, fitting each tree
   to the negative gradient of any differentiable loss, with shrinkage.
+  [Annotated companion](../../papers/gradient-boosting-machine.html)
 - **Chen and Guestrin, *XGBoost: A Scalable Tree Boosting System* (2016)**:
   https://arxiv.org/abs/1603.02754. A regularized, second-order boosting
   objective with fast, sparsity-aware split finding, which made boosted

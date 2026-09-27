@@ -194,7 +194,7 @@ sum(1 for m in mg if m &lt; 0) / len(mg)  # → 0.25</code></pre>
 </div>
 <p class="reading"><strong>Reading it:</strong> the horizontal axis is the number of trees that have voted on one email (log scale), and the solid line is the margin after that many votes. The dashed line is the limit the theorem promises, 2P<sub>Θ</sub> − 1 for two classes. The first few trees swing the margin wildly (one tree gives +1 or −1), but by a few hundred trees the line hugs its limit. Drag the slider below 0.5: the limit drops below zero and the forest settles on the wrong answer for this email, however many trees you add. More trees remove the luck of the draw; they cannot fix trees that are wrong more often than right.</p>
 <h4>Why it matters</h4>
-<p>This is why the number of trees is the one setting of a forest that needs no tuning: pick “enough”, and past that point only time is spent. The lesson measures the same plateau with <a data-lesson="primer/ml/classical.html#forest_curve"><code>forest_curve</code></a>. Contrast gradient boosting, where adding rounds does overfit (see the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a>).</p>
+<p>This is why the number of trees is the one setting of a forest that needs no tuning: pick “enough”, and past that point only time is spent. The lesson measures the same plateau with <a data-lesson="primer/ml/classical.html#forest_curve"><code>forest_curve</code></a>. Contrast gradient boosting, where adding rounds does overfit (see the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a> and the <a href="gradient-boosting-machine.html">gradient boosting machine companion</a>).</p>
 </section>
 
 <section id="s2-2">
@@ -562,7 +562,7 @@ sum(1 for k in oob_trees if vote[k] == "spam") / len(oob_trees)  # → 1.0</code
   <tbody>
     <tr><td>F = 1 or int(log<sub>2</sub> M + 1) inputs per node</td><td>About the square root of the number of inputs for classification</td><td>A middle ground between the paper's two settings that works on most tables</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
     <tr><td>Importance by scrambling inputs in the out-of-bag rows</td><td>Permutation importance on a held-out set, for any model; impurity importance as a quick look</td><td>Impurity importance is biased towards inputs with many distinct values</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
-    <tr><td>Forests versus Adaboost</td><td>Forests versus gradient-boosted trees</td><td>Boosting with shrinkage and subsampling usually edges out forests when tuned; forests need less tuning</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
+    <tr><td>Forests versus Adaboost</td><td>Forests versus gradient-boosted trees</td><td>Boosting with shrinkage and subsampling usually edges out forests when tuned; forests need less tuning</td><td><a href="gradient-boosting-machine.html">gradient boosting companion</a></td></tr>
     <tr><td>Averaging many randomized models</td><td>The same idea inside neural networks</td><td>Dropout trains an implicit ensemble of thinned networks</td><td><a href="dropout.html">dropout companion</a></td></tr>
   </tbody>
 </table></div>

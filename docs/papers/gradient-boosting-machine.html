@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gradient Boosting Machine (Friedman 2001), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Friedman (2001), the paper that turned boosting into gradient descent on predictions: fit each small tree to the negative gradient of any loss, then shrink the step.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="gradient-boosting-machine">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Function estimation</a></li>
+      <li><a href="#s2">2 Optimization in function space</a></li>
+      <li><a href="#s3">3 Finite data</a></li>
+      <li><a href="#s4">4 Applications: additive modeling</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Least squares</a></li>
+          <li><a href="#s4-2">4.2 Least absolute deviation</a></li>
+          <li><a href="#s4-3">4.3 Regression trees</a></li>
+          <li><a href="#s4-4">4.4 M-regression (Huber)</a></li>
+          <li><a href="#s4-5">4.5 Two-class classification</a></li>
+          <li><a href="#s4-6">4.6 Multi-class classification</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Regularization: shrinkage</a></li>
+      <li><a href="#s6">6 Simulation studies</a></li>
+      <li><a href="#s7">7 Tree boosting: how big a tree?</a></li>
+      <li><a href="#s8">8 Interpretation</a>
+        <ol>
+          <li><a href="#s8-1">8.1 Relative importance</a></li>
+          <li><a href="#s8-2">8.2 Partial dependence</a></li>
+        </ol>
+      </li>
+      <li><a href="#s9">9 Real data</a></li>
+      <li><a href="#s10">10 Data mining</a></li>
+      <li><a href="#today">What changed since 2001</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Greedy Function Approximation: A Gradient Boosting Machine, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Jerome H. Friedman (2001), the paper that recast boosting as gradient descent on the predictions themselves, and built gradient-boosted trees for any loss.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://projecteuclid.org/journals/annals-of-statistics/volume-29/issue-5/Greedy-function-approximation-A-gradient-boosting-machine/10.1214/aos/1013203451.full">Paper at Project Euclid</a>
+    <a class="btn" href="https://doi.org/10.1214/aos/1013203451">DOI</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. The paper appeared in <em>The Annals of Statistics</em>, volume 29, number 5 (2001), and began as the IMS 1999 Reitz Lecture. It is not published under an open licence, so this page quotes at most a sentence or two per section (clearly marked), reproduces only a few selected rows of its tables with attribution, and explains everything in its own words. The equations are reproduced with every symbol decoded, keeping the paper's equation numbers. Every diagram and chart is redrawn. The worked examples are our own, built on four houses and four emails small enough to check by hand. The journal offers no links to individual sections, so each section's “original” link opens the article's DOI.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The diagrams are live: hover or tap a part. The playground in §5 boosts small trees in your browser: switch the loss, drag the learning rate and the number of trees, and watch three bad labels pull the fit off course, or not.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it matters</strong> today. The running example is the one the <a class="lesson" data-lesson="primer/ml/classical.html">trees and boosting lesson</a> uses: four houses of size 1, 2, 3 and 4 that sold for 1, 2, 6 and 7. The lesson's <a data-lesson="primer/ml/classical.html#GradientBoosting"><code>GradientBoosting</code></a> is this paper's Algorithm 1 in about thirty lines of NumPy.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<blockquote class="quote">“Function estimation/approximation is viewed from the perspective of numerical optimization in function space, rather than parameter space.”<cite>Friedman (2001), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A sculptor does not carve a statue in one blow. Each tap removes a little of what is still wrong, guided by where the stone most differs from the figure in mind. This paper says <span class="t" data-t="boosting">boosting</span> is exactly that: every new small tree is a tap aimed at the direction in which the current model's mistakes shrink fastest. That direction is the <span class="t" data-t="gradient">gradient</span> of the loss, and because every loss has one, the same recipe works for prices, for yes/no labels, for data full of outliers.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Adding one small model at a time, each chosen to reduce the loss, is <span class="t" data-t="gradient descent">gradient descent</span> carried out on the predictions rather than on weights (§2 and §3).</li>
+  <li>A single generic algorithm, Gradient_Boost, works for any differentiable loss: fit a tree by least squares to the negative gradient, then choose the step size for the actual loss (Algorithm 1).</li>
+  <li>With trees as the small models, each leaf can get its own best step, giving the “TreeBoost” algorithms for squared error, absolute error, the Huber loss and logistic classification (§4).</li>
+  <li>Shrinking every step by a <span class="t" data-t="learning rate">learning rate</span> ν makes the result markedly more accurate, at the price of more trees (§5).</li>
+  <li>Boosted trees can be read through relative importance and partial dependence plots (§8), and inherit trees' robustness to messy data (§10).</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p><span class="t" data-t="gradient boosting">Gradient-boosted trees</span> are the most common winning model on <span class="t" data-t="tabular data">tabular data</span>. XGBoost, LightGBM, CatBoost and scikit-learn's boosting all run this paper's loop, with refinements. See the <a href="xgboost.html">XGBoost companion</a> for the most influential of those refinements.</p>
+</section>
+
+<section id="s1">
+<h2>1 Function estimation <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Learning from examples means finding the rule F that turns inputs x (a house's size) into guesses for the output y (its price) so that, on average over all houses the world could produce, a chosen penalty for bad guesses is as small as possible. The penalty is the <span class="t" data-t="loss function">loss function</span> L(y, F). Pick a different penalty and a different rule is best.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Suppose the rule may only be a single constant guess c for every house. With the squared penalty (y − c)<sup>2</sup>, the best constant for prices 1, 2, 6 and 7 is their average, 4. With the absolute penalty |y − c|, any value between the two middle prices is best, and the <span class="t" data-t="median">median</span> 4 is the usual pick. For these four prices the two agree; §4.2 shows a case where they do not.</p>
+<div class="eq" data-tex="\htmlData{sym=Fstar}{F^*} = \htmlData{sym=argmin}{\arg\min_F}\; \htmlData{sym=Eyx}{E_{y,\mathbf{x}}}\, \htmlData{sym=L}{L}(\htmlData{sym=y}{y}, \htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}})) \qquad (1)" data-fallback="F* = argmin_F E_{y,x} L(y, F(x))   (1)"></div>
+<div class="symtable" data-syms="Fstar,argmin,Eyx,L,y,F,x"></div>
+<p class="inwords"><strong>In words:</strong> “the best rule is the one whose average penalty, over every input and output the world could produce, is smallest.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with only constants allowed and the four prices as the whole world, the average squared penalty at c = 4 is (9 + 4 + 4 + 9)/4 = 6.5, lower than at c = 3 (7.5) or c = 5 (7.5). The average absolute penalty at c = 4 is (3 + 2 + 2 + 3)/4 = 2.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>y = [1, 2, 6, 7]
+# E L(y, c): the average penalty of the constant guess c
+def avg_squared(c):
+    return sum((y_i - c) ** 2 for y_i in y) / len(y)
+[avg_squared(c) for c in (3, 4, 5)]  # → [7.5, 6.5, 7.5]
+# the absolute penalty at c = 4
+sum(abs(y_i - 4) for y_i in y) / len(y)  # → 2.5</code></pre>
+<p>The paper then restricts F to an <strong>additive expansion</strong>: a sum of M simple pieces h(x; a<sub>m</sub>), each with its own parameters a<sub>m</sub> and weight β<sub>m</sub>. Neural networks, splines and wavelets all have this shape; the paper's case of interest is where each piece is a small <span class="t" data-t="decision tree">regression tree</span>, whose parameters are its splitting variables, split points and leaf values.</p>
+<div class="eq" data-tex="\htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}}; \{\htmlData{sym=beta}{\beta_m}, \htmlData{sym=am}{\mathbf{a}_m}\}_1^M) = \htmlData{sym=summ}{\sum_{m=1}^{M}} \htmlData{sym=beta}{\beta_m}\, \htmlData{sym=h}{h}(\htmlData{sym=x}{\mathbf{x}}; \htmlData{sym=am}{\mathbf{a}_m}) \qquad (2)" data-fallback="F(x; {β_m, a_m}) = Σ_{m=1}^{M} β_m h(x; a_m)   (2)"></div>
+<div class="symtable" data-syms="summ,beta,h,am"></div>
+<p class="inwords"><strong>In words:</strong> “the model is a weighted sum of M simple functions of the input, each shaped by its own parameters.”</p>
+<p class="inwords"><strong>With the numbers:</strong> one stump, h(x) = −2.5 if size ≤ 2.5 and +2.5 otherwise, with weight β = 1, added to a constant 4: F(4) = 4 + 1 × 2.5 = 6.5 and F(1) = 4 − 2.5 = 1.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># h(x; a): a stump that splits size at 2.5
+def h(x):
+    return -2.5 if x &lt;= 2.5 else 2.5
+beta = 1.0
+# F(x) = 4 + β h(x)
+[4 + beta * h(x) for x in (1, 4)]  # → [1.5, 6.5]</code></pre>
+<h3 class="rung">1.1 and 1.2: optimizing parameters, one step at a time</h3>
+<p>With the shape fixed, learning becomes choosing parameters. Most methods do that by building the answer as a sum of steps: start from a guess, then repeatedly move the parameters a little in the direction that lowers the loss fastest, which is the negative gradient, by an amount found by a <span class="t" data-t="line search">line search</span>. That is <span class="t" data-t="gradient descent">steepest descent</span>, the ancestor of every optimizer in the <a data-lesson="primer/ml/optimizers.html">optimizers lesson</a>.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Separating the loss L from the model F is the move that makes the rest of the paper general: every algorithm that follows is the same loop with a different L plugged in.</p>
+</section>
+
+<section id="s2">
+<h2>2 Numerical optimization in function space <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Instead of turning the knobs of a machine and watching all its outputs move at once, imagine reaching in and moving each output directly. If the machine predicts four house prices, treat those four predictions themselves as the four knobs. The slope of the loss with respect to each prediction says which way that one prediction should move.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Start from F = (4, 4, 4, 4) for the four houses. With the squared loss ½(y − F)<sup>2</sup>, the slope for each house is F − y = (3, 2, −2, −3). Stepping the other way by a full unit moves the predictions to (1, 2, 6, 7): every price hit exactly. That is suspiciously perfect, and useless for a house of size 2.5, which is not one of the four knobs. §3 fixes this.</p>
+<div class="eq" data-tex="\htmlData{sym=fm}{f_m}(\htmlData{sym=x}{\mathbf{x}}) = -\htmlData{sym=rhom}{\rho_m}\, \htmlData{sym=gm}{g_m}(\htmlData{sym=x}{\mathbf{x}}), \qquad \htmlData{sym=gm}{g_m}(\htmlData{sym=x}{\mathbf{x}}) = \htmlData{sym=Ey}{E_y}\!\left[\htmlData{sym=dLdF}{\frac{\partial L(y, F(\mathbf{x}))}{\partial F(\mathbf{x})}} \,\Big|\, \htmlData{sym=x}{\mathbf{x}}\right]_{F = F_{m-1}} \qquad (6, 7)" data-fallback="f_m(x) = −ρ_m g_m(x),  g_m(x) = E_y[∂L(y, F(x))/∂F(x) | x] at F = F_{m−1}   (6, 7)"></div>
+<div class="symtable" data-syms="fm,rhom,gm,Ey,dLdF"></div>
+<p class="inwords"><strong>In words:</strong> “at every input, the next increment moves the prediction against the average slope of the loss there, by a step size ρ.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for house 4, y = 7 and F<sub>0</sub> = 4, so the slope of ½(7 − F)<sup>2</sup> at F = 4 is 4 − 7 = −3, and with ρ = 1 the increment is +3: the prediction moves from 4 to 7.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>y, F, eps = 7.0, 4.0, 1e-6
+# ∂L/∂F for L = ½(y − F)², measured by nudging F both ways
+g = (0.5 * (y - (F + eps)) ** 2 - 0.5 * (y - (F - eps)) ** 2) / (2 * eps)
+round(g, 6)  # → -3.0
+rho = 1.0
+# f_m = −ρ g_m
+round(-rho * g, 6)  # → 3.0</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>This is the paper's central reframing. In ordinary training the gradient is taken with respect to weights; here it is taken with respect to the predictions. The same idea explains why, in the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a>, the residual y − F is called a negative gradient.</p>
+</section>
+
+<section id="s3">
+<h2>3 Finite data <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<blockquote class="quote">“This permits the replacement of the difficult function minimization problem (9) by least-squares function minimization (11), followed by only a single parameter optimization based on the original criterion (12).”<cite>Friedman (2001), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The gradient from §2 exists only at the houses in the training data: four arrows saying “this one up by 3, that one down by 2”. To predict for a house nobody has seen, the paper looks for the small tree whose predictions point <em>most nearly in the same direction</em> as those arrows. The tree is a smooth-enough stand-in for the arrows that also has an answer everywhere else.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The arrows (the negative gradient, called the <strong>pseudo-responses</strong> ỹ) for the four houses are −3, −2, +2, +3. Among all stumps, the one splitting at size 2.5 and predicting −2.5 on the left and +2.5 on the right fits them best by least squares (leftover squared error 1, against 14 for either other split). The line search then asks how far to move along that stump; for squared loss the answer is ρ = 1.</p>
+<figure class="ix" id="fig-proj">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 230" role="img" aria-label="Four houses: the negative gradient at each is an arrow; a stump approximates the arrows with one flat value on each side of size 2.5">
+    <defs><marker id="arrp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk plain" data-block="zero"><path class="wire" d="M28,110 H290"/><text x="24" y="114" text-anchor="end" class="lbl">0</text></g>
+    <text x="24" y="54" text-anchor="end" class="lbl">+3</text>
+    <text x="24" y="174" text-anchor="end" class="lbl">−3</text>
+    <path class="wire" d="M28,50 H34 M28,170 H34"/>
+    <g class="blk ff" data-block="leafL"><rect x="45" y="157" width="110" height="6" rx="2"/><text x="100" y="185" text-anchor="middle" class="lbl">tree: −2.5</text></g>
+    <g class="blk ff" data-block="leafR"><rect x="165" y="57" width="110" height="6" rx="2"/><text x="220" y="48" text-anchor="middle" class="lbl">tree: +2.5</text></g>
+    <g class="blk attn" data-block="g1"><path class="wire" d="M72,110 V168" marker-end="url(#arrp)" style="stroke-width:2"/><circle cx="72" cy="110" r="3"/></g>
+    <g class="blk attn" data-block="g2"><path class="wire" d="M128,110 V148" marker-end="url(#arrp)" style="stroke-width:2"/><circle cx="128" cy="110" r="3"/></g>
+    <g class="blk attn" data-block="g3"><path class="wire" d="M192,110 V72" marker-end="url(#arrp)" style="stroke-width:2"/><circle cx="192" cy="110" r="3"/></g>
+    <g class="blk attn" data-block="g4"><path class="wire" d="M248,110 V52" marker-end="url(#arrp)" style="stroke-width:2"/><circle cx="248" cy="110" r="3"/></g>
+    <path class="wire" d="M160,30 V200" stroke-dasharray="4 4"/>
+    <text x="160" y="24" text-anchor="middle" class="lbl">split: size 2.5</text>
+    <text x="72" y="215" text-anchor="middle" class="lbl">house 1</text>
+    <text x="128" y="215" text-anchor="middle" class="lbl">house 2</text>
+    <text x="192" y="215" text-anchor="middle" class="lbl">house 3</text>
+    <text x="248" y="215" text-anchor="middle" class="lbl">house 4</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap an arrow or a flat bar.</p></div>
+  </div>
+  <figcaption>The step in §3 for the four houses, drawn for this page: the negative gradient at each training point (arrows) and the stump fitted to it by least squares (flat bars).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each arrow starts at zero and shows how far, and which way, one house's prediction should move to reduce its squared error fastest: that is the negative gradient, −g. The two flat bars are the stump's answer: one value for every house left of the dashed split, one for every house right of it. The bars cannot match every arrow (they miss houses 1 and 4 by 0.5 each way), but they point the same way everywhere, and unlike the arrows they give an answer for any size at all. Fitting the bars to the arrows is equation (11); deciding how far to move along the bars is equation (12).</p>
+<h3 class="rung">The math: Algorithm 1, line by line</h3>
+<p>Line 3 of Algorithm 1 computes the pseudo-responses:</p>
+<div class="eq" data-tex="\htmlData{sym=ytilde}{\tilde y_i} = -\left[\htmlData{sym=dLdF}{\frac{\partial L(y_i, F(\mathbf{x}_i))}{\partial F(\mathbf{x}_i)}}\right]_{F = \htmlData{sym=Fm1}{F_{m-1}}}" data-fallback="ỹ_i = −[∂L(y_i, F(x_i)) / ∂F(x_i)] at F = F_{m−1}"></div>
+<div class="symtable" data-syms="ytilde,Fm1"></div>
+<p class="inwords"><strong>In words:</strong> “for every training example i = 1 … N, work out how the loss would change if its prediction were nudged, and flip the sign: that is the target the next tree is trained on.”</p>
+<p class="inwords"><strong>With the numbers:</strong> squared loss ½(y − F)<sup>2</sup> at F<sub>0</sub> = 4: ỹ = y − 4 = (−3, −2, 2, 3).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>y = [1, 2, 6, 7]
+F0 = sum(y) / len(y)
+# ỹ_i = −∂L/∂F = y_i − F_0 for squared loss
+y_tilde = [y_i - F0 for y_i in y]
+y_tilde  # → [-3.0, -2.0, 2.0, 3.0]</code></pre>
+<p>Line 4 fits the base learner to them by least squares, whatever the loss:</p>
+<div class="eq" data-tex="\htmlData{sym=am}{\mathbf{a}_m} = \htmlData{sym=argminab}{\arg\min_{\mathbf{a}, \beta}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \big[\htmlData{sym=ytilde}{\tilde y_i} - \htmlData{sym=beta}{\beta}\, \htmlData{sym=h}{h}(\mathbf{x}_i; \mathbf{a})\big]^2 \qquad (11)" data-fallback="a_m = argmin_{a, β} Σ_i [ỹ_i − β h(x_i; a)]²   (11)"></div>
+<div class="symtable" data-syms="argminab,sumi"></div>
+<p class="inwords"><strong>In words:</strong> “choose the tree whose predictions, suitably scaled, come closest to the pseudo-responses in squared distance.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the three possible stumps split after house 1, 2 or 3. Their leftover squared errors on (−3, −2, 2, 3) are 14, 1 and 14, so the split at 2.5 wins, with leaf values −2.5 and +2.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>y_tilde = [-3.0, -2.0, 2.0, 3.0]
+def sse(v):
+    mean = sum(v) / len(v)
+    return sum((a - mean) ** 2 for a in v)
+# leftover squared error after splitting after house t
+[sse(y_tilde[:t]) + sse(y_tilde[t:]) for t in (1, 2, 3)]  # → [14.0, 1.0, 14.0]</code></pre>
+<p>Line 5 then goes back to the <em>real</em> loss to decide the step size:</p>
+<div class="eq" data-tex="\htmlData{sym=rhom}{\rho_m} = \htmlData{sym=argminrho}{\arg\min_{\rho}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=L}{L}\big(\htmlData{sym=y}{y_i},\, \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)} + \htmlData{sym=rho}{\rho}\, \htmlData{sym=h}{h}(\mathbf{x}_i; \htmlData{sym=am}{\mathbf{a}_m})\big) \qquad (12)" data-fallback="ρ_m = argmin_ρ Σ_i L(y_i, F_{m−1}(x_i) + ρ h(x_i; a_m))   (12)"></div>
+<div class="symtable" data-syms="argminrho,rho"></div>
+<p class="inwords"><strong>In words:</strong> “slide along the new tree's direction and stop where the actual loss on the training data is lowest.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for squared loss the best ρ is Σ ỹ<sub>i</sub> h<sub>i</sub> / Σ h<sub>i</sub><sup>2</sup> = (7.5 + 5 + 5 + 7.5) / 25 = 1.0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>y_tilde = [-3.0, -2.0, 2.0, 3.0]
+h = [-2.5, -2.5, 2.5, 2.5]
+# for squared loss the line search has a closed form: Σ ỹ h / Σ h²
+sum(a * b for a, b in zip(y_tilde, h)) / sum(b * b for b in h)  # → 1.0</code></pre>
+<figure class="ix" id="fig-alg">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 400" role="img" aria-label="Algorithm 1, Gradient Boost: start from the best constant, then repeat: pseudo-responses, fit a tree by least squares, line search, update">
+    <defs><marker id="arra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="loop"><rect x="30" y="62" width="270" height="270" rx="14"/></g>
+    <text x="40" y="80" class="lbl">repeat for m = 1 … M</text>
+    <path class="wire" d="M165,44 V92" marker-end="url(#arra)"/>
+    <path class="wire" d="M165,128 V152" marker-end="url(#arra)"/>
+    <path class="wire" d="M165,188 V212" marker-end="url(#arra)"/>
+    <path class="wire" d="M165,248 V272" marker-end="url(#arra)"/>
+    <path class="wire" d="M70,290 H48 V110 H68" marker-end="url(#arra)"/>
+    <path class="wire" d="M165,308 V354" marker-end="url(#arra)"/>
+    <g class="blk plain" data-block="init"><rect x="80" y="12" width="170" height="32" rx="6"/><text x="165" y="33" text-anchor="middle">start: best constant F₀</text></g>
+    <g class="blk attn" data-block="pseudo"><rect x="70" y="92" width="190" height="36" rx="7"/><text x="165" y="114" text-anchor="middle">pseudo-responses ỹ = −∂L/∂F</text></g>
+    <g class="blk ff" data-block="fit"><rect x="70" y="152" width="190" height="36" rx="7"/><text x="165" y="174" text-anchor="middle">fit a tree to ỹ (least squares)</text></g>
+    <g class="blk norm" data-block="leafv"><rect x="70" y="212" width="190" height="36" rx="7"/><text x="165" y="234" text-anchor="middle">best step per leaf (real loss)</text></g>
+    <g class="blk soft" data-block="update"><rect x="70" y="272" width="190" height="36" rx="7"/><text x="165" y="294" text-anchor="middle">F ← F + ν × tree</text></g>
+    <g class="blk plain" data-block="out"><rect x="95" y="356" width="140" height="32" rx="6"/><text x="165" y="377" text-anchor="middle">final model F_M</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step. Start at the top with the constant.</p></div>
+  </div>
+  <figcaption>Algorithm 1 (Gradient_Boost) with the per-leaf step of §4.3 and the shrinkage of §5, redrawn as a flow chart. Based on Friedman (2001), Algorithm 1 and equations (18) and (36).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> start at the top: the model begins as the single best constant. Everything inside the dashed frame repeats once per tree. Only the first and third steps know which loss you chose: the pseudo-responses are that loss's negative gradient, and the step size is chosen on that loss. The middle step is always the same least-squares tree fit, which is why one tree-growing routine serves every loss. The arrow on the left carries the updated model back to the top for the next round; after M rounds the model is the constant plus M shrunken trees.</p>
+<h3 class="rung">Why it matters</h3>
+<p>“Least squares to find the direction, the real loss to find the step” is the paper's engineering insight. It means one fast tree-growing routine can boost any differentiable loss. The lesson's <a data-lesson="primer/ml/classical.html#GradientBoosting.negative_gradient"><code>GradientBoosting.negative_gradient</code></a> is line 3; its call to <a data-lesson="primer/ml/classical.html#DecisionTree"><code>DecisionTree</code></a> with the squared criterion is line 4.</p>
+</section>
+
+<section id="s4">
+<h2>4 Applications: additive modeling <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Algorithm 1 is a machine with a slot for the loss. This section feeds it four different losses and writes out what comes out: least squares (a sanity check), least absolute deviation (robust), Huber (a compromise) and the logistic likelihood (classification).</p>
+
+<section id="s4-1">
+<h3>4.1 Least-squares regression <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
+<h4>Tiny example</h4>
+<p>With L = ½(y − F)<sup>2</sup> the pseudo-responses are the plain residuals y − F, the tree fits them, and the line search just returns the tree's own scale. This is “fit the residuals, add, repeat”, the loop the lesson teaches: after one round with a step of 0.5, the four houses are predicted 2.75, 2.75, 5.25 and 5.25, and the mean squared error falls from 6.5 to 1.8125.</p>
+<h4>Why it matters</h4>
+<p>The paper calls this a reality check: the general machine reproduces the familiar method. Algorithm 2 (LS_Boost) is exactly the lesson's <a data-lesson="primer/ml/classical.html#boosting_worked_example"><code>boosting_worked_example</code></a>.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Least-absolute-deviation (LAD) regression <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>With the absolute loss |y − F|, the slope is the same size however badly a prediction misses; only its sign matters. So each tree is trained on “too low” or “too high”, never on “by how much”. A wildly wrong label cannot shout louder than any other.</p>
+<h4>Tiny example</h4>
+<p>A typo turns house 4's price from 7 into 70. Least squares starts from the mean, 19.75, and its residuals are −18.75, −17.75, −13.75 and +50.25: the whole next tree bends towards the typo. LAD starts from the median, 4, and its pseudo-responses are −1, −1, +1, +1, exactly what they were before the typo.</p>
+<div class="eq" data-tex="\htmlData{sym=ytilde}{\tilde y_i} = \htmlData{sym=sign}{\operatorname{sign}}\big(\htmlData{sym=y}{y_i} - \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)}\big) \qquad (13)" data-fallback="ỹ_i = sign(y_i − F_{m−1}(x_i))   (13)"></div>
+<div class="symtable" data-syms="sign"></div>
+<p class="inwords"><strong>In words:</strong> “under absolute loss, each example asks only to be moved up or down, never by how much.”</p>
+<p class="inwords"><strong>With the numbers:</strong> prices (1, 2, 6, 70) and F<sub>0</sub> = median = 4: signs of (−3, −2, 2, 66) are (−1, −1, +1, +1).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import statistics
+y = [1, 2, 6, 70]
+# least squares starts at the mean, and the typo dominates the residuals
+F0_ls = sum(y) / len(y)
+[round(y_i - F0_ls, 2) for y_i in y]  # → [-18.75, -17.75, -13.75, 50.25]
+# LAD starts at the median; its pseudo-responses are signs
+F0 = statistics.median(y)
+[(y_i &gt; F0) - (y_i &lt; F0) for y_i in y]  # → [-1, -1, 1, 1]</code></pre>
+<p>The line search for this loss becomes a <span class="t" data-tip-title="Weighted median" data-tip="The value that splits the total weight in half: sort the values, add up their weights from the smallest, and stop where the running total reaches half. With equal weights it is the ordinary median.">weighted median</span> (equation 14).</p>
+<h4>Why it matters</h4>
+<p>Real targets have typos, sensor glitches and one-off mansions. Choosing the loss is choosing what the model is allowed to be influenced by, and gradient boosting makes that choice a one-line change.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Regression trees <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A tree is not one direction but J separate little ones: one flat value per leaf. So instead of a single step size for the whole tree, give each leaf its own best step. Each leaf becomes a tiny problem: “for the examples that land here, what single number, added to their current predictions, lowers the loss most?”</p>
+<h4>Tiny example</h4>
+<p>For the left leaf (houses 1 and 2, residuals −3 and −2), the best addition under squared loss is their average, −2.5. Under absolute loss it is their median. The tree's structure comes from the least-squares fit of §3; only the leaf values are re-chosen for the real loss.</p>
+<div class="eq" data-tex="\htmlData{sym=gammajm}{\gamma_{jm}} = \htmlData{sym=argmingamma}{\arg\min_{\gamma}} \htmlData{sym=sumleaf}{\sum_{\mathbf{x}_i \in R_{jm}}} \htmlData{sym=L}{L}\big(\htmlData{sym=y}{y_i},\, \htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)} + \htmlData{sym=gamma}{\gamma}\big) \qquad (18)" data-fallback="γ_jm = argmin_γ Σ_{x_i ∈ R_jm} L(y_i, F_{m−1}(x_i) + γ)   (18)"></div>
+<div class="symtable" data-syms="gammajm,argmingamma,sumleaf,gamma"></div>
+<p class="inwords"><strong>In words:</strong> “each leaf's value is the constant that, added to the current predictions of the examples in that leaf, minimizes their loss.”</p>
+<p class="inwords"><strong>With the numbers:</strong> left leaf, squared loss: trying γ = −3, −2.5 and −2 gives summed losses 0.5, 0.25 and 0.5 (halved squares), so γ = −2.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the left leaf: houses 1 and 2, current prediction 4
+y_leaf, F_prev = [1, 2], 4.0
+def leaf_loss(gamma):
+    return sum(0.5 * (y_i - (F_prev + gamma)) ** 2 for y_i in y_leaf)
+[leaf_loss(g) for g in (-3.0, -2.5, -2.0)]  # → [0.5, 0.25, 0.5]</code></pre>
+<p>For LAD this gives Algorithm 3 (LAD_TreeBoost): trees are grown on the signs, and each leaf adds the median of its residuals. The paper notes it is highly robust: the trees see only the order of each input, the pseudo-responses take only two values, and the leaf updates are medians.</p>
+<h4>Why it matters</h4>
+<p>Per-leaf steps are what “TreeBoost” means, and every modern library keeps them. XGBoost goes one step further and solves (18) approximately for any loss with a second-order formula; see the <a href="xgboost.html">XGBoost companion</a>.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 M-regression <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Squared error is ideal for well-behaved noise but panics at outliers; absolute error is calm about outliers but wastes information on ordinary points. The <span class="t" data-t="huber loss">Huber loss</span> is squared for small misses and absolute for large ones: listen closely to small complaints, and cap the volume of large ones.</p>
+<h4>Tiny example</h4>
+<p>With the typo prices (1, 2, 6, 70), starting from 4, the residuals are −3, −2, 2 and 66. With δ = 5, the first three are small and pass through unchanged; the typo is clipped to 5.</p>
+<div class="eq" data-tex="\htmlData{sym=L}{L}(\htmlData{sym=y}{y}, \htmlData{sym=F}{F}) = \begin{cases} \tfrac{1}{2}(y - F)^2 & |y - F| \le \htmlData{sym=delta}{\delta} \\ \htmlData{sym=delta}{\delta}\,(|y - F| - \htmlData{sym=delta}{\delta}/2) & |y - F| &gt; \htmlData{sym=delta}{\delta} \end{cases} \qquad (19)" data-fallback="L(y, F) = ½(y − F)² if |y − F| ≤ δ, else δ(|y − F| − δ/2)   (19)"></div>
+<div class="symtable" data-syms="delta"></div>
+<p class="inwords"><strong>In words:</strong> “penalize a miss by half its square while it is within δ, and only in proportion to its size beyond that”; its negative gradient is the residual, clipped to ±δ.</p>
+<p class="inwords"><strong>With the numbers:</strong> residuals (−3, −2, 2, 66) with δ = 5 give pseudo-responses (−3, −2, 2, 5). The paper sets δ each round to the α-<span class="t" data-t="quantile">quantile</span> of the absolute residuals, with α = 0.9 by default, so the largest 10% are treated as outliers.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>residuals = [-3.0, -2.0, 2.0, 66.0]
+delta = 5.0
+# −∂L/∂F: the residual, clipped to ±δ
+[max(-delta, min(delta, r)) for r in residuals]  # → [-3.0, -2.0, 2.0, 5.0]</code></pre>
+<p>Algorithm 4 (M_TreeBoost) approximates each leaf's value with one step of Huber's iterative method, starting from the leaf's median residual.</p>
+<h4>Why it matters</h4>
+<p>§6.2 finds M_TreeBoost within about 1% of the best method under both perfectly normal noise and extremely heavy-tailed noise. Robust losses of this kind (Huber, quantile, absolute) remain standard options in every boosting library.</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Two-class logistic regression and classification <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>For yes/no labels, the model's output F is a score, and the loss punishes confident wrong scores heavily and confident right ones barely at all. The pseudo-response is then “how surprised were we”: large for examples the model gets wrong, near zero for those it already gets right.</p>
+<h4>Tiny example</h4>
+<p>Four emails, labelled y = +1 (spam), +1, +1 and −1. The paper's F is <em>half</em> the <span class="t" data-t="log-odds">log-odds</span>. The starting constant is ½ log(1.5 / 0.5) = ½ log 3 = 0.549, which corresponds to a 75% chance of spam, the base rate. The three spam emails get pseudo-response 0.5 each (a mild “more spam, please”), the one legitimate email −1.5 (a loud “much less”).</p>
+<div class="eq" data-tex="\htmlData{sym=L}{L}(\htmlData{sym=ypm}{y}, \htmlData{sym=F}{F}) = \log\big(1 + e^{-2\htmlData{sym=ypm}{y}\htmlData{sym=F}{F}}\big), \qquad \htmlData{sym=ytilde}{\tilde y_i} = \frac{2\htmlData{sym=ypm}{y_i}}{1 + \exp\big(2\htmlData{sym=ypm}{y_i}\htmlData{sym=Fm1}{F_{m-1}(\mathbf{x}_i)}\big)} \qquad (22)" data-fallback="L(y, F) = log(1 + e^(−2yF)),   ỹ_i = 2y_i / (1 + exp(2 y_i F_{m−1}(x_i)))   (22)"></div>
+<div class="symtable" data-syms="ypm"></div>
+<p class="inwords"><strong>In words:</strong> “the loss is the logistic penalty on the score times the label; its negative gradient is twice the label, shrunk by how confidently right the model already is.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with F<sub>0</sub> = 0.549, for y = +1: 2 / (1 + e<sup>1.099</sup>) = 2 / 4 = 0.5. For y = −1: −2 / (1 + e<sup>−1.099</sup>) = −2 / 1.333 = −1.5. (That is 2(y′ − p) with y′ the 0/1 label and p = 0.75: the lesson's y − p, doubled because F is half the log-odds.)</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+y = [1, 1, 1, -1]
+y_bar = sum(y) / len(y)
+# F_0 = ½ log((1 + ȳ) / (1 − ȳ)): half the log-odds of the base rate
+F0 = 0.5 * math.log((1 + y_bar) / (1 - y_bar))
+round(F0, 3)  # → 0.549
+# ỹ_i = 2 y_i / (1 + exp(2 y_i F_0))
+[round(2 * y_i / (1 + math.exp(2 * y_i * F0)), 3) for y_i in y]  # → [0.5, 0.5, 0.5, -1.5]</code></pre>
+<p>The per-leaf problem (23) has no closed form, so the paper takes a single <span class="t" data-t="newton's method">Newton-Raphson step</span>: divide the leaf's summed slope by its summed curvature.</p>
+<div class="eq" data-tex="\htmlData{sym=gammajm}{\gamma_{jm}} = \htmlData{sym=sumleaf}{\sum_{\mathbf{x}_i \in R_{jm}}} \htmlData{sym=ytilde}{\tilde y_i} \Big/ \htmlData{sym=sumleaf}{\sum_{\mathbf{x}_i \in R_{jm}}} |\htmlData{sym=ytilde}{\tilde y_i}|\,(2 - |\htmlData{sym=ytilde}{\tilde y_i}|)" data-fallback="γ_jm = Σ_{x_i ∈ R_jm} ỹ_i / Σ_{x_i ∈ R_jm} |ỹ_i| (2 − |ỹ_i|)"></div>
+<div class="symtable" data-syms="gammajm,sumleaf,ytilde"></div>
+<p class="inwords"><strong>In words:</strong> “a leaf's step is its total pull divided by its total curvature: confident examples have small curvature and barely move the denominator.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a leaf holding two spam emails: (0.5 + 0.5) / (0.75 + 0.75) = 0.667, so their score rises to 0.549 + 0.667 = 1.216, a spam probability of 1 / (1 + e<sup>−2.432</sup>) = 0.919. A leaf holding the legitimate email alone: −1.5 / 0.75 = −2.0, so its score falls to −1.451 and its spam probability to 0.052.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+F0 = 0.5 * math.log(3)
+def newton_step(leaf):
+    # Σ ỹ / Σ |ỹ|(2 − |ỹ|)
+    return sum(leaf) / sum(abs(t) * (2 - abs(t)) for t in leaf)
+round(newton_step([0.5, 0.5]), 3)  # → 0.667
+round(newton_step([-1.5]), 3)  # → -2.0
+# probabilities from F: p = 1 / (1 + e^(−2F))
+[round(1 / (1 + math.exp(-2 * (F0 + g))), 3) for g in (newton_step([0.5, 0.5]), newton_step([-1.5]))]  # → [0.919, 0.052]</code></pre>
+<h4>4.5.1 Influence trimming</h4>
+<p>The curvature |ỹ<sub>i</sub>|(2 − |ỹ<sub>i</sub>|) doubles as a measure of how much example i can still affect the fit. An email the model already scores confidently right has a pseudo-response near 0, and so a weight near 0. The paper drops, each round, the lowest-weight examples that together carry only a fraction α (0.05 to 0.2) of the total weight. It reports that 90% to 95% of the examples were often dropped without hurting accuracy, cutting computation 10 to 20 times.</p>
+<div class="eq" data-tex="\htmlData{sym=wi}{w_i} = |\htmlData{sym=ytilde}{\tilde y_i}|\,(2 - |\htmlData{sym=ytilde}{\tilde y_i}|) \qquad (26)" data-fallback="w_i = |ỹ_i| (2 − |ỹ_i|)   (26)"></div>
+<div class="symtable" data-syms="wi"></div>
+<p class="inwords"><strong>In words:</strong> “an example's influence is the curvature of its loss: large while the model is unsure about it, near zero once it is confidently right.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at the start every email has |ỹ| of 0.5 or 1.5 and weight 0.75. Much later, a spam email the model scores confidently right might have ỹ = 0.02 and weight 0.0396: nearly nothing to learn from it this round.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># w_i = |ỹ_i| (2 − |ỹ_i|)
+[round(abs(t) * (2 - abs(t)), 4) for t in (0.5, -1.5, 0.02)]  # → [0.75, 0.75, 0.0396]</code></pre>
+<h4>Why it matters</h4>
+<p>This is the lesson's log-loss boosting with Newton leaves, and the ancestor of XGBoost's second-order objective, where a second derivative h<sub>i</sub> plays exactly the role this curvature plays here, for every loss (see the <a href="xgboost.html">XGBoost companion</a>).</p>
+</section>
+
+<section id="s4-6">
+<h3>4.6 Multi-class logistic regression and classification <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>With K classes, the model keeps K scores per input, turns them into probabilities with a <span class="t" data-t="softmax">softmax</span>, and grows K trees per round, one per class, each pushing its class's score up where that class is under-predicted.</p>
+<h4>Tiny example</h4>
+<p>Three classes, all scores 0 at the start, so every class gets probability 1/3. For an example whose true class is the first, the pseudo-responses are (1 − 1/3, 0 − 1/3, 0 − 1/3) = (0.667, −0.333, −0.333).</p>
+<div class="eq" data-tex="\htmlData{sym=ytildeik}{\tilde y_{ik}} = \htmlData{sym=yik}{y_{ik}} - \htmlData{sym=pk}{p_{k,m-1}(\mathbf{x}_i)} \qquad (31)" data-fallback="ỹ_ik = y_ik − p_{k,m−1}(x_i)   (31)"></div>
+<div class="symtable" data-syms="ytildeik,yik,pk"></div>
+<p class="inwords"><strong>In words:</strong> “for each class, the next tree's target is the gap between the true 0/1 label and the probability the model currently gives that class.”</p>
+<p class="inwords"><strong>With the numbers:</strong> y = (1, 0, 0) and p = (1/3, 1/3, 1/3) give (0.667, −0.333, −0.333).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+F = [0.0, 0.0, 0.0]
+# p_k = exp(F_k) / Σ_l exp(F_l)
+p = [math.exp(F_k) / sum(math.exp(F_l) for F_l in F) for F_k in F]
+y = [1, 0, 0]
+# ỹ_k = y_k − p_k
+[round(y_k - p_k, 3) for y_k, p_k in zip(y, p)]  # → [0.667, -0.333, -0.333]</code></pre>
+<p>Each leaf again takes one Newton step (equation 32, with a factor (K − 1)/K). The paper compares this L<sub>K</sub>_TreeBoost with LogitBoost: the leaf updates agree, and they differ only in how the trees are split. It also finds its version more numerically stable, because LogitBoost divides by p(1 − p), which is near zero for any confidently classified example.</p>
+<h4>Why it matters</h4>
+<p>One tree per class per round is still how gradient-boosting libraries handle multi-class problems, and the target y − p is the same gradient of <span class="t" data-t="cross-entropy">cross-entropy</span> that trains the last layer of a neural classifier (see the <a data-lesson="primer/ml/losses.html">losses lesson</a>).</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Regularization <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<blockquote class="quote">“As illustrated here decreasing the learning rate clearly improves performance, usually dramatically. The reason for this is less clear.”<cite>Friedman (2001), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Every tree is fitted to the training data, noise included. Taking each tree's full correction lets the first few trees commit hard to whatever they saw. Taking only a fraction of each correction means many trees must agree before the model moves far, which averages some of the noise away. The price is more trees.</p>
+<h3 class="rung">Tiny example</h3>
+<p>With a learning rate ν = 0.1, house 4 moves from 4 to 4 + 0.1 × 2.5 = 4.25 after the first tree, instead of all the way to 6.5. The remaining gap is left for later trees, which will see a slightly different picture.</p>
+<div class="eq" data-tex="\htmlData{sym=Fm}{F_m}(\htmlData{sym=x}{\mathbf{x}}) = \htmlData{sym=Fm1}{F_{m-1}}(\htmlData{sym=x}{\mathbf{x}}) + \htmlData{sym=nu}{\nu} \cdot \htmlData{sym=rhom}{\rho_m}\, \htmlData{sym=h}{h}(\htmlData{sym=x}{\mathbf{x}}; \htmlData{sym=am}{\mathbf{a}_m}), \qquad 0 &lt; \htmlData{sym=nu}{\nu} \le 1 \qquad (36)" data-fallback="F_m(x) = F_{m−1}(x) + ν · ρ_m h(x; a_m),   0 &lt; ν ≤ 1   (36)"></div>
+<div class="symtable" data-syms="Fm,nu"></div>
+<p class="inwords"><strong>In words:</strong> “each round adds only a fraction ν of the best step the new tree offers.”</p>
+<p class="inwords"><strong>With the numbers:</strong> house 4: 4 + 0.1 × 1.0 × 2.5 = 4.25.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>F_prev, nu, rho, h = 4.0, 0.1, 1.0, 2.5
+# F_m = F_{m−1} + ν ρ_m h
+round(F_prev + nu * rho * h, 2)  # → 4.25</code></pre>
+<h3 class="rung">Try it: boost in your browser</h3>
+<p>Forty noisy points around a sine curve, three of them pushed up by a labelling mistake (hollow circles). Each round adds one small tree with two levels of questions (up to four leaves). Choose the loss, drag ν and the number of trees M, and watch the fit (solid line) against the true curve (dashed). The chart below the picture tracks how far the fit is from the true curve after every round.</p>
+<div class="play" id="gb-play">
+  <div class="plot" style="margin:0">
+    <div class="controls">
+      <label for="gb-loss">loss</label>
+      <select id="gb-loss"><option value="ls">least squares</option><option value="lad">least absolute deviation</option><option value="huber">Huber (α = 0.9)</option></select>
+      <label for="gb-nu">ν = <strong id="gb-nu-v">0.10</strong></label><input type="range" id="gb-nu" min="0.05" max="1" step="0.05" value="0.1">
+      <label for="gb-m">M = <strong id="gb-m-v">60</strong> trees</label><input type="range" id="gb-m" min="0" max="300" step="1" value="60">
+    </div>
+    <svg id="gb-svg" viewBox="0 0 420 250" role="img" aria-label="Noisy training points, the true sine curve and the boosted fit"></svg>
+    <div class="legend"><span><i style="background:var(--accent)"></i>boosted fit</span><span><i style="background:var(--muted)"></i>true curve (dashed)</span><span>● training points · ○ mislabelled points</span></div>
+    <p class="readout" id="gb-readout"></p>
+    <div id="gb-chart"></div>
+    <p class="readout" id="gb-chart-readout">Hover or tap the chart to read the distance from the true curve after any number of trees.</p>
+    <p class="readout"><em>Simulated for this page with a fixed random seed; the data are not from the paper. The distance is the average absolute gap between the fit and the true sine over 121 evenly spaced points.</em></p>
+  </div>
+</div>
+<p class="reading"><strong>Reading it:</strong> in the picture, dots are training points and the solid line is the model after M trees; it is always a staircase, because every tree adds flat steps. The chart below plots the fit's distance from the true curve against the number of trees, so its lowest point is the best M for your settings. With least squares, the three hollow outliers pull a bump into the fit near them; switch to least absolute deviation or Huber and the bump mostly disappears, because those losses cap how loudly one point can pull. Now drag ν: at 1.0 the curve bottoms out within a few trees and then worsens as trees chase noise; at 0.1 it falls slowly, reaches a lower minimum, and stays near it much longer. That is the paper's ν-M trade-off in miniature.</p>
+<h3 class="rung">What the paper measured</h3>
+<p>The paper boosts 11-leaf trees on 5,000 simulated examples and scores each model with an error measure relative to the best constant:</p>
+<div class="eq" data-tex="\htmlData{sym=A}{A}(\hat F_M) = \frac{\htmlData{sym=Ex}{E_{\mathbf{x}}}\,|\htmlData{sym=Fstar}{F^*}(\mathbf{x}) - \htmlData{sym=Fhat}{\hat F_M}(\mathbf{x})|}{\htmlData{sym=Ex}{E_{\mathbf{x}}}\,|\htmlData{sym=Fstar}{F^*}(\mathbf{x}) - \operatorname{median}_{\mathbf{x}} \htmlData{sym=Fstar}{F^*}(\mathbf{x})|} \qquad (37)" data-fallback="A(F̂_M) = E_x |F*(x) − F̂_M(x)| / E_x |F*(x) − median_x F*(x)|   (37)"></div>
+<div class="symtable" data-syms="A,Ex,Fhat"></div>
+<p class="inwords"><strong>In words:</strong> “the model's average distance from the true function, as a fraction of the distance a constant guess (the median) would have.” 0 is perfect; 1 is no better than a constant.</p>
+<p class="inwords"><strong>With the numbers:</strong> treat the four prices as the true function and the one-round fit (2.75, 2.75, 5.25, 5.25) as F̂: the top is (1.75 + 0.75 + 0.75 + 1.75)/4 = 1.25, the bottom (3 + 2 + 2 + 3)/4 = 2.5, so A = 0.5: the model has closed half the gap a constant leaves.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import statistics
+F_star = [1, 2, 6, 7]
+F_hat = [2.75, 2.75, 5.25, 5.25]
+top = sum(abs(a - b) for a, b in zip(F_star, F_hat)) / 4
+bottom = sum(abs(a - statistics.median(F_star)) for a in F_star) / 4
+top, bottom, top / bottom  # → (1.25, 2.5, 0.5)</code></pre>
+<div class="plot" id="t1-plot">
+  <div id="t1-chart"></div>
+  <p class="readout" id="t1-readout">Hover or tap the chart to read the best number of trees at each learning rate.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each line is one of the paper's methods from its Table 1: least squares and LAD scored by A, and the logistic model scored by its deviance (−2 log-likelihood). The horizontal axis is the learning rate ν on a log scale, and the vertical axis is the number of trees at which the error was lowest. Every line climbs steeply to the left: for least squares, halving ν roughly doubles the trees needed (15, 43, 77, 146, 326, 855). The table below shows what that buys; the logistic model's deviance falls in the same way, from 0.60 at ν = 1 to 0.45 at ν = 0.125.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, reproduced with attribution (Friedman, 2001): the iteration with the lowest error, and that error A.</caption>
+  <thead><tr><th class="num">ν</th><th class="num">LS: best M</th><th class="num">LS: A</th><th class="num">LAD: best M</th><th class="num">LAD: A</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1.0</td><td class="num">15</td><td class="num">0.48</td><td class="num">19</td><td class="num">0.57</td></tr>
+    <tr><td class="num">0.25</td><td class="num">77</td><td class="num">0.34</td><td class="num">84</td><td class="num">0.38</td></tr>
+    <tr class="hl"><td class="num">0.125</td><td class="num">146</td><td class="num">0.32</td><td class="num">307</td><td class="num">0.35</td></tr>
+    <tr><td class="num">0.03</td><td class="num">855</td><td class="num">0.32</td><td class="num">937</td><td class="num">0.35</td></tr>
+  </tbody>
+</table></div>
+<p>Going from ν = 1 to ν = 0.125 cuts the least-squares error by a third (0.48 to 0.32); going further buys nothing but trees. The paper also notes that the misclassification rate kept improving after the likelihood had started to overfit, since a class decision depends only on the sign of F, while the likelihood also cares about its size. And it records a mystery it could not explain: shrinking each step during training (36) works far better than shrinking the finished model towards the mean (38).</p>
+<h3 class="rung">Why it matters</h3>
+<p>The paper's advice survives unchanged: set M as large as you can afford, then pick ν so the validation error reaches its minimum near the end, and stop there (<span class="t" data-t="early stopping">early stopping</span>). The lesson measures the same trade-off with <a data-lesson="primer/ml/classical.html#boosting_curves"><code>boosting_curves</code></a>.</p>
+</section>
+
+<section id="s6">
+<h2>6 Simulation studies <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>One benchmark dataset flatters whichever method happens to suit it. The paper instead generates 100 random target functions of 10 inputs (§6.1: sums of 20 random bumps, each depending on a few inputs), and asks how each method does across all of them.</p>
+<h3 class="rung">What it found</h3>
+<ul>
+  <li><strong>Loss versus noise (§6.2).</strong> With normal noise, least squares was best on 73 of the 100 targets and Huber (M_TreeBoost) on the other 27; on average least squares was 0.2% worse than the best method, Huber 0.9% and LAD 7.4%. With the heavy-tailed “slash” noise the picture flips: least squares was 364.6% worse than the best on average, LAD 4.1% and Huber 1.0%. The paper's verdict: Huber is the method of choice, never far from the best.</li>
+  <li><strong>Steps versus smooth curves (§6.3).</strong> Boosted trees are staircases; MARS fits smooth curves. On the 100 smooth targets the two were comparable by average absolute error. But for MARS the root-mean-squared error was typically about 30% higher than its average absolute error, while for the boosted trees the two were close: MARS tends to be either very close or far off, and the boosted trees' errors are more even.</li>
+  <li><strong>Classification (§6.4).</strong> On five-class problems, L<sub>K</sub>_TreeBoost was best on 78 of 100 targets, 0.6% above the best on average, against 3.5% for LogitBoost and 15% for AdaBoost.MH. Once LogitBoost and AdaBoost.MH were also given shrinkage (ν = 0.1), all three came within a few percent of each other, which suggests the learning rate matters more than the structural differences.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>Two lessons that still hold: the loss should match the noise, and shrinkage helps every boosting method, not just this one.</p>
+</section>
+
+<section id="s7">
+<h2>7 Tree boosting <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A house's price may depend on its size and its location separately (each adds its own amount), or on how they combine (a big house matters more downtown). A tree with J leaves can express combinations of at most J − 1 inputs. Stumps (J = 2) can only add up separate effects; bigger trees can capture combinations.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Write any function as a sum of parts that each depend on one input, parts that depend on pairs, parts on triples, and so on:</p>
+<div class="eq" data-tex="\htmlData{sym=F}{F}(\htmlData{sym=x}{\mathbf{x}}) = \sum_j \htmlData{sym=fj}{f_j(x_j)} + \sum_{j,k} \htmlData{sym=fjk}{f_{jk}(x_j, x_k)} + \sum_{j,k,l} f_{jkl}(x_j, x_k, x_l) + \cdots \qquad (42)" data-fallback="F(x) = Σ_j f_j(x_j) + Σ_{j,k} f_jk(x_j, x_k) + Σ_{j,k,l} f_jkl(x_j, x_k, x_l) + …   (42)"></div>
+<div class="symtable" data-syms="fj,fjk"></div>
+<p class="inwords"><strong>In words:</strong> “a function is its one-input effects, plus its two-input <span class="t" data-t="interaction effect">interactions</span>, plus higher ones”; a tree with J leaves reaches at most order min(J − 1, n).</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's simulations have n = 10 inputs. Trees with J = 2, 3, 6, 11 and 21 leaves reach interactions of order 1, 2, 5, 10 and 10.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>n = 10
+# highest interaction order a J-leaf tree can express: min(J − 1, n)
+[min(J - 1, n) for J in (2, 3, 6, 11, 21)]  # → [1, 2, 5, 10, 10]</code></pre>
+<div class="plot" id="f6-plot"><div id="f6-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one tree size J from the paper's §7 (the numbers behind its Figure 6), over the 100 random targets: its length is how much larger, on average, that tree size's error was than the best tree size's on the same target. The number on the right is how many of the 100 targets that tree size won. Stumps (J = 2) won 8 times but were 23.2% worse on average: superb when the target happens to be additive, poor otherwise. From J = 6 up, the sizes are nearly tied and each wins about 30 targets.</p>
+<h3 class="rung">Why it matters</h3>
+<p>This is why boosting uses small trees: a handful of leaves captures the interactions most real targets have, and the paper finds it unlikely that large trees would ever be necessary or desirable. The lesson boosts depth-2 trees (four leaves) in <a data-lesson="primer/ml/classical.html#boosting_curves"><code>boosting_curves</code></a>.</p>
+</section>
+
+<section id="s8">
+<h2>8 Interpretation <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A model made of hundreds of trees cannot be read tree by tree. The paper offers two summaries: which inputs matter most (relative importance), and how the prediction moves as one or two inputs change with everything else averaged out (partial dependence).</p>
+
+<section id="s8-1">
+<h3>8.1 Relative importance of input variables <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
+<h4>Tiny example</h4>
+<p>Each split in a tree removes some squared error. Credit that improvement to the input the split used, add up per input, and average over all trees. In the four-house stump, the split at size 2.5 removed 25 of the 26 units of squared error in the residuals.</p>
+<div class="eq" data-tex="\htmlData{sym=isq}{i^2}(R_l, R_r) = \frac{\htmlData{sym=wlwr}{w_l w_r}}{\htmlData{sym=wlwr}{w_l + w_r}}\,(\htmlData{sym=ylyr}{\bar y_l - \bar y_r})^2 \qquad (35)" data-fallback="i²(R_l, R_r) = w_l w_r / (w_l + w_r) · (ȳ_l − ȳ_r)²   (35)"></div>
+<div class="symtable" data-syms="isq,wlwr,ylyr"></div>
+<p class="inwords"><strong>In words:</strong> “the improvement from a split is the gap between the two sides' averages, squared, weighted by how balanced the split is.”</p>
+<p class="inwords"><strong>With the numbers:</strong> two houses a side (w<sub>l</sub> = w<sub>r</sub> = 2), averages −2.5 and 2.5: (2 × 2)/(2 + 2) × 5<sup>2</sup> = 25.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>w_l, w_r, y_l, y_r = 2, 2, -2.5, 2.5
+# i² = w_l w_r / (w_l + w_r) · (ȳ_l − ȳ_r)²
+w_l * w_r / (w_l + w_r) * (y_l - y_r) ** 2  # → 25.0</code></pre>
+<div class="eq" data-tex="\htmlData{sym=Ijsq}{\hat I_j^2}(\htmlData{sym=T}{T}) = \htmlData{sym=sumt}{\sum_{t=1}^{J-1}} \htmlData{sym=isqt}{\hat\imath_t^2}\, \htmlData{sym=ind}{\mathbf{1}}(\htmlData{sym=vt}{v_t} = j), \qquad \hat I_j^2 = \frac{1}{M}\sum_{m=1}^{M} \hat I_j^2(T_m) \qquad (44, 45)" data-fallback="Î_j²(T) = Σ_{t=1}^{J−1} î_t² 1(v_t = j),   Î_j² = (1/M) Σ_m Î_j²(T_m)   (44, 45)"></div>
+<div class="symtable" data-syms="Ijsq,T,sumt,isqt,ind,vt"></div>
+<p class="inwords"><strong>In words:</strong> “an input's squared importance is the total improvement of every split that used it, averaged over all the trees”; take the square root, and scale so the top input scores 100.</p>
+<p class="inwords"><strong>With the numbers:</strong> a tree splits on x<sub>1</sub> twice (improvements 4.0 and 0.5) and on x<sub>2</sub> once (1.0). Then Î<sub>1</sub> = √4.5 = 2.12 and Î<sub>2</sub> = 1.0, so on the 0 to 100 scale x<sub>1</sub> scores 100 and x<sub>2</sub> scores 47.1.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# (splitting variable v_t, improvement î_t²) for the three splits
+splits = [(1, 4.0), (2, 1.0), (1, 0.5)]
+I = {j: math.sqrt(sum(i2 for v_t, i2 in splits if v_t == j)) for j in (1, 2)}
+round(I[1], 2)  # → 2.12
+# relative importance, top input = 100
+round(100 * I[2] / I[1], 1)  # → 47.1</code></pre>
+<div class="plot" id="t2-plot"><div id="t2-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> the paper checks the measure on a linear target whose true importances are known: input j's coefficient has size j, so on the 0 to 100 scale input 10 should score 100, input 9 score 90, and so on down to 10. Blue bars are those true values and striped bars the paper's estimates from its Table 2 (mean of ten runs, selected rows reproduced with attribution). The estimates track the truth closely, ranking the inputs correctly in every run, with the least important inputs slightly overstated (13.0 for a true 10).</p>
+<h4>Why it matters</h4>
+<p>Summing split improvements is the same idea as the impurity importance of a single tree, and it shares its weakness: it is computed on training data, so like the impurity importance in the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a> (<a data-lesson="primer/ml/classical.html#DecisionTree.feature_importances"><code>DecisionTree.feature_importances</code></a>) it can credit inputs that only help fit noise; permutation importance on held-out data (see the <a href="random-forests.html">random forests companion</a>) is the more honest check.</p>
+</section>
+
+<section id="s8-2">
+<h3>8.2 Partial dependence plots <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To see how a model's predicted price depends on size alone, take every real house in the data, pretend each had this particular size, ask the model, and average the answers. Do that for each size and plot the averages: a <span class="t" data-t="partial dependence plot">partial dependence plot</span>.</p>
+<h4>Tiny example</h4>
+<p>A model F̂(x<sub>1</sub>, x<sub>2</sub>) = 2x<sub>1</sub> + x<sub>1</sub>x<sub>2</sub>, and three rows whose x<sub>2</sub> values are 0, 1 and 2. At x<sub>1</sub> = 1 the model gives 2, 3 and 4 for the three rows, averaging 3. At x<sub>1</sub> = 2 it gives 4, 6 and 8, averaging 6.</p>
+<div class="eq" data-tex="\htmlData{sym=Fbar}{\bar F_l}(\htmlData{sym=zl}{\mathbf{z}_l}) = \frac{1}{\htmlData{sym=N}{N}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=Fhat}{\hat F}(\htmlData{sym=zl}{\mathbf{z}_l}, \htmlData{sym=zil}{\mathbf{z}_{i, \backslash l}}) \qquad (53)" data-fallback="F̄_l(z_l) = (1/N) Σ_i F̂(z_l, z_{i,\l})   (53)"></div>
+<div class="symtable" data-syms="Fbar,zl,zil"></div>
+<p class="inwords"><strong>In words:</strong> “the partial dependence on the chosen inputs is the model's prediction with those inputs set to z, averaged over the other inputs as they occur in the data.”</p>
+<p class="inwords"><strong>With the numbers:</strong> F̄(1) = (2 + 3 + 4)/3 = 3.0 and F̄(2) = (4 + 6 + 8)/3 = 6.0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def F_hat(x1, x2):
+    return 2 * x1 + x1 * x2
+# z_{i,\l}: the other input's value in each data row
+x2_rows = [0, 1, 2]
+# F̄(z) = (1/N) Σ F̂(z, x2_i)
+[sum(F_hat(z, x2) for x2 in x2_rows) / len(x2_rows) for z in (1, 2)]  # → [3.0, 6.0]</code></pre>
+<p>The paper stresses averaging over the other inputs' <em>marginal</em> distribution (51), not their distribution given z (56): the second would mix in effects that belong to correlated inputs. For a single tree it gives a fast recipe that needs no data at all: walk down the tree, follow the branch at nodes that split on the chosen inputs, and send weight down both branches, in proportion to their training counts, at nodes that split on anything else.</p>
+<h4>Why it matters</h4>
+<p>The paper points out that partial dependence works for any black-box model (neural networks, nearest neighbours, support vector machines), while its tree-walking shortcut makes it especially cheap for tree ensembles. It also notes the plot tells the whole story only when the model's dependence on the chosen inputs is roughly additive or multiplicative with the rest (equations 54 and 55); otherwise it is a useful summary, not a complete one.</p>
+</section>
+<h3 class="rung">8.3 A randomly generated function</h3>
+<p>Applied to the first of the §6 random targets, the importances show no small dominant subset of inputs, the one-input plots show smooth trends built from fine steps, and the two-input plots show interactions of varying strength, all consistent with how the target was generated.</p>
+</section>
+
+<section id="s9">
+<h2>9 Real data <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<h3 class="rung">Garnet data (§9.1)</h3>
+<p>13,317 garnets from rocks around the world; the task is to predict titanium dioxide concentration from 10 other chemical concentrations and a three-valued tectonic setting. The data are skewed with many outliers.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 3, reproduced with attribution (Friedman, 2001). Average absolute error relative to the best constant, on held-out data, by number of leaves per tree.</caption>
+  <thead><tr><th class="num">Leaves J</th><th class="num">LS_TreeBoost</th><th class="num">LAD_TreeBoost</th><th class="num">M_TreeBoost</th></tr></thead>
+  <tbody>
+    <tr><td class="num">2</td><td class="num">0.58</td><td class="num">0.57</td><td class="num">0.57</td></tr>
+    <tr><td class="num">3</td><td class="num">0.48</td><td class="num">0.47</td><td class="num">0.46</td></tr>
+    <tr class="hl"><td class="num">6</td><td class="num">0.48</td><td class="num">0.44</td><td class="num">0.43</td></tr>
+    <tr><td class="num">21</td><td class="num">0.46</td><td class="num">0.43</td><td class="num">0.43</td></tr>
+  </tbody>
+</table></div>
+<p>Stumps are clearly worse, so the inputs interact; six leaves are enough; and the robust losses beat least squares on this outlier-heavy data. Two inputs, gallium and zirconium, dominate the importances, and the two-input partial dependence shows a strong interaction between them: the prediction barely depends on either while the other is at its lowest values.</p>
+<h3 class="rung">Demographic data (§9.2)</h3>
+<p>9,409 shopping-mall questionnaires; the task is to predict income from 13 other answers, most categorical with a few values, many missing. Here tree size hardly matters (errors 0.57 to 0.63 across all sizes and losses), so stumps suffice: the relationship is additive, and the partial dependence plots then describe the model completely. Income rises with education and peaks at age 45 to 54.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The same diagnostic still works: compare stumps with larger trees on validation data. If stumps are as good, the problem is additive and every effect can be plotted one input at a time.</p>
+</section>
+
+<section id="s10">
+<h2>10 Data mining <span class="orig">· <a href="https://doi.org/10.1214/aos/1013203451">original</a></span></h2>
+<blockquote class="quote">“All TreeBoost procedures are invariant under all (strictly) monotone transformations of the individual input variables.”<cite>Friedman (2001), §10</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Real data arrive messy: skewed incomes, outliers, irrelevant columns, missing answers. Boosted trees shrug off most of it, because a tree only ever asks “is this input above that threshold?”.</p>
+<h3 class="rung">What the paper lists</h3>
+<ul>
+  <li><strong>No input transformations needed.</strong> Using x, log x, e<sup>x</sup> or x<sup>a</sup> gives the same result, since the order of values is all a split sees; long-tailed inputs and input outliers stop mattering. LAD_TreeBoost is also fully robust to outliers in the output, and M_TreeBoost largely so.</li>
+  <li><strong>Built-in feature selection</strong> and robustness to irrelevant inputs, and trees' handling of missing values.</li>
+  <li><strong>The weaknesses of single trees are softened.</strong> Coarse staircases become fine ones, instability is averaged away, and the interaction order is controlled by the tree size.</li>
+  <li><strong>Speed.</strong> After sorting the inputs, the cost grows linearly with the number of examples, inputs and trees. M_TreeBoost on the garnet data (500 trees of 6 leaves) took 20 seconds on a 933 MHz Pentium III.</li>
+  <li><strong>Incremental use.</strong> Good-enough models often appear by about 100 trees, and boosting can be resumed later, or continued on new data, from where it stopped.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>This list is, almost word for word, why boosted trees became the default on tables: the same reasons the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a> gives for trees beating neural networks there (units don't matter, thresholds are native, irrelevant columns are ignored).</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2001</h2>
+<p>The loop is unchanged: pseudo-responses, a least-squares tree, per-leaf steps, shrinkage. The refinements around it:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>Newton leaf values only for the logistic losses</td><td>A second-order (Newton) step for every loss, with penalties on leaf values and tree size in the split score itself</td><td>One formula for any twice-differentiable loss, and built-in regularization</td><td><a href="xgboost.html">XGBoost companion</a></td></tr>
+    <tr><td>Exact split search over sorted inputs</td><td>Histogram or quantile-sketch split search</td><td>Scales to billions of rows</td><td><a href="xgboost.html">XGBoost companion</a></td></tr>
+    <tr><td>Influence trimming of confident examples</td><td>Random row and column subsampling per tree</td><td>Faster, and decorrelates the trees as in a random forest</td><td><a href="random-forests.html">random forests companion</a></td></tr>
+    <tr><td>Choose M on a left-out test set</td><td>Early stopping on a validation set, built into the training call</td><td>Same idea, automated</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Jerome H. Friedman, <em>Greedy Function Approximation: A Gradient Boosting Machine</em>, The Annals of Statistics 29(5) (2001). <a href="https://doi.org/10.1214/aos/1013203451">doi:10.1214/aos/1013203451</a>. Quotations are brief and attributed; a few table rows are reproduced with attribution; every chart and diagram is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §1
+    Fstar: { tex: "F^*", name: "The best possible rule", meaning: "The function from inputs to predictions with the lowest average loss over all the data the world could produce. Everything else is an attempt to approximate it.", shape: "input → number", example: "the constant 4 when only constants are allowed" },
+    argmin: { tex: "\\arg\\min_F", name: "The minimizing function", meaning: "Not the smallest value itself, but the F that achieves it.", shape: "a function", example: "c = 4" },
+    Eyx: { tex: "E_{y,\\mathbf{x}}", name: "Average over the data", meaning: "The expected value over inputs x and outputs y drawn together from the world: in practice, an average over examples.", shape: "one number", example: "the average over the four houses" },
+    L: { tex: "L", name: "Loss function", meaning: "The penalty for predicting F when the truth is y. Squared error, absolute error, Huber and the logistic loss are the paper's four.", shape: "≥ 0", example: "½(7 − 4)² = 4.5" },
+    y: { tex: "y", name: "True output", meaning: "The value to predict for one example.", shape: "a number (or ±1 for classes)", example: "house 4 sold for 7" },
+    F: { tex: "F", name: "The model", meaning: "The current prediction rule: in boosting, a constant plus a sum of trees.", shape: "input → number", example: "F(4) = 6.5 after one full step" },
+    x: { tex: "\\mathbf{x}", name: "Inputs", meaning: "One example's input variables.", shape: "n numbers", example: "size 4" },
+    summ: { tex: "\\sum_{m=1}^{M}", name: "Sum of M pieces", meaning: "Add up the M simple functions that make up the model.", shape: "one number per input", example: "M = 1 stump" },
+    beta: { tex: "\\beta_m", name: "Weight of piece m", meaning: "How much piece m counts in the sum.", shape: "one number", example: "1.0" },
+    h: { tex: "h", name: "Base learner", meaning: "One simple function, here a small regression tree; its parameters a are its splits and leaf values.", shape: "input → number", example: "−2.5 if size ≤ 2.5, else +2.5" },
+    am: { tex: "\\mathbf{a}_m", name: "Tree m's parameters", meaning: "Which inputs tree m splits on, where, and its leaf values.", shape: "a list", example: "split size at 2.5" },
+    // §2
+    fm: { tex: "f_m", name: "Increment m", meaning: "The change added to every prediction at step m.", shape: "input → number", example: "+3 for house 4" },
+    rhom: { tex: "\\rho_m", name: "Step size", meaning: "How far to move along the chosen direction, found by a line search on the real loss.", shape: "one number", example: "1.0 for squared loss here" },
+    gm: { tex: "g_m", name: "Gradient in function space", meaning: "At each input, the slope of the loss with respect to the prediction there, averaged over the outputs that input can have.", shape: "one number per input", example: "−3 for house 4" },
+    Ey: { tex: "E_y[\\,\\cdot \\mid \\mathbf{x}]", name: "Average over outputs at x", meaning: "The average over the outputs y that can occur with this particular input.", shape: "one number", example: "only one house has size 4, so just its value" },
+    dLdF: { tex: "\\frac{\\partial L}{\\partial F}", name: "Slope of the loss", meaning: "How fast the loss changes as the prediction is nudged up. Its negative points to the fastest decrease.", shape: "one number per example", example: "4 − 7 = −3 for squared loss at house 4" },
+    // §3
+    ytilde: { tex: "\\tilde y_i", name: "Pseudo-response", meaning: "The negative gradient of the loss at example i: the target the next tree is trained on. For squared loss it is the residual.", shape: "one number per example", example: "(−3, −2, 2, 3)" },
+    Fm1: { tex: "F_{m-1}", name: "The model so far", meaning: "The predictions after the first m − 1 trees, where the gradient is taken.", shape: "one number per example", example: "F₀ = 4 for every house" },
+    N: { tex: "N", name: "Number of training examples", meaning: "How many rows the training data has.", shape: "a whole number", example: "4" },
+    argminab: { tex: "\\arg\\min_{\\mathbf{a},\\beta}", name: "Best tree and scale", meaning: "The tree parameters (and a scale) that make the least-squares gap smallest.", shape: "tree parameters", example: "the split at 2.5" },
+    sumi: { tex: "\\sum_{i=1}^{N}", name: "Sum over training examples", meaning: "Add up over all N examples.", shape: "one number", example: "over the four houses" },
+    argminrho: { tex: "\\arg\\min_{\\rho}", name: "Best step size", meaning: "The ρ that makes the real loss smallest along the new tree's direction: the line search.", shape: "one number", example: "1.0" },
+    rho: { tex: "\\rho", name: "Candidate step size", meaning: "A step length being tried in the line search.", shape: "one number", example: "0.5, 1.0, 1.5 …" },
+    // §4
+    sign: { tex: "\\operatorname{sign}", name: "Sign", meaning: "+1 for a positive number, −1 for a negative one. Under absolute loss it is the whole gradient: direction without size.", shape: "−1, 0 or +1", example: "sign(66) = +1" },
+    gammajm: { tex: "\\gamma_{jm}", name: "Leaf value", meaning: "The constant added to every example in leaf j of tree m, chosen for the real loss.", shape: "one number per leaf", example: "−2.5 for the left leaf" },
+    argmingamma: { tex: "\\arg\\min_{\\gamma}", name: "Best leaf constant", meaning: "The γ that minimizes the loss of the examples in this leaf.", shape: "one number", example: "−2.5" },
+    sumleaf: { tex: "\\sum_{\\mathbf{x}_i \\in R_{jm}}", name: "Sum over one leaf", meaning: "Add up over the training examples that land in leaf region R_jm of tree m.", shape: "one number", example: "houses 1 and 2" },
+    gamma: { tex: "\\gamma", name: "Candidate leaf constant", meaning: "A value being tried for the leaf.", shape: "one number", example: "−3, −2.5, −2" },
+    delta: { tex: "\\delta", name: "Huber threshold", meaning: "The size of miss beyond which the loss stops growing quadratically. Set each round to the α-quantile of the absolute residuals.", shape: "> 0", example: "5" },
+    ypm: { tex: "y", name: "Label as ±1", meaning: "For two classes the paper codes the label as +1 or −1.", shape: "+1 or −1", example: "+1 for spam" },
+    wi: { tex: "w_i", name: "Influence of example i", meaning: "The curvature of example i's loss at the current model: how much it can still move the fit.", shape: "0 … 1", example: "0.75 at the start" },
+    ytildeik: { tex: "\\tilde y_{ik}", name: "Pseudo-response for class k", meaning: "The target for class k's tree at example i.", shape: "−1 … 1", example: "0.667 for the true class" },
+    yik: { tex: "y_{ik}", name: "One-hot label", meaning: "1 if example i belongs to class k, else 0.", shape: "0 or 1", example: "(1, 0, 0)" },
+    pk: { tex: "p_{k,m-1}", name: "Current class probability", meaning: "The probability the model after m − 1 rounds gives class k, from a softmax of the K scores.", shape: "0 … 1", example: "1/3" },
+    // §5
+    Fm: { tex: "F_m", name: "The model after m trees", meaning: "The previous model plus a shrunken copy of the new tree.", shape: "input → number", example: "4.25 for house 4" },
+    nu: { tex: "\\nu", name: "Learning rate (shrinkage)", meaning: "The fraction of each tree's best step actually taken. Smaller values need more trees and usually generalize better.", shape: "0 … 1", example: "0.1" },
+    A: { tex: "A", name: "Relative absolute error", meaning: "The model's average distance from the true function, divided by the average distance of the best constant (the median). 0 is perfect, 1 is no better than a constant.", shape: "≥ 0", example: "0.5" },
+    Ex: { tex: "E_{\\mathbf{x}}", name: "Average over inputs", meaning: "The average over the input distribution (in practice, a large validation set).", shape: "one number", example: "over the four houses" },
+    Fhat: { tex: "\\hat F", name: "The fitted model", meaning: "The model the algorithm produced, as opposed to the unknown true function.", shape: "input → number", example: "(2.75, 2.75, 5.25, 5.25)" },
+    // §7
+    fj: { tex: "f_j(x_j)", name: "Main effect", meaning: "The part of the function that depends on input j alone.", shape: "input → number", example: "how price rises with size" },
+    fjk: { tex: "f_{jk}(x_j, x_k)", name: "Two-input interaction", meaning: "The part that depends on how inputs j and k combine, beyond their separate effects.", shape: "input pair → number", example: "size matters more downtown" },
+    // §8.1
+    isq: { tex: "i^2", name: "Split improvement", meaning: "How much squared error one split removes.", shape: "≥ 0", example: "25" },
+    wlwr: { tex: "w_l, w_r", name: "Sizes of the two sides", meaning: "The number (or total weight) of examples on the left and right of the split.", shape: "≥ 0", example: "2 and 2" },
+    ylyr: { tex: "\\bar y_l - \\bar y_r", name: "Gap between side averages", meaning: "The difference between the average targets on the two sides of the split.", shape: "one number", example: "−2.5 − 2.5 = −5" },
+    Ijsq: { tex: "\\hat I_j^2", name: "Squared importance of input j", meaning: "The total split improvement credited to input j, in one tree or averaged over all trees.", shape: "≥ 0", example: "4.5 for x₁" },
+    T: { tex: "T", name: "One tree", meaning: "A single tree of the ensemble, with J leaves and J − 1 splits.", shape: "a tree", example: "a tree with three splits" },
+    sumt: { tex: "\\sum_{t=1}^{J-1}", name: "Sum over the splits", meaning: "Add up over the J − 1 internal (splitting) nodes of the tree.", shape: "one number", example: "three splits" },
+    isqt: { tex: "\\hat\\imath_t^2", name: "Improvement at split t", meaning: "The squared-error improvement (35) achieved by split t.", shape: "≥ 0", example: "4.0, 1.0, 0.5" },
+    ind: { tex: "\\mathbf{1}(\\cdot)", name: "Indicator", meaning: "1 if the condition holds, 0 otherwise: here, whether split t used input j.", shape: "0 or 1", example: "1 for the splits on x₁" },
+    vt: { tex: "v_t", name: "Splitting variable of node t", meaning: "Which input split t tests.", shape: "an input index", example: "x₁" },
+    // §8.2
+    Fbar: { tex: "\\bar F_l", name: "Partial dependence", meaning: "The model's prediction as a function of the chosen inputs only, with the other inputs averaged over the data.", shape: "chosen inputs → number", example: "F̄(1) = 3" },
+    zl: { tex: "\\mathbf{z}_l", name: "Chosen inputs", meaning: "The one or two inputs whose effect is being plotted, set to the value z.", shape: "l numbers (usually 1 or 2)", example: "x₁ = 1" },
+    zil: { tex: "\\mathbf{z}_{i,\\backslash l}", name: "The other inputs of row i", meaning: "Row i's actual values for every input not being plotted.", shape: "n − l numbers", example: "x₂ = 0, 1, 2" },
+  },
+
+  blocks: {
+    // §3 projection figure
+    zero: { title: "Zero line", body: "<p>Arrows start here. Above means the prediction should go up, below means down.</p>", shape: "0" },
+    g1: { title: "House 1: −g = −3", body: "<p>Price 1, predicted 4: the loss falls fastest if this prediction drops. The arrow's length is the residual, 1 − 4 = −3.</p>", shape: "ỹ₁ = −3" },
+    g2: { title: "House 2: −g = −2", body: "<p>Price 2, predicted 4: move down by 2.</p>", shape: "ỹ₂ = −2" },
+    g3: { title: "House 3: −g = +2", body: "<p>Price 6, predicted 4: move up by 2.</p>", shape: "ỹ₃ = +2" },
+    g4: { title: "House 4: −g = +3", body: "<p>Price 7, predicted 4: move up by 3.</p>", shape: "ỹ₄ = +3" },
+    leafL: { title: "Left leaf: −2.5", body: "<p>The stump's value for every size ≤ 2.5: the average of the arrows it covers, (−3 − 2)/2. It also answers for sizes the data never had, such as 1.7.</p>", shape: "h = −2.5 for size ≤ 2.5" },
+    leafR: { title: "Right leaf: +2.5", body: "<p>The average of the arrows for houses 3 and 4. The pair of leaves is the least-squares best stump: leftover squared error 1.</p>", shape: "h = +2.5 for size > 2.5" },
+    // Algorithm 1
+    init: { title: "Line 1: the best constant", body: "<p>F₀ = argmin<sub>ρ</sub> Σ L(yᵢ, ρ): the single number with the lowest training loss. The mean for squared loss, the median for absolute or Huber loss, half the log-odds of the base rate for logistic loss.</p>", shape: "F₀ = 4 for the houses", lesson: "primer/ml/classical.html" },
+    loop: { title: "Lines 2 to 7: the loop", body: "<p>Repeat once per tree, M times in all. The model is never refit from scratch; it only grows by addition.</p>", shape: "m = 1 … M" },
+    pseudo: { title: "Line 3: pseudo-responses", body: "<p>The negative gradient of the loss at every training example, evaluated at the current model. This is the only place the loss's slope enters.</p>", shape: "one number per example", lesson: "primer/ml/classical.html" },
+    fit: { title: "Line 4: fit a tree by least squares", body: "<p>Grow a small regression tree (J leaves) to predict the pseudo-responses, with the ordinary squared-error split criterion, whatever the loss.</p>", shape: "J leaves" },
+    leafv: { title: "Line 5: the line search, per leaf", body: "<p>Choose each leaf's value to minimize the real loss for its examples (equation 18): the mean for squared loss, the median for absolute loss, one Newton step for logistic loss.</p>", shape: "γ_jm, one per leaf" },
+    update: { title: "Line 6: update, shrunk by ν", body: "<p>Add the new tree to the model, scaled by the learning rate ν (equation 36).</p>", shape: "F_m = F_{m−1} + ν Σ γ_jm 1(x ∈ R_jm)" },
+    out: { title: "The final model", body: "<p>A constant plus M shrunken trees. Predicting means routing the input down every tree and adding up the leaf values.</p>", shape: "F_M(x)" },
+  },
+
+  onReady(P) {
+    playground(P);
+    table1Chart(P);
+    fig6Bars();
+    table2Bars();
+  },
+};
+
+/* ---- boosting playground: stumps on noisy sine data, three losses ---- */
+function playground(P) {
+  function mulberry32(seed) {
+    return function () {
+      seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rand = mulberry32(1999);
+  const gauss = () => { const u = 1 - rand(), v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const n = 40, MMAX = 300;
+  const X = [], Y = [], BAD = [];
+  for (let i = 0; i < n; i++) { const x = 6 * rand(); X.push(x); Y.push(Math.sin(x) + 0.3 * gauss()); BAD.push(false); }
+  // Three labelling mistakes: these targets are pushed up by 3.
+  [4, 17, 30].forEach((i) => { Y[i] += 3; BAD[i] = true; });
+  const GRID = Array.from({ length: 121 }, (_, k) => k * 0.05);
+  const median = (v) => { const s = [...v].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const quantile = (v, q) => { const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
+
+  // Best least-squares threshold on targets t, among the rows idx (sorted by x). null if no split.
+  function bestSplit(idx, t) {
+    const o = [...idx].sort((a, b) => X[a] - X[b]);
+    let total = 0; o.forEach((i) => (total += t[i]));
+    let best = null, sL = 0;
+    for (let k = 0; k < o.length - 1; k++) {
+      sL += t[o[k]];
+      const nL = k + 1, nR = o.length - nL, sR = total - sL;
+      const score = (sL * sL) / nL + (sR * sR) / nR;
+      if (X[o[k]] < X[o[k + 1]] && (!best || score > best.score)) best = { score, thr: (X[o[k]] + X[o[k + 1]]) / 2 };
+    }
+    return best && best.thr;
+  }
+  // A depth-2 tree (up to 4 leaves) grown on t; returns the leaves as [lo, hi, rows].
+  function grow(t) {
+    const all = X.map((_, i) => i);
+    const leaves = [];
+    const t1 = bestSplit(all, t);
+    [[-Infinity, t1], [t1, Infinity]].forEach(([lo, hi]) => {
+      const rows = all.filter((i) => X[i] > lo && X[i] <= hi);
+      const t2 = rows.length > 1 ? bestSplit(rows, t) : null;
+      if (t2 === null) leaves.push([lo, hi, rows]);
+      else { leaves.push([lo, t2, rows.filter((i) => X[i] <= t2)]); leaves.push([t2, hi, rows.filter((i) => X[i] > t2)]); }
+    });
+    return leaves;
+  }
+  function boost(loss, nu) {
+    const F0 = loss === "ls" ? Y.reduce((a, b) => a + b, 0) / n : median(Y);
+    const F = Array(n).fill(F0);
+    const trees = [];
+    for (let m = 0; m < MMAX; m++) {
+      const r = Y.map((y, i) => y - F[i]);
+      let delta = 0, t = r;
+      if (loss === "lad") t = r.map((v) => Math.sign(v));
+      if (loss === "huber") { delta = quantile(r.map(Math.abs), 0.9); t = r.map((v) => Math.max(-delta, Math.min(delta, v))); }
+      const tree = grow(t).map(([lo, hi, rows]) => {
+        const rr = rows.map((i) => r[i]);
+        let g;
+        if (loss === "ls") g = rr.reduce((a, b) => a + b, 0) / rr.length;
+        else {
+          const med = median(rr);
+          g = loss === "lad" ? med : med + rr.reduce((a, v) => a + Math.sign(v - med) * Math.min(delta, Math.abs(v - med)), 0) / rr.length;
+        }
+        return [lo, hi, nu * g];
+      });
+      trees.push(tree);
+      for (let i = 0; i < n; i++) for (const [lo, hi, g] of tree) if (X[i] > lo && X[i] <= hi) F[i] += g;
+    }
+    return { F0, trees };
+  }
+  const leafValue = (tree, x) => { for (const [lo, hi, g] of tree) if (x > lo && x <= hi) return g; return 0; };
+  function distanceCurve(model) {
+    const cur = GRID.map(() => model.F0);
+    const out = [[0, GRID.reduce((a, x, k) => a + Math.abs(cur[k] - Math.sin(x)), 0) / GRID.length]];
+    model.trees.forEach((tree, m) => {
+      let s = 0;
+      GRID.forEach((x, k) => { cur[k] += leafValue(tree, x); s += Math.abs(cur[k] - Math.sin(x)); });
+      out.push([m + 1, s / GRID.length]);
+    });
+    return out;
+  }
+  function predict(model, M, x) {
+    let f = model.F0;
+    for (let m = 0; m < M; m++) f += leafValue(model.trees[m], x);
+    return f;
+  }
+
+  const lossSel = document.getElementById("gb-loss");
+  const nuIn = document.getElementById("gb-nu"), nuV = document.getElementById("gb-nu-v");
+  const mIn = document.getElementById("gb-m"), mV = document.getElementById("gb-m-v");
+  const svg = document.getElementById("gb-svg");
+  const readout = document.getElementById("gb-readout");
+  const NS = "http://www.w3.org/2000/svg";
+  const W = 420, H = 250, ml = 34, mr = 10, mt = 10, mb = 26;
+  const sx = (x) => ml + (x / 6) * (W - ml - mr);
+  const sy = (y) => mt + ((4.5 - y) / 6.5) * (H - mt - mb);
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v)); return e; };
+  let model = null, curve = null, chart = null;
+
+  function drawPicture(M) {
+    svg.innerHTML = "";
+    svg.appendChild(el("line", { x1: ml, y1: sy(0), x2: W - mr, y2: sy(0), stroke: "var(--border)" }));
+    [-2, 0, 2, 4].forEach((v) => { const t = el("text", { x: ml - 6, y: sy(v) + 4, "text-anchor": "end", class: "lbl" }); t.textContent = String(v); svg.appendChild(t); });
+    [0, 2, 4, 6].forEach((v) => { const t = el("text", { x: sx(v), y: H - 8, "text-anchor": "middle", class: "lbl" }); t.textContent = `x = ${v}`; svg.appendChild(t); });
+    const truth = GRID.map((x, k) => `${k ? "L" : "M"}${sx(x).toFixed(1)},${sy(Math.sin(x)).toFixed(1)}`).join(" ");
+    svg.appendChild(el("path", { d: truth, fill: "none", stroke: "var(--muted)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }));
+    for (let i = 0; i < n; i++) {
+      svg.appendChild(BAD[i]
+        ? el("circle", { cx: sx(X[i]), cy: sy(Y[i]), r: 4.5, fill: "none", stroke: "var(--active)", "stroke-width": 2 })
+        : el("circle", { cx: sx(X[i]), cy: sy(Y[i]), r: 3, fill: "var(--wire)" }));
+    }
+    const fine = Array.from({ length: 301 }, (_, k) => k * 0.02);
+    const fit = fine.map((x, k) => `${k ? "L" : "M"}${sx(x).toFixed(1)},${sy(predict(model, M, x)).toFixed(1)}`).join(" ");
+    svg.appendChild(el("path", { d: fit, fill: "none", stroke: "var(--accent)", "stroke-width": 2.5 }));
+  }
+  function refresh(rebuild) {
+    const loss = lossSel.value, nu = +nuIn.value, M = +mIn.value;
+    nuV.textContent = nu.toFixed(2); mV.textContent = String(M);
+    if (rebuild) {
+      model = boost(loss, nu);
+      curve = distanceCurve(model);
+      const series = [{ name: "distance from the true curve", points: curve }];
+      if (!chart) chart = P.lineChart(document.getElementById("gb-chart"), {
+        series, width: 420, height: 240, xLabel: "number of trees M", yLabel: "distance",
+        yMin: 0, xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(3),
+        readout: document.getElementById("gb-chart-readout"),
+        ariaLabel: "Average distance of the boosted fit from the true curve against the number of trees",
+      });
+      else chart.update(series);
+    }
+    drawPicture(M);
+    let best = 0; curve.forEach((p, k) => { if (p[1] < curve[best][1]) best = k; });
+    const name = lossSel.options[lossSel.selectedIndex].text;
+    readout.textContent = `${name}, ν = ${nu.toFixed(2)}, M = ${M} trees: average distance from the true curve ${curve[M][1].toFixed(3)}. The lowest for these settings is ${curve[best][1].toFixed(3)}, at M = ${best}.`;
+    svg.setAttribute("aria-label", `Forty training points around a sine curve, three of them mislabelled, and the boosted fit after ${M} trees with ${name}, learning rate ${nu.toFixed(2)}.`);
+  }
+  lossSel.addEventListener("change", () => refresh(true));
+  nuIn.addEventListener("input", () => refresh(true));
+  mIn.addEventListener("input", () => refresh(false));
+  refresh(true);
+}
+
+/* ---- Table 1: best number of trees against the learning rate ---- */
+function table1Chart(P) {
+  const nus = [0.03, 0.06, 0.125, 0.25, 0.5, 1.0];
+  const ls = [855, 326, 146, 77, 43, 15], lad = [937, 509, 307, 84, 19, 19], l2 = [1000, 1000, 570, 310, 80, 20];
+  const pts = (v) => nus.map((nu, k) => [nu, v[k]]);
+  P.lineChart(document.getElementById("t1-chart"), {
+    series: [
+      { name: "least squares", points: pts(ls) },
+      { name: "LAD", points: pts(lad) },
+      { name: "logistic (deviance)", points: pts(l2) },
+    ],
+    width: 420, height: 280,
+    xLabel: "learning rate ν (log scale)", yLabel: "best number of trees",
+    logX: true, yMin: 0, yMax: 1050,
+    xFmt: (v) => String(+v.toPrecision(2)), yFmt: (v) => String(Math.round(v)),
+    readout: document.getElementById("t1-readout"),
+    ariaLabel: "Best number of trees against the learning rate for three boosting methods, from Table 1",
+  });
+}
+
+/* ---- Figure 6 (numbers from §7): tree size ---- */
+function fig6Bars() {
+  const rows = [["J = 2", 23.2, 8], ["J = 3", 16.4, 2], ["J = 6", 2.4, 30], ["J = 11", 2.2, 31], ["J = 21", 3.7, 29]];
+  document.getElementById("f6-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Average excess error over the best tree size, axis 0 to 25% (§7); right: targets won out of 100</div>` +
+    rows.map(([j, e, w]) => `<div class="share-row" style="grid-template-columns:4rem minmax(0,1fr) 6.5rem"><span>${j}</span><div><div class="share-bar" style="width:${((e / 25) * 100).toFixed(1)}%"></div></div><span>+${e}% · won ${w}</span></div>`).join("");
+}
+
+/* ---- Table 2: estimated against true relative importance ---- */
+function table2Bars() {
+  const rows = [[10, 100, 100.0], [9, 90, 90.3], [7, 70, 69.8], [5, 50, 51.7], [3, 30, 31.3], [1, 10, 13.0]];
+  const bar = (label, v, style) => `<div class="share-row" style="grid-template-columns:4.5rem minmax(0,1fr) 3rem"><span>${label}</span><div><div class="share-bar" style="width:${v}%;${style}"></div></div><span>${v.toFixed(1)}</span></div>`;
+  document.getElementById("t2-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--accent)"></i>true, |a<sub>j</sub>| scaled to 100</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>estimated (striped, Table 2)</span></div>` +
+    rows.map(([j, t, e]) => bar(`input ${j}`, t, "") + bar("", e, "background:var(--hatch) var(--accent)") + `<div style="height:.35rem"></div>`).join("");
+}
+</script>
+</body>
+</html>

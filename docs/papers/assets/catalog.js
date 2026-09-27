@@ -1020,7 +1020,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.classical"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "xgboost",
