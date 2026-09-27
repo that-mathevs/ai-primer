@@ -768,6 +768,7 @@ measurements into a decision made in advance.
   (2022)**: https://arxiv.org/abs/2212.08073. Introduced training against a
   written set of principles, with self-critique and revision followed by
   reinforcement learning from AI-labelled preferences (RLAIF).
+  [Annotated companion](../../papers/constitutional-ai.html)
 - **Perez et al., *Red Teaming Language Models with Language Models*
   (2022)**: https://arxiv.org/abs/2202.03286. Showed that one language model
   can generate test cases that find failures in another, automating

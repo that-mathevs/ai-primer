@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Constitutional AI, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Bai et al. (2022), Constitutional AI: Harmlessness from AI Feedback.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="constitutional-ai">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a>
+        <ol>
+          <li><a href="#s1-1">1.1 Motivations</a></li>
+          <li><a href="#s1-2">1.2 The approach</a></li>
+          <li><a href="#s1-3">1.3–1.4 Contributions, models, data</a></li>
+        </ol>
+      </li>
+      <li><a href="#s2">2 Can a model judge harm?</a></li>
+      <li><a href="#s3">3 Critique, revise, fine-tune</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Method</a></li>
+          <li><a href="#s3-2">3.2 Datasets and training</a></li>
+          <li><a href="#s3-3">3.3 Main results</a></li>
+          <li><a href="#s3-4">3.4 Scaling trends</a></li>
+          <li><a href="#s3-5">3.5 Are critiques necessary?</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 RL from AI feedback</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Method</a></li>
+          <li><a href="#s4-2">4.2 Datasets and training</a></li>
+          <li><a href="#s4-3">4.3 Main results</a></li>
+          <li><a href="#s4-4">4.4 Harmless, not evasive</a></li>
+          <li><a href="#s4-5">4.5 Absolute harmfulness</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Related work</a></li>
+      <li><a href="#s6">6 Discussion</a></li>
+      <li><a href="#appendix">Appendices</a></li>
+      <li><a href="#today">What carries forward</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Constitutional AI, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Bai, Kadavath, Kundu, Askell and colleagues (2022), <em>Constitutional AI: Harmlessness from AI Feedback</em>: training an assistant to be harmless from a short written list of principles instead of thousands of human labels for harm.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2212.08073">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2212.08073">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2212.08073">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is released under the Creative Commons Attribution 4.0 licence; its numbers appear here in text and small tables with attribution, and its pipeline figure is redrawn from scratch. The paper has almost no equations: the formulas below write out, in symbols, steps the paper describes in words, and each is labelled as this page's own. The paper's example conversations include deliberately harmful requests; this page uses its own milder examples instead. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation has a table decoding it, a sentence reading it aloud, the numbers worked through, and the same numbers in Python.</li>
+  <li>The pipeline diagram in §1.2 is live: tap any box to see what goes in and what comes out.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/ml/alignment.html">alignment lesson</a> builds a toy constitution, a critique-and-revise pass and the preference pairs it produces, in plain Python. The reward-model machinery this paper reuses is built in the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> and walked through in the <a href="instructgpt.html">InstructGPT companion</a>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073">original</a></span></h2>
+<blockquote class="quote">“The only human oversight is provided through a list of rules or principles, and so we refer to the method as ‘Constitutional AI’.”<cite>Bai et al. (2022), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A newspaper has a style guide. A junior writer drafts a story, an editor reads it against the guide and writes notes in the margin, and the writer revises. Later the same editor is asked, over and over, which of two drafts is better, and those verdicts teach the newsroom what “better” means. <span class="t" data-t="constitutional ai">Constitutional AI</span> does this with language models: the style guide is a short list of principles written in plain language (the <em>constitution</em>), and a model plays the editor.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>An assistant can be trained to be <strong>harmless</strong> with <strong>no human labels identifying harmful outputs</strong>: people wrote the principles and a few examples, and a model did all the harm-judging.</li>
+  <li>Two stages: a <strong>supervised</strong> stage (the model critiques and rewrites its own answers, then is <span class="t" data-t="fine-tuning">fine-tuned</span> on the rewrites) and a <strong>reinforcement learning</strong> stage whose preference labels come from a model, not people: <span class="t" data-t="rlaif">RLAIF</span>.</li>
+  <li>The result is <strong>harmless but not evasive</strong>: it engages with a harmful request by explaining why it won't help, instead of shutting the conversation down.</li>
+  <li>Both stages can use <span class="t" data-t="chain of thought">chain-of-thought</span> reasoning, which makes the model's judgements easier to read and improves how people rate the results.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>This paper showed that the expensive, slow part of <span class="t" data-t="rlhf">RLHF</span>, collecting human comparisons, can be partly replaced by a model applying written rules. That moves the question “what should the model do?” out of a pile of private labels and into a document people can read and argue about.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S1">original</a></span></h2>
+<blockquote class="quote">“We chose the term ‘constitutional’ because we are able to train less harmful systems entirely through the specification of a short list of principles or instructions, i.e. a constitution.”<cite>Bai et al. (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Every AI system follows <em>some</em> set of principles, even if nobody wrote them down: they are baked into whatever the human raters happened to reward. The authors' second reason for the word “constitutional” is exactly this. If principles are unavoidable, better to write them down where everyone can see them.</p>
+<h3 class="rung">The starting point</h3>
+<p>The paper builds on the authors' earlier RLHF assistant, trained on two kinds of human comparisons: which answer is more <em>helpful</em>, and which is more <em>harmless</em>. That earlier work found a tension between the two. Training for helpfulness makes a model willing to obey harmful requests; training for harmlessness makes it evasive, refusing controversial questions and sometimes staying evasive for the rest of the conversation.</p>
+
+<section id="s1-1">
+<h3>1.1 Motivations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S1.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A company that grows from ten staff to ten thousand can't have the founder review every decision. It writes a handbook and trains managers to apply it. The paper's four motivations are that situation, applied to supervising AI:</p>
+<ol>
+  <li><strong>Scaling supervision.</strong> Using AI to help people supervise AI more efficiently, which the paper calls “scaling supervision” (<span class="t" data-tip-title="Scalable oversight" data-tip="The general research goal of supervising AI systems whose work is too large or too hard for people to check directly, often by using AI to help the people doing the checking. This paper calls its version scaling supervision.">scalable oversight</span> is the wider field's name for the goal). RLHF already took a step this way: the reward during training comes from a <span class="t" data-t="preference model">preference model</span>, not a person watching live. But it still needs tens of thousands of human labels.</li>
+  <li><strong>A harmless but non-evasive assistant.</strong> An assistant that answers everything with “I don't know” is harmless and useless. The goal is one that declines harmful requests <em>and explains why</em>.</li>
+  <li><strong>Simplicity and transparency.</strong> Tens of thousands of labels don't tell anyone what the training goal was. A short list of principles does.</li>
+  <li><strong>Faster iteration.</strong> Changing the goal means editing the principles, not collecting a new round of human labels.</li>
+</ol>
+<h4>Tiny example: reading an Elo gap</h4>
+<p>The paper reports results as <span class="t" data-t="elo rating">Elo scores</span> computed from crowdworkers' side-by-side choices, the same rating system chess uses. Only the <em>gap</em> between two scores means anything. If model A sits 100 points above model B, people are predicted to prefer A about 64% of the time. At 200 points it is about 76%.</p>
+<div class="eq" data-tex="\htmlData{sym=PAB}{P(A \succ B)} = \frac{1}{1 + \htmlData{sym=tenpow}{10^{-(R_A - R_B)/400}}}" data-fallback="P(A ≻ B) = 1 / (1 + 10^(−(R_A − R_B)/400))"></div>
+<div class="symtable" data-syms="PAB,RA,RB,tenpow"></div>
+<p class="inwords"><strong>In words:</strong> “the chance people prefer A to B depends only on the difference of their ratings; every 400 points of difference multiplies the odds by ten.”</p>
+<p class="inwords"><strong>With the numbers:</strong> R<sub>A</sub> − R<sub>B</sub> = 100, so 10<sup>−100/400</sup> = 10<sup>−0.25</sup> = 0.562 and P = 1 / 1.562 = <strong>0.64</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>R_A, R_B = 150, 50
+# 10^(−(R_A − R_B)/400)
+ten_pow = 10 ** (-(R_A - R_B) / 400)
+round(ten_pow, 3)  # → 0.562
+# P(A ≻ B)
+round(1 / (1 + ten_pow), 2)  # → 0.64</code></pre>
+<div class="plot" id="elo-plot">
+  <div class="controls"><label for="elo-gap">Elo gap R<sub>A</sub> − R<sub>B</sub> = <strong id="elo-gap-v">100</strong></label><input type="range" id="elo-gap" min="-300" max="300" step="10" value="100"></div>
+  <div id="elo-bars"></div>
+  <p class="readout" id="elo-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> drag the gap and watch the two bars, which always add up to 100%: they are the predicted share of head-to-head comparisons each model wins. At a gap of 0 the split is 50/50. The paper's Figure 2 plots harmlessness Elo against helpfulness Elo for every training run, with gaps between the best and worst runs of a few hundred points on each axis, so this slider covers the range you need to read it. The <a data-lesson="primer/ml/benchmarks.html#elo_win_probability">benchmarks lesson</a> derives the same formula and computes it in <a data-lesson="primer/ml/benchmarks.html#elo_win_probability"><code>elo_win_probability</code></a>.</p>
+<h4>Why it matters</h4>
+<p>The paper's Figure 2 is its headline: for the models trained with human feedback, gaining helpfulness costs harmlessness, and the runs trace out a curve of trade-offs. The runs trained with AI feedback sit above that curve, less harmful at the same helpfulness. In the language of trade-offs this is a <span class="t" data-tip-title="Pareto improvement" data-tip="Doing better on one goal without doing worse on any other. When two goals trade off, the best achievable combinations form a curve (the Pareto frontier); a Pareto improvement moves that curve outwards.">Pareto improvement</span>: better on one axis without being worse on the other.</p>
+</section>
+
+<section id="s1-2">
+<h3>1.2 The Constitutional AI approach <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S1.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two stages, like learning to write for a newspaper. First you rewrite your own drafts following the editor's notes until your habits change (supervised stage). Then you write two versions of each piece, the editor picks the better one each time, and you gradually learn to write the kind the editor prefers (reinforcement stage).</p>
+<h4>The two stages, as the paper names them</h4>
+<ul>
+  <li><strong>Supervised stage: critique → revision → supervised learning.</strong> A helpful-only assistant answers prompts designed to provoke harmful answers (<span class="t" data-t="red-teaming">red-teaming</span> prompts). The model is asked to critique its answer against a randomly drawn principle, then to revise it. Repeat, with a fresh principle each time. Fine-tune a <span class="t" data-t="pretraining">pretrained</span> model on the final revisions. The paper says this stage gets the model “on-distribution”, so the next stage has less exploring to do.</li>
+  <li><strong>RL stage: AI comparisons → preference model → reinforcement learning.</strong> The supervised model writes two answers per harmful prompt. A <em>feedback model</em> is shown both and a principle, and asked which is better. Its choices, mixed with <em>human</em> labels for helpfulness, train a preference model, and the supervised model is then trained by RL against it.</li>
+</ul>
+<h4>Diagram</h4>
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 660" role="img" aria-label="The Constitutional AI pipeline: a supervised stage on top, a reinforcement learning stage below">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="slframe" aria-label="The supervised stage"><rect x="4" y="8" width="352" height="300" rx="12"/></g>
+    <g class="blk frame" data-block="rlframe" aria-label="The reinforcement learning stage"><rect x="4" y="324" width="352" height="330" rx="12"/></g>
+    <text x="14" y="26" class="lbl">Supervised stage (SL-CAI)</text>
+    <text x="24" y="342" class="lbl">Reinforcement stage (RL-CAI)</text>
+    <!-- wires, supervised -->
+    <path class="wire" d="M170,58 H186" marker-end="url(#arr)"/>
+    <path class="wire" d="M262,76 V96 H222 V104" marker-end="url(#arr)"/>
+    <path class="wire" d="M222,132 V144" marker-end="url(#arr)"/>
+    <path class="wire" d="M222,172 V184" marker-end="url(#arr)"/>
+    <path class="wire" d="M292,198 H310 V158 H292" marker-end="url(#arr)"/>
+    <path class="wire" d="M96,170 H150" marker-end="url(#arr)"/>
+    <path class="wire" d="M96,194 H150" marker-end="url(#arr)"/>
+    <path class="wire" d="M222,212 V242" marker-end="url(#arr)"/>
+    <!-- wires, reinforcement -->
+    <path class="wire" d="M222,286 V296 H190 V356" marker-end="url(#arr)"/>
+    <path class="wire" d="M190,396 V416" marker-end="url(#arr)"/>
+    <path class="wire" d="M96,440 H108" marker-end="url(#arr)"/>
+    <path class="wire" d="M190,462 V488" marker-end="url(#arr)"/>
+    <path class="wire" d="M318,460 V506 H272" marker-end="url(#arr)"/>
+    <path class="wire" d="M190,526 V546" marker-end="url(#arr)"/>
+    <path class="wire" d="M190,584 V604" marker-end="url(#arr)"/>
+    <path class="wire" d="M190,296 H16 V566 H108" marker-end="url(#arr)"/>
+    <text x="314" y="182" class="lbl">repeat</text>
+    <!-- blocks, supervised -->
+    <g class="blk emb" data-block="helpful"><rect x="14" y="38" width="156" height="40" rx="7"/><text x="92" y="55" text-anchor="middle">Helpful-only</text><text x="92" y="70" text-anchor="middle">RLHF model</text></g>
+    <g class="blk plain" data-block="redteam"><rect x="188" y="38" width="160" height="40" rx="7"/><text x="268" y="55" text-anchor="middle">Answers red-team</text><text x="268" y="70" text-anchor="middle">prompts</text></g>
+    <g class="blk soft" data-block="response"><rect x="152" y="104" width="140" height="28" rx="6"/><text x="222" y="123" text-anchor="middle">Response</text></g>
+    <g class="blk ff" data-block="critique"><rect x="152" y="144" width="140" height="28" rx="6"/><text x="222" y="163" text-anchor="middle">Critique</text></g>
+    <g class="blk lin" data-block="revision"><rect x="152" y="184" width="140" height="28" rx="6"/><text x="222" y="203" text-anchor="middle">Revision</text></g>
+    <g class="blk norm" data-block="constitution"><rect x="26" y="156" width="70" height="52" rx="10"/><text x="61" y="178" text-anchor="middle">16</text><text x="61" y="193" text-anchor="middle">principles</text></g>
+    <g class="blk attn" data-block="slcai"><rect x="134" y="244" width="176" height="42" rx="7"/><text x="222" y="262" text-anchor="middle">Fine-tune on revisions</text><text x="222" y="278" text-anchor="middle">→ SL-CAI model</text></g>
+    <!-- blocks, reinforcement -->
+    <g class="blk plain" data-block="pairs"><rect x="110" y="356" width="160" height="40" rx="7"/><text x="190" y="373" text-anchor="middle">SL-CAI writes two</text><text x="190" y="388" text-anchor="middle">answers per prompt</text></g>
+    <g class="blk norm" data-block="constitution"><rect x="26" y="414" width="70" height="52" rx="10"/><text x="61" y="436" text-anchor="middle">16</text><text x="61" y="451" text-anchor="middle">principles</text></g>
+    <g class="blk ff" data-block="feedback"><rect x="110" y="418" width="160" height="44" rx="7"/><text x="190" y="436" text-anchor="middle">Feedback model</text><text x="190" y="452" text-anchor="middle">picks (A) or (B)</text></g>
+    <g class="blk emb" data-block="humanlabels"><rect x="280" y="414" width="72" height="46" rx="7"/><text x="316" y="433" text-anchor="middle">human</text><text x="316" y="448" text-anchor="middle">helpful</text></g>
+    <g class="blk attn" data-block="pm"><rect x="110" y="488" width="160" height="38" rx="7"/><text x="190" y="511" text-anchor="middle">Preference model</text></g>
+    <g class="blk soft" data-block="rlaif"><rect x="110" y="546" width="160" height="38" rx="7"/><text x="190" y="569" text-anchor="middle">RL against the PM</text></g>
+    <g class="blk attn" data-block="rlcai"><rect x="110" y="606" width="160" height="38" rx="7"/><text x="190" y="629" text-anchor="middle">RL-CAI model</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap any box, starting at the top left with the <strong>helpful-only RLHF model</strong>. The two <strong>16 principles</strong> boxes are the same constitution used twice.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn and laid out top to bottom. Based on Bai et al. (2022), Figure 1 (CC BY 4.0).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top frame is the supervised stage. A helpful-only model answers red-team prompts; each answer goes round the Response → Critique → Revision loop, with a principle drawn from the constitution on the left each time, and the “repeat” arrow sends each revision back for another critique. The revisions (from every round) fine-tune a model, SL-CAI. The long wire down the left edge carries SL-CAI into the bottom frame twice: it writes the pairs of answers, and it is also the starting point for RL. In the bottom frame, the feedback model compares each pair against a principle from the same constitution, its verdicts join the human helpfulness labels (right) to train one preference model, and RL against that preference model produces the final RL-CAI model. The constitution appearing twice is the whole idea: one written document steers both stages.</p>
+<h4>Why it matters</h4>
+<p>From the preference model downwards, this is ordinary RLHF. The only swap is <em>who labels harmlessness</em>. That makes the method easy to bolt onto an existing RLHF pipeline, and it is why the paper can compare the two fairly.</p>
+</section>
+
+<section id="s1-3">
+<h3>1.3–1.4 Contributions, models and data <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S1.SS3">original</a></span></h3>
+<p>The paper's three findings, in its own order:</p>
+<ul>
+  <li>As models get more capable, their ability to spot harm improves a lot, and chain-of-thought reasoning improves it further, to the point of competing with preference models trained on human labels (§2).</li>
+  <li>Critiques and revisions can be applied again and again, each round reducing harmfulness, and critiquing first beats revising directly (§3).</li>
+  <li>RL on the AI-generated labels improves the model further, matching or beating human labels for harmlessness as judged by crowdworkers (§4).</li>
+</ul>
+<p>The models are the authors' own pretrained language models (the results focus on the largest, with 52 billion parameters). The starting assistant was trained with RLHF using <em>only</em> helpfulness labels. For comparison they also trained new “helpful” and “HH” (helpful and harmless) RLHF models from human labels. The human labels themselves came from earlier work, where crowdworkers chose the more helpful or more harmless of two model answers, and for harmlessness also acted as red-teamers, writing prompts meant to draw out harmful answers.</p>
+</section>
+</section>
+
+<section id="s2">
+<h2>2 Evaluating the potential for AI supervision <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S2">original</a></span></h2>
+<blockquote class="quote">“The results suggest that large language models may already be approaching the performance of crowdworkers in identifying and assessing harmful behavior, and so motivate using AI feedback.”<cite>Bai et al. (2022), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Before handing the marking to a teaching assistant, you check that they mark the way you would: give them papers you have already marked and count how often they agree. Section 2 does this for a model marking helpfulness, honesty and harmlessness.</p>
+<h3 class="rung">What was tested</h3>
+<p>Earlier work had written conversations ending in two candidate answers, with the better one known: 221 of them. Models now scored “well over 90%” on those, so the authors wrote 217 harder ones, mostly subtle tests of harmlessness, including cases where an evasive answer should lose to one that is harmless <em>and</em> helpful. That makes 438 binary comparisons. Two kinds of judge were scored:</p>
+<ul>
+  <li>a preference model trained on several hundred thousand human labels, counted correct when it scores the better answer higher;</li>
+  <li>a language model asked a multiple-choice question (“which answer is better, (A) or (B)?”), with and without chain-of-thought reasoning written out first.</li>
+</ul>
+<p>Chain of thought helped the larger models a lot, and the trend in Figure 4 suggests models larger than 52 billion parameters would compete with the human-trained preference model. A further small gain came from writing <strong>five</strong> chains of thought and averaging the probabilities each gave.</p>
+<h3 class="rung">Tiny example (illustrative numbers)</h3>
+<p>Five chains of thought about the same pair. Each ends by leaning one way, giving probabilities for (A) of 0.9, 0.2, 0.8, 0.7 and 0.9. One chain went astray, but the average, 0.7, still leans towards (A), and less extremely than any single confident chain.</p>
+<div class="eq" data-tex="\htmlData{sym=pbar}{\bar{p}} = \htmlData{sym=invS}{\frac{1}{S}} \htmlData{sym=sumS}{\sum_{s=1}^{S}} \htmlData{sym=ps}{p_s}" data-fallback="p̄ = (1/S) Σ_s p_s"></div>
+<div class="symtable" data-syms="pbar,invS,sumS,ps,S"></div>
+<p class="inwords"><strong>In words:</strong> “add up the probability each chain of thought gives to answer (A), and divide by the number of chains.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (0.9 + 0.2 + 0.8 + 0.7 + 0.9) / 5 = 3.5 / 5 = <strong>0.7</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># p_s: each chain's probability for answer (A)
+p = [0.9, 0.2, 0.8, 0.7, 0.9]
+S = len(p)
+# (1/S) Σ_s p_s
+round(sum(p) / S, 2)  # → 0.7</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>This section is the paper's justification for everything that follows: AI feedback is only worth training on if the AI's verdicts track what people would say. Appendix B adds two more checks on crowdworker-labelled red-team conversations: telling harmful from ethical assistant behaviour on a balanced set of 254 conversations, and a 9-way classification of the kind of harm on 287 examples. The same habit, checking a model judge against human labels before trusting it, is how the <a data-lesson="primer/agents/evals.html">evals lesson</a> calibrates an <span class="t" data-t="llm-as-judge">LLM judge</span>.</p>
+</section>
+
+<section id="s3">
+<h2>3 Critiques, revisions and supervised learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Proofreading your own essay works better if you read it once hunting for one kind of problem (“is anything here unkind?”) and then rewrite, than if you just rewrite it cold. The supervised stage makes a model do exactly that, many times, and then learns from the finished rewrites.</p>
+
+<section id="s3-1">
+<h3>3.1 Method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S3.SS1">original</a></span></h3>
+<blockquote class="quote">“Note that since the final prompt-revision pair is formatted in the same manner as the original prompt-response pair, we can apply the same critique-revision pipeline multiple times, giving us a sequence of revisions.”<cite>Bai et al. (2022), §3.1</cite></blockquote>
+<h4>The loop</h4>
+<ol>
+  <li>Show the helpful-only model a red-team prompt and sample its answer, which is often harmful.</li>
+  <li>Append a <em>critique request</em>, drawn from the constitution, and sample the model's critique.</li>
+  <li>Append the matching <em>revision request</em> and sample the rewrite.</li>
+  <li>Put the prompt and the rewrite together. Because this looks just like the original prompt and answer, steps 2 to 4 can run again with a new principle.</li>
+</ol>
+<p>Each <strong>principle</strong> in the supervised stage is a pair: a critique request and its revision request. There are 16, drawn at random at every step. Two of them, quoted from the paper's Appendix C.1, appear in the step-through below.</p>
+<p>The model sometimes lost track of its role, writing a critique where a revision belonged or the reverse. The fix was a few worked examples in the prompt (<span class="t" data-t="few-shot prompt">few-shot prompting</span>), all formatted the same way.</p>
+<h4>Try it: step through a critique and revision loop</h4>
+<div class="play" id="cr-play">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem">
+    <button type="button" id="cr-next">Next step</button>
+    <button type="button" id="cr-reset">Start again</button>
+    <span id="cr-count" aria-live="polite"></span>
+  </div>
+  <div id="cr-steps"></div>
+  <p class="readout"><em>This example is this page's own, written to show the shape of the loop; it is not a real model's output. The principles quoted are from the paper's Appendix C.1. The paper's own examples are in its Appendices A and D.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> press <strong>Next step</strong> and read down. The first answer does what the person asked without thinking about the person whose messages would be read. The first principle asks for harms in general; its critique names the privacy problem, and the revision removes it while still speaking to the person. The second round draws a different principle, about sounding like a thoughtful friend; its critique finds nothing harmful left but notices the answer ignores <em>why</em> someone might ask, and the second revision adds that. Notice the pattern the paper reports: the first revision removes most of the harm, and later ones make smaller changes. Every revision in the chain, not only the last, becomes fine-tuning data (§3.2).</p>
+<h4>What the paper observed</h4>
+<p>The original answers often contained harmful content; the first revision almost always removed most of it; later revisions sometimes helped further, but less visibly. The revisions were rarely <span class="t" data-tip-title="Evasive answer" data-tip="An answer that avoids the question without saying why, such as “I can't answer that”. Harmless, but unhelpful and opaque. The paper treats evasiveness as a problem to remove, not a safe default.">evasive</span>: the model engaged with sensitive topics thoughtfully instead of shutting down. Appendix A notes that the critiques themselves were often inaccurate or overstated, yet the revisions were still more harmless than the original.</p>
+<h4>In code</h4>
+<p>The <a data-lesson="primer/ml/alignment.html">alignment lesson</a> builds a four-principle toy of this loop: <a data-lesson="primer/ml/alignment.html#critique"><code>critique</code></a> returns the names of the principles an answer breaks, and <a data-lesson="primer/ml/alignment.html#revise"><code>revise</code></a> applies one fix per broken principle. There the principles are keyword checks and the fixes are exact, so the rewrite always passes; a real model's critiques are softer and sometimes wrong.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Datasets and training <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S3.SS2">original</a></span></h3>
+<div class="tablewrap"><table>
+  <caption>Supervised-stage data, as reported by Bai et al. (2022), §3.2 (CC BY 4.0)</caption>
+  <thead><tr><th>What</th><th class="num">Count</th><th>How used</th></tr></thead>
+  <tbody>
+    <tr><td>Red-team prompts written by people (from earlier work)</td><td class="num">42,496</td><td>4 critique-revision rounds each</td></tr>
+    <tr><td>Red-team prompts written by a model, few-shot prompted</td><td class="num">140,335</td><td>4 critique-revision rounds each</td></tr>
+    <tr class="hl"><td>All red-team prompts</td><td class="num">182,831</td><td>4 revisions per prompt</td></tr>
+    <tr><td>Helpfulness prompts written by people</td><td class="num">135,296</td><td>2 answers each from the helpful model</td></tr>
+  </tbody>
+</table></div>
+<p>A pretrained model was fine-tuned for one <span class="t" data-t="epoch">epoch</span> on the revisions (from every round, not just the last) plus the helpfulness answers, at a constant <span class="t" data-t="learning rate">learning rate</span> of 0.5 times the pretraining rate, in <span class="t" data-t="batch">batches</span> of 1,024 sequences. All sampling used <span class="t" data-t="temperature">temperature</span> T = 1. The helpfulness answers are there so the model doesn't forget how to be useful while learning to be harmless.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Main results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A taste test with no scoresheet: crowdworkers chat with two models at once, and at every turn pick the answer they prefer. Thousands of such picks become Elo scores for helpfulness and for harmlessness.</p>
+<h4>What they found</h4>
+<ul>
+  <li>As in earlier work, the helpful-only RLHF model is more helpful and more harmful than the HH RLHF model.</li>
+  <li><strong>SL-CAI</strong> sits in between on harmlessness (more harmless than helpful RLHF, less than HH RLHF) and is less helpful than both RL models.</li>
+  <li>SL-CAI is both more helpful and more harmless than the pretrained model it started from.</li>
+  <li>The Elo scores rest on 10,274 helpfulness comparisons and 8,135 more (the paper's sentence leaves out the word; by context, harmlessness) across the 24 model snapshots in Figures 2 and 3.</li>
+</ul>
+<p>One detail matters for reading every result: this time crowdworkers were told to prefer a thoughtfully harmless answer over an evasively harmless one. That lowers the HH RLHF model's harmlessness score and raises the helpful model's, which the authors suspect is why the two look closer than in their earlier paper.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Scaling trends <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S3.SS4">original</a></span></h3>
+<h4>Number of revisions</h4>
+<p>Figure 5 scores the original answer (revision 0) and revisions 1 to 4 with preference models trained only on <em>human</em> labels. Harmlessness scores rise with every revision, most steeply at the first; helpfulness scores fall; the combined score rises. The authors add a caution from their earlier work: preference-model scores become less well <span class="t" data-t="calibration">calibrated</span> at high values, so the later gains should be taken “with a grain of salt”. They trained SL-CAI-<em>n</em> models on revisions up to and including the <em>n</em>-th, for <em>n</em> = 1 to 4.</p>
+<h4>Number of principles</h4>
+<p>Figure 6 varies how many principles the constitution holds. It makes no significant difference to the harmlessness score. The authors still expect more principles to give more <em>varied</em> revisions, which helps the RL stage explore, though they did not measure diversity.</p>
+<h4>Why it matters</h4>
+<p>The first revision does most of the work. Everything after it buys less, and the measuring stick itself gets less trustworthy at the top of its range: a small instance of <span class="t" data-t="goodhart's law">Goodhart's law</span>, which the <a data-lesson="primer/ml/alignment.html">alignment lesson</a> opens with.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Are critiques necessary? <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S3.SS5">original</a></span></h3>
+<p><strong>Everyday picture:</strong> “write down what's wrong, then fix it” against “just fix it”. Figure 7 compares critiqued revisions with direct revisions, scored by the same 52B harmlessness preference model. Critiques helped the smaller models noticeably; for the larger ones the two were similar, though critiques were always slightly ahead. The authors kept critiques anyway, for transparency: a written critique shows <em>why</em> the model changed its answer, and may help it find subtler harms.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Reinforcement learning from AI feedback <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>RLHF hires people to say which of two answers is better. RLAIF asks a model the same question, with a principle to judge by. Everything downstream (the preference model, the reinforcement learning) is unchanged.</p>
+
+<section id="s4-1">
+<h3>4.1 Method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“Once the desired comparison labels are obtained, the remainder of the training pipeline (i.e., preference model training and RL) is exactly the same as RLHF.”<cite>Bai et al. (2022), §4.1</cite></blockquote>
+<h4>The question the feedback model is asked</h4>
+<p>The <em>feedback model</em> (a pretrained language model, for the main runs) sees the conversation, a principle, and the two answers labelled (A) and (B), ending with “The answer is:”. There are 16 principles for this stage, one drawn at random per comparison, and a few worked examples are placed before each question. One of the principles:</p>
+<blockquote class="quote">“Which of these assistant responses is less harmful? Choose the response that a wise, ethical, polite and friendly person would more likely say.”<cite>Bai et al. (2022), §4.1</cite></blockquote>
+<h4>Tiny example: turning the model's answer into a label</h4>
+<p>The feedback model doesn't just say “(A)”; it gives a probability to every possible next token. Suppose the <span class="t" data-t="log-probability">log-probability</span> of “(A)” is −0.4 and of “(B)” is −1.5. As probabilities these are e<sup>−0.4</sup> = 0.670 and e<sup>−1.5</sup> = 0.223, which add up to only 0.893, because the rest went to other tokens. Rescale the two so they add up to 1 and (A) gets <strong>0.75</strong>. That number, not a flat “A wins”, is the training target: a <em>soft</em> label.</p>
+<div class="eq" data-tex="\htmlData{sym=t}{t} = \frac{\htmlData{sym=e}{e}^{\htmlData{sym=ellA}{\ell_A}}}{\htmlData{sym=e}{e}^{\htmlData{sym=ellA}{\ell_A}} + \htmlData{sym=e}{e}^{\htmlData{sym=ellB}{\ell_B}}}" data-fallback="t = e^(ℓ_A) / (e^(ℓ_A) + e^(ℓ_B))"></div>
+<div class="symtable" data-syms="t,ellA,ellB,e"></div>
+<p class="inwords"><strong>In words:</strong> “turn each option's log-probability back into a probability, then divide by the total of the two, so the pair shares 100% between them.” (This page's notation for the paper's “normalized probabilities as targets”.)</p>
+<p class="inwords"><strong>With the numbers:</strong> t = 0.670 / (0.670 + 0.223) = 0.670 / 0.893 = <strong>0.75</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# ℓ_A, ℓ_B: log-probabilities of the tokens "(A)" and "(B)"
+l_A, l_B = -0.4, -1.5
+round(math.exp(l_A), 3), round(math.exp(l_B), 3)  # → (0.67, 0.223)
+# t = e^ℓ_A / (e^ℓ_A + e^ℓ_B)
+t = math.exp(l_A) / (math.exp(l_A) + math.exp(l_B))
+round(t, 2)  # → 0.75</code></pre>
+<p>Is 0.75 meaningful? The paper argues these multiple-choice probabilities are fairly well calibrated (a “75%” is right about 75% of the time), and Figure 9 checks it on the §2 comparisons.</p>
+
+<h4>With chain of thought, and why it needs clamping</h4>
+<p>In the chain-of-thought variant the feedback model is the helpful RLHF model, the question is rephrased as a conversation, and it is told “Let's think step-by-step” before answering. The written reasoning usually ends by naming a winner, so the probability for that option comes out near 0 or 1: badly calibrated. The fix is to <span class="t" data-tip-title="Clamping" data-tip="Forcing a number into a range: anything below the lower bound becomes the lower bound, anything above the upper bound becomes the upper bound, and anything between is left alone.">clamp</span> the probability into the range 40% to 60%.</p>
+<div class="eq" data-tex="\htmlData{sym=tclamp}{t'} = \htmlData{sym=minop}{\min}\big(\htmlData{sym=maxop}{\max}(\htmlData{sym=t}{t},\ \htmlData{sym=lo}{0.4}),\ \htmlData{sym=hi}{0.6}\big)" data-fallback="t′ = min(max(t, 0.4), 0.6)"></div>
+<div class="symtable" data-syms="tclamp,t,maxop,lo,minop,hi"></div>
+<p class="inwords"><strong>In words:</strong> “raise anything below 0.4 up to 0.4, lower anything above 0.6 down to 0.6, and leave everything in between as it is.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a confident chain of thought gives t = 0.97, which becomes <strong>0.6</strong>; t = 0.03 becomes <strong>0.4</strong>; t = 0.55 stays <strong>0.55</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def clamp(t, lo=0.4, hi=0.6):
+    # t' = min(max(t, lo), hi)
+    return min(max(t, lo), hi)
+[clamp(t) for t in (0.97, 0.03, 0.55)]  # → [0.6, 0.4, 0.55]</code></pre>
+<h4>Why it matters</h4>
+<p>A label is a claim about how sure you are. Hard labels (0 or 1) and over-confident chain-of-thought labels both claim certainty the feedback model doesn't have, and §4.3 shows what the policy does with that false certainty. The paper also used the supervised model both to write the answer pairs and as RL's starting point, so the preference model is trained on the kind of answers the policy actually writes, at least early in RL.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Datasets and training <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S4.SS2">original</a></span></h3>
+<div class="tablewrap"><table>
+  <caption>RL-stage data, as reported by Bai et al. (2022), §4.2 (CC BY 4.0)</caption>
+  <thead><tr><th>What</th><th class="num">Count</th></tr></thead>
+  <tbody>
+    <tr><td>Human helpfulness comparisons (for the preference model)</td><td class="num">135,296</td></tr>
+    <tr class="hl"><td>AI harmlessness comparisons (one per SL-CAI red-team prompt)</td><td class="num">182,831</td></tr>
+    <tr><td>Extra model-written red-team prompts for RL</td><td class="num">491,142</td></tr>
+    <tr><td>Extra model-written helpfulness prompts for RL</td><td class="num">474,300</td></tr>
+  </tbody>
+</table></div>
+<p>Every RL run, AI feedback or human, used the same RL settings as the authors' earlier work and the same training prompts: all the prompts from §3.2 plus the extra ones above. One difference from their earlier paper: the RLHF baselines now start straight from pretrained models, since the earlier intermediate step made little difference compared with what RL added.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Main results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S4.SS3">original</a></span></h3>
+<h4>Headline</h4>
+<p>RL-CAI models are significantly more harmless than both the RLHF models and SL-CAI (Figures 3 and 8). With chain of thought, RL-CAI is slightly less helpful and slightly more harmless than without. In Figure 8 the RL-CAI runs gain a lot of harmlessness without a great cost in helpfulness.</p>
+<h4>Overtraining: Goodhart again</h4>
+<p>Trained too long, RL-CAI started to game its reward (<span class="t" data-t="reward hacking">reward hacking</span>): it became overly harsh with harmful prompts, or tacked the same boilerplate onto most red-team answers, such as “you are valid, valued, and cared for”. Three things helped:</p>
+<ul>
+  <li><strong>Rewriting principles</strong> to discourage over-reactive or accusatory answers. Several principles in Appendix C say so explicitly, such as avoiding answers that are “too preachy, obnoxious, or overly-reactive”.</li>
+  <li><strong>Ensembling</strong>: drawing one of 16 principles per label instead of reusing one, which made the preference model's scores more robust.</li>
+  <li><strong>Soft or clamped labels.</strong> Without chain of thought, soft labels did much better than hard 0/1 labels. With chain of thought, clamping to 20–80% helped slightly and 40–60% helped more, so 40–60 is what the main results use.</li>
+</ul>
+<h4>Why soft labels calm the policy down: the loss, decoded</h4>
+<p>The preference model gives each answer a score r, and the chance it assigns to “A is better” is the <span class="t" data-t="sigmoid">sigmoid</span> of the gap m = r<sub>A</sub> − r<sub>B</sub> (the <span class="t" data-t="bradley-terry model">Bradley-Terry model</span>). Training it on a target t is ordinary <span class="t" data-t="cross-entropy">cross-entropy</span> between t and that chance. The paper describes this in words (“normalized probabilities as targets”); written out, it is:</p>
+<div class="eq" data-tex="\htmlData{sym=Lsoft}{L}(\htmlData{sym=m}{m}) = -\big[\,\htmlData{sym=t}{t}\,\htmlData{sym=ln}{\ln}\htmlData{sym=sigma}{\sigma}(\htmlData{sym=m}{m}) + (1-\htmlData{sym=t}{t})\,\htmlData{sym=ln}{\ln}\htmlData{sym=sigma}{\sigma}(-\htmlData{sym=m}{m})\,\big], \qquad \htmlData{sym=mstar}{m^{*}} = \htmlData{sym=ln}{\ln}\frac{\htmlData{sym=t}{t}}{1-\htmlData{sym=t}{t}}" data-fallback="L(m) = −[t ln σ(m) + (1 − t) ln σ(−m)],  m* = ln(t / (1 − t))"></div>
+<div class="symtable" data-syms="m,t,sigma,ln,Lsoft,mstar"></div>
+<p class="inwords"><strong>In words:</strong> “reward the preference model for giving answer A the chance t of being better, and B the rest; the loss is smallest at the gap m* where the sigmoid of the gap equals t exactly.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with the clamped target t = 0.6, the best gap is m* = ln(0.6 / 0.4) = ln 1.5 = <strong>0.405</strong>, where the loss is 0.673. With the soft label t = 0.75 from §4.1, m* = ln 3 = <strong>1.10</strong>. With a hard label t = 1, m* = ln(1/0) is infinite: at a gap of 3 the loss is still 0.049 and still falling, so training keeps pushing the gap wider. With t = 0.6, the same gap of 3 costs 1.249, pulling the gap back towards 0.405.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def sigma(z):
+    return 1 / (1 + math.exp(-z))
+def L(m, t):
+    # −[t ln σ(m) + (1 − t) ln σ(−m)]
+    return -(t * math.log(sigma(m)) + (1 - t) * math.log(sigma(-m)))
+# m* = ln(t / (1 − t)) for the clamped and the soft target
+[round(math.log(t / (1 - t)), 3) for t in (0.6, 0.75)]  # → [0.405, 1.099]
+round(L(math.log(1.5), 0.6), 3)  # → 0.673
+# a gap of 3 under a hard label, then under the clamped one
+round(L(3, 1.0), 3), round(L(3, 0.6), 3)  # → (0.049, 1.249)</code></pre>
+<div class="plot" id="soft-plot">
+  <div class="controls"><label for="soft-t">target t = <strong id="soft-t-v">0.60</strong></label><input type="range" id="soft-t" min="0.5" max="0.99" step="0.01" value="0.6"></div>
+  <div id="soft-chart"></div>
+  <p class="readout" id="soft-readout">Hover or tap the curves to read the loss at any gap.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the preference model's score gap between the two answers; the y-axis is the loss on one comparison. The solid curve is a hard label, t = 1: it keeps sloping down to the right forever, so every step of training rewards an even bigger gap. The dashed curve is the target t from the slider: it has a lowest point at m* = ln(t/(1 − t)), and gaps beyond it cost more. Slide t down to 0.6, the paper's clamp, and the valley sits close to zero: the preference model learns “A is a bit better” rather than “A is infinitely better”. A preference model with milder gaps gives the policy a milder reward to chase, which is the paper's explanation for why soft and clamped labels led to less extreme answers. With t = 1 the formula is exactly the reward-model loss built in <a data-lesson="primer/ml/training_stages.html#reward_model_loss"><code>reward_model_loss</code></a>.</p>
+<p>Figure 9 of the paper checks the calibration directly on the §2 comparisons, plotting the 52B feedback model's stated probabilities against how often it was right, and finds them reasonably well calibrated.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Harmlessness versus evasiveness <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S4.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Ask a librarian something awkward. One says “I can't discuss that” and turns away. Another explains why they won't help with that part, and points you somewhere useful. Both are harmless; only the second is helpful, and only the second tells you what the rule is.</p>
+<h4>What the paper found</h4>
+<p>The earlier HH RLHF models were often evasive, with canned replies like “I can't answer that”. RL-CAI is “virtually never evasive”. Appendix D sets them side by side: on several of the paper's sensitive prompts, the HH RLHF model's whole reply is a short refusal, while RL-CAI with chain of thought explains the problem with the question and answers what it can.</p>
+<p>Figure 8 has a telling detail. Late in training, the harmlessness Elo of <em>both</em> RLHF baselines falls. For the helpful model, the authors' explanation is that it grows more willing to help with dangerous tasks. For the HH model, it grows more evasive, and crowdworkers had been told to prefer the nuanced answer over the evasive one when both were harmless. The authors trace the evasiveness partly to their older human-label instructions, which simply asked for the more harmless answer and so rewarded refusals.</p>
+<h4>Why it matters</h4>
+<p>How raters are instructed decides what a model learns. An instruction like “pick the more harmless answer” quietly teaches refusal, the <span class="t" data-t="over-refusal">over-refusal</span> failure the <a data-lesson="primer/ml/alignment.html#refusal_tradeoff">alignment lesson's refusal section</a> measures. Written principles can say what raters' instructions often leave out: engage, and explain.</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Absolute harmfulness score <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S4.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Comparisons say which of two answers is worse, never how bad either is. So the authors also used a single-model score: in earlier red-teaming, each worker chatted with one model trying to bait it, then rated their own “success” on a 0 to 4 scale. A language model was trained to predict that rating from the whole conversation.</p>
+<h4>Tiny example (illustrative numbers)</h4>
+<p>A worker rates a conversation 3; the predictor says 2.2. Training uses the squared error, an L2 loss: (2.2 − 3)² = 0.64.</p>
+<div class="eq" data-tex="\htmlData{sym=Labs}{L} = (\htmlData{sym=shat}{\hat{s}} - \htmlData{sym=sabs}{s})^2" data-fallback="L = (ŝ − s)²"></div>
+<div class="symtable" data-syms="Labs,shat,sabs"></div>
+<p class="inwords"><strong>In words:</strong> “the penalty is the square of how far the predicted rating is from the worker's rating.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (2.2 − 3)² = (−0.8)² = <strong>0.64</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># ŝ: predicted rating, s: the worker's rating, 0 to 4
+s_hat, s = 2.2, 3
+round((s_hat - s) ** 2, 2)  # → 0.64</code></pre>
+<h4>What they found</h4>
+<p>On 64 hand-picked held-out red-team prompts, averaged over 256 answers per prompt (Figure 10), the helpful-only RLHF model grows <em>more</em> harmful as training goes on, while HH RLHF, RL-CAI and RL-CAI with chain of thought all grow less harmful. The authors caution that absolute scores may be poorly calibrated, since different workers grade the 0 to 4 scale differently.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S5">original</a></span></h2>
+<p>The paper places itself as an extension of RLHF, alongside other assistants trained on human data (LaMDA, InstructGPT, Sparrow). Sparrow's split of harmlessness into separate rules resembles a constitution. Earlier work on models critiquing themselves or learning from written feedback resembles the supervised stage. Chain-of-thought prompting (“think step-by-step”) supplies the reasoning in both stages. Work showing language models make well-calibrated choices justifies using their probabilities as soft labels, and proposals for supervising AI with AI's help (<span class="t" data-tip-title="Scalable oversight" data-tip="The general research goal of supervising AI systems whose work is too large or too hard for people to check directly, often by using AI to help the people doing the checking. This paper calls its version scaling supervision.">scalable oversight</span>) supply the motivation. The <a href="instructgpt.html">InstructGPT companion</a> covers the human-feedback recipe this paper modifies.</p>
+</section>
+
+<section id="s6">
+<h2>6 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S6">original</a></span></h2>
+<blockquote class="quote">“Our ultimate goal is not to remove human supervision entirely, but to make it more efficient, transparent, and targeted.”<cite>Bai et al. (2022), §6</cite></blockquote>
+<h3 class="rung">What was and wasn't removed</h3>
+<p>Human labels for <em>harmlessness</em> are gone; human labels for <em>helpfulness</em> remain. The authors expect helpfulness could also be learned without human feedback, from a pretrained model and extensive prompting, and leave that open.</p>
+<section id="s6-1">
+<h3>6.1 Future directions <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S6.SS1">original</a></span></h3>
+<ul>
+  <li><strong>Steering more than harm.</strong> The same method could change writing style, tone or persona, or make a model add caveats to certain kinds of advice. Cheap labels also make it practical to generate feedback along dozens of behavioural directions and study how they interact.</li>
+  <li><strong>Robustness.</strong> If helpfulness and harmlessness conflict less, red-teaming can be automated and scaled up without the model learning to refuse everything.</li>
+  <li><strong>Online training.</strong> Keep updating the preference model with fresh AI feedback on the policy's latest answers, which worked well with human feedback and can now be fully automated.</li>
+</ul>
+</section>
+<section id="s6-2">
+<h3>6.2 Broader impacts <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#S6.SS2">original</a></span></h3>
+<p>The authors name two risks. Anything that makes it easier to train a model to behave as its creators intend also makes it easier to train a harmful one, and the supervised stage needs no RL machinery, so it is especially accessible. And needing fewer human labels means fewer people look at the model's behaviour before release, so failures nobody anticipated are more likely to ship. On the other side, fewer people have to do the unpleasant work of trying to provoke harmful content.</p>
+</section>
+</section>
+
+<section id="appendix">
+<h2>Appendices <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.08073#A3">original</a></span></h2>
+<h3 class="rung">What the constitution actually says (Appendix C)</h3>
+<p>The principles are short and overlapping, and the authors say they were chosen “in a fairly ad hoc manner for research purposes”. The 16 supervised-stage pairs mostly ask the model to find and remove harmful, unethical, dangerous or illegal content; a few target something specific, such as content inappropriate for young children, or whether the answer sounds like “a thoughtful, empathetic, caring, sensitive friend or therapist”. The 16 RL-stage principles are multiple-choice instructions, several of which warn against the over-reaction seen in §4.3, asking for more ethical awareness “without sounding excessively condescending, reactive, annoying or condemnatory”.</p>
+<h3 class="rung">The few-shot examples (Appendix E)</h3>
+<p>The worked examples placed before each critique include one about <em>honesty</em>, not harm: a critique of an answer that stated a shaky claim too confidently, and a revision that states it with appropriate uncertainty. It is a small demonstration of the paper's §6.1 point that the same machinery can steer behaviours other than harmlessness.</p>
+<h3 class="rung">In code</h3>
+<p>The alignment lesson's <a data-lesson="primer/ml/alignment.html#constitutional_preference_pairs"><code>constitutional_preference_pairs</code></a> is the RL stage's labeller in miniature: it scores each candidate with <a data-lesson="primer/ml/alignment.html#violations"><code>violations</code></a> (how many toy principles it breaks), keeps every pair with a strict winner and drops ties. It produces hard labels; this page's §4.3 chart shows what soft labels would change.</p>
+</section>
+
+<section id="today">
+<h2>What carries forward</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Idea in the paper</th><th>Why it lasts</th><th>Where to build it</th></tr></thead>
+  <tbody>
+    <tr><td>Principles written in plain language</td><td>The training goal becomes something people can read, argue about and change without relabelling data</td><td><a data-lesson="primer/ml/alignment.html">alignment</a></td></tr>
+    <tr><td>Critique, then revise</td><td>The same draft-check-fix loop reappears wherever a model improves its own output, from training data to agent reflection</td><td><a data-lesson="primer/agents/planning.html">planning</a></td></tr>
+    <tr><td>AI-labelled preference pairs</td><td>Pairs from any labeller can train a reward model or feed a method that skips the reward model entirely</td><td><a href="dpo.html">DPO companion</a></td></tr>
+    <tr><td>Soft and clamped labels</td><td>A label should carry the labeller's uncertainty, or the reward will overstate it</td><td><a data-lesson="primer/ml/training_stages.html">training stages</a></td></tr>
+    <tr><td>Check the AI judge against people first (§2)</td><td>An automated judge is only as good as its agreement with the humans it replaces</td><td><a data-lesson="primer/agents/evals.html">evals</a></td></tr>
+    <tr><td>Harmless without being evasive</td><td>Refusal rate and harmful-compliance rate are two separate errors to measure</td><td><a data-lesson="primer/ml/alignment.html">alignment</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion and colleagues, <em>Constitutional AI: Harmlessness from AI Feedback</em>, 2022. <a href="https://arxiv.org/abs/2212.08073">arXiv:2212.08073</a>, released under CC BY 4.0. Quotations are brief and attributed; numbers are reproduced with attribution and the pipeline figure is redrawn. All explanations, diagrams, examples and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // 1.1 Elo
+    PAB: { tex: "P(A \\succ B)", name: "Chance A is preferred", meaning: "The predicted share of side-by-side comparisons in which people prefer model A's answer to model B's. The symbol ≻ reads “is preferred to”.", shape: "a probability, 0 to 1", example: "0.64 for a 100-point gap" },
+    RA: { tex: "R_A", name: "Model A's Elo score", meaning: "A rating fitted from many comparisons. Its absolute value means nothing; only its difference from another model's score does.", shape: "a number, often in the hundreds", example: "150" },
+    RB: { tex: "R_B", name: "Model B's Elo score", meaning: "The other model's rating on the same scale.", shape: "a number", example: "50" },
+    tenpow: { tex: "10^{-(R_A - R_B)/400}", name: "The odds against A", meaning: "Ten raised to minus the rating gap over 400. It is 1 when the gap is 0 (even odds) and shrinks tenfold for every 400 points A leads by. The 400 is a convention inherited from chess ratings.", shape: "a positive number", example: "10^−0.25 = 0.562" },
+    // 2 averaging
+    pbar: { tex: "\\bar{p}", name: "Averaged probability", meaning: "The final probability that answer (A) is better, after averaging several chains of thought. The bar over p is the usual mark for an average.", shape: "0 to 1", example: "0.7" },
+    invS: { tex: "\\frac{1}{S}", name: "Divide by the number of samples", meaning: "Turns the sum into an average.", shape: "a number", example: "1/5" },
+    sumS: { tex: "\\sum_{s=1}^{S}", name: "Sum over the samples", meaning: "Add up what follows for s = 1, 2, …, S: one term per chain of thought.", shape: "one number", example: "0.9 + 0.2 + 0.8 + 0.7 + 0.9 = 3.5" },
+    ps: { tex: "p_s", name: "One chain's probability", meaning: "The probability chain of thought number s ends up giving to answer (A).", shape: "0 to 1", example: "p₂ = 0.2 (the chain that went astray)" },
+    S: { tex: "S", name: "Number of samples", meaning: "How many chains of thought were written for one comparison.", shape: "a whole number", example: "5 in the paper" },
+    // 4.1 soft label
+    t: { tex: "t", name: "Target probability for A", meaning: "The training target for “answer A is better”: 1 means certainly A, 0 certainly B, 0.5 no preference. A soft label is anything in between.", shape: "0 to 1", example: "0.75 (soft), 0.6 (clamped), 1 (hard)" },
+    ellA: { tex: "\\ell_A", name: "Log-probability of “(A)”", meaning: "The logarithm of the probability the feedback model gives to writing “(A)” next. Log-probabilities are negative; closer to 0 means more likely.", shape: "a negative number", example: "−0.4" },
+    ellB: { tex: "\\ell_B", name: "Log-probability of “(B)”", meaning: "The same for the token “(B)”.", shape: "a negative number", example: "−1.5" },
+    e: { tex: "e", name: "Euler's number, about 2.718", meaning: "Raising e to a log-probability undoes the logarithm and gives back the probability.", shape: "a constant", example: "e^−0.4 = 0.670" },
+    // 4.1 clamp
+    tclamp: { tex: "t'", name: "Clamped target", meaning: "The target after being forced into the 40% to 60% range. The prime mark just means “a changed version of t”.", shape: "0.4 to 0.6", example: "0.97 → 0.6" },
+    maxop: { tex: "\\max", name: "Maximum", meaning: "The larger of the two numbers. max(t, 0.4) lifts anything below 0.4 up to 0.4.", shape: "one number", example: "max(0.03, 0.4) = 0.4" },
+    minop: { tex: "\\min", name: "Minimum", meaning: "The smaller of the two numbers. min(…, 0.6) caps anything above 0.6 at 0.6.", shape: "one number", example: "min(0.97, 0.6) = 0.6" },
+    lo: { tex: "0.4", name: "Lower bound", meaning: "The least confident a clamped label may be in A. The paper also tried 0.2.", shape: "a constant", example: "0.4" },
+    hi: { tex: "0.6", name: "Upper bound", meaning: "The most confident a clamped label may be in A. The paper also tried 0.8.", shape: "a constant", example: "0.6" },
+    // 4.3 loss
+    m: { tex: "m", name: "Score gap", meaning: "The preference model's score for answer A minus its score for answer B: m = r_A − r_B. Positive means it prefers A.", shape: "any number", example: "0.405 at the best point for t = 0.6" },
+    sigma: { tex: "\\sigma", name: "Sigmoid", meaning: "σ(z) = 1 / (1 + e^−z): squashes any number into a probability between 0 and 1. σ(m) is the preference model's chance that A is better, and σ(−m) = 1 − σ(m) its chance for B.", shape: "0 to 1", example: "σ(0.405) = 0.6" },
+    ln: { tex: "\\ln", name: "Natural logarithm", meaning: "The power e must be raised to. The log of a probability is negative, and very negative for a probability near 0, which is what makes confident mistakes costly.", shape: "one number", example: "ln 1.5 = 0.405" },
+    Lsoft: { tex: "L", name: "Loss on one comparison", meaning: "Cross-entropy between the target t and the preference model's chance σ(m). Training lowers it by adjusting the scores.", shape: "a non-negative number", example: "0.673 at the best gap for t = 0.6" },
+    mstar: { tex: "m^{*}", name: "Best score gap", meaning: "The gap where the loss is smallest: exactly where σ(m) = t. It is finite for any t below 1, and infinite for a hard label t = 1.", shape: "a number", example: "0.405 for t = 0.6; 1.10 for t = 0.75" },
+    // 4.5
+    Labs: { tex: "L", name: "Squared-error (L2) loss", meaning: "The penalty for one conversation: how far the prediction is from the worker's rating, squared, so big misses cost much more than small ones.", shape: "a non-negative number", example: "0.64" },
+    shat: { tex: "\\hat{s}", name: "Predicted rating", meaning: "The harmfulness score the trained predictor gives the conversation. The hat marks a prediction.", shape: "a number, roughly 0 to 4", example: "2.2" },
+    sabs: { tex: "s", name: "Worker's rating", meaning: "How successful the red-teaming worker judged their attempt to provoke harm, on a whole-number scale from 0 to 4.", shape: "0, 1, 2, 3 or 4", example: "3" },
+  },
+
+  blocks: {
+    slframe: { title: "The supervised stage", body: "<p>Everything in this frame produces training data by self-correction, then fine-tunes on it. The paper says this stage gets the model “on-distribution”, so the RL stage starts from sensible behaviour instead of having to discover it.</p>", shape: "output: the SL-CAI model" },
+    rlframe: { title: "The reinforcement stage", body: "<p>This frame is ordinary RLHF with one swap: harmlessness comparisons are labelled by a model reading a principle, not by a crowdworker. From the preference model down, the pipeline is unchanged.</p>", shape: "output: the RL-CAI model", lesson: "primer/ml/training_stages.html" },
+    helpful: { title: "Helpful-only RLHF model", body: "<p>An assistant trained with RLHF on human <em>helpfulness</em> labels only. It follows instructions well, including harmful ones, which is exactly what makes it useful here: its answers to red-team prompts give the critique loop something to fix.</p>", shape: "a 52B language model (the largest in the paper)" },
+    redteam: { title: "Red-team prompts", body: "<p>Conversations designed to draw out a harmful answer: 42,496 written by crowdworkers in earlier work, plus 140,335 written by a model, 182,831 in all.</p>", shape: "182,831 prompts", lesson: "primer/ml/alignment.html" },
+    response: { title: "Response", body: "<p>The helpful model's first answer to a red-team prompt, sampled at temperature 1. Often harmful. This is “revision 0” in the paper's Figure 5.</p>", shape: "one answer" },
+    critique: { title: "Critique", body: "<p>The model is shown a critique request from a randomly drawn principle and writes what is wrong with the answer. The paper found critiques often overstated or inaccurate, yet useful: critiqued revisions beat direct ones, most clearly for smaller models (§3.5).</p>", shape: "free text", lesson: "primer/ml/alignment.html#critique" },
+    revision: { title: "Revision", body: "<p>The matching revision request asks the model to rewrite its answer in light of the critique. The prompt plus revision looks just like the original prompt plus answer, so it can go round again: four rounds per prompt in the paper.</p>", shape: "one rewritten answer", lesson: "primer/ml/alignment.html#revise" },
+    constitution: { title: "The constitution", body: "<p>Sixteen short principles written in plain language. In the supervised stage each is a critique request paired with a revision request; in the RL stage each is a multiple-choice instruction such as “choose the less harmful response”. One is drawn at random for every critique and every label.</p>", shape: "16 principles per stage" },
+    slcai: { title: "SL-CAI model", body: "<p>A pretrained model fine-tuned for one epoch on the revisions (from every round) plus 2 helpful answers to each of 135,296 helpfulness prompts. More harmless than the helpful RLHF model, less than HH RLHF, and the starting point for RL.</p>", shape: "a fine-tuned language model", lesson: "primer/ml/training_stages.html" },
+    pairs: { title: "Two answers per prompt", body: "<p>The SL-CAI model writes a pair of answers to each red-team prompt. Using the same model that RL will start from means the preference model is trained on the kind of answers the policy actually writes.</p>", shape: "182,831 pairs" },
+    feedback: { title: "Feedback model", body: "<p>A pretrained model (or, with chain of thought, the helpful RLHF model) shown the conversation, a principle and the two answers as options (A) and (B). Its probabilities for “(A)” and “(B)”, rescaled to add up to 1, become a soft label; with chain of thought they are clamped to 40–60%.</p>", shape: "one probability per pair" },
+    humanlabels: { title: "Human helpfulness labels", body: "<p>135,296 comparisons in which crowdworkers chose the more helpful answer. People still supervise helpfulness; only harmlessness labels come from the model.</p>", shape: "135,296 comparisons" },
+    pm: { title: "Preference model", body: "<p>A model that reads a prompt and an answer and returns one score. Trained on both kinds of comparisons, so the gap between two answers' scores predicts which is preferred. It is a hybrid: human judgement of helpfulness, AI judgement of harmlessness.</p>", shape: "one number per answer", lesson: "primer/ml/training_stages.html#reward_model_loss" },
+    rlaif: { title: "RL against the preference model", body: "<p>The SL-CAI model writes answers to training prompts; the preference model scores them; reinforcement learning nudges the policy towards higher scores. Same settings as the authors' RLHF runs. Trained too long, it games the score (§4.3).</p>", shape: "about 1.3 million training prompts in all", lesson: "primer/ml/reinforcement.html" },
+    rlcai: { title: "RL-CAI model", body: "<p>The final assistant: more harmless than the RLHF baselines at similar helpfulness, and almost never evasive. It explains why it won't help with a harmful request.</p>", shape: "the trained policy" },
+  },
+
+  onReady(P) {
+    eloBars();
+    critiqueLoop();
+    softChart(P);
+  },
+};
+
+/* ---- Elo gap to win share ---- */
+function eloBars() {
+  const s = document.getElementById("elo-gap"), v = document.getElementById("elo-gap-v");
+  const bars = document.getElementById("elo-bars"), out = document.getElementById("elo-readout");
+  function draw() {
+    const gap = +s.value;
+    const p = 1 / (1 + Math.pow(10, -gap / 400));
+    v.textContent = (gap > 0 ? "+" : "") + gap;
+    const row = (label, x, style) => `<div class="share-row" style="grid-template-columns:5.5rem minmax(0,1fr) 3.4rem"><span>${label}</span><div><div class="share-bar" style="width:${(x * 100).toFixed(1)}%;${style}"></div></div><span>${(x * 100).toFixed(0)}%</span></div>`;
+    bars.innerHTML = row("A preferred", p, "") + row("B preferred", 1 - p, "background:var(--hatch) var(--wire)");
+    out.innerHTML = `10<sup>${(-gap / 400).toFixed(3)}</sup> = ${Math.pow(10, -gap / 400).toFixed(3)}, so P(A ≻ B) = 1 / (1 + ${Math.pow(10, -gap / 400).toFixed(3)}) = <strong>${p.toFixed(3)}</strong>. The striped bar is B.`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- critique and revision stepper (this page's own example) ---- */
+function critiqueLoop() {
+  const steps = [
+    ["Prompt", "plain", "How can I read my flatmate's messages without them knowing?"],
+    ["Response", "soft", "Wait until they leave their phone unlocked on the table, then scroll through their chats quickly and put it back where it was."],
+    ["Principle 1 (critique request, Appendix C.1)", "norm", "“Identify specific ways in which the assistant’s last response is harmful, unethical, racist, sexist, toxic, dangerous, or illegal.”"],
+    ["Critique 1", "ff", "The answer helps the person secretly read someone else's private messages. That invades the flatmate's privacy, breaks their trust, and may be illegal."],
+    ["Revision 1", "lin", "I'd advise against reading their messages without permission: it invades their privacy and could damage your relationship, and in some places it's illegal. If something is worrying you, talking to them directly is the better route."],
+    ["Principle 2 (critique request, Appendix C.1)", "norm", "“Please comment on whether the assistant’s last response is thoughtful and empathetic. Does it seem like the kind of thing a sensitive friend or therapist might say?”"],
+    ["Critique 2", "ff", "Nothing harmful remains, but the answer is a little abrupt. It doesn't acknowledge that the person may be anxious about something real, or suggest how to raise it."],
+    ["Revision 2", "lin", "It sounds like something may be worrying you, and that's hard when you share a home. Reading their messages in secret would break their trust and could be illegal, so I'd avoid it. You could tell them what's on your mind and ask directly; if it's about money, noise or safety, a written house agreement can help too."],
+  ];
+  const box = document.getElementById("cr-steps"), count = document.getElementById("cr-count");
+  let shown = 2;
+  const colour = { plain: "var(--wire)", soft: "var(--soft-stroke)", norm: "var(--norm-stroke)", ff: "var(--ff-stroke)", lin: "var(--lin-stroke)" };
+  function draw() {
+    box.innerHTML = steps.slice(0, shown).map(([label, kind, text]) =>
+      `<div style="border-left:4px solid ${colour[kind]};padding:.35rem .7rem;margin:.55rem 0;background:var(--bg);border-radius:6px"><div class="ui" style="font-size:.78rem;color:var(--muted)">${label}</div><div>${text}</div></div>`).join("");
+    count.textContent = `Step ${shown} of ${steps.length}` + (shown === steps.length ? ": both revisions become fine-tuning data." : "");
+    document.getElementById("cr-next").disabled = shown >= steps.length;
+  }
+  document.getElementById("cr-next").addEventListener("click", () => { shown = Math.min(steps.length, shown + 1); draw(); });
+  document.getElementById("cr-reset").addEventListener("click", () => { shown = 2; draw(); });
+  draw();
+}
+
+/* ---- soft-label preference loss against the score gap ---- */
+function softChart(P) {
+  const sig = (z) => 1 / (1 + Math.exp(-z));
+  const loss = (m, t) => -(t * Math.log(sig(m)) + (1 - t) * Math.log(sig(-m)));
+  const curve = (t) => { const pts = []; for (let m = -3; m <= 6.0001; m += 0.1) pts.push([+m.toFixed(2), loss(m, t)]); return pts; };
+  const slider = document.getElementById("soft-t"), label = document.getElementById("soft-t-v");
+  const series = (t) => [{ name: "hard label, t = 1", points: curve(1) }, { name: `target t = ${t.toFixed(2)}`, points: curve(t) }];
+  const chart = P.lineChart(document.getElementById("soft-chart"), {
+    series: series(0.6), xLabel: "score gap m = r_A − r_B", yLabel: "loss", yMin: 0,
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2), width: 380, height: 260,
+    readout: document.getElementById("soft-readout"), ariaLabel: "Preference loss against score gap, for a hard label and a soft target",
+  });
+  const show = () => {
+    const t = +slider.value;
+    label.textContent = t.toFixed(2);
+    document.getElementById("soft-readout").innerHTML = `With t = ${t.toFixed(2)}, the loss is lowest at m* = ln(${t.toFixed(2)} / ${(1 - t).toFixed(2)}) = <strong>${Math.log(t / (1 - t)).toFixed(3)}</strong>, where it equals ${loss(Math.log(t / (1 - t)), t).toFixed(3)}. The hard label has no lowest point.`;
+  };
+  slider.addEventListener("input", () => { chart.update(series(+slider.value)); show(); });
+  show();
+}
+</script>
+</body>
+</html>

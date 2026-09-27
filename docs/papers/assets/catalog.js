@@ -376,7 +376,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.alignment"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "red-teaming-lms",
@@ -800,7 +800,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.efficient_architectures"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "mamba-2",

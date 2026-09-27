@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mamba, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Gu and Dao (2023), Mamba: Linear-Time Sequence Modeling with Selective State Spaces.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="mamba">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 State space models</a>
+        <ol>
+          <li><a href="#s2-1">The continuous system</a></li>
+          <li><a href="#s2-2">Discretization</a></li>
+          <li><a href="#s2-3">Two ways to compute</a></li>
+          <li><a href="#s2-4">Time invariance, structure, size</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Selective state space models</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Selection as compression</a></li>
+          <li><a href="#s3-2">3.2 Adding selection</a></li>
+          <li><a href="#s3-3">3.3 The hardware-aware scan</a></li>
+          <li><a href="#s3-4">3.4 The Mamba block</a></li>
+          <li><a href="#s3-5">3.5 Selection is gating</a></li>
+          <li><a href="#s3-6">3.6 Details</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Synthetic tasks</a></li>
+          <li><a href="#s4-2">4.2 Language</a></li>
+          <li><a href="#s4-3">4.3 DNA</a></li>
+          <li><a href="#s4-4">4.4 Audio</a></li>
+          <li><a href="#s4-5">4.5 Speed and memory</a></li>
+          <li><a href="#s4-6">4.6 Ablations</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Discussion and conclusion</a></li>
+      <li><a href="#appendix">Appendices</a></li>
+      <li><a href="#today">Where it leads</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Mamba, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Gu and Dao (2023), <em>Mamba: Linear-Time Sequence Modeling with Selective State Spaces</em>: a recurrent model that decides, token by token, what to remember, and trains fast enough to compete with Transformers.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2312.00752">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2312.00752">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2312.00752">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is released under the Creative Commons Attribution 4.0 licence; selected rows of its tables are reproduced here with attribution, its charts are replotted from those published numbers, and its diagrams are redrawn from scratch. Equations are reproduced with every symbol decoded; a few formulas that write out, in symbols, something the paper says in words are labelled as this page's own. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation comes with a table decoding it, a sentence reading it aloud, the numbers worked through, and the same numbers in Python.</li>
+  <li>The diagrams are live: tap any part to see what it holds and what shape it has. The sliders let you turn the one dial that makes Mamba selective.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/ml/efficient_architectures.html">efficient architectures lesson</a> builds every piece in NumPy: the recurrence, the convolution, the selective step size and the parallel scan. The tiny examples here reuse its numbers, so you can run them there.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752">original</a></span></h2>
+<blockquote class="quote">“We identify that a key weakness of such models is their inability to perform content-based reasoning, and make several improvements.”<cite>Gu &amp; Dao (2023), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A <span class="t" data-t="transformer">Transformer</span> reading a long document keeps every page on the desk, so it can look anything up, but the desk (the <span class="t" data-t="kv cache">KV cache</span>) grows with every page and each new page is compared with all the old ones. A recurrent model reads with a single notebook page of fixed size: cheap, but it has to decide what to write down. Older fast models of this kind used the same note-taking rule for every word. Mamba lets each word decide how much to write and how much to erase.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Making the parameters of a <span class="t" data-t="state-space model">state space model</span> depend on the current token (a <em>selection mechanism</em>) fixes their weakness on discrete data such as text.</li>
+  <li>That change rules out the fast convolution trick, so the authors write a <strong>hardware-aware parallel scan</strong> that computes the recurrence quickly on GPUs.</li>
+  <li>The resulting architecture, Mamba, has no attention and not even separate <span class="t" data-t="feed-forward network">MLP</span> blocks. It runs in time linear in sequence length, has about <strong>5× higher</strong> generation <span class="t" data-t="throughput">throughput</span> than a Transformer of similar size, and keeps improving on real data up to sequences a million long.</li>
+  <li>On language, Mamba-3B beats Transformers of the same size and matches Transformers twice its size.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Mamba made recurrent models a serious alternative to attention for language, and it is the reason the phrase “state space model” now appears next to “Transformer” in discussions of long context. Its successor, Mamba-2, and hybrid models that mix a few attention layers with many Mamba layers, build directly on this paper; the <a data-lesson="primer/ml/efficient_architectures.html#hybrid_cache_bytes">efficient architectures lesson</a> works out their memory.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S1">original</a></span></h2>
+<blockquote class="quote">“The efficacy of self-attention is attributed to its ability to route information densely within a context window, allowing it to model complex data.”<cite>Gu &amp; Dao (2023), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Attention's strength and its cost are the same thing: every token can consult every other token directly. That means nothing outside the window can be seen, and the work grows with the square of the window. Many cheaper variants of attention exist, but, the authors note, none had been shown to work well at scale across domains. Structured state space models (<span class="t" data-t="state-space model">SSMs</span>) were a promising different road: they compute either as a recurrence or as a convolution, in time linear or nearly linear in length; they dominated long-range benchmarks such as the Long Range Arena and did well on continuous signals such as audio and vision. On text they lagged.</p>
+<h3 class="rung">The three contributions</h3>
+<ul>
+  <li><strong>Selection.</strong> Let the SSM's parameters depend on the input, so the model can ignore irrelevant tokens and keep relevant ones indefinitely.</li>
+  <li><strong>A hardware-aware algorithm.</strong> Compute the now input-dependent recurrence with a parallel scan, keeping the large expanded state in the GPU's fast on-chip memory. It is faster than the previous convolution-based SSMs both in theory (linear instead of nearly linear in length) and in practice, up to 3× on A100 GPUs.</li>
+  <li><strong>A simpler architecture.</strong> Merge the usual SSM block and the Transformer's MLP block into one block, the Mamba block, and stack it.</li>
+</ul>
+<h3 class="rung">Diagram: the overview (Figure 1)</h3>
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 468" role="img" aria-label="A selective state space model: each input channel updates a larger hidden state, with the step size and the B and C parameters computed from the input, all inside the GPU's fast memory">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="sram" aria-label="GPU SRAM, the fast on-chip memory"><rect x="8" y="128" width="344" height="242" rx="12"/></g>
+    <text x="40" y="146" class="lbl">GPU SRAM: small, fast</text>
+    <g class="blk frame" data-block="hbm" aria-label="GPU HBM, the large main memory"><rect x="8" y="386" width="344" height="74" rx="12"/></g>
+    <text x="18" y="406" class="lbl">GPU HBM:</text>
+    <text x="18" y="420" class="lbl">large, slower</text>
+    <path class="wire" d="M126,40 H194" marker-end="url(#arr)"/>
+    <path class="wire" d="M270,62 V78" marker-end="url(#arr)"/>
+    <path class="wire" d="M270,112 V148" marker-end="url(#arr)"/>
+    <path class="wire" d="M270,182 V218" marker-end="url(#arr)"/>
+    <path class="wire" d="M116,262 H232" marker-end="url(#arr)"/>
+    <path class="wire" d="M30,60 V340 H270 V312" marker-end="url(#arr)"/>
+    <path class="wire" d="M306,262 H334 V420 H302" marker-end="url(#arr)"/>
+    <text x="174" y="254" class="lbl" text-anchor="middle">× Ā (keep)</text>
+    <text x="150" y="334" class="lbl" text-anchor="middle">x_t × <tspan style="text-decoration:overline">B</tspan> (write)</text>
+    <text x="330" y="360" class="lbl" text-anchor="end">× C</text>
+    <g class="blk emb" data-block="xin"><rect x="16" y="20" width="110" height="40" rx="7"/><text x="71" y="37" text-anchor="middle">input x_t</text><text x="71" y="52" text-anchor="middle" class="lbl">D = 5 channels</text></g>
+    <g class="blk attn" data-block="select"><rect x="196" y="20" width="148" height="42" rx="7"/><text x="270" y="37" text-anchor="middle">Selection</text><text x="270" y="53" text-anchor="middle" class="lbl">computed from x_t</text></g>
+    <g class="blk plain" data-block="params"><rect x="196" y="80" width="148" height="32" rx="7"/><text x="270" y="101" text-anchor="middle">Δ_t, B_t, C_t</text></g>
+    <g class="blk norm" data-block="disc"><rect x="196" y="150" width="148" height="32" rx="7"/><text x="270" y="171" text-anchor="middle">Discretize → Ā, <tspan style="text-decoration:overline">B</tspan></text></g>
+    <g class="blk lin" data-block="hprev" id="hprev-grid"><text x="80" y="322" text-anchor="middle" class="lbl">h_(t−1)</text></g>
+    <g class="blk ff" data-block="state" id="state-grid"></g>
+    <text x="316" y="236" class="lbl">h_t</text>
+    <g class="blk soft" data-block="yout"><rect x="140" y="404" width="160" height="32" rx="7"/><text x="220" y="425" text-anchor="middle">output y_t (D = 5)</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a part. Start with <strong>input x_t</strong> at the top left, then follow it into the state grid <strong>h_t</strong>.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn with the paper's example sizes, D = 5 channels and N = 4 state numbers per channel. Based on Gu &amp; Dao (2023), Figure 1 (CC BY 4.0).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> one time step, top to bottom. The input x<sub>t</sub> has D = 5 channels. The <em>selection</em> box reads the input and produces this step's Δ, B and C; discretizing turns Δ (with the fixed A) into this step's keep factor Ā and write factor B̄. The two grids are the hidden state before and after the step: every channel has its own N = 4 numbers, so the state is 5 × 4, four times bigger than the input. The new state is the old one times Ā plus the input times B̄, and the output is read off with C, back to 5 numbers. The dashed frames are the GPU's two memories: the expanded state lives only in the small fast one (SRAM), while inputs and outputs travel to and from the large main memory (HBM). Older SSMs could skip building the big state because their parameters never changed with the input; selection brings the parameters back to life, and the memory trick in §3.3 keeps it affordable.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The authors list three properties that make selective SSMs a candidate backbone for <span class="t" data-tip-title="Foundation model" data-tip="A large model pretrained on a broad dataset and then adapted to many tasks. Language models are the best-known example; the paper also builds them for DNA and audio.">foundation models</span>: high quality on dense data like language and genomics; training cost linear in length and generation at constant time per step, since there is no cache of previous tokens; and quality that keeps improving with context up to a million tokens.</p>
+</section>
+
+<section id="s2">
+<h2>2 State space models <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A cup of tea cooling on a desk. Every minute it keeps some fraction of its heat and gains whatever hot water you pour in. Its temperature is a running summary of every pour, with older pours counting less. A <span class="t" data-t="state-space model">state space model</span> is that cup, many times over: a small state that fades a little each step and takes in the new input, read out as the output. Because the update is only multiply-and-add, it can be computed two ways, one step at a time or all at once.</p>
+
+<section id="s2-1">
+<h3>The continuous system (equation 1) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S2">original</a></span></h3>
+<h4>Tiny example</h4>
+<p>One channel, a state of one number. Take A = −1 and B = 1. If the state is h = 2 and no input arrives (x = 0), the state is changing at rate −2: draining away. If an input x = 3 arrives, the rate is −2 + 3 = +1: filling up. The negative A is what makes the memory fade.</p>
+<div class="eq" data-tex="\htmlData{sym=hprime}{h'(t)} = \htmlData{sym=A}{\mathbf{A}}\,\htmlData{sym=hcont}{h(t)} + \htmlData{sym=B}{\mathbf{B}}\,\htmlData{sym=xcont}{x(t)}" data-fallback="h′(t) = A h(t) + B x(t)"></div>
+<div class="eq" data-tex="\htmlData{sym=ycont}{y(t)} = \htmlData{sym=C}{\mathbf{C}}\,\htmlData{sym=hcont}{h(t)}" data-fallback="y(t) = C h(t)"></div>
+<div class="symtable" data-syms="hcont,hprime,A,B,xcont,C,ycont"></div>
+<p class="inwords"><strong>In words:</strong> “the state's rate of change is a multiple of the state itself (the fading) plus a multiple of the input (the pouring); the output is a fixed reading of the state.”</p>
+<p class="inwords"><strong>With the numbers:</strong> h′ = (−1)(2) + (1)(0) = <strong>−2</strong> with no input, and (−1)(2) + (1)(3) = <strong>1</strong> with x = 3.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>A, B = -1.0, 1.0
+h = 2.0
+# h'(t) = A h(t) + B x(t), with no input and then with x = 3
+[A * h + B * x for x in (0.0, 3.0)]  # → [-2.0, 1.0]</code></pre>
+</section>
+
+<section id="s2-2">
+<h3>Discretization (equation 4) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S2.SS0.SSS0.Px1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Equation 1 describes the tea continuously; a computer works in steps. <span class="t" data-t="discretization">Discretization</span> answers: if the input holds steady for a step of length Δ, how much of the old state survives the step, and how much of the input gets in? The paper uses the <span class="t" data-t="zero-order hold">zero-order hold</span> rule, which assumes exactly that: the input is held constant through the step.</p>
+<h4>Tiny example</h4>
+<p>Same A = −1, B = 1, and a step Δ = 0.5. The state keeps e<sup>−0.5</sup> = 0.607 of itself and takes in 0.393 of the input. A long step Δ = 5 keeps only 0.0067 and takes in 0.9933: the old state is essentially replaced. A tiny step keeps nearly everything and takes in nearly nothing. With A = −1 and B = 1 the two amounts always add up to 1.</p>
+<div class="eq" data-tex="\htmlData{sym=Abar}{\overline{\mathbf{A}}} = \htmlData{sym=exp}{\exp}(\htmlData{sym=Delta}{\Delta}\htmlData{sym=A}{\mathbf{A}})" data-fallback="Ā = exp(ΔA)"></div>
+<div class="eq" data-tex="\htmlData{sym=Bbar}{\overline{\mathbf{B}}} = \htmlData{sym=inv}{(\Delta\mathbf{A})^{-1}}\big(\htmlData{sym=exp}{\exp}(\htmlData{sym=Delta}{\Delta}\htmlData{sym=A}{\mathbf{A}}) - \htmlData{sym=I}{\mathbf{I}}\big)\cdot \htmlData{sym=Delta}{\Delta}\htmlData{sym=B}{\mathbf{B}}" data-fallback="B̄ = (ΔA)⁻¹ (exp(ΔA) − I) · ΔB"></div>
+<div class="symtable" data-syms="Delta,A,B,exp,Abar,inv,I,Bbar"></div>
+<p class="inwords"><strong>In words:</strong> “the keep factor is e raised to the step length times the fade rate; the write factor is how much input accumulates over that step, which for a single number is (e<sup>ΔA</sup> − 1) / A times B.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Δ = 0.5: Ā = e<sup>−0.5</sup> = <strong>0.607</strong>, B̄ = (−0.5)<sup>−1</sup> × (0.607 − 1) × 0.5 = (−2) × (−0.393) × 0.5 = <strong>0.393</strong>. Δ = 5: Ā = <strong>0.0067</strong>, B̄ = <strong>0.9933</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+A, B = -1.0, 1.0
+def zoh(delta):
+    # Ā = exp(ΔA)
+    A_bar = math.exp(delta * A)
+    # B̄ = (ΔA)^-1 (exp(ΔA) − 1) ΔB, one number instead of a matrix
+    B_bar = (1 / (delta * A)) * (A_bar - 1) * delta * B
+    return round(A_bar, 4), round(B_bar, 4)
+zoh(0.5)  # → (0.6065, 0.3935)
+zoh(5.0)  # → (0.0067, 0.9933)</code></pre>
+<div class="plot" id="dt-plot">
+  <div class="controls"><label for="dt-slider">step size Δ = <strong id="dt-v">0.50</strong></label><input type="range" id="dt-slider" min="-3" max="1" step="0.01" value="-0.301"><span>(log scale, A = −1, B = 1)</span></div>
+  <div id="dt-bars"></div>
+  <p class="readout" id="dt-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the slider sets the step size Δ on a log scale, from 0.001 to 10. The solid bar is Ā, how much of the old state survives the step; the striped bar is B̄, how much of this input is written. Slide left and the state is kept almost whole while the input barely registers: the step is so short that the input is a blip. Slide right and the state is wiped and replaced by the input. In an ordinary SSM, Δ is one learned number per channel, fixed for every token. Mamba's whole idea (§3) is to compute Δ from each token, so the model can slide this dial differently for every word. The lesson's <a data-lesson="primer/ml/efficient_architectures.html#discretize"><code>discretize</code></a> computes the same two numbers.</p>
+<h4>Why it matters</h4>
+<p>The paper notes that discretization links SSMs to continuous-time systems (for instance, the model can be applied at different resolutions) and to the <em>gates</em> of recurrent networks, a link §3.5 makes exact. Mechanically, it is just the first step of the forward pass.</p>
+</section>
+
+<section id="s2-3">
+<h3>Two ways to compute: recurrence and convolution (equations 2 and 3) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S2.SS0.SSS0.Px2">original</a></span></h3>
+<h4>Tiny example</h4>
+<p>The state keeps half of itself each step and takes the input whole: Ā = 0.5, B̄ = 1, C = 1. Inputs x = (1, 0, 0, 2). Step by step the state is 1, then 0.5, then 0.25, then 0.5 × 0.25 + 2 = 2.125. Unrolled, the last output is every past input weighted by how much it has faded: 1 × 2 + 0.5 × 0 + 0.25 × 0 + 0.125 × 1 = 2.125. The same answer, with no loop.</p>
+<div class="eq" data-tex="\htmlData{sym=ht}{h_t} = \htmlData{sym=Abar}{\overline{\mathbf{A}}}\,\htmlData{sym=htm1}{h_{t-1}} + \htmlData{sym=Bbar}{\overline{\mathbf{B}}}\,\htmlData{sym=xt}{x_t}" data-fallback="h_t = Ā h_(t−1) + B̄ x_t"></div>
+<div class="eq" data-tex="\htmlData{sym=yt}{y_t} = \htmlData{sym=C}{\mathbf{C}}\,\htmlData{sym=ht}{h_t}" data-fallback="y_t = C h_t"></div>
+<div class="eq" data-tex="\htmlData{sym=Kbar}{\overline{\mathbf{K}}} = \big(\htmlData{sym=C}{\mathbf{C}}\htmlData{sym=Bbar}{\overline{\mathbf{B}}},\ \htmlData{sym=C}{\mathbf{C}}\htmlData{sym=Abar}{\overline{\mathbf{A}}}\htmlData{sym=Bbar}{\overline{\mathbf{B}}},\ \dots,\ \htmlData{sym=C}{\mathbf{C}}\htmlData{sym=Abark}{\overline{\mathbf{A}}^{k}}\htmlData{sym=Bbar}{\overline{\mathbf{B}}},\ \dots\big)" data-fallback="K̄ = (C B̄, C Ā B̄, …, C Āᵏ B̄, …)"></div>
+<div class="eq" data-tex="\htmlData{sym=yseq}{y} = \htmlData{sym=xseq}{x} \htmlData{sym=conv}{\ast} \htmlData{sym=Kbar}{\overline{\mathbf{K}}}" data-fallback="y = x ∗ K̄"></div>
+<div class="symtable" data-syms="ht,htm1,xt,yt,Abar,Bbar,C,Kbar,Abark,xseq,yseq,conv"></div>
+<p class="inwords"><strong>In words:</strong> “each step, fade the state and add the new input, then read it out; equivalently, the output is the whole input sequence slid against a fixed list of weights, where the weight for an input k steps ago is C times Ā to the k times B̄.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the loop gives y = (1, 0.5, 0.25, 2.125). The kernel is K̄ = (1, 0.5, 0.25, 0.125), and y<sub>4</sub> = 1 × 2 + 0.5 × 0 + 0.25 × 0 + 0.125 × 1 = <strong>2.125</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>A_bar, B_bar, C = 0.5, 1.0, 1.0
+x = [1.0, 0.0, 0.0, 2.0]
+# the recurrence, equation 2
+h, y = 0.0, []
+for x_t in x:
+    h = A_bar * h + B_bar * x_t
+    y.append(C * h)
+y  # → [1.0, 0.5, 0.25, 2.125]
+# the kernel K̄, equation 3a: C Ā^k B̄ for k = 0, 1, 2, 3
+K = [C * A_bar ** k * B_bar for k in range(4)]
+K  # → [1.0, 0.5, 0.25, 0.125]
+# y_4 by convolution, equation 3b: newest input times K̄_0, and so on back
+sum(K[k] * x[3 - k] for k in range(4))  # → 2.125</code></pre>
+<p class="reading"><strong>Reading it:</strong> the two equations are two roads to the same outputs. The recurrence is how the model <em>generates</em>: one token at a time, carrying a fixed-size state. The convolution is how older SSMs <em>trained</em>: the whole input is known in advance, the kernel is computed once, and every output is a weighted sum computed in parallel. The lesson builds both roads as <a data-lesson="primer/ml/efficient_architectures.html#ssm_recurrent"><code>ssm_recurrent</code></a> and <a data-lesson="primer/ml/efficient_architectures.html#ssm_convolution"><code>ssm_convolution</code></a>, with the kernel from <a data-lesson="primer/ml/efficient_architectures.html#ssm_kernel"><code>ssm_kernel</code></a>, and checks they agree.</p>
+</section>
+
+<section id="s2-4">
+<h3>Time invariance, structure and size <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S2.SS0.SSS0.Px3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The convolution road has a catch: it only exists if the fading rule is the same at every step. If the cup of tea cooled faster on some minutes than others, there would be no single list of weights to slide along the input. The paper calls the “same rule at every step” property <span class="t" data-t="linear time invariance">linear time invariance</span> (LTI), and every structured SSM before Mamba had it, for efficiency. The paper's core insight is that LTI is also their weakness.</p>
+<h4>How big the state is</h4>
+<p>Structured SSMs use a <em>diagonal</em> A, so A, B and C are each just N numbers per channel. The model runs the same SSM independently on each of D channels, so the state for one token is D × N numbers. Over a batch of B sequences of length L, the full state is B × L × D × N numbers, N times more than the input and output (B × L × D). Computing all of it costs O(BLDN) time and memory, which the paper calls “the root of the fundamental efficiency bottleneck” that §3.3 attacks.</p>
+<div class="eq" data-tex="\htmlData{sym=sizeh}{\text{size}(h)} = \htmlData{sym=Bsz}{\mathtt{B}} \cdot \htmlData{sym=L}{\mathtt{L}} \cdot \htmlData{sym=D}{\mathtt{D}} \cdot \htmlData{sym=N}{\mathtt{N}}" data-fallback="size(h) = B · L · D · N"></div>
+<div class="symtable" data-syms="sizeh,Bsz,L,D,N"></div>
+<p class="inwords"><strong>In words:</strong> “the full state has one number for every sequence, every position, every channel and every state slot.” (This page's notation for the paper's shape (B, L, D, N).)</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's speed benchmark uses D = 1,024 and N = 16. For one sequence of 2,048 tokens, the input is 1 × 2,048 × 1,024 = <strong>2,097,152</strong> numbers and the full state is 16 times that, <strong>33,554,432</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>B, L, D, N = 1, 2048, 1024, 16
+# the input and output: (B, L, D)
+print(f"{B * L * D:,}")  # → 2,097,152
+# the full state: (B, L, D, N)
+print(f"{B * L * D * N:,}")  # → 33,554,432</code></pre>
+<h4>SSM architectures the paper compares against</h4>
+<ul>
+  <li><strong><span class="t" data-t="linear attention">Linear attention</span></strong>: an approximation of self-attention with a recurrence that the paper views as a degenerate linear SSM.</li>
+  <li><strong>H3</strong>: an S4 layer sandwiched between two gated connections, plus a short local convolution. It is the template for most SSM architectures.</li>
+  <li><strong>Hyena</strong>: H3's architecture with S4 replaced by a long convolution whose weights come from a small network.</li>
+  <li><strong>RetNet</strong>: an extra gate and a simpler SSM, computed in parallel with a variant of multi-head attention.</li>
+  <li><strong>RWKV</strong>: a recurrent language model built on another linear-attention approximation; its main mechanism involves LTI recurrences.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>“State space model” means many things in many fields (Kalman filters, hidden Markov models); in this paper it means only the structured, deep-learning kind. And the size equation is the whole engineering story: the state is where the model's memory lives, so a bigger N means a better memory, and N times the input is too big to write to GPU main memory for every token.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Selective state space models <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S3">original</a></span></h2>
+
+<section id="s3-1">
+<h3>3.1 Motivation: selection as a means of compression <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S3.SS1">original</a></span></h3>
+<blockquote class="quote">“We argue that a fundamental problem of sequence modeling is compressing context into a smaller state.”<cite>Gu &amp; Dao (2023), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Attention is effective and expensive for the same reason: it doesn't compress at all. It keeps the whole context (the KV cache), which makes generation slow and training quadratic. A recurrent model is cheap because its state is fixed in size, and only as good as what it chose to put there. So the question is not “recurrence or attention?” but “how well does the state compress the context?”. The authors' answer is <strong>selectivity</strong>: the ability to focus on some inputs and filter out others, depending on what they are.</p>
+<h4>Diagram: the two tasks that expose LTI models (Figure 2)</h4>
+<figure class="ix" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 224" role="img" aria-label="Three synthetic tasks as rows of tokens: copying, selective copying, and induction heads" id="fig2-svg">
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a row. Coloured squares are tokens to remember, blank squares are filler, and the squares after the bar are what the model must output.</p></div>
+  </div>
+  <figcaption>Figure 2 of the paper, redrawn with this page's own token sequences. Based on Gu &amp; Dao (2023), Figure 2 (CC BY 4.0).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each row is a sequence read left to right; everything after the vertical bar is what the model must produce. In <em>copying</em>, the four tokens to remember always sit at the start and the gap before the answer is always the same length, so a model only needs to track <em>time</em>: “output what arrived exactly 12 steps ago” is a fixed convolution kernel, and LTI models solve it. In <em>selective copying</em> the same four tokens are scattered among filler at random positions, so the model has to look at <em>content</em>: remember the coloured ones, skip the blanks. No fixed kernel can do that, because the spacing changes every time. In <em>induction heads</em>, having seen “H then P” once, when H appears again the model must answer P: recall by association, which the paper calls a key ability of large language models.</p>
+<h4>Try it: selective against fixed step sizes</h4>
+<p>A tiny version of selective copying from the lesson: twelve inputs, one of which (a 7, in third place) is <em>marked</em> as worth remembering, the rest small noise. A one-channel SSM must still hold the 7 at the end. The selective model computes Δ from the marker (large Δ, so write, on the 7; tiny Δ, so keep, everywhere else). The fixed model uses one Δ for every token; choose it with the slider.</p>
+<div class="plot" id="recall-plot">
+  <div class="controls"><label for="recall-d">fixed Δ = <strong id="recall-d-v">0.096</strong></label><input type="range" id="recall-d" min="-3" max="1" step="0.001" value="-1.018"></div>
+  <div id="recall-chart"></div>
+  <p class="readout" id="recall-readout">Hover or tap the chart to read the state at each position.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the position in the sequence, the y-axis the value of the state after each token. The dotted line is the input itself, spiking to 7 at position 2. The solid line, the selective model, jumps to about 7 at the marked token and then barely moves, ending at <strong>6.55</strong>, because every later token has a tiny Δ. The dashed line is the fixed Δ from the slider. It starts at 0.096, the best any fixed setting manages here, ending at only <strong>0.26</strong>: a Δ small enough to protect the 7 from later noise is also too small to write the 7 in the first place. Slide it up and the 7 gets written, then washed out by the next nine tokens. Only input-dependent Δ can both write the important token and ignore the rest. The lesson computes these runs in <a data-lesson="primer/ml/efficient_architectures.html#selective_recall"><code>selective_recall</code></a> and <a data-lesson="primer/ml/efficient_architectures.html#time_invariant_recall"><code>time_invariant_recall</code></a>.</p>
+<h4>Why it matters</h4>
+<p>The paper states the trade-off plainly: efficient models must have a small state, while effective models must have a state that contains everything needed from the context. Selection is how a small state can hold the right things.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Improving SSMs with selection <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A note-taker with a dial. For filler words (“um”, “so”) they barely touch their notes; for a name or a number they wipe the relevant line and write the new fact. An LTI SSM has the dial glued in one position. Mamba reads the dial setting off each token.</p>
+<h4>What changes, shape by shape (Algorithms 1 and 2)</h4>
+<div class="tablewrap"><table>
+  <caption>Shapes before and after selection, from Gu &amp; Dao (2023), Algorithms 1 and 2 (CC BY 4.0)</caption>
+  <thead><tr><th>Parameter</th><th>S4: fixed</th><th>S6: selective</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>(D, N)</td><td>(D, N)</td></tr>
+    <tr class="hl"><td>B = s<sub>B</sub>(x)</td><td>(D, N)</td><td>(B, L, N)</td></tr>
+    <tr class="hl"><td>C = s<sub>C</sub>(x)</td><td>(D, N)</td><td>(B, L, N)</td></tr>
+    <tr class="hl"><td>Δ</td><td>(D)</td><td>(B, L, D)</td></tr>
+    <tr><td>Ā, B̄</td><td>(D, N)</td><td>(B, L, D, N)</td></tr>
+    <tr><td>Computed as</td><td>recurrence or convolution</td><td>recurrence (scan) only</td></tr>
+  </tbody>
+</table></div>
+<p>In the shapes, B is the batch size, L the length, D the channels and N the state size (the paper reuses the letter B for batch and for the B parameter).</p>
+<p>The highlighted rows are the change: B, C and Δ gain a length dimension L, one value per token. That is exactly what “time-varying” means, and it is why the convolution road closes. The paper chooses s<sub>B</sub>(x) = Linear<sub>N</sub>(x) and s<sub>C</sub>(x) = Linear<sub>N</sub>(x), where Linear<sub>d</sub> is a learned projection to d numbers, and s<sub>Δ</sub>(x) = Broadcast<sub>D</sub>(Linear<sub>1</sub>(x)): the input is squeezed to <em>one</em> number, then copied to all D channels, so that when a token should be ignored, every channel ignores it together.</p>
+<h4>Tiny example</h4>
+<p>From the lesson: suppose the projection gives 10 × marker − 5, so a marked token gets 5 and an ordinary one gets −5. <span class="t" data-t="softplus">Softplus</span> turns these into step sizes: 5.007 for the marked token (write) and 0.0067 for an ordinary one (keep). Softplus is used because a step size must be positive.</p>
+<div class="eq" data-tex="\htmlData{sym=Delta}{\Delta} = \htmlData{sym=tauDelta}{\tau_\Delta}\big(\htmlData{sym=param}{\mathsf{Parameter}} + \htmlData{sym=sDelta}{s_\Delta(x)}\big)" data-fallback="Δ = τ_Δ(Parameter + s_Δ(x))"></div>
+<div class="eq" data-tex="\htmlData{sym=tauDelta}{\tau_\Delta}(\htmlData{sym=z}{z}) = \htmlData{sym=softplusf}{\mathsf{softplus}}(\htmlData{sym=z}{z}) = \htmlData{sym=ln}{\ln}(1 + \htmlData{sym=e}{e}^{\htmlData{sym=z}{z}})" data-fallback="τ_Δ(z) = softplus(z) = ln(1 + e^z)"></div>
+<div class="symtable" data-syms="Delta,tauDelta,param,sDelta,z,softplusf,ln,e"></div>
+<p class="inwords"><strong>In words:</strong> “add a learned offset to a one-number summary of this token, and pass the sum through softplus, a smooth ramp that is always positive; the result is this token's step size.”</p>
+<p class="inwords"><strong>With the numbers:</strong> z = 5: ln(1 + e<sup>5</sup>) = ln(149.4) = <strong>5.007</strong>. z = −5: ln(1 + e<sup>−5</sup>) = ln(1.0067) = <strong>0.0067</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def softplus(z):
+    # ln(1 + e^z)
+    return math.log(1 + math.exp(z))
+# z = Parameter + s_Δ(x): 10 × marker − 5
+[round(softplus(10 * marker - 5), 4) for marker in (1, 0)]  # → [5.0067, 0.0067]</code></pre>
+<h4>Why it matters</h4>
+<p>This is the paper's entire modelling change: three small projections of the input. The lesson's <a data-lesson="primer/ml/efficient_architectures.html#step_sizes"><code>step_sizes</code></a> is this equation with a hand-set projection, and <a data-lesson="primer/ml/efficient_architectures.html#selective_ssm"><code>selective_ssm</code></a> runs the per-token recurrence. The cost is that every token now has its own Ā and B̄, so the fixed kernel of equation 3 no longer exists; §3.3 is about paying that cost.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Efficient implementation: the hardware-aware scan <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A chef with a tiny counter next to the stove and a big pantry down the hall. Fetching from the pantry is the slow part. A sensible chef carries the few raw ingredients to the counter once, does all the chopping and mixing there, and walks only the finished dish back. The GPU is that kitchen: <span class="t" data-t="sram">SRAM</span> is the counter, <span class="t" data-t="hbm">HBM</span> the pantry, and most operations other than matrix multiplication are limited by the walking (memory bandwidth), not the cooking.</p>
+<h4>Why earlier SSMs used convolutions (§3.3.1)</h4>
+<p>Recurrent models trade expressivity against speed: a bigger state remembers more but costs more. The recurrence is the more flexible road, but it builds the state of shape (B, L, D, N), N times bigger than the input. The convolution road skips the state entirely and only builds a kernel of shape (B, L, D). That trick is what let earlier LTI SSMs have states N ≈ 10 to 100 times larger than a traditional RNN's for free. Selection takes the trick away.</p>
+<h4>The fix, in three classic techniques (§3.3.2)</h4>
+<ul>
+  <li><strong><span class="t" data-t="kernel fusion">Kernel fusion</span>.</strong> Instead of writing Ā and B̄, size (B, L, D, N), to HBM, read only Δ, A, B and C into SRAM, discretize and run the recurrence there, and write only the output, size (B, L, D), back.</li>
+  <li><strong><span class="t" data-t="parallel scan">Parallel scan</span>.</strong> The recurrence looks sequential, but a work-efficient parallel scan computes all its states in about log₂ L rounds.</li>
+  <li><strong>Recomputation.</strong> The intermediate states are needed for the backward pass, but instead of storing them the kernel recomputes them when it reloads the inputs (the same idea as <span class="t" data-t="activation checkpointing">activation checkpointing</span>). The fused layer ends up needing the same memory as an optimized Transformer with <a href="flashattention.html">FlashAttention</a>.</li>
+</ul>
+<h4>Tiny example: how much walking is saved</h4>
+<p>The paper counts memory traffic in O(·) terms: O(BLDN) for the plain scan, O(BLD + DN) for the fused one, a saving of a factor of about N. With the benchmark's sizes, one sequence of 2,048 tokens, D = 1,024 and N = 16, those counts are 33.6 million numbers against 2.1 million: about 16 times less traffic, which the paper reports as a 20 to 40× speedup in practice.</p>
+<div class="eq" data-tex="\htmlData{sym=IOnaive}{\text{IO}_{\text{plain}}} \approx \htmlData{sym=Bsz}{\mathtt{B}}\htmlData{sym=L}{\mathtt{L}}\htmlData{sym=D}{\mathtt{D}}\htmlData{sym=N}{\mathtt{N}}" data-fallback="IO_plain ≈ BLDN"></div>
+<div class="eq" data-tex="\htmlData{sym=IOfused}{\text{IO}_{\text{fused}}} \approx \htmlData{sym=Bsz}{\mathtt{B}}\htmlData{sym=L}{\mathtt{L}}\htmlData{sym=D}{\mathtt{D}} + \htmlData{sym=D}{\mathtt{D}}\htmlData{sym=N}{\mathtt{N}}" data-fallback="IO_fused ≈ BLD + DN"></div>
+<div class="symtable" data-syms="IOnaive,IOfused,Bsz,L,D,N"></div>
+<p class="inwords"><strong>In words:</strong> “the plain scan moves the whole expanded state through main memory; the fused scan moves only the inputs and outputs, plus the small fixed A.” (This page's counting of the paper's O(BLDN) and O(BLD + DN), with constants dropped.)</p>
+<p class="inwords"><strong>With the numbers:</strong> 1 × 2,048 × 1,024 × 16 = 33,554,432 against 2,097,152 + 16,384 = 2,113,536: a ratio of <strong>15.9</strong>, close to N = 16.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>B, L, D, N = 1, 2048, 1024, 16
+io_plain = B * L * D * N
+io_fused = B * L * D + D * N
+print(f"{io_plain:,} {io_fused:,}")  # → 33,554,432 2,113,536
+round(io_plain / io_fused, 1)  # → 15.9</code></pre>
+<h4>The scan, in one equation</h4>
+<p>Why can a recurrence run in parallel at all? Each step is “multiply the state by a, then add b”. Two such steps in a row are again one step of the same form, so steps can be merged in pairs, then pairs of pairs, like a knockout tournament. The paper cites the parallel scan without writing it out; this is the merge rule the lesson's <a data-lesson="primer/ml/efficient_architectures.html#parallel_scan"><code>parallel_scan</code></a> uses.</p>
+<div class="eq" data-tex="(\htmlData{sym=a1}{a_1}, \htmlData{sym=b1}{b_1}) \htmlData{sym=circ}{\circ} (\htmlData{sym=a2}{a_2}, \htmlData{sym=b2}{b_2}) = (\htmlData{sym=a1}{a_1}\htmlData{sym=a2}{a_2},\ \htmlData{sym=a2}{a_2}\htmlData{sym=b1}{b_1} + \htmlData{sym=b2}{b_2})" data-fallback="(a1, b1) ∘ (a2, b2) = (a1 a2, a2 b1 + b2)"></div>
+<div class="symtable" data-syms="a1,b1,a2,b2,circ"></div>
+<p class="inwords"><strong>In words:</strong> “doing step 1 and then step 2 is the same as one step that multiplies by both, and adds step 1's addition faded by step 2, plus step 2's own.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the tea example, steps 1–2 merge to (0.25, 0.5) and steps 3–4 to (0.25, 2). Merging those: (0.25 × 0.25, 0.25 × 0.5 + 2) = <strong>(0.0625, 2.125)</strong>, and 2.125 is the final state from the loop in §2.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def merge(first, then):
+    a1, b1 = first
+    a2, b2 = then
+    return (a1 * a2, a2 * b1 + b2)
+# the four tea steps: h becomes 0.5 h + x_t
+s = [(0.5, 1.0), (0.5, 0.0), (0.5, 0.0), (0.5, 2.0)]
+merge(merge(s[0], s[1]), merge(s[2], s[3]))  # → (0.0625, 2.125)</code></pre>
+<h4>Why it matters</h4>
+<p>This is the same lesson <a href="flashattention.html">FlashAttention</a> taught for attention, by an overlapping set of authors: the bottleneck is memory traffic, not arithmetic, so the fastest algorithm is the one that keeps its big intermediate results on the chip. The <a data-lesson="primer/ml/hardware.html">hardware lesson</a> explains the memory hierarchy behind it.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 A simplified SSM architecture <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S3.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Earlier SSM networks alternated two kinds of floor in the building: an H3 floor (the sequence mixer) and an MLP floor (per-token processing), like a Transformer's attention and feed-forward layers. Mamba builds one kind of floor that does both, and stacks it.</p>
+<figure class="ix" id="fig3">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 400" role="img" aria-label="The Mamba block: two linear projections, a convolution, activation and selective SSM on one branch, an activation on the other, multiplied together and projected back">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="mblock" aria-label="The whole Mamba block"><rect x="8" y="40" width="304" height="316" rx="12"/></g>
+    <path class="wire" d="M160,388 V372 H90 V342" marker-end="url(#arr3)"/>
+    <path class="wire" d="M160,372 H230 V342" marker-end="url(#arr3)"/>
+    <path class="wire" d="M90,312 V292" marker-end="url(#arr3)"/>
+    <path class="wire" d="M90,262 V242" marker-end="url(#arr3)"/>
+    <path class="wire" d="M90,212 V178" marker-end="url(#arr3)"/>
+    <path class="wire" d="M230,312 V178" marker-end="url(#arr3)"/>
+    <path class="wire" d="M90,150 V130 H146" marker-end="url(#arr3)"/>
+    <path class="wire" d="M230,150 V130 H174" marker-end="url(#arr3)"/>
+    <path class="wire" d="M160,116 V98" marker-end="url(#arr3)"/>
+    <path class="wire" d="M160,70 V30" marker-end="url(#arr3)"/>
+    <text x="164" y="398" class="lbl">input (D)</text>
+    <text x="164" y="22" class="lbl">output (D)</text>
+    <g class="blk lin" data-block="inproj"><rect x="40" y="312" width="100" height="30" rx="6"/><text x="90" y="331" text-anchor="middle">Linear ↑</text></g>
+    <g class="blk lin" data-block="inproj"><rect x="180" y="312" width="100" height="30" rx="6"/><text x="230" y="331" text-anchor="middle">Linear ↑</text></g>
+    <g class="blk emb" data-block="conv"><rect x="40" y="262" width="100" height="30" rx="6"/><text x="90" y="281" text-anchor="middle">Conv</text></g>
+    <g class="blk norm" data-block="silu"><rect x="40" y="212" width="100" height="30" rx="6"/><text x="90" y="231" text-anchor="middle">σ (SiLU)</text></g>
+    <g class="blk attn" data-block="ssm"><rect x="40" y="150" width="100" height="28" rx="6"/><text x="90" y="169" text-anchor="middle">Selective SSM</text></g>
+    <g class="blk norm" data-block="silu"><rect x="180" y="150" width="100" height="28" rx="6"/><text x="230" y="169" text-anchor="middle">σ (SiLU)</text></g>
+    <g class="blk pe" data-block="mult"><circle cx="160" cy="130" r="13"/><text x="160" y="135" text-anchor="middle" style="font-size:15px">×</text></g>
+    <g class="blk lin" data-block="outproj"><rect x="110" y="70" width="100" height="28" rx="6"/><text x="160" y="89" text-anchor="middle">Linear ↓</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a part. Start at the bottom with the two <strong>Linear ↑</strong> projections, and follow each branch up.</p></div>
+  </div>
+  <figcaption>The Mamba block from Figure 3 of the paper, redrawn. The optional normalization layer is left out. Based on Gu &amp; Dao (2023), Figure 3 and §3.4 (CC BY 4.0).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> data enters at the bottom with D numbers per token and is widened twice, into two branches of E × D numbers each (E = 2). The left branch is the sequence mixer: a short convolution, the <span class="t" data-tip-title="SiLU (Swish)" data-tip="An activation function: x times the sigmoid of x. It behaves like ReLU for large positive or negative inputs but bends smoothly through zero. The σ in the paper's Figure 3.">SiLU</span> activation, then the selective SSM, the only place where tokens exchange information. The right branch is a gate: just SiLU, applied per token. The two meet at ×, where the gate scales the SSM's output number by number, and the final Linear narrows back to D. Remove the left branch's Conv and SSM and what remains is a gated MLP of the <span class="t" data-t="swiglu">SwiGLU</span> kind; the paper describes Mamba as exactly that block with a conv → SSM path added. Compared with H3, Mamba replaces H3's first multiplicative gate with an activation function.</p>
+<h4>The parameter count</h4>
+<div class="eq" data-tex="\htmlData{sym=params}{\text{params}} \approx \underbrace{2\htmlData{sym=E}{E}\htmlData{sym=Dm}{D}^2}_{\text{in}} + \underbrace{\htmlData{sym=E}{E}\htmlData{sym=Dm}{D}^2}_{\text{out}} = 3\htmlData{sym=E}{E}\htmlData{sym=Dm}{D}^2" data-fallback="params ≈ 2ED² (in) + ED² (out) = 3ED²"></div>
+<div class="symtable" data-syms="params,E,Dm"></div>
+<p class="inwords"><strong>In words:</strong> “almost all of a block's weights are in its three big projections: two that widen D numbers to E × D, and one that narrows E × D back to D; the SSM itself adds comparatively little.”</p>
+<p class="inwords"><strong>With the numbers:</strong> E = 2 gives 6D² per block. With D = 1,024 that is <strong>6,291,456</strong>; two blocks make 12D² = <strong>12,582,912</strong>, the same as one Transformer layer's attention (4D²) plus MLP (8D²). That is why the paper stacks two Mamba blocks for every Transformer layer it compares against.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>E, D = 2, 1024
+# 2ED² to widen (two branches) + ED² to narrow
+per_block = 2 * E * D ** 2 + E * D ** 2
+print(f"{per_block:,}")  # → 6,291,456
+# two Mamba blocks against one Transformer layer, 12D²
+2 * per_block == 12 * D ** 2  # → True</code></pre>
+<h4>Why it matters</h4>
+<p>One homogeneous block is simpler to build, tune and scale. The ablation in §4.6 (Table 2) finds the Mamba block performs about the same as H3 while being simpler, and slightly better with a selective layer inside.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Properties of selection: it is gating, made principled <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S3.SS5">original</a></span></h3>
+<blockquote class="quote">“We highlight the most important connection: the classical gating mechanism of RNNs is an instance of our selection mechanism for SSMs.”<cite>Gu &amp; Dao (2023), §3.5.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>An <span class="t" data-t="lstm">LSTM</span> or <span class="t" data-t="gru">GRU</span> has gates: dials between 0 and 1 that decide how much of the old memory to keep and how much new input to let in. They were invented by hand. Theorem 1 shows that a selective SSM in its simplest setting <em>is</em> such a gate, derived from discretization rather than invented.</p>
+<h4>Theorem 1</h4>
+<p>Take one state number (N = 1), A = −1, B = 1, Δ = softplus(Linear(x)). Then the selective recurrence becomes a gated update:</p>
+<div class="eq" data-tex="\htmlData{sym=gt}{g_t} = \htmlData{sym=sigmaf}{\sigma}(\htmlData{sym=Linear}{\mathsf{Linear}}(\htmlData{sym=xt}{x_t}))" data-fallback="g_t = σ(Linear(x_t))"></div>
+<div class="eq" data-tex="\htmlData{sym=ht}{h_t} = (1 - \htmlData{sym=gt}{g_t})\,\htmlData{sym=htm1}{h_{t-1}} + \htmlData{sym=gt}{g_t}\,\htmlData{sym=xt}{x_t}" data-fallback="h_t = (1 − g_t) h_(t−1) + g_t x_t"></div>
+<div class="symtable" data-syms="gt,sigmaf,Linear,xt,htm1,ht"></div>
+<p class="inwords"><strong>In words:</strong> “compute a gate between 0 and 1 from the current input; the new state is a blend of the old state and the input, with the gate deciding the mix.”</p>
+<p class="inwords"><strong>With the numbers:</strong> why this is the same thing: with A = −1, Ā = e<sup>−Δ</sup>, and e<sup>−softplus(z)</sup> = 1 / (1 + e<sup>z</sup>) = 1 − σ(z). Take z = Linear(x<sub>t</sub>) = 2. Then Δ = softplus(2) = 2.127 and Ā = e<sup>−2.127</sup> = <strong>0.119</strong>, while the gate is g = σ(2) = 0.881 and 1 − g = <strong>0.119</strong>. The same keep factor, reached two ways. And B̄ = 1 − Ā = 0.881 = g.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+z = 2.0
+# the SSM road: Δ = softplus(z), Ā = e^(ΔA) with A = −1
+delta = math.log(1 + math.exp(z))
+A_bar = math.exp(-delta)
+round(delta, 3), round(A_bar, 3)  # → (2.127, 0.119)
+# the gate road: g = σ(z), keep 1 − g
+g = 1 / (1 + math.exp(-z))
+round(g, 3), round(1 - g, 3)  # → (0.881, 0.119)</code></pre>
+<div class="play" id="gate-play">
+  <div class="sliders" id="gate-sliders"></div>
+  <div class="shares" id="gate-bars"></div>
+  <p class="readout" id="gate-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the slider is z = Linear(x<sub>t</sub>), what the model computes from the current token. The first two bars come from the SSM road (step size Δ, then keep factor Ā = e<sup>−Δ</sup>); the last two from the gate road (g = σ(z), and 1 − g). Drag anywhere: the keep bar and the 1 − g bar are always identical, which is Theorem 1. At very negative z the gate is shut, Δ → 0, and the token is ignored; at very positive z the gate is open, Δ is large, and the state is reset to this token. That is the paper's reading of Δ: large Δ focuses on the current input and forgets the state; small Δ keeps the state and ignores the input.</p>
+<h4>What selection buys, mechanically (§3.5.2)</h4>
+<ul>
+  <li><strong>Variable spacing.</strong> Filler between the important tokens (the “um”s of language) can be skipped, whatever its length.</li>
+  <li><strong>Filtering context.</strong> Many sequence models don't get better with longer context, because they can't ignore what's irrelevant. A selective model can, so in principle its performance only improves with more context (§4.3 tests this).</li>
+  <li><strong>Boundary resetting.</strong> When independent documents are packed into one sequence, an LTI model bleeds information across the boundary; a selective one can reset its state there (Δ → ∞, or g → 1).</li>
+</ul>
+<p>And each parameter's role: <strong>Δ</strong> balances focusing on the current input against keeping the state; <strong>A</strong> matters only through ΔA, so making Δ selective already makes Ā selective, and A is left fixed for simplicity; selective <strong>B</strong> and <strong>C</strong> give finer control over whether an input enters the state and whether the state reaches the output.</p>
+</section>
+
+<section id="s3-6">
+<h3>3.6 Additional model details <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S3.SS6">original</a></span></h3>
+<ul>
+  <li><strong>Real, not complex.</strong> Earlier SSMs used complex numbers in the state, which helps on continuous signals. Mamba uses real numbers by default, and they work well on everything the paper tries except one audio task. The authors' guess: complex numbers help continuous modalities (audio, video) but not discrete ones (text, DNA).</li>
+  <li><strong>Initialization.</strong> The n-th element of A starts at −(n + 1) in the real case (called S4D-Real) or −1/2 + n<em>i</em> in the complex case (S4D-Lin).</li>
+  <li><strong>The Δ projection</strong> can project to R numbers instead of 1, a small fraction of D, for a negligible number of extra parameters.</li>
+</ul>
+<h4>Tiny example: where Δ starts</h4>
+<p>Δ's learned offset (the “Parameter”) is initialized so that softplus of it lands uniformly between 0.001 and 0.1. To get there you need the inverse of softplus. For a target step of 0.01, the offset is ln(e<sup>0.01</sup> − 1) = −4.600; the range 0.001 to 0.1 maps to offsets from −6.907 to −2.252. Small initial steps mean the model starts out keeping its state and learns which tokens deserve a large Δ.</p>
+<div class="eq" data-tex="\htmlData{sym=param}{\mathsf{Parameter}} = \htmlData{sym=tauinv}{\tau_\Delta^{-1}}(\htmlData{sym=u}{u}) = \htmlData{sym=ln}{\ln}(\htmlData{sym=e}{e}^{\htmlData{sym=u}{u}} - 1)" data-fallback="Parameter = τ_Δ⁻¹(u) = ln(e^u − 1)"></div>
+<div class="eq" data-tex="\htmlData{sym=u}{u} \sim \htmlData{sym=unif}{\mathsf{Uniform}([0.001, 0.1])}" data-fallback="u ~ Uniform([0.001, 0.1])"></div>
+<div class="symtable" data-syms="param,tauinv,u,unif,ln,e"></div>
+<p class="inwords"><strong>In words:</strong> “pick a starting step size at random between 0.001 and 0.1, and set the offset to whatever number softplus turns into that step size.”</p>
+<p class="inwords"><strong>With the numbers:</strong> u = 0.01 gives ln(0.01005) = <strong>−4.600</strong>; the ends of the range give <strong>−6.907</strong> and <strong>−2.252</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def softplus_inverse(u):
+    # τ_Δ^-1(u) = ln(e^u − 1)
+    return math.log(math.exp(u) - 1)
+[round(softplus_inverse(u), 3) for u in (0.001, 0.01, 0.1)]  # → [-6.907, -4.6, -2.252]
+# check: softplus undoes it
+round(math.log(1 + math.exp(softplus_inverse(0.01))), 6)  # → 0.01</code></pre>
+<p>The paper calls a selective SSM computed with a scan <strong>S6</strong> for short: an S4 model plus selection plus a scan.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Empirical evaluation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A new engine is tested on a track built to expose its old weakness (synthetic tasks), then on three real roads (language, DNA, audio), then timed on a dynamometer (speed and memory), and finally taken apart to see which part matters (ablations).</p>
+
+<section id="s4-1">
+<h3>4.1 Synthetic tasks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S4.SS1">original</a></span></h3>
+<h4>Selective copying</h4>
+<p>Sequences of length 4,096 with 16 possible tokens, 16 of which must be remembered, and 2-layer models of width 64. The table pairs an <em>architecture</em> (the block around the sequence layer) with an inner <em>layer</em>. Architectural gating (H3's or Mamba's multiplications) helps a little; swapping the layer for a selective one (S6) solves the task.</p>
+<div class="tablewrap"><table>
+  <caption>Selective copying accuracy (%), from Gu &amp; Dao (2023), Figure 4 table (CC BY 4.0)</caption>
+  <thead><tr><th>Architecture</th><th>Layer</th><th class="num">Accuracy</th></tr></thead>
+  <tbody>
+    <tr><td>No gate</td><td>S4</td><td class="num">18.3</td></tr>
+    <tr><td>No gate</td><td>S6</td><td class="num">97.0</td></tr>
+    <tr><td>H3</td><td>S4</td><td class="num">57.0</td></tr>
+    <tr><td>H3</td><td>Hyena</td><td class="num">30.1</td></tr>
+    <tr><td>H3</td><td>S6</td><td class="num">99.7</td></tr>
+    <tr><td>Mamba</td><td>S4</td><td class="num">56.4</td></tr>
+    <tr><td>Mamba</td><td>Hyena</td><td class="num">28.4</td></tr>
+    <tr class="hl"><td>Mamba</td><td>S6</td><td class="num">99.8</td></tr>
+  </tbody>
+</table></div>
+<p>The paper argues that architectural gating is not selection: a multiplication applied to each token separately cannot change the <em>spacing</em> between tokens, which is what this task varies.</p>
+<h4>Induction heads</h4>
+<p>The <span class="t" data-t="induction head">induction head</span> task: having seen “Harry Potter” earlier in a sequence, predict “Potter” the next time “Harry” appears. Models with 2 layers train on sequences of 256 tokens (a vocabulary of 16) and are tested on lengths from 64 up to 1,048,576.</p>
+<div class="plot" id="ind-plot">
+  <div id="ind-chart"></div>
+  <p class="readout" id="ind-readout">Hover or tap the chart to read each model's accuracy at a test length.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the test sequence length on a log scale, from 64 to 1,048,576; the models trained at 256, just right of the 128 label. The y-axis is accuracy. All three models score 100% at the length they trained on. Moving right, the attention model (multi-head attention with xPos positions, the best attention variant here) holds up at twice the length (99.6%), falls to 67.6% at four times and 25.4% at eight, then to about 7% to 9%; its line stops at 16,384 because longer sequences ran out of memory. H3, an LTI SSM, falls similarly. Mamba's line stays flat at 100% all the way to 1,048,576 tokens, 4,096 times longer than anything it trained on, with 74 thousand parameters. Values are from the paper's Table 3, where a check mark means perfect accuracy (drawn here as 100).</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Language modeling <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S4.SS2">original</a></span></h3>
+<h4>Scaling laws</h4>
+<p>Models from about 125 million to 1.3 billion parameters, trained on the Pile following the <span class="t" data-t="chinchilla scaling">Chinchilla</span> protocol, compared on <span class="t" data-t="perplexity">perplexity</span>. The baselines include the GPT-3 Transformer and a stronger recipe the paper calls Transformer++ (rotary positions, SwiGLU, RMSNorm, no bias terms, higher learning rates), plus H3, Hyena, RWKV and RetNet. Mamba is the first attention-free model to match Transformer++, and its advantage grows with sequence length (Figure 6).</p>
+<h4>Zero-shot evaluations (Table 1)</h4>
+<p>Models trained on 300 billion tokens of the Pile, scored on six common-sense tasks without any task-specific training (<span class="t" data-t="zero-shot">zero-shot</span>). Pythia and RWKV used the same tokenizer, data and training length.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, from Gu &amp; Dao (2023) (CC BY 4.0). Pile ppl is perplexity on the Pile validation set (lower is better); the average is over six accuracy columns (higher is better)</caption>
+  <thead><tr><th>Model</th><th class="num">Pile ppl</th><th class="num">LAMBADA acc</th><th class="num">HellaSwag</th><th class="num">Average acc</th></tr></thead>
+  <tbody>
+    <tr><td>Pythia-1.4B</td><td class="num">7.51</td><td class="num">61.7</td><td class="num">52.1</td><td class="num">55.2</td></tr>
+    <tr><td>RWKV-1.5B</td><td class="num">7.70</td><td class="num">56.4</td><td class="num">52.5</td><td class="num">54.3</td></tr>
+    <tr class="hl"><td>Mamba-1.4B</td><td class="num">6.80</td><td class="num">64.9</td><td class="num">59.1</td><td class="num">59.7</td></tr>
+    <tr><td>Pythia-2.8B</td><td class="num">6.73</td><td class="num">64.7</td><td class="num">59.3</td><td class="num">59.1</td></tr>
+    <tr><td>RWKV-3B</td><td class="num">7.00</td><td class="num">63.9</td><td class="num">59.6</td><td class="num">59.6</td></tr>
+    <tr class="hl"><td>Mamba-2.8B</td><td class="num">6.22</td><td class="num">69.2</td><td class="num">66.1</td><td class="num">63.3</td></tr>
+    <tr><td>Pythia-6.9B</td><td class="num">6.51</td><td class="num">67.1</td><td class="num">64.0</td><td class="num">61.7</td></tr>
+    <tr><td>RWKV-7.4B</td><td class="num">6.31</td><td class="num">67.2</td><td class="num">65.5</td><td class="num">62.5</td></tr>
+  </tbody>
+</table></div>
+<div class="plot" id="lm-plot"><div id="lm-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one model's average accuracy over the six tasks, on an axis from 50% to 65% so the gaps are visible; Mamba's bars are solid, the others striped. Mamba-1.4B beats both models of its size and even edges past Pythia-2.8B. Mamba-2.8B, the paper's “Mamba-3B”, is about 4 points above Pythia-2.8B (63.3 against 59.1) and above both the 6.9B Pythia and the 7.4B RWKV. That is the abstract's “matches Transformers twice its size”.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 DNA modeling <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>DNA is a text with a four-letter alphabet and very long-range structure. The models are pretrained to predict the next base pair on one human genome (HG38, about 4.5 billion tokens).</p>
+<ul>
+  <li><strong>Model size</strong> (Figure 7, left): at context 1,024, from about 200 thousand to 40 million parameters, Mamba scales better than HyenaDNA and Transformer++; at the largest size it matches them with roughly 3 to 4 times fewer parameters.</li>
+  <li><strong>Context length</strong> (Figure 7, right): with model size fixed (6 layers, width 128, about 1.4 million parameters) and training tokens fixed, Mamba's perplexity keeps improving as context grows to a million base pairs, while HyenaDNA gets <em>worse</em>. The paper's explanation is §3.5's “filtering context”: a long fixed convolution averages in more and more noise.</li>
+</ul>
+<h4>Great apes classification</h4>
+<p>Pretrained models are fine-tuned to tell which of five great apes (human, chimpanzee, gorilla, orangutan, bonobo, which share 99% of their DNA) a random stretch of DNA came from. Random guessing scores 20%.</p>
+<div class="plot" id="apes-plot">
+  <div id="apes-chart"></div>
+  <p class="readout" id="apes-readout">Hover or tap the chart to read accuracy at each context length.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the context length the model was pretrained and fine-tuned on, from 1,024 to 1,048,576 base pairs (log scale); the y-axis is accuracy. At short contexts every model scores around 30%, only a little above the 20% of guessing, because a thousand base pairs barely distinguish species sharing 99% of their DNA. With more context, both Mamba models climb, reaching 71.7% (1.4 million parameters) and 81.3% (7 million) at a million base pairs, against 54.9% for HyenaDNA of the same small size. Not every step up in length helps (HyenaDNA drops at 262,144), but at the longest context the gap between the models is widest. Numbers from the paper's Table 5.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Audio modeling and generation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S4.SS4">original</a></span></h3>
+<p><strong>Long-context pretraining.</strong> On YouTubeMix, 4 hours of solo piano sampled 16,000 times a second, the paper swaps the S4 + MLP blocks of the SaShiMi audio model for Mamba blocks and trains with contexts from 8,192 up to about a million samples at fixed compute. Both improve with longer context and Mamba is better throughout, with the gap widening at longer lengths (Figure 9). The metric is <span class="t" data-tip-title="Bits per byte" data-tip="The model's average surprise per sample, measured in bits: the next-token loss divided by ln 2. Lower means the model predicts the audio better.">bits per byte</span>. This is the one experiment where the complex-valued SSM was used.</p>
+<p><strong>Speech generation.</strong> SC09 is a dataset of one-second clips of people saying the digits zero to nine. Models generate clips from scratch, scored by automatic measures including <span class="t" data-tip-title="FID (Fréchet Inception Distance)" data-tip="A measure of how different a set of generated samples is from real ones, computed from the statistics of a classifier's features. Lower is better; 0 would be indistinguishable.">FID</span> and IS (a score of how clear and varied the samples are; higher is better).</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of the SC09 table (Figure 10), from Gu &amp; Dao (2023) (CC BY 4.0)</caption>
+  <thead><tr><th>Model</th><th class="num">Params</th><th class="num">FID ↓</th><th class="num">IS ↑</th></tr></thead>
+  <tbody>
+    <tr><td>WaveNet</td><td class="num">4.2M</td><td class="num">5.08</td><td class="num">2.27</td></tr>
+    <tr><td>SaShiMi</td><td class="num">5.8M</td><td class="num">1.99</td><td class="num">5.13</td></tr>
+    <tr><td>DiffWave (diffusion)</td><td class="num">24.1M</td><td class="num">1.92</td><td class="num">5.26</td></tr>
+    <tr><td>DiffWave + SaShiMi</td><td class="num">23.0M</td><td class="num">1.42</td><td class="num">5.94</td></tr>
+    <tr class="hl"><td>Mamba</td><td class="num">6.1M</td><td class="num">0.94</td><td class="num">6.26</td></tr>
+    <tr class="hl"><td>Mamba</td><td class="num">24.3M</td><td class="num">0.67</td><td class="num">7.33</td></tr>
+  </tbody>
+</table></div>
+<p>A small Mamba beats much larger GAN and diffusion models, and halves SaShiMi's FID. An ablation (Figure 11) swaps block types in the U-Net's outer and centre stages: Mamba is better than S4 + MLP in the outer blocks, and in the centre Mamba beats S4 + MLP, which beats attention + MLP.</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Speed and memory <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S4.SS5">original</a></span></h3>
+<ul>
+  <li><strong>The scan</strong> (state size N = 16, on an A100 GPU): faster than FlashAttention-2 beyond sequence length 2,048, and 20 to 40 times faster than a standard scan written in PyTorch. Appendix D adds: up to 7 times faster than attention at 32,768.</li>
+  <li><strong>Generation</strong>: 4 to 5 times higher throughput than a Transformer of similar size, because with no KV cache it can serve much larger batches. An untrained 6.9B Mamba out-generates a Transformer five times smaller (1.3B).</li>
+  <li><strong>Training memory</strong> (Table 7, 125M models, length 2,048): comparable to the most optimized Transformer, for example 4.8 GB against 4.6 GB at batch size 1 and 23.1 GB against 20.7 GB at batch size 16.</li>
+</ul>
+<p>Why no cache matters: a Transformer must keep keys and values for every past token, so memory grows with the conversation; Mamba keeps a fixed state per layer. The <a data-lesson="primer/ml/efficient_architectures.html#ssm_state_bytes">efficient architectures lesson</a> computes that fixed state (<a data-lesson="primer/ml/efficient_architectures.html#ssm_state_bytes"><code>ssm_state_bytes</code></a>) against a growing KV cache.</p>
+</section>
+
+<section id="s4-6">
+<h3>4.6 Model ablations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S4.SS6">original</a></span></h3>
+<p>All on language modelling with models of about 350 million parameters; lower perplexity is better.</p>
+<div class="tablewrap"><table>
+  <caption>Selected ablations, from Gu &amp; Dao (2023), Table 2 and Figure 13 table (CC BY 4.0)</caption>
+  <thead><tr><th>Variant</th><th class="num">Perplexity</th></tr></thead>
+  <tbody>
+    <tr><td>H3 block, S4 (complex) layer</td><td class="num">10.30</td></tr>
+    <tr><td>H3 block, S6 layer</td><td class="num">8.95</td></tr>
+    <tr><td>Mamba block, S4 (complex) layer</td><td class="num">10.54</td></tr>
+    <tr class="hl"><td>Mamba block, S6 layer</td><td class="num">8.69</td></tr>
+    <tr><td>Nothing selective</td><td class="num">10.93</td></tr>
+    <tr><td>Only B selective</td><td class="num">10.15</td></tr>
+    <tr><td>Only C selective</td><td class="num">9.98</td></tr>
+    <tr><td>Only Δ selective</td><td class="num">9.81</td></tr>
+    <tr class="hl"><td>Δ, B and C selective</td><td class="num">8.71</td></tr>
+  </tbody>
+</table></div>
+<p>Three lessons: among time-invariant layers the choice barely matters (all about 10.2 to 10.6), while making the layer selective is a big gain; Δ is the single most important selective parameter, as Theorem 1 suggests, but the three together do far better than any one; and real-valued A initializations beat the standard complex one once the SSM is selective (8.71 against 9.16).</p>
+<h4>A bigger state only helps if it is selective</h4>
+<div class="plot" id="n-plot">
+  <div id="n-chart"></div>
+  <p class="readout" id="n-readout">Hover or tap the chart to read perplexity at each state size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the state size N per channel (1 to 16, log scale); the y-axis is perplexity, lower being better. With B and C fixed (time-invariant), growing the state from 1 to 16 barely helps: 9.88 to 9.81. With B and C selective, the same growth takes perplexity from 9.73 to 8.71, more than a full point, for about 1% more parameters (367.1 million to 371.5 million). A bigger notebook is only useful to a note-taker who chooses what to write in it. Numbers from the paper's Figure 16 table.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Discussion and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#S5">original</a></span></h2>
+<blockquote class="quote">“Our results suggest that Mamba is a strong candidate to be a general sequence model backbone.”<cite>Gu &amp; Dao (2023), §6</cite></blockquote>
+<h3 class="rung">The paper's own caveats</h3>
+<ul>
+  <li><strong>No free lunch.</strong> Selection fixes SSMs' weakness on discrete data but can hurt where LTI models shine. On raw audio, a smooth signal sampled at regular intervals, making the SSM selective hurt performance (Appendix E.4); the gap shrinks when only the inner layers, which see already-compressed audio, are made selective.</li>
+  <li><strong>Downstream affordances.</strong> Transformer models come with a whole ecosystem: fine-tuning, prompting, in-context learning, instruction tuning, RLHF, quantization. Whether SSMs have the same properties was an open question.</li>
+  <li><strong>Scale.</strong> The experiments stop at a few billion parameters, below the strongest open models and below the 7B scale at which RWKV and RetNet had been evaluated. Whether Mamba stays ahead at larger sizes was left open.</li>
+</ul>
+<h3 class="rung">Conclusion</h3>
+<p>A selection mechanism lets structured state space models do context-dependent reasoning while still scaling linearly in sequence length, and a simple attention-free architecture built on it matches or exceeds strong Transformers across language, DNA and audio. The authors single out emerging long-context domains such as genomics, audio and video.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2312.00752#A1">original</a></span></h2>
+<h3 class="rung">Selection is not just “gating” (Appendix A)</h3>
+<p>“Gating” has come to mean any multiplication in a network. The paper gives an example to show why that is too loose: a layer y = σ(Wx) ∘ x (a <span class="t" data-tip-title="GLU (gated linear unit)" data-tip="A layer that multiplies its input, element by element, by a sigmoid of a linear function of the same input. It is so simple it is often treated as just an activation function.">GLU</span>) technically counts as gated, as a <span class="t" data-tip-title="Hypernetwork" data-tip="A network whose weights are produced by another, smaller network. The paper notes the term is broad enough to cover almost anything with a multiplication.">hypernetwork</span> and as data-dependent, yet it is little more than an activation function. The authors reserve “selection” for the older, narrower sense of RNN gating: a model choosing to take in or ignore inputs <em>along the sequence</em>. That is what separates it from the per-token multiplications in H3 or Hyena.</p>
+<h3 class="rung">Where the memory goes (Appendix D)</h3>
+<p>During training in 16-bit precision, a FlashAttention layer stores about 12 bytes of activations per token and an MLP layer about 20, 32 in total; a selective SSM layer stores about 16. So two Mamba blocks, which replace one attention and one MLP layer, need about the same activation memory. When a sequence is too long to fit in SRAM, the fused scan is run chunk by chunk, carrying the state from one chunk to the next.</p>
+<h3 class="rung">Proof of Theorem 1 (Appendix C)</h3>
+<p>With N = 1, A = −1 and B = 1, the continuous system is h′ = −h + x, a “leaky integrator”. Zero-order hold gives Ā = e<sup>−Δ</sup> and B̄ = 1 − Ā. With Δ = softplus(z), e<sup>−Δ</sup> = 1 / (1 + e<sup>z</sup>) = 1 − σ(z), so Ā = 1 − g and B̄ = g with g = σ(z). The §3.5 widget shows the two roads agreeing for any z.</p>
+</section>
+
+<section id="today">
+<h2>Where it leads</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Idea in the paper</th><th>Why it lasts</th><th>Where to build it</th></tr></thead>
+  <tbody>
+    <tr><td>Compression is the problem: a state is a summary</td><td>Explains both why attention is costly (it never summarises) and why recurrent models forget</td><td><a data-lesson="primer/ml/efficient_architectures.html">efficient architectures</a></td></tr>
+    <tr><td>Parameters that depend on the token (selection)</td><td>The step size is a learned gate, so a fixed-size state can hold what matters</td><td><a data-lesson="primer/ml/efficient_architectures.html#selective_ssm">selective SSM</a></td></tr>
+    <tr><td>Parallel scan instead of convolution</td><td>Any recurrence of the form h = a·h + b trains in parallel, even when a changes every step</td><td><a data-lesson="primer/ml/efficient_architectures.html#parallel_scan">parallel scan</a></td></tr>
+    <tr><td>Keep the big intermediate on the chip</td><td>Memory traffic, not arithmetic, is the usual bottleneck on GPUs</td><td><a href="flashattention.html">FlashAttention companion</a></td></tr>
+    <tr><td>No KV cache, constant memory per token</td><td>Makes long generation and big batches cheap; mixing in a few attention layers restores exact recall</td><td><a data-lesson="primer/ml/efficient_architectures.html#hybrid_cache_bytes">hybrid models</a></td></tr>
+    <tr><td>Selective SSMs as a form of linear attention</td><td>The follow-up paper, Mamba-2, shows the two are views of one computation</td><td><a data-lesson="primer/ml/efficient_architectures.html#linear_attention_recurrent">linear attention</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Albert Gu and Tri Dao, <em>Mamba: Linear-Time Sequence Modeling with Selective State Spaces</em>, 2023. <a href="https://arxiv.org/abs/2312.00752">arXiv:2312.00752</a>, released under CC BY 4.0. Quotations are brief and attributed; selected table rows are reproduced and charts replotted from the published numbers with attribution; diagrams are redrawn. All explanations, diagrams, examples and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §2 continuous
+    hcont: { tex: "h(t)", name: "State at time t", meaning: "The hidden state of the continuous system: a summary of the input so far. It has N numbers per channel.", shape: "N numbers (here 1)", example: "2" },
+    hprime: { tex: "h'(t)", name: "Rate of change of the state", meaning: "How fast the state is changing at time t. The prime mark means “rate of change”, as in calculus.", shape: "N numbers", example: "−2 with no input, 1 with x = 3" },
+    A: { tex: "\\mathbf{A}", name: "State matrix (fade rate)", meaning: "How the state feeds back on itself. Negative values make the state decay; in Mamba A is diagonal, so it is just N numbers per channel, and it is not input-dependent.", shape: "N × N, stored as N numbers per channel (D × N)", example: "−1" },
+    B: { tex: "\\mathbf{B}", name: "Input matrix", meaning: "How the input is written into the state. Fixed in S4; computed from each token in Mamba.", shape: "N × 1 per channel", example: "1" },
+    xcont: { tex: "x(t)", name: "Input signal", meaning: "The input at time t, one number per channel.", shape: "1 number per channel", example: "0, then 3" },
+    C: { tex: "\\mathbf{C}", name: "Output matrix", meaning: "How the state is read out into the output. Fixed in S4; computed from each token in Mamba.", shape: "1 × N per channel", example: "1" },
+    ycont: { tex: "y(t)", name: "Output signal", meaning: "What the layer outputs at time t.", shape: "1 number per channel", example: "equals the state when C = 1" },
+    // §2 discretization
+    Delta: { tex: "\\Delta", name: "Step size (Delta)", meaning: "How long a step the continuous system is advanced by for this token. Large Δ: forget the state, take in the input. Small Δ: keep the state, ignore the input. In Mamba it is computed from each token.", shape: "a positive number per channel (per token in Mamba)", example: "0.5; or 5.007 for a marked token and 0.0067 for an ordinary one" },
+    exp: { tex: "\\exp", name: "Exponential", meaning: "e raised to the power in brackets. For a diagonal A it is just e to each diagonal number.", shape: "keeps the shape", example: "exp(−0.5) = 0.607" },
+    Abar: { tex: "\\overline{\\mathbf{A}}", name: "A-bar: this step's keep factor", meaning: "How much of the old state survives one step. Between 0 and 1 when A is negative.", shape: "D × N (and × B × L once selective)", example: "0.607 for Δ = 0.5; 0.5 in the tea example" },
+    inv: { tex: "(\\Delta\\mathbf{A})^{-1}", name: "Inverse of ΔA", meaning: "The matrix that undoes ΔA. For a single number it is simply 1 / (ΔA).", shape: "N × N (diagonal)", example: "1 / (0.5 × −1) = −2" },
+    I: { tex: "\\mathbf{I}", name: "Identity matrix", meaning: "The matrix version of the number 1: ones on the diagonal, zeros elsewhere.", shape: "N × N", example: "1 for a single number" },
+    Bbar: { tex: "\\overline{\\mathbf{B}}", name: "B-bar: this step's write factor", meaning: "How much of the input gets written into the state in one step, after accounting for the fading that happens during the step.", shape: "D × N (and × B × L once selective)", example: "0.393 for Δ = 0.5; 1 in the tea example" },
+    // §2 recurrence and convolution
+    ht: { tex: "h_t", name: "State after step t", meaning: "The fixed-size memory after reading token t.", shape: "N numbers per channel", example: "1, 0.5, 0.25, 2.125" },
+    htm1: { tex: "h_{t-1}", name: "State before step t", meaning: "The memory carried over from the previous token. Starts at 0.", shape: "N numbers per channel", example: "0.25 before the last step" },
+    xt: { tex: "x_t", name: "Input at step t", meaning: "Token t's input, one number per channel.", shape: "D numbers", example: "(1, 0, 0, 2) over four steps" },
+    yt: { tex: "y_t", name: "Output at step t", meaning: "The state read out through C.", shape: "D numbers", example: "2.125 at step 4" },
+    Kbar: { tex: "\\overline{\\mathbf{K}}", name: "The SSM convolution kernel", meaning: "The list of weights saying how much an input k steps ago still counts. It exists only if Ā, B̄ and C are the same at every step.", shape: "length L per channel", example: "(1, 0.5, 0.25, 0.125)" },
+    Abark: { tex: "\\overline{\\mathbf{A}}^k", name: "Ā to the power k", meaning: "Ā multiplied by itself k times: how much an input has faded after k steps. Ā⁰ is 1.", shape: "N × N", example: "0.5³ = 0.125" },
+    xseq: { tex: "x", name: "The whole input sequence", meaning: "All L inputs of one channel, known in advance during training.", shape: "L numbers", example: "(1, 0, 0, 2)" },
+    yseq: { tex: "y", name: "The whole output sequence", meaning: "All L outputs of one channel.", shape: "L numbers", example: "(1, 0.5, 0.25, 2.125)" },
+    conv: { tex: "\\ast", name: "Convolution", meaning: "Slide the kernel along the input: each output is the sum of recent inputs times the matching kernel weights, newest input times the first weight.", shape: "L in, L out", example: "y₄ = 1·2 + 0.5·0 + 0.25·0 + 0.125·1" },
+    // §2 size
+    sizeh: { tex: "\\text{size}(h)", name: "Size of the full state", meaning: "How many numbers the state takes if written out for every position of every sequence in a batch.", shape: "a count", example: "33,554,432" },
+    Bsz: { tex: "\\mathtt{B}", name: "Batch size", meaning: "How many sequences are processed together. (Not the B matrix: the paper reuses the letter, in a different font.)", shape: "a whole number", example: "1" },
+    L: { tex: "\\mathtt{L}", name: "Sequence length", meaning: "How many tokens per sequence.", shape: "a whole number", example: "2,048" },
+    D: { tex: "\\mathtt{D}", name: "Channels", meaning: "How many numbers represent each token inside the layer; one independent SSM runs per channel.", shape: "a whole number", example: "1,024 (5 in Figure 1)" },
+    N: { tex: "\\mathtt{N}", name: "State size", meaning: "How many state numbers each channel carries. The paper's default is 16.", shape: "a whole number", example: "16 (4 in Figure 1)" },
+    // §3.2
+    tauDelta: { tex: "\\tau_\\Delta", name: "Step-size function", meaning: "The function that turns a raw number into a valid, positive step size. Mamba uses softplus.", shape: "one number in, one out", example: "softplus" },
+    param: { tex: "\\mathsf{Parameter}", name: "Learned offset for Δ", meaning: "A learned number per channel, added before softplus. It sets the default step size; the input-dependent part moves it up or down per token. It can be seen as a bias.", shape: "D numbers", example: "−5 in the tiny example" },
+    sDelta: { tex: "s_\\Delta(x)", name: "Input-dependent part of Δ", meaning: "The token squeezed to one number by a learned projection, then copied to all D channels: Broadcast_D(Linear_1(x)).", shape: "D numbers per token", example: "10 × marker: 10 or 0" },
+    z: { tex: "z", name: "The raw step-size number", meaning: "What goes into softplus: Parameter + s_Δ(x).", shape: "any number", example: "5 or −5" },
+    softplusf: { tex: "\\mathsf{softplus}", name: "Softplus", meaning: "ln(1 + e^z): a smooth ramp that is always positive, close to z for large z and close to 0 for very negative z.", shape: "one number", example: "softplus(5) = 5.007" },
+    ln: { tex: "\\ln", name: "Natural logarithm", meaning: "The power e must be raised to; the undo button for e^x.", shape: "one number", example: "ln(149.4) = 5.007" },
+    e: { tex: "e", name: "Euler's number, about 2.718", meaning: "The base of natural exponentials and logarithms.", shape: "a constant", example: "e⁵ = 148.4" },
+    // §3.3
+    IOnaive: { tex: "\\text{IO}_{\\text{plain}}", name: "Main-memory traffic, plain scan", meaning: "Roughly how many numbers a scan that writes the expanded Ā, B̄ and the states to HBM must move.", shape: "a count", example: "33,554,432" },
+    IOfused: { tex: "\\text{IO}_{\\text{fused}}", name: "Main-memory traffic, fused scan", meaning: "Roughly how many numbers the fused kernel moves: the inputs and outputs of shape (B, L, D), plus A of shape (D, N).", shape: "a count", example: "2,113,536" },
+    a1: { tex: "a_1", name: "First step's multiplier", meaning: "Step 1 multiplies the state by this (the keep factor).", shape: "one number", example: "0.25" },
+    b1: { tex: "b_1", name: "First step's addition", meaning: "Step 1 then adds this (the written input).", shape: "one number", example: "0.5" },
+    a2: { tex: "a_2", name: "Second step's multiplier", meaning: "Step 2's keep factor. It also fades whatever step 1 added.", shape: "one number", example: "0.25" },
+    b2: { tex: "b_2", name: "Second step's addition", meaning: "Step 2's own addition.", shape: "one number", example: "2" },
+    circ: { tex: "\\circ", name: "Merge (do one, then the other)", meaning: "Combines two steps into one step of the same form. Because it is associative, merges can be grouped in any order, which is what lets a scan run in log₂ L parallel rounds.", shape: "two steps in, one step out", example: "(0.25, 0.5) ∘ (0.25, 2) = (0.0625, 2.125)" },
+    // §3.4
+    params: { tex: "\\text{params}", name: "Parameters in one Mamba block", meaning: "Learned numbers in the block's big projections; the SSM's own parameters are much smaller.", shape: "a count", example: "6,291,456 for D = 1,024" },
+    E: { tex: "E", name: "Expansion factor", meaning: "How much the block widens each token inside: D numbers become E × D. The paper always uses 2.", shape: "a whole number", example: "2" },
+    Dm: { tex: "D", name: "Model width", meaning: "Numbers per token entering and leaving the block.", shape: "a whole number", example: "1,024" },
+    // §3.5
+    gt: { tex: "g_t", name: "Gate at step t", meaning: "A number between 0 and 1 computed from the current input: how much of the input to let in, and 1 − g how much of the old state to keep.", shape: "0 to 1", example: "σ(2) = 0.881" },
+    sigmaf: { tex: "\\sigma", name: "Sigmoid", meaning: "1 / (1 + e^−z): squashes any number into the range 0 to 1.", shape: "0 to 1", example: "σ(2) = 0.881" },
+    Linear: { tex: "\\mathsf{Linear}", name: "A learned linear projection", meaning: "Multiply by learned weights and add a learned bias. Here it produces one number from the input.", shape: "D numbers in, 1 out", example: "2" },
+    // §3.6
+    tauinv: { tex: "\\tau_\\Delta^{-1}", name: "Inverse softplus", meaning: "The function that undoes softplus: given a step size, which raw number produces it?", shape: "a positive number in, any number out", example: "0.01 → −4.600" },
+    u: { tex: "u", name: "Target starting step size", meaning: "A random starting step size for one channel.", shape: "0.001 to 0.1", example: "0.01" },
+    unif: { tex: "\\mathsf{Uniform}([0.001, 0.1])", name: "Uniform distribution", meaning: "Every value between 0.001 and 0.1 is equally likely. The ~ means “is drawn from”.", shape: "a range", example: "0.01 is one possible draw" },
+  },
+
+  blocks: {
+    // Figure 1
+    sram: { title: "GPU SRAM", body: "<p>The small, fast memory on the chip, next to the arithmetic units. Mamba's fused kernel builds the big expanded state here and never writes it out, which is the hardware-aware part of the algorithm (§3.3).</p>", shape: "megabytes, not gigabytes", lesson: "primer/ml/hardware.html" },
+    hbm: { title: "GPU HBM", body: "<p>The GPU's large main memory. Only the inputs (x, Δ, B, C and the fixed A) are read from it, and only the output y is written back, so traffic is about BLD + DN numbers instead of BLDN.</p>", shape: "tens of gigabytes", lesson: "primer/ml/hardware.html" },
+    xin: { title: "Input x_t", body: "<p>Token t's representation, D numbers (5 in the paper's figure). Each channel runs its own SSM, and the input also feeds the selection mechanism, which is what makes this model selective.</p>", shape: "D = 5" },
+    select: { title: "Selection mechanism", body: "<p>Small learned projections of the input: s<sub>B</sub>(x) and s<sub>C</sub>(x) give this token's B and C (N numbers each), and s<sub>Δ</sub>(x) gives one number, broadcast to every channel and passed through softplus to get Δ. In an LTI SSM this box does not exist: Δ, B and C are fixed.</p>", shape: "x_t → Δ_t (D), B_t (N), C_t (N)", lesson: "primer/ml/efficient_architectures.html#step_sizes" },
+    params: { title: "Δ_t, B_t, C_t", body: "<p>This token's own parameters. Because they carry a time index t, the model is time-varying and cannot be computed as one convolution.</p>", shape: "D + N + N numbers per token" },
+    disc: { title: "Discretize", body: "<p>Zero-order hold turns Δ, A and B into the keep factor Ā = exp(ΔA) and the write factor B̄. Done inside SRAM, so the expanded (D, N) result for every token is never written to main memory.</p>", shape: "(D, N) per token", lesson: "primer/ml/efficient_architectures.html#discretize" },
+    hprev: { title: "Previous state h_(t−1)", body: "<p>The memory carried over from the last token: N = 4 numbers for each of the D = 5 channels. Multiplied by Ā, it fades by an amount this token chose.</p>", shape: "D × N = 5 × 4" },
+    state: { title: "New state h_t", body: "<p>h<sub>t</sub> = Ā h<sub>t−1</sub> + B̄ x<sub>t</sub>, done independently for each channel. The state is N times larger than the input: this larger state is what lets SSMs remember more than a plain RNN, and it is exactly what the fused kernel keeps out of main memory.</p>", shape: "D × N = 5 × 4", lesson: "primer/ml/efficient_architectures.html#selective_ssm" },
+    yout: { title: "Output y_t", body: "<p>Each channel's state is read out with this token's C (a weighted sum over its N numbers), giving D numbers again. Only this is written back to HBM.</p>", shape: "D = 5" },
+    // Figure 2
+    row_copy: { title: "Copying", body: "<p>Remember the first four tokens and repeat them after a fixed gap. Because the gap is always the same, “output what arrived 8 steps ago” works every time: a fixed convolution kernel or an LTI recurrence can solve it by tracking time alone.</p>", shape: "fixed spacing" },
+    row_sel: { title: "Selective copying", body: "<p>The same four tokens, scattered among filler at random positions. The model must remember the coloured ones and skip the blanks, which depends on <em>what</em> each token is. A fixed kernel can't, because the spacing changes every time. The paper's version: length 4,096, 16 tokens to remember.</p>", shape: "random spacing" },
+    row_ind: { title: "Induction heads", body: "<p>Associative recall: after seeing H followed by P, when H appears again, output P. The paper trains on length 256 and tests up to about a million; only Mamba generalizes (§4.1).</p>", shape: "recall by content" },
+    // Figure 3
+    mblock: { title: "The Mamba block", body: "<p>The whole block, repeated to build the network, with normalization and residual connections between blocks. It merges an SSM block (like H3) and a gated MLP into one, and has about 3ED² = 6D² parameters.</p>", shape: "D in, D out" },
+    inproj: { title: "Input projections (Linear ↑)", body: "<p>Two learned projections widen each token from D to E × D numbers (E = 2), one for each branch. Together they hold 2ED² parameters, most of the block.</p>", shape: "D → 2D, twice" },
+    conv: { title: "Short convolution", body: "<p>A small convolution along the sequence, mixing each token with its immediate neighbours before the SSM, as in H3.</p>", shape: "2D → 2D" },
+    silu: { title: "σ: SiLU activation", body: "<p>x · sigmoid(x), a smooth ReLU-like bend. On the right branch it forms the gate; the paper chose SiLU so that, without the SSM path, the block becomes the popular SwiGLU MLP.</p>", shape: "keeps the shape" },
+    ssm: { title: "Selective SSM (S6)", body: "<p>The only part of the block where tokens exchange information: the selective recurrence of §3.2, computed with the hardware-aware scan of §3.3.</p>", shape: "2D channels, state N = 16 each", lesson: "primer/ml/efficient_architectures.html#selective_ssm" },
+    mult: { title: "× (multiplicative gate)", body: "<p>The SSM branch's output is multiplied, number by number, by the SiLU branch. This is gating in the loose, per-token sense (Appendix A); it does not act along the sequence.</p>", shape: "2D × 2D → 2D" },
+    outproj: { title: "Output projection (Linear ↓)", body: "<p>Narrows E × D numbers back to D so blocks can be stacked. ED² parameters.</p>", shape: "2D → D" },
+  },
+
+  onReady(P) {
+    deltaBars();
+    recallChart(P);
+    gateWidget();
+    inductionChart(P);
+    lmBars();
+    apesChart(P);
+    stateChart(P);
+  },
+};
+
+/* ---- Figure 1 grids and Figure 2 token rows, built before papers.js wires the diagrams ---- */
+(function buildPictures() {
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+  // Figure 1: two 5 × 4 state grids.
+  const grid = (g, x0, y0) => {
+    const s = 16;
+    g.appendChild(el("rect", { x: x0 - 4, y: y0 - 4, width: 4 * s + 8, height: 5 * s + 8, rx: 6, fill: "none" }));
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 4; c++)
+      g.appendChild(el("rect", { x: x0 + c * s + 1, y: y0 + r * s + 1, width: s - 2, height: s - 2, rx: 2, style: `fill-opacity:${0.25 + 0.15 * ((r + c) % 4)}` }));
+  };
+  grid(document.getElementById("hprev-grid"), 48, 226);
+  grid(document.getElementById("state-grid"), 238, 226);
+  // Figure 2: token rows.
+  const svg = document.getElementById("fig2-svg");
+  const colours = { A: "var(--attn-stroke)", B: "var(--ff-stroke)", C: "var(--emb-stroke)", D: "var(--norm-stroke)", H: "var(--attn-stroke)", P: "var(--ff-stroke)" };
+  const row = (key, label, title, y, cells, answer) => {
+    const g = el("g", { class: "blk plain", "data-block": key, "aria-label": label });
+    g.appendChild(el("rect", { x: 2, y: y - 24, width: 356, height: 54, rx: 8, style: "fill:none;stroke:none" }));
+    g.appendChild(el("text", { x: 8, y: y - 8, class: "lbl" }, title));
+    const s = 20;
+    cells.forEach((t, i) => {
+      const x = 8 + i * s;
+      const fill = t && t !== "·" ? colours[t] : "var(--card)";
+      g.appendChild(el("rect", { x, y, width: s - 3, height: s - 3, rx: 3, style: `fill:${fill};fill-opacity:${t && t !== "·" ? 0.55 : 1}` }));
+      if (t && t !== "·") g.appendChild(el("text", { x: x + 8.5, y: y + 13, "text-anchor": "middle", style: "font-size:10px" }, t));
+    });
+    const bx = 8 + cells.length * s + 2;
+    g.appendChild(el("path", { d: `M${bx},${y - 4} V${y + 22}`, class: "wire" }));
+    answer.forEach((t, i) => {
+      const x = bx + 6 + i * s;
+      g.appendChild(el("rect", { x, y, width: s - 3, height: s - 3, rx: 3, style: `fill:${colours[t]};fill-opacity:0.55` }));
+      g.appendChild(el("text", { x: x + 8.5, y: y + 13, "text-anchor": "middle", style: "font-size:10px" }, t));
+    });
+    svg.appendChild(g);
+  };
+  row("row_copy", "Copying: four tokens, a fixed gap, then the same four tokens", "Copying", 34, ["A", "B", "C", "D", "·", "·", "·", "·", "·", "·", "·", "·"], ["A", "B", "C", "D"]);
+  row("row_sel", "Selective copying: four tokens scattered among filler, then the same four tokens", "Selective copying", 112, ["·", "A", "·", "·", "B", "C", "·", "·", "·", "D", "·", "·"], ["A", "B", "C", "D"]);
+  row("row_ind", "Induction heads: H followed by P, later H again, answer P", "Induction heads", 190, ["·", "H", "P", "·", "·", "·", "·", "·", "·", "·", "·", "H"], ["P"]);
+})();
+
+const softplus = (z) => Math.log1p(Math.exp(z));
+const sig = (z) => 1 / (1 + Math.exp(-z));
+function barRow(label, value, max, style, text, cols) {
+  const w = Math.max(0, Math.min(100, (value / max) * 100));
+  return `<div class="share-row" style="grid-template-columns:${cols || "7rem minmax(0,1fr) 4rem"}"><span>${label}</span><div><div class="share-bar" style="width:${w.toFixed(1)}%;${style || ""}"></div></div><span>${text}</span></div>`;
+}
+
+/* ---- Δ slider: keep and write factors ---- */
+function deltaBars() {
+  const s = document.getElementById("dt-slider"), v = document.getElementById("dt-v");
+  const bars = document.getElementById("dt-bars"), out = document.getElementById("dt-readout");
+  function draw() {
+    const d = Math.pow(10, +s.value);
+    const keep = Math.exp(-d), write = 1 - keep;
+    v.textContent = d < 0.1 ? d.toFixed(4) : d.toFixed(2);
+    bars.innerHTML = barRow("keep Ā", keep, 1, "", keep.toFixed(4)) + barRow("write B̄ (striped)", write, 1, "background:var(--hatch) var(--accent)", write.toFixed(4));
+    out.innerHTML = `Δ = ${v.textContent}: Ā = e<sup>−${v.textContent}</sup> = <strong>${keep.toFixed(4)}</strong>, B̄ = 1 − Ā = <strong>${write.toFixed(4)}</strong>. ${keep > 0.9 ? "The state is kept; this input barely registers." : keep < 0.1 ? "The state is wiped and replaced by this input." : "A blend of old state and new input."}`;
+  }
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- the recall task: selective Δ against one fixed Δ ---- */
+function recallChart(P) {
+  const values = [0.3, -0.5, 7.0, 0.8, -0.2, 0.6, -0.9, 0.4, 0.1, -0.3, 0.5, -0.6];
+  const markers = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const run = (deltas) => { let h = 0; return values.map((x, t) => { const keep = Math.exp(-deltas[t]); h = keep * h + (1 - keep) * x; return [t, h]; }); };
+  const selective = run(markers.map((m) => softplus(10 * m - 5)));
+  const slider = document.getElementById("recall-d"), label = document.getElementById("recall-d-v");
+  const series = (d) => [
+    { name: "selective Δ", points: selective },
+    { name: `fixed Δ = ${d.toFixed(3)}`, points: run(values.map(() => d)) },
+    { name: "input", points: values.map((x, t) => [t, x]) },
+  ];
+  const d0 = Math.pow(10, +slider.value);
+  const chart = P.lineChart(document.getElementById("recall-chart"), {
+    series: series(d0), xLabel: "position", yLabel: "state", width: 380, height: 260,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("recall-readout"), ariaLabel: "State of a selective and a fixed-step SSM across the recall sequence",
+  });
+  const show = () => {
+    const d = Math.pow(10, +slider.value);
+    label.textContent = d.toFixed(3);
+    const fixed = run(values.map(() => d));
+    document.getElementById("recall-readout").innerHTML = `Final state: selective <strong>${selective[11][1].toFixed(2)}</strong>, fixed Δ = ${d.toFixed(3)} <strong>${fixed[11][1].toFixed(2)}</strong>. The 7 is what should survive.`;
+  };
+  slider.addEventListener("input", () => { chart.update(series(Math.pow(10, +slider.value))); show(); });
+  show();
+}
+
+/* ---- Theorem 1: the SSM road and the gate road agree ---- */
+function gateWidget() {
+  const box = document.getElementById("gate-sliders");
+  const l = document.createElement("label"); l.htmlFor = "gate-z"; l.textContent = "z = Linear(x_t)";
+  const r = document.createElement("input"); Object.assign(r, { type: "range", id: "gate-z", min: -6, max: 6, step: 0.1, value: 2 });
+  const o = document.createElement("output"); o.textContent = "2.0";
+  box.append(l, r, o);
+  const bars = document.getElementById("gate-bars"), out = document.getElementById("gate-readout");
+  function draw() {
+    const z = +r.value;
+    o.textContent = z.toFixed(1);
+    const d = softplus(z), keep = Math.exp(-d), g = sig(z);
+    const cols = "8.5rem minmax(0,1fr) 3.6rem";
+    bars.innerHTML =
+      barRow("Δ = softplus(z)", d, 6, "background:var(--wire)", d.toFixed(3), cols) +
+      barRow("SSM keep Ā = e^(−Δ)", keep, 1, "", keep.toFixed(3), cols) +
+      barRow("gate g = σ(z)", g, 1, "background:var(--hatch) var(--accent)", g.toFixed(3), cols) +
+      barRow("gate keep 1 − g", 1 - g, 1, "", (1 - g).toFixed(3), cols);
+    out.innerHTML = `z = ${z.toFixed(1)}: Ā = <strong>${keep.toFixed(3)}</strong> and 1 − g = <strong>${(1 - g).toFixed(3)}</strong>, equal as Theorem 1 says. ${g < 0.1 ? "Gate shut: this token is ignored." : g > 0.9 ? "Gate open: the state is reset to this token." : "Gate part open: old state and new input are blended."}`;
+  }
+  r.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- log2-length axis formatting ---- */
+const lenFmt = (v) => { const n = Math.round(Math.log2(v)); const x = Math.pow(2, n); return x >= 1048576 ? `${x / 1048576}M` : x >= 1024 ? `${x / 1024}K` : String(x); };
+
+/* ---- induction heads, Table 3 ---- */
+function inductionChart(P) {
+  const lens = [];
+  for (let k = 6; k <= 20; k++) lens.push(Math.pow(2, k));
+  const pts = (acc) => acc.map((a, i) => [lens[i], a]).filter((p) => p[1] !== null);
+  P.lineChart(document.getElementById("ind-chart"), {
+    series: [
+      { name: "Mamba (74K params)", points: pts(lens.map(() => 100)) },
+      { name: "MHA-xPos (137K)", points: pts([100, 100, 100, 99.6, 67.6, 25.4, 7.0, 9.0, 7.8, null, null, null, null, null, null]) },
+      { name: "H3 (153K)", points: pts([100, 100, 100, 80.9, 39.5, 23.8, 14.8, 8.2, 5.9, 6.6, 8.2, 4.7, 8.2, 6.3, 7.4]) },
+    ],
+    xLabel: "test sequence length", yLabel: "accuracy %", logX: true, yMin: 0, yMax: 100, width: 380, height: 260,
+    xFmt: lenFmt, yFmt: (v) => v.toFixed(1),
+    readout: document.getElementById("ind-readout"), ariaLabel: "Induction heads accuracy against test sequence length for Mamba, attention and H3",
+  });
+}
+
+/* ---- Table 1 average accuracy ---- */
+function lmBars() {
+  const rows = [["Pythia-1.4B", 55.2], ["RWKV-1.5B", 54.3], ["Mamba-1.4B", 59.7], ["Pythia-2.8B", 59.1], ["RWKV-3B", 59.6], ["Mamba-2.8B", 63.3], ["Pythia-6.9B", 61.7], ["RWKV-7.4B", 62.5]];
+  document.getElementById("lm-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Average zero-shot accuracy (%), axis from 50 to 65. Solid: Mamba. Striped: baselines.</div>` +
+    rows.map(([m, a]) => barRow(m, a - 50, 15, m.startsWith("Mamba") ? "" : "background:var(--hatch) var(--wire)", a.toFixed(1), "7rem minmax(0,1fr) 3rem")).join("");
+}
+
+/* ---- great apes, Table 5 ---- */
+function apesChart(P) {
+  const lens = [1024, 4096, 16384, 65536, 262144, 1048576];
+  const pts = (acc) => acc.map((a, i) => [lens[i], a]);
+  P.lineChart(document.getElementById("apes-chart"), {
+    series: [
+      { name: "Mamba 7M", points: pts([30.00, 29.01, 31.48, 43.73, 56.60, 81.31]) },
+      { name: "Mamba 1.4M", points: pts([31.47, 27.50, 27.66, 40.72, 42.41, 71.67]) },
+      { name: "HyenaDNA 1.4M", points: pts([28.04, 28.43, 41.17, 42.22, 31.10, 54.87]) },
+    ],
+    xLabel: "context length (base pairs)", yLabel: "accuracy %", logX: true, yMin: 0, yMax: 100, width: 380, height: 260,
+    xFmt: lenFmt, yFmt: (v) => v.toFixed(1),
+    readout: document.getElementById("apes-readout"), ariaLabel: "Great apes DNA classification accuracy against context length",
+  });
+}
+
+/* ---- state size N, Figure 16 table ---- */
+function stateChart(P) {
+  const ns = [1, 2, 4, 8, 16];
+  const pts = (ppl) => ppl.map((p, i) => [ns[i], p]);
+  P.lineChart(document.getElementById("n-chart"), {
+    series: [
+      { name: "B, C fixed", points: pts([9.88, 9.86, 9.82, 9.82, 9.81]) },
+      { name: "B, C selective", points: pts([9.73, 9.40, 9.09, 8.84, 8.71]) },
+    ],
+    xLabel: "state size N", yLabel: "perplexity", logX: true, yMin: 8.5, yMax: 10, width: 380, height: 240,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("n-readout"), ariaLabel: "Perplexity against state size for fixed and selective B and C",
+  });
+}
+</script>
+</body>
+</html>

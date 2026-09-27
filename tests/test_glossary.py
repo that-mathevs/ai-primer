@@ -20,6 +20,17 @@ class TestTheGlossary:
             if entry.lesson:
                 importlib.import_module(entry.lesson)  # raises if the lesson doesn't exist
 
+    def test_given_the_glossary_source_no_term_is_defined_twice(self):
+        # A dict literal silently keeps the last of two equal keys, so a term added twice loses a definition unseen.
+        import ast
+        from pathlib import Path
+
+        source = (Path(__file__).resolve().parent.parent / "primer" / "glossary.py").read_text()
+        literal = next(n.value for n in ast.walk(ast.parse(source))
+                       if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "GLOSSARY")
+        keys = [k.value for k in literal.keys if isinstance(k, ast.Constant)]
+        assert sorted({k for k in keys if keys.count(k) > 1}) == []
+
     def test_given_the_glossary_its_keys_are_lowercase_so_lookups_ignore_case(self):
         assert all(term == term.lower() for term in GLOSSARY)
 

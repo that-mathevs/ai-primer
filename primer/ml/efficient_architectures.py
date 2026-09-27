@@ -1182,6 +1182,7 @@ fraction of layers that are SSMs.
   Spaces* (2023)**: https://arxiv.org/abs/2312.00752. Made the state-space
   parameters depend on the input and trained them with a hardware-aware
   parallel scan.
+  [Annotated companion](../../papers/mamba.html)
 - **Dao & Gu, *Transformers are SSMs* (Mamba-2, 2024)**:
   https://arxiv.org/abs/2405.21060. Showed that selective SSMs and a form of
   linear attention are two views of one computation.
