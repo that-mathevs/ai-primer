@@ -1182,3 +1182,24 @@ class TestLearningPaths:
 
         subtitle = "Modern AI from first principles: every concept explained, implemented and tested."
         assert subtitle in render_home() and subtitle in (ROOT / "README.md").read_text()
+
+
+class TestAPageCanBeSeenAsAPhoneShowsIt:
+    # Headless Chrome won't make a window narrower than about 500 pixels, so tools/screenshot.py
+    # frames the page at phone width instead, and picks the theme rather than inheriting the machine's.
+
+    def test_given_a_page_it_is_framed_at_phone_width(self):
+        from tools.screenshot import frame_page
+
+        assert 'width:390px' in frame_page("papers/hyde.html", theme="light")
+
+    def test_given_a_theme_it_is_chosen_before_the_page_loads(self):
+        from tools.screenshot import frame_page
+
+        framed = frame_page("papers/hyde.html", theme="dark")
+        assert framed.index('"primer-theme", "dark"') < framed.index("papers/hyde.html")
+
+    def test_given_an_anchor_the_frame_opens_at_it(self):
+        from tools.screenshot import frame_page
+
+        assert '"papers/hyde.html#fig1"' in frame_page("papers/hyde.html#fig1", theme="light")

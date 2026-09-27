@@ -1,0 +1,53 @@
+---
+name: shipping-the-primer
+description: Merge finished work into main and publish the site: the full gate, one branch at a time, then push and watch the deploy. Use when merging agent or feature branches, or before any push to main.
+---
+
+# Shipping the primer
+
+Every push to `main` publishes the site: `.github/workflows/pages.yml` runs
+the same gate as below and deploys `docs/html` to GitHub Pages. A red gate
+locally is a red deploy, so main only moves when the gate is **green**.
+
+## 1. Merge one branch at a time
+
+```bash
+git merge --no-ff <branch> -m "Merge <what it adds>"
+```
+
+Conflicts come from shared files several branches extend at once:
+
+- `primer/glossary.py`: keep both sides' entries. If both added the same
+  term, keep the clearer definition, once.
+- `docs/papers/CATALOG.md` and a lesson's `## The papers behind this lesson`:
+  keep both sides' rows and links.
+
+Run `make test` after each merge, before the next one.
+
+**Done when** every finished branch is merged and `make test` is green.
+
+## 2. The gate
+
+```bash
+make test && make docs && make sitecheck && make browsercheck
+make links        # network; before a push that adds or changes a URL
+```
+
+`make links` lists servers that refuse automated checks (dl.acm.org and some
+doi.org links answer 403) as "check by hand": confirm each one is the right
+paper, and treat a 404 as a real break.
+
+**Done when** all of it passes.
+
+## 3. Publish
+
+```bash
+git push
+gh run watch "$(gh run list -L 1 --json databaseId -q '.[0].databaseId')" --exit-status
+```
+
+Then remove what the merge left behind: `git branch -d <branch>` and
+`git worktree remove <path>` for each merged branch.
+
+**Done when** the deploy run is green, and `git branch` and `git worktree list`
+show only `main`.

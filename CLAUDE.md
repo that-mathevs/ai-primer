@@ -241,7 +241,15 @@ make docs     # readme + figures + the HTML site (nav, hover glossary, papers) i
 make sitecheck  # crawl the built site; fails on any broken internal link
 make links    # check every external URL (needs network; run before publishing)
 python -m primer.ml.attention        # any single lesson
+python tools/screenshot.py papers/hyde.html#fig1 --theme dark   # a built page at phone width
 ```
+
+## Skills for repeated work
+
+Work done more than once has a procedure in [`.claude/skills/`](.claude/skills),
+each with steps and a bar for done: `writing-a-paper-companion`,
+`reviewing-a-lesson` and `shipping-the-primer`. Follow the skill rather than
+improvising, and when a new kind of task starts repeating, write its skill.
 
 ## Definition of done for a module
 

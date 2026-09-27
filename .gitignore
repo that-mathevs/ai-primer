@@ -13,5 +13,7 @@ docs/html/
 .idea/
 .vscode/
 *.swp
-.claude/
+.claude/*
+# ...except the skills: the repeatable procedures for working on the primer
+!.claude/skills/
 .env
