@@ -507,7 +507,7 @@ window.PRIMER_GLOSSARY = {
  "clip": {
   "def": "A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.",
   "lesson": "primer/ml/embeddings/contrastive.html",
-  "term": "CLIP"
+  "term": "clip"
  },
  "clustering": {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
