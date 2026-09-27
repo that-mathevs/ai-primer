@@ -3,7 +3,127 @@ r"""
 
 Run: `python -m primer.agents.deployment`
 
-## The everyday picture
+This lesson builds on action guardrails from `primer.agents.guardrails`, on
+the release gate from `primer.agents.evals` and on traces from
+`primer.agents.observability`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Safe deployment means letting an agent act in the real
+world one earned step at a time: it proves itself in shadow, then proposes,
+then acts alone on low-risk work, while every release goes to a few users
+first, every action can be stopped and rate-limited, and every action is
+written to a log nobody can quietly edit.
+
+**When you need it.** The moment an agent's output stops being a draft and
+becomes an action: a refund issued, an email sent, a record changed in the
+system a company runs on. Offline evals (`primer.agents.evals`) gate what
+ships; this lesson is about limiting the damage from whatever the evals
+missed, because real traffic always holds inputs the golden set didn't.
+The tell: someone asks "what's the worst this could do in the next five
+minutes?" and the answer is "we'd notice eventually". This lesson's worked
+example shows why the first step is to watch rather than act: in shadow
+mode over ten support tickets the agent agrees with staff 80% of the time
+overall, but the split is 100% on replies and 60% on refunds, so the right
+first grant of autonomy is replies, not refunds, and only the breakdown
+shows it. You don't need canaries and hash chains for an internal tool
+that drafts text a person edits; you need all of it for anything that
+moves money or changes records, and regulated work needs the audit log
+whatever the risk.
+
+**Your options.** Seven mechanisms, from the ones that cost nothing to run
+to the ones that hold up under audit. They stack rather than compete:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Shadow mode | The agent records what it would do on real inputs; people keep doing the work | Zero user impact and a clean comparison against what staff actually did, at full volume | Staff carry the whole load meanwhile; you need to log proposals and compare | Your agent loop, plus a comparison job |
+| Human approval of each action | The agent proposes; a person approves before anything executes | Nothing executes unseen | Review load, and reviewers who start rubber-stamping | The reviewers' existing workflow |
+| Graduated autonomy | Acts alone on low-risk actions once a full window of recent decisions clears a bar; high-risk actions still go to a person; any incident demotes at once | Trust is earned on evidence and taken back on one bad event | Classifying every action's risk; keeping the window's statistics | Your action gate |
+| Prompts as code | Every prompt version is named by a hash of its text, reviewed, evaluated, and one step from rollback | Any behaviour change ties to the exact edit that caused it | A registry and the discipline to use it | Your code and configuration |
+| Canary release | A new version goes to 1% of users, then 5, 25, 50 and 100, growing only while its success rate stays within a margin of the current version's | At worst a few percent of users saw the bad version for one step | Enough traffic per step to judge (100 canary tasks in this lesson), and metrics split by version | The router and the metrics store |
+| Kill switch and rate limit | Stop the agent instantly, per tenant or for everyone; cap actions per minute with a token bucket | A bounded blast radius even when everything else has failed | Someone on call to flip the switch; a burst above the cap is refused | In front of every action |
+| Tamper-evident audit log | Each entry stores the hash of the one before, so any edit or deletion breaks every later link | Tampering is detectable; with write-once storage, provable | Storage that can't be modified, and a link from each entry to its trace | Storage |
+
+**How to choose.** Go by what the action can do if it's wrong, and how
+fast you'd know.
+
+- Reversible and low value (a reply, a draft, a label): shadow briefly,
+  then approval, then autonomy, with the eval gate and a canary on every
+  prompt or model change.
+- Irreversible or high value (a payment, a deletion, an external email):
+  approval stays, whatever the agent's record, above a value threshold you
+  set on purpose. Autonomy applies below it.
+- Many customers on one platform: kill switches and rate limits per
+  tenant, so one customer's bad day never becomes everyone's.
+- Regulated work: the audit log from day one, on write-once storage,
+  linked to traces, with the agent acting under its own service identity
+  and the narrowest permissions it can do the job with.
+- Whatever you pick, promote on a sustained record over a window of
+  decisions (this lesson uses the last 50), never a lucky streak, and demote
+  on a single incident.
+
+**What it costs.** Shadow mode costs the humans nothing extra and costs you
+patience: in the lesson's simulation the rolling agreement first clears the
+95% bar after 98 decisions, and a window of 50 is the least you can judge
+on. Approval mode costs reviewer time on every action. A canary costs
+traffic and time per step; the lesson's controller refuses to judge on
+fewer than 100 canary tasks, and the SRE Workbook's chapter on canarying
+makes the trade explicit: a 5% canary with a 20% error rate hurts 1% of
+requests overall, which is the whole point, but a daily release cycle
+can't afford a week-long canary. A rate limit costs refused actions during
+a burst (a bucket of 5 refilling at one per second lets 5 of a burst of 8
+through and refuses 3). The audit log costs a hash per entry and storage
+you can't reclaim. Rollback of a prompt costs nothing, because the previous
+version is already in the registry. Against all of that, the cost of not
+having them is the incident: a refund issued on a bad prompt that no
+switch could stop and no log can show.
+
+**What breaks.**
+
+- **Promoting on a streak.** Twenty good decisions in a row is luck at 95%.
+  Require a full window.
+- **A canary judged too early.** The lesson's bad version, truly 91%
+  successful, passes the 1% step by luck on 100 tasks and is caught at 5%.
+  Small steps are cheap to get wrong; that's why there are several.
+- **Users flipping between versions.** Assign users by hashing their id
+  into a bucket, so nobody changes version mid-conversation.
+- **Reviewers who stop reading.** Approval mode can bias people toward
+  accepting the agent's suggestion. Sample approvals for a second look, and
+  keep incident demotion automatic.
+- **Retried writes that double-post.** A canary or a retry that re-sends
+  "create order" makes two orders. Use idempotency keys before granting any
+  write.
+- **An ordinary log table.** Anyone with write access can edit a row. Chain
+  the hashes and anchor the latest one somewhere separate.
+- **A working agent nobody uses.** Adoption is part of the job: build with
+  the people whose work it touches, show sources, and make handing a case
+  to a person one click.
+
+**In the wild.** Canarying comes from site reliability engineering: the
+Google SRE Workbook defines it as "a partial and time-limited deployment of
+a change in a service and its evaluation", and its advice to rank metrics by
+how well they show user-visible problems is why this lesson compares
+success rates rather than latency alone. Feature flags are the mechanism
+behind both canaries and kill switches; Martin Fowler's taxonomy separates
+release, experiment, ops and permissioning toggles, with the kill switch as
+a long-lived ops toggle, and the pattern is what feature-flag services and
+OpenFeature, a vendor-neutral specification for feature flagging, exist to
+implement. The token bucket is a textbook rate-limiting algorithm, linked
+in Further reading. The hash chain is Haber and Stornetta's 1991
+construction for time-stamping documents, the ancestor of every
+tamper-evident log and of blockchains. The NIST AI Risk Management
+Framework (released in January 2023) organises this whole lesson's
+concerns into four functions, Govern, Map, Measure and Manage, and is the
+vocabulary compliance teams will use for it.
+
+**Go deeper.** Level 2 builds each gate in plain code: agreement counted
+decision by decision, the autonomy state machine with its promotion window,
+a content-addressed prompt registry, a canary controller with the rollback
+rule worked in numbers, the token bucket formula, and a hash chain you can
+break and watch `verify()` find the break. If you only needed to plan a
+rollout, you are done.
+
+## Level 2: How it works, from scratch
 
 A new pilot doesn't get the captain's seat on day one. First they sit in the
 right seat and call out every move they *would* make while the captain

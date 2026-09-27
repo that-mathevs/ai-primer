@@ -3,7 +3,119 @@ r"""
 
 Run: `python -m primer.agents.observability`
 
-## The everyday picture
+This lesson builds on the agent loop from `primer.agents.agent_loop` and on
+the golden set from `primer.agents.evals`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Observability for an agent means recording every run
+as a tree of timed steps (the task, then each model call, tool call and
+retrieval, with what went in and what came out), so that "why did it do
+that?" is a lookup and not a guess.
+
+**When you need it.** From the first day real people use the system. The
+tell: a user reports a wrong answer from yesterday and the only evidence is
+the answer itself. This lesson's worked example is exactly that case. A user
+asks "Where is order A-100?" (with a hyphen) and gets "I couldn't find order
+A-100." From the answer alone the order might not exist; the trace shows a
+tool error on one line, `unknown order id A-100`, and tells you the fix
+belongs in the tool that doesn't normalise hyphens, not in the prompt. The
+second tell is a bill you can't explain: in the lesson's six-order run,
+input tokens climb with every model call because each call resends the
+growing history, and only a per-call record makes that visible before the
+invoice does. You don't need a tracing platform for a script you run by
+hand, but even there, one structured record per model call (model, tokens,
+latency, cost) pays for itself the first time something is slow.
+
+**Your options.** Six ways to see inside a run, from the cheapest to the
+most complete:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Print statements and plain logs | Lines of text as the agent runs | You can read them, once; nothing ties one run's steps together | Nothing up front; hours later, when you need to find one run among thousands | Your code |
+| Structured per-call records | One record per model call with model, tokens, latency, cost, prompt version | Dashboards for cost and volume; the bill becomes explainable | A logging library and a few fields per call | Your code |
+| Traces with spans | Each step is a timed span with attributes and a parent; a run is a tree under one trace id | Replay any run; find the first error; see where the time goes | Instrumenting each call (a `with` block), and somewhere to store the trees | Your agent loop |
+| A vendor's own SDK | The tracing platform's client records the spans for you | Fastest start | Lock-in: changing vendors is a code change | Your code, tied to one service |
+| OpenTelemetry with the GenAI conventions | The same spans in standard names (`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.tool.name`) and the standard OTLP format | Flows into the monitoring the organisation already runs and into any LLM tool; changing vendors is a collector setting | Learning the conventions; running a collector | Exporter and collector |
+| An LLM tracing platform on top | Traces, user feedback, prompt versions, datasets and evals in one place | The loop from a thumbs-down to a golden test is a few clicks | Hosting it yourself or sending traces (with user data in them) to a service | A service |
+
+**How to choose.** Decide by what you'll need to answer, then by who else
+needs to read it.
+
+- You need to explain a bill: structured per-call records with tokens,
+  model and cost; a sum over them is the invoice.
+- You need to explain a decision: traces. The first error span, or the
+  first surprising output, shows where the chain broke. Nothing less lets
+  you replay a run.
+- The organisation already runs Datadog, Grafana or Honeycomb: emit
+  OpenTelemetry spans with the GenAI attribute names, and let the collector
+  fan them out. Name your own attributes with a prefix (`app.prompt.version`)
+  so they never collide with the standard's.
+- You want traces linked to feedback and evals: put an LLM tracing platform
+  behind the collector; most of them accept OpenTelemetry, so the agent code
+  doesn't change.
+- Whatever you pick, redact personal data before export, restrict who can
+  read traces, set a retention limit, and keep tenants' traces apart. A
+  trace holds the user's words.
+
+**What it costs.** Instrumentation is cheap in code: a span is a `with`
+block around a call, and an exception inside it marks the span as an error
+by itself. It is not free in storage: a trace keeps every prompt and tool
+result, so this lesson's three-step run (two model calls, one tool call,
+900 ms on its toy clock, 195 input and 38 output tokens, about a tenth of
+a cent) is a few kilobytes, and a million runs a day is gigabytes.
+Distributed tracing at scale has always answered that by sampling: Google's
+Dapper, the design OpenTelemetry descends from, kept overhead low by
+tracing a sample of requests through shared libraries rather than every
+request. Keep every trace while volume is small; sample when it isn't, but
+always keep the ones a user flagged or a monitor caught. Latency cost is
+negligible when export is asynchronous. The cost that matters is what you
+learn from the trace itself: in the lesson's six-order run, model calls
+take far more of the time than tool calls, so the latency wins are fewer
+model calls and smaller contexts, not faster tools.
+
+**What breaks.**
+
+- **A log with no thread through it.** Thousands of lines from thousands of
+  runs, and no way to gather one run back together. A trace id on every
+  span is the fix.
+- **Fixing the prompt when the tool was wrong.** Without the trace, the
+  hyphen bug above looks like a model mistake. Read the first error span
+  before editing anything.
+- **Personal data in the trace store.** Prompts and outputs hold names,
+  emails and card numbers. Redact before export, and limit retention.
+- **Vendor-shaped traces.** Attributes named after one product's SDK don't
+  flow anywhere else. Use the standard names and a collector.
+- **Gaps between spans.** Time outside any span (a queue, a retry wait,
+  untraced code) is invisible in the tree. Instrument the retries and the
+  guardrail checks too.
+- **Traces nobody reads.** Recording is half the job. Store user feedback
+  against the trace id and route flagged traces to a person, so each one can
+  become a golden case.
+
+**In the wild.** OpenTelemetry is the open standard for traces, metrics and
+logs; its concepts page defines a trace as the path of a request through an
+application and a span as a unit of work with a name, a parent, start and
+end times, attributes, events and a status, which is exactly what this
+lesson's `Span` holds. Its GenAI semantic conventions, maintained in their
+own repository, standardise the span, metric and event names for model
+calls, tool calls, agents and MCP. Langfuse is an open-source, self-hostable
+platform that captures model and non-model calls, versions prompts, runs
+evaluations (LLM judge, code, human) and tracks cost per user, built on
+OpenTelemetry. Arize Phoenix is open source too, with tracing built on
+OpenTelemetry and OpenInference, evaluators and datasets for comparing
+versions. LangSmith and Braintrust play the same role as services. All of
+them descend from Dapper (Sigelman et al., 2010), which introduced the
+trace-and-span tree with propagated ids.
+
+**Go deeper.** Level 2 builds the tracer in plain Python: a span, a `with`
+block that opens and closes it, a fake clock so timings are exact, the
+agent loop instrumented step by step, the export to OpenTelemetry-shaped
+records, the walk that finds the first error, and the path from a
+thumbs-down to a golden case. If you only needed to decide what to record
+and where to send it, you are done.
+
+## Level 2: How it works, from scratch
 
 An aeroplane's flight recorder writes down every control input, every
 instrument reading and every radio call, each stamped with the time. When

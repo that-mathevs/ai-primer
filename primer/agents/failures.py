@@ -3,7 +3,122 @@ r"""
 
 Run: `python -m primer.agents.failures`
 
-## The everyday picture
+This lesson builds on the agent loop from `primer.agents.agent_loop`, on
+traces from `primer.agents.observability` and on the golden set from
+`primer.agents.evals`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Most agent failures in production are system failures
+with known fixes (too many steps, bad retrieval, ambiguous tools, a context
+that rots, loops, no evals, injected instructions, messy data, brittle
+integrations, no adoption), and this lesson is the catalogue: symptom, fix,
+and where the fix is built.
+
+**When you need it.** When the agent works in demos and fails in
+production, and nobody can say why. The tell is the gap between the two:
+demos are three steps long and real tasks are twenty. This lesson's
+arithmetic explains the gap on its own. If each step succeeds 95% of the
+time, a ten-step task succeeds 60% of the time and a twenty-step task 36%;
+at 90% per step, twenty steps succeed 12% of the time; at 99%, 82%. At 95%
+per step, the most steps you can chain and still succeed nine times in ten
+is two. Nothing about the model changed between the demo and production;
+the exponent did. You need this catalogue before the first incident, as a
+checklist, and after every incident, to name what happened. You don't need
+the integration patterns (retries, breakers) for a tool that calls nothing
+outside your process, and you don't need loop detection for a workflow
+with a fixed number of steps.
+
+**Your options.** Six defences, from the ones that protect one request to
+the ones that protect the whole system:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Retries with capped exponential backoff and jitter | Wait 0.1 s, then 0.2 s, doubling to a cap, with a random spread so clients don't retry in waves | A transient blip (a timeout, a rate limit) doesn't fail the task | Latency on the retried request; a duplicate write unless the write is idempotent | Around each outside call |
+| Circuit breaker | After a run of failures, calls fail instantly for a cool-down, then one trial call probes for recovery | An outage fails fast and stays contained instead of tying every request up in timeouts (in this lesson's 50-second outage the dead service is called 5 times and 21 requests fail fast) | A fallback path for when the breaker is open | Around each dependency |
+| Loop detection and budgets | Stop when the same tool is called with the same arguments three times, or when a step or token budget runs out | A confused agent stops and hands off instead of burning money all night | A false stop now and then; a handoff path | The agent loop |
+| Fewer steps, verification, checkpoints | Shorten the chain, check a step's result where it happens and retry only that step, save state to resume from the middle | Attacks the exponent directly: errors stop travelling down the chain | Design effort; a check after each key step costs a call | The task design |
+| Contract tests | Automated checks that an outside API still accepts and returns what your tool expects | An upstream change is caught by a test, not a user | Tests to write and keep current | Your test suite |
+| Evals and traces | A golden set in CI and a trace of every run | Regressions don't ship silently, and every failure can be replayed to its first bad step | The two lessons before this one | Your pipeline and your monitoring |
+
+**How to choose.** Read the symptom first; the catalogue maps each one to
+a fix.
+
+- Long tasks fail and short ones don't: compounding error. Cut steps,
+  verify after the key ones, checkpoint, and put a person at the critical
+  points.
+- Timeouts and expired credentials: brittle integrations. Retries with
+  backoff for blips, a breaker for outages, contract tests for changes.
+  Never retry an invalid request (it fails the same way every time), and
+  never retry a write that isn't idempotent.
+- The same call repeated, cost spiking: loops. Detect the repeat and set
+  hard budgets.
+- Confident wrong answers: bad retrieval, or messy source data. Fix search
+  and ingestion before touching the prompt.
+- Wrong tool or bad arguments: ambiguous tools. Fewer tools, precise
+  descriptions, validated inputs.
+- The agent obeys text it found in a document: prompt injection. Boundaries
+  around untrusted content and privilege separation.
+- It works and nobody uses it: adoption. Build with the people it serves.
+- Whatever the symptom, look at the trace for the first failing step before
+  changing anything, and add the case to the golden set.
+
+**What it costs.** Retries cost time on the slow path: the lesson's waits
+are 0.1 s and 0.2 s before the third attempt succeeds, capped at 10 s
+however many attempts there are, and with full jitter each client waits a
+random time up to that cap. A breaker costs almost nothing while closed
+and saves a great deal while open: every request that would have waited
+30 s on a dead service fails at once instead. Loop detection is
+a comparison of the last few calls. Verification after a step costs a
+model call per check, which is why it goes after the key steps, not all of
+them. The expensive fix is the design one, shortening chains, and it is
+also the one with the largest payoff: raising per-step reliability from
+95% to 99% takes a twenty-step task from 36% to 82%. The lesson's figures
+draw each of these curves so the trade can be read off, not guessed.
+
+**What breaks.**
+
+- **Retrying the invalid.** A bad request retried five times is five times
+  the load and the same error. Retry only the exceptions that can clear
+  on their own.
+- **Retrying a write without an idempotency key.** "Create order" twice is
+  two orders.
+- **Retries in waves.** Every client that failed at the same moment retries
+  at the same moment, and the recovering service goes down again. Jitter.
+- **No breaker.** One dead dependency, and every request waits out a full
+  timeout; the whole agent looks down.
+- **A breaker with no fallback.** Failing fast is only useful if the agent
+  can do something else: use a cache, tell the user, hand off.
+- **Loop detection that only counts.** Three calls of the same tool with
+  refining queries is progress, not a loop. Compare arguments, not names.
+- **Fixing the prompt for a system fault.** A retrieval miss, a tool error
+  or a parsing bug looks like a model mistake from the answer alone. The
+  trace shows which it was.
+
+**In the wild.** The circuit breaker was named by Michael Nygard in
+*Release It!* and written up by Martin Fowler with the three states this
+lesson builds (closed, open, half-open); the retry guidance, capped
+exponential backoff with jitter, is the AWS Builders' Library article the
+lesson links. Libraries package both: in
+Python, tenacity gives a retry decorator with exponential and random
+exponential waits, stop conditions by attempts or elapsed time, and retry
+only on chosen exception types, the same policy as this lesson's
+`retry_with_backoff`. Anthropic's *Building effective agents* draws the
+same conclusions from the other direction: start with simple prompts and
+evaluation, add multi-step agents only where simpler designs fall short,
+add complexity only when it demonstrably improves outcomes, and have the
+agent pause for human feedback at checkpoints; its emphasis on tool design
+as an interface problem is the fix for the ambiguous-tools row. The seven
+rows this lesson doesn't build point to the lessons that do.
+
+**Go deeper.** Level 2 builds three of the fixes in plain code: the
+compounding-error formula and its inverse (how many steps a target allows),
+retries with capped backoff and full jitter that raise invalid requests
+at once, a circuit breaker as a three-state machine replayed through an
+outage, and a loop detector that compares arguments. If you only needed to
+name the failure and find its fix, you are done.
+
+## Level 2: How it works, from scratch
 
 Pilots learn from a catalogue of accidents: each entry names what went
 wrong, how it showed up in the cockpit, and the checklist item that now
