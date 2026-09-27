@@ -1534,3 +1534,17 @@ class TestAReaderDescendsByChoice:
         from tools.docsite import DEPTH_SCRIPT
 
         assert "hashchange" in DEPTH_SCRIPT and "closest" in DEPTH_SCRIPT
+
+    def test_given_both_sides_deleted_their_own_pending_lessons_the_pending_set_keeps_only_what_both_kept(self):
+        from tools.land import resolve_pending_conflict
+
+        # Two writers each deleted their group from LEVELS_PENDING; git sees one region changed both ways.
+        conflicted = ('LEVELS_PENDING: frozenset[str] = frozenset({\n    # a\n    "primer.a",\n\n<<<<<<< HEAD\n'
+                      '    # b\n    "primer.b",\n=======\n    # c\n    "primer.c",\n>>>>>>> levels/c\n\n    # d\n    "primer.d",\n})\n')
+        assert resolve_pending_conflict(conflicted) == 'LEVELS_PENDING: frozenset[str] = frozenset({\n    # a\n    "primer.a",\n\n\n    # d\n    "primer.d",\n})\n'
+
+    def test_given_a_conflict_outside_the_pending_set_it_is_left_for_a_person(self):
+        from tools.land import resolve_pending_conflict
+
+        conflicted = 'x = 1\n<<<<<<< HEAD\ny = 2\n=======\ny = 3\n>>>>>>> other\n'
+        assert resolve_pending_conflict(conflicted) is None

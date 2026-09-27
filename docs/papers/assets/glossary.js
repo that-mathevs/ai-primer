@@ -2572,7 +2572,7 @@ window.PRIMER_GLOSSARY = {
  "oauth": {
   "def": "A standard way for a user to grant an app limited, revocable access without sharing their password.",
   "lesson": "primer/agents/mcp.html",
-  "term": "oauth"
+  "term": "OAuth"
  },
  "ocr": {
   "def": "Optical character recognition: reading text from an image of a page.",
@@ -2587,7 +2587,7 @@ window.PRIMER_GLOSSARY = {
  "ollama": {
   "def": "A free app that downloads open language models and runs them on your own computer, served over a small local web API.",
   "lesson": "primer/agents/llm.html",
-  "term": "ollama"
+  "term": "Ollama"
  },
  "one-hot": {
   "def": "A vector with a 1 at the correct class and 0 everywhere else.",
