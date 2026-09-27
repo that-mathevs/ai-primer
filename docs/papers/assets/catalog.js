@@ -1285,7 +1285,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.pretraining"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "gpipe",
