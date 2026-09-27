@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XGBoost (Chen and Guestrin 2016), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Chen and Guestrin (2016): a regularized, second-order boosting objective whose leaf weights and split gains come out in closed form, plus the split-finding and systems tricks that made boosted trees scale.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="xgboost">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Tree boosting in a nutshell</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Regularized objective</a></li>
+          <li><a href="#s2-2">2.2 Second-order boosting</a></li>
+          <li><a href="#s2-3">2.3 Shrinkage and column subsampling</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Split finding</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Exact greedy</a></li>
+          <li><a href="#s3-2">3.2 Approximate</a></li>
+          <li><a href="#s3-3">3.3 Weighted quantile sketch</a></li>
+          <li><a href="#s3-4">3.4 Sparsity-aware</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 System design</a></li>
+      <li><a href="#s5">5 Related works</a></li>
+      <li><a href="#s6">6 End-to-end evaluations</a></li>
+      <li><a href="#s7">7 Conclusion</a></li>
+      <li><a href="#appendix">Appendix: the sketch</a></li>
+      <li><a href="#today">What changed since 2016</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>XGBoost: A Scalable Tree Boosting System, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Tianqi Chen and Carlos Guestrin (2016), the paper behind the library that made gradient-boosted trees the default model for tables of data.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1603.02754">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1603.02754">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1603.02754">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper (the arXiv version, v3, presented at KDD 2016) section by section, quotes only a sentence or two per section (clearly marked), reproduces only a few selected rows of its tables with attribution, and explains everything in its own words. The equations are reproduced with every symbol decoded, keeping the paper's equation numbers. Every diagram is redrawn for this page, and the worked examples are our own: the same four houses as the <a href="gradient-boosting-machine.html">gradient boosting machine companion</a>, and a handful of emails. Every section links to the original.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The diagrams are live. Two playgrounds respond to you: a split scanner that runs the paper's Algorithms 1 and 3 on ten emails (drag the threshold, the penalties, and where missing values go), and a weighted-quantile picker for §3.3.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it matters</strong>. The paper builds on Friedman's gradient boosting; if “fit the next tree to the negative gradient” is new, start with the <a href="gradient-boosting-machine.html">gradient boosting machine companion</a> or the <a class="lesson" data-lesson="primer/ml/classical.html">trees and boosting lesson</a>, which builds boosting from scratch.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754">original</a></span></h2>
+<blockquote class="quote">“By combining these insights, XGBoost scales beyond billions of examples using far fewer resources than existing systems.”<cite>Chen and Guestrin (2016), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Gradient boosting was a good recipe with a slow kitchen. This paper is mostly about the kitchen: how to lay out the ingredients so every cook can work at once, how to handle ingredients that are missing, how to cook a meal too big for the fridge. It also tidies the recipe itself, adding a penalty that keeps each tree simple and a second-order formula that says, in one line, how good any tree is.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A <span class="t" data-t="regularization">regularized</span> boosting objective whose best leaf values and best splits have closed-form formulas built from each example's first and second derivatives (§2).</li>
+  <li>A sparsity-aware split search that learns where missing values should go, and runs in time proportional to the non-missing entries (§3.4).</li>
+  <li>A weighted <span class="t" data-t="quantile">quantile</span> sketch with a provable guarantee for proposing candidate splits on huge data (§3.3 and the appendix).</li>
+  <li>A cache-aware, compressed, sharded column-block layout that lets one machine train on 1.7 billion examples (§4 and §6).</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The second-order objective and its split gain are what most gradient-boosting libraries optimize today, and the missing-value default direction is standard. On <span class="t" data-t="tabular data">tabular data</span>, boosted trees remain the model to beat.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S1">original</a></span></h2>
+<blockquote class="quote">“The most important factor behind the success of XGBoost is its scalability in all scenarios.”<cite>Chen and Guestrin (2016), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A method wins competitions when it is accurate <em>and</em> fast enough to try many ideas in an afternoon. The introduction documents the first and promises the second.</p>
+<h3 class="rung">What it reports</h3>
+<ul>
+  <li>Of 29 winning solutions to challenges on Kaggle's blog in 2015, 17 used XGBoost; 8 used it alone, and most of the others combined it with neural networks. Deep neural networks, the next most popular method, appeared in 11.</li>
+  <li>In KDDCup 2015, every team in the top 10 used XGBoost.</li>
+  <li>The system runs more than ten times faster than popular existing solutions on one machine, and scales to billions of examples.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>These numbers are a snapshot of 2015, but the pattern they show (trees for tables, neural networks for text, images and audio, and the two combined) is the one the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a> explains in its final section.</p>
+</section>
+
+<section id="s2">
+<h2>2 Tree boosting in a nutshell <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S2">original</a></span></h2>
+
+<section id="s2-1">
+<h3>2.1 Regularized learning objective <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S2.SS1">original</a></span></h3>
+<blockquote class="quote">“Intuitively, the regularized objective will tend to select a model employing simple and predictive functions.”<cite>Chen and Guestrin (2016), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A committee of advisers, each a small flowchart ending in a score. To predict, walk the example through every flowchart and add up the scores it lands on. Training chooses the flowcharts so the added-up scores fit the data, while a penalty charges for every leaf and for every large score, so each adviser stays modest.</p>
+<h4>Tiny example</h4>
+<p>House 4 walks through two trees. The first is a single leaf holding 4.0, the average price. The second asks “size &gt; 2.5?” and says +2.5. The prediction is 4.0 + 2.5 = 6.5.</p>
+<figure class="ix" id="fig-ens">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 250" role="img" aria-label="A two-tree ensemble for house prices: the prediction is the sum of the leaf scores the house reaches in each tree">
+    <defs><marker id="arre" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="70" y="18" text-anchor="middle" class="lbl">tree 1</text>
+    <text x="230" y="18" text-anchor="middle" class="lbl">tree 2</text>
+    <path class="wire" d="M160,26 V180" stroke-dasharray="4 4"/>
+    <g class="blk soft" data-block="t1leaf"><rect x="25" y="80" width="90" height="34" rx="8"/><text x="70" y="102" text-anchor="middle">w = 4.0</text></g>
+    <g class="blk attn" data-block="t2q"><rect x="180" y="30" width="100" height="32" rx="16"/><text x="230" y="51" text-anchor="middle">size &gt; 2.5?</text></g>
+    <path class="wire" d="M205,62 L190,98" marker-end="url(#arre)"/>
+    <path class="wire" d="M255,62 L270,98" marker-end="url(#arre)"/>
+    <text x="188" y="84" text-anchor="end" class="lbl">no</text>
+    <text x="272" y="84" class="lbl">yes</text>
+    <g class="blk soft" data-block="t2left"><rect x="160" y="100" width="60" height="32" rx="8"/><text x="190" y="121" text-anchor="middle">−2.5</text></g>
+    <g class="blk soft" data-block="t2right"><rect x="240" y="100" width="60" height="32" rx="8"/><text x="270" y="121" text-anchor="middle">+2.5</text></g>
+    <g class="blk plain" data-block="sum"><rect x="40" y="200" width="240" height="36" rx="8"/><text x="160" y="223" text-anchor="middle">house 4: ŷ = 4.0 + 2.5 = 6.5</text></g>
+    <path class="wire" d="M70,114 V198" marker-end="url(#arre)"/>
+    <path class="wire" d="M270,132 V198" marker-end="url(#arre)"/>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Follow house 4 (size 4) through both trees.</p></div>
+  </div>
+  <figcaption>A tree ensemble in the style of Figure 1 of the paper, redrawn with this page's four houses. Based on Chen and Guestrin (2016), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each tree maps an example to one leaf, and each leaf holds a number, its weight w. Tree 1 has a single leaf, so every house gets 4.0 there. In tree 2, house 4 (size 4) answers “yes” and lands on +2.5. The bottom box adds the two landing spots. Unlike a classification tree, a leaf here holds a continuous score, not a label: the model is the sum of the scores, so no single tree needs to be right on its own.</p>
+<div class="eq" data-tex="\begin{aligned} &amp;\htmlData{sym=yhat}{\hat y_i} = \htmlData{sym=phi}{\phi}(\htmlData{sym=xi}{\mathbf{x}_i}) = \htmlData{sym=sumk}{\sum_{k=1}^{K}} \htmlData{sym=fk}{f_k}(\htmlData{sym=xi}{\mathbf{x}_i}), \\ &amp;\htmlData{sym=fk}{f_k} \in \htmlData{sym=Fspace}{\mathcal{F}} \quad (1) \end{aligned}" data-fallback="ŷ_i = φ(x_i) = Σ_{k=1}^{K} f_k(x_i),  f_k ∈ F   (1)"></div>
+<div class="symtable" data-syms="yhat,phi,xi,sumk,fk,Fspace"></div>
+<p class="inwords"><strong>In words:</strong> “the prediction for an example is the sum, over all K trees, of the leaf score it reaches in each.”</p>
+<p class="inwords"><strong>With the numbers:</strong> K = 2: f<sub>1</sub>(house 4) = 4.0 and f<sub>2</sub>(house 4) = 2.5, so ŷ = 6.5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># f_k: each tree maps a size to its leaf weight
+def f1(size):
+    return 4.0
+def f2(size):
+    return 2.5 if size &gt; 2.5 else -2.5
+trees = [f1, f2]
+# ŷ = Σ_k f_k(x)
+sum(f_k(4) for f_k in trees)  # → 6.5</code></pre>
+<p>Training minimizes the loss plus a penalty on every tree:</p>
+<div class="eq" data-tex="\begin{aligned} &amp;\htmlData{sym=Lphi}{\mathcal{L}(\phi)} = \htmlData{sym=sumi}{\sum_i} \htmlData{sym=l}{l}(\htmlData{sym=yhat}{\hat y_i}, \htmlData{sym=y}{y_i}) + \htmlData{sym=sumk}{\sum_k} \htmlData{sym=Omega}{\Omega}(\htmlData{sym=fk}{f_k}), \\ &amp;\htmlData{sym=Omega}{\Omega}(f) = \htmlData{sym=gammaT}{\gamma}\htmlData{sym=T}{T} + \tfrac{1}{2}\htmlData{sym=lambda}{\lambda}\htmlData{sym=wnorm}{\lVert w \rVert^2} \quad (2) \end{aligned}" data-fallback="L(φ) = Σ_i l(ŷ_i, y_i) + Σ_k Ω(f_k),   Ω(f) = γT + ½λ‖w‖²   (2)"></div>
+<div class="symtable" data-syms="Lphi,sumi,l,y,Omega,gammaT,T,lambda,wnorm"></div>
+<p class="inwords"><strong>In words:</strong> “the objective is the total loss on the training data, plus, for every tree, a fixed charge per leaf and a charge on the squared size of its leaf scores.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a tree with T = 2 leaves of weights −2 and +2, with γ = 1 and λ = 1, costs 1 × 2 + ½ × 1 × (4 + 4) = 6.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>gamma, lam = 1.0, 1.0
+w = [-2.0, 2.0]
+T = len(w)
+# Ω(f) = γT + ½ λ ‖w‖²
+gamma * T + 0.5 * lam * sum(w_j ** 2 for w_j in w)  # → 6.0</code></pre>
+<h4>Why it matters</h4>
+<p>Friedman's gradient boosting controlled complexity from the outside: tree size, learning rate, number of trees. Putting γ and λ inside the objective means the split search itself refuses splits that do not pay for their leaf. With γ = λ = 0 the objective falls back to traditional gradient tree boosting, as the paper notes.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Gradient tree boosting <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“This score is like the impurity score for evaluating decision trees, except that it is derived for a wider range of objective functions.”<cite>Chen and Guestrin (2016), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Walking down a hill in fog, the slope under your feet says which way is down; knowing also how the slope is <em>changing</em> (the curvature) tells you how far to step before the ground starts rising again. First-order boosting uses only the slope. This paper uses slope and curvature for every example, as <span class="t" data-t="newton's method">Newton's method</span> does, and so gets the best step for each leaf from a formula.</p>
+<h4>Tiny example</h4>
+<p>Take squared loss l = (y − ŷ)<sup>2</sup> and the four houses predicted 4. Each house's slope is g = 2(ŷ − y) = (6, 4, −4, −6) and its curvature is h = 2 for every house. The next tree t adds f<sub>t</sub>(x) to every prediction, and the paper approximates the new loss by its second-order <span class="t" data-tip-title="Taylor expansion" data-tip="Approximating a function near a point by its value there, plus its slope times the step, plus half its curvature times the step squared, and so on. Two terms give a straight line; three give a parabola.">Taylor expansion</span>:</p>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=Lt}{\tilde{\mathcal{L}}^{(t)}} = {} &amp; \htmlData{sym=sumin}{\sum_{i=1}^{n}} \Big[\htmlData{sym=gi}{g_i}\, \htmlData{sym=ft}{f_t}(\htmlData{sym=xi}{\mathbf{x}_i}) + \tfrac{1}{2}\htmlData{sym=hi}{h_i}\, \htmlData{sym=ft}{f_t}^2(\htmlData{sym=xi}{\mathbf{x}_i})\Big] \\ &amp; + \htmlData{sym=Omega}{\Omega}(\htmlData{sym=ft}{f_t}) \quad (3) \end{aligned}" data-fallback="L̃(t) = Σ_{i=1}^{n} [g_i f_t(x_i) + ½ h_i f_t²(x_i)] + Ω(f_t)   (3)"></div>
+<div class="symtable" data-syms="Lt,sumin,gi,hi,ft"></div>
+<p class="inwords"><strong>In words:</strong> “for the next tree, each example contributes its slope times the tree's output for it, plus half its curvature times that output squared; add the tree's penalty.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for squared loss the approximation is exact. For a less tidy loss, take one spam email under log loss with its score at 0 (a 50% guess): g = p − y = −0.5 and h = p(1 − p) = 0.25. Stepping the score by f = 0.5, the true loss is 0.4741 and the quadratic approximation gives 0.4744.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+y = [1, 2, 6, 7]
+y_hat = 4.0
+# squared loss (y − ŷ)²: g = 2(ŷ − y), h = 2
+[2 * (y_hat - y_i) for y_i in y]  # → [6.0, 4.0, -4.0, -6.0]
+# log loss for one spam email, score F = 0: p = 0.5
+p = 0.5
+g, h = p - 1, p * (1 - p)
+g, h  # → (-0.5, 0.25)
+f = 0.5
+exact = math.log(1 + math.exp(-f))
+approx = math.log(2) + g * f + 0.5 * h * f ** 2
+round(exact, 4), round(approx, 4)  # → (0.4741, 0.4744)</code></pre>
+<p>Group the examples by the leaf they land in. Every example in leaf j gets the same output w<sub>j</sub>, so the sums collapse to two numbers per leaf: G<sub>j</sub> = Σg and H<sub>j</sub> = Σh (equation 4). Each leaf is now a parabola in w<sub>j</sub>, and the bottom of a parabola has a formula:</p>
+<div class="eq" data-tex="\htmlData{sym=wstar}{w_j^*} = -\frac{\htmlData{sym=Gj}{\sum_{i \in I_j} g_i}}{\htmlData{sym=Hj}{\sum_{i \in I_j} h_i} + \htmlData{sym=lambda}{\lambda}} \quad (5)" data-fallback="w_j* = −Σ_{i∈I_j} g_i / (Σ_{i∈I_j} h_i + λ)   (5)"></div>
+<div class="symtable" data-syms="wstar,Gj,Hj"></div>
+<p class="inwords"><strong>In words:</strong> “a leaf's best score is minus its total slope divided by its total curvature plus λ”: a Newton step, damped by λ.</p>
+<p class="inwords"><strong>With the numbers:</strong> the left leaf holds houses 1 and 2: G = 6 + 4 = 10, H = 2 + 2 = 4, so with λ = 1, w* = −10/5 = −2. With λ = 0 it would be −2.5, the average residual that Friedman's least-squares boosting uses: λ pulls every leaf towards zero. For the spam email alone in a leaf with λ = 0, w* = 0.5/0.25 = 2, taking its predicted probability from 0.5 to 0.881.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def w_star(G, H, lam):
+    # w* = −G / (H + λ)
+    return -G / (H + lam)
+w_star(10.0, 4.0, 1.0)  # → -2.0
+w_star(10.0, 4.0, 0.0)  # → -2.5
+# one spam email: g = −0.5, h = 0.25, λ = 0
+w = w_star(-0.5, 0.25, 0.0)
+w, round(1 / (1 + math.exp(-w)), 3)  # → (2.0, 0.881)</code></pre>
+<p>Put each best score back in, and the objective of a whole tree structure q is:</p>
+<div class="eq" data-tex="\htmlData{sym=Lq}{\tilde{\mathcal{L}}^{(t)}(q)} = -\frac{1}{2}\htmlData{sym=sumT}{\sum_{j=1}^{T}} \frac{\htmlData{sym=Gj}{\big(\sum_{i \in I_j} g_i\big)}^2}{\htmlData{sym=Hj}{\sum_{i \in I_j} h_i} + \htmlData{sym=lambda}{\lambda}} + \htmlData{sym=gammaT}{\gamma}\htmlData{sym=T}{T} \quad (6)" data-fallback="L̃(q) = −½ Σ_{j=1}^{T} (Σ_{i∈I_j} g_i)² / (Σ_{i∈I_j} h_i + λ) + γT   (6)"></div>
+<div class="symtable" data-syms="Lq,sumT"></div>
+<p class="inwords"><strong>In words:</strong> “a tree's quality is minus half the sum, over its leaves, of the squared total slope over the total curvature plus λ, plus the leaf charge; lower is better.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the split tree for the four houses (λ = γ = 1): −½ (10<sup>2</sup>/5 + 10<sup>2</sup>/5) + 2 = −20 + 2 = −18. A single leaf holding all four: G = 0, so −½ × 0 + 1 = 1. The split tree scores 19 lower, so it is better.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>lam, gamma = 1.0, 1.0
+def structure_score(leaves):
+    # −½ Σ_j G_j² / (H_j + λ) + γT
+    return -0.5 * sum(G ** 2 / (H + lam) for G, H in leaves) + gamma * len(leaves)
+structure_score([(10.0, 4.0), (-10.0, 4.0)])  # → -18.0
+structure_score([(0.0, 8.0)])  # → 1.0</code></pre>
+<figure class="ix" id="fig-score">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 260" role="img" aria-label="Structure score for the four houses: sum g and h in each leaf, then apply the scoring formula">
+    <defs><marker id="arrs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk plain" data-block="stats">
+      <rect x="10" y="10" width="110" height="170" rx="8"/>
+      <text x="65" y="30" text-anchor="middle" class="lbl">house: g, h</text>
+      <text x="65" y="60" text-anchor="middle">1: 6, 2</text>
+      <text x="65" y="90" text-anchor="middle">2: 4, 2</text>
+      <text x="65" y="120" text-anchor="middle">3: −4, 2</text>
+      <text x="65" y="150" text-anchor="middle">4: −6, 2</text>
+    </g>
+    <g class="blk attn" data-block="q"><rect x="170" y="14" width="110" height="30" rx="15"/><text x="225" y="34" text-anchor="middle">size &gt; 2.5?</text></g>
+    <path class="wire" d="M200,44 L180,78" marker-end="url(#arrs)"/>
+    <path class="wire" d="M250,44 L270,78" marker-end="url(#arrs)"/>
+    <g class="blk soft" data-block="leafA"><rect x="140" y="80" width="80" height="56" rx="8"/><text x="180" y="100" text-anchor="middle" class="lbl">houses 1, 2</text><text x="180" y="118" text-anchor="middle">G = 10</text><text x="180" y="132" text-anchor="middle">H = 4</text></g>
+    <g class="blk soft" data-block="leafB"><rect x="232" y="80" width="80" height="56" rx="8"/><text x="272" y="100" text-anchor="middle" class="lbl">houses 3, 4</text><text x="272" y="118" text-anchor="middle">G = −10</text><text x="272" y="132" text-anchor="middle">H = 4</text></g>
+    <path class="wire" d="M180,136 V176 M272,136 V176 M180,176 H272 M226,176 V198" marker-end="url(#arrs)"/>
+    <g class="blk norm" data-block="obj"><rect x="130" y="200" width="185" height="50" rx="8"/><text x="222" y="220" text-anchor="middle">−½(100/5 + 100/5) + 2γ</text><text x="222" y="240" text-anchor="middle">= −18 (λ = γ = 1)</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with the gradient statistics on the left.</p></div>
+  </div>
+  <figcaption>The structure score of Figure 2 of the paper, redrawn with the four houses. Based on Chen and Guestrin (2016), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the left box is everything the tree needs from the data: one slope g and one curvature h per example. The tree sends each example to a leaf, and each leaf only adds up the g's and h's it receives (G and H). The bottom box applies equation (6) to those two numbers per leaf. Nothing else about the examples, not even their labels, is needed any more: that is why the same tree-growing code works for any loss that can supply g and h.</p>
+<h4>The split gain</h4>
+<p>Growing a tree greedily, a leaf is split in two if the score improves. The improvement is equation (6) before minus after:</p>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=Lsplit}{\mathcal{L}_{\text{split}}} = \frac{1}{2}\Bigg[&amp;\frac{\htmlData{sym=GL}{G_L}^2}{\htmlData{sym=HL}{H_L} + \htmlData{sym=lambda}{\lambda}} + \frac{\htmlData{sym=GR}{G_R}^2}{\htmlData{sym=HR}{H_R} + \htmlData{sym=lambda}{\lambda}} \\ &amp;- \frac{(\htmlData{sym=GL}{G_L} + \htmlData{sym=GR}{G_R})^2}{\htmlData{sym=HL}{H_L} + \htmlData{sym=HR}{H_R} + \htmlData{sym=lambda}{\lambda}}\Bigg] - \htmlData{sym=gammaT}{\gamma} \quad (7) \end{aligned}" data-fallback="L_split = ½ [G_L²/(H_L+λ) + G_R²/(H_R+λ) − (G_L+G_R)²/(H_L+H_R+λ)] − γ   (7)"></div>
+<div class="symtable" data-syms="Lsplit,GL,HL,GR,HR"></div>
+<p class="inwords"><strong>In words:</strong> “a split is worth half of (the left side's score plus the right side's score minus the unsplit score), minus the price of one more leaf; if that is not positive, don't split.” (The paper writes the sums in full; G and H are shorthand for them.)</p>
+<p class="inwords"><strong>With the numbers:</strong> splitting the four houses at 2.5: ½(100/5 + 100/5 − 0/9) − 1 = 19, matching the drop from 1 to −18 above. Splitting after house 1 instead: ½(36/3 + 36/7 − 0) − 1 = 7.571. The middle split wins.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>lam, gamma = 1.0, 1.0
+g, h = [6.0, 4.0, -4.0, -6.0], [2.0] * 4
+def split_gain(G_L, H_L, G_R, H_R):
+    return 0.5 * (G_L ** 2 / (H_L + lam) + G_R ** 2 / (H_R + lam) - (G_L + G_R) ** 2 / (H_L + H_R + lam)) - gamma
+# split after house t = 1, 2, 3
+[round(split_gain(sum(g[:t]), sum(h[:t]), sum(g[t:]), sum(h[t:])), 3) for t in (1, 2, 3)]  # → [7.571, 19.0, 7.571]</code></pre>
+<h4>Why it matters</h4>
+<p>This is the heart of the paper and of modern boosting: one formula scores any split for any twice-differentiable loss, with regularization built in. Friedman's logistic TreeBoost already used a Newton step for its leaf values (see the <a href="gradient-boosting-machine.html">gradient boosting machine companion</a>, §4.5); here the same curvature also chooses the splits. The lesson's <a data-lesson="primer/ml/classical.html#GradientBoosting"><code>GradientBoosting</code></a> is first-order, fitting each tree to <a data-lesson="primer/ml/classical.html#GradientBoosting.negative_gradient"><code>GradientBoosting.negative_gradient</code></a> by squared error; the lesson names the second-order step as one of the refinements it leaves out.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Shrinkage and column subsampling <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S2.SS3">original</a></span></h3>
+<blockquote class="quote">“According to user feedback, using column sub-sampling prevents over-fitting even more so than the traditional row sub-sampling (which is also supported).”<cite>Chen and Guestrin (2016), §2.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Two more brakes on overfitting. <span class="t" data-t="shrinkage">Shrinkage</span> (Friedman's learning rate, here called η) takes only part of each tree's correction. Column subsampling lets each tree see only a random subset of the input columns, the trick <span class="t" data-t="random forest">random forests</span> use to make their trees disagree.</p>
+<h4>Tiny example</h4>
+<p>With η = 0.1, the right leaf's +2 moves house 4 from 4 to 4.2. With half the columns sampled per tree, a model with 28 inputs would give each tree 14 of them to choose from.</p>
+<h4>Why it matters</h4>
+<p>Column sampling is borrowed straight from Breiman (see the <a href="random-forests.html">random forests companion</a>, §3): decorrelating the trees helps boosting too, and it also makes each tree cheaper. The paper's experiments in §6 show it can cost a little accuracy on one dataset and gain a little on another.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Split finding algorithms <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S3">original</a></span></h2>
+
+<section id="s3-1">
+<h3>3.1 Basic exact greedy algorithm <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To find the best threshold on one input, line the examples up in order of that input and walk along the line, keeping a running total of g and h on your left. At every gap, the right side's totals are just “everything minus the left”, so the gain of every possible split costs one addition and one formula.</p>
+<h4>Try it: the split scanner</h4>
+<p>Ten emails, labelled spam (1) or not (0), all currently predicted 50% spam, so every email has h = 0.25 and g = 0.5 − y (+0.5 for legitimate, −0.5 for spam). The input is the number of links; two emails have no link count recorded. Drag the threshold and watch the running sums and the gain of equation (7). Then change λ and γ, and choose where the two emails with missing values go.</p>
+<div class="play" id="scan">
+  <div class="sliders">
+    <label for="scan-t">threshold (links &lt;)</label><input type="range" id="scan-t" min="0.5" max="6.5" step="1" value="3.5"><output id="scan-t-v">3.5</output>
+    <label for="scan-l">λ</label><input type="range" id="scan-l" min="0" max="5" step="0.5" value="1"><output id="scan-l-v">1.0</output>
+    <label for="scan-g">γ</label><input type="range" id="scan-g" min="0" max="2" step="0.1" value="0"><output id="scan-g-v">0.0</output>
+  </div>
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.85rem;margin:.6rem 0">
+    <span>missing link counts go:</span>
+    <button type="button" data-missing="right" aria-pressed="true">right</button>
+    <button type="button" data-missing="left" aria-pressed="false">left</button>
+  </div>
+  <div id="scan-row" class="sentence" aria-label="The ten emails, sorted by number of links"></div>
+  <div id="scan-bars"></div>
+  <p class="readout" id="scan-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each chip is one email, sorted by its link count, with its slope g just above it; the two chips marked “?” have no link count. Chips going to the left child are outlined. The bars below show the gain of every threshold at once for the current λ, γ and missing-value direction, and the readout gives the running sums at your threshold. With missing values sent right and λ = 1, the best threshold is “links &lt; 3.5”, gain 1.746: left of it the emails are mostly legitimate, right of it all spam, and the two unknowns (both spam) belong with the spam. Send them left instead and the same threshold only gains 0.545. Raise γ past the best gain and every bar goes negative: the leaf charge now outweighs any split, so the tree stops growing here.</p>
+<h4>Why it matters</h4>
+<p>Sorting once and sweeping with running sums is exactly how the lesson's <a data-lesson="primer/ml/classical.html#best_split"><code>best_split</code></a> finds its splits quickly (with label counts in place of g and h). Algorithm 1 in the paper is that sweep, run over every feature.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Approximate algorithm <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>When the data do not fit in memory, or live on many machines, trying every threshold is too slow. Instead, propose a few dozen candidate thresholds per feature (at percentiles), drop every example into its bucket, add up g and h per bucket, and run the same sweep over buckets instead of examples.</p>
+<h4>What the paper finds</h4>
+<p>Candidates can be proposed once per tree (<strong>global</strong>) or again after every split (<strong>local</strong>). On the Higgs 10M data (Figure 3), local proposals with ε = 0.3 (about 1/ε, so roughly three, buckets) matched exact greedy, while global proposals needed a finer ε = 0.05 (about 20 buckets) to match it; global with ε = 0.3 fell clearly behind.</p>
+<h4>Why it matters</h4>
+<p>Bucketing turns split finding into adding up small histograms, which is fast and easy to distribute. The lesson mentions “fast histogram-based split search” as one of the refinements modern libraries add to the basic loop.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Weighted quantile sketch <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Where should the bucket boundaries go? Evenly by count would spend as many candidates on examples the model already predicts confidently as on the ones it is still unsure about. The paper spaces them evenly by <em>curvature</em> h instead, so uncertain examples get finer buckets.</p>
+<h4>Tiny example</h4>
+<p>Four examples with feature values 1, 2, 3 and 4 and curvatures 0.25, 0.25, 0.09 and 0.01 (the last two are nearly certain). The weighted rank of the value 3 is the share of total curvature strictly below it: (0.25 + 0.25)/0.6 = 0.833. By count it would be 0.5.</p>
+<div class="eq" data-tex="\htmlData{sym=rk}{r_k}(\htmlData{sym=z}{z}) = \frac{1}{\htmlData{sym=sumhall}{\sum_{(x,h) \in \mathcal{D}_k} h}} \htmlData{sym=sumhbelow}{\sum_{(x,h) \in \mathcal{D}_k,\ x &lt; z}} h \quad (8)" data-fallback="r_k(z) = (1 / Σ_{(x,h)∈D_k} h) Σ_{(x,h)∈D_k, x&lt;z} h   (8)"></div>
+<div class="symtable" data-syms="rk,z,sumhall,sumhbelow"></div>
+<p class="inwords"><strong>In words:</strong> “the weighted rank of a value is the share of total curvature carried by examples whose feature value is below it.”</p>
+<p class="inwords"><strong>With the numbers:</strong> r(3) = (0.25 + 0.25) / (0.25 + 0.25 + 0.09 + 0.01) = 0.5 / 0.6 = 0.833.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x = [1, 2, 3, 4]
+h = [0.25, 0.25, 0.09, 0.01]
+z = 3
+# r_k(z) = Σ_{x &lt; z} h / Σ h
+round(sum(h_i for x_i, h_i in zip(x, h) if x_i &lt; z) / sum(h), 3)  # → 0.833</code></pre>
+<p>The candidates s<sub>1</sub> … s<sub>l</sub> must be close in weighted rank:</p>
+<div class="eq" data-tex="\begin{aligned} &amp;|\htmlData{sym=rk}{r_k}(\htmlData{sym=skj}{s_{k,j}}) - \htmlData{sym=rk}{r_k}(\htmlData{sym=skj}{s_{k,j+1}})| &lt; \htmlData{sym=eps}{\epsilon}, \\ &amp;s_{k1} = \min_i x_{ik},\quad s_{kl} = \max_i x_{ik} \quad (9) \end{aligned}" data-fallback="|r_k(s_{k,j}) − r_k(s_{k,j+1})| &lt; ε,  s_k1 = min_i x_ik,  s_kl = max_i x_ik   (9)"></div>
+<div class="symtable" data-syms="skj,eps"></div>
+<p class="inwords"><strong>In words:</strong> “neighbouring candidate thresholds may be at most ε apart in weighted rank, and the first and last are the smallest and largest values”, which gives roughly 1/ε candidates.</p>
+<p class="inwords"><strong>With the numbers:</strong> ε = 0.3 allows about 1/0.3 ≈ 3 buckets; ε = 0.05 about 20, the two settings of Figure 3.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># roughly 1/ε candidate points
+[round(1 / eps) for eps in (0.3, 0.05)]  # → [3, 20]</code></pre>
+<div class="plot" id="wq-plot">
+  <div class="controls">
+    <label for="wq-eps">ε = <strong id="wq-eps-v">0.20</strong></label><input type="range" id="wq-eps" min="0.1" max="0.5" step="0.05" value="0.2">
+    <label><input type="checkbox" id="wq-w" checked> weight by curvature h</label>
+  </div>
+  <svg id="wq-svg" viewBox="0 0 420 200" role="img" aria-label="Twelve examples along one feature, bars showing each example's curvature, and the candidate split points"></svg>
+  <p class="readout" id="wq-readout"></p>
+  <p class="readout"><em>Illustrative curvatures, chosen for this page: examples 6 to 10 are ones the model already predicts confidently.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the twelve bars are examples in order of their feature value, and each bar's height is its curvature h. The dashed vertical lines are the candidate thresholds the rule in (9) proposes. With weighting on, candidates crowd into the regions with tall bars (examples the model is still unsure about) and the confident middle stretch gets few or none. Untick the box and every example counts the same, so the candidates spread evenly by count. Drag ε: smaller ε, more candidates, closer to the exact search.</p>
+<h4>Why curvature is the right weight</h4>
+<p>Completing the square turns equation (3) into a weighted squared error:</p>
+<div class="eq" data-tex="\htmlData{sym=sumin}{\sum_{i=1}^{n}} \frac{1}{2}\htmlData{sym=hi}{h_i}\Big(\htmlData{sym=ft}{f_t}(\htmlData{sym=xi}{\mathbf{x}_i}) + \frac{\htmlData{sym=gi}{g_i}}{\htmlData{sym=hi}{h_i}}\Big)^2 + \htmlData{sym=Omega}{\Omega}(\htmlData{sym=ft}{f_t}) + \text{constant}" data-fallback="Σ ½ h_i (f_t(x_i) + g_i/h_i)² + Ω(f_t) + constant"></div>
+<div class="symtable" data-syms="gi,hi"></div>
+<p class="inwords"><strong>In words:</strong> “each boosting step is a least-squares fit to the targets −g/h, with example i weighted by h<sub>i</sub>”: so h is literally each example's weight.</p>
+<p class="inwords"><strong>With the numbers:</strong> for the spam email (g = −0.5, h = 0.25), the target is −g/h = 2, the Newton step found above. The paper prints this line with (f<sub>t</sub>(x<sub>i</sub>) − g<sub>i</sub>/h<sub>i</sub>)<sup>2</sup> and “labels g<sub>i</sub>/h<sub>i</sub>”; expanding the square shows the sign must be +, with labels −g<sub>i</sub>/h<sub>i</sub>. The weights h<sub>i</sub>, which are the point of the passage, are unaffected.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>g, h, f = -0.5, 0.25, 1.3
+# g f + ½ h f² equals ½ h (f + g/h)² minus a constant g²/(2h)
+round(g * f + 0.5 * h * f ** 2, 5)  # → -0.43875
+round(0.5 * h * (f + g / h) ** 2 - g ** 2 / (2 * h), 5)  # → -0.43875
+# the least-squares target −g/h
+-g / h  # → 2.0</code></pre>
+<p>Finding such candidates on huge, distributed, weighted data is a known hard problem for unweighted data (quantile sketches) and had no solution with guarantees for weighted data; the paper's appendix supplies one.</p>
+<h4>Why it matters</h4>
+<p>Weighting by h makes the buckets finest where the next tree has the most to learn. The same idea, h as the weight of an example, is what lets one tree-growing routine serve every loss.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Sparsity-aware split finding <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S3.SS4">original</a></span></h3>
+<blockquote class="quote">“XGBoost handles all sparsity patterns in a unified way.”<cite>Chen and Guestrin (2016), §3.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Real tables are full of holes: missing values, columns that are mostly zero, and the many zeros <span class="t" data-t="one-hot encoding">one-hot encoding</span> creates. Rather than guess a value to fill in, give every split a <strong>default direction</strong>: a road that examples with the value missing always take. Learn which road is better from the data.</p>
+<h4>Tiny example</h4>
+<p>The split scanner above is Algorithm 3. For the threshold “links &lt; 3.5”, the algorithm sweeps once with the two missing-value emails sent right (gain 1.746) and once with them sent left (gain 0.545), and keeps right as the default. Both sweeps visit only the eight emails that have a value: the missing ones are handled through the totals G and H.</p>
+<h4>What the paper finds</h4>
+<p>Because only non-missing entries are visited, the cost is linear in the number of non-missing entries. On the Allstate-10K data, sparse mainly because of one-hot encoding, the sparsity-aware algorithm ran more than 50 times faster than a version that ignores sparsity (Figure 5).</p>
+<h4>Why it matters</h4>
+<p>Learned default directions are how XGBoost lets you pass data with missing values straight in, the “native handling of missing values” the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a> lists among modern refinements.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 System design <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S4">original</a></span></h2>
+<blockquote class="quote">“The most time consuming part of tree learning is to get the data into sorted order.”<cite>Chen and Guestrin (2016), §4.1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A library that re-sorted its whole catalogue for every question would be slow. Sort each shelf once, keep a card in each position pointing to the book's row, and every later question is a walk along a shelf.</p>
+<h3 class="rung">4.1 Column blocks</h3>
+<p>The data are stored as <strong>blocks</strong> in compressed column format: each column sorted by value once, before training, and reused by every tree. Each sorted entry keeps its row index, so the sweep can fetch that row's g and h. All leaves at a level are split in one pass over a column, and different columns can be scanned in parallel. The block layout also makes column subsampling trivial.</p>
+<figure class="ix" id="fig-block">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 250" role="img" aria-label="A column block: one feature column stored sorted with row indices, pointing into the gradient statistics stored by row">
+    <defs><marker id="arrb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="70" y="18" text-anchor="middle" class="lbl">links, sorted once</text>
+    <text x="250" y="18" text-anchor="middle" class="lbl">g, h by row</text>
+    <g class="blk emb" data-block="col">
+      <rect x="20" y="26" width="100" height="30" rx="5"/><text x="70" y="46" text-anchor="middle">0 → row 3</text>
+      <rect x="20" y="62" width="100" height="30" rx="5"/><text x="70" y="82" text-anchor="middle">1 → row 1</text>
+      <rect x="20" y="98" width="100" height="30" rx="5"/><text x="70" y="118" text-anchor="middle">4 → row 4</text>
+      <rect x="20" y="134" width="100" height="30" rx="5"/><text x="70" y="154" text-anchor="middle">6 → row 2</text>
+    </g>
+    <g class="blk ff" data-block="grad">
+      <rect x="200" y="26" width="100" height="30" rx="5"/><text x="250" y="46" text-anchor="middle">row 1: g₁, h₁</text>
+      <rect x="200" y="62" width="100" height="30" rx="5"/><text x="250" y="82" text-anchor="middle">row 2: g₂, h₂</text>
+      <rect x="200" y="98" width="100" height="30" rx="5"/><text x="250" y="118" text-anchor="middle">row 3: g₃, h₃</text>
+      <rect x="200" y="134" width="100" height="30" rx="5"/><text x="250" y="154" text-anchor="middle">row 4: g₄, h₄</text>
+    </g>
+    <g class="blk attn" data-block="fetch">
+      <path class="wire" d="M120,41 L198,113" marker-end="url(#arrb)"/>
+      <path class="wire" d="M120,77 L198,41" marker-end="url(#arrb)"/>
+      <path class="wire" d="M120,113 L198,149" marker-end="url(#arrb)"/>
+      <path class="wire" d="M120,149 L198,77" marker-end="url(#arrb)"/>
+    </g>
+    <g class="blk norm" data-block="buffer"><rect x="60" y="196" width="200" height="40" rx="8"/><text x="160" y="214" text-anchor="middle">prefetch buffer: copy g, h</text><text x="160" y="230" text-anchor="middle">in sorted order, then sum</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Follow the arrows from the sorted column to the statistics.</p></div>
+  </div>
+  <figcaption>The column block of Figure 6 and the access pattern of Figure 8, redrawn together with four made-up rows. Based on Chen and Guestrin (2016), §4.1, §4.2, Figures 6 and 8.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> on the left, one feature column stored in sorted order, each entry pointing to its row. On the right, the slope and curvature of each row, stored by row. The sweep walks down the left column in order, but its arrows jump around the right column: row 3, then 1, then 4, then 2. On millions of rows those jumps land outside the processor's cache, and each <span class="t" data-t="cache miss">cache miss</span> stalls the running sum. The box at the bottom is the paper's fix: first copy a mini-batch of the needed g and h into a small buffer in sorted order, then sum them from there.</p>
+<h3 class="rung">The cost, before and after</h3>
+<div class="eq" data-tex="\begin{aligned} &amp;\text{before: } O\big(\htmlData{sym=K}{K}\,\htmlData{sym=d}{d}\,\htmlData{sym=nnz}{\lVert \mathbf{x} \rVert_0} \log \htmlData{sym=n}{n}\big) \\ &amp;\text{after: } O\big(\htmlData{sym=K}{K}\,\htmlData{sym=d}{d}\,\htmlData{sym=nnz}{\lVert \mathbf{x} \rVert_0} + \htmlData{sym=nnz}{\lVert \mathbf{x} \rVert_0} \log \htmlData{sym=n}{n}\big) \end{aligned}" data-fallback="before: O(K d ‖x‖₀ log n); after: O(K d ‖x‖₀ + ‖x‖₀ log n)"></div>
+<div class="symtable" data-syms="K,d,nnz,n"></div>
+<p class="inwords"><strong>In words:</strong> “sorting inside every tree and level costs a log n factor on every pass; sorting once up front pays that factor a single time.” (<span class="t" data-t="big-o">O(·)</span> keeps only how cost grows.)</p>
+<p class="inwords"><strong>With the numbers:</strong> for 500 trees of depth 8 on 10 million dense rows of 28 features, log<sub>2</sub> n ≈ 23.3, and the block layout does about 23 times less split-search work.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+K, d, n = 500, 8, 10_000_000
+nnz = n * 28
+before = K * d * nnz * math.log2(n)
+after = K * d * nnz + nnz * math.log2(n)
+round(math.log2(n), 1), round(before / after, 1)  # → (23.3, 23.1)</code></pre>
+<h3 class="rung">4.2 Cache-aware access, and 4.3 out-of-core blocks</h3>
+<ul>
+  <li><strong>Prefetching</strong> made the exact greedy algorithm about twice as fast on the 10-million-row datasets (Figure 7).</li>
+  <li><strong>Block size</strong> for the approximate algorithm: too small starves the threads, too large overflows the cache; 2<sup>16</sup> examples per block balanced the two (Figure 9).</li>
+  <li><strong>Out-of-core</strong> (data bigger than memory): blocks live on disk and a separate thread reads the next one while the current one is processed. Compressing each block by column (row indices stored as 16-bit offsets, which is why blocks hold 2<sup>16</sup> rows) shrank data to about 26% to 29% of its size, and <strong>sharding</strong> blocks across disks multiplied read throughput.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>This is the part of the paper about hardware rather than statistics, and it is the same lesson as the <a data-lesson="primer/ml/hardware.html">hardware lesson</a> teaches for neural networks: arithmetic is cheap, moving data is what costs. See the <a data-lesson="primer/ml/hardware.html">hardware lesson</a> for the <span class="t" data-t="memory hierarchy">memory hierarchy</span> behind cache misses.</p>
+</section>
+
+<section id="s5">
+<h2>5 Related works <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S5">original</a></span></h2>
+<h3 class="rung">Where the ideas come from</h3>
+<p>Gradient boosting itself is Friedman's (<a href="gradient-boosting-machine.html">companion</a>); the second-order view comes from Friedman, Hastie and Tibshirani's additive logistic regression; the regularized objective resembles the regularized greedy forest, simplified for parallel training; column sampling is borrowed from random forests (<a href="random-forests.html">companion</a>). The paper claims three firsts: a unified treatment of every sparsity pattern in tree learning, a weighted quantile sketch with guarantees, and the system directions of out-of-core and cache-aware learning.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Much of what made XGBoost win was combining known ideas into one system that ran fast everywhere, which the paper states plainly.</p>
+</section>
+
+<section id="s6">
+<h2>6 End-to-end evaluations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S6">original</a></span></h2>
+<h3 class="rung">Setup</h3>
+<p>Four datasets: Allstate insurance claims (10 million examples, 4,227 features, mostly one-hot), Higgs boson physics events (10 million, 28 features), Yahoo! learning-to-rank (473,000 documents, 700 features) and Criteo click logs (1.7 billion examples, 67 features, over a terabyte). Unless stated otherwise: trees of maximum depth 8, shrinkage 0.1, no column subsampling.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Tables 3 and 4, reproduced with attribution (Chen and Guestrin, 2016). 500 trees each.</caption>
+  <thead><tr><th>Data, method</th><th class="num">Seconds per tree</th><th class="num">Score</th></tr></thead>
+  <tbody>
+    <tr><td>Higgs-1M, XGBoost</td><td class="num">0.6841</td><td class="num">0.8304 AUC</td></tr>
+    <tr><td>Higgs-1M, scikit-learn</td><td class="num">28.51</td><td class="num">0.8302 AUC</td></tr>
+    <tr><td>Higgs-1M, R's gbm</td><td class="num">1.032</td><td class="num">0.6224 AUC</td></tr>
+    <tr><td>Yahoo LTRC, XGBoost</td><td class="num">0.826</td><td class="num">0.7892 NDCG@10</td></tr>
+    <tr><td>Yahoo LTRC, XGBoost, half the columns</td><td class="num">0.506</td><td class="num">0.7913 NDCG@10</td></tr>
+    <tr><td>Yahoo LTRC, pGBRT</td><td class="num">2.576</td><td class="num">0.7915 NDCG@10</td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li><strong>Classification (§6.3).</strong> Same accuracy as scikit-learn (<span class="t" data-t="roc-auc">AUC</span> 0.8304 against 0.8302) at more than 10 times the speed; R's gbm is fast but, growing only one branch of each tree, much less accurate. Here column subsampling cost a little (0.8245).</li>
+  <li><strong>Learning to rank (§6.4).</strong> Faster than pGBRT, the best previously published system, at almost the same <span class="t" data-t="ndcg">NDCG</span>; with half the columns, faster still and slightly better.</li>
+  <li><strong>Out-of-core (§6.5).</strong> On one machine, compression gave a 3× speed-up and sharding across two disks another 2×; the basic version could only handle 200 million examples, the final one all 1.7 billion.</li>
+  <li><strong>Distributed (§6.6).</strong> On 32 machines, more than 10 times faster per iteration than Spark MLlib and 2.2 times faster than H2O's optimized version, and the only system of the three to scale to the full 1.7 billion examples. With out-of-core computing, four machines were enough to process the entire dataset (Figure 13).</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The Higgs row is the one to remember: the accuracy came from the algorithm everyone shared (scikit-learn matched it); the roughly 40-fold speed-up came from the system. Speed is what let practitioners try many features and settings, which is how competitions are won.</p>
+</section>
+
+<section id="s7">
+<h2>7 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754#S7">original</a></span></h2>
+<blockquote class="quote">“Our experience shows that cache access patterns, data compression and sharding are essential elements for building a scalable end-to-end system for tree boosting.”<cite>Chen and Guestrin (2016), §7</cite></blockquote>
+<p>The authors suggest these lessons apply to other machine learning systems as well, which the rest of this primer bears out: the same concerns drive how large neural networks are trained and served (see the <a data-lesson="primer/ml/hardware.html">hardware lesson</a>).</p>
+</section>
+
+<section id="appendix">
+<h2>Appendix A: the weighted quantile sketch <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1603.02754">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Each machine keeps a small summary of its share of the data: a few values with running weight totals, enough to answer “what value sits at weighted rank 30%?” within a known error. Summaries can be <strong>merged</strong> (two machines' summaries combine into one) and <strong>pruned</strong> (thinned to a memory budget), with the error tracked through every step.</p>
+<h3 class="rung">The guarantees</h3>
+<p>Merging an ε<sub>1</sub>-accurate summary with an ε<sub>2</sub>-accurate one gives a max(ε<sub>1</sub>, ε<sub>2</sub>)-accurate summary (Theorem A.1). Pruning to a budget of b + 1 points adds 1/b to the error (Theorem A.2):</p>
+<div class="eq" data-tex="\htmlData{sym=eps}{\epsilon} \;\longrightarrow\; \htmlData{sym=eps}{\epsilon} + \frac{1}{\htmlData{sym=b}{b}}" data-fallback="ε → ε + 1/b"></div>
+<div class="symtable" data-syms="b"></div>
+<p class="inwords"><strong>In words:</strong> “thinning a summary down to b + 1 points makes its rank answers worse by at most 1/b.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a summary accurate to 0.01, pruned to 101 points (b = 100), is accurate to 0.02.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>eps, b = 0.01, 100
+# ε + 1/b after pruning
+eps + 1 / b  # → 0.02</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>These two operations are what let candidate splits be computed in pieces, on many machines or in a stream, and combined with a guaranteed error, which is what the approximate algorithm of §3.2 needs at scale.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2016</h2>
+<p>The objective, the gain formula and default directions are now the common core of gradient-boosted tree libraries. The lesson summarizes what they add to the basic loop:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Where it lives in this primer</th></tr></thead>
+  <tbody>
+    <tr><td>Second-order leaf weights and split gain (equations 5 and 7)</td><td>Named as a refinement in the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a>; first-order boosting in <a data-lesson="primer/ml/classical.html#GradientBoosting"><code>GradientBoosting</code></a></td></tr>
+    <tr><td>Penalties γ and λ on tree size and leaf weights</td><td>The same idea as weight decay in the <a data-lesson="primer/ml/regularization.html">regularization lesson</a></td></tr>
+    <tr><td>Bucketed split search</td><td>“Fast histogram-based split search” in the trees lesson</td></tr>
+    <tr><td>Learned default directions for missing values</td><td>“Native handling of missing values” in the trees lesson</td></tr>
+    <tr><td>Column subsampling</td><td>Random feature subsets in the <a href="random-forests.html">random forests companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Tianqi Chen and Carlos Guestrin, <em>XGBoost: A Scalable Tree Boosting System</em>, KDD 2016. <a href="https://arxiv.org/abs/1603.02754">arXiv:1603.02754</a>. Quotations are brief and attributed; a few table rows are reproduced with attribution; every diagram is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §2.1
+    yhat: { tex: "\\hat y_i", name: "Prediction for example i", meaning: "The ensemble's output for one example: the sum of its leaf scores.", shape: "one number", example: "6.5 for house 4" },
+    phi: { tex: "\\phi", name: "The whole model", meaning: "The tree ensemble as one function from inputs to predictions.", shape: "input → number", example: "φ(house 4) = 6.5" },
+    xi: { tex: "\\mathbf{x}_i", name: "Inputs of example i", meaning: "The m feature values of one example.", shape: "m numbers", example: "size 4" },
+    sumk: { tex: "\\sum_{k}", name: "Sum over trees", meaning: "Add up over all K trees (for predictions) or over every tree's penalty (in the objective).", shape: "one number", example: "4.0 + 2.5" },
+    fk: { tex: "f_k", name: "Tree k", meaning: "One regression tree: a structure q that sends an input to a leaf, and a weight w for each leaf.", shape: "input → number", example: "f₂(house 4) = 2.5" },
+    Fspace: { tex: "\\mathcal{F}", name: "The space of regression trees", meaning: "Every possible tree: any structure q with T leaves and any leaf weights w.", shape: "a set of functions", example: "f(x) = w_{q(x)}" },
+    Lphi: { tex: "\\mathcal{L}(\\phi)", name: "Regularized objective", meaning: "What training minimizes: total loss plus every tree's penalty.", shape: "one number", example: "loss + 6 for the example tree" },
+    sumi: { tex: "\\sum_i", name: "Sum over examples", meaning: "Add up over all training examples.", shape: "one number", example: "the four houses" },
+    l: { tex: "l", name: "Loss", meaning: "A differentiable convex loss comparing a prediction with its target, such as squared error or log loss.", shape: "≥ 0", example: "(7 − 4)² = 9" },
+    y: { tex: "y_i", name: "Target", meaning: "The true value of example i.", shape: "a number", example: "7" },
+    Omega: { tex: "\\Omega", name: "Tree penalty", meaning: "The complexity charge for one tree: γ per leaf plus half λ times its squared leaf weights.", shape: "≥ 0", example: "6" },
+    gammaT: { tex: "\\gamma", name: "Leaf charge (gamma)", meaning: "The price of each leaf. In the split gain, a split must improve the loss by more than γ to be made.", shape: "≥ 0", example: "1" },
+    T: { tex: "T", name: "Number of leaves", meaning: "How many leaves the tree has.", shape: "a whole number", example: "2" },
+    lambda: { tex: "\\lambda", name: "Weight penalty (lambda)", meaning: "How hard large leaf weights are penalized; it also damps the Newton step in every leaf.", shape: "≥ 0", example: "1" },
+    wnorm: { tex: "\\lVert w \\rVert^2", name: "Squared leaf weights", meaning: "The sum of the squares of all the tree's leaf weights.", shape: "≥ 0", example: "(−2)² + 2² = 8" },
+    // §2.2
+    Lt: { tex: "\\tilde{\\mathcal{L}}^{(t)}", name: "Approximate objective at step t", meaning: "The objective for the next tree, with the loss replaced by its second-order Taylor expansion and constants dropped.", shape: "one number", example: "for the four houses" },
+    sumin: { tex: "\\sum_{i=1}^{n}", name: "Sum over the n examples", meaning: "Add up over every training example.", shape: "one number", example: "n = 4" },
+    gi: { tex: "g_i", name: "Slope (gradient) of example i", meaning: "The first derivative of the loss with respect to the prediction, at the current prediction. Its negative is Friedman's pseudo-response.", shape: "one number per example", example: "6 for house 1; −0.5 for the spam email" },
+    hi: { tex: "h_i", name: "Curvature (hessian) of example i", meaning: "The second derivative of the loss at the current prediction: how fast the slope changes. It acts as the example's weight.", shape: "≥ 0 for a convex loss", example: "2 under squared loss; 0.25 for the spam email" },
+    ft: { tex: "f_t", name: "The next tree", meaning: "The tree being added at step t; f_t(x) is its output for an example.", shape: "input → number", example: "w_L or w_R" },
+    wstar: { tex: "w_j^*", name: "Best leaf weight", meaning: "The weight that minimizes leaf j's parabola: a Newton step damped by λ.", shape: "one number per leaf", example: "−2 for the left leaf" },
+    Gj: { tex: "G_j", name: "Total slope in leaf j", meaning: "The sum of g over the examples I_j that land in leaf j.", shape: "one number", example: "6 + 4 = 10" },
+    Hj: { tex: "H_j", name: "Total curvature in leaf j", meaning: "The sum of h over the examples that land in leaf j.", shape: "≥ 0", example: "2 + 2 = 4" },
+    Lq: { tex: "\\tilde{\\mathcal{L}}^{(t)}(q)", name: "Structure score", meaning: "The best achievable objective for tree structure q, with every leaf at its best weight. Lower is better.", shape: "one number", example: "−18 for the split tree" },
+    sumT: { tex: "\\sum_{j=1}^{T}", name: "Sum over leaves", meaning: "Add up over the tree's T leaves.", shape: "one number", example: "two leaves" },
+    Lsplit: { tex: "\\mathcal{L}_{\\text{split}}", name: "Split gain", meaning: "How much the structure score improves if this leaf is split in two. Split only if it is positive.", shape: "one number", example: "19" },
+    GL: { tex: "G_L", name: "Left total slope", meaning: "Sum of g over the examples going left.", shape: "one number", example: "10" },
+    HL: { tex: "H_L", name: "Left total curvature", meaning: "Sum of h over the examples going left.", shape: "≥ 0", example: "4" },
+    GR: { tex: "G_R", name: "Right total slope", meaning: "Sum of g over the examples going right: the node's total minus G_L.", shape: "one number", example: "−10" },
+    HR: { tex: "H_R", name: "Right total curvature", meaning: "Sum of h over the examples going right.", shape: "≥ 0", example: "4" },
+    // §3.3
+    rk: { tex: "r_k", name: "Weighted rank", meaning: "For feature k, the share of total curvature h carried by examples whose value is below z.", shape: "0 … 1", example: "r(3) = 0.833" },
+    z: { tex: "z", name: "A feature value", meaning: "The point whose weighted rank is being measured.", shape: "one number", example: "3" },
+    sumhall: { tex: "\\sum_{(x,h) \\in \\mathcal{D}_k} h", name: "Total curvature", meaning: "The sum of h over every example, pairing each example's value x of feature k with its h.", shape: "> 0", example: "0.6" },
+    sumhbelow: { tex: "\\sum_{x < z} h", name: "Curvature below z", meaning: "The sum of h over examples whose feature value is less than z.", shape: "≥ 0", example: "0.5" },
+    skj: { tex: "s_{k,j}", name: "Candidate threshold j", meaning: "The j-th proposed split point for feature k, in increasing order.", shape: "one number", example: "the dashed lines in the chart" },
+    eps: { tex: "\\epsilon", name: "Approximation factor (epsilon)", meaning: "The largest allowed gap in weighted rank between neighbouring candidates: about 1/ε candidates in all. In the appendix, a summary's error bound.", shape: "0 … 1", example: "0.3 gives about 3 buckets" },
+    // §4
+    K: { tex: "K", name: "Number of trees", meaning: "How many trees are boosted.", shape: "a whole number", example: "500" },
+    d: { tex: "d", name: "Tree depth", meaning: "The maximum depth of each tree.", shape: "a whole number", example: "8" },
+    nnz: { tex: "\\lVert \\mathbf{x} \\rVert_0", name: "Non-missing entries", meaning: "How many entries of the training data are present (not missing).", shape: "a whole number", example: "280 million for 10M dense rows of 28 features" },
+    n: { tex: "n", name: "Number of rows", meaning: "How many training examples there are.", shape: "a whole number", example: "10 million" },
+    // Appendix
+    b: { tex: "b", name: "Memory budget", meaning: "Pruning keeps b + 1 points of the summary.", shape: "a whole number", example: "100" },
+  },
+
+  blocks: {
+    // Figure 1 redraw
+    t1leaf: { title: "Tree 1: one leaf", body: "<p>A tree with a single leaf gives every example the same score. Here it holds 4.0, the average price, which is how boosting usually starts.</p>", shape: "w = 4.0 for everyone" },
+    t2q: { title: "Tree 2's question", body: "<p>The structure q of tree 2: a single split on size. q maps each house to leaf 1 (no) or leaf 2 (yes).</p>", shape: "q: size → leaf index" },
+    t2left: { title: "Tree 2, left leaf", body: "<p>Houses of size ≤ 2.5 add −2.5 to their score.</p>", shape: "w₁ = −2.5" },
+    t2right: { title: "Tree 2, right leaf", body: "<p>Houses of size &gt; 2.5 add +2.5. House 4 lands here.</p>", shape: "w₂ = +2.5" },
+    sum: { title: "The prediction: a sum", body: "<p>Equation (1): add the leaf weights the example lands on in every tree. 4.0 + 2.5 = 6.5.</p>", shape: "ŷ = Σ f_k(x)" },
+    // Figure 2 redraw
+    stats: { title: "Gradient statistics", body: "<p>For squared loss (y − ŷ)² at ŷ = 4, each house has g = 2(ŷ − y) and h = 2. For another loss only these numbers would change.</p>", shape: "one (g, h) pair per example" },
+    q: { title: "The structure q", body: "<p>The candidate tree: one question. Its quality depends only on which examples end up together in each leaf.</p>", shape: "2 leaves" },
+    leafA: { title: "Left leaf: G = 10, H = 4", body: "<p>Houses 1 and 2. Best weight −10/(4 + λ) = −2 with λ = 1; this leaf contributes −½ × 100/5 = −10 to the score.</p>", shape: "w* = −2" },
+    leafB: { title: "Right leaf: G = −10, H = 4", body: "<p>Houses 3 and 4. Best weight +2; contributes −10 to the score.</p>", shape: "w* = +2" },
+    obj: { title: "Structure score", body: "<p>Equation (6): −½ Σ G²/(H + λ) + γT = −20 + 2 = −18. The single-leaf tree scores +1, so this split improves the objective by 19, the gain of equation (7).</p>", shape: "−18" },
+    // Figure 6/8 redraw
+    col: { title: "Sorted column (the block)", body: "<p>Feature values sorted once before training, each with its row index. Every tree reuses this order, so no sorting happens during training.</p>", shape: "one sorted list per feature" },
+    grad: { title: "Gradient statistics by row", body: "<p>g and h for every row, recomputed each boosting round and stored in row order.</p>", shape: "n pairs" },
+    fetch: { title: "Indirect fetches", body: "<p>Walking the sorted column visits rows in a scattered order, so each g, h fetch jumps to a new place in memory. When the statistics do not fit in cache, each jump can stall the accumulation.</p>", shape: "row 3, 1, 4, 2" },
+    buffer: { title: "Cache-aware prefetching", body: "<p>Each thread first gathers a mini-batch of the needed g and h into a small buffer, then accumulates from the buffer. About twice as fast on 10-million-row data (Figure 7).</p>", shape: "a small per-thread buffer" },
+  },
+
+  onReady(P) {
+    scanner();
+    weightedQuantile();
+  },
+};
+
+/* ---- Algorithms 1 and 3: the split scanner ---- */
+function scanner() {
+  // Ten emails: link count (null = missing) and label. Every prediction is 0.5, so g = 0.5 − y and h = 0.25.
+  const emails = [[0, 0], [1, 0], [1, 0], [2, 1], [3, 0], [4, 1], [5, 1], [6, 1], [null, 1], [null, 1]];
+  const g = emails.map(([, y]) => 0.5 - y), H1 = 0.25;
+  const tIn = document.getElementById("scan-t"), lIn = document.getElementById("scan-l"), gIn = document.getElementById("scan-g");
+  const row = document.getElementById("scan-row"), bars = document.getElementById("scan-bars"), out = document.getElementById("scan-readout");
+  let missing = "right";
+  const thresholds = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5];
+  function sums(t) {
+    let GL = 0, HL = 0, GR = 0, HR = 0;
+    emails.forEach(([x], i) => {
+      const left = x === null ? missing === "left" : x < t;
+      if (left) { GL += g[i]; HL += H1; } else { GR += g[i]; HR += H1; }
+    });
+    return { GL, HL, GR, HR };
+  }
+  function gain(s, lam, gam) {
+    // An empty side with λ = 0 has nothing to score: count it as 0 rather than 0/0.
+    const sc = (G, H) => (H + lam > 0 ? (G * G) / (H + lam) : 0);
+    return 0.5 * (sc(s.GL, s.HL) + sc(s.GR, s.HR) - sc(s.GL + s.GR, s.HL + s.HR)) - gam;
+  }
+  function draw() {
+    const t = +tIn.value, lam = +lIn.value, gam = +gIn.value;
+    document.getElementById("scan-t-v").textContent = t.toFixed(1);
+    document.getElementById("scan-l-v").textContent = lam.toFixed(1);
+    document.getElementById("scan-g-v").textContent = gam.toFixed(1);
+    row.innerHTML = emails.map(([x, y], i) => {
+      const left = x === null ? missing === "left" : x < t;
+      return `<span class="tok${left ? " focus" : ""}" style="cursor:default">${x === null ? "?" : x} links · ${y ? "spam" : "not"}<span class="pct">g ${g[i] > 0 ? "+" : ""}${g[i]}</span></span>`;
+    }).join("");
+    const gains = thresholds.map((th) => gain(sums(th), lam, gam));
+    const top = Math.max(...gains.map(Math.abs), 0.1);
+    bars.innerHTML = `<div class="legend" style="margin:.2rem 0 .4rem">gain of each threshold (bar length = size; the number shows the sign)</div>` +
+      thresholds.map((th, k) => `<div class="share-row" style="grid-template-columns:5.5rem minmax(0,1fr) 3.6rem"><span>links &lt; ${th}${th === t ? " ◀" : ""}</span><div><div class="share-bar" style="width:${Math.max(1, (Math.abs(gains[k]) / top) * 100).toFixed(1)}%;${gains[k] < 0 ? "background:var(--wire)" : ""}"></div></div><span>${gains[k].toFixed(3)}</span></div>`).join("");
+    const s = sums(t), gv = gain(s, lam, gam);
+    out.innerHTML = `Threshold links &lt; ${t}, missing values ${missing}: G<sub>L</sub> = ${s.GL}, H<sub>L</sub> = ${s.HL}, G<sub>R</sub> = ${s.GR}, H<sub>R</sub> = ${s.HR}. Gain = <strong>${gv.toFixed(3)}</strong>${gv > 0 ? " (worth splitting)" : " (not worth a leaf)"}.`;
+  }
+  [tIn, lIn, gIn].forEach((el) => el.addEventListener("input", draw));
+  document.querySelectorAll("[data-missing]").forEach((btn) => btn.addEventListener("click", () => {
+    missing = btn.dataset.missing;
+    document.querySelectorAll("[data-missing]").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    draw();
+  }));
+  draw();
+}
+
+/* ---- §3.3: weighted quantile candidates ---- */
+function weightedQuantile() {
+  const h = [0.25, 0.24, 0.22, 0.2, 0.1, 0.05, 0.02, 0.01, 0.01, 0.02, 0.2, 0.25];
+  const epsIn = document.getElementById("wq-eps"), wIn = document.getElementById("wq-w");
+  const svg = document.getElementById("wq-svg"), out = document.getElementById("wq-readout");
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v)); return e; };
+  const X0 = 30, DX = 32, BASE = 160;
+  function candidates(weights, eps) {
+    // Walk the examples in order; place a candidate at an example whenever the rank below it has moved ε past the last candidate.
+    const total = weights.reduce((a, b) => a + b, 0);
+    const picks = [0];
+    let below = 0, last = 0;
+    for (let i = 1; i < weights.length; i++) {
+      below += weights[i - 1];
+      if (below / total - last >= eps - 1e-9) { picks.push(i); last = below / total; }
+    }
+    if (picks[picks.length - 1] !== weights.length - 1) picks.push(weights.length - 1);
+    return picks;
+  }
+  function draw() {
+    const eps = +epsIn.value, weighted = wIn.checked;
+    document.getElementById("wq-eps-v").textContent = eps.toFixed(2);
+    const w = weighted ? h : h.map(() => 1);
+    const picks = candidates(w, eps);
+    svg.innerHTML = "";
+    svg.appendChild(el("line", { x1: X0 - 12, y1: BASE, x2: X0 + DX * 11 + 12, y2: BASE, stroke: "var(--border)" }));
+    h.forEach((hv, i) => {
+      const x = X0 + DX * i;
+      svg.appendChild(el("rect", { x: x - 9, y: BASE - hv * 500, width: 18, height: hv * 500, rx: 3, fill: "var(--accent)", opacity: 0.85 }));
+      const t = el("text", { x, y: BASE + 16, "text-anchor": "middle", class: "lbl" }); t.textContent = String(i + 1); svg.appendChild(t);
+    });
+    picks.forEach((i) => svg.appendChild(el("line", { x1: X0 + DX * i, y1: 14, x2: X0 + DX * i, y2: BASE, stroke: "var(--active)", "stroke-width": 2, "stroke-dasharray": "5 3" })));
+    const lab = el("text", { x: X0 + DX * 5.5, y: BASE + 34, "text-anchor": "middle", class: "lbl" }); lab.textContent = "examples in order of the feature (bar height = h)"; svg.appendChild(lab);
+    out.textContent = `${weighted ? "Weighted by h" : "Unweighted"}, ε = ${eps.toFixed(2)}: ${picks.length} candidate points, at examples ${picks.map((i) => i + 1).join(", ")}.`;
+    svg.setAttribute("aria-label", `Twelve examples with their curvatures as bars; ${picks.length} candidate split points at examples ${picks.map((i) => i + 1).join(", ")}.`);
+  }
+  epsIn.addEventListener("input", draw);
+  wIn.addEventListener("change", draw);
+  draw();
+}
+</script>
+</body>
+</html>

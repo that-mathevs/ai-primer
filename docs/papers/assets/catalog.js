@@ -1010,7 +1010,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.classical"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "gradient-boosting-machine",
@@ -1021,7 +1021,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.classical"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "xgboost",
@@ -1032,7 +1032,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.classical"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "trees-beat-deep-learning-on-tables",

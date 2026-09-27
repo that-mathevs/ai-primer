@@ -977,14 +977,17 @@ or when the model must be trained end to end with other neural parts.
 - **Breiman, *Random Forests*, Machine Learning 45 (2001)**:
   https://doi.org/10.1023/A:1010933404324. Added random feature subsets at
   each split, out-of-bag error estimates, and permutation importance.
+  [Annotated companion](../../papers/random-forests.html)
 - **Friedman, *Greedy Function Approximation: A Gradient Boosting Machine*,
   Annals of Statistics 29 (2001)**: https://doi.org/10.1214/aos/1013203451.
   Framed boosting as gradient descent in function space, fitting each tree
   to the negative gradient of any differentiable loss, with shrinkage.
+  [Annotated companion](../../papers/gradient-boosting-machine.html)
 - **Chen and Guestrin, *XGBoost: A Scalable Tree Boosting System* (2016)**:
   https://arxiv.org/abs/1603.02754. A regularized, second-order boosting
   objective with fast, sparsity-aware split finding, which made boosted
   trees the default on tabular problems.
+  [Annotated companion](../../papers/xgboost.html)
 - **Grinsztajn, Oyallon and Varoquaux, *Why do tree-based models still
   outperform deep learning on tabular data?* (2022)**:
   https://arxiv.org/abs/2207.08815. A benchmark on 45 medium-sized tabular
