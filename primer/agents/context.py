@@ -3,7 +3,136 @@ r"""
 
 Run: `python -m primer.agents.context`
 
-## The everyday picture
+This lesson builds on tokens from `primer.ml.tokenization`, on the KV cache
+from `primer.ml.inference`, and on the agent loop from
+`primer.agents.agent_loop`, whose prompt it assembles.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Context engineering is deciding, on every request,
+exactly which tokens the model sees (instructions, tools, memory, retrieved
+documents, tool results, recent turns), in what order, and inside what
+boundaries, so the model gets the smallest set of high-signal tokens that
+lets it do the job.
+
+**When you need it.** The moment the prompt is assembled by code rather
+than written once: every agent, every chat product with history, every RAG
+system. A single hand-written prompt for a one-shot task doesn't need it. The
+tells, each one from this lesson: an agent that gets worse the longer a
+session runs, because its window fills with stale turns and verbose tool
+results (context rot); a model that starts ignoring its rules for no visible
+reason, because a long tool result pushed the instructions or the user's
+latest message out of the window; a prompt-cache hit rate of zero, because a
+timestamp sits at the top of the system prompt; and a bill that grows with
+the square of a conversation's length, because every turn resends the whole
+history.
+
+**Your options.** The levers, from the ones you set in an afternoon to the
+ones that change your architecture:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Stable first, changing last | Orders the prompt so the system prompt and tool definitions come first and anything that varies (timestamp, question) comes last | The provider's prefix cache can reuse the stable part on every request | Nothing; it is a layout | Your prompt |
+| Sandwich ordering, question last | Puts the best retrieved chunks at the two ends and restates the question at the very end | The material most used sits where models use it most reliably | Nothing | Your prompt |
+| Escaped, tagged data | Wraps each document or tool result in a tag with an id and escapes its text | Data cannot close its own tag and pose as an instruction; sources are citable by id | A few tokens per block | Your code |
+| Compressed tool results | Keeps only the fields the next decision needs | Every later step pays for what matters, not the whole record | A field list per tool | Your code, at the tool boundary |
+| Budgeted assembly | Gives each section a priority and admits sections most-important-first within a token budget | The least useful content is dropped, never whatever came last; must-haves are never cut | A priority per section and a token estimate | Your code |
+| Rolling summary (compaction) | Keeps the last few turns verbatim and folds everything older into one summary | History stays bounded however long the session runs | One cheap model call when the window nears its limit, and lost detail | Your code, plus a small model |
+| Just-in-time retrieval | Keeps references (paths, ids, queries) in the window and loads content through tools when needed | The window holds what this step needs, not everything it might | A tool call per load, and latency | Tools (RAG, memory, files) |
+| Sub-agents | Delegates a focused task to an agent with its own window that returns a condensed summary | The parent's window never sees the sub-task's raw material | Extra model calls; the summaries run 1,000 to 2,000 tokens each in Anthropic's account | Orchestration |
+
+**How to choose.** Start by measuring what is in the window today: tokens
+per section, per step.
+
+- A chat product with long conversations: rolling summary first. It is
+  usually the single biggest saving on chat workloads, and it turns
+  history that grows without end into a line that climbs slowly (35 tokens
+  at turn 0 to 834 at turn 39 in this lesson, against 1,493 for the full
+  history).
+- An agent that calls tools: compress tool results at the boundary. The
+  order lookup in this lesson returns 213 tokens; the task needs 17, a 12x
+  saving repaid on every later step because results stay in the history.
+- Anything with a system prompt over a few hundred tokens: stable first,
+  changing last, then confirm with the provider's cache counters. Same
+  content, same model; in this lesson only the timestamp's position
+  separates a 92% cached share from 0%.
+- Any prompt that carries external text (documents, emails, web pages):
+  escaped tags with ids, always. It is the first, cheapest line of defence
+  against injection, not the last.
+- A long-horizon task (a large refactor, a research report): just-in-time
+  retrieval, structured notes outside the window, and sub-agents, which is
+  the set Anthropic describes for agents that outlive one window.
+- Whatever you pick, set the budget and the priorities explicitly. If the
+  must-haves (system prompt, tools, the user's message, room for the
+  answer) alone overflow the window, no cut can help; the fix is a smaller
+  system prompt, fewer tools or a bigger window.
+
+**What it costs.** Input tokens cost money and latency on every call, and
+an agent resends its context at every step, so the price of a step is
+roughly the size of its window. Prompt caching changes the arithmetic: on
+Claude's API, a cache read is billed at 0.1x the base input price and a
+cache write at 1.25x, the cached prefix lives five minutes by default (an
+hour at 2x), and prompts under a model-specific minimum (512 to 4,096
+tokens) are not cached at all, silently. Summaries cost a small model call
+and the details they leave out; the lesson's extractive summary is free but
+crude, a real one is told to keep decisions, numbers and names. Compression
+costs a field list per tool. Layout costs nothing, which is why getting it
+wrong is so expensive: nothing errors, you just pay full price on every
+request.
+
+**What breaks.**
+
+- **A silent cache miss.** A timestamp, request id or randomly ordered tool
+  list near the top makes every request a full-price miss. The cache
+  matches from the first byte and stops at the first difference, in the
+  order tools, then system, then messages, so a change high up invalidates
+  everything below it. Move the variable part to the end and watch the
+  cache counters.
+- **Instructions pushed out.** Without a budget, one long document or
+  chatty tool result evicts the rules. Budget every section and never cut
+  the must-haves.
+- **Context rot.** Quality drops and cost climbs as a session goes on.
+  Summarize old turns, compress tool results, move durable facts to memory,
+  and for very long tasks restart with a clean window plus a structured
+  handoff.
+- **Data posing as instructions.** A review containing a closing tag and a
+  fake system instruction can end its own block. Escape the three
+  characters `<`, `>` and `&` and tag every external block; then treat it
+  as harder, not impossible, and put the real defence in the architecture
+  (`primer.agents.guardrails`).
+- **Lost in the middle.** Liu et al. showed that models use relevant
+  information at the start or end of a long input far more reliably than
+  the same information in the middle. Send fewer, better chunks; sandwich
+  the rest; restate the question last.
+- **Placeholders mistaken for data.** A compressor that fills dropped
+  fields with defaults invents values. Skip missing fields; never
+  substitute.
+
+**In the wild.** Anthropic's engineering post on context engineering
+defines the discipline as curating the optimal set of tokens during
+inference and names the long-horizon techniques above: compaction (Claude
+Code's version keeps architectural decisions, open bugs and the five most
+recently accessed files), structured note-taking, sub-agents and
+just-in-time retrieval. Claude's prompt caching docs give the price
+multipliers, lifetimes and the tools, system, messages order quoted here,
+and its prompt-engineering docs recommend XML tags for separating
+instructions from data. Liu et al. (2023), *Lost in the Middle*, is the
+paper behind sandwich ordering. Every RAG pipeline (`primer.agents.rag`)
+ends in an assembler like this lesson's, and every agent framework's
+"memory" or "checkpoint" feature (`primer.agents.memory`) is a decision
+about what re-enters the window.
+
+**Go deeper.** Level 2 builds the assembler: sections with priorities
+admitted within a budget, a piece-by-piece cut you can drag a slider on,
+rolling summaries measured against full history, a tool-result compressor,
+the escaping that fences data, a prefix cache replayed over twenty requests
+with the timestamp in each position, and sandwich ordering drawn against
+the U-shaped curve. If you only needed to choose, you are done.
+
+## Level 2: How it works, from scratch
+
+What follows builds the assembler piece by piece, in plain Python, and
+measures each decision in tokens.
 
 Picture a desk that only holds so many papers. A model can use two things:
 what it learned in training (its long-term knowledge) and whatever is on
