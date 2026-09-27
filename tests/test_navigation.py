@@ -1379,3 +1379,158 @@ class TestFigureWordsStayReadable:
         fig, ax = self.figure()
         ax.annotate("same count,\nnew message", xy=(0.2, 0.2), xytext=(0.6, 0.6), arrowprops=dict(arrowstyle="->"))
         assert text_collisions(fig) == []
+
+
+# Every lesson has two levels. Level 1 is the practitioner's guide: what the thing is, when
+# you need it, how to choose between the options, what it costs, what breaks, who does it
+# in the wild. A reader can stop there. Level 2 is the same thing built from scratch (the
+# ladder), and on the site its math and code fold into Level 3. Lessons still without a
+# guide are declared in primer.curriculum.LEVELS_PENDING, so the set can only shrink.
+LEVEL_1 = "## Level 1: The practitioner's guide"
+LEVEL_2 = "## Level 2: How it works, from scratch"
+GUIDE_LABELS = ["**In one sentence.**", "**When you need it.**", "**Your options.**", "**How to choose.**",
+                "**What it costs.**", "**What breaks.**", "**In the wild.**", "**Go deeper.**"]
+
+
+def lesson_doc(module: str) -> str:
+    return importlib.import_module(module).__doc__ or ""
+
+
+def practitioners_guide(doc: str) -> str:
+    return doc.split(LEVEL_1, 1)[1].split(LEVEL_2, 1)[0] if LEVEL_1 in doc else ""
+
+
+def lessons_with_levels():
+    from primer.curriculum import LEVELS_PENDING
+
+    return [l for l in CURRICULUM if l.module not in LEVELS_PENDING]
+
+
+class TestEveryLessonStartsAtTheTop:
+    def test_given_the_curriculum_the_lessons_still_without_a_guide_are_exactly_the_declared_ones(self):
+        from primer.curriculum import LEVELS_PENDING
+
+        # A lesson gains its guide and leaves the set in the same change; nothing else touches the set.
+        without = {l.module for l in CURRICULUM if LEVEL_1 not in lesson_doc(l.module)}
+        assert without == set(LEVELS_PENDING)
+
+    @pytest.mark.parametrize("lesson", lessons_with_levels(), ids=lambda l: getattr(l, "module", ""))
+    def test_given_the_lesson_its_first_section_is_the_practitioners_guide(self, lesson):
+        doc = lesson_doc(lesson.module)
+        assert doc.index(LEVEL_1) == doc.index("\n## ") + 1
+
+    @pytest.mark.parametrize("lesson", lessons_with_levels(), ids=lambda l: getattr(l, "module", ""))
+    def test_given_the_lesson_the_guide_is_followed_by_the_mechanism_built_from_scratch(self, lesson):
+        doc = lesson_doc(lesson.module)
+        assert LEVEL_2 in doc and doc.index(LEVEL_2) > doc.index(LEVEL_1)
+        # Level 2 opens by saying what will be built, before the first mechanism section.
+        assert doc.split(LEVEL_2, 1)[1].lstrip().split("\n")[0].strip() != ""
+
+    @pytest.mark.parametrize("lesson", lessons_with_levels(), ids=lambda l: getattr(l, "module", ""))
+    def test_given_the_guide_it_answers_every_practitioners_question_in_order(self, lesson):
+        guide = practitioners_guide(lesson_doc(lesson.module))
+        positions = [guide.find(label) for label in GUIDE_LABELS]
+        assert [l for l, p in zip(GUIDE_LABELS, positions) if p < 0] == []
+        assert positions == sorted(positions)
+
+    @pytest.mark.parametrize("lesson", lessons_with_levels(), ids=lambda l: getattr(l, "module", ""))
+    def test_given_the_guide_it_lays_the_options_out_as_a_table(self, lesson):
+        options = practitioners_guide(lesson_doc(lesson.module)).split("**Your options.**", 1)[1].split("**How to choose.**")[0]
+        assert re.search(r"^\|.*\|\n\|[-| :]+\|\n", options, re.M)
+
+    @pytest.mark.parametrize("lesson", lessons_with_levels(), ids=lambda l: getattr(l, "module", ""))
+    def test_given_the_guide_it_is_a_read_of_a_few_minutes(self, lesson):
+        # The level 80% of readers stop at: long enough to decide with, short enough to finish.
+        assert 600 <= len(practitioners_guide(lesson_doc(lesson.module)).split()) <= 1600
+
+    @pytest.mark.parametrize("lesson", lessons_with_levels(), ids=lambda l: getattr(l, "module", ""))
+    def test_given_the_guide_it_holds_no_formula_symbols_table_or_python(self, lesson):
+        guide = practitioners_guide(lesson_doc(lesson.module))
+        assert [m for m in ("$$", "**Symbols**", "**In Python:**", "```python") if m in guide] == []
+
+    @pytest.mark.parametrize("lesson", lessons_with_levels(), ids=lambda l: getattr(l, "module", ""))
+    def test_given_the_guide_it_draws_at_most_one_diagram(self, lesson):
+        assert practitioners_guide(lesson_doc(lesson.module)).count("```mermaid") <= 1
+
+    def test_given_every_learning_path_it_says_how_deep_its_reader_goes(self):
+        from primer.curriculum import LEARNING_PATHS
+
+        assert all(p.depth in (1, 2, 3) for p in LEARNING_PATHS)
+        # The application engineer stops at the guide; the ML engineer reads to the code.
+        depth = {p.who: p.depth for p in LEARNING_PATHS}
+        assert depth["AI application engineer"] == 1 and depth["ML engineer"] == 3
+
+
+class TestAReaderDescendsByChoice:
+    # tools/docsite.py wraps each level so the page can show one at a time, and folds each formula's
+    # decoding into a Level 3 block. A switch in the lesson bar picks the depth; a link into a
+    # deeper level opens it.
+    PAGE = ('<div class="docstring"><h1 id="t">T</h1><p>intro</p>'
+            '<h2 id="level-1-the-practitioners-guide">Level 1: The practitioner\'s guide</h2><p>a</p>'
+            '<h2 id="level-2-how-it-works-from-scratch">Level 2: How it works, from scratch</h2><p>b</p>'
+            '<h2 id="in-20-seconds">In 20 seconds</h2><p>c</p></div>')
+
+    def test_given_a_lesson_page_each_level_becomes_a_section_the_switch_can_show_or_hide(self):
+        from tools.docsite import mark_levels
+
+        out = mark_levels(self.PAGE)
+        one, two = out.index('<section class="level level-1" data-level="1">'), out.index('<section class="level level-2" data-level="2">')
+        assert one < out.index('<h2 id="level-1') < two < out.index('<h2 id="level-2')
+        assert out.count("</section>") == 2 and out.index("<p>c</p>") < out.rindex("</section>") < out.rindex("</div>")
+
+    def test_given_a_page_without_levels_it_is_left_as_it_is(self):
+        from tools.docsite import mark_levels
+
+        page = '<div class="docstring"><h2 id="the-idea">The idea</h2><p>x</p></div>'
+        assert mark_levels(page) == page
+
+    def test_given_a_formula_it_and_its_symbols_fold_into_a_level_3_block_and_its_reading_stays(self):
+        from tools.docsite import fold_math
+
+        # "In words" and "With the numbers" are the Level 2 reading of the formula, so they stay in view.
+        html = ('<p>lead</p><p>$$ y = x $$</p><p><strong>Symbols</strong></p><table><tr><td>x</td></tr></table>'
+                '<p><strong>In words:</strong> y is x.</p><p><strong>With the numbers:</strong> 2.</p>'
+                '<p><strong>In Python:</strong></p><div class="pdoc-code codehilite"><pre>y = x</pre></div><p>after</p>')
+        out = fold_math(html)
+        assert out.startswith('<p>lead</p><details class="level-3"><summary>Level 3: the formula and its symbols</summary><p>$$')
+        assert '</table></details><p><strong>In words:</strong> y is x.</p><p><strong>With the numbers:</strong> 2.</p>' in out
+        assert out.endswith('<details class="level-3"><summary>Level 3: in Python</summary><p><strong>In Python:</strong></p>'
+                            '<div class="pdoc-code codehilite"><pre>y = x</pre></div></details><p>after</p>')
+
+    def test_given_a_docstring_with_diagrams_and_code_inside_it_level_2_runs_to_its_real_end(self):
+        from tools.docsite import mark_levels
+
+        page = ('<div class="docstring"><h2 id="level-1-the-practitioners-guide">L1</h2><p>a</p>'
+                '<h2 id="level-2-how-it-works-from-scratch">L2</h2><pre><div class="mermaid">flowchart</div></pre>'
+                '<p>Reading it</p><div class="pdoc-code codehilite"><pre>x</pre></div><p>last</p></div><p>outside</p>')
+        out = mark_levels(page)
+        assert '<p>last</p></section></div><p>outside</p>' in out
+
+    def test_given_the_lesson_bar_it_offers_the_three_levels_as_one_labelled_group(self):
+        from tools.docsite import lesson_nav
+
+        bar = lesson_nav("primer.ml.attention", levels=True)
+        assert 'role="radiogroup"' in bar and 'aria-label="How deep to read"' in bar
+        assert [int(d) for d in re.findall(r'data-depth="(\d)"', bar)] == [1, 2, 3]
+
+    def test_given_a_lesson_still_without_a_guide_its_bar_has_no_switch(self):
+        from tools.docsite import lesson_nav
+
+        assert 'role="radiogroup"' not in lesson_nav("primer.ml.attention", levels=False)
+
+    def test_given_a_learning_path_its_links_open_each_lesson_at_the_paths_depth(self):
+        from tools.docsite import render_home
+
+        assert 'href="primer/ml/structured_output.html?depth=1"' in render_home()
+
+    def test_given_the_depth_script_it_takes_the_link_first_then_the_readers_last_choice(self):
+        from tools.docsite import DEPTH_SCRIPT
+
+        # A path link says ?depth=N; otherwise the reader's previous choice, remembered site-wide.
+        assert 'searchParams.get("depth")' in DEPTH_SCRIPT and 'localStorage.getItem("primer-depth")' in DEPTH_SCRIPT
+        assert DEPTH_SCRIPT.index('searchParams.get("depth")') < DEPTH_SCRIPT.index('localStorage.getItem("primer-depth")')
+
+    def test_given_a_link_into_a_deeper_level_the_page_descends_to_show_it(self):
+        from tools.docsite import DEPTH_SCRIPT
+
+        assert "hashchange" in DEPTH_SCRIPT and "closest" in DEPTH_SCRIPT

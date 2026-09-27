@@ -595,8 +595,22 @@ def catalog() -> list[dict]:
     return papers
 
 
-def lesson_nav(module: str, tests: int | None = None) -> str:
-    """Breadcrumb plus previous/next links for one lesson page, and how many tests specify it."""
+DEPTH_LABELS = {1: "Level 1: the practitioner's guide", 2: "Level 2: how it works, from scratch", 3: "Level 3: the math and the code"}
+
+
+def depth_switch() -> str:
+    """The reader's choice of how deep to read, as a radio group depth.js drives."""
+    buttons = "".join(
+        f'<button type="button" role="radio" aria-checked="false" data-depth="{d}">{htmllib.escape(label)}</button>'
+        for d, label in DEPTH_LABELS.items()
+    )
+    return f'<div class="pn-depth" role="radiogroup" aria-label="How deep to read"><span class="pn-depth-label">Read at</span>{buttons}</div>'
+
+
+def lesson_nav(module: str, tests: int | None = None, levels: bool = False) -> str:
+    """Breadcrumb plus previous/next links for one lesson page, and how many tests specify it.
+
+    A lesson with its two levels written also gets the depth switch."""
     from primer.curriculum import CURRICULUM, PARTS, neighbours, source_path, tests_for
 
     page = _page(module)
@@ -629,8 +643,154 @@ def lesson_nav(module: str, tests: int | None = None) -> str:
         f'<div class="pn-code">Code: <a href="{code_link(source_path(module), page)}">{source_path(module)}</a> · '
         f'Specified by: <a href="{code_link(tests_for(module), page)}">{tests_for(module)}</a>{count} · '
         f"Run: <code>python -m {module}</code></div>"
-        f'<div class="pn-steps">{link(before, True)}{link(after, False)}</div>'
+        + (depth_switch() if levels else "")
+        + f'<div class="pn-steps">{link(before, True)}{link(after, False)}</div>'
         "</div>"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Levels. A lesson's docstring has "Level 1: The practitioner's guide" and "Level 2: How it
+# works, from scratch"; the page wraps each in a section, folds every formula's decoding
+# into a Level 3 block, and lets depth.js show as much as the reader asked for.
+# ---------------------------------------------------------------------------
+
+LEVEL_1_ID, LEVEL_2_ID = "level-1-the-practitioners-guide", "level-2-how-it-works-from-scratch"
+
+
+def mark_levels(page_html: str) -> str:
+    """Wrap Level 1 and Level 2 of a lesson's docstring in sections, so each can be shown or hidden.
+
+    Level 2 runs from its heading to the end of the docstring (summary, self-test and
+    further reading included: they belong to the mechanism)."""
+    one, two = f'<h2 id="{LEVEL_1_ID}">', f'<h2 id="{LEVEL_2_ID}">'
+    if one not in page_html or two not in page_html:
+        return page_html
+    start = page_html.index(one)
+    middle = page_html.index(two)
+    end = _closing_div(page_html, page_html.rindex("<div", 0, start))  # the docstring div this heading sits in
+    return (
+        page_html[:start]
+        + '<section class="level level-1" data-level="1">' + page_html[start:middle] + "</section>"
+        + '<div class="descend" data-descend="2"><span>Level 2: How it works, from scratch.</span> '
+        '<button type="button" data-depth="2">Descend</button></div>'
+        + '<section class="level level-2" data-level="2">' + page_html[middle:end] + "</section>"
+        + page_html[end:]
+    )
+
+
+def _closing_div(page_html: str, open_at: int) -> int:
+    """Index of the </div> that closes the <div> at open_at (diagrams and code blocks nest divs inside a docstring)."""
+    depth = 0
+    for m in re.finditer(r"<div\b|</div>", page_html[open_at:]):
+        depth += 1 if m.group(0) == "<div" else -1
+        if depth == 0:
+            return open_at + m.start()
+    raise ValueError("unclosed <div>")
+
+
+FORMULA = re.compile(r"<p>\$\$.*?\$\$</p>(?:\s*<p><strong>Symbols</strong></p>\s*<table>.*?</table>)?", re.S)
+IN_PYTHON = re.compile(r'<p><strong>In Python:</strong></p>\s*<div class="pdoc-code codehilite">.*?</div>', re.S)
+
+
+def fold_math(page_html: str) -> str:
+    """Fold each formula with its Symbols table, and each In Python block, into Level 3 blocks.
+
+    The In words and With the numbers lines between them stay in view: they are how Level 2
+    reads the formula."""
+    page_html = FORMULA.sub(
+        lambda m: '<details class="level-3"><summary>Level 3: the formula and its symbols</summary>' + m.group(0) + "</details>",
+        page_html,
+    )
+    return IN_PYTHON.sub(
+        lambda m: '<details class="level-3"><summary>Level 3: in Python</summary>' + m.group(0) + "</details>", page_html
+    )
+
+
+DEPTH_SCRIPT = """<script>
+(function () {
+  // How deep to read: 1 the guide, 2 the mechanism, 3 its math and code too. A learning path's
+  // link says ?depth=N; otherwise the reader's last choice, remembered across the site; else 1.
+  var root = document.documentElement;
+  var asked = new URL(location.href).searchParams.get("depth");
+  function stored() { try { return localStorage.getItem("primer-depth"); } catch (_) { return null; } }
+  var depth = parseInt(asked || stored() || "1", 10);
+  if (!(depth >= 1 && depth <= 3)) depth = 1;
+  function apply(d, remember) {
+    depth = d;
+    root.setAttribute("data-depth", String(d));
+    document.querySelectorAll('[role="radio"][data-depth]').forEach(function (b) {
+      b.setAttribute("aria-checked", String(parseInt(b.dataset.depth, 10) === d));
+      b.tabIndex = parseInt(b.dataset.depth, 10) === d ? 0 : -1;
+    });
+    document.querySelectorAll("details.level-3").forEach(function (el) { el.open = d >= 3; });
+    if (remember) { try { localStorage.setItem("primer-depth", String(d)); } catch (_) {} }
+  }
+  function reveal() {
+    // A link into a deeper level (the contents list, an "In code" line) descends far enough to show it.
+    var target = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (!target) return;
+    var level = target.closest("section.level, details.level-3, .api-level-3");
+    var need = level ? (level.classList.contains("level-1") ? 1 : level.classList.contains("level-2") ? 2 : 3) : depth;
+    if (need > depth) apply(need, false);
+    var fold = target.closest("details.level-3");
+    if (fold) fold.open = true;
+    target.scrollIntoView();
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(depth, false);
+    document.querySelectorAll("button[data-depth]").forEach(function (b) {
+      b.addEventListener("click", function () { apply(parseInt(b.dataset.depth, 10), true); });
+    });
+    document.querySelectorAll('[role="radiogroup"][aria-label="How deep to read"]').forEach(function (group) {
+      group.addEventListener("keydown", function (e) {
+        var step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+        if (!step) return;
+        var next = Math.min(3, Math.max(1, depth + step));
+        apply(next, true);
+        var b = group.querySelector('[data-depth="' + next + '"]');
+        if (b) b.focus();
+        e.preventDefault();
+      });
+    });
+    window.addEventListener("hashchange", reveal);
+    reveal();
+  });
+})();
+</script>"""
+
+LEVELS_CSS = """
+<style>
+.pn-depth{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin-top:.5rem}
+.pn-depth-label{color:var(--p-muted);margin-right:.2rem}
+.pn-depth button,.descend button{font:inherit;font-size:13px;padding:.25rem .6rem;border:1px solid var(--p-border);border-radius:999px;background:var(--p-card);color:var(--p-fg);cursor:pointer}
+.pn-depth button[aria-checked="true"]{background:var(--p-accent);border-color:var(--p-accent);color:#fff}
+section.level{border-left:4px solid var(--p-border);padding-left:1rem;margin:1.5rem 0}
+section.level-1{border-color:#059669}section.level-2{border-color:#2563eb}
+section.level > h2:first-child{margin-top:.2rem}
+details.level-3{border-left:4px solid #7c3aed;padding:.2rem 0 .2rem 1rem;margin:1rem 0}
+details.level-3 > summary{cursor:pointer;color:#7c3aed;font-weight:600}
+.descend{display:none;align-items:center;gap:.6rem;flex-wrap:wrap;margin:1.5rem 0;padding:.7rem .9rem;border:1px dashed var(--p-border);border-radius:.5rem;color:var(--p-muted)}
+.descend button{background:var(--p-accent);border-color:var(--p-accent);color:#fff}
+html[data-depth="1"] section.level-2,html[data-depth="1"] .api-level-3,html[data-depth="2"] .api-level-3{display:none}
+html[data-depth="1"] .descend[data-descend="2"],html[data-depth="1"] .descend[data-descend="3"],html[data-depth="2"] .descend[data-descend="3"]{display:flex}
+</style>
+"""
+
+
+def mark_api_level(page_html: str) -> str:
+    """The module's members (the code itself, with View Source) are Level 3, after a descend bar."""
+    first = re.search(r'\n(\s*)<section id="', page_html)
+    if not first:
+        return page_html
+    i = first.start()
+    end = page_html.rfind("</main>")
+    return (
+        page_html[:i]
+        + '\n<div class="descend" data-descend="3"><span>Level 3: the code, function by function.</span> '
+        '<button type="button" data-depth="3">Descend</button></div>'
+        + '<div class="api-level-3">' + page_html[i:end] + "</div>"
+        + page_html[end:]
     )
 
 
@@ -1004,7 +1164,7 @@ def render_home(tests: int | None = None) -> str:
     number = {l.module: i for i, l in enumerate(CURRICULUM)}
     paths = "".join(
         f'<div class="path"><h3>{htmllib.escape(p.who)}</h3><p class="o">{htmllib.escape(p.why)}</p><ol class="steps">'
-        + "".join(f'<li><a href="{_page(m)}"><span class="n">{number[m]}</span>{htmllib.escape(lesson_titles[m])}</a></li>' for m in p.route)
+        + "".join(f'<li><a href="{_page(m)}?depth={p.depth}"><span class="n">{number[m]}</span>{htmllib.escape(lesson_titles[m])}</a></li>' for m in p.route)
         + "</ol></div>"
         for p in LEARNING_PATHS
     )
@@ -1043,7 +1203,12 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padd
 </style></head>
 <body><main>
 <header><div class="top"><div><h1>AI Primer</h1><p class="subtitle">Modern AI from first principles: every concept explained, implemented and tested.</p></div><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></div>
-<p>{{COUNT}} lessons, numbered 0 to {{LAST}}, with every formula decoded symbol by symbol and worked through in Python.
+<p>{{COUNT}} lessons, numbered 0 to {{LAST}}. Every lesson has two levels, and you choose how deep to go.
+<strong>Level 1, the practitioner's guide</strong>, is the level of a good professional book: what the thing is, when you
+need it, your options and their trade-offs, what it costs, what breaks, and who does it in the wild. Most readers stop
+there, well equipped. <strong>Level 2, how it works from scratch</strong>, builds the same thing in plain Python, drawn and
+explained, with every formula decoded symbol by symbol; that decoding, and the code itself, fold away as <strong>Level 3</strong>.
+A switch at the top of each lesson picks the depth, and the paths below open every lesson at the depth their reader wants.
 Hover over any underlined term for a plain-English definition.</p>
 <p>Every lesson is also an executable specification: don't take its word for how attention, retrieval or tool
 calling works, run it. All of it is pinned down by {{TESTS}}: small programs that run the lessons' code and check it
@@ -1111,9 +1276,15 @@ def _postprocess(path: Path, terms: dict[str, tuple], counts: dict[str, int] | N
     if any(l.module == module for l in CURRICULUM):
         from primer.curriculum import tests_for
 
-        nav = lesson_nav(module, tests=(counts or {}).get(tests_for(module)))
+        levels = f'<h2 id="{LEVEL_1_ID}">' in text and f'<h2 id="{LEVEL_2_ID}">' in text
+        nav = lesson_nav(module, tests=(counts or {}).get(tests_for(module)), levels=levels)
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + nav, text, count=1)
         text = text.replace("</main>", nav.replace('class="primer-nav"', 'class="primer-nav pn-bottom"') + "</main>", 1)
+        if levels:
+            text = mark_levels(text)
+            text = fold_math(text)
+            text = mark_api_level(text)
+            text = text.replace("</head>", LEVELS_CSS + "</head>", 1).replace("</body>", DEPTH_SCRIPT + "</body>", 1)
     else:
         text = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + site_nav(page), text, count=1)
     text = draw_diagrams_once(text)

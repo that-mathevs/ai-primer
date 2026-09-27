@@ -7,7 +7,96 @@ New to the notation? `primer.notation` explains every symbol used here from
 zero. This lesson builds on sampling from `primer.ml.inference` and on tool
 arguments from `primer.agents.tools`.
 
-## The idea
+## Level 1: The practitioner's guide
+
+**In one sentence.** Structured output means making a model's answer fit an
+exact shape (a JSON object, a label from a fixed list, a date) every time, so
+that a program can read it with no person in the loop.
+
+**When you need it.** The moment something other than a person reads the
+answer: a tool call's arguments, a row for a database, a classification
+label, a form to fill in. A person shrugs off a stray word in front of the
+JSON; a parser rejects the whole answer. You don't need it for prose a
+person will read, and you don't need it when the reader is another model that
+copes with loose text. The tell: if you are writing code to strip "Sure, here
+you go!" from the front of responses, you need it.
+
+How often does asking nicely fail? This lesson's toy model, asked 200 times
+for `{"age": 42}` with only the prompt to guide it, gets it exactly right 133
+times (66.5%). Real models do far better than a toy, but not perfectly, and
+the failures grow with length: in an answer of 100 tokens where each token is
+right 98% of the time, the whole answer comes out valid only about 13% of the
+time (Level 2 shows why). At a million calls a day, a 1% failure rate is ten
+thousand broken answers a day.
+
+**Your options.** Five ways, from the cheapest to the most certain:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Prompting and examples | Ask for the format and show an example or two | Nothing; it raises the odds | A few extra input tokens | Your prompt |
+| Post-processing | Repair the common slips: strip chatter, close a bracket | Nothing, but it catches the frequent cases | A small parser you maintain | Your code |
+| Validate and retry | Parse; on failure, ask again, quoting the error | Valid eventually, if the model is usually right | A whole extra call per retry, and latency | Your code |
+| Constrained decoding | Forbid, at every token, anything that cannot lead to a valid answer | A valid shape, by construction | A grammar compiled once, a small check per token, some drift in what the model says | The model server: JSON mode, strict schemas, grammar engines |
+| Fine-tuning on the format | Train the model on thousands of examples in the shape | Far more reliable; still not certain | Data, a training run, a model to host | Training |
+
+**How to choose.** Start from what reads the answer and how often it may be
+wrong.
+
+- One field, a label from a list, a yes or no: prompt for it and validate.
+  Retries are cheap because the answer is short.
+- A JSON object your code depends on, at volume: use the hosted API's strict
+  schema, or a grammar engine in front of a model you run yourself. It
+  removes the parsing code, the type checks and the retry loop in one move.
+- A format no engine supports (a custom mini-language, a legacy fixed-width
+  record): post-process what you can, validate, retry, and consider
+  fine-tuning once the volume justifies it.
+- Whatever you pick, validate the values afterwards. A schema proves shape,
+  not truth: `{"amount": 0, "currency": "USD"}` fits a payment schema exactly
+  and is still a bad payment.
+
+**What it costs.** Prompting costs tokens. Retries cost whole calls and
+double the slowest requests. Constrained decoding costs a one-time compile of
+the schema (a noticeable pause on the first request, cached after that) and a
+small check per token; nested schemas cost more than flat ones. It can also
+cost quality: forcing a model off the path it wanted can make it invent a
+value to satisfy a required field, or wander, legally, until the token budget
+runs out. In this lesson's toy, a strict schema with a required `age` the
+model has no answer for produces `"age": 9700`. Fine-tuning costs the most up
+front and the least per call.
+
+**What breaks.**
+
+- **A required field the model can't fill** becomes a made-up value that
+  parses. Make such fields optional, or allow null.
+- **Valid JSON, wrong content.** JSON mode alone guarantees something
+  parseable, not your keys or your types. That needs a schema.
+- **Truncation.** A valid shape cut off by the output limit is invalid. Set
+  the limit with the schema's size in mind.
+- **Token boundaries.** A token can straddle a boundary in the grammar, so
+  real engines check character by character; a home-made masker that judges
+  whole tokens rejects valid answers.
+- **Drift.** A constrained model can sound different, because the mask
+  changes which continuations it is allowed.
+- **Business rules.** Shape is checked; meaning is not. Keep the validator.
+
+**In the wild.** Hosted APIs expose the mechanism at three strengths: JSON
+mode (any valid JSON), strict structured outputs (your schema, guaranteed)
+and strict tool use (a tool's arguments must fit its input schema). Claude's
+structured outputs and strict tool use are one example, linked in Further
+reading. For models you run yourself, Outlines and XGrammar turn a JSON
+Schema or a regular expression into token masks, and llama.cpp accepts a
+grammar file (GBNF). Libraries such as instructor (validate and retry against
+a Python type) and guidance (constrain a generation to a pattern or a set of
+options) wrap these steps. Every agent framework leans on all of this: a
+tool call is a structured output.
+
+**Go deeper.** Level 2 builds constrained decoding from nothing: why failures
+compound with length (a one-line formula), how a mask is applied before each
+token is drawn, how a pattern becomes a finite-state machine and a JSON
+Schema becomes a stack, and what each pitfall above looks like in numbers you
+can rerun. If you only needed to choose, you are done.
+
+## Level 2: How it works, from scratch
 
 A language model writes one token at a time, and each token is a draw from a
 probability distribution (see `primer.ml.inference`). Most of the time you

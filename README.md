@@ -2,10 +2,18 @@
 
 **Modern AI from first principles: every concept explained, implemented and tested.**
 
-This is an effort to explain how modern AI works, from the ground up, in a way that is
-accessible to anyone with a basic understanding of programming and math. It is not a course,
-but a reference that you can read in any order, with each lesson building on the previous ones.
+This is an effort to explain how modern AI works, in a way that is accessible to anyone
+with a basic understanding of programming and math. It is not a course, but a reference
+that you can read in any order, with each lesson building on the previous ones.
 You don't need a PhD in math or computer science to understand how AI works.
+
+Every lesson has two levels, and you choose how deep to go. **Level 1, the
+practitioner's guide**, is the level of a good professional book: what the thing is,
+when you need it, your options and their trade-offs, what it costs, what breaks, and who
+does it in the wild. Most readers stop there, well equipped. **Level 2, how it works from
+scratch**, builds the same thing in plain Python, drawn and explained, with every formula
+decoded symbol by symbol (that part folds away as Level 3 on the site). Start at the top;
+descend as far as you like.
 
 ## 👉 Read it here: [that-mathevs.github.io/ai-primer](https://that-mathevs.github.io/ai-primer/)
 

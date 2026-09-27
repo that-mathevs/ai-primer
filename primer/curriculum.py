@@ -272,6 +272,15 @@ def reading_list(package: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Every lesson opens with "## Level 1: The practitioner's guide" and continues with
+# "## Level 2: How it works, from scratch". These lessons don't yet; each leaves the
+# set in the change that gives it its guide (tests/test_navigation.py holds the bar).
+# ---------------------------------------------------------------------------
+
+LEVELS_PENDING: frozenset[str] = frozenset(l.module for l in CURRICULUM) - {"primer.ml.structured_output"}
+
+
+# ---------------------------------------------------------------------------
 # Learning paths: a short route through the lessons for each kind of reader.
 # A path skips lessons but never jumps backwards, so prerequisites come first.
 # ---------------------------------------------------------------------------
@@ -282,6 +291,9 @@ class LearningPath:
     who: str  # the reader it's for
     why: str  # what they get out of it
     route: tuple[str, ...]  # lesson modules, in reading order
+    # How deep this reader goes by default: 1 the practitioner's guide, 2 the mechanism built
+    # from scratch, 3 its math and code as well. The site opens each lesson at this depth.
+    depth: int = 2
 
 
 _M, _E, _G, _A = "primer.ml.", "primer.ml.embeddings.", "primer.ml.generative.", "primer.agents."
@@ -290,12 +302,14 @@ LEARNING_PATHS: list[LearningPath] = [
     LearningPath(
         "Software engineer new to AI",
         "How a language model works, then how to build on one.",
+        depth=2, route=
         ("primer.notation", _M + "big_picture", _M + "neural_net", _M + "attention", _M + "transformer", _M + "tokenization",
          _M + "inference", _E + "similarity", _E + "retrieval", _A + "llm", _A + "agent_loop", _A + "rag", _A + "evals"),
     ),
     LearningPath(
         "AI application engineer",
         "Agents, retrieval and tools, and keeping them reliable, safe and affordable.",
+        depth=1, route=
         (_M + "structured_output", _E + "retrieval", _A + "llm", _A + "orchestration", _A + "agent_loop", _A + "tools",
          _A + "coding_agents", _A + "mcp", _A + "rag", _A + "context", _A + "memory", _A + "evals", _A + "guardrails",
          _A + "cost", _A + "observability", _A + "deployment", _A + "failures"),
@@ -303,6 +317,7 @@ LEARNING_PATHS: list[LearningPath] = [
     LearningPath(
         "ML engineer",
         "The model itself: training, scaling, serving and looking inside.",
+        depth=3, route=
         ("primer.notation", _M + "neural_net", _M + "optimizers", _M + "deep_nets", _M + "attention", _M + "positional",
          _M + "transformer", _M + "training_stages", _M + "pretraining", _M + "fine_tuning", _M + "reinforcement",
          _M + "hardware", _M + "inference", _M + "efficient_architectures", _M + "losses", _M + "metrics",
@@ -311,18 +326,21 @@ LEARNING_PATHS: list[LearningPath] = [
     LearningPath(
         "Engineering manager or architect",
         "What these systems can do, what they cost, and how they fail.",
+        depth=1, route=
         (_M + "big_picture", _M + "training_stages", _M + "reasoning", _M + "alignment", _M + "inference",
          _M + "benchmarks", _A + "orchestration", _A + "rag", _A + "evals", _A + "cost", _A + "deployment", _A + "failures"),
     ),
     LearningPath(
         "Just explain LLMs to me",
         "The shortest route to understanding what happens when you send a prompt.",
+        depth=2, route=
         (_M + "big_picture", _M + "attention", _M + "transformer", _M + "tokenization", _M + "training_stages",
          _M + "reasoning", _M + "inference"),
     ),
     LearningPath(
         "Curious about images, audio and video",
         "How models generate pictures and sound, and how they see and hear.",
+        depth=2, route=
         (_M + "neural_net", _M + "cnn_rnn", _E + "contrastive", _G + "autoencoders", _G + "gans", _G + "diffusion",
          _G + "multimodal"),
     ),

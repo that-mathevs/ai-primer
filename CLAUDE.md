@@ -20,12 +20,39 @@ offline [`ScriptedLLM`](primer/agents/llm.py) and the real [`ClaudeLLM`](primer/
 ## The purpose: demystify everything
 
 **We are destroying the priesthood.** Nothing here may depend on already
-knowing the jargon, the notation or the folklore. Nothing stays a black box. Every mechanism is built in plain code, **drawn**,
-and **explained**, until a reader could rebuild it from memory. When choosing
-between one more paragraph and one more diagram, draw the diagram, then
-explain it. See [Diagrams](#diagrams).
+knowing the jargon, the notation or the folklore. Nothing stays a black box,
+and nobody is made to open one: every lesson starts at the top and lets the
+reader descend as far as they choose.
 
-**Start from zero.** Write every concept as a **ladder**, climbed in this order:
+**Start at the top: two levels in every lesson.** Most readers want to use
+the idea well; some want to rebuild it. A lesson serves both, in this order:
+
+- **Level 1: The practitioner's guide** (`## Level 1: The practitioner's guide`),
+  the first section of every lesson. The level of a good professional book:
+  what the thing is, when you need it (and when you don't), the options laid
+  out as a table with their trade-offs, how to choose, what it costs, what
+  breaks, and who does it in the wild (real tools, APIs, systems). No
+  formulas, no code, at most one diagram, 600 to 1,600 words. A reader who
+  stops here can use the idea well and choose between the options. It is
+  written by these labels, in this order: `**In one sentence.**`,
+  `**When you need it.**`, `**Your options.**` (the table), `**How to choose.**`,
+  `**What it costs.**`, `**What breaks.**`, `**In the wild.**`, `**Go deeper.**`
+  (what Level 2 will show). Every number in it comes from the lesson's own
+  code or a primary source. [`.claude/skills/writing-the-practitioners-guide/`](.claude/skills/writing-the-practitioners-guide)
+  holds the procedure and [`primer/ml/structured_output.py`](primer/ml/structured_output.py) the reference.
+- **Level 2: How it works, from scratch** (`## Level 2: How it works, from scratch`),
+  everything after: the mechanism built in plain code, **drawn** and
+  **explained** until a reader could rebuild it from memory, climbing the
+  ladder below in every section. On the site, each formula's symbols table
+  and each In Python block fold into **Level 3**, and the module's code is
+  Level 3 too; a switch in the lesson bar picks the depth, and the learning
+  paths in [`primer/curriculum.py`](primer/curriculum.py) open each lesson at
+  the depth their reader wants.
+
+When choosing between one more paragraph and one more diagram, draw the
+diagram, then explain it. See [Diagrams](#diagrams).
+
+**Level 2 starts from zero.** Write every concept as a **ladder**, climbed in this order:
 
 1. **Everyday picture**: an analogy or scene a curious non-engineer follows
    with no jargon. A convolution is a flashlight sweeping a photo, looking
@@ -93,8 +120,10 @@ notation is a bug.
    so two bare prices in one paragraph become one italic formula.
    [`tests/test_house_style.py`](tests/test_house_style.py) enforces it.
 3. **Every module is a lesson.** It has a markdown docstring (pdoc renders it)
-   with, in order: `# Title`, `Run: python -m <module>`, the idea in plain
-   English, formulas in `$$…$$`, diagrams and figures (see
+   with, in order: `# Title`, `Run: python -m <module>`, a line on what it
+   builds on, `## Level 1: The practitioner's guide`, `## Level 2: How it
+   works, from scratch` opening with the idea in plain English, then the
+   mechanism sections with formulas in `$$…$$`, diagrams and figures (see
    [Diagrams](#diagrams)), `## In 20 seconds`, `## Self-test questions` (each followed by its answer),
    and `## Further reading`. It ends with a `demo()` that narrates the lesson
    through [`primer._show`](primer/_show.py) and an `if __name__ == "__main__": demo()`.
@@ -254,8 +283,8 @@ python tools/screenshot.py papers/hyde.html#fig1 --theme dark   # a built page a
 ## Skills for repeated work
 
 Work done more than once has a procedure in [`.claude/skills/`](.claude/skills),
-each with steps and a bar for done: `writing-a-paper-companion`,
-`reviewing-a-lesson` and `shipping-the-primer`. Follow the skill rather than
+each with steps and a bar for done: `writing-the-practitioners-guide`,
+`writing-a-paper-companion`, `reviewing-a-lesson` and `shipping-the-primer`. Follow the skill rather than
 improvising, and when a new kind of task starts repeating, write its skill.
 
 ## Definition of done for a module
@@ -263,6 +292,8 @@ improvising, and when a new kind of task starts repeating, write its skill.
 - It has its entry in [`primer/curriculum.py`](primer/curriculum.py), and every new term it
   introduces has an entry in [`primer/glossary.py`](primer/glossary.py).
 
+- It opens with its practitioner's guide, at the bar above, and the module is
+  not in `LEVELS_PENDING` in [`primer/curriculum.py`](primer/curriculum.py).
 - Its scenarios were written first and watched fail.
 - `make test` passes and `make spec` reads as a clear description.
 - `python -m <module>` runs cleanly and teaches something on its own.
