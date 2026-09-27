@@ -3,7 +3,134 @@ r"""
 
 Run: `python -m primer.agents.rag`
 
-## The everyday picture
+This lesson builds on keyword search, embeddings and reranking from
+`primer.ml.embeddings.retrieval`, on prompt assembly from
+`primer.agents.context`, and on the tool-calling loop from
+`primer.agents.agent_loop`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Retrieval-augmented generation (RAG) fetches the few
+passages of your own documents most likely to answer a question, puts them
+in the prompt, and has the model answer from those passages with citations,
+so the model can use knowledge it was never trained on and a reader can
+check where each fact came from.
+
+**When you need it.** When the answer lives in documents the model has not
+seen (your policies, tickets, contracts, product manuals), when those
+documents change faster than you could retrain, when every answer must name
+its source, or when different users may read different documents. You don't
+need it when the model already knows the subject (public, stable knowledge),
+when you want to change *how* the model behaves rather than *what* it
+knows (that is fine-tuning: it teaches format and style, not facts that
+change), or when the whole collection fits in the prompt. Anthropic's
+contextual retrieval post puts that last threshold at about 200,000 tokens,
+roughly 500 pages: below it, put everything in the prompt and skip the
+pipeline. The tell: your model answers a question about the 2023 travel
+policy confidently and wrongly, because it never saw the 2026 one.
+
+**Your options.** From the cheapest to the most capable, each one usually
+added on top of the last:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Everything in the prompt | Sends the whole collection with every question | Nothing is ever missed by a search | Every token, every call; only up to a few hundred pages | Your prompt |
+| Keyword search (BM25) | Ranks passages by the question's rarer words | Exact identifiers (`ERR-4012`, ticket numbers) are found | An inverted index; misses synonyms and paraphrase | A search engine |
+| Dense search | Ranks passages by embedding similarity, meaning over words | Paraphrases are found ("scam message" finds the phishing guide) | An embedding model at ingest and per query, a vector index; blurs exact codes | A vector index |
+| Hybrid search | Runs both and fuses the rankings by rank (RRF), never by score | Both kinds of question, and no score scales to reconcile | Two indexes, two searches per question | Both indexes plus a fusion step |
+| Reranking | A cross-encoder reads the question next to each of the top candidates | Far better ordering of the top few | One model score per candidate, so only over a shortlist | A reranking model between search and the prompt |
+| Retrieval upgrades | Contextual chunks, query rewriting, HyDE, multi-query, date filters, parent-child | Each fixes one named failure | Model calls at ingest (context lines) or per query (rewrites, drafts) | Ingestion or query time |
+| Agentic RAG | The model decides when, how often and with what words to search | Multi-part and vague questions handled; no search for small talk | Several model calls and a step budget per question | An agent loop with a search tool |
+| GraphRAG | Extracts entities and relations first, answers by walking the graph or summarizing clusters | Questions about connections and whole-collection themes | A model pass over every document at ingest, and a graph to maintain | Ingestion, plus a graph store |
+
+**How to choose.** Start from the questions people actually ask, with a
+labelled set of at least a dozen where you know the right document.
+
+- Questions full of exact identifiers and paraphrases both, which is what
+  enterprise data looks like: hybrid search with a reranker. In this
+  lesson's toy set, dense search alone never finds `ERR-4012` and plateaus
+  at 92% recall; hybrid reaches 100% by the second result; reranking the
+  hybrid shortlist lifts the share of questions answered by the first
+  result from 75% to 92%.
+- Chunks that lose their meaning when cut from the document (a fix that
+  never names the error it fixes): contextual chunks. Prefixing each chunk
+  with where it comes from turns "not in the top 20" into "second" here;
+  Anthropic measured a 49% drop in top-20 retrieval failures from
+  contextual embeddings and contextual BM25, and 67% with a reranker added.
+- Follow-up questions and vague phrasing: query rewriting and HyDE, which
+  searches with a model-written draft answer.
+- Two questions in one, or a question the first search doesn't settle:
+  agentic RAG.
+- "What depends on X?" and "what are the themes?": GraphRAG, and only then,
+  because it is the most expensive to build and keep current.
+- Whatever you pick: filter by permissions and date *before* ranking, and
+  verify citations before the answer reaches anyone. Retrieval quality is
+  decided in the first boxes (parsing, chunking, search), never by the
+  prompt.
+
+**What it costs.** Ingestion costs an embedding per chunk, a keyword index,
+and for contextual chunks a model call per chunk: with prompt caching,
+Anthropic's post prices that at \$1.02 per million document tokens. A query
+costs one embedding, two searches, a reranker score for each of a handful
+of candidates (8 here, kept to 3), and one generation whose input is the
+question plus those passages; that prompt is what the answer's latency and
+token bill mostly consist of. Agentic RAG multiplies the model calls by the
+number of searches (two for the two-part question in this lesson, zero for
+"thanks, that's all!") and needs a step limit. Quality costs come from the
+front of the pipeline: a table flattened by a naive PDF extractor, so that
+the hotel cap floats free of its grade, is a failure no later stage can
+repair. Effort goes mostly into the labelled question set and the parsing,
+not the model.
+
+**What breaks.**
+
+- **The right passage is not in the index.** Parsing garbled it, chunking
+  split it from its context, or the permission sync dropped it. Check
+  ingestion before touching anything downstream.
+- **The right passage is in the index but not in the top k.** Measure
+  recall@k on the labelled set. If it is low, change retrieval (hybrid,
+  reranker, rewriting, HyDE, contextual chunks); a prompt cannot fix it.
+- **Permission leaks.** Filtering after generation strips the citation and
+  leaves the fact: in this lesson the restricted forecast's "41 million
+  dollars" reaches an employee who may not read it. Copy each document's
+  access list onto its chunks and filter before ranking; sync revocations
+  promptly.
+- **Stale sources.** A superseded 2023 policy outranks the current one.
+  Carry the date on every chunk and filter or prefer by it.
+- **Confident answers with no support.** Instruct the model to answer only
+  from the sources and to decline otherwise, then check that every cited id
+  was in the context and that its passage supports the claim.
+- **Blaming the model.** With dense-only retrieval this lesson's twelve
+  questions produce five wrong answers, of which only one is a retrieval
+  miss; switching to hybrid removes that one, and the two that remain are
+  generation and data problems. Each needs a different fix, so diagnose
+  first.
+
+**In the wild.** The name comes from Lewis et al. (2020), who paired a
+retriever with a generator over a document index. Keyword search is BM25
+in Lucene, Elasticsearch and OpenSearch; dense search runs on vector
+indexes such as FAISS and hosted services such as Pinecone; Elasticsearch
+documents RRF for fusing the two. HyDE is Gao et al. (2022). Contextual
+retrieval and prompt caching are described in Anthropic's post, and
+Claude's citations feature returns the exact passage behind each claim for
+PDF, plain-text and custom documents. GraphRAG is Microsoft's open
+implementation of Edge et al. (2024). RAGAS evaluates a RAG pipeline on
+retrieval and generation separately, which is exactly the split the
+debugging section relies on.
+
+**Go deeper.** Level 2 builds the whole pipeline in plain Python: a PDF
+extractor's damage repaired step by step, chunks that carry their
+metadata, BM25 and dense search fused by a one-line formula, a reranker, a
+prompt that tags every source, a citation check, the permission leak
+reproduced, each upgrade as a working function with its before and after,
+and the diagnosis figure you can rerun on your own questions. If you only
+needed to choose, you are done.
+
+## Level 2: How it works, from scratch
+
+What follows builds every box of the pipeline from scratch, in the order a
+question travels through them, then the upgrades, then how to tell a
+retrieval failure from a generation failure.
 
 An open-book exam with a librarian. Before you answer, the librarian fetches
 the few pages most likely to contain the answer; you answer from those

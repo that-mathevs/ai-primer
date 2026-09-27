@@ -340,7 +340,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.agents.mcp",
 
     # agents, what they work with
-    "primer.agents.rag",
     "primer.agents.context",
     "primer.agents.memory",
     "primer.agents.planning",
