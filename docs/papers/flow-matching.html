@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Matching for Generative Modeling, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Lipman et al. (2022), the paper that trains a generator by regressing velocities along simple paths from noise to data.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .fm-canvas { max-width: 460px; margin: 0.4rem auto; image-rendering: auto; cursor: crosshair; touch-action: none; }
+  .fm-toggle { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  /* Charts are drawn narrow so their labels stay legible on a phone; on a wide screen they stop growing. */
+  .plot svg[role="slider"] { max-width: 600px; margin: 0 auto; }
+</style>
+</head>
+<body data-paper="flow-matching">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Continuous normalizing flows</a></li>
+      <li><a href="#s3">3 Flow Matching</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Building the path from pieces</a></li>
+          <li><a href="#s3-2">3.2 Conditional Flow Matching</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Gaussian paths and their fields</a>
+        <ol>
+          <li><a href="#s4-1">Example I: diffusion paths</a></li>
+          <li><a href="#s4-2">Example II: optimal transport paths</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Related work</a></li>
+      <li><a href="#s6">6 Experiments</a>
+        <ol>
+          <li><a href="#s6-1">6.1 Likelihood and sample quality</a></li>
+          <li><a href="#s6-2">6.2 Sampling efficiency</a></li>
+          <li><a href="#s6-3">6.3 Conditional generation</a></li>
+        </ol>
+      </li>
+      <li><a href="#s7">7 Conclusion</a></li>
+      <li><a href="#appendix">Appendices, briefly</a></li>
+      <li><a href="#today">What changed since 2022</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Flow Matching for Generative Modeling, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Lipman, Chen, Ben-Hamu, Nickel and Le (2022), the paper that trains a generator by teaching a network which way to move, along simple paths from noise to data.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2210.02747">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2210.02747">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2210.02747">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. Equations are reproduced with every symbol decoded; the paper's figures are redrawn from scratch as pictures you can explore, computed live in your browser; and only a few selected rows of its tables appear, each with attribution. Every section links to the original: read it alongside.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the numbers of a tiny example, and the same example in a few lines of Python.</li>
+  <li>The pictures are live: drag the sliders, click (or use the arrow keys) to move points, and watch the readouts.</li>
+</ul>
+<p>One warning about labels, which this paper shares with the <a class="lesson" data-lesson="primer/ml/generative/diffusion.html">diffusion and flow matching lesson</a>: here <em>x</em><sub>0</sub> is the <strong>noise</strong>, <em>x</em><sub>1</sub> is the <strong>data</strong>, and time runs from 0 (noise) to 1 (data). Diffusion papers use the opposite convention.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Specifically, we present the notion of Flow Matching (FM), a simulation-free approach for training CNFs based on regressing vector fields of fixed conditional probability paths.”<cite>Lipman et al. (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2210.02747">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Picture a weather map covered in little arrows, one at every place, saying which way the wind blows and how hard. Drop a leaf anywhere and it drifts along the arrows. Now suppose you want a wind that carries leaves scattered at random (noise) into the shape of, say, a face (data). This paper is a recipe for <em>learning that wind</em>. The wind is a <span class="t" data-t="velocity field">velocity field</span>, and a generator built by following one is a <span class="t" data-tip-title="Continuous normalizing flow (CNF)" data-tip="A generator that turns noise into data by following a learned velocity field smoothly through time, from t = 0 to t = 1. Because the motion is smooth and reversible, it can also compute exactly how probable any data point is.">continuous normalizing flow</span>.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A way to train these flows with <strong>no simulation</strong> during training: each step is one network call and a squared error, like training a <span class="t" data-t="diffusion model">diffusion model</span>.</li>
+  <li>The recipe works with a whole family of paths from noise to data. <strong>Diffusion's paths are members of the family</strong>, and training them this way was more stable than the usual score matching.</li>
+  <li>A new member, <span class="t" data-t="optimal transport">optimal transport</span> paths, moves every point in a <strong>straight line at constant speed</strong>. It trained faster, sampled in fewer steps and scored better on ImageNet than the diffusion-based methods it was compared with.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Flow matching with straight paths, and its close cousin <span class="t" data-t="rectified flow">rectified flow</span>, is how several of today's image generators are trained, Stable Diffusion 3 among them. The <a class="lesson" data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> builds it from scratch in a few dozen lines of NumPy.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S1">original</a></span></h2>
+<blockquote class="quote">“We find that conditional OT paths are simpler than diffusion paths, forming straight line trajectories whereas diffusion paths result in curved paths.”<cite>Lipman et al. (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Continuous flows were an elegant idea with a painful training bill. To check whether the wind was right, you had to actually release leaves and follow them all the way, step by step, then trace back through every step to work out how to adjust the wind. Diffusion models escaped that bill with a trick: they never follow the leaves during training, they only ask the network one question about one moment. The paper's goal is to give general flows the same trick.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Suppose (illustratively) that following the wind accurately from noise to data takes 100 small steps. Training by <span class="t" data-tip-title="Maximum likelihood" data-tip="Training a model to make the real data as probable as possible under it. For a flow, computing that probability means following the flow the whole way, which is what makes it expensive.">maximum likelihood</span> then costs about 100 network calls forward, plus the backward pass through all of them, for <em>every</em> training example. Flow matching costs <strong>one</strong> call per example: pick a moment, look at one point, grade one guess.</p>
+<h3 class="rung">Why it matters</h3>
+<p>“Simulation-free” is the whole game. It is what let diffusion models scale to billions of images, and this paper extends it to any path you can write down, including straighter ones that are cheaper to follow when you generate.</p>
+</section>
+
+<section id="s2">
+<h2>2 Preliminaries: continuous normalizing flows <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S2">original</a></span></h2>
+<blockquote class="quote">“A CNF is used to reshape a simple prior density p<sub>0</sub> (e.g., pure noise) to a more complicated one, p<sub>1</sub>, via the push-forward equation”<cite>Lipman et al. (2022), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two objects carry the whole paper. A <strong>velocity field</strong> is the wind map: at each place and moment, an arrow. A <strong>probability path</strong> is a movie of a crowd: frame 0 is a cloud of random noise, frame 1 is the data, and every frame in between is a <span class="t" data-t="probability distribution">probability distribution</span> saying where the crowd is at that moment. Let every person in the frame-0 crowd walk with the wind, and you get a movie. The wind <em>generates</em> that movie.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Take a one-dimensional wind that blows outwards in proportion to where you stand: <em>v</em>(<em>x</em>) = <em>x</em>. A walker starting at <em>x</em> = 1 moves at speed 1, then faster as they get further out, and after time ln 2 ≈ 0.693 has reached exactly 2. Every walker doubles their position in that time, so the whole crowd spreads out to twice its width, and the height of its bell curve halves (the same number of people over twice the ground).</p>
+<h3 class="rung">The math</h3>
+<p>The flow <em>φ</em> records where a walker who started at <em>x</em> is at time <em>t</em>. It is defined by an <span class="t" data-t="ordinary differential equation">ordinary differential equation</span>: the walker's velocity at every moment is whatever the wind says at their current spot.</p>
+<div class="eq" data-tex="\htmlData{sym=ddt}{\frac{d}{dt}}\htmlData{sym=phit}{\phi_t(x)} = \htmlData{sym=vfield}{v_t}\big(\htmlData{sym=phit}{\phi_t(x)}\big), \qquad \htmlData{sym=phit}{\phi_0(x)} = \htmlData{sym=xstart}{x}" data-fallback="d/dt φ_t(x) = v_t(φ_t(x)),  φ_0(x) = x"></div>
+<div class="symtable" data-syms="phit,ddt,vfield,xstart"></div>
+<p class="inwords"><strong>In words:</strong> “a walker's position changes at the rate the velocity field gives at that position and time, and at time 0 every walker is where they started.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with <em>v</em>(<em>x</em>) = <em>x</em>, the walker from <em>x</em> = 1 is at <em>φ</em><sub><em>t</em></sub>(1) = e<sup><em>t</em></sup>, whose rate of change is e<sup><em>t</em></sup>, its own position, as the equation demands. At <em>t</em> = ln 2 it is at 2. Following the field in 100,000 tiny <span class="t" data-t="euler step">Euler steps</span> lands on 2.0 too.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# the exact flow for v(x) = x: φ_t(x) = x e^t
+t = math.log(2)
+1 * math.exp(t)  # → 2.0
+# the same, by following the field in small Euler steps
+x, n = 1.0, 100_000
+h = t / n
+for _ in range(n):
+    x = x + h * x
+round(x, 3)  # → 2.0</code></pre>
+<p>The second equation says how the crowd's density changes as it moves. Where walkers spread apart, the density drops, by exactly how much the flow stretches space there.</p>
+<div class="eq" data-tex="\htmlData{sym=pushf}{[\phi_t]_{*}p_0}(\htmlData{sym=xany}{x}) = \htmlData{sym=pzero}{p_0}\big(\htmlData{sym=phiinv}{\phi_t^{-1}}(\htmlData{sym=xany}{x})\big)\,\htmlData{sym=detj}{\det\!\left[\frac{\partial \phi_t^{-1}}{\partial x}(x)\right]}" data-fallback="[φ_t]_* p_0(x) = p_0(φ_t^-1(x)) det[∂φ_t^-1/∂x (x)]"></div>
+<div class="symtable" data-syms="pushf,xany,pzero,phiinv,detj"></div>
+<p class="inwords"><strong>In words:</strong> “to find the crowd's density at <em>x</em> at time <em>t</em>, run the flow backwards to see where the walkers now at <em>x</em> started, read the starting density there, and correct for how much the flow stretched or squeezed the space around them.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with <em>v</em>(<em>x</em>) = <em>x</em>, <em>φ</em><sub><em>t</em></sub><sup>−1</sup>(<em>x</em>) = <em>x</em> e<sup>−<em>t</em></sup> and the stretch factor is e<sup>−<em>t</em></sup>. Start from the standard bell curve, whose height at 0 is 0.3989. At <em>t</em> = ln 2 the height at 0 is 0.3989 × 0.5 = <strong>0.1995</strong>, and at <em>x</em> = 2 it is <em>p</em><sub>0</sub>(1) × 0.5 = 0.2420 × 0.5 = <strong>0.121</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# p_0: the standard bell curve
+def p0(x):
+    return math.exp(-x * x / 2) / math.sqrt(2 * math.pi)
+t = math.log(2)
+# φ_t^-1(x) = x e^-t, and det[∂φ_t^-1/∂x] = e^-t
+def p_t(x):
+    return p0(x * math.exp(-t)) * math.exp(-t)
+round(p_t(0), 4)  # → 0.1995
+round(p_t(2), 4)  # → 0.121</code></pre>
+<div class="plot" id="fig-density">
+  <div class="controls"><label for="dens-t">time t = <strong id="dens-tv">0.69</strong></label><input type="range" id="dens-t" min="0" max="1" step="0.01" value="0.69"></div>
+  <div id="dens-chart"></div>
+  <p class="readout" id="dens-readout">Hover or tap the chart, or focus it and use the arrow keys, to read the two curves.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is position and the y-axis is density (how crowded that spot is). The solid curve is the crowd at time 0, the standard bell curve. The dashed curve is the same crowd after walking with the wind <em>v</em>(<em>x</em>) = <em>x</em> for time <em>t</em>, computed from the push-forward formula above. Drag <em>t</em> up and the crowd spreads out: the curve gets wider and lower, because the same people now cover more ground. The area under both curves stays exactly 1; nobody is created or lost. At <em>t</em> = 0.69 (ln 2) the dashed peak is half the solid one.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>A continuous normalizing flow is exactly this machine, with a neural network <em>v</em><sub><em>t</em></sub>(<em>x</em>; <em>θ</em>) as the wind. Generating means solving the first equation from a noise sample; measuring how probable a data point is means running the second one. Diffusion models, sampled deterministically, are also flows of this kind, which is why the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> can treat DDIM and flow matching side by side. Its <a data-lesson="primer/ml/generative/diffusion.html#euler_step"><code>euler_step</code></a> is the loop in the Python above.</p>
+</section>
+
+<section id="s3">
+<h2>3 Flow Matching <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S3">original</a></span></h2>
+<blockquote class="quote">“Simply put, the FM loss regresses the vector field u<sub>t</sub> with a neural network v<sub>t</sub>.”<cite>Lipman et al. (2022), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Suppose someone hands you a perfect wind map, <em>u</em>, drawn by hand. You could train a network to copy it the way a student copies a map: at random places and times, compare the network's arrow with the true arrow, and nudge the network to shrink the difference. That is the <strong>Flow Matching objective</strong>. It is plain <span class="t" data-t="regression">regression</span>: predict a number (here, an arrow) and be graded by squared error.</p>
+<h3 class="rung">Tiny example</h3>
+<p>At some place and time the true arrow says “move right at speed 3”, and the network says 2.5. The loss there is (2.5 − 3)<sup>2</sup> = 0.25. Average this over many random places and times and you have the loss.</p>
+<div class="eq" data-tex="\htmlData{sym=LFM}{\mathcal{L}_{\text{FM}}(\theta)} = \htmlData{sym=Efm}{\mathbb{E}_{t,\,p_t(x)}}\,\htmlData{sym=sqnorm}{\big\|}\htmlData{sym=vnet}{v_t(x)} - \htmlData{sym=utrue}{u_t(x)}\htmlData{sym=sqnorm}{\big\|^2}" data-fallback="L_FM(θ) = E_{t, p_t(x)} ‖v_t(x) − u_t(x)‖²"></div>
+<div class="symtable" data-syms="LFM,Efm,vnet,utrue,sqnorm"></div>
+<p class="inwords"><strong>In words:</strong> “pick a random time and a random point from the crowd at that time; measure how far the network's arrow is from the true arrow, squared; average over many picks.”</p>
+<p class="inwords"><strong>With the numbers:</strong> one pick with true arrow 3 and guess 2.5 contributes (2.5 − 3)<sup>2</sup> = 0.25.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># one pick: the true arrow u_t(x) and the network's guess v_t(x)
+u, v = 3.0, 2.5
+# ‖v − u‖²
+(v - u) ** 2  # → 0.25</code></pre>
+<h3 class="rung">The catch</h3>
+<p>Nobody has the perfect map. To use this loss you would need to know, for real data such as photographs, the exact probability path from noise to photos <em>and</em> the exact wind that produces it. Both are out of reach. The rest of Section 3 is the paper's way around this, and it is the heart of the paper.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Building the path, and its wind, from one-example pieces <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S3.SS1">original</a></span></h3>
+<blockquote class="quote">“The marginal vector field (equation 8) generates the marginal probability path (equation 6).”<cite>Lipman et al. (2022), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Think of a railway network. For a single destination, the timetable is easy to write: one train, one track, from the depot (noise) to that one town (a data point). The paper builds the whole network out of these one-destination timetables. The crowd at any moment is simply everybody on every train, a <span class="t" data-tip-title="Mixture" data-tip="A distribution made by combining several simpler ones: pick one of them at random (here, one data point), then draw from it. The crowd at time t is a mixture of one small crowd per data point.">mixture</span>. And the wind at a spot is the <em>average</em> of the directions of the trains passing through it, weighted by how many of each are there.</p>
+<h4>Tiny example</h4>
+<p>Take a one-dimensional dataset with just two points, <em>x</em><sub>1</sub> = −2 and <em>x</em><sub>1</sub> = +2, equally likely. For each destination, use the straight track of the lesson: at time <em>t</em> its small crowd is a bell curve centred on <em>t</em>·<em>x</em><sub>1</sub> with spread 1 − <em>t</em>, and a rider at <em>x</em> travels at (<em>x</em><sub>1</sub> − <em>x</em>)/(1 − <em>t</em>): the distance still to go, divided by the time left (§4 derives this). Stand at <em>x</em> = 0.5 at time <em>t</em> = 0.5.</p>
+<ul>
+  <li>The “+2” crowd is centred at 1 with spread 0.5: its density at 0.5 is <strong>0.4839</strong>. The “−2” crowd is centred at −1: its density at 0.5 is only <strong>0.0089</strong>.</li>
+  <li>So of the riders passing 0.5, a share 0.982 are heading to +2 and 0.018 to −2.</li>
+  <li>Riders to +2 need (2 − 0.5)/0.5 = <strong>3</strong>; riders to −2 need (−2 − 0.5)/0.5 = <strong>−5</strong>. The wind at this spot is the weighted average: 0.982 × 3 + 0.018 × (−5) ≈ <strong>2.86</strong>.</li>
+</ul>
+<h4>The math</h4>
+<p>The whole crowd is the mixture of the one-destination crowds, weighted by how common each data point is:</p>
+<div class="eq" data-tex="\htmlData{sym=pmarg}{p_t(x)} = \htmlData{sym=integ}{\int} \htmlData{sym=pcond}{p_t(x \mid x_1)}\,\htmlData{sym=qdata}{q(x_1)}\,\htmlData{sym=integ}{dx_1}" data-fallback="p_t(x) = ∫ p_t(x | x_1) q(x_1) dx_1"></div>
+<div class="symtable" data-syms="pmarg,pcond,qdata,integ"></div>
+<p class="inwords"><strong>In words:</strong> “the density of the whole crowd at <em>x</em> is the density of each data point's small crowd at <em>x</em>, weighted by how common that data point is, summed over all data points.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>p</em><sub>0.5</sub>(0.5) = ½ × 0.0089 + ½ × 0.4839 = <strong>0.2464</strong>. At <em>t</em> = 1 each small crowd shrinks onto its data point, so the mixture becomes (almost exactly) the data itself: that is the paper's equation 7.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# a bell curve with mean mu and spread s, read at x
+def N(x, mu, s):
+    return math.exp(-(x - mu) ** 2 / (2 * s * s)) / (s * math.sqrt(2 * math.pi))
+t, x = 0.5, 0.5
+data = [-2.0, 2.0]
+q = [0.5, 0.5]
+# p_t(x | x_1): each data point's crowd, centred at t·x_1 with spread 1 − t
+p_cond = [N(x, t * x1, 1 - t) for x1 in data]
+[round(p, 4) for p in p_cond]  # → [0.0089, 0.4839]
+# ∫ ... q(x_1) dx_1 becomes a sum over the two data points
+p_t = sum(p * q_k for p, q_k in zip(p_cond, q))
+round(p_t, 4)  # → 0.2464</code></pre>
+<p>The wind of the whole crowd is the average of the one-destination winds, weighted by each destination's share of the riders at <em>x</em>:</p>
+<div class="eq" data-tex="\htmlData{sym=utrue}{u_t(x)} = \htmlData{sym=integ}{\int} \htmlData{sym=ucond}{u_t(x \mid x_1)}\,\frac{\htmlData{sym=pcond}{p_t(x \mid x_1)}\,\htmlData{sym=qdata}{q(x_1)}}{\htmlData{sym=pmarg}{p_t(x)}}\,\htmlData{sym=integ}{dx_1}" data-fallback="u_t(x) = ∫ u_t(x | x_1) p_t(x | x_1) q(x_1) / p_t(x) dx_1"></div>
+<div class="symtable" data-syms="utrue,ucond,pcond,qdata,pmarg,integ"></div>
+<p class="inwords"><strong>In words:</strong> “the wind at <em>x</em> is each data point's wind at <em>x</em>, weighted by the share of the crowd at <em>x</em> that belongs to that data point.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the shares are 0.0089 × 0.5 / 0.2464 = 0.018 and 0.4839 × 0.5 / 0.2464 = 0.982; the winds are −5 and 3; so <em>u</em><sub>0.5</sub>(0.5) = 0.018 × (−5) + 0.982 × 3 = <strong>2.86</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def N(x, mu, s):
+    return math.exp(-(x - mu) ** 2 / (2 * s * s)) / (s * math.sqrt(2 * math.pi))
+t, x = 0.5, 0.5
+data, q = [-2.0, 2.0], [0.5, 0.5]
+p_cond = [N(x, t * x1, 1 - t) for x1 in data]
+p_t = sum(p * q_k for p, q_k in zip(p_cond, q))
+# p_t(x | x_1) q(x_1) / p_t(x): each data point's share of the crowd at x
+shares = [p * q_k / p_t for p, q_k in zip(p_cond, q)]
+[round(s, 3) for s in shares]  # → [0.018, 0.982]
+# u_t(x | x_1): distance still to go over time left
+u_cond = [(x1 - x) / (1 - t) for x1 in data]
+u_cond  # → [-5.0, 3.0]
+# the weighted average of the one-destination winds
+u_t = sum(s * u for s, u in zip(shares, u_cond))
+round(u_t, 2)  # → 2.86</code></pre>
+<h4>See it in two dimensions</h4>
+<figure class="ix" id="fig-field">
+  <div class="plot" style="margin:0;border:0;padding:0">
+    <div class="controls"><label for="field-t">time t = <strong id="field-tv">0.50</strong></label><input type="range" id="field-t" min="0" max="0.95" step="0.01" value="0.5"></div>
+    <canvas id="field-canvas" class="fm-canvas" width="640" height="640" aria-label="The marginal velocity field for four data points at the corners of a square, with the conditional velocities at one chosen point. Click to move the point."></canvas>
+    <p class="readout" id="field-readout">Click the picture, or focus it and use the arrow keys, to move the probe point.</p>
+  </div>
+  <figcaption>Equations 6 and 8 computed exactly, in your browser, for a toy dataset of four points at (±2, ±2), with the paper's straight (optimal transport) paths and σ<sub>min</sub> = 0.01. Drawn for this page; not a figure from the paper.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the four solid squares are the data. The dashed circles are the four one-destination crowds at the chosen time: each is centred on <em>t</em>·<em>x</em><sub>1</sub>, and its radius is its spread. The small grey arrows everywhere are the marginal wind <em>u</em><sub><em>t</em></sub>(<em>x</em>) of equation 8. At the probe point (the ring), the thin arrows are the four one-destination winds, each drawn fainter the smaller its share (the percentages), and the thick red arrow is their weighted average, the marginal wind. Start at <em>t</em> = 0: all four crowds sit on top of each other, every share is 25%, and the thick arrow points at the average of the data, the empty middle. Drag <em>t</em> up and the crowds separate; soon one share takes almost everything, and the thick arrow swings to follow the nearest corner. That is how a single wind, with no randomness at all, splits one cloud of noise into four clusters.</p>
+<h4>Theorem 1, in words</h4>
+<p>The surprising part is that this averaged wind really does move the averaged crowd: if each one-destination wind produces its own crowd, the weighted-average wind of equation 8 produces the mixture crowd of equation 6. The proof (Appendix A) checks the <a href="#appendix-b">continuity equation</a>, which says that mass is neither created nor destroyed. Nothing about images is assumed; it holds for any data distribution.</p>
+<h4>Why it matters today</h4>
+<p>This is the move that turns an impossible target into a buildable one: you never need the wind for all of the data at once, only the wind for one data point at a time, which you can write down by hand. The toy picture above even shows why one Euler step from noise lands in the middle of the data, a failure the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> measures on its own four blobs.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Conditional Flow Matching <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“The FM (equation 5) and CFM (equation 9) objectives have identical gradients w.r.t. θ.”<cite>Lipman et al. (2022), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Equation 8 still hides an integral over all the data, so even the averaged wind cannot be computed for a real dataset. The paper's answer is to skip the average entirely. Pick <em>one</em> data point, put a rider on its track, and train the network to predict <em>that rider's</em> velocity. Different riders passing the same spot want different arrows, so the network can never be perfect. The best it can do is answer with their average, which is exactly the averaged wind it could not compute. The average takes care of itself.</p>
+<h4>Tiny example</h4>
+<p>At <em>x</em> = 0.5, <em>t</em> = 0.5 above, 98.2% of riders want 3 and 1.8% want −5. If the network answers <em>v</em>, its expected squared error is 0.982(<em>v</em> − 3)<sup>2</sup> + 0.018(<em>v</em> + 5)<sup>2</sup>. For <em>v</em> = 2.5 that is 1.26; the error against the true averaged wind would be (2.5 − 2.86)<sup>2</sup> = 0.13. The gap, 1.13, is the same whatever <em>v</em> is (try <em>v</em> = 0: 9.29 against 8.16). A gap that never changes cannot change the slope, so both losses pull the network the same way.</p>
+<div class="eq" data-tex="\htmlData{sym=LCFM}{\mathcal{L}_{\text{CFM}}(\theta)} = \htmlData{sym=Ecfm}{\mathbb{E}_{t,\,q(x_1),\,p_t(x \mid x_1)}}\,\htmlData{sym=sqnorm}{\big\|}\htmlData{sym=vnet}{v_t(x)} - \htmlData{sym=ucond}{u_t(x \mid x_1)}\htmlData{sym=sqnorm}{\big\|^2}" data-fallback="L_CFM(θ) = E_{t, q(x_1), p_t(x | x_1)} ‖v_t(x) − u_t(x | x_1)‖²"></div>
+<div class="symtable" data-syms="LCFM,Ecfm,vnet,ucond,sqnorm"></div>
+<p class="inwords"><strong>In words:</strong> “pick a time, pick one real data point, put a point on that data point's path at that time, and grade the network's arrow against that one path's arrow.”</p>
+<p class="inwords"><strong>With the numbers:</strong> one draw where the rider is heading to +2 grades the guess 2.5 as (2.5 − 3)<sup>2</sup> = 0.25; a draw heading to −2 grades it as (2.5 + 5)<sup>2</sup> = 56.25. Over many draws at this spot, 98.2% are the first kind, and the average is 1.26.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># at x = 0.5, t = 0.5: each destination's share and its wind
+shares, u_cond = [0.018, 0.982], [-5.0, 3.0]
+v = 2.5
+# the CFM loss at this spot: the average of the per-rider errors
+cfm = sum(s * (v - u) ** 2 for s, u in zip(shares, u_cond))
+round(cfm, 2)  # → 1.26</code></pre>
+<p>The one line of algebra behind Theorem 2: for a fixed spot, the average squared distance to a set of targets is the squared distance to their average, plus how spread out the targets are.</p>
+<div class="eq" data-tex="\htmlData{sym=Egiven}{\mathbb{E}_{x_1 \mid x}}\,\big\|\htmlData{sym=vnet}{v_t(x)} - \htmlData{sym=ucond}{u_t(x \mid x_1)}\big\|^2 = \big\|\htmlData{sym=vnet}{v_t(x)} - \htmlData{sym=utrue}{u_t(x)}\big\|^2 + \htmlData{sym=spread}{\mathbb{E}_{x_1 \mid x}\big\|u_t(x \mid x_1) - u_t(x)\big\|^2}" data-fallback="E_{x_1|x} ‖v − u_t(x|x_1)‖² = ‖v − u_t(x)‖² + E_{x_1|x} ‖u_t(x|x_1) − u_t(x)‖²"></div>
+<div class="symtable" data-syms="Egiven,vnet,ucond,utrue,spread"></div>
+<p class="inwords"><strong>In words:</strong> “the conditional loss at a spot equals the marginal loss at that spot plus a leftover that depends only on the data, not on the network.” Averaging over spots and times turns the left side into the CFM loss and the first term on the right into the FM loss; the leftover is the constant of Theorem 2.</p>
+<p class="inwords"><strong>With the numbers:</strong> for <em>v</em> = 2.5: 1.26 = 0.13 + 1.13. For <em>v</em> = 0: 9.29 = 8.16 + 1.13. The leftover, 1.13, is the spread of the targets 3 and −5 around their average 2.86.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>shares, u_cond = [0.01798621, 0.98201379], [-5.0, 3.0]
+# u_t(x): the average target
+u_t = sum(s * u for s, u in zip(shares, u_cond))
+# the leftover: how spread out the targets are around u_t(x)
+spread = sum(s * (u - u_t) ** 2 for s, u in zip(shares, u_cond))
+round(spread, 2)  # → 1.13
+for v in (2.5, 0.0):
+    cfm = sum(s * (v - u) ** 2 for s, u in zip(shares, u_cond))
+    fm = (v - u_t) ** 2
+    print(round(cfm, 2), round(fm, 2), round(cfm - fm, 2))  # → 1.26 0.13 1.13 9.29 8.16 1.13</code></pre>
+<div class="plot" id="fig-loss">
+  <div class="controls"><label for="loss-x">position x = <strong id="loss-xv">0.50</strong></label><input type="range" id="loss-x" min="-2" max="2" step="0.05" value="0.5"><span>t = 0.5, data at −2 and +2</span></div>
+  <div id="loss-chart"></div>
+  <p class="readout" id="loss-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the network's answer <em>v</em> at one spot, over a window 3 either side of the best answer; the y-axis is the loss. The solid curve is the Flow Matching loss, graded against the true averaged wind; the dashed curve is the Conditional Flow Matching loss, graded against each rider's own wind. They are the same bowl, one lifted above the other by a constant, so their lowest points sit at the same <em>v</em> and their slopes match everywhere. Slope is what training follows, so training on the computable dashed loss is training on the uncomputable solid one. Drag <em>x</em> to 0: the two destinations are now equally likely, the targets are +4 and −4, the best answer is 0, and the gap grows to 16, because the riders disagree completely.</p>
+<h4>Why it matters today</h4>
+<p>This is why the lesson's training loop is so short: <a data-lesson="primer/ml/generative/diffusion.html#train_velocity_predictor"><code>train_velocity_predictor</code></a> pairs each data point with fresh noise, picks a time, and regresses one rider's velocity, exactly the CFM loss. The same argument, with noise in place of velocity, is why diffusion's “guess the noise” loss works: the paper credits denoising score matching as its inspiration.</p>
+</section>
+
+<section id="s4">
+<h2>4 Conditional probability paths and vector fields <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S4">original</a></span></h2>
+<blockquote class="quote">“We decide to use the simplest vector field corresponding to a canonical transformation for Gaussian distributions.”<cite>Lipman et al. (2022), §4</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Now choose the one-destination tracks. The paper uses a bell-shaped crowd (a <span class="t" data-t="gaussian">Gaussian</span>) that slides and shrinks over time: at time 0 it is the standard noise cloud centred on 0, at time 1 a tiny cloud centred on the data point. Two dials describe any such track: where the centre is at each moment (the mean) and how wide the cloud is (the spread). The simplest way to move a bell curve is to stretch it and shift it, and the wind that does exactly that is what Theorem 3 writes down.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Data point <em>x</em><sub>1</sub> = 2; centre 2<em>t</em>; spread 1 − <em>t</em>. A noise sample <em>x</em><sub>0</sub> = −1 is carried to −1 × (1 − <em>t</em>) + 2<em>t</em>: at <em>t</em> = 0.25 that is −0.25. The centre moves at speed 2 and the spread shrinks at rate 1, and together they move this point at speed 3, the same answer as the lesson's straight line from −1 to 2.</p>
+<h3 class="rung">The math</h3>
+<div class="eq" data-tex="\htmlData{sym=pcond}{p_t(x \mid x_1)} = \htmlData{sym=gauss}{\mathcal{N}}\big(x \,\big|\, \htmlData{sym=mut}{\mu_t(x_1)},\; \htmlData{sym=sigt}{\sigma_t(x_1)}^2 \htmlData{sym=ident}{I}\big)" data-fallback="p_t(x | x_1) = N(x | μ_t(x_1), σ_t(x_1)² I)"></div>
+<div class="symtable" data-syms="pcond,gauss,mut,sigt,ident"></div>
+<p class="inwords"><strong>In words:</strong> “the crowd heading to <em>x</em><sub>1</sub> is, at every moment, a round bell curve with centre μ<sub><em>t</em></sub> and spread σ<sub><em>t</em></sub>,” with μ<sub>0</sub> = 0, σ<sub>0</sub> = 1 (pure noise) and μ<sub>1</sub> = <em>x</em><sub>1</sub>, σ<sub>1</sub> = σ<sub>min</sub> (a tight cloud on the data).</p>
+<p class="inwords"><strong>With the numbers:</strong> at <em>t</em> = 0.25 the crowd heading to 2 has centre 0.5 and spread 0.75, and its density at −0.25 is <strong>0.3226</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x1, t = 2.0, 0.25
+mu, sigma = t * x1, 1 - t
+mu, sigma  # → (0.5, 0.75)
+# N(x | μ, σ²) in one dimension, read at x = −0.25
+x = -0.25
+round(math.exp(-(x - mu) ** 2 / (2 * sigma ** 2)) / (sigma * math.sqrt(2 * math.pi)), 4)  # → 0.3226</code></pre>
+<p>The flow that produces this crowd from noise stretches and shifts each noise sample:</p>
+<div class="eq" data-tex="\htmlData{sym=psit}{\psi_t(x)} = \htmlData{sym=sigt}{\sigma_t(x_1)}\,\htmlData{sym=xnoise}{x} + \htmlData{sym=mut}{\mu_t(x_1)}" data-fallback="ψ_t(x) = σ_t(x_1) x + μ_t(x_1)"></div>
+<div class="symtable" data-syms="psit,xnoise,sigt,mut"></div>
+<p class="inwords"><strong>In words:</strong> “to place a noise sample on the track at time <em>t</em>, scale it by the current spread and add the current centre.” Training with it is equation 14 of the paper: draw noise <em>x</em><sub>0</sub>, place it with <em>ψ</em><sub><em>t</em></sub>, and grade the network against the speed of <em>ψ</em><sub><em>t</em></sub>(<em>x</em><sub>0</sub>).</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>ψ</em><sub>0.25</sub>(−1) = 0.75 × (−1) + 0.5 = <strong>−0.25</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x0, x1, t = -1.0, 2.0, 0.25
+# σ_t x + μ_t
+psi = (1 - t) * x0 + t * x1
+psi  # → -0.25</code></pre>
+<p>Theorem 3 gives the wind that moves every point of that crowd along its track:</p>
+<div class="eq" data-tex="\htmlData{sym=ucond}{u_t(x \mid x_1)} = \frac{\htmlData{sym=sigp}{\sigma'_t(x_1)}}{\htmlData{sym=sigt}{\sigma_t(x_1)}}\big(\htmlData{sym=xany}{x} - \htmlData{sym=mut}{\mu_t(x_1)}\big) + \htmlData{sym=mup}{\mu'_t(x_1)}" data-fallback="u_t(x | x_1) = σ'_t(x_1)/σ_t(x_1) · (x − μ_t(x_1)) + μ'_t(x_1)"></div>
+<div class="symtable" data-syms="ucond,sigp,sigt,xany,mut,mup"></div>
+<p class="inwords"><strong>In words:</strong> “a point's velocity is the centre's velocity, plus its offset from the centre scaled by the rate at which the cloud is shrinking or growing.” A point off-centre in a shrinking cloud is pulled inwards; the centre itself just moves with μ′.</p>
+<p class="inwords"><strong>With the numbers:</strong> at <em>x</em> = −0.25, <em>t</em> = 0.25: σ′ = −1, σ = 0.75, μ = 0.5, μ′ = 2, so <em>u</em> = (−1 / 0.75) × (−0.25 − 0.5) + 2 = 1 + 2 = <strong>3</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x1, t, x = 2.0, 0.25, -0.25
+# μ_t = t x_1 and σ_t = 1 − t, and their rates of change
+mu, mu_prime = t * x1, x1
+sigma, sigma_prime = 1 - t, -1.0
+u = sigma_prime / sigma * (x - mu) + mu_prime
+round(u, 6)  # → 3.0</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>Choosing μ<sub><em>t</em></sub> and σ<sub><em>t</em></sub> is now a design decision, not something inherited from a noise process. The next two examples are two choices of these dials: one gives back diffusion, the other gives straight lines.</p>
+</section>
+
+<section id="s4-1">
+<h3>Example I: diffusion paths <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S4.SS1.SSS0.Px1">original</a></span></h3>
+<blockquote class="quote">“Another important observation is that, as these probability paths were previously derived as solutions of diffusion processes, they do not actually reach a true noise distribution in finite time.”<cite>Lipman et al. (2022), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Diffusion's tracks were never designed as tracks: they fall out of a process that fades a photo into static a little at a time. Read backwards (noise to data), the fading gives a centre and a spread for every moment, so diffusion is just one setting of the two dials. The paper checks the two classic settings, <span class="t" data-tip-title="Variance exploding (VE)" data-tip="A diffusion that keeps the data and adds ever larger noise on top, so the spread grows without limit and the signal is never shrunk.">variance exploding</span> and <span class="t" data-tip-title="Variance preserving (VP)" data-tip="A diffusion that shrinks the data while adding noise, so the total spread stays about 1. DDPM's forward process is of this kind.">variance preserving</span>, and finds that Theorem 3 gives the same wind as diffusion's deterministic sampler (the probability flow; Appendix D).</p>
+<h4>Tiny example</h4>
+<p>With the paper's settings β<sub>min</sub> = 0.1 and β<sub>max</sub> = 20 (Appendix E), halfway along (<em>t</em> = 0.5) the variance-preserving centre is only 0.28 of the way to the data, and the spread is still 0.96: the point is nearly all noise. At the start (<em>t</em> = 0) the centre is 0.0066·<em>x</em><sub>1</sub>, not 0. The noise at <em>t</em> = 0 is <em>almost</em> the standard cloud, but not quite.</p>
+<div class="eq" data-tex="\htmlData{sym=pcond}{p_t(x \mid x_1)} = \htmlData{sym=gauss}{\mathcal{N}}\big(x \,\big|\, \htmlData{sym=alph}{\alpha_{1-t}}\,x_1,\; (1 - \htmlData{sym=alph}{\alpha_{1-t}}^2)\,\htmlData{sym=ident}{I}\big), \qquad \htmlData{sym=alph}{\alpha_t} = e^{-\frac{1}{2}\htmlData{sym=Tint}{T(t)}}, \quad \htmlData{sym=Tint}{T(t)} = \htmlData{sym=integ}{\int_0^t} \htmlData{sym=betas}{\beta(s)}\,\htmlData{sym=integ}{ds}" data-fallback="p_t(x | x_1) = N(x | α_{1−t} x_1, (1 − α_{1−t}²) I), α_t = e^(−T(t)/2), T(t) = ∫_0^t β(s) ds"></div>
+<div class="symtable" data-syms="alph,Tint,betas,integ,ident"></div>
+<p class="inwords"><strong>In words:</strong> “the variance-preserving track shrinks the data point by α and fills the rest with noise, so that the squares of the data share and the noise share always add to 1; α decays exponentially with the accumulated noise rate <em>T</em>, read backwards in time.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with β(<em>s</em>) = 0.1 + 19.9<em>s</em>, <em>T</em>(<em>s</em>) = 0.1<em>s</em> + 9.95<em>s</em><sup>2</sup>. At <em>t</em> = 0.5: <em>T</em>(0.5) = 2.5375, α<sub>0.5</sub> = e<sup>−1.26875</sup> = <strong>0.2812</strong>, spread √(1 − 0.2812<sup>2</sup>) = <strong>0.9597</strong>. At <em>t</em> = 0: α<sub>1</sub> = e<sup>−5.025</sup> = <strong>0.0066</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+beta_min, beta_max = 0.1, 20.0
+# T(t) = ∫_0^t β(s) ds with β(s) = β_min + s (β_max − β_min)
+def T(t):
+    return t * beta_min + 0.5 * t * t * (beta_max - beta_min)
+def alpha(t):
+    return math.exp(-0.5 * T(t))
+t = 0.5
+round(T(1 - t), 4), round(alpha(1 - t), 4)  # → (2.5375, 0.2812)
+# the spread √(1 − α²)
+round(math.sqrt(1 - alpha(1 - t) ** 2), 4)  # → 0.9597
+# at t = 0 the centre is not quite 0
+round(alpha(1.0), 4)  # → 0.0066</code></pre>
+<h4>Why it matters today</h4>
+<p>Two things follow. Training diffusion's own tracks with the Flow Matching loss is a legitimate alternative to score matching, and the paper found it steadier (§6). And because diffusion's tracks never quite reach pure noise, diffusion code has to paper over the gap; flow matching can simply set μ<sub>0</sub> = 0 and σ<sub>0</sub> = 1 exactly. The lesson's <a data-lesson="primer/ml/generative/diffusion.html#add_noise"><code>add_noise</code></a> is this same shrink-and-add-noise step, in the diffusion convention.</p>
+</section>
+
+<section id="s4-2">
+<h3>Example II: optimal transport paths <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S4.SS1.SSS0.Px2">original</a></span></h3>
+<blockquote class="quote">“Intuitively, particles under the OT displacement map always move in straight line trajectories and with constant speed.”<cite>Lipman et al. (2022), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The most natural dials of all: move the centre at a steady pace from 0 to the data point, and shrink the spread at a steady pace from 1 to almost nothing. Every noise sample then travels in a straight line at constant speed, like a courier who knows the address and never turns. Moving one crowd onto another with the least total effort is what <span class="t" data-t="optimal transport">optimal transport</span> means, and for these two bell curves the straight-line plan is the optimal one.</p>
+<h4>Tiny example</h4>
+<p>Noise <em>x</em><sub>0</sub> = −1, data <em>x</em><sub>1</sub> = 2, σ<sub>min</sub> = 0.01. At <em>t</em> = 0.25 the sample sits at 0.7525 × (−1) + 0.25 × 2 = −0.2525, and its velocity is 2 − 0.99 × (−1) = 2.99 at every moment. With σ<sub>min</sub> = 0 these are the lesson's −0.25 and 3.</p>
+<div class="eq" data-tex="\htmlData{sym=mut}{\mu_t(x)} = t\,x_1, \qquad \htmlData{sym=sigt}{\sigma_t(x)} = 1 - (1 - \htmlData{sym=smin}{\sigma_{\min}})\,t" data-fallback="μ_t(x) = t x_1,  σ_t(x) = 1 − (1 − σ_min) t"></div>
+<div class="symtable" data-syms="mut,sigt,smin"></div>
+<p class="inwords"><strong>In words:</strong> “the centre slides from 0 to the data point at constant speed, and the spread shrinks from 1 to σ<sub>min</sub> at constant speed.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at <em>t</em> = 0.25 with <em>x</em><sub>1</sub> = 2: centre 0.5, spread 1 − 0.99 × 0.25 = <strong>0.7525</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x1, t, sigma_min = 2.0, 0.25, 0.01
+mu = t * x1
+sigma = 1 - (1 - sigma_min) * t
+mu, sigma  # → (0.5, 0.7525)</code></pre>
+<p>Plugging these dials into Theorem 3 gives the conditional wind (the paper's equation 21), which is defined all the way to <em>t</em> = 1:</p>
+<div class="eq" data-tex="\htmlData{sym=ucond}{u_t(x \mid x_1)} = \frac{x_1 - (1 - \htmlData{sym=smin}{\sigma_{\min}})\,\htmlData{sym=xany}{x}}{1 - (1 - \htmlData{sym=smin}{\sigma_{\min}})\,t}" data-fallback="u_t(x | x_1) = (x_1 − (1 − σ_min) x) / (1 − (1 − σ_min) t)"></div>
+<div class="symtable" data-syms="ucond,xany,smin"></div>
+<p class="inwords"><strong>In words:</strong> “the velocity is the distance still to cover (to the data point, allowing for the tiny final spread) divided by the time left.” For a fixed <em>x</em> the direction never changes with time, only the size: the paper's Figure 2 contrasts this with diffusion's target, which turns as time passes.</p>
+<p class="inwords"><strong>With the numbers:</strong> at <em>x</em> = −0.2525, <em>t</em> = 0.25: (2 − 0.99 × (−0.2525)) / 0.7525 = <strong>2.99</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x1, t, sigma_min = 2.0, 0.25, 0.01
+x = -0.2525
+u = (x1 - (1 - sigma_min) * x) / (1 - (1 - sigma_min) * t)
+round(u, 4)  # → 2.99</code></pre>
+<p>The flow itself (equation 22) is a straight line from the noise sample to (almost) the data point:</p>
+<div class="eq" data-tex="\htmlData{sym=psit}{\psi_t(x_0)} = \big(1 - (1 - \htmlData{sym=smin}{\sigma_{\min}})\,t\big)\,\htmlData{sym=xnoise}{x_0} + t\,\htmlData{sym=xdata}{x_1}" data-fallback="ψ_t(x_0) = (1 − (1 − σ_min) t) x_0 + t x_1"></div>
+<div class="symtable" data-syms="psit,xnoise,xdata,smin"></div>
+<p class="inwords"><strong>In words:</strong> “mix the noise sample and the data point: the data's share grows from 0 to 1 at a steady pace, and the noise's share shrinks from 1 to σ<sub>min</sub>.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1 − 0.99 × 0.25) × (−1) + 0.25 × 2 = <strong>−0.2525</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x0, x1, t, sigma_min = -1.0, 2.0, 0.25, 0.01
+psi = (1 - (1 - sigma_min) * t) * x0 + t * x1
+round(psi, 4)  # → -0.2525</code></pre>
+<p>And the training loss (equation 23) is the lesson's loss, with σ<sub>min</sub> kept:</p>
+<div class="eq" data-tex="\htmlData{sym=LCFM}{\mathcal{L}_{\text{CFM}}(\theta)} = \htmlData{sym=Eot}{\mathbb{E}_{t,\,q(x_1),\,p(x_0)}}\,\Big\|\htmlData{sym=vnet}{v_t}\big(\htmlData{sym=psit}{\psi_t(x_0)}\big) - \big(\htmlData{sym=xdata}{x_1} - (1 - \htmlData{sym=smin}{\sigma_{\min}})\,\htmlData{sym=xnoise}{x_0}\big)\Big\|^2" data-fallback="L_CFM(θ) = E_{t, q(x_1), p(x_0)} ‖v_t(ψ_t(x_0)) − (x_1 − (1 − σ_min) x_0)‖²"></div>
+<div class="symtable" data-syms="LCFM,Eot,vnet,psit,xdata,xnoise,smin"></div>
+<p class="inwords"><strong>In words:</strong> “draw a time, a data point and a noise sample; place the noise on the straight line toward the data; grade the network's velocity there against the line's constant velocity.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the target is 2 − 0.99 × (−1) = 2.99; a guess of 2.5 scores (2.5 − 2.99)<sup>2</sup> = <strong>0.2401</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>x0, x1, sigma_min = -1.0, 2.0, 0.01
+# x_1 − (1 − σ_min) x_0: the same at every t
+target = x1 - (1 - sigma_min) * x0
+round(target, 4)  # → 2.99
+round((2.5 - target) ** 2, 4)  # → 0.2401</code></pre>
+
+<h4>Figure 3, redrawn: two tracks from the same noise</h4>
+<figure class="ix" id="fig-paths">
+  <div class="plot" style="margin:0;border:0;padding:0">
+    <div class="controls"><label for="paths-t">time t = <strong id="paths-tv">0.50</strong></label><input type="range" id="paths-t" min="0" max="1" step="0.01" value="0.5"></div>
+    <canvas id="paths-canvas" class="fm-canvas" width="640" height="640" aria-label="Two conditional paths from one noise sample to one data point: a straight optimal transport line and a curved variance preserving diffusion arc, with a dot on each at the chosen time."></canvas>
+    <div class="legend"><span><i style="background:var(--ff-stroke)"></i>optimal transport (solid line, round dot)</span><span><i style="background:var(--attn-stroke)"></i>diffusion, variance preserving (dashed line, square dot)</span></div>
+    <p class="readout" id="paths-readout"></p>
+  </div>
+  <figcaption>The conditional tracks of equation 22 (optimal transport, σ<sub>min</sub> = 0.01) and equation 18 (variance preserving, β<sub>min</sub> = 0.1, β<sub>max</sub> = 20), from the same noise sample to the same data point, computed live. Based on Lipman et al. (2022), Figure 3, redrawn.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the hollow circle is the noise sample <em>x</em><sub>0</sub> and the filled square is the data point <em>x</em><sub>1</sub>. The solid line is the optimal transport track: straight, and the round dot moves along it at an even pace as you drag <em>t</em>. The dashed curve is the diffusion track: it bows outwards, because its noise share and data share are the sides of a right triangle (their squares add to 1), and its square dot creeps through the first half (at <em>t</em> = 0.5 it is only 28% data), then rushes to the data at the end. A solver taking a few big straight steps follows the straight track exactly; on the curved, late-rushing track big steps cut the corner and land off it. The paper also sees diffusion's sampling paths “overshoot” the final sample and double back.</p>
+<div class="plot" id="fig-noise">
+  <div id="noise-chart"></div>
+  <p class="readout" id="noise-readout">Hover or tap the chart, or focus it and use the arrow keys, to read both curves.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is time from noise (0) to data (1); the y-axis is how much of the moving point is still noise, σ<sub><em>t</em></sub>. The solid line is optimal transport: noise drains away at a steady rate. The dashed curve is the variance-preserving diffusion track: at <em>t</em> = 0.5 the point is still 96% noise, and most of the cleaning happens in the last third. That is the pattern the paper sees in real images (its Figure 6): the optimal transport model's pictures emerge gradually, while diffusion's stay static-like until the very end.</p>
+
+<h4>The whole recipe in one picture</h4>
+<figure class="ix" id="fig-recipe">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 520" role="img" aria-label="The Conditional Flow Matching recipe with straight paths: training on top, sampling below">
+    <defs><marker id="arrfm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="fm_train" aria-label="Training frame"><rect x="6" y="24" width="348" height="244" rx="12"/></g>
+    <text x="12" y="17" class="lbl">Training (one step)</text>
+    <g class="blk frame" data-block="fm_sample" aria-label="Sampling frame"><rect x="6" y="296" width="348" height="218" rx="12"/></g>
+    <text x="12" y="289" class="lbl">Sampling</text>
+    <!-- wires: training -->
+    <path class="wire" d="M66,68 V100" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M180,68 V100" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M294,68 V100" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M294,76 H200 V100" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M66,88 H174 Q180,80 186,88 H194 Q200,80 206,88 H250 V100" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M123,136 V158" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M123,196 V222" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M294,140 V240 H282" marker-end="url(#arrfm)"/>
+    <text x="130" y="152" class="lbl">xₜ and t</text>
+    <!-- wires: sampling -->
+    <path class="wire" d="M180,342 V362" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M180,404 V424" marker-end="url(#arrfm)"/>
+    <path class="wire" d="M130,440 H34 V383 H58" marker-end="url(#arrfm)"/>
+    <text x="40" y="432" class="lbl">no</text>
+    <path class="wire" d="M180,456 V472" marker-end="url(#arrfm)"/>
+    <text x="186" y="468" class="lbl">yes</text>
+    <!-- training blocks -->
+    <g class="blk emb" data-block="fm_x0"><rect x="16" y="38" width="100" height="30" rx="6"/><text x="66" y="58" text-anchor="middle">noise x₀</text></g>
+    <g class="blk plain" data-block="fm_t"><rect x="130" y="38" width="100" height="30" rx="6"/><text x="180" y="58" text-anchor="middle">time t</text></g>
+    <g class="blk soft" data-block="fm_x1"><rect x="244" y="38" width="100" height="30" rx="6"/><text x="294" y="58" text-anchor="middle">data x₁</text></g>
+    <g class="blk norm" data-block="fm_mix"><rect x="16" y="100" width="214" height="36" rx="7"/><text x="123" y="122" text-anchor="middle">point on the line ψₜ(x₀)</text></g>
+    <g class="blk lin" data-block="fm_target"><rect x="238" y="100" width="112" height="40" rx="7"/><text x="294" y="116" text-anchor="middle">target</text><text x="294" y="132" text-anchor="middle">x₁ − (1−σ)x₀</text></g>
+    <g class="blk ff" data-block="fm_net"><rect x="16" y="158" width="214" height="38" rx="7"/><text x="123" y="181" text-anchor="middle">network v_θ(xₜ, t)</text></g>
+    <g class="blk attn" data-block="fm_loss"><rect x="60" y="222" width="222" height="34" rx="7"/><text x="171" y="243" text-anchor="middle">loss ‖v − target‖²</text></g>
+    <!-- sampling blocks -->
+    <g class="blk emb" data-block="fm_start"><rect x="58" y="308" width="244" height="34" rx="7"/><text x="180" y="329" text-anchor="middle">start: x ~ N(0, I), t = 0</text></g>
+    <g class="blk ff" data-block="fm_step"><rect x="58" y="362" width="244" height="42" rx="7"/><text x="180" y="380" text-anchor="middle">ODE solver step</text><text x="180" y="396" text-anchor="middle">x ← x + h·v_θ(x, t)</text></g>
+    <g class="blk plain" data-block="fm_check"><rect x="130" y="424" width="100" height="32" rx="7"/><text x="180" y="444" text-anchor="middle">t = 1?</text></g>
+    <g class="blk soft" data-block="fm_out"><rect x="100" y="472" width="160" height="30" rx="7"/><text x="180" y="492" text-anchor="middle">a new sample</text></g>
+  </svg>
+  <div class="panel" id="fig-recipe-panel" aria-live="polite"><p class="hint">Hover or tap a block. Start with <strong>noise x₀</strong> at the top left.</p></div>
+  </div>
+  <figcaption>Conditional Flow Matching with optimal transport paths (equations 22 and 23), and sampling by solving equation 1. Drawn for this page to summarise §4 and §6; not a figure from the paper.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read the top box from the top down. Three random draws (a noise sample, a time and a real data point) feed two calculations: the point on the straight line at that time (left) and the line's velocity (right, which ignores <em>t</em> because the speed is constant). The network sees only the point and the time, guesses a velocity, and the squared difference is the loss. Nothing is simulated: one training step is one network call. The bottom box is generation: start from noise at <em>t</em> = 0 and repeat solver steps along the learned wind until <em>t</em> = 1. The paper uses an adaptive solver (dopri5) or fixed-step ones (Euler, midpoint); the Euler step is shown.</p>
+<h4>Why it matters today</h4>
+<p>This is the version everyone uses: the lesson's <a data-lesson="primer/ml/generative/diffusion.html#flow_point"><code>flow_point</code></a> and <a data-lesson="primer/ml/generative/diffusion.html#flow_target"><code>flow_target</code></a> are equations 22 and 23 with σ<sub>min</sub> = 0. The paper also makes a careful point that later work took up: each <em>conditional</em> track is straight and optimal, but the <em>averaged</em> wind is not guaranteed to be; its paths bend where tracks cross. The lesson's figure of crossing training lines and bending learned paths shows exactly this, and rectified flow's retraining exists to straighten them.</p>
+</section>
+
+<section id="s5">
+<h2>5 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S5">original</a></span></h2>
+<blockquote class="quote">“In contrast, the Flow Matching framework allows simulation-free training with unbiased gradients and readily scales to very high dimensions.”<cite>Lipman et al. (2022), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Before this paper there were three kinds of road. Train flows by following them (accurate, but slow and hard to scale). Train them without following, but with sums that are hard to estimate or gradients that are slightly wrong. Or build a diffusion process and let it dictate the track. Flow Matching takes the last road's trick (grade one example at a time, as denoising score matching does) and applies it to any track you like.</p>
+<h3 class="rung">What sits nearby</h3>
+<ul>
+  <li><strong>Maximum-likelihood flows</strong> (Chen et al., 2018; Grathwohl et al., 2018): every training step solves the equation of §2, forward and backward.</li>
+  <li><strong>Diffusion and score-based models</strong> (Sohl-Dickstein et al., 2015; Song and Ermon, 2019; Ho et al., 2020): simulation-free, but only on paths a noising process can produce.</li>
+  <li><strong>Concurrent work</strong>: Liu et al. (2022, rectified flow) and Albergo and Vanden-Eijnden (2022, stochastic interpolants) arrived at similar per-example objectives independently.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Three groups finding the same idea at once is a sign it was the natural next step. The three names (flow matching, rectified flow, stochastic interpolants) describe closely related recipes, and the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> teaches them as one.</p>
+</section>
+
+<section id="s6">
+<h2>6 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The experiments are a fair race. The same network (a <span class="t" data-t="u-net">U-Net</span>) and the same settings, trained five ways: DDPM's noise loss, two versions of score matching, Flow Matching on diffusion tracks, and Flow Matching on straight tracks. If anything the race favours the older methods, which were allowed extra training iterations. Three scores are kept: how probable the model finds real test images (likelihood, in bits per dimension), how realistic its samples look (<span class="t" data-t="fid">FID</span>), and how many network calls its sampler needs (<span class="t" data-tip-title="NFE (number of function evaluations)" data-tip="How many times the sampler calls the network to make one sample. It is the main cost of generating, so fewer is faster.">NFE</span>). Lower is better for all three.</p>
+</section>
+
+<section id="s6-1">
+<h3>6.1 Likelihood and sample quality on ImageNet <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S6.SS1">original</a></span></h3>
+<blockquote class="quote">“On both CIFAR-10 and ImageNet, FM-OT consistently obtains best results across all our quantitative measures compared to competing methods.”<cite>Lipman et al. (2022), §6.1</cite></blockquote>
+<h4>The results</h4>
+<div class="tablewrap"><table>
+  <caption>Selected rows and columns of Table 1, reproduced with attribution (Lipman et al., 2022). Same architecture for every row; lower is better</caption>
+  <thead><tr><th>Training method</th><th class="num">CIFAR-10 NLL</th><th class="num">CIFAR-10 FID</th><th class="num">CIFAR-10 NFE</th><th class="num">ImageNet 64 NLL</th><th class="num">ImageNet 64 FID</th><th class="num">ImageNet 64 NFE</th></tr></thead>
+  <tbody>
+    <tr><td>DDPM</td><td class="num">3.12</td><td class="num">7.48</td><td class="num">274</td><td class="num">3.32</td><td class="num">17.36</td><td class="num">264</td></tr>
+    <tr><td>Score matching</td><td class="num">3.16</td><td class="num">19.94</td><td class="num">242</td><td class="num">3.40</td><td class="num">19.74</td><td class="num">441</td></tr>
+    <tr><td>Flow Matching, diffusion paths</td><td class="num">3.10</td><td class="num">8.06</td><td class="num">183</td><td class="num">3.33</td><td class="num">16.88</td><td class="num">187</td></tr>
+    <tr class="hl"><td>Flow Matching, optimal transport paths</td><td class="num">2.99</td><td class="num">6.35</td><td class="num">142</td><td class="num">3.31</td><td class="num">14.45</td><td class="num">138</td></tr>
+  </tbody>
+</table></div>
+<p>Read across the highlighted row: the straight-path model is best on every column. The NFE column is the easiest to feel: an adaptive solver, asked for the same accuracy, needs about half as many network calls on the straight-path model as on DDPM. On ImageNet 128×128 the same recipe reached an FID of 20.9, better than the unconditional GANs the paper lists (it sets aside one model, IC-GAN, that is given extra conditioning).</p>
+<h4>Bits per dimension, decoded</h4>
+<p><strong>Everyday picture:</strong> if you used the model to compress images, how many bits would each pixel colour cost? A model that finds real images more probable compresses them into fewer bits, so lower is better.</p>
+<div class="eq" data-tex="\htmlData{sym=BPD}{\mathrm{BPD}} = \htmlData{sym=Ebpd}{\mathbb{E}_{x_1}}\left[-\frac{\htmlData{sym=log2p}{\log_2 p_1(x_1)}}{\htmlData{sym=dim}{d}}\right]" data-fallback="BPD = E_{x_1}[ −log₂ p_1(x_1) / d ]"></div>
+<div class="symtable" data-syms="BPD,Ebpd,log2p,dim"></div>
+<p class="inwords"><strong>In words:</strong> “the number of bits the model needs to describe a test image, divided by the number of colour values in it, averaged over test images.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a CIFAR-10 image has <em>d</em> = 32 × 32 × 3 = 3,072 colour values. At 2.99 bits per dimension, one image costs 2.99 × 3,072 ≈ 9,185 bits, about <strong>1,148 bytes</strong>, against 3,072 bytes stored raw.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>d = 32 * 32 * 3
+d  # → 3072
+bpd = 2.99
+# −log₂ p_1(x_1) = BPD × d bits per image
+bits = bpd * d
+round(bits)  # → 9185
+round(bits / 8)  # → 1148</code></pre>
+<h4>Faster training</h4>
+<p>The paper reports that Flow Matching also <em>learns</em> faster. For ImageNet 128, a reference diffusion model trained for 4.36 million iterations at batch size 256, while Flow Matching (with a 25% larger model) used 500,000 iterations at batch size 1.5k: about a third fewer images seen in total.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>diffusion_images = 4.36e6 * 256
+fm_images = 500e3 * 1.5e3
+# the share of image throughput saved
+round(1 - fm_images / diffusion_images, 2)  # → 0.33</code></pre>
+<h4>Why it matters today</h4>
+<p>A method that is better on quality, likelihood, sampling cost <em>and</em> training cost at once is rare. That combination, with a loss simpler than diffusion's, is why straight-path training spread so quickly.</p>
+</section>
+
+<section id="s6-2">
+<h3>6.2 Sampling efficiency <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S6.SS2">original</a></span></h3>
+<blockquote class="quote">“…the FM with OT model produces the best numerical error, in terms of computational cost, requiring roughly only 60% of the NFEs to reach the same error threshold as diffusion models.”<cite>Lipman et al. (2022), §6.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Following a wind with a few big steps is like driving a winding road with your eyes closed, opening them only every few seconds: on a straight road you arrive fine, on a winding one you end up in a field. Straighter paths forgive bigger steps, so they need fewer network calls for the same result.</p>
+<h4>Try it: the exact wind, a few big steps</h4>
+<div class="plot" id="fig-steps">
+  <div class="controls">
+    <label for="steps-n">Euler steps N = <strong id="steps-nv">4</strong></label><input type="range" id="steps-n" min="1" max="20" step="1" value="4">
+    <span class="fm-toggle" role="group" aria-label="Which paths the wind was built from"><button type="button" data-kind="ot" aria-pressed="true">optimal transport</button><button type="button" data-kind="vp" aria-pressed="false">diffusion (VP)</button></span>
+  </div>
+  <canvas id="steps-canvas" class="fm-canvas" width="640" height="640" aria-label="Three hundred samples after N Euler steps along the exact marginal wind, with the four data points and a few sample trajectories."></canvas>
+  <p class="readout" id="steps-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the four outlined squares are the data points at (±2, ±2). The dots are 300 samples, each started from the same noise every time, after <em>N</em> Euler steps along the <em>exact</em> averaged wind of equation 8 (so this is what a perfectly trained network would do, not a trained network). Faint lines show some of the journeys. With optimal transport paths and 1 step, everything lands in the middle: the averaged wind at <em>t</em> = 0 points at the mean of the data. By 4 steps the samples sit on the corners. Switch to diffusion paths: at 4 steps the samples are still smeared out, and it takes around 15 to get as close. The numbers are illustrative, from a four-point toy; the paper's own measurement on ImageNet 32 is the 60% quoted above.</p>
+<div class="plot" id="fig-steps-chart">
+  <div id="stepsc-chart"></div>
+  <p class="readout" id="stepsc-readout">Hover or tap the chart, or focus it and use the arrow keys, to compare the two at each step count.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of Euler steps (network calls per sample); the y-axis is the average distance from each sample to its nearest data point, computed on the toy above. Lower is better. The solid line (optimal transport) falls steeply and reaches the floor within about 5 steps; the dashed line (diffusion paths) needs roughly 15 to 20. At a single step diffusion looks better only because its samples have barely moved from the noise, while the straight-path samples have all jumped to the centre. This is a redrawn cousin of the paper's Figure 7, where error against a 1,000-step reference is plotted against NFE on ImageNet 32.</p>
+<h4>Why it matters today</h4>
+<p>Sampling cost is paid on every image a user asks for, forever; training is paid once. That is why so much later work (rectified flow's retraining, distillation into one- or few-step students) pushes the step count down further, and why the lesson's <a data-lesson="primer/ml/generative/diffusion.html#step_sweep"><code>step_sweep</code></a> measures exactly this curve for a trained network.</p>
+</section>
+
+<section id="s6-3">
+<h3>6.3 Conditional sampling from low-resolution images <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S6.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The same recipe works when the generator is given a hint. Here the hint is a small 64×64 photo, and the task is <span class="t" data-tip-title="Super-resolution" data-tip="Producing a sharper, higher-resolution image from a small or blurry one. The generator must invent plausible fine detail that the small image does not contain.">super-resolution</span>: produce a plausible 256×256 version.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2, reproduced with attribution (Lipman et al., 2022). ImageNet validation set, 64×64 to 256×256</caption>
+  <thead><tr><th>Model</th><th class="num">FID ↓</th><th class="num">IS ↑</th><th class="num">PSNR ↑</th><th class="num">SSIM ↑</th></tr></thead>
+  <tbody>
+    <tr><td>Regression</td><td class="num">15.2</td><td class="num">121.1</td><td class="num">27.9</td><td class="num">0.801</td></tr>
+    <tr><td>SR3 (diffusion)</td><td class="num">5.2</td><td class="num">180.1</td><td class="num">26.4</td><td class="num">0.762</td></tr>
+    <tr class="hl"><td>Flow Matching, optimal transport paths</td><td class="num">3.4</td><td class="num">200.8</td><td class="num">24.7</td><td class="num">0.747</td></tr>
+  </tbody>
+</table></div>
+<p>FID and <span class="t" data-tip-title="Inception score (IS)" data-tip="A score for generated images from an image classifier: high when each image is confidently recognisable and the set as a whole covers many classes. Higher is better.">IS</span> judge realism, and Flow Matching wins both. <span class="t" data-tip-title="PSNR and SSIM" data-tip="Pixel-by-pixel similarity to the one true high-resolution photo. They reward safe, blurry averages, which is why plain regression scores best on them while looking worst.">PSNR and SSIM</span> reward matching the original pixel by pixel, which is why plain regression, which blurs, tops those columns. Following the SR3 authors, the paper treats FID and IS as the better signal of quality.</p>
+<h4>Why it matters today</h4>
+<p>Conditioning slots in without changing the method: the network simply also receives the hint. Text-to-image models condition on a prompt in the same way, and guidance (see the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>, Step 5) works on velocities just as it does on noise guesses.</p>
+</section>
+
+<section id="s7">
+<h2>7 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S7">original</a></span></h2>
+<blockquote class="quote">“Furthermore, the FM framework provides an alternative view on diffusion models, and suggests forsaking the stochastic/diffusion construction in favor of more directly specifying the probability path, allowing us to, e.g., construct paths that allow faster sampling and/or improve generation.”<cite>Lipman et al. (2022), §7</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Diffusion said: decide how to destroy data, and learning to undo it follows. Flow Matching says: decide the road from noise to data directly, and learning to drive it follows. The first is a special case of the second.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The authors expected other paths (non-round Gaussians, other kernels) to follow. The short <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#S8">social responsibility section</a> adds two notes: image generators can be misused, and methods that need fewer training updates save real energy.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices, briefly <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#A1">original</a></span></h2>
+<h3 class="rung">What they contain</h3>
+<ul>
+  <li><strong>A, the proofs.</strong> Theorem 1 checks the continuity equation below; Theorem 2 expands both squares and swaps the order of averaging (the one-line identity in §3.2); Theorem 3 differentiates the stretch-and-shift flow.</li>
+  <li><strong>C, computing probabilities.</strong> Following the flow backwards from a data point while adding up how much the wind spreads space along the way gives its log-probability, the number behind the NLL column. The spreading is estimated with random probe vectors, which keeps the estimate unbiased and cheap.</li>
+  <li><strong>D, diffusion's winds.</strong> Rewriting a diffusion's density equation as a continuity equation recovers the probability-flow wind, which matches Theorem 3 for both VE and VP paths.</li>
+  <li><strong>E, implementation.</strong> <span class="t" data-t="adam">Adam</span>, learning rates of 10<sup>−4</sup> to 5 × 10<sup>−4</sup>, batch sizes up to 2,048, and sampling with the adaptive dopri5 solver at tolerance 10<sup>−5</sup>.</li>
+</ul>
+
+<section id="appendix-b">
+<h3>Appendix B: the continuity equation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.02747#A2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Watch one stretch of a busy corridor. The number of people in it goes up only if more walk in than walk out. Density times velocity is the flow of people; if that flow is larger leaving a spot than arriving, the spot empties. This bookkeeping rule is how the paper proves that a wind “generates” a crowd.</p>
+<h4>Tiny example</h4>
+<p>A steady wind of speed 2 carries the standard bell curve to the right. At <em>x</em> = 1, the crowd is on the down-slope, so as it moves right the density there rises at rate 0.4839; at the same time more people flow out of the spot than in, at rate −0.4839. The two cancel.</p>
+<div class="eq" data-tex="\htmlData{sym=ddt}{\frac{d}{dt}}\htmlData{sym=pmarg}{p_t(x)} + \htmlData{sym=divop}{\mathrm{div}}\big(\htmlData{sym=pmarg}{p_t(x)}\,\htmlData{sym=vfield}{v_t(x)}\big) = 0" data-fallback="d/dt p_t(x) + div(p_t(x) v_t(x)) = 0"></div>
+<div class="symtable" data-syms="ddt,pmarg,divop,vfield"></div>
+<p class="inwords"><strong>In words:</strong> “the rate at which the density at a spot changes, plus the net outflow of mass from that spot, is zero: mass is only ever moved, never made or destroyed.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <em>p</em><sub><em>t</em></sub>(<em>x</em>) = <em>p</em><sub>0</sub>(<em>x</em> − 2<em>t</em>) and <em>v</em> = 2. At <em>x</em> = 1, <em>t</em> = 0: d<em>p</em>/d<em>t</em> = 0.4839 and div(<em>p v</em>) = d(2<em>p</em>)/d<em>x</em> = −0.4839; they sum to 0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def p0(x):
+    return math.exp(-x * x / 2) / math.sqrt(2 * math.pi)
+c, x, h = 2.0, 1.0, 1e-6
+# the crowd drifting right at speed c
+def p(t, x):
+    return p0(x - c * t)
+# d/dt p_t(x), by a small finite difference
+dp_dt = (p(h, x) - p(-h, x)) / (2 * h)
+round(dp_dt, 4)  # → 0.4839
+# div(p v): in one dimension, the slope of p·c in x
+div = (p(0, x + h) * c - p(0, x - h) * c) / (2 * h)
+round(div, 4)  # → -0.4839
+abs(dp_dt + div) &lt; 1e-6  # → True</code></pre>
+<h4>Why it matters today</h4>
+<p>It is the one tool every proof in the paper leans on, and it is why the averaged wind of §3.1 is correct: add up the continuity equations of all the one-destination crowds and you get the continuity equation of the whole crowd.</p>
+</section>
+</section>
+
+<section id="today">
+<h2>What changed since 2022</h2>
+<p>The core, regress a velocity along a chosen path with a squared error, is unchanged. Much around it has moved:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>Straight paths with a tiny σ<sub>min</sub></td><td>The same with σ<sub>min</sub> = 0, as in rectified flow</td><td>One setting fewer to choose</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Straight <em>conditional</em> paths only</td><td>Retraining on the model's own (noise, sample) pairs to straighten the <em>learned</em> paths</td><td>Few-step and even one-step sampling</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>A U-Net on pixels</td><td>A transformer over patches of an autoencoder's latent</td><td>Cheaper per image, and it scales like language models</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Adaptive dopri5 with over 100 calls</td><td>A few dozen fixed Euler steps, or a distilled few-step student</td><td>Sampling cost is paid on every image</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Unconditional images, super-resolution</td><td>Text-to-image and text-to-video, trained with rectified flow (Stable Diffusion 3, Esser et al. 2024)</td><td>The recipe scales and conditions easily</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel and Matt Le, <em>Flow Matching for Generative Modeling</em>, ICLR 2023. <a href="https://arxiv.org/abs/2210.02747">arXiv:2210.02747</a>. Quotations are brief and attributed, and only selected rows of the paper's tables are reproduced, with attribution. Figures are redrawn from scratch and computed live; all explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §2
+    phit: { tex: "\\phi_t(x)", name: "The flow", meaning: "Where a walker who started at x has got to by time t. At time 0 it is x itself.", shape: "a point, same size as x", example: "φ_t(1) = e^t with v(x) = x; φ_(ln 2)(1) = 2" },
+    ddt: { tex: "\\frac{d}{dt}", name: "Rate of change in time", meaning: "How fast the thing after it changes as time passes: a derivative with respect to t.", shape: "same shape as what it acts on", example: "d/dt e^t = e^t" },
+    vfield: { tex: "v_t", name: "The velocity field (the wind)", meaning: "An arrow for every place and time: which way, and how fast, to move. In a CNF it is a neural network.", shape: "maps a point (and t) to an arrow of the same size", example: "v(x) = x in the tiny example; v = 2 everywhere in Appendix B" },
+    xstart: { tex: "x", name: "Starting point", meaning: "Where the walker is at time 0, typically a noise sample.", shape: "a point in d dimensions", example: "1" },
+    pushf: { tex: "[\\phi_t]_{*}p_0", name: "Push-forward of p₀", meaning: "The density you get by moving every bit of probability in p₀ along the flow for time t: the crowd at time t.", shape: "a density: a number at every x", example: "0.1995 at x = 0, t = ln 2" },
+    xany: { tex: "x", name: "A position", meaning: "Any point where we read the density or the wind.", shape: "a point in d dimensions", example: "0, 2, −0.25 or −0.2525 in the examples" },
+    pzero: { tex: "p_0", name: "The starting density", meaning: "The crowd at time 0: in generation, pure noise, the standard bell curve N(0, I).", shape: "a density", example: "p₀(0) = 0.3989, p₀(1) = 0.2420" },
+    phiinv: { tex: "\\phi_t^{-1}", name: "The flow run backwards", meaning: "Given where a walker is at time t, where did they start? Flows can always be reversed, because the wind gives one arrow per spot.", shape: "a point to a point", example: "φ_t⁻¹(x) = x e^−t for v(x) = x" },
+    detj: { tex: "\\det[\\partial\\phi_t^{-1}/\\partial x]", name: "Stretch correction", meaning: "The determinant of the reverse flow's matrix of slopes (its Jacobian): how much it squeezes a tiny patch of space. If the flow doubles distances, densities must halve so the total stays 1.", shape: "one positive number per x", example: "e^−t = 0.5 at t = ln 2" },
+    // §3
+    LFM: { tex: "\\mathcal{L}_{\\text{FM}}(\\theta)", name: "Flow Matching loss", meaning: "The average squared gap between the network's arrows and the true arrows. θ are the network's weights.", shape: "one number", example: "0.25 for one pick with truth 3 and guess 2.5" },
+    Efm: { tex: "\\mathbb{E}_{t,\\,p_t(x)}", name: "Average over times and points", meaning: "An expectation: draw t uniformly between 0 and 1, draw x from the crowd at that time, and average what follows.", shape: "turns many numbers into one", example: "t = 0.5, x = 0.5 is one draw" },
+    vnet: { tex: "v_t(x)", name: "The network's arrow", meaning: "What the neural network, with weights θ, says the velocity is at position x and time t. This is what training shapes.", shape: "same size as x", example: "a guess of 2.5" },
+    utrue: { tex: "u_t(x)", name: "The true (marginal) wind", meaning: "The velocity field that really produces the crowd's movie from noise to data. For real data it cannot be computed; §3.1 shows it is an average of simple per-example winds.", shape: "same size as x", example: "2.86 at x = 0.5, t = 0.5 in the two-point example" },
+    sqnorm: { tex: "\\|\\cdot\\|^2", name: "Squared length", meaning: "Square each entry of the difference and add them up: the squared distance between two arrows.", shape: "one number", example: "(2.5 − 3)² = 0.25" },
+    // §3.1
+    pmarg: { tex: "p_t(x)", name: "The whole crowd at time t", meaning: "The marginal probability path: the mixture of every data point's small crowd. At t = 0 it is noise; at t = 1 it is (almost) the data.", shape: "a density", example: "0.2464 at x = 0.5, t = 0.5" },
+    pcond: { tex: "p_t(x \\mid x_1)", name: "One data point's crowd", meaning: "The conditional probability path: where the noise heading for one particular data point x₁ is at time t. The bar | reads “given”.", shape: "a density", example: "N(0.5; 1, 0.5²) = 0.4839 for x₁ = 2" },
+    qdata: { tex: "q(x_1)", name: "The data distribution", meaning: "How common each real data point is. We can draw examples from it (the training set) but cannot write it down.", shape: "a density over data", example: "½ for each of −2 and +2" },
+    integ: { tex: "\\int \\ldots\\, dx_1", name: "Sum over every data point", meaning: "An integral: the continuous version of adding up. With a finite dataset it is just a sum over the data points.", shape: "one number (or arrow) out", example: "½ × 0.0089 + ½ × 0.4839" },
+    ucond: { tex: "u_t(x \\mid x_1)", name: "One data point's wind", meaning: "The conditional velocity field: the arrow that moves noise along the track to one particular data point x₁. Easy to write down by hand.", shape: "same size as x", example: "3 for x₁ = 2 and −5 for x₁ = −2, at x = 0.5, t = 0.5" },
+    // §3.2
+    LCFM: { tex: "\\mathcal{L}_{\\text{CFM}}(\\theta)", name: "Conditional Flow Matching loss", meaning: "The same squared error, but graded against one data point's wind instead of the uncomputable average. Theorem 2: its gradient equals the FM loss's.", shape: "one number", example: "1.26 at x = 0.5, t = 0.5, v = 2.5" },
+    Ecfm: { tex: "\\mathbb{E}_{t,\\,q(x_1),\\,p_t(x \\mid x_1)}", name: "Average over time, data point, and position on its track", meaning: "Draw t, then a real data point x₁, then a position x from that data point's crowd at time t, and average.", shape: "turns many numbers into one", example: "t = 0.5, x₁ = 2, x = 0.5" },
+    Egiven: { tex: "\\mathbb{E}_{x_1 \\mid x}", name: "Average over data points, at a fixed spot", meaning: "Among all the tracks passing through x at time t, average over which data point each is heading for, weighted by its share.", shape: "one number out", example: "weights 0.018 and 0.982" },
+    spread: { tex: "\\mathbb{E}_{x_1 \\mid x}\\|u_t(x \\mid x_1) - u_t(x)\\|^2", name: "The leftover", meaning: "How much the per-example targets disagree at this spot. It depends only on the data, never on the network, so it has no gradient: it cannot change training.", shape: "one number, fixed", example: "1.13 at x = 0.5; 16 at x = 0" },
+    // §4
+    gauss: { tex: "\\mathcal{N}", name: "Normal (Gaussian) distribution", meaning: "The bell curve. N(x | μ, σ² I) is a round bell centred at μ with spread σ in every direction.", shape: "a density", example: "N(−0.25 | 0.5, 0.75²) = 0.3226" },
+    mut: { tex: "\\mu_t(x_1)", name: "Centre of the track's crowd", meaning: "Where the bell curve heading to x₁ is centred at time t: 0 at the start, x₁ at the end.", shape: "same size as x", example: "t·x₁ = 0.5 at t = 0.25, x₁ = 2" },
+    sigt: { tex: "\\sigma_t(x_1)", name: "Spread of the track's crowd", meaning: "The standard deviation of that bell curve at time t: 1 at the start (pure noise), σ_min at the end.", shape: "one positive number", example: "0.75 (σ_min = 0) or 0.7525 (σ_min = 0.01) at t = 0.25" },
+    ident: { tex: "I", name: "Identity matrix", meaning: "Makes the bell curve round: the same spread in every direction, and no tilt.", shape: "d × d", example: "in one dimension, just 1" },
+    psit: { tex: "\\psi_t", name: "The conditional flow", meaning: "Carries a noise sample to its place on the track at time t by stretching (×σ_t) and shifting (+μ_t).", shape: "a point to a point", example: "ψ_0.25(−1) = −0.25 (σ_min = 0) or −0.2525 (σ_min = 0.01)" },
+    xnoise: { tex: "x_0", name: "A noise sample", meaning: "A draw from the standard bell curve N(0, I): where a track starts.", shape: "a point in d dimensions", example: "−1" },
+    xdata: { tex: "x_1", name: "A data point", meaning: "A real training example: where a track ends.", shape: "a point in d dimensions", example: "2" },
+    sigp: { tex: "\\sigma'_t", name: "Rate of change of the spread", meaning: "How fast the cloud is shrinking (negative) or growing. The prime means “derivative in time”.", shape: "one number", example: "−1 for σ_t = 1 − t" },
+    mup: { tex: "\\mu'_t", name: "Velocity of the centre", meaning: "How fast, and which way, the centre of the cloud is moving.", shape: "same size as x", example: "x₁ = 2 for μ_t = t·x₁" },
+    // §4.1 Example I
+    alph: { tex: "\\alpha_{1-t}", name: "Data share (diffusion)", meaning: "How much of the data point survives in the variance-preserving track, read at the reversed time 1 − t because diffusion runs data to noise. Near 0 at the start, 1 at the end.", shape: "between 0 and 1", example: "0.2812 at t = 0.5; 0.0066 at t = 0" },
+    Tint: { tex: "T(t)", name: "Accumulated noise", meaning: "The total noise rate added up from time 0 to t. The more has accumulated, the more the data has faded.", shape: "one non-negative number", example: "T(0.5) = 2.5375; T(1) = 10.05" },
+    betas: { tex: "\\beta(s)", name: "Noise rate", meaning: "How fast noise is added at diffusion time s: the paper uses a straight line from β_min = 0.1 to β_max = 20.", shape: "one positive number per s", example: "β(0.5) = 10.05" },
+    // §4.1 Example II
+    smin: { tex: "\\sigma_{\\min}", name: "Final spread", meaning: "How tight the cloud around the data point is at t = 1. Small but non-zero in the paper; the lesson (and rectified flow) set it to 0.", shape: "a small positive number", example: "0.01 here" },
+    Eot: { tex: "\\mathbb{E}_{t,\\,q(x_1),\\,p(x_0)}", name: "Average over time, data and noise", meaning: "Draw a time uniformly, a real data point, and a noise sample, independently, and average.", shape: "turns many numbers into one", example: "t = 0.25, x₁ = 2, x₀ = −1" },
+    // §6.1
+    BPD: { tex: "\\mathrm{BPD}", name: "Bits per dimension", meaning: "How many bits the model would need, per colour value, to store a test image. Lower means the model finds real images more probable.", shape: "one number", example: "2.99 on CIFAR-10" },
+    Ebpd: { tex: "\\mathbb{E}_{x_1}", name: "Average over test images", meaning: "Compute the quantity for every image in the test set and average.", shape: "one number out", example: "10,000 CIFAR-10 test images" },
+    log2p: { tex: "\\log_2 p_1(x_1)", name: "Log-probability, in bits", meaning: "The base-2 logarithm of how probable the model finds this image. It is negative (probabilities are below 1), so the minus sign makes the cost positive.", shape: "one number", example: "−9,185 bits for one image at 2.99 BPD" },
+    dim: { tex: "d", name: "Number of dimensions", meaning: "How many numbers describe one image: height × width × 3 colour channels.", shape: "a whole number", example: "32 × 32 × 3 = 3,072" },
+    // Appendix B
+    divop: { tex: "\\mathrm{div}", name: "Divergence", meaning: "The net outflow from a tiny region: add up, over every direction, how fast the flow increases along that direction. Positive means more leaves than arrives.", shape: "one number per x", example: "−0.4839 at x = 1 in the example" },
+  },
+
+  blocks: {
+    fm_train: { title: "Training: one step", body: "<p>Everything in this box is one training step, and it contains no simulation: no walking along the wind, only one network call and one squared error. Repeat for many random draws.</p>", lesson: "primer/ml/generative/diffusion.html" },
+    fm_sample: { title: "Sampling", body: "<p>Generation solves equation 1 with the trained wind: start from noise and step forward in time. This is the only place the flow is followed.</p>", lesson: "primer/ml/generative/diffusion.html" },
+    fm_x0: { title: "Noise x₀", body: "<p>A fresh draw from the standard bell curve N(0, I), one per training example.</p>", shape: "same shape as an image (or a 2-D point in the toy)" },
+    fm_t: { title: "Time t", body: "<p>A random moment between 0 (noise) and 1 (data), drawn uniformly. Different draws teach the network the wind at different stages of the journey.</p>", shape: "one number in [0, 1]" },
+    fm_x1: { title: "Data x₁", body: "<p>A real training example, drawn from the dataset.</p>", shape: "one image (or point)" },
+    fm_mix: { title: "The point on the line, ψₜ(x₀)", body: "<p>Equation 22: (1 − (1 − σ<sub>min</sub>)t)·x₀ + t·x₁. A weighted mix of noise and data, more data the later the time.</p>", shape: "same shape as x₀", lesson: "primer/ml/generative/diffusion.html#flow_point" },
+    fm_target: { title: "The target velocity", body: "<p>x₁ − (1 − σ<sub>min</sub>)x₀: the constant velocity of the straight line. It does not depend on t, which is why no wire from <em>time t</em> reaches it.</p>", shape: "same shape as x₀", lesson: "primer/ml/generative/diffusion.html#flow_target" },
+    fm_net: { title: "The network v_θ", body: "<p>Sees the mixed point and the time (never x₀ or x₁ separately) and guesses a velocity. Because many lines pass through the same point, its best possible guess is their average: the marginal wind of equation 8.</p>", shape: "point and time in, velocity out", lesson: "primer/ml/generative/diffusion.html#VelocityPredictor" },
+    fm_loss: { title: "Squared error", body: "<p>Equation 23: ‖v − target‖². By Theorem 2, lowering this also lowers the uncomputable Flow Matching loss, at the same rate.</p>", shape: "one number", lesson: "primer/ml/generative/diffusion.html#train_velocity_predictor" },
+    fm_start: { title: "Start from noise", body: "<p>Draw x from N(0, I) and set t = 0: exactly the crowd the straight paths start from.</p>", shape: "one noise sample" },
+    fm_step: { title: "One solver step", body: "<p>Ask the network for the wind at (x, t) and move for a short time h. The Euler step shown is the simplest solver; the paper also uses the midpoint rule and the adaptive dopri5, which picks its own step sizes.</p>", shape: "x and t updated", lesson: "primer/ml/generative/diffusion.html#euler_step" },
+    fm_check: { title: "Reached t = 1?", body: "<p>With N equal steps, h = 1/N, and the loop runs N times: N network calls, the NFE.</p>", shape: "N steps" },
+    fm_out: { title: "A new sample", body: "<p>Where the noise ended up at t = 1: a new data-like example. Straighter learned paths need fewer steps to land well.</p>", shape: "one generated image (or point)", lesson: "primer/ml/generative/diffusion.html#euler_sample" },
+  },
+
+  onReady(P) {
+    densityChart(P);
+    fieldExplorer(P);
+    lossChart(P);
+    pathsFigure(P);
+    stepsFigure(P);
+  },
+};
+
+/* ---- shared helpers for the toy computations ---- */
+const FM = (() => {
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const DATA = [[2, 2], [-2, 2], [-2, -2], [2, -2]];
+  const SMIN = 0.01, BMIN = 0.1, BMAX = 20;
+  const T = (s) => s * BMIN + 0.5 * s * s * (BMAX - BMIN);
+  const alpha = (s) => Math.exp(-0.5 * T(s));
+  // One data point's crowd and wind at (x, t), for straight (ot) or variance-preserving (vp) tracks.
+  function cond(kind, x, t, x1) {
+    if (kind === "ot") {
+      const s = 1 - (1 - SMIN) * t;
+      return { mu: [t * x1[0], t * x1[1]], sig: s, u: [(x1[0] - (1 - SMIN) * x[0]) / s, (x1[1] - (1 - SMIN) * x[1]) / s] };
+    }
+    const a = alpha(1 - t), s = Math.sqrt(1 - a * a);
+    const k = (-0.5 * (BMIN + (1 - t) * (BMAX - BMIN)) * a) / (1 - a * a);
+    return { mu: [a * x1[0], a * x1[1]], sig: s, u: [k * (a * x[0] - x1[0]), k * (a * x[1] - x1[1])] };
+  }
+  // Equation 8 for the four-point dataset: shares, the per-point winds, and their weighted average.
+  function marginal(kind, x, t) {
+    const cs = DATA.map((x1) => cond(kind, x, t, x1));
+    const lw = cs.map((c) => -((x[0] - c.mu[0]) ** 2 + (x[1] - c.mu[1]) ** 2) / (2 * c.sig * c.sig));
+    const m = Math.max(...lw);
+    const w = lw.map((l) => Math.exp(l - m));
+    const W = w.reduce((a, b) => a + b, 0);
+    const shares = w.map((v) => v / W);
+    const u = [0, 1].map((d) => cs.reduce((acc, c, i) => acc + shares[i] * c.u[d], 0));
+    return { shares, cs, u };
+  }
+  // A seeded generator, so every reader sees the same noise.
+  function rng(seed) {
+    return () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let r = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function noise(n, seed) {
+    const r = rng(seed);
+    return Array.from({ length: n }, () => {
+      const u = 1 - r(), v = r(), rad = Math.sqrt(-2 * Math.log(u));
+      return [rad * Math.cos(2 * Math.PI * v), rad * Math.sin(2 * Math.PI * v)];
+    });
+  }
+  function arrow(ctx, x0, y0, x1, y1, width, color) {
+    const ang = Math.atan2(y1 - y0, x1 - x0), len = Math.hypot(x1 - x0, y1 - y0);
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    if (len < 2) return;
+    const hd = Math.min(4 + width * 3, len * 0.6);
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - hd * Math.cos(ang - 0.45), y1 - hd * Math.sin(ang - 0.45));
+    ctx.lineTo(x1 - hd * Math.cos(ang + 0.45), y1 - hd * Math.sin(ang + 0.45));
+    ctx.closePath(); ctx.fill();
+  }
+  function square(ctx, px, py, r, color) { ctx.fillStyle = color; ctx.fillRect(px - r, py - r, 2 * r, 2 * r); }
+  return { css, DATA, SMIN, T, alpha, cond, marginal, noise, arrow, square };
+})();
+
+/* ---- §2: the crowd spreading under v(x) = x ---- */
+function densityChart(P) {
+  const p0 = (x) => Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
+  const xs = Array.from({ length: 161 }, (_, i) => -4 + i * 0.05);
+  const series = (t) => [
+    { name: "time 0: p₀", points: xs.map((x) => [x, p0(x)]) },
+    { name: `time ${t.toFixed(2)}: pushed forward`, points: xs.map((x) => [x, p0(x * Math.exp(-t)) * Math.exp(-t)]) },
+  ];
+  const slider = document.getElementById("dens-t");
+  const label = document.getElementById("dens-tv");
+  const chart = P.lineChart(document.getElementById("dens-chart"), { width: 420, height: 280,
+    series: series(+slider.value), xLabel: "position x", yLabel: "density", yMin: 0, yMax: 0.42,
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("dens-readout"), ariaLabel: "Density before and after flowing with v(x) = x",
+  });
+  slider.addEventListener("input", () => { label.textContent = (+slider.value).toFixed(2); chart.update(series(+slider.value)); });
+}
+
+/* ---- §3.1: the marginal wind as a weighted average ---- */
+function fieldExplorer(P) {
+  const canvas = document.getElementById("field-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height, R = 3.2;
+  const toPx = (x, y) => [((x + R) / (2 * R)) * W, ((R - y) / (2 * R)) * H];
+  const toXY = (px, py) => [(px / W) * 2 * R - R, R - (py / H) * 2 * R];
+  const slider = document.getElementById("field-t");
+  const label = document.getElementById("field-tv");
+  const readout = document.getElementById("field-readout");
+  let probe = [0.5, 0.5];
+  const names = ["(2, 2)", "(−2, 2)", "(−2, −2)", "(2, −2)"];
+  function draw() {
+    const t = +slider.value;
+    const fg = FM.css("--fg"), wire = FM.css("--wire"), active = FM.css("--active"), muted = FM.css("--muted");
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = FM.css("--card") || "#fff"; ctx.fillRect(0, 0, W, H);
+    // the grid of marginal arrows, each drawn a fixed length so direction reads clearly
+    for (let i = 0; i <= 12; i++) for (let j = 0; j <= 12; j++) {
+      const x = [-3 + i * 0.5, -3 + j * 0.5];
+      const u = FM.marginal("ot", x, t).u;
+      const n = Math.hypot(u[0], u[1]) || 1;
+      const [px, py] = toPx(x[0], x[1]);
+      FM.arrow(ctx, px, py, px + (u[0] / n) * 20, py - (u[1] / n) * 20, 1.6, wire);
+    }
+    // each data point's crowd: centre t·x₁, radius σ_t
+    const s = 1 - (1 - FM.SMIN) * t;
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = muted; ctx.lineWidth = 1.5;
+    FM.DATA.forEach((x1) => {
+      const [cx, cy] = toPx(t * x1[0], t * x1[1]);
+      ctx.beginPath(); ctx.arc(cx, cy, (s / (2 * R)) * W, 0, 2 * Math.PI); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    FM.DATA.forEach((x1) => { const [px, py] = toPx(...x1); FM.square(ctx, px, py, 8, fg); });
+    // at the probe: the four conditional winds and their weighted average
+    const m = FM.marginal("ot", probe, t);
+    const [qx, qy] = toPx(...probe);
+    const scale = 0.25; // draw each arrow as where it would carry you in 0.25 time units
+    const clip = (u) => { const n = Math.hypot(u[0], u[1]); const k = n * scale > 2.6 ? 2.6 / (n * scale) : 1; return [u[0] * k * scale, u[1] * k * scale]; };
+    ctx.font = "22px ui-sans-serif, system-ui, sans-serif";
+    m.cs.forEach((c, i) => {
+      const d = clip(c.u);
+      const [ex, ey] = toPx(probe[0] + d[0], probe[1] + d[1]);
+      ctx.globalAlpha = 0.2 + 0.8 * m.shares[i];
+      FM.arrow(ctx, qx, qy, ex, ey, 2.5, fg);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = fg;
+      ctx.fillText(`${Math.round(m.shares[i] * 100)}%`, ex + 6, ey + (ey > qy ? 18 : -6));
+    });
+    const d = clip(m.u);
+    const [ex, ey] = toPx(probe[0] + d[0], probe[1] + d[1]);
+    FM.arrow(ctx, qx, qy, ex, ey, 6, active);
+    ctx.strokeStyle = fg; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(qx, qy, 10, 0, 2 * Math.PI); ctx.stroke();
+    const top = m.shares.indexOf(Math.max(...m.shares));
+    readout.innerHTML = `At t = ${t.toFixed(2)}, point (${probe[0].toFixed(2)}, ${probe[1].toFixed(2)}): shares ` +
+      m.shares.map((w, i) => `${names[i]} <strong>${Math.round(w * 100)}%</strong>`).join(", ") +
+      `. Marginal wind u = (<strong>${m.u[0].toFixed(2)}, ${m.u[1].toFixed(2)}</strong>), mostly the wind toward ${names[top]}.`;
+    label.textContent = t.toFixed(2);
+  }
+  canvas.addEventListener("pointerdown", (ev) => {
+    const r = canvas.getBoundingClientRect();
+    probe = toXY(((ev.clientX - r.left) / r.width) * W, ((ev.clientY - r.top) / r.height) * H);
+    draw();
+  });
+  P.keyPoint(canvas, {
+    what: "the probe point",
+    get: () => { const [px, py] = toPx(...probe); return [px / W, py / H]; },
+    set: (fx, fy) => { probe = toXY(fx * W, fy * H); draw(); },
+    announce: false,
+  });
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- §3.2: the FM and CFM losses differ by a constant ---- */
+function lossChart(P) {
+  const t = 0.5, data = [-2, 2];
+  const N = (x, mu, s) => Math.exp(-((x - mu) ** 2) / (2 * s * s));
+  function at(x) {
+    const w0 = data.map((x1) => N(x, t * x1, 1 - t));
+    const W = w0[0] + w0[1];
+    const w = w0.map((v) => v / W);
+    const uc = data.map((x1) => (x1 - x) / (1 - t));
+    const ubar = w[0] * uc[0] + w[1] * uc[1];
+    const spread = w[0] * (uc[0] - ubar) ** 2 + w[1] * (uc[1] - ubar) ** 2;
+    return { w, uc, ubar, spread };
+  }
+  // Answers within 3 of the best one, so the constant gap stays visible next to the bowl.
+  const series = (x) => {
+    const a = at(x);
+    const vs = Array.from({ length: 61 }, (_, i) => a.ubar - 3 + i * 0.1);
+    return [
+      { name: "FM loss (against the averaged wind)", points: vs.map((v) => [v, (v - a.ubar) ** 2]) },
+      { name: "CFM loss (against each rider's wind)", points: vs.map((v) => [v, a.w[0] * (v - a.uc[0]) ** 2 + a.w[1] * (v - a.uc[1]) ** 2]) },
+    ];
+  };
+  const slider = document.getElementById("loss-x");
+  const label = document.getElementById("loss-xv");
+  const readout = document.getElementById("loss-readout");
+  const chart = P.lineChart(document.getElementById("loss-chart"), { width: 420, height: 280,
+    series: series(+slider.value), xLabel: "network's answer v", yLabel: "loss", yMin: 0,
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(1), readout, ariaLabel: "Flow Matching and Conditional Flow Matching loss against the network's answer",
+  });
+  const say = () => {
+    const x = +slider.value, a = at(x);
+    label.textContent = x.toFixed(2);
+    readout.innerHTML = `At x = ${x.toFixed(2)}: shares ${a.w.map((w) => w.toFixed(3)).join(" and ")}, rider targets ${a.uc.map((u) => u.toFixed(2)).join(" and ")}. Both curves bottom out at v = <strong>${a.ubar.toFixed(2)}</strong>; the gap between them is <strong>${a.spread.toFixed(2)}</strong> everywhere.`;
+  };
+  slider.addEventListener("input", () => { chart.update(series(+slider.value)); say(); });
+  say();
+}
+
+/* ---- §4.1: a straight track and a diffusion track from the same noise ---- */
+function pathsFigure(P) {
+  const canvas = document.getElementById("paths-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const x0 = [0.3, -1.4], x1 = [2.0, 1.2];
+  const X = [-0.6, 2.9], Y = [-1.9, 1.6];
+  const toPx = (x, y) => [((x - X[0]) / (X[1] - X[0])) * W, ((Y[1] - y) / (Y[1] - Y[0])) * H];
+  const ot = (t) => { const a = 1 - (1 - FM.SMIN) * t; return [a * x0[0] + t * x1[0], a * x0[1] + t * x1[1]]; };
+  const vp = (t) => { const a = FM.alpha(1 - t), s = Math.sqrt(1 - a * a); return [s * x0[0] + a * x1[0], s * x0[1] + a * x1[1]]; };
+  const slider = document.getElementById("paths-t");
+  const label = document.getElementById("paths-tv");
+  const readout = document.getElementById("paths-readout");
+  function trace(f, color, dash) {
+    ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.setLineDash(dash); ctx.beginPath();
+    for (let i = 0; i <= 200; i++) { const [px, py] = toPx(...f(i / 200)); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  function draw() {
+    const t = +slider.value;
+    const fg = FM.css("--fg"), c1 = FM.css("--ff-stroke"), c2 = FM.css("--attn-stroke");
+    ctx.fillStyle = FM.css("--card") || "#fff"; ctx.fillRect(0, 0, W, H);
+    trace(ot, c1, []);
+    trace(vp, c2, [12, 8]);
+    const [ax, ay] = toPx(...x0); ctx.strokeStyle = fg; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ax, ay, 11, 0, 2 * Math.PI); ctx.stroke();
+    const [bx, by] = toPx(...x1); FM.square(ctx, bx, by, 10, fg);
+    ctx.font = "24px ui-sans-serif, system-ui, sans-serif"; ctx.fillStyle = fg;
+    ctx.fillText("noise x₀", ax - 40, ay + 42); ctx.fillText("data x₁", bx - 90, by - 22);
+    const [px, py] = toPx(...ot(t)); ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(px, py, 11, 0, 2 * Math.PI); ctx.fill();
+    const [qx, qy] = toPx(...vp(t)); FM.square(ctx, qx, qy, 10, c2);
+    const a = FM.alpha(1 - t);
+    label.textContent = t.toFixed(2);
+    readout.innerHTML = `At t = ${t.toFixed(2)}: straight track is <strong>${Math.round(t * 100)}%</strong> data, ${Math.round((1 - (1 - FM.SMIN) * t) * 100)}% noise; diffusion track is <strong>${Math.round(a * 100)}%</strong> data, ${Math.round(Math.sqrt(1 - a * a) * 100)}% noise.`;
+  }
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+  const ts = Array.from({ length: 101 }, (_, i) => i / 100);
+  P.lineChart(document.getElementById("noise-chart"), { width: 420, height: 280,
+    series: [
+      { name: "optimal transport: 1 − (1 − σ_min)t", color: "var(--ff-stroke)", points: ts.map((t) => [t, 1 - (1 - FM.SMIN) * t]) },
+      { name: "diffusion (VP): √(1 − α²)", color: "var(--attn-stroke)", points: ts.map((t) => [t, Math.sqrt(1 - FM.alpha(1 - t) ** 2)]) },
+    ],
+    xLabel: "time t", yLabel: "noise share σₜ", yMin: 0, yMax: 1.05, xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("noise-readout"), ariaLabel: "Noise share of the moving point against time, for both tracks",
+  });
+}
+
+/* ---- §6.2: few-step sampling along the exact marginal wind ---- */
+function stepsFigure(P) {
+  const canvas = document.getElementById("steps-canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height, R = 3.4;
+  const toPx = (x, y) => [((x + R) / (2 * R)) * W, ((R - y) / (2 * R)) * H];
+  const start = FM.noise(300, 7);
+  const slider = document.getElementById("steps-n");
+  const label = document.getElementById("steps-nv");
+  const readout = document.getElementById("steps-readout");
+  let kind = "ot";
+  function run(k, n) {
+    const h = 1 / n;
+    return start.map((x) => {
+      const path = [x];
+      let p = x;
+      for (let i = 0; i < n; i++) { const u = FM.marginal(k, p, i * h).u; p = [p[0] + h * u[0], p[1] + h * u[1]]; path.push(p); }
+      return path;
+    });
+  }
+  const error = (paths) => paths.reduce((acc, path) => { const e = path[path.length - 1]; return acc + Math.min(...FM.DATA.map((d) => Math.hypot(e[0] - d[0], e[1] - d[1]))); }, 0) / paths.length;
+  // The error curve for both kinds of path, computed once.
+  const Ns = Array.from({ length: 25 }, (_, i) => i + 1);
+  const curves = { ot: Ns.map((n) => [n, error(run("ot", n))]), vp: Ns.map((n) => [n, error(run("vp", n))]) };
+  function draw() {
+    const n = +slider.value;
+    const paths = run(kind, n);
+    const fg = FM.css("--fg"), c = kind === "ot" ? FM.css("--ff-stroke") : FM.css("--attn-stroke"), muted = FM.css("--wire");
+    ctx.fillStyle = FM.css("--card") || "#fff"; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 0.35; ctx.strokeStyle = muted; ctx.lineWidth = 1.2;
+    paths.slice(0, 40).forEach((path) => { ctx.beginPath(); path.forEach((p, i) => { const [px, py] = toPx(...p); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.stroke(); });
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = c;
+    paths.forEach((path) => { const [px, py] = toPx(...path[path.length - 1]); ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill(); });
+    FM.DATA.forEach((d) => { const [px, py] = toPx(...d); ctx.strokeStyle = fg; ctx.lineWidth = 3; ctx.strokeRect(px - 10, py - 10, 20, 20); });
+    label.textContent = String(n);
+    const e = (k) => curves[k][n - 1][1].toFixed(3);
+    readout.innerHTML = `${n} step${n > 1 ? "s" : ""} (${n} network call${n > 1 ? "s" : ""} per sample). Average distance to the nearest data point: optimal transport <strong>${e("ot")}</strong>, diffusion paths <strong>${e("vp")}</strong>. Showing ${kind === "ot" ? "optimal transport" : "diffusion"} samples.`;
+  }
+  slider.addEventListener("input", draw);
+  document.querySelectorAll("#fig-steps [data-kind]").forEach((b) => b.addEventListener("click", () => {
+    kind = b.dataset.kind;
+    document.querySelectorAll("#fig-steps [data-kind]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    draw();
+  }));
+  document.addEventListener("papers:theme", draw);
+  draw();
+  P.lineChart(document.getElementById("stepsc-chart"), { width: 420, height: 280,
+    series: [{ name: "optimal transport paths", color: "var(--ff-stroke)", points: curves.ot }, { name: "diffusion (VP) paths", color: "var(--attn-stroke)", points: curves.vp }],
+    xLabel: "Euler steps (network calls)", yLabel: "distance to data", yMin: 0, xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("stepsc-readout"), ariaLabel: "Average distance to the nearest data point against the number of Euler steps, for both kinds of path",
+  });
+}
+</script>
+</body>
+</html>
