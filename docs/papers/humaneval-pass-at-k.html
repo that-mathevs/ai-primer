@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HumanEval and pass@k, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Chen et al. (2021), the Codex paper that introduced the HumanEval benchmark and the unbiased pass@k estimator.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="humaneval-pass-at-k">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Evaluation framework</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Functional correctness and pass@k</a></li>
+          <li><a href="#s2-try">Try it: draw k of n samples</a></li>
+          <li><a href="#s2-2">2.2 HumanEval</a></li>
+          <li><a href="#s2-3">2.3 The sandbox</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Code fine-tuning</a>
+        <ol>
+          <li><a href="#s3-3">3.3 Results: loss, temperature, ranking</a></li>
+          <li><a href="#s3-4">3.4 Against other models</a></li>
+          <li><a href="#s3-5">3.5 APPS</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Supervised fine-tuning: Codex-S</a></li>
+      <li><a href="#s5">5 Docstring generation: Codex-D</a></li>
+      <li><a href="#s6">6 Limitations</a></li>
+      <li><a href="#s7">7 Broader impacts</a></li>
+      <li><a href="#s8">8 Related work and 9 Conclusion</a></li>
+      <li><a href="#appa">Appendix A: why the plug-in is biased</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Evaluating Large Language Models Trained on Code, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Chen, Tworek, Jun, Yuan and 54 co-authors (2021), the Codex paper: a GPT model fine-tuned on public code, the HumanEval benchmark of 164 hand-written programming problems, and the unbiased pass@k estimator that every code benchmark has used since.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2107.03374">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2107.03374">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2107.03374">Paper as HTML (ar5iv)</a>
+    <a class="btn" href="https://github.com/openai/human-eval">HumanEval on GitHub</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard licence, so its tables are not reproduced: a few of its numbers are restated in this page's own charts and tables, each attributed, and its figures are redrawn from scratch. Its three-line pass@k function and one problem from its appendix are quoted because the page explains them line by line. Equations are reproduced with every symbol decoded. The paper runs to 35 pages with long appendices on bias, security and economics; those are summarised, and the sections on evaluation, which made the paper famous, are taken apart in full. Numbers the paper does not give are labelled illustrative.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s2-try">sample drawer</a> lets you set how many samples were generated and how many passed, then draw k at random and watch the count converge on the formula.</li>
+  <li>The <a href="#appa">bias explorer</a> shows why the tempting shortcut formula always reads low.</li>
+  <li>The <a href="#s6">chain builder</a> assembles the paper's synthetic docstrings from its 13 building blocks and runs them.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. Two lessons build what this paper introduced: the <a class="lesson" data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> (pass@k and its bias) and the <a class="lesson" data-lesson="primer/agents/coding_agents.html">coding agents lesson</a> (hidden tests, a sandbox, and pass@k for agents).</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Furthermore, we find that repeated sampling from the model is a surprisingly effective strategy for producing working solutions to difficult prompts.”<cite>Chen et al. (2021), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2107.03374">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A student writes a function from its description. You don't grade it by how much it looks like the model answer; you run it and see whether it works. And if the student may hand in several attempts, you count the problem solved when any one of them works. This paper builds that exam for <span class="t" data-t="llm">language models</span>, and a careful way to score it.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>Codex</strong>, a GPT model <span class="t" data-t="fine-tuning">fine-tuned</span> on public Python code from GitHub, solves 28.8% of the new HumanEval problems with one sample each. GPT-3 solves 0%; GPT-J (6 billion parameters, trained on a mix of text that includes some code) solves 11.4%.</li>
+  <li><strong>Sampling many times works</strong>: with 100 samples per problem, it solves 70.2% (if something can pick out the working sample).</li>
+  <li>It struggles with docstrings that describe long chains of operations and with binding operations to the right variables.</li>
+  <li>A long analysis of broader impacts: over-reliance, misalignment, bias, security, economics.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Codex itself is history, but two things from this paper are everywhere: the idea of grading generated code by running it against <span class="t" data-t="unit test">unit tests</span> (<span class="t" data-t="functional correctness">functional correctness</span>), and the formula for <span class="t" data-t="pass@k">pass@k</span>. Every code benchmark score you read today is built on them.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>GPT-3 was never trained to write code, yet the authors noticed it could write simple Python functions from their <span class="t" data-tip-title="Docstring" data-tip="In Python, the text in triple quotes just under a function's first line, describing what the function does. HumanEval gives the model a function's signature and docstring and asks it to write the body.">docstrings</span>. The hypothesis: a GPT model that reads lots of code will be much better at it.</p>
+<h3 class="rung">Tiny example: the headline numbers, from the paper's Figure 1</h3>
+<p>For Codex-12B and its variants on HumanEval's 164 problems (all samples at <span class="t" data-t="temperature">temperature</span> 0.8 in that figure):</p>
+<div class="tablewrap"><table>
+  <caption>The share of problems solved under each rule, from the caption of Figure 1 of Chen et al. (2021).</caption>
+  <thead><tr><th>Model and rule</th><th class="num">Solved</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-12B, one sample</td><td class="num">0%</td></tr>
+    <tr><td>Codex-12B, one sample</td><td class="num">28.8%</td></tr>
+    <tr><td>Codex-S-12B (extra fine-tuning on standalone functions), one sample</td><td class="num">37.7%</td></tr>
+    <tr><td>Codex-S, 100 samples, submit the one with the highest mean log-probability</td><td class="num">44.5%</td></tr>
+    <tr class="hl"><td>Codex-S, 100 samples, solved if any passes the unit tests</td><td class="num">77.5%</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> read down the rows. The first jump (0% to 28.8%) is what training on code buys; the second (to 37.7%) is fine-tuning on the right <em>kind</em> of code. The last two rows use the same 100 samples and differ only in who picks one: the model's own confidence gets 44.5%, while the unit tests get 77.5%. The gap between those rows is the value of being able to <em>check</em> an answer.</p>
+<h3 class="rung">The whole paper in one picture</h3>
+<figure class="ix wide" id="fig-pipeline">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 350" role="img" aria-label="GPT-3 weights are fine-tuned on 159 GB of Python to make Codex; further fine-tuning on 50,000 filtered standalone-function problems makes Codex-S; the same problems in reverse order make Codex-D; all are evaluated on HumanEval by running unit tests in a sandbox and computing pass@k">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk lin" data-block="gpt"><rect x="10" y="10" width="150" height="40" rx="7"/><text x="85" y="27" text-anchor="middle">GPT-3 family</text><text x="85" y="43" text-anchor="middle">12M to 12B params</text></g>
+    <g class="blk plain" data-block="github"><rect x="200" y="10" width="170" height="40" rx="7"/><text x="285" y="27" text-anchor="middle">159 GB of Python</text><text x="285" y="43" text-anchor="middle">54M GitHub repos</text></g>
+    <path class="wire" d="M85,50 V76" marker-end="url(#arr)"/>
+    <path class="wire" d="M285,50 V62 H120 V76" marker-end="url(#arr)"/>
+    <g class="blk ff" data-block="codex"><rect x="10" y="78" width="150" height="40" rx="7"/><text x="85" y="95" text-anchor="middle">Codex</text><text x="85" y="111" text-anchor="middle">§3</text></g>
+    <g class="blk plain" data-block="problems"><rect x="200" y="78" width="170" height="54" rx="7"/><text x="285" y="95" text-anchor="middle">≈50,000 problems:</text><text x="285" y="110" text-anchor="middle">contests + CI traces,</text><text x="285" y="125" text-anchor="middle">kept if solvable</text></g>
+    <path class="wire" d="M85,118 V160" marker-end="url(#arr)"/>
+    <path class="wire" d="M285,132 V146 H120 V160" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="codexs"><rect x="10" y="162" width="150" height="40" rx="7"/><text x="85" y="179" text-anchor="middle">Codex-S</text><text x="85" y="195" text-anchor="middle">writes code, §4</text></g>
+    <path class="wire" d="M300,132 V160" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="codexd"><rect x="220" y="162" width="150" height="40" rx="7"/><text x="295" y="179" text-anchor="middle">Codex-D</text><text x="295" y="195" text-anchor="middle">writes docstrings, §5</text></g>
+    <path class="wire" d="M85,202 V236" marker-end="url(#arr)"/>
+    <path class="wire" d="M295,202 V216 H140 V236" marker-end="url(#arr)"/>
+    <g class="blk frame" data-block="eval"><rect x="6" y="238" width="368" height="104" rx="10"/></g>
+    <text x="16" y="256" class="lbl">Evaluation, §2</text>
+    <g class="blk norm" data-block="humaneval"><rect x="14" y="264" width="108" height="66" rx="7"/><text x="68" y="286" text-anchor="middle">HumanEval</text><text x="68" y="302" text-anchor="middle">164 problems</text><text x="68" y="318" text-anchor="middle">n = 200 each</text></g>
+    <path class="wire" d="M122,297 H134" marker-end="url(#arr)"/>
+    <g class="blk attn" data-block="sandbox"><rect x="136" y="264" width="108" height="66" rx="7"/><text x="190" y="286" text-anchor="middle">run hidden</text><text x="190" y="302" text-anchor="middle">unit tests in</text><text x="190" y="318" text-anchor="middle">a sandbox</text></g>
+    <path class="wire" d="M244,297 H256" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="passk"><rect x="258" y="264" width="108" height="66" rx="7" stroke-width="3"/><text x="312" y="286" text-anchor="middle">count passes c,</text><text x="312" y="302" text-anchor="middle">then estimate</text><text x="312" y="318" text-anchor="middle">pass@k</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. Follow the models down the left, then the evaluation along the bottom.</p></div>
+  </div>
+  <figcaption>The paper's structure as one diagram, drawn from §2 to §5 of Chen et al. (2021).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the left column is the family of models: GPT-3 weights, fine-tuned on a large slice of GitHub to make Codex, then fine-tuned again on about 50,000 small, verified “write this function” problems to make Codex-S. The same problems, with the docstring moved to the end, train Codex-D to go the other way. Every model is graded the same way, along the bottom: generate many samples per HumanEval problem, run each against hidden unit tests in a sandbox, count the passes, and turn the count into pass@k. The green box with the thick border is the paper's most lasting contribution.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The paper's structure is still the structure of code-model work: pretrain broadly, fine-tune on code, fine-tune again on the task format, and measure by execution rather than by resemblance.</p>
+</section>
+
+<section id="s2">
+<h2>2 Evaluation framework <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S2">original</a></span></h2>
+<p>Three pieces: a metric (pass@k), a dataset (HumanEval), and a safe place to run untrusted code (the sandbox). This section is why the paper is still read.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Functional correctness and pass@k <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S2.SS1">original</a></span></h3>
+<blockquote class="quote">“Perhaps the most convincing reason to evaluate functional correctness is that it is used by human developers to judge code.”<cite>Chen et al. (2021), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Two recipes for the same cake can share hardly a word, and a recipe that differs from the original by one word (“salt” for “sugar”) can be a disaster. Comparing text is the wrong test for a recipe; bake it and taste it. Code is the same: <span class="t" data-t="bleu">BLEU</span> and other text-matching scores compare a sample with a reference solution, but many different programs are correct, and a program one character away from the reference can be wrong. So a sample counts as correct if it passes the problem's unit tests.</p>
+<h4>Tiny example: counting draws</h4>
+<p>Take one problem from the paper's Appendix B, <code class="example">is_prime(n)</code>: Codex-12B wrote n = 8 samples and c = 3 of them passed. If you could hand in k = 3 of those samples, picked at random, how likely is it that at least one passes? Count. There are C(8, 3) = 56 different groups of 3 you could pick. The groups made only of failing samples come from the 5 failures: C(5, 3) = 10. So 10 of the 56 groups fail completely, and pass@3 = 1 − 10/56 = 0.821.</p>
+<p>The older way (Kulal et al., 2019) generates exactly k samples per problem and checks whether any passes. That is fair, but noisy: with k = 3 you would see one random group, and get 1 or 0. The paper instead generates more samples than needed (n = 200, k up to 100) and computes the average over <em>every</em> group of k, exactly, by counting.</p>
+<h4>The math: the unbiased estimator</h4>
+<div class="eq" data-tex="\htmlData{sym=passk}{\text{pass@}k} := \htmlData{sym=Eprob}{\mathbb{E}_{\text{Problems}}}\left[1 - \htmlData{sym=ratio}{\frac{\htmlData{sym=binfail}{\binom{n-c}{k}}}{\htmlData{sym=binall}{\binom{n}{k}}}}\right]" data-fallback="pass@k := E over problems of [ 1 − C(n − c, k) / C(n, k) ]"></div>
+<div class="symtable" data-syms="n,c,k,binall,binfail,ratio,Eprob,passk"></div>
+<p class="inwords"><strong>In words:</strong> “for each problem, pass@k is one minus the share of all possible groups of k samples that contain no passing sample; the benchmark's pass@k is the average of that over the problems.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for <code class="example">is_prime</code>, n = 8, c = 3, k = 3: 1 − C(5, 3)/C(8, 3) = 1 − 10/56 = 0.821. The paper's Appendix B shows eight problems, each with 8 samples, and 1, 3, 1, 0, 0, 3, 3 and 0 of them pass. Averaging over those eight problems gives pass@1 = 0.172 and pass@3 = 0.402. With k = 1 the formula is simply c / n, the share of samples that pass.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+n, c, k = 8, 3, 3
+# C(n, k): every group of k samples; C(n - c, k): groups made only of failures
+math.comb(n, k), math.comb(n - c, k)  # → (56, 10)
+# pass@k for this one problem
+round(1 - math.comb(n - c, k) / math.comb(n, k), 3)  # → 0.821
+# E over problems: the eight Appendix B problems, 8 samples each
+cs = [1, 3, 1, 0, 0, 3, 3, 0]
+def pass_at(n, c, k):
+    return 1.0 if n - c &lt; k else 1 - math.comb(n - c, k) / math.comb(n, k)
+round(sum(pass_at(8, c, 1) for c in cs) / len(cs), 3)  # → 0.172
+round(sum(pass_at(8, c, 3) for c in cs) / len(cs), 3)  # → 0.402</code></pre>
+<p>When fewer than k samples failed (n − c &lt; k), every group of k must contain a pass, and the formula is exactly 1; the code checks that case first. The <span class="t" data-t="binomial coefficient">binomial coefficients</span> C(n, k) are the “n choose k” counts; <a data-lesson="primer/ml/benchmarks.html#pass_at_k"><code>pass_at_k</code></a> in the benchmarks lesson is this formula.</p>
+<h4>The paper's three lines of code</h4>
+<p>C(200, 100) has 59 digits. Computed naively in floating point, the ratio of two such numbers can lose accuracy or overflow, so the paper's Figure 3 gives a stable version that never forms either number. Their function, quoted:</p>
+<pre style="background:var(--code-bg);border:1px solid var(--border);border-radius:8px;padding:0.7rem 0.9rem;overflow-x:auto;font-size:0.88rem;line-height:1.45"><code class="example">def pass_at_k(n, c, k):
+    if n - c &lt; k: return 1.0
+    return 1.0 - np.prod(1.0 - k /
+        np.arange(n - c + 1, n + 1))</code></pre>
+<div class="eq" data-tex="1 - \htmlData{sym=ratio}{\frac{\binom{n-c}{k}}{\binom{n}{k}}} = 1 - \htmlData{sym=prodi}{\prod_{i=n-c+1}^{n}} \left(1 - \htmlData{sym=kover}{\frac{k}{i}}\right)" data-fallback="1 − C(n−c, k)/C(n, k) = 1 − Π_{i=n−c+1}^{n} (1 − k/i)"></div>
+<div class="symtable" data-syms="prodi,kover"></div>
+<p class="inwords"><strong>In words:</strong> “the share of all-failing groups equals a product of c small factors, one for each i from n − c + 1 up to n, each a little below 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> n = 8, c = 3, k = 3: i runs over 6, 7, 8, giving (1 − 3/6)(1 − 3/7)(1 − 3/8) = 0.5 × 0.571 × 0.625 = 0.179 = 10/56. So pass@3 = 1 − 0.179 = 0.821, the same answer with no large numbers at all.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+n, c, k = 8, 3, 3
+# Π over i = n - c + 1 .. n of (1 - k / i)
+fail = math.prod(1 - k / i for i in range(n - c + 1, n + 1))
+round(fail, 4), round(10 / 56, 4)  # → (0.1786, 0.1786)
+round(1 - fail, 3)  # → 0.821
+# why it matters: C(200, 100) has 59 digits
+len(str(math.comb(200, 100)))  # → 59</code></pre>
+<p>Why it works: C(n − c, k)/C(n, k) is the chance that k draws without replacement all land among the n − c failures. Writing both counts as factorials and cancelling leaves a product of c factors of the form (i − k)/i. Python's integers are exact, so the benchmarks lesson can use <code>math.comb</code> directly; numpy's floats cannot, which is why the paper's version exists.</p>
+<h4>The tempting shortcut</h4>
+<p>Why not estimate one sample's pass rate as p̂ = c / n and compute the chance that k independent tries all fail, (1 − p̂)<sup>k</sup>?</p>
+<div class="eq" data-tex="\htmlData{sym=passk}{\text{pass@}k} \approx 1 - (1 - \htmlData{sym=phat}{\hat{p}})^{\htmlData{sym=k}{k}}, \qquad \htmlData{sym=phat}{\hat{p}} = \htmlData{sym=cn}{\frac{c}{n}}" data-fallback="pass@k ≈ 1 − (1 − p̂)^k, with p̂ = c/n"></div>
+<div class="symtable" data-syms="phat,cn"></div>
+<p class="inwords"><strong>In words:</strong> “treat the observed pass rate as the true one and assume k independent tries.”</p>
+<p class="inwords"><strong>With the numbers:</strong> p̂ = 3/8 = 0.375; 1 − 0.625³ = 1 − 0.244 = 0.756, against 0.821 from counting. The shortcut reads low, and <a href="#appa">Appendix A</a> shows this is not luck: averaged over every possible outcome it is always low.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>n, c, k = 8, 3, 3
+p_hat = c / n
+p_hat  # → 0.375
+# 1 - (1 - p̂)^k
+round(1 - (1 - p_hat) ** k, 3)  # → 0.756</code></pre>
+<h4>Why it matters</h4>
+<p>pass@k with a large k answers “can the model produce a working solution at all, if something checks for us?”; pass@1 answers “will one try work?”. Both come from the same n samples, which is the formula's practical gift: generate once, report any k up to n. The <a data-lesson="primer/agents/coding_agents.html">coding agents lesson</a> makes the matching point for agents: a user running an agent once gets pass@1.</p>
+</section>
+
+<section id="s2-try">
+<h3>Try it: draw k of n samples</h3>
+<h4>Everyday picture</h4>
+<p>A bag of n marbles, c of them green. Grab k without looking. The formula says how often your handful contains at least one green; drawing many handfuls should agree.</p>
+<p><strong>Try it:</strong> set n, c and k. Press <em>Draw k at random</em> a few times, then <em>Draw 1,000</em>, and watch the running share of draws that contained a pass settle on the formula. Then set k close to n: once fewer than k samples fail, every draw contains a pass.</p>
+<div class="plot">
+  <div class="controls ui"><label for="pk-n">Samples generated, n = <strong id="pk-n-v">8</strong></label><input type="range" id="pk-n" min="1" max="20" step="1" value="8"></div>
+  <div class="controls ui"><label for="pk-c">Samples that pass, c = <strong id="pk-c-v">3</strong></label><input type="range" id="pk-c" min="0" max="8" step="1" value="3"></div>
+  <div class="controls ui"><label for="pk-k">Attempts allowed, k = <strong id="pk-k-v">3</strong></label><input type="range" id="pk-k" min="1" max="8" step="1" value="3"></div>
+  <div class="controls ui"><button type="button" id="pk-draw">Draw k at random</button> <button type="button" id="pk-many">Draw 1,000</button> <button type="button" id="pk-reset">Reset the tally</button></div>
+  <div id="pk-grid"></div>
+  <p class="readout" id="pk-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each square is one generated sample: green and striped if it passed the unit tests, plain grey if it failed. A draw outlines k squares chosen at random, without repeats. The readout gives three numbers: the counting formula 1 − C(n − c, k)/C(n, k), the running share of your draws that caught at least one green square, and the plug-in shortcut 1 − (1 − c/n)<sup>k</sup>. After a thousand draws the running share sits close to the formula, not to the shortcut: the formula describes exactly this experiment, drawing without replacement from the samples you have.</p>
+<h4>Why it matters</h4>
+<p>The formula is not a model of the world; it is an exact count of an experiment you could run on your own samples. That is why it can be exactly unbiased: nothing is assumed beyond the n samples being independent draws from the model.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 HumanEval: hand-written evaluation set <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“It is important for these tasks to be hand-written, since our models are trained on a large fraction of GitHub, which already contains solutions to problems from a variety of sources.”<cite>Chen et al. (2021), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>If you set a class homework taken from the textbook's exercises, and the answers are in the back of the book, the grades tell you who has the book. The authors wrote 164 fresh problems by hand, because Codex had read much of GitHub, where solutions to published exercises (for example, the Codeforces problems in the APPS dataset) already sit in more than ten public repositories.</p>
+<h4>Tiny example: one HumanEval problem and eight tries</h4>
+<p>Each problem has a function signature, a docstring (often with examples), a reference body, and hidden unit tests: 7.7 tests per problem on average. The model sees only the signature and docstring and writes the body. Hover or tap each part.</p>
+<figure class="ix wide" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 410" role="img" aria-label="The words_string problem: signature and docstring go to the model, which writes eight completions; hidden tests in a sandbox pass one and fail seven, so c is 1 of n = 8">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="prompt"><rect x="6" y="4" width="368" height="148" rx="10"/></g>
+    <text x="16" y="22" class="lbl">What the model sees</text>
+    <g class="blk lin" data-block="sig"><rect x="14" y="30" width="352" height="26" rx="6"/><text x="24" y="48" style="font-family:ui-monospace,monospace">def words_string(s):</text></g>
+    <g class="blk norm" data-block="doc"><rect x="14" y="62" width="352" height="46" rx="6"/><text x="24" y="80">Split a string of words separated by commas</text><text x="24" y="97">or spaces into a list of the words.</text></g>
+    <g class="blk norm" data-block="example"><rect x="14" y="114" width="352" height="30" rx="6"/><text x="24" y="134" style="font-family:ui-monospace,monospace;font-size:11px">"Hi, my name is John" → ["Hi", "my", …]</text></g>
+    <path class="wire" d="M190,152 V170" marker-end="url(#arr2)"/>
+    <text x="16" y="186" class="lbl">8 samples at temperature 0.8</text>
+    <g class="blk soft" data-block="c1"><rect x="14" y="194" width="40" height="40" rx="6"/><text x="34" y="219" text-anchor="middle">1 ✓</text></g>
+    <g class="blk emb" data-block="split"><rect x="58" y="194" width="40" height="40" rx="6"/><text x="78" y="219" text-anchor="middle">2 ✗</text></g>
+    <g class="blk emb" data-block="strip"><rect x="102" y="194" width="40" height="40" rx="6"/><text x="122" y="219" text-anchor="middle">3 ✗</text></g>
+    <g class="blk emb" data-block="comma"><rect x="146" y="194" width="40" height="40" rx="6"/><text x="166" y="219" text-anchor="middle">4 ✗</text></g>
+    <g class="blk emb" data-block="split"><rect x="190" y="194" width="40" height="40" rx="6"/><text x="210" y="219" text-anchor="middle">5 ✗</text></g>
+    <g class="blk emb" data-block="split"><rect x="234" y="194" width="40" height="40" rx="6"/><text x="254" y="219" text-anchor="middle">6 ✗</text></g>
+    <g class="blk emb" data-block="comma"><rect x="278" y="194" width="40" height="40" rx="6"/><text x="298" y="219" text-anchor="middle">7 ✗</text></g>
+    <g class="blk emb" data-block="split"><rect x="322" y="194" width="44" height="40" rx="6"/><text x="344" y="219" text-anchor="middle">8 ✗</text></g>
+    <path class="wire" d="M190,234 V252" marker-end="url(#arr2)"/>
+    <g class="blk attn" data-block="tests"><rect x="60" y="254" width="260" height="44" rx="7"/><text x="190" y="272" text-anchor="middle">Hidden unit tests (7.7 per problem</text><text x="190" y="289" text-anchor="middle">on average), run in a sandbox</text></g>
+    <path class="wire" d="M190,298 V316" marker-end="url(#arr2)"/>
+    <g class="blk soft" data-block="count"><rect x="60" y="318" width="260" height="36" rx="7" stroke-width="3"/><text x="190" y="341" text-anchor="middle">c = 1 of n = 8 pass</text></g>
+    <path class="wire" d="M190,354 V368" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="estimate"><rect x="60" y="370" width="260" height="34" rx="7"/><text x="190" y="392" text-anchor="middle">pass@1 = 0.125, pass@3 = 0.375</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. The eight numbered squares are real samples from the paper's Appendix B; hover the pink ones to see why each failed.</p></div>
+  </div>
+  <figcaption>One problem from the paper's Appendix B, <code>words_string</code>, with the verdicts on the eight Codex-12B samples printed there. The docstring is paraphrased; its example is quoted.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the frame at the top is everything the model is given. The eight squares are the eight samples the paper prints for this problem: one correct (green), seven wrong (pink). Squares with the same wrong idea light up together: four of the seven are some form of <code>s.split()</code>, which splits on spaces only and keeps the commas, so <code>"Hi,"</code> comes back instead of <code>"Hi"</code>; the docstring's own example already catches it. The tests, not a human, deliver each verdict. The count c = 1 of n = 8 is the only thing pass@k needs: pass@1 = 1/8, and pass@3 = 1 − C(7, 3)/C(8, 3) = 1 − 35/56 = 0.375.</p>
+<p class="inwords"><strong>In Python:</strong> the most common wrong answer, run on the docstring's example.</p>
+<pre class="in-python"><code>s = "Hi, my name is John"
+# samples 2, 5, 6 and 8 all amount to this
+s.split()  # → ['Hi,', 'my', 'name', 'is', 'John']
+# the docstring asks for ['Hi', 'my', 'name', 'is', 'John']
+s.split() == ["Hi", "my", "name", "is", "John"]  # → False</code></pre>
+<h4>Why it matters</h4>
+<p>HumanEval is small (164 problems), easy by professional standards, and Python-only, and all three facts shape how to read a score on it. Small means noisy: the <a data-lesson="primer/ml/benchmarks.html#standard_error">benchmarks lesson</a> computes that a score of 80% on 164 problems carries a 95% margin of about ±6 points. Hand-written means it was fresh in 2021; it has been public since, which is the <span class="t" data-t="contamination">contamination</span> risk the authors wrote it to avoid.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Sandbox for executing generated programs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>You would taste a stranger's cooking, but not in your own kitchen with the doors unlocked. Generated code is often wrong, and code learned from GitHub can include code that was written to do harm, so it runs somewhere it can break nothing.</p>
+<h4>What they built</h4>
+<p>A <span class="t" data-t="sandbox">sandbox</span> meant to stop untrusted programs from modifying the host, persisting on it, reaching sensitive resources, or sending data out. The main wall is <span class="t" data-tip-title="gVisor" data-tip="A container runtime that intercepts a container's requests to the operating system and emulates them, so the program never talks to the real host kernel directly.">gVisor</span>, which emulates the host's resources so a container never touches them directly; network access is cut by firewall rules except for what the experiment itself needs.</p>
+<h4>Why it matters</h4>
+<p>Execution-based grading is only as trustworthy as the place code runs. The <a data-lesson="primer/agents/coding_agents.html">coding agents lesson</a> builds a small version in plain Python: <a data-lesson="primer/agents/coding_agents.html#run_sandboxed"><code>run_sandboxed</code></a> runs code with a restricted set of built-ins under step and time <a data-lesson="primer/agents/coding_agents.html#Limits"><code>Limits</code></a>, and <a data-lesson="primer/agents/coding_agents.html#run_cases"><code>run_cases</code></a> grades it against test cases.</p>
+</section>
+
+<section id="s3">
+<h2>3 Code fine-tuning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Take a well-read generalist and give them a year of nothing but reading other people's code. That is Codex: GPT models of up to 12 billion parameters, trained further on Python.</p>
+<h3 class="rung">3.1 Data</h3>
+<p>Collected in May 2020 from 54 million public GitHub repositories: 179 GB of unique Python files under 1 MB. Files that looked auto-generated, had an average line longer than 100 characters or a longest line over 1,000, or had few alphanumeric characters were removed, leaving 159 GB.</p>
+<h3 class="rung">3.2 Methods</h3>
+<ul>
+  <li><strong>Start from GPT-3.</strong> Surprisingly, starting from a pretrained language model gave no better final result than starting from scratch (the code dataset is so large), but it converged faster, so every model starts from GPT.</li>
+  <li><strong>Training.</strong> 100 billion tokens with <span class="t" data-t="adam">Adam</span> (β₁ = 0.9, β₂ = 0.95, ε = 10⁻⁸), <span class="t" data-t="weight decay">weight decay</span> 0.1, a 175-step linear <span class="t" data-t="warmup">warmup</span> and <span class="t" data-t="cosine decay">cosine decay</span>.</li>
+  <li><strong>A better tokenizer for code.</strong> GPT-3's <span class="t" data-t="tokenizer">tokenizer</span> wastes tokens on indentation, so they added tokens for runs of whitespace of different lengths: about 30% fewer tokens for the same code.</li>
+  <li><strong>Sampling.</strong> <span class="t" data-t="top-p">Nucleus sampling</span> with p = 0.95, stopping at the first <code>\nclass</code>, <code>\ndef</code>, <code>\n#</code>, <code>\nif</code> or <code>\nprint</code>, since otherwise the model carries on writing more functions.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The stop sequences are a small detail with a big effect on the metric: a correct function followed by stray top-level code can fail its tests. Every harness that grades generated code has to decide where the generation ends.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Results: loss, temperature and ranking <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Three questions a practitioner asks: does a bigger model predict code better, how adventurous should sampling be, and if you can't run tests, how do you pick one sample to show?</p>
+<h4>The math: test loss follows a power law</h4>
+<div class="eq" data-tex="\htmlData{sym=L}{L}(\htmlData{sym=N}{N}) = \left(\frac{\htmlData{sym=N}{N}}{\htmlData{sym=Nc}{5.92 \times 10^{7}}}\right)^{\htmlData{sym=alpha}{-0.13}}" data-fallback="L(N) = (N / 5.92 × 10⁷)^(−0.13)"></div>
+<div class="symtable" data-syms="N,Nc,alpha,L"></div>
+<p class="inwords"><strong>In words:</strong> “the test loss is the model's size, measured in units of 59.2 million parameters, raised to the power −0.13: every doubling of size multiplies the loss by the same factor.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at N = 5.92 × 10⁷ the loss is 1. At 3 × 10⁸, (5.07)<sup>−0.13</sup> = 0.81; at 1.2 × 10¹⁰, (202.7)<sup>−0.13</sup> = 0.50. Each doubling multiplies the loss by 2<sup>−0.13</sup> = 0.914. (Illustrative sizes plugged into the paper's fitted curve; N counts non-embedding parameters.)</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># L(N) = (N / 5.92e7) ** -0.13, the paper's fit on held-out Python
+def L(N):
+    return (N / 5.92e7) ** -0.13
+round(L(5.92e7), 2), round(L(3e8), 2), round(L(1.2e10), 2)  # → (1.0, 0.81, 0.5)
+# the factor per doubling of N
+round(2 ** -0.13, 3)  # → 0.914</code></pre>
+<p>This is the same kind of <span class="t" data-tip-title="Power law" data-tip="A relationship where one quantity is a fixed power of another, so doubling the input always multiplies the output by the same factor. On log-log axes it is a straight line.">power law</span> as GPT-3's scaling curves (<a href="scaling-laws.html#k-1-2">scaling-laws companion</a>): code fine-tuning did not break the smooth trend.</p>
+<h4>Temperature: pick it for the k you report</h4>
+<p>For a 679M-parameter Codex, the best temperature for pass@1 is 0.2, and for pass@100 it is 0.8. Higher temperatures are best for larger k because the samples are more varied, and pass@k only needs <em>one</em> of them to work.</p>
+<p><strong>Tiny example (illustrative).</strong> Ten problems. At a low temperature, the samples for a problem are near-copies: the model solves 3 problems every time and the other 7 never, so pass@1 = pass@100 = 0.3. At a high temperature, samples vary: say 5 problems are solved by 20% of samples and 5 never. Then pass@1 = 0.1, but with 100 tries each of those 5 is almost surely solved, so pass@100 ≈ 0.5. Low temperature wins pass@1, high temperature wins pass@100.</p>
+<pre class="in-python"><code># low temperature: each problem is all-or-nothing
+round(3 / 10, 2), round(3 / 10, 2)  # → (0.3, 0.3)
+# high temperature: 5 problems at 20% per sample, 5 at 0%
+p = [0.2] * 5 + [0.0] * 5
+round(sum(p) / len(p), 2)  # → 0.1
+round(sum(1 - (1 - q) ** 100 for q in p) / len(p), 3)  # → 0.5</code></pre>
+<h4>The math: choosing one sample without tests</h4>
+<p>pass@k assumes an oracle (the unit tests) picks the working sample. An autocomplete tool can show a user only one suggestion and has no tests. The paper tries ranking samples by the model's own <span class="t" data-t="log-probability">log-probability</span>: the sum over tokens performs slightly <em>worse</em> than picking at random, while the mean per token beats random clearly.</p>
+<div class="eq" data-tex="\htmlData{sym=score}{\text{score}}(\htmlData{sym=smp}{s}) = \htmlData{sym=invT}{\frac{1}{T}} \htmlData{sym=sumt}{\sum_{t=1}^{T}} \htmlData{sym=log}{\log} \htmlData{sym=P}{P}(\htmlData{sym=st}{s_t} \htmlData{sym=given}{\mid} \htmlData{sym=xprompt}{x}, \htmlData{sym=sprev}{s_{&lt;t}})" data-fallback="score(s) = (1/T) Σ_{t=1}^{T} log P(s_t | x, s_&lt;t)"></div>
+<div class="symtable" data-syms="smp,T,st,sprev,xprompt,P,given,log,sumt,invT,score"></div>
+<p class="inwords"><strong>In words:</strong> “a sample's score is the average, over its tokens, of the log of the probability the model gave each token; the sample with the highest average is the one shown.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a 4-token wrong one-liner with token log-probabilities (−0.1, −0.2, −0.3, −0.2) sums to −0.8, average −0.2. A 12-token correct loop whose tokens each score −0.15 sums to −1.8, average −0.15. By the sum, the short wrong answer wins; by the mean, the correct one does.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># log P(s_t | x, s_&lt;t) for each token of two samples (illustrative)
+short_wrong = [-0.1, -0.2, -0.3, -0.2]
+long_right = [-0.15] * 12
+# Σ_t log P: longer samples pay for every token
+round(sum(short_wrong), 2), round(sum(long_right), 2)  # → (-0.8, -1.8)
+# (1/T) Σ_t log P: the paper's ranking score
+round(sum(short_wrong) / len(short_wrong), 2), round(sum(long_right) / len(long_right), 2)  # → (-0.2, -0.15)</code></pre>
+<p>The same length bias appears when multiple-choice benchmarks score options by likelihood; the benchmarks lesson builds both rules in <a data-lesson="primer/ml/benchmarks.html#option_logprob"><code>option_logprob</code></a>.</p>
+<h4>BLEU does not track correctness</h4>
+<p>For Codex-12B samples on four random problems, the paper plots the <span class="t" data-t="bleu">BLEU</span> scores of correct and incorrect samples against the reference solution, and the two distributions overlap heavily. An incorrect sample is guaranteed to differ in behaviour from the reference, so a higher BLEU score is no evidence of a working program. The <code>words_string</code> samples in <a href="#fig2">the figure above</a> show the reason in miniature: four wrong samples are nearly identical text, and the one correct sample, a character-by-character loop, looks like none of them.</p>
+<h4>Why it matters</h4>
+<p>Three practical rules that outlived Codex: report the temperature with pass@k (a pass@100 at T = 0.2 undersells a model); without a checker, prefer mean over summed log-probability to pick a sample; and never use text overlap as a stand-in for correctness when the output can be executed.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Against other models <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S3.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>How much of Codex's ability is size, and how much is what it read? Compare it with models of every size trained on different mixtures.</p>
+<h4>Tiny example</h4>
+<p>GPT-Neo 2.7B and GPT-J 6B were trained on The Pile, a text collection that is 8% GitHub code. GPT-Neo 2.7B roughly matches Codex-85M (30 times fewer parameters); GPT-J 6B roughly matches Codex-300M (20 times fewer). Plain GPT models of similar size score near 0%.</p>
+<div class="plot" id="fig-scale">
+  <div id="scale-chart"></div>
+  <p class="readout" id="scale-readout">Hover the chart, or tab to it and use the arrow keys, to read pass@k at each model size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is parameters on a log scale; the y-axis is the percentage of HumanEval problems solved. The top three lines are Codex at eight sizes, from 12 million to 12 billion parameters, for pass@1, pass@10 and pass@100. Every line rises steadily with size, and the gaps between them grow: at 12B, 28.8% of problems are solved on the first try but 72.3% within 100. The lowest line is the text-trained GPT-Neo (125M, 1.3B, 2.7B) and GPT-J (6B) at pass@1, each the best of the temperatures the authors tried: at 2.7B it sits where Codex was at 85M. Numbers from Table 1 of Chen et al. (2021).</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows from Table 1 of Chen et al. (2021): percentage of HumanEval problems solved.</caption>
+  <thead><tr><th>Model</th><th class="num">pass@1</th><th class="num">pass@10</th><th class="num">pass@100</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-J 6B</td><td class="num">11.62</td><td class="num">15.74</td><td class="num">27.74</td></tr>
+    <tr><td>TabNine (a code autocomplete product)</td><td class="num">2.58</td><td class="num">4.35</td><td class="num">7.59</td></tr>
+    <tr><td>Codex-300M</td><td class="num">13.17</td><td class="num">20.37</td><td class="num">36.27</td></tr>
+    <tr class="hl"><td>Codex-12B</td><td class="num">28.81</td><td class="num">46.81</td><td class="num">72.31</td></tr>
+  </tbody>
+</table></div>
+<p>Two numbers disagree inside the paper. The abstract and introduction give GPT-J 11.4% and Codex-12B 70.2% with 100 samples; Table 1 gives 11.62% and 72.31%, and §3.4 says 11.6%. The paper does not say which settings produced the abstract's figures.</p>
+<h4>Why it matters</h4>
+<p>What a model reads matters as much as its size: 8% code in the training mix bought GPT-Neo and GPT-J a real, if small, ability, and a code-only diet bought Codex a 20 to 30 times advantage in parameters. The same logic, choosing a <span class="t" data-t="data mixture">data mixture</span> for the skills you want, runs through the pretraining lesson.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Results on the APPS dataset <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S3.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>HumanEval asks for one function. APPS (Hendrycks et al., 2021) asks for whole programs that read input and print output, like programming-contest problems, in three tiers from introductory to competition level, 5,000 problems each for training and test.</p>
+<h4>Tiny example: filtering with the public examples</h4>
+<p>APPS problems print 3 input/output examples in their statement. Contestants test against those before submitting, so the paper does too: sample 1,000 programs, keep only those that pass the 3 public examples, and compute pass@k among the survivors. On the introductory tier, Codex-12B (given one example in its docstring, “1-shot”) solves 4.14% with one raw sample, 25.02% with 1,000 raw samples, and 22.78% with one <em>filtered</em> sample.</p>
+<h4>Why it matters</h4>
+<p>Filtered pass@1 is a realistic middle ground between pass@1 and an oracle: the public examples act as a cheap <span class="t" data-t="verifier">verifier</span>, and one filtered sample gets most of the way to what 1,000 raw samples achieve. It is the same pattern as <span class="t" data-t="best-of-n">best-of-n</span>, with a checker that sees only part of the truth. Timeouts count too: a correct but slow program fails a 3-second limit, and the paper reports those separately.</p>
+</section>
+
+<section id="s4">
+<h2>4 Supervised fine-tuning: Codex-S <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>GitHub is mostly not “here is a docstring, now write the function”: it is classes, scripts, configuration files, data. To get better at the exam's format, practise that format.</p>
+<h3 class="rung">Tiny example: where the practice problems came from</h3>
+<ul>
+  <li><strong>About 10,000 problems from programming-contest and practice sites</strong>, turned into HumanEval-style tasks. Their full test suites are hidden, so tests were built from the examples in the statements, or recovered by submitting deliberately wrong solutions.</li>
+  <li><strong>About 40,000 functions from open-source projects with continuous integration</strong>: run each project's tests with Python's <code>sys.setprofile</code> hook, record the inputs and outputs of every function called, and turn them into unit tests. These are mostly utility functions: following instructions rather than clever algorithms.</li>
+  <li><strong>Filtering by sampling.</strong> Codex-12B tried each problem 100 times. If no sample passed, the problem was judged ambiguous or too hard and dropped; repeated runs removed problems whose results changed from run to run.</li>
+</ul>
+<h3 class="rung">The math: train only on the solution</h3>
+<p>Each training example is prompt (signature and docstring) followed by the reference solution. The loss counts only the solution's tokens: the prompt's tokens are masked out, because the goal is to write functions, not docstrings. This is <span class="t" data-t="sft">supervised fine-tuning</span> with a <span class="t" data-t="loss mask">loss mask</span>.</p>
+<div class="eq" data-tex="\htmlData{sym=Lsft}{\mathcal{L}} = -\htmlData{sym=sumsol}{\sum_{t=1}^{T}} \htmlData{sym=log}{\log} \htmlData{sym=P}{P}(\htmlData{sym=yt}{y_t} \htmlData{sym=given}{\mid} \htmlData{sym=xprompt}{x}, \htmlData{sym=yprev}{y_{&lt;t}})" data-fallback="L = − Σ_{t=1}^{T} log P(y_t | x, y_&lt;t)"></div>
+<div class="symtable" data-syms="yt,yprev,sumsol,Lsft"></div>
+<p class="inwords"><strong>In words:</strong> “the loss is minus the sum of the log-probabilities the model gives each token of the reference solution, given the prompt and the solution so far; no term comes from the prompt's own tokens.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a 3-token solution whose tokens get probabilities 0.9, 0.8 and 0.5: −(log 0.9 + log 0.8 + log 0.5) = 0.105 + 0.223 + 0.693 = 1.022. The least likely token contributes most, so training pushes hardest there.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# P(y_t | x, y_&lt;t) for each solution token (illustrative); prompt tokens are not listed: they are masked
+P = [0.9, 0.8, 0.5]
+[round(-math.log(p), 3) for p in P]  # → [0.105, 0.223, 0.693]
+# L = -Σ_t log P(y_t | x, y_&lt;t)
+round(-sum(math.log(p) for p in P), 3)  # → 1.022</code></pre>
+<h3 class="rung">Results</h3>
+<p>Codex-S beats Codex of the same size by 6.5 points of pass@1 and 15.1 points of pass@100 on average across sizes, and it is one to two orders of magnitude more parameter-efficient. It prefers slightly higher temperatures than Codex for every k above 1 (the paper uses 0 for pass@1 and 1 for pass@100), which the authors take as a sign that it models a narrower distribution. Ranking by mean log-probability beats random ranking by 11.6 points on average for Codex-S-12B.</p>
+<h3 class="rung">Why it matters</h3>
+<p>This is the recipe of the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a> in miniature: a broad base, then a small, clean dataset in the exact format you care about. The filtering step is worth noticing: a model's own samples, checked by tests, decide which training problems are trustworthy.</p>
+</section>
+
+<section id="s5">
+<h2>5 Docstring generation: Codex-D <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>If a model can turn a description into code, can another turn code into a description? That would help people see what generated code is meant to do, which the authors want for safety reasons.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Reorder each training problem as signature, then solution, then docstring, and train on the docstring's tokens. There is no unit test for a docstring, so the authors graded samples by hand: a docstring is correct if it uniquely and accurately specifies the body. Ten samples per problem, 1,640 in all, from Codex-D-12B at temperature 0.8.</p>
+<div class="tablewrap"><table>
+  <caption>From Table 3 of Chen et al. (2021): pass rates, graded by unit tests for Codex-S and by hand for Codex-D.</caption>
+  <thead><tr><th>Model</th><th class="num">pass@1</th><th class="num">pass@10</th></tr></thead>
+  <tbody>
+    <tr><td>Codex-S-12B (code from docstring)</td><td class="num">32.2%</td><td class="num">59.5%</td></tr>
+    <tr><td>Codex-D-12B (docstring from code)</td><td class="num">20.3%</td><td class="num">46.5%</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the reverse direction is somewhat harder but in the same range. The common failures were leaving out an important detail (“an answer must be to two decimal places”) and inventing a task from the function's name instead of its body. Codex-D also wrote docstrings such as “I just found this function online”: it had learned from real developers' docstrings.</p>
+<h3 class="rung">Back-translation as a ranking score</h3>
+<p>Codex-D gives another way to pick one sample out of k: prefer the sample from which Codex-D finds the <em>original</em> docstring most probable, P(docstring | sample). This <span class="t" data-tip-title="Back-translation" data-tip="Scoring an output by how well it can be translated back into the input: here, how probable a docstring model finds the original docstring given a generated function.">back-translation</span> score beats random ranking but loses to mean log-probability, and it overfits quickly.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Two lessons: a task with no automatic grader forces expensive hand grading (the reason functional correctness was so valuable), and a model's second opinion is a weaker selector than a test.</p>
+</section>
+
+<section id="s6">
+<h2>6 Limitations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S6">original</a></span></h2>
+<blockquote class="quote">“We find that as the number of chained building blocks in the docstring increases, model performance decreases exponentially.”<cite>Chen et al. (2021), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Give someone a recipe with two steps and they follow it; give them twelve steps read aloud once, and one gets skipped. A person who can do a chain of two can do a chain of twelve with care. The paper finds Codex cannot: every extra step costs it a large share of its success.</p>
+<h3 class="rung">Tiny example: the chain builder</h3>
+<p>The paper built synthetic problems from 13 one-line string operations (its Appendix C), each with a sentence for the docstring and a line of code. Chaining m of them gives a docstring of m instructions and a body of m lines. Pass rates fell by a factor of roughly 2 to 3 with each extra block (its Figure 11).</p>
+<p><strong>Try it:</strong> choose how many blocks to chain, in the paper's order, and type an input string. Read the docstring a model would get, and the output the correct body produces. Past about five blocks, notice how hard it is to check the answer in your head.</p>
+<div class="plot" id="fig-blocks">
+  <div class="controls ui"><label for="bb-m">Blocks chained, m = <strong id="bb-m-v">3</strong></label><input type="range" id="bb-m" min="1" max="13" step="1" value="3"></div>
+  <div class="controls ui"><label for="bb-s">Input string</label> <input type="text" id="bb-s" value="Hello, World! Evaluate code." size="28"></div>
+  <pre id="bb-doc" style="background:var(--code-bg);border:1px solid var(--border);border-radius:8px;padding:0.7rem 0.9rem;white-space:pre-wrap;font-size:0.76rem;line-height:1.45"></pre>
+  <p class="readout" id="bb-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the box shows the docstring: one numbered instruction per block, in the order the paper lists them. The readout shows the string after each block and the final result, computed by the same one-line operations the paper gives (lowercasing, removing vowels, dropping every third character, reversing word order, and so on). Each step is trivial; the difficulty is keeping track of all of them. With an illustrative 90% success at one block and a factor of 2.5 per extra block, the pass rate would be 36% at two blocks and 14% at three.</p>
+<h3 class="rung">Binding operations to variables</h3>
+<p>From the paper: asked to “Add 3 to y, then subtract 4 from both x and w. Return the product of the four numbers”, Codex-12B computed <code>t = y + 3</code> and <code>u = x - 4</code>, never decremented w, and returned <code>z * w</code> instead of the product of all four. The more operations and variables in a docstring, the more such mix-ups.</p>
+<h3 class="rung">Why it matters</h3>
+<p>HumanEval problems are short and self-contained, so a high score says little about long, multi-step specifications or about code that must fit a large existing system. The authors also note that training is not sample-efficient: Codex read hundreds of millions of lines of code, far more than any developer, yet a strong student finishing an introductory course should solve more of HumanEval than Codex-12B. Real repositories and multi-step work are what later benchmarks, graded the same way by hidden tests, set out to measure (the <a data-lesson="primer/agents/coding_agents.html">coding agents lesson</a> builds one in miniature).</p>
+</section>
+
+<section id="s7">
+<h2>7 Broader impacts and hazard analysis <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S7">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A new power tool comes with a safety sheet: what it can do, how it can hurt you, and how to use it well. Section 7 and Appendices E to H are that sheet for code generation.</p>
+<h3 class="rung">The main findings, one line each</h3>
+<ul>
+  <li><strong>Over-reliance (§7.1).</strong> Suggestions can look right and be wrong, which matters most for beginners; human review is required.</li>
+  <li><strong>Misalignment (§7.2, Appendix E).</strong> When the prompt contains subtly buggy code, Codex writes worse code than it is capable of, even when told to write correct code, and the gap grows with model size. A model trained to continue its input matches the input's quality, not the user's intent: a failure of <span class="t" data-t="alignment">alignment</span>, not of ability.</li>
+  <li><strong>Bias (§7.3, Appendix F).</strong> Code and comments can encode stereotypes, much as text models do.</li>
+  <li><strong>Economics (§7.4, Appendix H).</strong> Effects are limited by how little of an engineer's day is writing code; the paper calls its analysis preliminary.</li>
+  <li><strong>Security (§7.5, Appendix G).</strong> Asked to create encryption keys, Codex models often chose clearly insecure settings (RSA keys shorter than 2,048 bits, AES in ECB mode), with no clear improvement with size.</li>
+  <li><strong>Environment and law (§7.6, §7.7).</strong> Fine-tuning Codex-12B took compute similar to training GPT-3-12B; generated code matched training snippets in under 0.1% of cases in one study.</li>
+</ul>
+<h3 class="rung">A small inconsistency</h3>
+<p>Appendix E runs its alignment evaluation on “158 problems” of HumanEval, while §2.2 describes 164. The paper does not explain the difference.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The misalignment result is the one that aged into a research field: capability and intent are different things, and more capability can make the gap worse. The paper even suggests <span class="t" data-t="rlhf">RLHF</span>, with tests and verification tools helping the human labellers, as a direction; the <a href="instructgpt.html">InstructGPT companion</a> covers the method.</p>
+</section>
+
+<section id="s8">
+<h2>8 Related work and 9 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#S8">original</a></span></h2>
+<p>Earlier neural work split into <strong>program induction</strong> (the network computes the output itself) and <span class="t" data-tip-title="Program synthesis" data-tip="Producing a program, usually from a natural-language description or examples, as opposed to producing the program's output directly.">program synthesis</span> (the network writes a program). Large transformers moved synthesis forward (CodeBERT, PyMT5), and functional correctness was already used by SPoC, whose fixed budget of compilations is close to pass@k, and TransCoder, which also found it tracked quality better than BLEU. A cautionary note from bug-fixing research: weak test suites let “fixes” pass by deleting the failing functionality, which is why tests have to be good for execution-based grading to mean anything.</p>
+<p>The conclusion: fine-tuning GPT on GitHub code gives strong performance on human-written problems of easy exercise difficulty; training on a distribution closer to the evaluation, and sampling more, both help; the reverse task (docstrings from code) is easy to train and behaves similarly; and there is significant room for improvement.</p>
+</section>
+
+<section id="appa">
+<h2>Appendix A: estimating pass@k <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2107.03374#A1">original</a></span></h2>
+<blockquote class="quote">“Evaluating pass@k in an unbiased way with any number of samples n is important for fair comparison.”<cite>Chen et al. (2021), Appendix A</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A scale that always reads a little light is <em>biased</em>: weigh many things and the errors don't cancel, they pile up in one direction. An <span class="t" data-t="unbiased estimator">unbiased estimator</span> may be off on any single reading, but its average over many readings is the true value.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Suppose a model's true chance of a correct sample is p = 0.3, and you generate n = 8 samples and report k = 3. The true pass@3 is 1 − 0.7³ = 0.657. The number of passing samples c is random: sometimes 1, sometimes 4. Average each estimator over every possible c, weighted by how likely it is: the counting formula averages exactly 0.657, while the plug-in 1 − (1 − c/n)³ averages 0.603.</p>
+<h3 class="rung">The math: the proof in the appendix</h3>
+<p>c follows a <span class="t" data-t="binomial distribution">binomial distribution</span>: each of the n samples passes independently with chance p. The paper's derivation, one line at a time:</p>
+<div class="eq" data-tex="\begin{aligned} &amp;\htmlData{sym=Ec}{\mathbb{E}_c}\!\left[1 - \frac{\binom{n-c}{k}}{\binom{n}{k}}\right] \\ &amp;= 1 - \htmlData{sym=sumc}{\sum_{i=0}^{n-k}} \frac{\binom{n-i}{k}}{\binom{n}{k}} \htmlData{sym=pmf}{\binom{n}{i} p^{i}(1-p)^{n-i}} \\ &amp;= 1 - \htmlData{sym=sumc}{\sum_{i=0}^{n-k}} \htmlData{sym=ident}{\binom{n-k}{i}} p^{i}(1-p)^{n-i} \\ &amp;= 1 - (1-p)^{k} \htmlData{sym=sumc}{\sum_{i=0}^{n-k}} \binom{n-k}{i} p^{i}(1-p)^{n-k-i} \\ &amp;= 1 - (1-\htmlData{sym=p}{p})^{k} \end{aligned}" data-fallback="E_c[1 − C(n−c,k)/C(n,k)] = 1 − Σ_{i=0}^{n−k} C(n−i,k)/C(n,k) · C(n,i) p^i (1−p)^(n−i) = 1 − Σ C(n−k,i) p^i (1−p)^(n−i) = 1 − (1−p)^k Σ C(n−k,i) p^i (1−p)^(n−k−i) = 1 − (1−p)^k"></div>
+<div class="symtable" data-syms="p,Ec,pmf,sumc,ident"></div>
+<p class="inwords"><strong>In words:</strong> “average the estimator over every possible number of passing samples i, weighting each by its binomial chance; a counting identity turns each term into a binomial chance for n − k samples, those chances add up to 1, and what is left is exactly the true pass@k.” The sum stops at n − k because for more passes the estimator is 1, and 1 − 1 contributes nothing.</p>
+<p class="inwords"><strong>With the numbers:</strong> n = 8, k = 3, p = 0.3. The identity for i = 2: C(6, 3)/C(8, 3) × C(8, 2) = 20/56 × 28 = 10 = C(5, 2). The whole average: 0.657 = 1 − 0.7³. The plug-in's average: 0.603, low by 0.054.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+C = math.comb
+n, k, p = 8, 3, 0.3
+# the identity inside the proof, for i = 2
+C(6, 3) / C(8, 3) * C(8, 2), C(5, 2)  # → (10.0, 10)
+# the binomial chance of each count c of passing samples
+pmf = [C(n, c) * p**c * (1 - p) ** (n - c) for c in range(n + 1)]
+unbiased = sum(w * (1.0 if n - c &lt; k else 1 - C(n - c, k) / C(n, k)) for c, w in enumerate(pmf))
+plug_in = sum(w * (1 - (1 - c / n) ** k) for c, w in enumerate(pmf))
+round(unbiased, 3), round(1 - (1 - p) ** k, 3), round(plug_in, 3)  # → (0.657, 0.657, 0.603)</code></pre>
+<h3 class="rung">Why the plug-in reads low</h3>
+<p>The paper's reading: the plug-in behaves like drawing k samples <em>with</em> replacement from the n you have, so the same failing sample can be drawn twice, and the k draws are not independent tries of the model. A second way to see it: (1 − p̂)<sup>k</sup> curves upward in p̂ (it is <span class="t" data-t="convex">convex</span>), so averaging it over a spread of p̂ gives more than its value at the average, and one minus that gives less.</p>
+<figure class="plot" id="fig13">
+  <div class="controls ui"><label for="bi-p">True chance a sample passes, p = <strong id="bi-p-v">0.30</strong></label><input type="range" id="bi-p" min="0.02" max="0.9" step="0.01" value="0.3"></div>
+  <div class="controls ui"><label for="bi-k">Attempts reported, k = <strong id="bi-k-v">5</strong></label><input type="range" id="bi-k" min="1" max="20" step="1" value="5"></div>
+  <div id="bias-chart"></div>
+  <p class="readout" id="bias-readout">Hover the chart, or tab to it and use the arrow keys, to read each estimator's average at every n.</p>
+  <figcaption>The idea of the paper's Figure 13, recomputed exactly on this page: each estimator's average over every possible outcome of n samples. Not the paper's data.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the x-axis is n, how many samples were generated (at least k); the y-axis is pass@k, zoomed to the range the lines occupy (it does not start at 0). The solid line is the true pass@k, 1 − (1 − p)<sup>k</sup>, flat because it does not depend on n. The dashed line is the counting estimator's average: it lies exactly on the truth at every n. The dotted line is the plug-in's average: always below, and climbing towards the truth as n grows. That climb is the danger the paper names: with the plug-in, the same model looks better simply because more samples were drawn, and the gap has not closed even at n = 5k. Try p = 0.1 with k = 10 for a large gap.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Two labs that generate different numbers of samples can compare pass@k fairly only with an unbiased estimator. That is why this formula, not the obvious one, became the standard, and why the <a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> builds both (<a data-lesson="primer/ml/benchmarks.html#naive_pass_at_k"><code>naive_pass_at_k</code></a>) and checks the bias exactly with <a data-lesson="primer/ml/benchmarks.html#expected_pass_at_k"><code>expected_pass_at_k</code></a>.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>What came later</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>164 problems, 7.7 tests each</td><td>EvalPlus (Liu et al., 2023, <a href="https://arxiv.org/abs/2305.01210">arXiv:2305.01210</a>) added 80 times more tests to make HumanEval+, catching wrong code that had passed and cutting pass@k by up to 19.3 to 28.9%; it also changed some model rankings</td><td><a data-lesson="primer/agents/coding_agents.html#grade">hidden tests</a></td></tr>
+    <tr><td>Standalone functions from docstrings</td><td>Real repository issues graded by the project's own tests: SWE-bench (Jimenez et al., 2023, <a href="https://arxiv.org/abs/2310.06770">arXiv:2310.06770</a>), with fail-to-pass and pass-to-pass tests</td><td><a data-lesson="primer/agents/coding_agents.html#benchmark">resolved rate</a></td></tr>
+    <tr><td>pass@k with an oracle</td><td>pass@1 as the headline for agents that run once; pass@k for systems with a checker</td><td><a data-lesson="primer/agents/coding_agents.html#pass_at_k">pass@k for agents</a></td></tr>
+    <tr><td>Unit tests pick the sample</td><td>Tests, verifiers and votes as selectors at inference time</td><td><a href="self-consistency.html">self-consistency companion</a></td></tr>
+    <tr><td>Hand-written to avoid leakage</td><td>A public benchmark since 2021, so contamination checks matter for any recent score</td><td><a data-lesson="primer/ml/benchmarks.html#simulate_contamination">contamination</a></td></tr>
+  </tbody>
+</table></div>
+<p>The <a href="reflexion.html">Reflexion companion</a> shows HumanEval in its later role: a standard yardstick for agents that write code, test it and retry.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan and 54 co-authors, <em>Evaluating Large Language Models Trained on Code</em> (2021). <a href="https://arxiv.org/abs/2107.03374">arXiv:2107.03374</a>. Quoted sentences and the paper's pass@k function are attributed where they appear; numbers restated from its tables are attributed; every figure is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    n: { tex: "n", name: "Samples generated", meaning: "How many samples the model wrote for one problem. The paper uses n = 200; n must be at least k.", shape: "a whole number", example: "8" },
+    c: { tex: "c", name: "Samples that passed", meaning: "How many of the n samples passed every unit test.", shape: "0 to n", example: "3" },
+    k: { tex: "k", name: "Attempts allowed", meaning: "How many samples you may hand in; the problem counts as solved if any passes.", shape: "1 to n", example: "3" },
+    binall: { tex: "\\binom{n}{k}", name: "n choose k", meaning: "The number of different groups of k samples that can be picked from n, ignoring order.", shape: "a whole number", example: "C(8, 3) = 56" },
+    binfail: { tex: "\\binom{n-c}{k}", name: "Groups made only of failures", meaning: "The number of groups of k picked only from the n − c failing samples: the draws that would solve nothing.", shape: "a whole number", example: "C(5, 3) = 10" },
+    ratio: { tex: "\\frac{\\binom{n-c}{k}}{\\binom{n}{k}}", name: "Chance a random group all fails", meaning: "The share of all groups of k that contain no passing sample. One minus it is the chance of at least one pass.", shape: "0 to 1", example: "10 / 56 = 0.179" },
+    Eprob: { tex: "\\mathbb{E}_{\\text{Problems}}", name: "Average over problems", meaning: "Compute the bracket for each problem, then average over all problems in the benchmark.", shape: "", example: "over 164 problems (8 in the example)" },
+    passk: { tex: "\\text{pass@}k", name: "pass@k", meaning: "The expected share of problems solved when k samples may be handed in and any passing one counts.", shape: "0 to 1", example: "0.821 for is_prime; 0.402 averaged over 8 problems" },
+    prodi: { tex: "\\prod_{i=n-c+1}^{n}", name: "Product over i", meaning: "Multiply the bracket for every whole number i from n − c + 1 up to n: c factors in all.", shape: "", example: "i = 6, 7, 8" },
+    kover: { tex: "\\frac{k}{i}", name: "k over i", meaning: "One small fraction per factor; each factor 1 − k/i is a little below 1.", shape: "", example: "3/6, 3/7, 3/8" },
+    phat: { tex: "\\hat{p}", name: "Observed pass rate", meaning: "The share of samples that passed, used as if it were the model's true rate. The hat marks an estimate.", shape: "0 to 1", example: "3/8 = 0.375" },
+    cn: { tex: "\\frac{c}{n}", name: "Passing share", meaning: "Passing samples divided by samples generated.", shape: "0 to 1", example: "0.375" },
+    L: { tex: "L(N)", name: "Test loss", meaning: "Cross-entropy on held-out Python code: how surprised the model is by real code it has not seen. Lower is better.", shape: "a positive number", example: "0.81 at 3 × 10⁸ (illustrative)" },
+    N: { tex: "N", name: "Model size", meaning: "The number of non-embedding parameters in the model.", shape: "a count", example: "3 × 10⁸" },
+    Nc: { tex: "5.92 \\times 10^{7}", name: "Scale constant", meaning: "Fitted by the paper: the size at which this curve gives a loss of exactly 1.", shape: "a count", example: "59.2 million" },
+    alpha: { tex: "-0.13", name: "Exponent", meaning: "Fitted by the paper. Negative: the loss falls as N grows. Each doubling of N multiplies the loss by 2^(−0.13) = 0.914.", shape: "", example: "" },
+    smp: { tex: "s", name: "A sample", meaning: "One generated function body, as a sequence of tokens.", shape: "T tokens", example: "a 4-token one-liner" },
+    T: { tex: "T", name: "Length", meaning: "The number of tokens in the sample (or in the reference solution).", shape: "a whole number", example: "4 or 12" },
+    st: { tex: "s_t", name: "The t-th token", meaning: "One token of the sample.", shape: "a token", example: "“split”" },
+    sprev: { tex: "s_{<t}", name: "Earlier tokens", meaning: "Everything the sample wrote before token t.", shape: "t − 1 tokens", example: "" },
+    xprompt: { tex: "x", name: "The prompt", meaning: "The problem as the model sees it: signature and docstring (plus any header).", shape: "text", example: "def words_string(s): …" },
+    P: { tex: "P", name: "Probability", meaning: "The probability the model gave a token at that point, from its softmax over the vocabulary.", shape: "0 to 1", example: "e^(−0.15) = 0.86" },
+    given: { tex: "\\mid", name: "Given", meaning: "Read “given”: the token's probability after the model has read what is on the right.", shape: "", example: "" },
+    log: { tex: "\\log", name: "Natural logarithm", meaning: "Turns products of probabilities into sums; the log of a probability is negative.", shape: "−∞ to 0 here", example: "log 0.5 = −0.693" },
+    sumt: { tex: "\\sum_{t=1}^{T}", name: "Sum over tokens", meaning: "Add up over every token of the sample.", shape: "", example: "−0.1 − 0.2 − 0.3 − 0.2 = −0.8" },
+    invT: { tex: "\\frac{1}{T}", name: "Divide by the length", meaning: "Turns the total into an average per token, so long samples are not punished for being long.", shape: "", example: "−0.8 / 4 = −0.2" },
+    score: { tex: "\\text{score}(s)", name: "Mean log-probability", meaning: "The ranking score: the average log-probability per token. The highest-scoring sample is shown to the user.", shape: "−∞ to 0", example: "−0.15 beats −0.2" },
+    yt: { tex: "y_t", name: "The t-th solution token", meaning: "One token of the reference solution being trained on.", shape: "a token", example: "" },
+    yprev: { tex: "y_{<t}", name: "Earlier solution tokens", meaning: "The part of the reference solution before token t. Training feeds the true tokens, not the model's own guesses.", shape: "t − 1 tokens", example: "" },
+    sumsol: { tex: "\\sum_{t=1}^{T}", name: "Sum over solution tokens only", meaning: "Only the solution's T tokens contribute; the prompt's tokens are masked out of the loss.", shape: "", example: "3 terms" },
+    Lsft: { tex: "\\mathcal{L}", name: "Fine-tuning loss", meaning: "Negative log-likelihood of the reference solution: small when the model already finds the solution probable.", shape: "0 to ∞", example: "1.022" },
+    p: { tex: "p", name: "True pass rate", meaning: "The model's real chance of writing a passing sample for this problem, which pass@1 estimates.", shape: "0 to 1", example: "0.3" },
+    Ec: { tex: "\\mathbb{E}_c", name: "Average over outcomes", meaning: "The average over every possible count c of passing samples, each weighted by its binomial chance.", shape: "", example: "" },
+    pmf: { tex: "\\binom{n}{i} p^{i} (1-p)^{n-i}", name: "Binomial chance", meaning: "The chance that exactly i of n independent samples pass: the number of ways to choose which i, times the chance of that pattern.", shape: "0 to 1", example: "i = 2: 28 × 0.09 × 0.7⁶ = 0.296" },
+    sumc: { tex: "\\sum_{i=0}^{n-k}", name: "Sum over counts", meaning: "Add over every possible number i of passing samples from 0 up to n − k; larger counts make the estimator exactly 1 and add nothing.", shape: "", example: "i = 0 to 5" },
+    ident: { tex: "\\binom{n-k}{i}", name: "The counting identity", meaning: "C(n − i, k)/C(n, k) × C(n, i) always equals C(n − k, i): both count the same arrangements. This step is what makes the proof work.", shape: "", example: "20/56 × 28 = 10 = C(5, 2)" },
+  },
+  blocks: {
+    gpt: { title: "GPT-3 family", body: "<p>Codex models start from GPT-3 weights of matching size, from 12 million to 12 billion parameters. Starting from GPT did not improve the final result but made training converge faster.</p>", lesson: "primer/ml/big_picture.html" },
+    github: { title: "159 GB of Python", body: "<p>Collected in May 2020 from 54 million public repositories: 179 GB of unique Python files under 1 MB, filtered to 159 GB by removing auto-generated files, very long lines and files with few alphanumeric characters.</p>" },
+    codex: { title: "Codex", body: "<p>GPT fine-tuned on the Python corpus for 100 billion tokens, with a tokenizer extended with whitespace-run tokens. Codex-12B: 28.8% pass@1 on HumanEval.</p>" },
+    problems: { title: "About 50,000 practice problems", body: "<p>About 10,000 from programming-contest and practice sites and about 40,000 traced from projects' continuous-integration tests. Any problem Codex-12B could not solve once in 100 tries was dropped as ambiguous or too hard.</p>" },
+    codexs: { title: "Codex-S", body: "<p>Codex fine-tuned on the practice problems, with the loss on the solution only. Codex-S-12B: 37.7% pass@1, 77.5% pass@100.</p>", lesson: "primer/ml/training_stages.html" },
+    codexd: { title: "Codex-D", body: "<p>Trained on the same problems in reverse order (signature, solution, then docstring) to write docstrings for code. Graded by hand: 20.3% pass@1.</p>" },
+    eval: { title: "The evaluation", body: "<p>The same for every model: sample, execute, count, estimate. Nothing in it compares text with a reference.</p>" },
+    humaneval: { title: "HumanEval", body: "<p>164 hand-written problems: signature, docstring, reference body, and on average 7.7 unit tests. The paper samples n = 200 completions per problem to report pass@k for k up to 100.</p>", lesson: "primer/ml/benchmarks.html" },
+    sandbox: { title: "Run the tests in a sandbox", body: "<p>Each sample runs against the hidden tests inside a gVisor container, with network connections blocked except those the experiment itself needs, so broken or malicious code can do no harm.</p>", lesson: "primer/agents/coding_agents.html#run_sandboxed" },
+    passk: { title: "Count and estimate", body: "<p>Only the count c of passing samples per problem is kept. The unbiased estimator turns (n, c) into pass@k for any k up to n.</p>", lesson: "primer/ml/benchmarks.html#pass_at_k" },
+    prompt: { title: "What the model sees", body: "<p>The signature and docstring, exactly as in the dataset. The reference body and the tests are withheld.</p>" },
+    sig: { title: "The signature", body: "<p><code>def words_string(s):</code> fixes the function's name and arguments, which is how the hidden tests will call it.</p>" },
+    doc: { title: "The docstring (paraphrased)", body: "<p>“You will be given a string of words separated by commas or spaces. Your task is to split the string into words and return an array of the words.” The key word is <em>commas</em>.</p>" },
+    example: { title: "The docstring's examples", body: "<p><code>words_string(\"Hi, my name is John\") == [\"Hi\", \"my\", \"name\", \"is\", \"John\"]</code>, and a second example with six number words. Many HumanEval docstrings include examples like these.</p>" },
+    c1: { title: "Sample 1: correct", body: "<p>A loop over the characters that starts a new word at each space and skips commas. It looks nothing like the short wrong answers, and it is the only one that works.</p>" },
+    split: { title: "Samples 2, 5, 6, 8: wrong", body: "<p><code>return s.split()</code> (and <code>s.split(sep=None)</code>, the same thing). It splits on spaces and keeps the commas: <code>\"Hi,\"</code> instead of <code>\"Hi\"</code>. Four of the eight samples are this one idea.</p>" },
+    strip: { title: "Sample 3: wrong", body: "<p>Splits on single spaces, then strips commas and spaces from each piece. Close, but a string with a comma and no space after it would keep two words stuck together.</p>" },
+    comma: { title: "Samples 4 and 7: wrong", body: "<p>Split on commas only (sample 4 also strips spaces), so words separated only by spaces stay joined.</p>" },
+    tests: { title: "Hidden unit tests", body: "<p>Each HumanEval problem has on average 7.7 tests, never shown to the model. The verdict is automatic: every test passes, or the sample fails.</p>", lesson: "primer/agents/coding_agents.html#run_cases" },
+    count: { title: "c = 1 of n = 8", body: "<p>All that pass@k needs from this problem. The paper's real runs use n = 200.</p>" },
+    estimate: { title: "pass@k for this problem", body: "<p>pass@1 = c/n = 1/8 = 0.125. pass@3 = 1 − C(7, 3)/C(8, 3) = 1 − 35/56 = 0.375. With one passing sample, pass@k is simply k/n.</p>", lesson: "primer/ml/benchmarks.html#pass_at_k" },
+  },
+  onReady(P) { sampleDrawer(); biasExplorer(P); scaleChart(P); blockChain(); },
+};
+
+/* ---- exact helpers, mirroring the page's Python ---- */
+// 1 − C(n − c, k)/C(n, k), as the paper's stable product 1 − Π_{i=n−c+1}^{n} (1 − k/i)
+function passAtK(n, c, k) {
+  if (n - c < k) return 1;
+  let prod = 1;
+  for (let i = n - c + 1; i <= n; i++) prod *= 1 - k / i;
+  return 1 - prod;
+}
+// binomial probabilities of c = 0..n passing samples, built term by term so large n never overflows
+function binomialPmf(n, p) {
+  const out = [Math.pow(1 - p, n)];
+  for (let j = 0; j < n; j++) out.push(out[j] * ((n - j) / (j + 1)) * (p / (1 - p)));
+  return out;
+}
+
+/* ---- Try it: draw k of n samples ---- */
+function sampleDrawer() {
+  const nS = document.getElementById("pk-n"), cS = document.getElementById("pk-c"), kS = document.getElementById("pk-k");
+  const grid = document.getElementById("pk-grid"), out = document.getElementById("pk-readout");
+  let picked = [], draws = 0, hits = 0;
+  // A small seeded generator, so the same presses give the same draws on every visit.
+  let seed = 12345;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  function drawOnce(n, k) {
+    const idx = Array.from({ length: n }, (_, i) => i);
+    for (let i = 0; i < k; i++) { const j = i + Math.floor(rand() * (n - i)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+    return idx.slice(0, k);
+  }
+  function sync() {
+    const n = +nS.value;
+    cS.max = String(n); kS.max = String(n);
+    if (+cS.value > n) cS.value = String(n);
+    if (+kS.value > n) kS.value = String(n);
+    document.getElementById("pk-n-v").textContent = String(n);
+    document.getElementById("pk-c-v").textContent = cS.value;
+    document.getElementById("pk-k-v").textContent = kS.value;
+  }
+  function render() {
+    const n = +nS.value, c = +cS.value, k = +kS.value;
+    const cell = (i) => {
+      const pass = i < c, on = picked.includes(i);
+      const bg = pass ? "var(--hatch) var(--soft-stroke)" : "var(--code-bg)";
+      return `<span title="sample ${i + 1}: ${pass ? "passes" : "fails"}" style="display:inline-block;width:26px;height:26px;margin:3px;border-radius:5px;border:1.5px solid ${pass ? "var(--soft-stroke)" : "var(--wire)"};background:${bg};outline:${on ? "3px solid var(--active)" : "none"};outline-offset:1px"></span>`;
+    };
+    grid.innerHTML = `<div role="img" aria-label="${n} samples, ${c} passing${picked.length ? `; the last draw picked ${picked.length}` : ""}" style="margin:.4rem 0">${Array.from({ length: n }, (_, i) => cell(i)).join("")}</div>` +
+      `<div class="legend"><span><i class="hatch" style="background:var(--hatch) var(--soft-stroke)"></i>passes (striped)</span><span><i style="background:var(--code-bg);border:1.5px solid var(--wire)"></i>fails</span><span><i style="background:transparent;outline:2px solid var(--active)"></i>in the last draw</span></div>`;
+    const formula = passAtK(n, c, k), plug = 1 - Math.pow(1 - c / n, k);
+    const last = picked.length ? (picked.some((i) => i < c) ? "Last draw: contains a pass. " : "Last draw: all failures. ") : "";
+    out.textContent = `${last}Formula 1 − C(${n - c}, ${k})/C(${n}, ${k}) = ${formula.toFixed(3)}. ` +
+      (draws ? `Your draws: ${hits} of ${draws} contained a pass = ${(hits / draws).toFixed(3)}. ` : "No draws yet. ") +
+      `Plug-in 1 − (1 − ${c}/${n})^${k} = ${plug.toFixed(3)}.`;
+  }
+  function reset() { picked = []; draws = 0; hits = 0; }
+  [nS, cS, kS].forEach((s) => s.addEventListener("input", () => { sync(); reset(); render(); }));
+  document.getElementById("pk-draw").addEventListener("click", () => {
+    const n = +nS.value, c = +cS.value, k = +kS.value;
+    picked = drawOnce(n, k); draws++; if (picked.some((i) => i < c)) hits++; render();
+  });
+  document.getElementById("pk-many").addEventListener("click", () => {
+    const n = +nS.value, c = +cS.value, k = +kS.value;
+    for (let t = 0; t < 1000; t++) { picked = drawOnce(n, k); draws++; if (picked.some((i) => i < c)) hits++; }
+    render();
+  });
+  document.getElementById("pk-reset").addEventListener("click", () => { reset(); render(); });
+  sync(); render();
+}
+
+/* ---- Appendix A: each estimator's average over every outcome ---- */
+function biasExplorer(P) {
+  const pS = document.getElementById("bi-p"), kS = document.getElementById("bi-k");
+  const box = document.getElementById("bias-chart");
+  const series = () => {
+    const p = +pS.value, k = +kS.value, ns = [];
+    for (let n = k; n <= 100; n++) ns.push(n);
+    const truth = 1 - Math.pow(1 - p, k);
+    const avg = (n, f) => binomialPmf(n, p).reduce((s, w, c) => s + w * f(n, c), 0);
+    return [
+      { name: "true pass@k", points: ns.map((n) => [n, truth]) },
+      { name: "counting estimator, average", points: ns.map((n) => [n, avg(n, (n, c) => passAtK(n, c, k))]) },
+      { name: "plug-in 1 − (1 − c/n)^k, average", points: ns.map((n) => [n, avg(n, (n, c) => 1 - Math.pow(1 - c / n, k))]) },
+    ];
+  };
+  const opts = {
+    series: series(), yMin: 0, yMax: 1, width: Math.max(320, Math.min(640, box.clientWidth)), height: 280,
+    xLabel: "samples generated (n)", yLabel: "pass@k", xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("bias-readout"),
+    ariaLabel: "Average of the counting and plug-in estimators of pass@k against the number of samples, with the true value",
+  };
+  // The y-axis starts just below the lowest line, so a gap of a few hundredths is visible.
+  const zoom = (s) => {
+    const lo = Math.min(...s.flatMap((x) => x.points.map((q) => q[1])));
+    opts.yMin = Math.max(0, Math.floor((lo - 0.05) * 20) / 20);
+    opts.yMax = Math.min(1, Math.ceil((s[0].points[0][1] + 0.03) * 20) / 20);
+  };
+  zoom(opts.series);
+  const chart = P.lineChart(box, opts);
+  const redraw = () => {
+    document.getElementById("bi-p-v").textContent = (+pS.value).toFixed(2);
+    document.getElementById("bi-k-v").textContent = kS.value;
+    const s = series();
+    zoom(s);
+    chart.update(s);
+    const k = +kS.value, at = (i, n) => s[i].points.find((q) => q[0] === n)[1];
+    const n5 = Math.min(100, 5 * k);
+    document.getElementById("bias-readout").textContent =
+      `True pass@${k} = ${at(0, k).toFixed(3)}. At n = ${n5}: counting estimator averages ${at(1, n5).toFixed(3)}, plug-in averages ${at(2, n5).toFixed(3)} (low by ${(at(0, n5) - at(2, n5)).toFixed(3)}).`;
+  };
+  pS.addEventListener("input", redraw);
+  kS.addEventListener("input", redraw);
+}
+
+/* ---- Table 1: pass@k against model size ---- */
+function scaleChart(P) {
+  const box = document.getElementById("scale-chart");
+  // Codex rows of Table 1 of Chen et al. (2021): [parameters, pass@1, pass@10, pass@100] in %
+  const codex = [[12e6, 2.00, 3.62, 8.58], [25e6, 3.21, 7.1, 12.89], [42e6, 5.06, 8.8, 15.55], [85e6, 8.22, 12.81, 22.4],
+    [300e6, 13.17, 20.37, 36.27], [679e6, 16.22, 25.7, 40.95], [2.5e9, 21.36, 35.42, 59.5], [12e9, 28.81, 46.81, 72.31]];
+  const pile = [[125e6, 0.75], [1.3e9, 4.79], [2.7e9, 6.41], [6e9, 11.62]];
+  P.lineChart(box, {
+    series: [
+      { name: "Codex pass@100", points: codex.map((r) => [r[0], r[3]]) },
+      { name: "Codex pass@10", points: codex.map((r) => [r[0], r[2]]) },
+      { name: "Codex pass@1", points: codex.map((r) => [r[0], r[1]]) },
+      { name: "GPT-Neo and GPT-J pass@1", points: pile },
+    ],
+    logX: true, yMin: 0, yMax: 80, width: Math.max(320, Math.min(640, box.clientWidth)), height: 300,
+    xLabel: "parameters", yLabel: "problems solved (%)",
+    xFmt: (v) => (v >= 1e9 ? `${+(v / 1e9).toPrecision(3)}B` : `${+(v / 1e6).toPrecision(3)}M`), yFmt: (v) => v.toFixed(1),
+    readout: document.getElementById("scale-readout"),
+    ariaLabel: "HumanEval pass@1, pass@10 and pass@100 against model size for Codex, and pass@1 for GPT-Neo and GPT-J",
+  });
+}
+
+/* ---- §6: the 13 building blocks of Appendix C, in the paper's order ---- */
+const BLOCKS = [
+  ["remove all instances of the letter e from the string", (s) => s.split("e").join("")],
+  ["replace all spaces with exclamation points in the string", (s) => s.split(" ").join("!")],
+  ["convert the string s to lowercase", (s) => s.toLowerCase()],
+  ["remove the first and last two characters of the string", (s) => s.slice(2, s.length - 2 > 2 ? s.length - 2 : 2)],
+  ["removes all vowels from the string", (s) => [...s].filter((ch) => !"aeiouAEIOU".includes(ch)).join("")],
+  ["remove every third character from the string", (s) => [...s].filter((_, i) => i % 3 !== 0).join("")],
+  ["drop the last half of the string, as computed by characters", (s) => s.slice(0, Math.floor(s.length / 2))],
+  ["replace spaces with triple spaces", (s) => s.split(" ").join("   ")],
+  ["reverse the order of words in the string", (s) => s.split(/\s+/).filter(Boolean).reverse().join(" ")],
+  ["drop the first half of the string, as computed by number of words", (s) => { const w = s.split(/\s+/).filter(Boolean); return w.slice(Math.floor(w.length / 2)).join(" "); }],
+  ["add the word apples after every word in the string", (s) => s.split(/\s+/).filter(Boolean).map((w) => w + " apples").join(" ")],
+  ["make every other character in the string uppercase", (s) => [...s].map((ch, i) => (i % 2 === 0 ? ch.toUpperCase() : ch)).join("")],
+  ["delete all exclamation points, question marks, and periods from the string", (s) => [...s].filter((ch) => !".!?".includes(ch)).join("")],
+];
+
+function blockChain() {
+  const mS = document.getElementById("bb-m"), sIn = document.getElementById("bb-s");
+  const doc = document.getElementById("bb-doc"), out = document.getElementById("bb-readout");
+  function draw() {
+    const m = +mS.value;
+    document.getElementById("bb-m-v").textContent = String(m);
+    const used = BLOCKS.slice(0, m);
+    doc.textContent = "def string_manipulation(s: str):\n  \"\"\"\n  Return s after these steps, in order:\n" +
+      used.map(([d], i) => `  ${i + 1}. ${d}`).join("\n") + "\n  \"\"\"";
+    let s = sIn.value;
+    const steps = used.map(([, f]) => (s = f(s)));
+    out.textContent = `After each step: ${steps.map((x) => JSON.stringify(x)).join(" → ")}. Result: ${JSON.stringify(s)}.`;
+  }
+  mS.addEventListener("input", draw);
+  sIn.addEventListener("input", draw);
+  draw();
+}
+</script>
+</body>
+</html>

@@ -817,6 +817,7 @@ actions.
   https://arxiv.org/abs/2107.03374. Introduced the HumanEval benchmark of
   programming problems graded by hidden unit tests, and the unbiased pass@k
   estimator used above.
+  [Annotated companion](../../papers/humaneval-pass-at-k.html)
 - **Jimenez et al., *SWE-bench: Can Language Models Resolve Real-World GitHub
   Issues?* (2023)**: https://arxiv.org/abs/2310.06770. Built a benchmark from
   real issues in open-source Python repositories, graded by the tests of the
