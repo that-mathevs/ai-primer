@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-Consistency, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Wang et al. (2022), the paper that samples many chains of thought and lets their final answers vote.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="self-consistency">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Self-consistency over diverse paths</a>
+        <ol>
+          <li><a href="#s2-agg">Other ways to aggregate</a></li>
+          <li><a href="#s2-try">Try it: when does voting help?</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Experiments</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Setup</a></li>
+          <li><a href="#s3-2">3.2 Main results</a></li>
+          <li><a href="#s3-3">3.3 When chain of thought hurts</a></li>
+          <li><a href="#s3-4">3.4 Against other methods</a></li>
+          <li><a href="#s3-5">3.5 Additional studies</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Related work</a></li>
+      <li><a href="#s5">5 Conclusion and cost</a></li>
+      <li><a href="#today">What changed since 2022</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Self-Consistency, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Wang, Wei, Schuurmans, Le, Chi, Narang, Chowdhery and Zhou (2022), <em>Self-Consistency Improves Chain of Thought Reasoning in Language Models</em>.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2203.11171">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2203.11171">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2203.11171">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is released under a <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0</a> licence, so selected rows of its tables and its Figure 1 example are reproduced here with attribution to Wang et al. (2022). Every figure is redrawn from scratch, and the interactive vote is original. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s2-try">vote explorer</a> lets you set how often one sampled answer is right and how scattered the wrong ones are, and shows what voting over 1 to 40 samples does.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. This paper builds directly on <a href="chain-of-thought-prompting.html">chain-of-thought prompting</a>; read that companion first if “chain of thought” is new. The <a class="lesson" data-lesson="primer/ml/reasoning.html">reasoning models lesson</a> implements the vote and measures when it fails.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Self-consistency leverages the intuition that a complex reasoning problem typically admits multiple different ways of thinking leading to its unique correct answer.”<cite>Wang et al. (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2203.11171">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Unsure of a sum, you work it out three different ways. If two routes land on 18 and one on 26, you trust 18. Different correct routes meet at the same place; mistakes tend to scatter. This paper does that to a <span class="t" data-t="llm">language model</span>: ask it the same question many times, let it reason differently each time, and keep the answer it reaches most often.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Replacing <span class="t" data-t="greedy decoding">greedy decoding</span> (one chain of thought) with <span class="t" data-t="self-consistency">self-consistency</span> (many sampled chains and a vote on their answers) raises accuracy on every model and task tested.</li>
+  <li>Headline gains: GSM8K +17.9 points, SVAMP +11.0, AQuA +12.2, StrategyQA +6.4, ARC-challenge +3.9.</li>
+  <li>It needs no training, no extra model and no labels: one off-the-shelf model, a few-shot prompt, and sampling.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>“Sample several attempts and pick the most common answer” is now a standard way to spend <span class="t" data-t="test-time compute">test-time compute</span>, and a baseline every fancier method (verifiers, search, trained reasoning models) is measured against.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S1">original</a></span></h2>
+<blockquote class="quote">“The more that deliberate thinking and analysis is required for a problem, the greater the diversity of reasoning paths that can recover the answer.”<cite>Wang et al. (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Chain-of-thought prompting, as first published, asked the model for its <em>single most likely</em> chain: at every step, take the most probable next token. That is like asking one person for one attempt and accepting it. Self-consistency asks the same person for many attempts, lets each wander a little differently, and trusts the answer the attempts agree on.</p>
+<h3 class="rung">Tiny example: the paper's Figure 1</h3>
+<p>The question: <em>Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder for $2 per egg. How much does she make every day?</em> The right answer is (16 − 3 − 4) × 2 = 18 dollars. Hover or tap each box.</p>
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 404" role="img" aria-label="Greedy decoding writes one path and answers 14 dollars; self-consistency samples three paths, answering 18, 26 and 18, and the vote returns 18">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk plain" data-block="prompt"><rect x="10" y="6" width="360" height="44" rx="7"/><text x="190" y="24" text-anchor="middle">Prompt: worked examples with chains,</text><text x="190" y="41" text-anchor="middle">then Janet's ducks. How much a day?</text></g>
+    <path class="wire" d="M190,50 V62" marker-end="url(#arr)"/>
+    <g class="blk lin" data-block="model"><rect x="120" y="64" width="140" height="28" rx="7"/><text x="190" y="83" text-anchor="middle">Language model</text></g>
+    <path class="wire" d="M190,92 V114" marker-end="url(#arr)"/>
+    <path class="wire" d="M120,78 H4 V205 H10" marker-end="url(#arr)"/>
+    <path class="wire" d="M4,200 V255 H10" marker-end="url(#arr)"/>
+    <path class="wire" d="M4,250 V305 H10" marker-end="url(#arr)"/>
+    <text x="14" y="110" class="lbl">Greedy decode: one path</text>
+    <g class="blk emb" data-block="greedy"><rect x="12" y="116" width="268" height="42" rx="7"/><text x="146" y="133" text-anchor="middle">She uses 3 + 4 = 7 eggs a day,</text><text x="146" y="150" text-anchor="middle">so she sells 7 × $2 = $14 a day.</text></g>
+    <g class="blk emb" data-block="ans14"><rect x="290" y="122" width="80" height="30" rx="7"/><text x="330" y="142" text-anchor="middle">$14 ✗</text></g>
+    <path class="wire" d="M280,137 H288" marker-end="url(#arr)"/>
+    <text x="14" y="175" class="lbl">Sample: diverse paths</text>
+    <g class="blk frame" data-block="sampled"><rect x="8" y="182" width="276" height="148" rx="10"/></g>
+    <g class="blk soft" data-block="path1"><rect x="12" y="186" width="268" height="42" rx="7"/><text x="146" y="203" text-anchor="middle">She has 16 − 3 − 4 = 9 eggs left.</text><text x="146" y="220" text-anchor="middle">So she makes $2 × 9 = $18 a day.</text></g>
+    <g class="blk emb" data-block="path2"><rect x="12" y="236" width="268" height="42" rx="7"/><text x="146" y="253" text-anchor="middle">She sells the remainder for</text><text x="146" y="270" text-anchor="middle">$2 × (16 − 4 − 3) = $26 a day.</text></g>
+    <g class="blk soft" data-block="path3"><rect x="12" y="286" width="268" height="42" rx="7"/><text x="146" y="303" text-anchor="middle">16 − 3 = 13 left, 13 − 4 = 9 left.</text><text x="146" y="320" text-anchor="middle">So she has 9 eggs × $2 = $18.</text></g>
+    <g class="blk frame" data-block="answers"><rect x="286" y="182" width="88" height="148" rx="10"/></g>
+    <g class="blk soft" data-block="ans18"><rect x="290" y="192" width="80" height="30" rx="7"/><text x="330" y="212" text-anchor="middle">$18 ✓</text></g>
+    <g class="blk emb" data-block="ans26"><rect x="290" y="242" width="80" height="30" rx="7"/><text x="330" y="262" text-anchor="middle">$26 ✗</text></g>
+    <g class="blk soft" data-block="ans18"><rect x="290" y="292" width="80" height="30" rx="7"/><text x="330" y="312" text-anchor="middle">$18 ✓</text></g>
+    <path class="wire" d="M330,330 V346" marker-end="url(#arr)"/>
+    <g class="blk norm" data-block="vote"><rect x="170" y="348" width="204" height="50" rx="7"/><text x="272" y="368" text-anchor="middle">Majority vote: $18</text><text x="272" y="386" text-anchor="middle">2 of 3 paths agree</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. Start with the <strong>greedy</strong> path, then the three sampled ones, then the vote.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn with its text shortened: greedy chain-of-thought decoding (top) against self-consistency (bottom). Example text from Wang et al. (2022), Figure 1, reproduced under CC BY 4.0.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the top. The prompt and the model are the same for both methods. Greedy decoding follows the single most likely path, which confuses eggs used with eggs sold and answers 14 dollars (pink, ✗). Self-consistency samples three paths instead. Two take different routes (subtracting both at once, or one at a time) and both reach 18 dollars (green, ✓); one sets up the right expression but gets the arithmetic wrong and says 26. Only the answers, in the right-hand frame, go to the vote; the reasoning is thrown away. The two 18-dollar boxes light up together when you hover either: that shared answer is what the vote counts.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The paper calls it a “self-ensemble”: the benefit of asking many independent solvers, from one model. It needs nothing that chain-of-thought prompting did not already have, which is why it spread so quickly.</p>
+</section>
+
+<section id="s2">
+<h2>2 Self-consistency over diverse reasoning paths <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S2">original</a></span></h2>
+<blockquote class="quote">“We hypothesize that correct reasoning processes, even if they are diverse, tend to have greater agreement in their final answer than incorrect processes.”<cite>Wang et al. (2022), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A hiking group splits up to find the lake. Those who find it all end up at the same shore, whatever path they took; those who get lost end up in many different places. Count where people end up, and the biggest crowd is probably at the lake.</p>
+<h3 class="rung">Tiny example: three steps</h3>
+<ol>
+  <li><strong>Prompt</strong> the model with worked chain-of-thought examples, exactly as in the chain-of-thought paper.</li>
+  <li><strong>Sample</strong> m outputs instead of taking the greedy one: at each token, draw from the model's probabilities (with a <span class="t" data-t="temperature">temperature</span>, and often <span class="t" data-t="top-k">top-k</span>) so each run can take a different route. Each output is a reasoning path r<sub>i</sub> followed by “The answer is …”, from which a small parser pulls the answer a<sub>i</sub>.</li>
+  <li><strong>Vote</strong>: throw the paths away and return the answer that appears most often.</li>
+</ol>
+<p>In Figure 1 the sampled answers are a<sub>1</sub> = 18, a<sub>2</sub> = 26, a<sub>3</sub> = 18. 18 gets two votes and 26 gets one, so the answer is 18.</p>
+<h3 class="rung">The math: the majority vote</h3>
+<div class="eq" data-tex="\htmlData{sym=ahat}{\hat{a}} = \htmlData{sym=argmax}{\arg\max_{a}} \htmlData{sym=sumi}{\sum_{i=1}^{m}} \htmlData{sym=ind}{\mathbf{1}}(\htmlData{sym=ai}{a_i} = \htmlData{sym=a}{a})" data-fallback="â = argmax_a Σ_{i=1}^{m} 1(a_i = a)"></div>
+<div class="symtable" data-syms="m,ai,a,ind,sumi,argmax,ahat"></div>
+<p class="inwords"><strong>In words:</strong> “for every candidate answer, count how many of the m sampled paths ended in it; return the answer with the highest count.”</p>
+<p class="inwords"><strong>With the numbers:</strong> m = 3, answers (18, 26, 18). For a = 18 the sum is 1 + 0 + 1 = 2; for a = 26 it is 0 + 1 + 0 = 1. The largest count is 2, at a = 18, so â = 18.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># a_i: the answers parsed from m = 3 sampled paths
+answers = [18, 26, 18]
+m = len(answers)
+# Σ_i 1(a_i = a) for every candidate answer a
+counts = {a: sum(1 for a_i in answers if a_i == a) for a in sorted(set(answers))}
+counts  # → {18: 2, 26: 1}
+# argmax over a
+max(counts, key=counts.get)  # → 18</code></pre>
+<p>The paper calls this <em>marginalizing out</em> the reasoning paths: the model's chance of giving an answer is the sum of its chances over every path that leads there, and counting sampled answers estimates that sum. The path is a means to the answer, not something to be graded.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The vote only works when two answers can be compared exactly: a number, a multiple-choice letter, yes or no. The paper says so directly, and suggests that open-ended text would need some measure of whether two answers agree. In code, this is <a data-lesson="primer/ml/reasoning.html#majority_vote"><code>majority_vote</code></a> in the reasoning lesson: one line with a counter.</p>
+</section>
+
+<section id="s2-agg">
+<h3>Other ways to aggregate: weighting by probability <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S2.T1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Should a confident friend's vote count more than a hesitant one's? Only if confidence tracks being right. The paper tried weighting each path by how probable the model found it, and found the model's confidence too flat to be worth much.</p>
+<h4>Tiny example: how probable is a path?</h4>
+<p>The chance of a whole path is the product of its tokens' chances, which shrinks with every token, so long careful chains would always lose to short ones. The fix is to average per token instead. Take an illustrative 4-token path whose tokens had probabilities 0.9, 0.5, 0.8 and 0.6: the product is 0.216, and the per-token (geometric) average is 0.682. Below, c is short for the prompt and the question.</p>
+<div class="eq" data-tex="\begin{aligned} &\htmlData{sym=P}{P}(\htmlData{sym=ri}{r_i}, \htmlData{sym=ai}{a_i} \htmlData{sym=given}{\mid} \htmlData{sym=ctx}{c}) \\ &= \htmlData{sym=exp}{\exp}\!\Big(\htmlData{sym=invK}{\tfrac{1}{K}} \htmlData{sym=sumk}{\sum_{k=1}^{K}} \htmlData{sym=log}{\log} \htmlData{sym=P}{P}(\htmlData{sym=tk}{t_k} \htmlData{sym=given}{\mid} \htmlData{sym=ctx}{c}, \htmlData{sym=prev}{t_1, \ldots, t_{k-1}})\Big) \end{aligned}" data-fallback="P(r_i, a_i | c) = exp( (1/K) Σ_{k=1}^{K} log P(t_k | c, t_1, …, t_{k−1}) )"></div>
+<div class="symtable" data-syms="ri,ai,ctx,given,tk,prev,K,sumk,log,invK,exp,P"></div>
+<p class="inwords"><strong>In words:</strong> “a path's score is the typical probability of one of its tokens: take the log of each token's probability, average the logs over the path's length, and undo the log.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for (0.9, 0.5, 0.8, 0.6), K = 4, the logs are −0.105, −0.693, −0.223, −0.511; their average is −0.383, and exp(−0.383) = 0.682. A 4-token path and an 8-token path whose tokens are all 0.9 have products 0.656 and 0.430 (the longer one looks worse), but both score exactly 0.9 once averaged per token.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# illustrative P(t_k | ...) for each token of one path
+p = [0.9, 0.5, 0.8, 0.6]
+K = len(p)
+# the unnormalized path probability: the product
+round(math.prod(p), 3)  # → 0.216
+# log P(t_k | ...) for each token
+[round(math.log(p_k), 3) for p_k in p]  # → [-0.105, -0.693, -0.223, -0.511]
+# exp( (1/K) Σ_k log P(t_k | ...) )
+round(math.exp(sum(math.log(p_k) for p_k in p) / K), 3)  # → 0.682
+# length: products punish long paths, the per-token average does not
+round(0.9 ** 4, 3), round(0.9 ** 8, 3)  # → (0.656, 0.43)
+round(math.exp(sum(math.log(0.9) for _ in range(8)) / 8), 3)  # → 0.9</code></pre>
+<h4>Summing the weights, or averaging them</h4>
+<div class="eq" data-tex="\htmlData{sym=score}{\text{score}}(\htmlData{sym=a}{a}) = \htmlData{sym=sumi}{\sum_{i=1}^{m}} \htmlData{sym=ind}{\mathbf{1}}(\htmlData{sym=ai}{a_i} = \htmlData{sym=a}{a})\; \htmlData{sym=P}{P}(\htmlData{sym=ri}{r_i}, \htmlData{sym=ai}{a_i} \htmlData{sym=given}{\mid} \htmlData{sym=ctx}{c})" data-fallback="score(a) = Σ_{i=1}^{m} 1(a_i = a) · P(r_i, a_i | c)"></div>
+<div class="symtable" data-syms="score"></div>
+<p class="inwords"><strong>In words:</strong> “an answer's score is the sum of the probabilities of the paths that reached it. The ‘weighted average’ variant divides that by how many paths reached it.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> give Figure 1's paths per-token scores 0.62 ($18), 0.66 ($26) and 0.60 ($18), close together as the paper observed. The weighted sum gives 18 a score of 1.22 and 26 a score of 0.66: 18 wins, the same as the plain vote. The weighted average gives 18 an average of 0.61 and 26 an average of 0.66: 26 wins, because averaging throws away how many paths agreed.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># (a_i, per-token path probability), illustrative
+paths = [(18, 0.62), (26, 0.66), (18, 0.60)]
+# weighted sum: Σ_i 1(a_i = a) · P(r_i, a_i | ...)
+wsum = {a: round(sum(w for a_i, w in paths if a_i == a), 2) for a in (18, 26)}
+wsum  # → {18: 1.22, 26: 0.66}
+# weighted average: the sum divided by the number of paths that reached a
+wavg = {a: round(wsum[a] / sum(1 for a_i, _ in paths if a_i == a), 2) for a in (18, 26)}
+wavg  # → {18: 0.61, 26: 0.66}</code></pre>
+<div class="tablewrap"><table>
+  <caption>From Table 1 of Wang et al. (2022), reproduced under CC BY 4.0: PaLM-540B accuracy (%) with each way of combining 40 sampled paths.</caption>
+  <thead><tr><th>Aggregation</th><th class="num">GSM8K</th><th class="num">AQuA</th><th class="num">ARC-c</th></tr></thead>
+  <tbody>
+    <tr><td>Greedy decode (one path)</td><td class="num">56.5</td><td class="num">35.8</td><td class="num">85.2</td></tr>
+    <tr><td>Weighted average, unnormalized</td><td class="num">56.3</td><td class="num">35.8</td><td class="num">82.3</td></tr>
+    <tr><td>Weighted average, normalized</td><td class="num">22.1</td><td class="num">15.7</td><td class="num">51.7</td></tr>
+    <tr><td>Weighted sum, unnormalized</td><td class="num">59.9</td><td class="num">38.2</td><td class="num">83.5</td></tr>
+    <tr><td>Weighted sum, normalized</td><td class="num">74.1</td><td class="num">48.0</td><td class="num">88.7</td></tr>
+    <tr class="hl"><td>Unweighted sum (majority vote)</td><td class="num">74.4</td><td class="num">48.3</td><td class="num">88.7</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> compare the last two rows first: weighting by normalized probability gains nothing over simply counting. The paper's explanation is that the model rates all its sampled paths as similarly likely, right and wrong alike: it is poorly <span class="t" data-t="calibration">calibrated</span> on this task, so its confidence adds no information. Unnormalized weights do much worse; a likely reason is that products shrink with every token, so long paths are drowned out. Averaging instead of summing is worse still, because it discards agreement, as the tiny example showed.</p>
+<h4>Why it matters</h4>
+<p>If the model cannot tell its right paths from its wrong ones, something else has to: agreement between paths (this paper), or a separately trained <span class="t" data-t="verifier">verifier</span> that scores each path, as the paper notes earlier work did. The reasoning lesson's <a data-lesson="primer/ml/reasoning.html#verifier_experiment"><code>verifier_experiment</code></a> compares the two.</p>
+</section>
+
+<section id="s2-try">
+<h3>Try it: when does voting help?</h3>
+<h4>Everyday picture</h4>
+<p>A vote picks the <em>biggest pile</em>, not the right answer. It finds the right answer only when the right answer's pile tends to be bigger than every wrong answer's pile. That depends on two things: how often one path is right, and how scattered the wrong paths are.</p>
+<h4>Tiny example</h4>
+<p>A model right 40% of the time on a yes/no question has only one wrong answer, taking the other 60%: voting makes it <em>worse</em>. The same 40% model on a maths question, with its mistakes spread over ten different wrong numbers (6% each), sees the right answer as the biggest pile, and voting lifts it towards 100%.</p>
+<p><strong>Try it:</strong> drag the sliders. Watch the solid line (the vote) against the dashed line (one sampled path). Then set the wrong answers to 1 and move the first slider below and above 50%.</p>
+<div class="plot">
+  <div class="controls ui"><label for="sc-p">Chance one path is right, p = <strong id="sc-p-v">0.40</strong></label><input type="range" id="sc-p" min="0.05" max="0.95" step="0.05" value="0.4"></div>
+  <div class="controls ui"><label for="sc-k">Wrong answers the mistakes spread over, k = <strong id="sc-k-v">10</strong></label><input type="range" id="sc-k" min="1" max="10" step="1" value="10"></div>
+  <div id="vote-chart"></div>
+  <p class="readout" id="vote-readout">Hover the chart, or tab to it and use the arrow keys, to read the accuracy at each number of paths.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is m, the number of sampled paths that vote, from 1 to 40; the y-axis is how often the vote returns the right answer. The dashed line is a single sample, flat at the first slider's value. At the start (40% right, mistakes over ten answers), each wrong answer gets only 6%, so the right answer is the biggest pile and the vote climbs past 90% by about fifteen paths, then flattens, the same shape as the paper's Figure 2. Set the wrong answers to 1 (a yes/no question) and the vote rises only above 50%; below it, the vote sinks. The rule behind every setting: voting helps exactly when the right answer is more likely than each single wrong answer, p &gt; (1 − p) / k. At p = 0.25 with k = 3, all four answers are equally likely and the line stays flat at 0.25. The curves are computed exactly, assuming paths are independent; <a data-lesson="primer/ml/reasoning.html#correlated_vote_accuracy"><code>correlated_vote_accuracy</code></a> in the reasoning lesson shows what shared mistakes do to them.</p>
+<h4>Why it matters</h4>
+<p>This is why self-consistency shines on maths, where wrong answers are many and scattered, and helps less on yes/no and multiple-choice tasks, where a common wrong answer can collect as many votes as the right one. The paper's own commonsense gains (ARC-c +3.9) are smaller than its arithmetic ones (GSM8K +17.9).</p>
+</section>
+
+<section id="s3">
+<h2>3 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The test is fair by construction: the same models, the same prompts and the same questions as chain-of-thought prompting. The only change is how the output is decoded: one greedy chain, or 40 samples and a vote.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Experiment setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Four models of different sizes sit the same papers: arithmetic word problems, commonsense questions and two symbol puzzles.</p>
+<h4>What was tested</h4>
+<ul>
+  <li><strong>Tasks.</strong> Arithmetic: AddSub, MultiArith, ASDiv, AQuA, GSM8K, SVAMP. Commonsense: CommonsenseQA, StrategyQA, ARC (easy and challenge). Symbolic: last-letter concatenation and coin flip, tested at 4 letters and 4 flips when the prompt shows only 2.</li>
+  <li><strong>Models.</strong> UL2 (20B, open), GPT-3 through the Codex engines code-davinci-001 and code-davinci-002, LaMDA-137B and PaLM-540B.</li>
+  <li><strong>Prompts.</strong> The chain-of-thought paper's own: the same 8 worked examples for every arithmetic task; 4 to 7 per commonsense task.</li>
+  <li><strong>Sampling.</strong> <span class="t" data-t="temperature">Temperature</span> T = 0.5 with <span class="t" data-t="top-k">top-k</span> k = 40 for UL2 and LaMDA; T = 0.7, k = 40 for PaLM; T = 0.7 without top-k for GPT-3.</li>
+  <li><strong>Protocol.</strong> 40 sampled outputs per question, and every result averaged over 10 runs.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>These are ordinary settings for open-ended text, not tuned for reasoning. Section 3.5 shows the results hold across temperatures and sampling schemes, so the gain is not an artefact of one lucky setting.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Main results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A good student gains a little from double-checking; a middling one gains a lot. But a student who cannot yet do the sums gains little either, because their attempts don't agree on anything.</p>
+<h4>Tiny example</h4>
+<p>On GSM8K, PaLM-540B goes from 56.5% with one greedy chain to 74.4% with the vote: +17.9 points. UL2-20B goes from 4.1% to 7.3%: when almost every path is wrong, there is little right answer to amplify.</p>
+<div class="plot">
+  <div class="controls ui" role="group" aria-label="Model">
+    <span>Model:</span>
+    <button type="button" data-model="UL2-20B" aria-pressed="false">UL2-20B</button>
+    <button type="button" data-model="LaMDA-137B" aria-pressed="false">LaMDA-137B</button>
+    <button type="button" data-model="PaLM-540B" aria-pressed="true">PaLM-540B</button>
+    <button type="button" data-model="code-davinci-001" aria-pressed="false">code-davinci-001</button>
+    <button type="button" data-model="code-davinci-002" aria-pressed="false">code-davinci-002</button>
+  </div>
+  <div id="main-bars"></div>
+  <p class="readout" id="main-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one arithmetic benchmark, axis 0 to 100%: plain grey for chain of thought with one greedy chain, striped blue for self-consistency with 40 sampled chains. Every striped bar is longer than its grey partner, for every model: the vote never lost. Switch models and compare the gaps: small for UL2-20B (+3 to +7), large for LaMDA-137B (+9 to +24), and still large on the hardest sets for the strongest models (PaLM-540B: +12.5 on AQuA, +17.9 on GSM8K). Numbers from Table 2 of Wang et al. (2022), reproduced under CC BY 4.0. (The chain-of-thought paper reports PaLM-540B at 56.9% on GSM8K; this paper's own greedy run gives 56.5%.)</p>
+<h4>Commonsense and symbolic tasks</h4>
+<p>Gains are smaller, but never negative (Table 3): the smallest are zero, on 4-letter concatenation for UL2-20B and LaMDA-137B, which can barely do the task at all. With code-davinci-002: StrategyQA 73.4% → 79.8%, ARC-challenge 83.6% → 87.5%. On the longer symbol puzzles, PaLM-540B gains 5.0 points on 4-letter concatenation and 3.0 on 4-flip coins.</p>
+<h4>How many paths?</h4>
+<p>The paper plots accuracy against 1, 5, 10, 20 and 40 sampled paths (its Figure 2). The curves rise steeply over the first few paths and then level off, much like the vote explorer above. One detail matters: a <em>single</em> sampled path is usually a little worse than the greedy one, because sampling adds noise. The vote is what turns that noise into an advantage.</p>
+<h4>A repaired example</h4>
+<div class="tablewrap"><table>
+  <caption>From Table 4 of Wang et al. (2022), reproduced under CC BY 4.0 (PaLM-540B, GSM8K). Henry made two stops during his 60-mile bike trip. He first stopped after 20 miles. His second stop was 15 miles before the end of the trip. How many miles did he travel between his first and second stops?</caption>
+  <thead><tr><th>Decode</th><th>Output</th></tr></thead>
+  <tbody>
+    <tr><td>Greedy</td><td>He traveled 60 miles in total. He stopped after 20 miles, so he traveled 60 - 20 = 40 miles between the first and second stops. The answer is 40.</td></tr>
+    <tr><td>Sampled path 1</td><td>… So between his first and second stops he travelled 60 - 20 -15 = 25 miles. The answer is 25.</td></tr>
+    <tr><td>Sampled path 2</td><td>… This means the second stop was 60 - 15 = 45 miles into the trip. Since he made the stops in order, the second stop must have been 45 - 20 = 25 miles after the first stop. The answer is 25.</td></tr>
+  </tbody>
+</table></div>
+<h4>Why it matters</h4>
+<p>Greedy decoding commits to the most likely <em>next token</em> at every step, which is not the same as the most likely <em>answer</em>. Here the greedy path forgets the second stop; two differently worded samples both remember it and agree on 25.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Self-consistency helps when chain of thought hurts <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Asking someone to explain every answer can make them overthink a question they would have got right on instinct. Asking them several times and taking the consensus smooths that out.</p>
+<h4>Tiny example</h4>
+<p>On RTE, a <span class="t" data-tip-title="Natural language inference" data-tip="Deciding whether one sentence follows from another, contradicts it, or neither. ANLI, e-SNLI and RTE are benchmarks of this kind.">natural language inference</span> task, PaLM-540B scores 84.8% with plain answers, 79.1% with one chain of thought, and 86.3% with self-consistency.</p>
+<div class="tablewrap"><table>
+  <caption>From Table 5 of Wang et al. (2022), reproduced under CC BY 4.0: PaLM-540B accuracy (%).</caption>
+  <thead><tr><th>Method</th><th class="num">ANLI R1</th><th class="num">e-SNLI</th><th class="num">RTE</th><th class="num">BoolQ</th></tr></thead>
+  <tbody>
+    <tr><td>Standard prompting (no chain)</td><td class="num">69.1</td><td class="num">85.8</td><td class="num">84.8</td><td class="num">71.3</td></tr>
+    <tr><td>Chain-of-thought prompting</td><td class="num">68.8</td><td class="num">81.0</td><td class="num">79.1</td><td class="num">74.2</td></tr>
+    <tr class="hl"><td>Self-consistency</td><td class="num">78.5</td><td class="num">88.4</td><td class="num">86.3</td><td class="num">78.4</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> in the first three columns the middle row is below the top row: adding a single chain of thought hurt, as Ye and Durrett (2022) had reported. The bottom row beats both on every column. So the paper recommends self-consistency as the safe way to add reasoning to a few-shot prompt.</p>
+<h4>Why it matters</h4>
+<p>One chain is one draw from a noisy process. Whether reasoning helps or hurts on average can be hidden by that noise; the vote averages it out.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Compared with other approaches <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S3.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>There are other ways to get more than one attempt. You could keep the attempt the model is most sure of; explore several continuations at once and keep the best; or ask with differently worded prompts. The paper tries each against the vote, with the same number of attempts.</p>
+<h4>Tiny example: three rivals</h4>
+<ul>
+  <li><strong><span class="t" data-tip-title="Sample-and-rank" data-tip="Sample several outputs, then return the one the model itself gives the highest probability. It uses the model's confidence instead of agreement between samples.">Sample-and-rank</span></strong> (code-davinci-001): sample the same number of outputs, return the one with the highest probability. It helps a little; the vote helps much more (the paper's Figure 3).</li>
+  <li><strong><span class="t" data-t="beam search">Beam search</span></strong> (UL2-20B): keeps the few most likely partial outputs at each step. Its outputs are too alike to vote usefully, and its top beam gets <em>worse</em> as beams are added.</li>
+  <li><strong>Ensembles of prompts</strong> (LaMDA-137B): 40 random orderings of the exemplars, or 3 hand-written prompt sets, each decoded greedily, then a vote.</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>From Tables 6 and 7 of Wang et al. (2022), reproduced under CC BY 4.0: accuracy (%).</caption>
+  <thead><tr><th>Method</th><th class="num">1</th><th class="num">5</th><th class="num">10</th><th class="num">40</th></tr></thead>
+  <tbody>
+    <tr><td colspan="5"><strong>UL2-20B on AQuA, by number of beams or paths</strong></td></tr>
+    <tr><td>Beam search (top beam)</td><td class="num">23.6</td><td class="num">19.3</td><td class="num">16.1</td><td class="num">10.2</td></tr>
+    <tr><td>Self-consistency over beam-search outputs</td><td class="num">23.6</td><td class="num">19.8</td><td class="num">21.2</td><td class="num">24.2</td></tr>
+    <tr class="hl"><td>Self-consistency over samples</td><td class="num">19.7</td><td class="num">24.9</td><td class="num">25.3</td><td class="num">26.9</td></tr>
+  </tbody>
+</table></div>
+<div class="tablewrap"><table>
+  <thead><tr><th>LaMDA-137B</th><th class="num">GSM8K</th><th class="num">MultiArith</th><th class="num">ARC-c</th></tr></thead>
+  <tbody>
+    <tr><td>Chain of thought, greedy</td><td class="num">17.1</td><td class="num">51.8</td><td class="num">55.1</td></tr>
+    <tr><td>Ensemble of 3 prompt sets</td><td class="num">18.6</td><td class="num">57.1</td><td class="num">57.0</td></tr>
+    <tr><td>Ensemble of 40 prompt orderings</td><td class="num">19.2</td><td class="num">60.9</td><td class="num">57.0</td></tr>
+    <tr class="hl"><td>Self-consistency, 40 paths</td><td class="num">27.7</td><td class="num">75.7</td><td class="num">59.8</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> in the first table, read along each row. The top beam falls from 23.6% to 10.2% as the beam widens; voting over beams dips, then recovers to about where it started; voting over <em>samples</em> starts lower (one sample is noisier than the top beam) and climbs to the best score. In the second table, the prompt ensembles gain 1 to 9 points over greedy chain of thought, while self-consistency gains 5 to 24. The lesson in both: what makes the vote work is <em>diversity</em> of reasoning paths, and sampling from one prompt gives more of it than reshuffling prompts or searching for the single best continuation.</p>
+<h4>Why it matters</h4>
+<p>The paper calls self-consistency a “self-ensemble”. Its appendix also tried ensembling three <em>different</em> models by voting over their greedy answers: 33.3% on GSM8K, far below PaLM-540B's own 74.4% with self-consistency, because weaker models drag the vote down.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 Additional studies <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S3.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A method you have to tune carefully is fragile. The paper varies the sampling settings, deliberately corrupts the prompt, and asks whether agreement between samples can serve as a confidence meter.</p>
+<h4>Robust to sampling settings and model scale</h4>
+<p>Across temperatures, top-k values and <span class="t" data-t="top-p">nucleus sampling</span> settings on PaLM-540B, and across LaMDA models of every size, self-consistency improved over greedy decoding (its Figure 4). Gains are smaller for small models, which cannot yet do the arithmetic.</p>
+<h4>Robust to imperfect prompts, and to zero-shot</h4>
+<div class="tablewrap"><table>
+  <caption>From Table 8 of Wang et al. (2022), reproduced under CC BY 4.0: GSM8K accuracy (%).</caption>
+  <thead><tr><th>Model and prompt</th><th class="num">Greedy</th><th class="num">+ Self-consistency (40)</th></tr></thead>
+  <tbody>
+    <tr><td>LaMDA-137B, correct chains in the exemplars</td><td class="num">17.1</td><td class="num">27.7</td></tr>
+    <tr><td>LaMDA-137B, exemplars with wrong numbers in their chains</td><td class="num">14.9</td><td class="num">23.4</td></tr>
+    <tr><td>LaMDA-137B, exemplars showing equations only</td><td class="num">5.0</td><td class="num">6.5</td></tr>
+    <tr class="hl"><td>PaLM-540B, zero-shot “let's think step by step”</td><td class="num">43.0</td><td class="num">69.2</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the second row replaced every number in the exemplars' chains with a random one (“There are 7 cars in the parking lot already. 6 more arrive. Now there are 7 + 6 = 5 cars.”) but kept the final answers. Greedy accuracy dropped, and the vote more than recovered it. Equations-only chains are short, so samples differ little and the vote gains little. The last row needs no worked examples at all, only the instruction to think step by step (Kojima et al., 2022), and gains 26.2 points. The first row's 27.7 is Table 2's 40-path result, repeated for comparison.</p>
+<h4>The math: consistency as a confidence meter</h4>
+<div class="eq" data-tex="\htmlData{sym=cons}{\text{consistency}} = \htmlData{sym=invm}{\tfrac{1}{m}} \htmlData{sym=maxa}{\max_{a}} \htmlData{sym=sumi}{\sum_{i=1}^{m}} \htmlData{sym=ind}{\mathbf{1}}(\htmlData{sym=ai}{a_i} = \htmlData{sym=a}{a})" data-fallback="consistency = (1/m) max_a Σ_{i=1}^{m} 1(a_i = a)"></div>
+<div class="symtable" data-syms="maxa,invm,cons"></div>
+<p class="inwords"><strong>In words:</strong> “the share of the sampled paths that agree with the winning answer.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Figure 1's vote is 2 of 3, so consistency is 2 / 3 = 0.67. Forty paths with 34 on the winner give 0.85; with 12 on the winner, 0.30.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>answers = [18, 26, 18]
+m = len(answers)
+# max_a Σ_i 1(a_i = a): the winner's vote count
+top = max(sum(1 for a_i in answers if a_i == a) for a in set(answers))
+round(top / m, 2)  # → 0.67
+# forty paths, 34 or 12 of them on the winner
+34 / 40, 12 / 40  # → (0.85, 0.3)</code></pre>
+<p>On GSM8K the paper found this share tracks accuracy closely (its Figure 5): questions where most paths agree are usually answered correctly, and questions with scattered answers usually are not. So low consistency is a cheap signal that the model “doesn't know”.</p>
+<h4>Why it matters</h4>
+<p>This is the useful by-product: a confidence score that needs no access to the model's internals, only its answers. In practice, low agreement is a natural trigger to escalate: sample more, call a tool, use a stronger model, or ask a person. The <a href="react.html">ReAct companion</a> shows exactly that: its authors fall back from self-consistency to looking things up when fewer than half the samples agree.</p>
+</section>
+
+<section id="s4">
+<h2>4 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S4">original</a></span></h2>
+<p>The paper sets itself against three kinds of earlier work. Specialised systems for arithmetic or logic needed task-specific designs. Re-ranking methods trained an extra model to pick among samples: a <span class="t" data-t="verifier">verifier</span> for maths solutions (Cobbe et al., 2021) or a human-labelled re-ranker for dialogue (LaMDA). Methods for extracting reasoning paths needed task-specific training too. Self-consistency needs none of that: sampling and counting on top of one frozen model. It also uses “consistency” in a new sense: agreement between the final answers of different reasoning paths.</p>
+</section>
+
+<section id="s5">
+<h2>5 Conclusion and discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2203.11171#S5">original</a></span></h2>
+<blockquote class="quote">“One limitation of self-consistency is that it incurs more computation cost.”<cite>Wang et al. (2022), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Asking forty people costs forty times as much as asking one. The paper's practical advice: start with 5 or 10 paths, which capture most of the gain, since accuracy levels off quickly.</p>
+<h3 class="rung">The math: what the vote costs</h3>
+<div class="eq" data-tex="\htmlData{sym=tok}{\text{tokens}} = \htmlData{sym=m}{m} \htmlData{sym=times}{\times} \htmlData{sym=Tlen}{T}" data-fallback="tokens = m × T"></div>
+<div class="symtable" data-syms="Tlen,times,tok"></div>
+<p class="inwords"><strong>In words:</strong> “the tokens generated for one question are the number of sampled paths times the length of each.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper capped GPT-3 outputs at 128 tokens. One greedy chain: at most 128 tokens. 40 paths: at most 40 × 128 = 5,120. The suggested 5 or 10 paths: 640 or 1,280. Run side by side, the wait is still about one path long; the bill is m paths.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># T: the paper's cap on GPT-3 output length
+T = 128
+# m = 40 paths, as in the experiments
+40 * T  # → 5120
+# the suggested starting points
+[m * T for m in (5, 10)]  # → [640, 1280]</code></pre>
+<h3 class="rung">Other points in the discussion</h3>
+<ul>
+  <li>Sampled chains that reach the right answer could become training data, so a model learns to get it right in one pass.</li>
+  <li>Right answers can still ride on wrong reasoning: in Table 4's StrategyQA example, the populations the model quotes for the two Albanys are not accurate, though its answer is.</li>
+  <li>Agreement between samples gives an uncertainty estimate and better calibration, for free.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The first bullet came true: training on a model's own correct sampled chains, and later reinforcement learning that rewards right final answers, turned sampling-and-checking into models that reason well in one pass. The cost trade-off, money for accuracy, is the everyday arithmetic of test-time compute; the <a data-lesson="primer/ml/reasoning.html">reasoning lesson</a> prices it (<a data-lesson="primer/ml/reasoning.html#reasoning_cost"><code>reasoning_cost</code></a>).</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2022</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Vote over final answers</td><td>Still the default when answers compare exactly (maths, multiple choice, code outputs), often called <span class="t" data-t="majority voting">majority voting</span></td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
+    <tr><td>Agreement picks the answer</td><td>A <span class="t" data-t="verifier">verifier</span> picks it (<span class="t" data-t="best-of-n">best-of-n</span>), bounded above by <span class="t" data-t="pass@n">pass@n</span></td><td><a data-lesson="primer/ml/reasoning.html#pass_at_n">pass@n</a></td></tr>
+    <tr><td>Independent samples assumed</td><td>Known limit: samples from one model share its blind spots, so gains level off</td><td><a data-lesson="primer/ml/reasoning.html#correlated_vote_accuracy">correlated votes</a></td></tr>
+    <tr><td>Consistency as a confidence meter</td><td>Agreement used to decide when to escalate, retry or ask a person</td><td><a href="react.html">ReAct companion</a></td></tr>
+    <tr><td>40 paths from a prompted model</td><td>Models trained to reason, which check their own work inside one long chain</td><td><a href="chain-of-thought-prompting.html">chain-of-thought companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed H. Chi, Sharan Narang, Aakanksha Chowdhery and Denny Zhou, <em>Self-Consistency Improves Chain of Thought Reasoning in Language Models</em> (2022). <a href="https://arxiv.org/abs/2203.11171">arXiv:2203.11171</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Selected table rows and the Figure 1 example are reproduced with attribution under that licence; every figure is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    m: { tex: "m", name: "Number of sampled paths", meaning: "How many times the model is asked the same question, each time sampling a fresh reasoning path.", shape: "a whole number; 40 in the paper", example: "3 in Figure 1" },
+    ai: { tex: "a_i", name: "The i-th answer", meaning: "The final answer parsed from sampled output i: the first number after “The answer is”, or the option chosen.", shape: "a number or an option", example: "a₁ = 18, a₂ = 26, a₃ = 18" },
+    a: { tex: "a", name: "A candidate answer", meaning: "Any answer that appeared among the samples; the vote tries each in turn.", shape: "a number or an option", example: "18 or 26" },
+    ind: { tex: "\\mathbf{1}(\\cdot)", name: "Indicator", meaning: "1 if the statement in brackets is true, 0 if it is false. Summing indicators counts.", shape: "0 or 1", example: "1(a₂ = 18) = 0" },
+    sumi: { tex: "\\sum_{i=1}^{m}", name: "Sum over paths", meaning: "Add up over every sampled path, from the first (i = 1) to the last (i = m).", shape: "", example: "1 + 0 + 1 = 2" },
+    argmax: { tex: "\\arg\\max_a", name: "Argmax over answers", meaning: "Not the biggest count itself, but the answer a that has it.", shape: "", example: "18 (count 2)" },
+    ahat: { tex: "\\hat{a}", name: "The chosen answer", meaning: "The hat marks the method's output: the answer with the most votes.", shape: "a number or an option", example: "18" },
+    P: { tex: "P", name: "Probability", meaning: "How likely the model was to write this text, from its softmax over the vocabulary at each token.", shape: "0 to 1", example: "0.9 for one token (illustrative)" },
+    ri: { tex: "r_i", name: "The i-th reasoning path", meaning: "The tokens of sampled output i before its final answer: its chain of thought.", shape: "a sequence of tokens", example: "“She has 16 − 3 − 4 = 9 eggs left…”" },
+    given: { tex: "\\mid", name: "Given", meaning: "Read “given”: the text on the right is already there when the text on the left is written.", shape: "", example: "" },
+    ctx: { tex: "c", name: "The context", meaning: "Short for the prompt (the worked examples) and the question, which every path starts from. The paper writes them out as “prompt, question”.", shape: "text", example: "the Janet's ducks prompt" },
+    tk: { tex: "t_k", name: "The k-th token", meaning: "One token of the output (r_i, a_i), counting reasoning and answer together. This k is a position, unrelated to top-k sampling.", shape: "one token", example: "“9”" },
+    prev: { tex: "t_1, \\ldots, t_{k-1}", name: "The tokens before it", meaning: "Everything the path has written so far; each token is predicted from all of them.", shape: "k − 1 tokens", example: "" },
+    K: { tex: "K", name: "Path length", meaning: "The number of tokens in the output (r_i, a_i).", shape: "a whole number", example: "4 (illustrative)" },
+    sumk: { tex: "\\sum_{k=1}^{K}", name: "Sum over tokens", meaning: "Add up over every token of the path, first to last.", shape: "", example: "−0.105 − 0.693 − 0.223 − 0.511 = −1.532" },
+    log: { tex: "\\log", name: "Natural logarithm", meaning: "Turns products into sums, so a path's probability becomes a sum over its tokens. Logs of probabilities are negative.", shape: "−∞ to 0 here", example: "log 0.9 = −0.105" },
+    invK: { tex: "\\tfrac{1}{K}", name: "Divide by the length", meaning: "Averages the log-probabilities per token, so long paths aren't punished just for being long.", shape: "", example: "−1.532 / 4 = −0.383" },
+    exp: { tex: "\\exp", name: "Exponential", meaning: "e raised to a power; undoes the logarithm, turning the average log back into a probability. The result is the geometric mean of the token probabilities.", shape: "0 to 1 here", example: "exp(−0.383) = 0.682" },
+    score: { tex: "\\text{score}(a)", name: "Weighted score of an answer", meaning: "The sum of the probabilities of the paths that reached answer a. With every weight equal to 1 it is the plain vote count.", shape: "0 to m", example: "score(18) = 0.62 + 0.60 = 1.22 (illustrative)" },
+    maxa: { tex: "\\max_a", name: "Largest over answers", meaning: "The biggest vote count any answer received (the count itself, unlike argmax).", shape: "1 to m", example: "2" },
+    invm: { tex: "\\tfrac{1}{m}", name: "Divide by the number of paths", meaning: "Turns the winning count into a share.", shape: "", example: "2 / 3" },
+    cons: { tex: "\\text{consistency}", name: "Consistency", meaning: "The share of sampled paths that agree with the chosen answer. High means the model keeps reaching the same answer.", shape: "1/m to 1", example: "0.67" },
+    tok: { tex: "\\text{tokens}", name: "Tokens generated", meaning: "Output tokens spent on one question, which is what sampling costs.", shape: "a whole number", example: "5,120 for 40 paths" },
+    Tlen: { tex: "T", name: "Path length cap", meaning: "The most tokens one sampled path may use. (This T is a length, not the sampling temperature.)", shape: "a whole number", example: "128 for GPT-3 in the paper" },
+    times: { tex: "\\times", name: "Multiply", meaning: "Every one of the m paths costs up to T tokens.", shape: "", example: "40 × 128" },
+  },
+  blocks: {
+    prompt: { title: "The prompt", body: "<p>The chain-of-thought prompt: eight worked examples (the first asks “If there are 3 cars in the parking lot and 2 more cars arrive, how many cars are in the parking lot?” and answers “There are 3 cars in the parking lot already. 2 more arrive. Now there are 3 + 2 = 5 cars. The answer is 5.”), then Janet's ducks. Identical for both methods.</p>" },
+    model: { title: "The same language model", body: "<p>One frozen model. What differs is only how its next tokens are chosen: always the most probable (greedy), or drawn at random in proportion to their probabilities (sampling).</p>", lesson: "primer/ml/inference.html" },
+    greedy: { title: "Greedy decode: one path", body: "<p>“This means she uses 3 + 4 = 7 eggs every day. She sells the remainder for $2 per egg, so in total she sells 7 * $2 = $14 per day.” Each token was the single most likely one, yet the path confuses the eggs used with the eggs sold.</p>" },
+    ans14: { title: "Greedy answer: $14, wrong", body: "<p>With one path there is nothing to compare against, so the mistake goes straight to the output.</p>" },
+    sampled: { title: "Sampled reasoning paths", body: "<p>The paper samples 40 paths per question; the figure shows three. Sampling lets each run take a different route through the problem.</p>" },
+    path1: { title: "Sampled path 1", body: "<p>“She has 16 − 3 − 4 = 9 eggs left. So she makes $2 * 9 = $18 per day.” Subtracts both uses at once.</p>" },
+    path2: { title: "Sampled path 2", body: "<p>“This means she she sells the remainder for $2 * (16 − 4 − 3) = $26 per day.” The expression is right; the arithmetic is not (it equals 18). A slip like this rarely lands on the same wrong number twice.</p>" },
+    path3: { title: "Sampled path 3", body: "<p>“She eats 3 for breakfast, so she has 16 − 3 = 13 left. Then she bakes muffins, so she has 13 − 4 = 9 eggs left. So she has 9 eggs * $2 = $18.” A different route, one subtraction at a time, to the same answer as path 1.</p>" },
+    answers: { title: "Only the answers go forward", body: "<p>Each output ends “The answer is …”; a parser takes the number after it. The reasoning paths are marginalized out: they helped reach an answer, and now only the answers are counted.</p>" },
+    ans18: { title: "Answer $18: two votes", body: "<p>Two different paths arrived here. Both $18 boxes light up together because they are the same answer: that shared value is what the vote counts.</p>" },
+    ans26: { title: "Answer $26: one vote", body: "<p>A lone mistake. Wrong answers tend to scatter over many values, so each one collects few votes.</p>" },
+    vote: { title: "Majority vote: $18", body: "<p>Count each distinct answer and return the most common. Here 18 wins, 2 votes to 1, and 2 of 3 is the consistency: a rough measure of how sure the model is.</p>", lesson: "primer/ml/reasoning.html" },
+  },
+  onReady(P) { voteExplorer(P); mainBars(); },
+};
+
+/* ---- the vote explorer: exact accuracy of a plurality vote over m independent paths ---- */
+// Each path is right with chance p; a wrong path picks one of k wrong answers at random;
+// ties are broken at random. Checked against brute-force enumeration while writing the page.
+function voteAccuracy(m, p, k) {
+  const fact = [1];
+  for (let i = 1; i <= m; i++) fact[i] = fact[i - 1] * i;
+  const comb = (n, r) => fact[n] / (fact[r] * fact[n - r]);
+  let acc = 0;
+  for (let r = 1; r <= m; r++) {
+    const w = m - r;
+    // dp[s][t]: ways to spread s wrong votes over the bins so far, t bins tied with r, weighted by Π 1/c!
+    let dp = Array.from({ length: w + 1 }, () => new Array(k + 1).fill(0));
+    dp[0][0] = 1;
+    for (let b = 0; b < k; b++) {
+      const nx = Array.from({ length: w + 1 }, () => new Array(k + 1).fill(0));
+      for (let s = 0; s <= w; s++)
+        for (let t = 0; t <= b; t++) {
+          if (!dp[s][t]) continue;
+          // A wrong answer may collect at most r votes, or the right answer loses outright.
+          for (let c = 0; c <= Math.min(r, w - s); c++) nx[s + c][t + (c === r ? 1 : 0)] += dp[s][t] / fact[c];
+        }
+      dp = nx;
+    }
+    let win = 0;
+    for (let t = 0; t <= k; t++) win += dp[w][t] / (t + 1);
+    win *= fact[w] / Math.pow(k, w);
+    acc += comb(m, r) * Math.pow(p, r) * Math.pow(1 - p, w) * win;
+  }
+  return acc;
+}
+
+function voteExplorer(P) {
+  const ps = document.getElementById("sc-p"), ks = document.getElementById("sc-k");
+  const box = document.getElementById("vote-chart");
+  const ms = Array.from({ length: 40 }, (_, i) => i + 1);
+  const series = () => {
+    const p = +ps.value, k = +ks.value;
+    return [
+      { name: "vote over m paths", points: ms.map((m) => [m, voteAccuracy(m, p, k)]) },
+      { name: "one sampled path", points: ms.map((m) => [m, p]) },
+    ];
+  };
+  // Drawn at about the width it is shown, so the axis labels stay readable on a phone.
+  const chart = P.lineChart(box, {
+    series: series(), yMin: 0, yMax: 1, width: Math.max(320, Math.min(640, box.clientWidth)), height: 280,
+    xLabel: "paths that vote (m)", yLabel: "chance the vote is right",
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("vote-readout"),
+    ariaLabel: "Chance the vote is right against the number of voting paths",
+  });
+  const redraw = () => {
+    const p = +ps.value, k = +ks.value;
+    document.getElementById("sc-p-v").textContent = p.toFixed(2);
+    document.getElementById("sc-k-v").textContent = String(k);
+    chart.update(series());
+    const each = (1 - p) / k;
+    document.getElementById("vote-readout").textContent =
+      `Right answer ${p.toFixed(2)}, each wrong answer ${each.toFixed(3)}: ` +
+      (p > each + 1e-9 ? "the right answer is the biggest pile, so the vote climbs. " : p < each - 1e-9 ? "a wrong answer is the biggest pile, so the vote sinks. " : "all answers are equally likely, so the vote stays flat. ") +
+      `With 5 paths: ${voteAccuracy(5, p, k).toFixed(2)}; with 40: ${voteAccuracy(40, p, k).toFixed(2)}.`;
+  };
+  ps.addEventListener("input", redraw);
+  ks.addEventListener("input", redraw);
+}
+
+/* ---- Table 2: greedy chain of thought against self-consistency ---- */
+function mainBars() {
+  // [task, chain of thought (greedy) %, self-consistency %], from Table 2 of Wang et al. (2022), CC BY 4.0
+  const T2 = {
+    "UL2-20B": [["AddSub", 18.2, 24.8], ["MultiArith", 10.7, 15.0], ["ASDiv", 16.9, 21.5], ["AQuA", 23.6, 26.9], ["SVAMP", 12.6, 19.4], ["GSM8K", 4.1, 7.3]],
+    "LaMDA-137B": [["AddSub", 52.9, 63.5], ["MultiArith", 51.8, 75.7], ["ASDiv", 49.0, 58.2], ["AQuA", 17.7, 26.8], ["SVAMP", 38.9, 53.3], ["GSM8K", 17.1, 27.7]],
+    "PaLM-540B": [["AddSub", 91.9, 93.7], ["MultiArith", 94.7, 99.3], ["ASDiv", 74.0, 81.9], ["AQuA", 35.8, 48.3], ["SVAMP", 79.0, 86.6], ["GSM8K", 56.5, 74.4]],
+    "code-davinci-001": [["AddSub", 57.2, 67.8], ["MultiArith", 59.5, 82.7], ["ASDiv", 52.7, 61.9], ["AQuA", 18.9, 25.6], ["SVAMP", 39.8, 54.5], ["GSM8K", 14.6, 23.4]],
+    "code-davinci-002": [["AddSub", 89.4, 91.6], ["MultiArith", 96.2, 100.0], ["ASDiv", 80.1, 87.8], ["AQuA", 39.8, 52.0], ["SVAMP", 75.8, 86.8], ["GSM8K", 60.1, 78.0]],
+  };
+  // The label column shrinks on a phone and wraps, so the bars keep most of the width.
+  const cols = "minmax(5.5rem, 38%) minmax(0,1fr) 3.2rem";
+  const row = (label, v, bg) => `<div class="share-row" style="grid-template-columns:${cols}"><span>${label}</span><div><div class="share-bar" style="width:${v}%;background:${bg}"></div></div><span>${v.toFixed(1)}%</span></div>`;
+  const out = document.getElementById("main-bars"), readout = document.getElementById("main-readout");
+  function draw(model) {
+    const rows = T2[model];
+    out.innerHTML =
+      `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>chain of thought, greedy</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>self-consistency, 40 paths (striped)</span><span>${model}, axis 0 to 100% (Table 2, CC BY 4.0)</span></div>` +
+      rows.map(([t, g, s]) => row(t, g, "var(--wire)") + row("", s, "var(--hatch) var(--accent)")).join("");
+    const gains = rows.map(([t, g, s]) => [t, +(s - g).toFixed(1)]);
+    const best = gains.reduce((x, y) => (y[1] > x[1] ? y : x));
+    readout.textContent = `${model}: self-consistency gains between ${Math.min(...gains.map((g) => g[1]))} and ${best[1]} points, most on ${best[0]}.`;
+  }
+  document.querySelectorAll("[data-model]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-model]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    draw(b.dataset.model);
+  }));
+  draw("PaLM-540B");
+}
+</script>
+</body>
+</html>

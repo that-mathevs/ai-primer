@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chain-of-Thought Prompting, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Wei et al. (2022), the paper that showed a few worked examples with written-out steps make large language models far better at multi-step reasoning.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="chain-of-thought-prompting">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Chain-of-thought prompting</a></li>
+      <li><a href="#s3">3 Arithmetic reasoning</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Experimental setup</a></li>
+          <li><a href="#s3-2">3.2 Results</a></li>
+          <li><a href="#s3-3">3.3 Ablation study</a></li>
+          <li><a href="#s3-4">3.4 Robustness</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Commonsense reasoning</a></li>
+      <li><a href="#s5">5 Symbolic reasoning</a></li>
+      <li><a href="#s6">6 Discussion and limitations</a></li>
+      <li><a href="#appx">Appendices: why scale, and where chains go wrong</a></li>
+      <li><a href="#s7">7–8 Related work and conclusion</a></li>
+      <li><a href="#today">What changed since 2022</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Chain-of-Thought Prompting, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Wei, Wang, Schuurmans, Bosma, Ichter, Xia, Chi, Le and Zhou (2022), <em>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</em>.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2201.11903">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2201.11903">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2201.11903">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is released under a <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0</a> licence, so selected numbers from its tables and a few of its prompt examples are reproduced here with attribution to Wei et al. (2022). Every figure is redrawn from scratch. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The diagrams are live: hover or tap a box to read what it holds. The charts answer the arrow keys once you tab to them.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it still matters</strong>. The <a class="lesson" data-lesson="primer/ml/reasoning.html">reasoning models lesson</a> builds the mechanism from scratch in code: a toy model that can do one addition per token, and exactly how writing steps down rescues it.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We explore how generating a chain of thought, a series of intermediate reasoning steps, significantly improves the ability of large language models to perform complex reasoning.”<cite>Wei et al. (2022), Abstract (dashes in the original replaced with commas). <a href="https://ar5iv.labs.arxiv.org/html/2201.11903">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A maths teacher who only ever shows the class the final answers (“question 4: 27”) gets pupils who guess. A teacher who works a few problems on the board, line by line, gets pupils who write their own working, and they get the answers right far more often. This paper does the second thing to a <span class="t" data-t="llm">language model</span>: it puts a handful of fully worked examples in the <span class="t" data-t="prompt">prompt</span>, and the model imitates the working.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Showing eight worked examples, each with its intermediate steps written in plain language, makes large models dramatically better at arithmetic word problems, commonsense questions and simple symbolic puzzles. No training, no <span class="t" data-t="fine-tuning">fine-tuning</span>: only a different prompt.</li>
+  <li>On <span class="t" data-tip-title="GSM8K" data-tip="Grade School Math 8K: about 8,500 grade-school maths word problems that take several steps each, with a test set of 1,319. Released by Cobbe et al. (2021).">GSM8K</span>, a set of grade-school maths word problems, PaLM 540B went from 17.9% solved to 56.9%, beating the previous best of 55% (a fine-tuned GPT-3 with a separately trained <span class="t" data-t="verifier">verifier</span>).</li>
+  <li>The trick only works in very large models. Below roughly 100 billion <span class="t" data-t="parameters">parameters</span> it does nothing or makes things worse: an <span class="t" data-t="emergent ability">emergent ability</span> of scale.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Every modern <span class="t" data-t="reasoning model">reasoning model</span> writes a long <span class="t" data-t="chain of thought">chain of thought</span> before it answers. This paper is where that habit was first shown to pay, and named.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S1">original</a></span></h2>
+<blockquote class="quote">“In this paper, we combine the strengths of these two ideas in a way that avoids their limitations.”<cite>Wei et al. (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two good ideas were lying around, each with a catch. The first: models that write out a <span class="t" data-tip-title="Rationale" data-tip="A written explanation of how an answer was reached: the intermediate steps, in words or equations.">rationale</span> before answering do better at maths, but teaching them required thousands of hand-written worked solutions. The second: large models can pick up a task from a few examples in the prompt (<span class="t" data-t="in-context learning">in-context learning</span>), with no training at all, but that barely helped on problems that need reasoning. The paper's move is to combine them: put a few worked solutions, rationale included, in the prompt.</p>
+<h3 class="rung">Tiny example: what changes in the prompt</h3>
+<div class="tablewrap"><table>
+  <thead><tr><th></th><th>Rationale training</th><th>Standard few-shot prompting</th><th>Chain-of-thought prompting</th></tr></thead>
+  <tbody>
+    <tr><td>Examples needed</td><td>thousands of worked solutions</td><td>about eight question and answer pairs</td><td>about eight question, working, answer triples</td></tr>
+    <tr><td>Model weights change?</td><td>yes: training or fine-tuning</td><td>no</td><td>no</td></tr>
+    <tr><td>Good at multi-step problems?</td><td>yes</td><td>poorly, and it barely improves with scale</td><td>yes, in large enough models</td></tr>
+  </tbody>
+</table></div>
+<p>The paper writes each example as a triple ⟨input, chain of thought, output⟩. A standard prompt uses pairs ⟨input, output⟩. That one extra element is the whole method.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Because nothing is trained, one model checkpoint can do many reasoning tasks, and anyone who can write eight worked examples can use it. The idea of steering a model by showing it examples comes from <a href="gpt-3.html">GPT-3's few-shot prompting</a>; this paper changes what the examples contain.</p>
+</section>
+
+<section id="s2">
+<h2>2 Chain-of-thought prompting <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S2">original</a></span></h2>
+<blockquote class="quote">“After Jane gives 2 flowers to her mom she has 10 … then after she gives 3 to her dad she will have 7 … so the answer is 7.”<cite>Wei et al. (2022), §2, the kind of inner working the method asks a model to write</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Doing a sum in your head, you keep the running total somewhere. A language model has nowhere to keep it except the text it has already written: each new <span class="t" data-t="token">token</span> is computed by one pass through the network, and the only thing that pass can read is the text so far. Writing “23 − 20 = 3” puts the 3 on the page, where the next pass can pick it up.</p>
+<h3 class="rung">Tiny example: the paper's Figure 1</h3>
+<p>Both prompts below show the model the same worked example about tennis balls, then ask a new question about apples. The only difference is whether the worked example includes its working. Hover or tap each box.</p>
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 372" role="img" aria-label="Standard prompting and chain-of-thought prompting side by side, with the model's output under each">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="95" y="14" text-anchor="middle" class="lbl">Standard</text>
+    <text x="285" y="14" text-anchor="middle" class="lbl">Chain of thought</text>
+    <g class="blk frame" data-block="input"><rect x="3" y="22" width="184" height="196" rx="12"/></g>
+    <g class="blk frame" data-block="input"><rect x="193" y="22" width="184" height="196" rx="12"/></g>
+    <g class="blk plain" data-block="exq"><rect x="11" y="30" width="168" height="42" rx="7"/><text x="95" y="47" text-anchor="middle">Q: Roger has 5 balls.</text><text x="95" y="64" text-anchor="middle">Buys 2 cans of 3.</text></g>
+    <g class="blk plain" data-block="exq"><rect x="201" y="30" width="168" height="42" rx="7"/><text x="285" y="47" text-anchor="middle">Q: Roger has 5 balls.</text><text x="285" y="64" text-anchor="middle">Buys 2 cans of 3.</text></g>
+    <g class="blk plain" data-block="exa_std"><rect x="11" y="80" width="168" height="78" rx="7"/><text x="95" y="123" text-anchor="middle">A: The answer is 11.</text></g>
+    <g class="blk attn" data-block="exa_cot"><rect x="201" y="80" width="168" height="78" rx="7"/><text x="285" y="100" text-anchor="middle">A: 2 cans of 3 is 6.</text><text x="285" y="121" text-anchor="middle">5 + 6 = 11.</text><text x="285" y="142" text-anchor="middle">The answer is 11.</text></g>
+    <g class="blk plain" data-block="testq"><rect x="11" y="166" width="168" height="44" rx="7"/><text x="95" y="184" text-anchor="middle">Q: 23 apples, 20 used,</text><text x="95" y="201" text-anchor="middle">6 bought. How many?</text></g>
+    <g class="blk plain" data-block="testq"><rect x="201" y="166" width="168" height="44" rx="7"/><text x="285" y="184" text-anchor="middle">Q: 23 apples, 20 used,</text><text x="285" y="201" text-anchor="middle">6 bought. How many?</text></g>
+    <path class="wire" d="M95,218 V238" marker-end="url(#arr)"/>
+    <path class="wire" d="M285,218 V238" marker-end="url(#arr)"/>
+    <g class="blk lin" data-block="model"><rect x="30" y="240" width="130" height="30" rx="7"/><text x="95" y="260" text-anchor="middle">Language model</text></g>
+    <g class="blk lin" data-block="model"><rect x="220" y="240" width="130" height="30" rx="7"/><text x="285" y="260" text-anchor="middle">Language model</text></g>
+    <path class="wire" d="M95,270 V288" marker-end="url(#arr)"/>
+    <path class="wire" d="M285,270 V288" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="out_std"><rect x="11" y="290" width="168" height="76" rx="7"/><text x="95" y="322" text-anchor="middle">A: The answer is 27.</text><text x="95" y="342" text-anchor="middle">✗ wrong</text></g>
+    <g class="blk soft" data-block="out_cot"><rect x="201" y="290" width="168" height="76" rx="7"/><text x="285" y="310" text-anchor="middle">A: 23 − 20 = 3.</text><text x="285" y="331" text-anchor="middle">3 + 6 = 9.</text><text x="285" y="352" text-anchor="middle">The answer is 9. ✓</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. Start with the worked example at the top of either column, then compare the two outputs at the bottom.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn and shortened: standard prompting (left) against chain-of-thought prompting (right). Prompt and output text from Wei et al. (2022), Figure 1, reproduced under CC BY 4.0.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the dashed frames are everything the model is given; the boxes below the arrows are what it writes. The two frames differ in exactly one box: the worked example's answer (orange on the right) spells out “2 cans of 3 is 6, 5 + 6 = 11” before stating 11 (shortened here; hover it for the full text). Everything else, including the model, is identical. Faced with the new apples question, the left model imitates its example and blurts a number, which is wrong. The right model imitates its example too, so it writes one subtraction and one addition first, then an answer that follows from them. The model was not taught to reason; it was shown what an answer looks like, and a good answer includes its working.</p>
+
+<h3 class="rung">The math: why written steps buy computation</h3>
+<p>The paper's first reason the method should help is that a chain of thought lets a model “allocate additional computation” to problems that need more steps. Here is one way to see why. This is not an equation from the paper; it is the rule the <a data-lesson="primer/ml/reasoning.html">reasoning lesson</a> builds and tests.</p>
+<div class="eq" data-tex="\htmlData{sym=S}{S} = \htmlData{sym=L}{L} \htmlData{sym=times}{\times} \htmlData{sym=T}{T}" data-fallback="S = L × T"></div>
+<div class="symtable" data-syms="S,L,T,times"></div>
+<p class="inwords"><strong>In words:</strong> “the number of steps a model can do one after another equals the steps one pass can do, times the number of tokens it writes.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the apples question needs two operations in a row (23 − 20, then + 6). Take an illustrative model that can do L = 1 operation per token. Blurting the number means T = 1 token of work, so S = 1: one operation short, and it must guess. Writing “23 − 20 = 3” and “3 + 6 = 9” before the answer gives T = 3, so S = 3, which is enough.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># illustrative: one operation per forward pass
+L = 1
+# answer at once: one token of work
+L * 1  # → 1
+# two written steps, then the answer
+L * 3  # → 3
+# the two steps the chain writes down
+step1 = 23 - 20  # → 3
+step1 + 6  # → 9</code></pre>
+<h3 class="rung">The four properties the paper lists</h3>
+<ol>
+  <li><strong>More computation where it is needed.</strong> A problem with more steps gets a longer chain, so more tokens, so more passes through the network.</li>
+  <li><strong>A window into the model.</strong> The chain shows how the model reached its answer, so you can see where it went wrong (the paper adds that this is not a full account of the model's computation).</li>
+  <li><strong>General.</strong> Anything a person can solve by writing steps in language is, in principle, a candidate: maths, commonsense, symbol puzzles.</li>
+  <li><strong>Cheap to use.</strong> A large, off-the-shelf model does it when the prompt's examples include chains.</li>
+</ol>
+<h3 class="rung">Why it matters today</h3>
+<p>Property 1 is the seed of what is now called <span class="t" data-t="test-time compute">test-time compute</span>: spending more tokens while answering to get a better answer. Property 2 comes with a warning the field later confirmed: a written chain is evidence about the model's reasoning, not a guaranteed record of it. In code, the lesson's <a data-lesson="primer/ml/reasoning.html#solve"><code>solve</code></a> is exactly this toy model, returning an <a data-lesson="primer/ml/reasoning.html#Attempt"><code>Attempt</code></a> with its steps, its answer and the tokens it spent.</p>
+</section>
+
+<section id="s3">
+<h2>3 Arithmetic reasoning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S3">original</a></span></h2>
+<blockquote class="quote">“Though simple for humans, arithmetic reasoning is a task where language models often struggle.”<cite>Wei et al. (2022), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Maths word problems are a good test bench because the answer is a number that is either right or wrong, and because reaching it takes several dependent steps: read the story, pick out the quantities, decide the operations, do them in order.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Experimental setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Same exam, two ways of briefing the candidate. Every model gets the same eight example problems; in one briefing the examples show only answers, in the other they show the working too. Then the model sits five sets of word problems.</p>
+<h4>Tiny example: one of the eight worked examples</h4>
+<div class="tablewrap"><table>
+  <caption>One exemplar from Table 20 of Wei et al. (2022), reproduced under CC BY 4.0. The standard prompt keeps only the last sentence of the answer.</caption>
+  <tbody>
+    <tr><td><strong>Q</strong></td><td>There were nine computers in the server room. Five more computers were installed each day, from monday to thursday. How many computers are now in the server room?</td></tr>
+    <tr><td><strong>A</strong></td><td>There were originally 9 computers. For each of 4 days, 5 more computers were added. So 5 * 4 = 20 computers were added. 9 + 20 is 29. The answer is 29.</td></tr>
+  </tbody>
+</table></div>
+<h4>What was tested</h4>
+<ul>
+  <li><strong>Benchmarks:</strong> GSM8K, SVAMP, ASDiv, AQuA (multiple choice) and MAWPS, five collections of maths word problems.</li>
+  <li><strong>Prompts:</strong> one hand-written set of eight <span class="t" data-t="exemplar">exemplars</span> for every benchmark except AQuA, which used four from its own training set. The authors note the exemplars were not tuned.</li>
+  <li><strong>Models:</strong> GPT-3 (four sizes, 350M to 175B), LaMDA (422M to 137B), PaLM (8B, 62B, 540B), UL2 20B and Codex.</li>
+  <li><strong>Decoding:</strong> <span class="t" data-t="greedy decoding">greedy</span>: always the single most likely next token, so one chain per question. (The paper points to follow-up work that samples many chains and votes; that is the <a href="self-consistency.html">self-consistency companion</a>.)</li>
+</ul>
+<h4>Why it matters</h4>
+<p>The comparison is clean: same model, same questions, same number of examples. The only variable is whether the examples show their working, so any difference in accuracy is caused by the chains.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“Chain-of-thought prompting does not positively impact performance for small models, and only yields performance gains when used with models of ∼100B parameters.”<cite>Wei et al. (2022), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Show a toddler a worked long-division example and they will copy its shape: numbers, lines, a confident final figure, all nonsense. Show it to a ten-year-old and they will actually follow it. Small models are the toddler: the paper found they wrote “fluent but illogical” chains, and did worse than if they had just answered.</p>
+<h4>Tiny example</h4>
+<p>On GSM8K, the smallest LaMDA (422M) solved 2.6% with standard prompting and 0.4% with chains: worse. LaMDA 137B went from 6.5% to 14.3%, and PaLM 540B from 17.9% to 56.9%, more than three times as many problems solved.</p>
+<h4>The paper's Figure 4, redrawn</h4>
+<div class="plot">
+  <div class="controls ui" role="group" aria-label="Model family">
+    <span>Model family:</span>
+    <button type="button" data-fam="LaMDA" aria-pressed="false">LaMDA</button>
+    <button type="button" data-fam="GPT" aria-pressed="false">GPT</button>
+    <button type="button" data-fam="PaLM" aria-pressed="true">PaLM</button>
+  </div>
+  <div class="controls ui" role="group" aria-label="Benchmark">
+    <span>Benchmark:</span>
+    <button type="button" data-set="GSM8K" aria-pressed="true">GSM8K</button>
+    <button type="button" data-set="SVAMP" aria-pressed="false">SVAMP</button>
+    <button type="button" data-set="MAWPS" aria-pressed="false">MAWPS</button>
+  </div>
+  <div id="scale-chart"></div>
+  <p class="readout" id="scale-readout">Hover the chart, or tab to it and use the arrow keys, to read each model size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is model size in billions of parameters, on a log scale (each labelled tick is ten times the one before); the y-axis is the share of problems solved, from 0 to 100%. The solid line is standard prompting, the dashed line chain-of-thought prompting, and the dotted flat line the best result any fine-tuned system had reached before. Start with PaLM on GSM8K: at 8B the two lines sit together near 5%, then the dashed line takes off, passing the dotted line at 540B. Switch to LaMDA or GPT and the small models' dashed line sits <em>below</em> the solid one: chains hurt until the model is big enough. That sudden bend, flat and then steep, is what the paper means by emergent. Now try GPT on SVAMP: standard prompting already reaches 65.7% at 175B and chains add only 3.2 points, while on GSM8K, the hardest set, the same model gains 31.3. Numbers from Table 2 of Wei et al. (2022), reproduced under CC BY 4.0.</p>
+<h4>The math: the gain, and when it turns positive</h4>
+<div class="eq" data-tex="\htmlData{sym=Delta}{\Delta}(\htmlData{sym=N}{N}) = \htmlData{sym=accC}{\text{acc}_{\text{CoT}}}(\htmlData{sym=N}{N}) - \htmlData{sym=accS}{\text{acc}_{\text{std}}}(\htmlData{sym=N}{N})" data-fallback="Δ(N) = acc_CoT(N) − acc_std(N)"></div>
+<div class="symtable" data-syms="N,accS,accC,Delta"></div>
+<p class="inwords"><strong>In words:</strong> “the gain from chain-of-thought prompting, for a model of a given size, is its accuracy with chains minus its accuracy without.”</p>
+<p class="inwords"><strong>With the numbers:</strong> on GSM8K, LaMDA 422M: Δ = 0.4 − 2.6 = −2.2 points (chains hurt). LaMDA 137B: 14.3 − 6.5 = +7.8. PaLM 540B: 56.9 − 17.9 = +39.0, and 56.9 / 17.9 = 3.18 times as many problems solved.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># GSM8K accuracy (%), standard then chain of thought, from Table 2
+acc = {"LaMDA 422M": (2.6, 0.4), "LaMDA 137B": (6.5, 14.3), "PaLM 540B": (17.9, 56.9)}
+# Δ(N) = acc_CoT(N) − acc_std(N)
+{N: round(cot - std, 1) for N, (std, cot) in acc.items()}  # → {'LaMDA 422M': -2.2, 'LaMDA 137B': 7.8, 'PaLM 540B': 39.0}
+# how many times as many problems PaLM 540B solves with chains
+round(56.9 / 17.9, 2)  # → 3.18</code></pre>
+<h4>Three takeaways the paper draws</h4>
+<ol>
+  <li><strong>It is emergent.</strong> Gains appear only around 100B parameters; smaller models write chains that read well and reason badly.</li>
+  <li><strong>Harder problems gain more.</strong> GSM8K, the hardest set, more than doubled for the largest GPT and PaLM models. On SingleOp, the one-step subset of MAWPS, the gain was tiny or negative (PaLM 540B: 94.1% either way).</li>
+  <li><strong>It rivals fine-tuning.</strong> PaLM 540B with eight exemplars set new records on GSM8K, SVAMP and MAWPS, against systems trained on each dataset's training set.</li>
+</ol>
+<h4>Why it matters today</h4>
+<p>The shape of this chart, a method useless for small models and powerful for large ones, is why reasoning tricks are usually tested on the largest models first, and why training small models to reason later relied on <span class="t" data-t="distillation">distillation</span> and reinforcement learning rather than prompting alone.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Ablation study <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>When a new medicine works, you want to know which ingredient did it. An <span class="t" data-t="ablation">ablation</span> removes one ingredient at a time. The paper tests three rival explanations for why chains help, each by building a prompt that keeps that one ingredient and drops the rest.</p>
+<h4>Tiny example: the same exemplar, four ways</h4>
+<div class="tablewrap"><table>
+  <caption>What the model is shown for the computers exemplar under each variant. The first three rows are written for this page to show the idea; the paper describes the variants in §3.3.</caption>
+  <thead><tr><th>Variant</th><th>The exemplar's answer</th><th>Tests the idea that…</th></tr></thead>
+  <tbody>
+    <tr><td>Equation only</td><td>5 * 4 + 9 = 29. The answer is 29.</td><td>the help comes from writing the maths</td></tr>
+    <tr><td>Variable compute only</td><td>a row of dots, one per character of that equation, then the answer</td><td>the help comes from extra tokens, whatever they say</td></tr>
+    <tr><td>Reasoning after answer</td><td>The answer is 29. There were originally 9 computers…</td><td>chains merely remind the model of what it knows</td></tr>
+    <tr class="hl"><td>Chain of thought</td><td>There were originally 9 computers… The answer is 29.</td><td>(the full method)</td></tr>
+  </tbody>
+</table></div>
+<div class="plot"><div id="ablation-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is the share of GSM8K problems LaMDA 137B solved, on an axis from 0 to 20%. The three ablations (grey) all land at or below standard prompting's 6.5%; only the full chain of thought (blue) jumps, to 14.3%. So it is not the equation alone (GSM8K's stories are too tangled to turn straight into one equation), not the extra tokens alone (dots add passes but carry no intermediate results), and not a reminder effect (a chain written after the answer cannot change the answer). Numbers from Table 6 of Wei et al. (2022), reproduced under CC BY 4.0.</p>
+<h4>The math: why the order matters</h4>
+<p>A language model writes left to right, and each piece is predicted from everything before it. So the chance of writing a chain <em>and then</em> an answer splits into two factors, and so does the reverse order.</p>
+<div class="eq" data-tex="\htmlData{sym=P}{P}(\htmlData{sym=c}{c}, \htmlData{sym=y}{y} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) = \htmlData{sym=P}{P}(\htmlData{sym=c}{c} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) \htmlData{sym=cdot}{\cdot} \htmlData{sym=P}{P}(\htmlData{sym=y}{y} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}, \htmlData{sym=c}{c})" data-fallback="P(c, y | E, x) = P(c | E, x) · P(y | E, x, c)"></div>
+<p>And with the answer written first:</p>
+<div class="eq" data-tex="\htmlData{sym=P}{P}(\htmlData{sym=y}{y}, \htmlData{sym=c}{c} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) = \htmlData{sym=P}{P}(\htmlData{sym=y}{y} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) \htmlData{sym=cdot}{\cdot} \htmlData{sym=P}{P}(\htmlData{sym=c}{c} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}, \htmlData{sym=y}{y})" data-fallback="P(y, c | E, x) = P(y | E, x) · P(c | E, x, y)"></div>
+<div class="symtable" data-syms="E,x,c,y,P,given,cdot"></div>
+<p class="inwords"><strong>In words:</strong> “the chance of writing this chain and then this answer is the chance of the chain, times the chance of the answer once the chain is on the page. Put the answer first and its chance is fixed before any working exists; the chain written afterwards cannot change it.”</p>
+<p class="inwords"><strong>With the numbers (illustrative, not from the paper):</strong> for the apples question, say the model writes the chain “23 − 20 = 3. 3 + 6 = 9.” with probability 0.40. With 3 and 6 on the page, writing 9 next is nearly a copy: probability 0.98. The pair together: 0.40 × 0.98 = 0.392. Answering first, the model must produce 9 with no working, say with probability 0.10, and that 0.10 is the accuracy no matter how good the explanation that follows.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># illustrative probabilities for the apples question
+# P(c | E, x): the model writes this chain
+p_c = 0.40
+# P(y | E, x, c): with 3 and 6 written, 9 is nearly a copy
+p_y_given_c = 0.98
+# P(c, y | E, x)
+round(p_c * p_y_given_c, 3)  # → 0.392
+# answer first: P(y | E, x) is settled before any working is written
+p_y = 0.10
+p_y  # → 0.1</code></pre>
+<p>Adding up the first product over <em>every</em> chain that ends in 9 gives the model's full chance of answering 9. Greedy decoding follows one chain only; the <a href="self-consistency.html">self-consistency paper</a> samples many and lets their answers vote, which estimates that sum.</p>
+<h4>Why it matters today</h4>
+<p>The dots result is subtle and still debated. Extra tokens are extra computation, as §2 argued, but the dots carry nothing from one pass to the next: the benefit needs the intermediate results to be <em>written down</em> where the next pass can read them. The lesson's toy model makes the same point: its running total survives only because it is written into the text.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Robustness of chain of thought <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S3.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If a recipe only works when one particular chef writes it, it is a trick, not a method. The paper had two more authors write their own chains for the same eight questions, wrote a deliberately terse version, and also borrowed three random sets of eight worked solutions written by crowd workers for GSM8K's training set.</p>
+<h4>Tiny example: the concise style</h4>
+<p>The original chain for the computers question uses several short sentences (“For each of 4 days, 5 more computers were added. So 5 * 4 = 20 computers were added. 9 + 20 is 29.”). The concise one reads “5 * 4 = 20 new computers were added. So there are 9 + 20 = 29 new computers in the server room now”.</p>
+<div class="plot"><div id="robust-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is LaMDA 137B's GSM8K solve rate, axis 0 to 20%. The top grey bar is standard prompting (6.5%). Every chain-of-thought variant beneath it, whoever wrote it and in whatever style, lands between 11.1% and 17.6%: 1.7 to 2.7 times standard prompting. The spread between them is real (prompts matter), but the gap to the grey bar is bigger than the spread. Numbers from Table 6 of Wei et al. (2022), reproduced under CC BY 4.0.</p>
+<p>The appendix adds that results held across different exemplar orders and different numbers of exemplars, with one warning: on the coin-flip task, annotator A's chains scored 99.6% and annotator C's 71.4% (standard prompting: 50.0%). Prompt writing still matters.</p>
+<h4>Why it matters today</h4>
+<p>This is why “show worked examples with steps” became general advice rather than one lab's trick, and why later work could generate the chains automatically instead of writing them by hand.</p>
+</section>
+
+<section id="s4">
+<h2>4 Commonsense reasoning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Not every hard question is maths. “Would a pear sink in water?” needs a fact (a pear's density) and one inference (less dense than water floats). Chains of thought are written in ordinary language, so they apply to reasoning about the everyday world as naturally as to sums.</p>
+<h3 class="rung">Tiny example: the five tasks</h3>
+<ul>
+  <li><strong>CSQA:</strong> multiple-choice commonsense questions.</li>
+  <li><strong>StrategyQA:</strong> yes/no questions that need an unstated multi-step strategy.</li>
+  <li><strong>Date understanding:</strong> work out a date from a short story.</li>
+  <li><strong>Sports understanding:</strong> is a sentence about sport plausible?</li>
+  <li><strong>SayCan:</strong> turn an instruction into a sequence of robot actions.</li>
+</ul>
+<div class="plot"><div id="cs-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one task for PaLM 540B, axis 0 to 100%: plain grey for standard prompting, striped blue for chain of thought. Every task improves, but by very different amounts: Date (+16.3 points) and Sports (+14.9) gain a lot, CSQA barely moves (+1.8). The paper highlights two results: 75.6% on StrategyQA beat the prior best of 69.4%, and 95.4% on Sports beat an unaided sports enthusiast (84%). Numbers from Table 4 of Wei et al. (2022), reproduced under CC BY 4.0. (The main text reports StrategyQA as 75.6%; Table 4 lists 77.8%.)</p>
+<h3 class="rung">Why it matters</h3>
+<p>Where the question needs one fact rather than several steps (much of CSQA), a chain has little to do. Where the answer comes from combining several facts or small inferences, it helps. The same rule, “chains help where there are steps”, reappears in the appendix's advice below.</p>
+</section>
+
+<section id="s5">
+<h2>5 Symbolic reasoning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Two puzzles a child can do with a pencil: take the last letter of each word in a name and join them (“Amy Brown” becomes “yn”); and track a coin as people flip it or leave it alone. They are easy to generate in any length, which makes them a clean test of a harder question: shown examples with two steps, can the model handle three or four?</p>
+<h3 class="rung">Tiny example: track the coin yourself</h3>
+<div class="play" id="coin">
+  <div class="ui" id="coin-people" role="group" aria-label="Who flips the coin"></div>
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin-top:.5rem">
+    <button type="button" id="coin-add">Add a person</button>
+    <button type="button" id="coin-remove">Remove a person</button>
+  </div>
+  <p id="coin-q" style="margin:.6rem 0 .2rem"></p>
+  <p id="coin-chain" style="border-left:3px solid var(--attn-stroke);padding:.25rem .6rem;margin:.3rem 0"></p>
+  <p class="readout" id="coin-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> press a person's button to switch between “flips” and “does not flip”. The question is written the way the paper's puzzles are; the orange chain below it follows the pattern of the paper's eight coin-flip exemplars (Table 23), which all have exactly two people. The chain reduces the story to one count and one rule: an even number of flips leaves the coin heads up. Add a third or fourth person and you leave the exemplars' length: the readout shows how PaLM 540B did at that length with and without chains.</p>
+<h3 class="rung">The math: the rule the chain uses</h3>
+<div class="eq" data-tex="\text{heads up} \;\htmlData{sym=iff}{\iff}\; \Big(\htmlData{sym=sumf}{\sum_{i=1}^{n}} \htmlData{sym=fi}{f_i}\Big) \htmlData{sym=mod}{\bmod 2} = 0" data-fallback="heads up ⇔ (Σ_{i=1}^{n} f_i) mod 2 = 0"></div>
+<div class="symtable" data-syms="n,fi,sumf,mod,iff"></div>
+<p class="inwords"><strong>In words:</strong> “count the people who flip; the coin is still heads up exactly when that count is even.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's example: “Phoebe flips the coin. Osvaldo does not flip the coin.” So f = (1, 0), the sum is 1, and 1 mod 2 = 1, which is not 0: the coin is tails up, and the answer is “no”.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># Phoebe flips, Osvaldo does not
+f = [1, 0]
+# Σ f_i: how many flips
+sum(f)  # → 1
+# heads up if the count is even
+sum(f) % 2 == 0  # → False
+# the other puzzle: last letters of "Amy Brown"
+"".join(word[-1] for word in "Amy Brown".split())  # → 'yn'</code></pre>
+<div class="plot"><div id="sym-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> PaLM 540B's solve rate, axis 0 to 100%, plain grey for standard prompting and striped blue for chain of thought. “2” is the exemplars' own length (in domain); “3” and “4” are longer than anything in the prompt (<span class="t" data-t="out-of-distribution">out of distribution</span>). Standard prompting never manages last-letter concatenation at any length (7.6% at best) and falls to a coin toss (about 50%) on longer coin puzzles. With chains, last letters go from 99.4% at two words to 63.0% at four, and coins stay above 90%. The chains taught a procedure that stretches beyond the examples' length, imperfectly. Numbers from Table 5 of Wei et al. (2022), reproduced under CC BY 4.0.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The paper stresses that in the in-domain case the exemplars hand the model the exact procedure; it only has to repeat it with new names. Small models still fail at that: in this paper, the ability to carry a procedure over to unseen symbols appeared only around 100B parameters.</p>
+</section>
+
+<section id="s6">
+<h2>6 Discussion and limitations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S6">original</a></span></h2>
+<blockquote class="quote">“Standard prompting only provides a lower bound on the capabilities of large language models.”<cite>Wei et al. (2022), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Judging a person's maths by making them answer instantly, with no paper, measures their mental arithmetic, not their maths. The paper's point is the same about models: how you ask changes what you measure, so a flat curve under one prompting style does not mean the model cannot do the task.</p>
+<h3 class="rung">The four limitations the authors list</h3>
+<ol>
+  <li>Imitating the look of human reasoning does not settle whether the network is “reasoning”; they leave that open.</li>
+  <li>Writing eight chains is cheap, but writing thousands for fine-tuning would not be (they suggest synthetic data).</li>
+  <li>Nothing guarantees a correct chain: wrong chains can reach right answers and vice versa.</li>
+  <li>It only works in very large models, which are expensive to serve.</li>
+</ol>
+<h3 class="rung">Why it matters today</h3>
+<p>All four turned into research programmes. Limitation 2 was answered by generating chains with models and training on the ones that reach correct answers; limitation 3 by <span class="t" data-t="verifier">verifiers</span> that check chains step by step; limitation 4 by distilling reasoning into smaller models. The <a data-lesson="primer/ml/reasoning.html">reasoning lesson</a> covers verifiers and the reinforcement learning that now trains the habit in directly.</p>
+</section>
+
+<section id="appx">
+<h2>Appendices: why scale, and where chains go wrong <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#A1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Marking a pile of wrong exam scripts tells you more than the score does: was it a slip on the calculator, a misread question, or a step left out? The authors hand-graded model chains the same way.</p>
+<h3 class="rung">Tiny example: 50 wrong chains, graded</h3>
+<div class="tablewrap"><table>
+  <caption>LaMDA 137B's chains for 50 GSM8K questions it got wrong, sorted by the smallest edit that would fix each, from Appendix D.2 of Wei et al. (2022), reproduced under CC BY 4.0.</caption>
+  <thead><tr><th>What was wrong</th><th>Example from the paper</th><th class="num">Share</th></tr></thead>
+  <tbody>
+    <tr><td>Calculator error only</td><td>“3 x 25 x 8 = 300” (it is 600)</td><td class="num">8%</td></tr>
+    <tr><td>Symbol mapping error</td><td>multiplied a coach's 15 weekly hours by 30 (the pay rate) instead of 50 (the weeks)</td><td class="num">16%</td></tr>
+    <tr><td>One step missing</td><td>found the second recipe's 40 instructions, forgot to add the first recipe's 20</td><td class="num">22%</td></tr>
+    <tr class="hl"><td>Major errors: misunderstood the question, or incoherent</td><td>subtracted 30 from the total of 110 coins and called the result the silver coins</td><td class="num">54%</td></tr>
+  </tbody>
+</table></div>
+<p>So nearly half the wrong chains (8 + 16 + 22 = 46%) were almost right. Among 50 chains that reached a <em>correct</em> answer, the logic was sound in all but one or two (§3.2 counts two coincidences; Appendix D.1 lists one). The paper cautions that this is easier to trust for numeric answers than for yes/no or multiple choice, where a wrong chain can land on the right option by luck.</p>
+<p>Two more findings. Passing every equation in a chain through a real calculator (Python's <code class="example">eval</code>) lifted LaMDA 137B's GSM8K score from 14.3% to 17.8% and PaLM 540B's from 56.9% to 58.6% (Table 1). And grading 45 errors from PaLM 62B (20 semantic misunderstandings, 18 missing steps, 7 other) showed that scaling to PaLM 540B fixed a substantial share in every category (Appendix A.1).</p>
+<h3 class="rung">When to expect a gain (Appendix A.3)</h3>
+<p>The authors' rule of thumb: chains help most when (1) the task needs several steps, (2) the model is large, and (3) standard prompting's accuracy grows little with scale. Remove any one and the gain shrinks.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The calculator result foreshadowed <span class="t" data-t="tool calling">tool use</span>: let the model plan in words and hand the arithmetic to a program. The error categories foreshadowed <span class="t" data-t="process reward model">process reward models</span>, which score each step of a chain rather than only its answer.</p>
+</section>
+
+<section id="s7">
+<h2>7–8 Related work and conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2201.11903#S7">original</a></span></h2>
+<p>The paper places itself between two lines of work. One trained or fine-tuned models to write intermediate steps: natural-language rationales for maths (Ling et al., 2017; Cobbe et al., 2021) and line-by-line “scratchpads” for program execution (Nye et al., 2021). The other improved prompting, mostly by changing the <em>input</em> side (instructions, learned prompts). Chain-of-thought prompting instead changes the <em>output</em> the examples demonstrate, and needs no training. The conclusion restates the main finding: for tasks with flat scaling curves under standard prompting, chains of thought produce steeply rising ones, in large enough models.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2022</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Eight hand-written worked examples in the prompt</td><td>Models trained to reason; often a plain instruction, or nothing, is enough to start a chain</td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
+    <tr><td>One greedy chain per question</td><td>Many sampled chains and a vote, or a verifier picking the best</td><td><a href="self-consistency.html">self-consistency companion</a></td></tr>
+    <tr><td>Chains a few sentences long</td><td>Thousands of <span class="t" data-t="thinking budget">thinking tokens</span>, with a budget the caller sets</td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
+    <tr><td>Hand-graded error analysis</td><td>Automatic checks: unit tests, exact-match answers, step-level verifiers</td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
+    <tr><td>An external calculator bolted on afterwards</td><td>Tool calls in the middle of reasoning</td><td><a href="react.html">ReAct companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le and Denny Zhou, <em>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</em> (2022). <a href="https://arxiv.org/abs/2201.11903">arXiv:2201.11903</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Selected table numbers and prompt examples are reproduced with attribution under that licence; every figure is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    S: { tex: "S", name: "Serial steps", meaning: "How many operations the model can chain, each using the result of the one before.", shape: "a whole number", example: "1 answering at once, 3 with a chain" },
+    L: { tex: "L", name: "Steps per pass", meaning: "How many dependent operations one forward pass can do. For a transformer this is bounded by its number of layers; here it is an illustrative 1.", shape: "a whole number", example: "1" },
+    T: { tex: "T", name: "Tokens written", meaning: "Each token is one forward pass through the whole network, so more tokens means more passes.", shape: "a whole number", example: "1 or 3" },
+    times: { tex: "\\times", name: "Multiply", meaning: "Each of the T passes contributes L steps.", shape: "", example: "" },
+    N: { tex: "N", name: "Model size", meaning: "The number of parameters (learned numbers) in the model.", shape: "0.35 to 540 billion", example: "540B for PaLM" },
+    accS: { tex: "\\text{acc}_{\\text{std}}", name: "Accuracy, standard prompting", meaning: "The share of test problems solved when the exemplars show only answers.", shape: "0 to 100%", example: "17.9% (PaLM 540B, GSM8K)" },
+    accC: { tex: "\\text{acc}_{\\text{CoT}}", name: "Accuracy, chain-of-thought prompting", meaning: "The share solved when the same exemplars also show their working.", shape: "0 to 100%", example: "56.9% (PaLM 540B, GSM8K)" },
+    Delta: { tex: "\\Delta", name: "Delta: the gain", meaning: "Accuracy with chains minus accuracy without, in percentage points. Negative means chains hurt.", shape: "−100 to 100 points", example: "−2.2 (LaMDA 422M), +39.0 (PaLM 540B)" },
+    E: { tex: "E", name: "The exemplars", meaning: "The few worked examples placed at the start of the prompt.", shape: "text: 8 examples", example: "the tennis-ball example and seven more" },
+    x: { tex: "x", name: "The question", meaning: "The new problem the model must solve, placed after the exemplars.", shape: "text", example: "the apples question" },
+    c: { tex: "c", name: "The chain of thought", meaning: "The intermediate steps the model writes.", shape: "text", example: "“23 − 20 = 3. 3 + 6 = 9.”" },
+    y: { tex: "y", name: "The answer", meaning: "The final output, parsed from “The answer is …”.", shape: "a number or option", example: "9" },
+    P: { tex: "P", name: "Probability", meaning: "How likely the model is to write this text next. It comes from the model's softmax over its vocabulary, multiplied token by token.", shape: "0 to 1", example: "0.40 for the chain (illustrative)" },
+    given: { tex: "\\mid", name: "Given", meaning: "Read “given”: everything to the right is already on the page when the text on the left is written.", shape: "", example: "P(y | E, x, c): the answer, with the chain already written" },
+    cdot: { tex: "\\cdot", name: "Multiply", meaning: "Chances of pieces written one after another multiply: first the chain, then the answer given the chain.", shape: "", example: "0.40 × 0.98 = 0.392" },
+    n: { tex: "n", name: "Number of people", meaning: "How many people appear in the coin puzzle, each of whom flips or does not.", shape: "a whole number", example: "2" },
+    fi: { tex: "f_i", name: "Flip indicator", meaning: "1 if person i flips the coin, 0 if they leave it alone.", shape: "0 or 1", example: "Phoebe 1, Osvaldo 0" },
+    sumf: { tex: "\\sum_{i=1}^{n}", name: "Sum over people", meaning: "Add up f_i for every person from the first (i = 1) to the last (i = n): the total number of flips.", shape: "", example: "1 + 0 = 1" },
+    mod: { tex: "\\operatorname{mod} 2", name: "Remainder after dividing by 2", meaning: "0 for an even number, 1 for an odd one.", shape: "0 or 1", example: "1 mod 2 = 1" },
+    iff: { tex: "\\iff", name: "If and only if", meaning: "The two statements are either both true or both false.", shape: "", example: "" },
+  },
+  blocks: {
+    input: { title: "The prompt (model input)", body: "<p>Everything inside the dashed frame is text given to the model: worked examples first, then the new question. The model's weights are the same in both columns; only this text differs.</p>" },
+    exq: { title: "Worked example: the question", body: "<p>“Roger has 5 tennis balls. He buys 2 more cans of tennis balls. Each can has 3 tennis balls. How many tennis balls does he have now?” The real prompts use eight such examples; the figure shows one.</p>" },
+    exa_std: { title: "Worked example: answer only", body: "<p>“The answer is 11.” Standard few-shot prompting shows the model question and answer pairs, so it learns the format: read a question, state a number.</p>" },
+    exa_cot: { title: "Worked example: answer with its working", body: "<p>“Roger started with 5 balls. 2 cans of 3 tennis balls each is 6 tennis balls. 5 + 6 = 11. The answer is 11.” This highlighted chain of thought is the paper's entire intervention.</p>", lesson: "primer/ml/reasoning.html" },
+    testq: { title: "The new question", body: "<p>“The cafeteria had 23 apples. If they used 20 to make lunch and bought 6 more, how many apples do they have?” It needs two operations in a row: 23 − 20 = 3, then 3 + 6 = 9.</p>" },
+    model: { title: "The same language model", body: "<p>An off-the-shelf model, not fine-tuned. It continues the text one token at a time, imitating the pattern of the examples it was shown.</p>", lesson: "primer/ml/big_picture.html" },
+    out_std: { title: "Standard output: wrong", body: "<p>“The answer is 27.” Imitating an answer-only example, the model commits to a number immediately, with no working to lean on.</p>" },
+    out_cot: { title: "Chain-of-thought output: right", body: "<p>“The cafeteria had 23 apples originally. They used 20 to make lunch. So they had 23 − 20 = 3. They bought 6 more apples, so they have 3 + 6 = 9. The answer is 9.” Each small step is easy given the one before it, and the final number is read off the page.</p>", lesson: "primer/ml/reasoning.html" },
+  },
+  onReady(P) { scaleChart(P); ablationBars(); robustBars(); csBars(); symBars(); coinDemo(); },
+};
+
+/* ---- shared bar helpers ---- */
+function barRow(label, value, max, text, bg, cols) {
+  return `<div class="share-row" style="grid-template-columns:${cols}"><span>${label}</span><div><div class="share-bar" style="width:${((value / max) * 100).toFixed(1)}%;background:${bg}"></div></div><span>${text}</span></div>`;
+}
+const PLAIN = "var(--wire)", STRIPED = "var(--hatch) var(--accent)";
+// The label column shrinks on a phone and wraps, so the bars keep most of the width.
+const COLS = "minmax(5.5rem, 38%) minmax(0,1fr) 3.2rem";
+
+/* ---- Figure 4: accuracy against model size (Table 2) ---- */
+function scaleChart(P) {
+  // [size in billions, standard %, chain of thought %], from Table 2 of Wei et al. (2022), CC BY 4.0
+  const T2 = {
+    LaMDA: { sizes: [0.42, 2, 8, 68, 137],
+      GSM8K: [[2.6, 3.6, 3.2, 5.7, 6.5], [0.4, 1.9, 1.6, 8.2, 14.3]],
+      SVAMP: [[2.5, 3.3, 4.3, 13.6, 29.5], [1.6, 2.4, 3.4, 18.8, 37.5]],
+      MAWPS: [[3.2, 3.9, 5.3, 21.6, 43.2], [0.9, 3.1, 4.8, 30.6, 57.9]] },
+    GPT: { sizes: [0.35, 1.3, 6.7, 175],
+      GSM8K: [[2.2, 2.4, 4.0, 15.6], [0.5, 0.5, 2.4, 46.9]],
+      SVAMP: [[1.4, 1.5, 6.1, 65.7], [0.8, 1.7, 3.1, 68.9]],
+      MAWPS: [[2.4, 3.1, 8.8, 72.7], [1.1, 1.7, 3.5, 87.1]] },
+    PaLM: { sizes: [8, 62, 540],
+      GSM8K: [[4.9, 9.6, 17.9], [4.1, 29.9, 56.9]],
+      SVAMP: [[15.1, 48.2, 69.4], [16.8, 46.7, 79.0]],
+      MAWPS: [[26.2, 61.8, 79.2], [30.5, 80.3, 93.3]] },
+  };
+  const PRIOR = { GSM8K: 55, SVAMP: 57.4, MAWPS: 88.4 };
+  let fam = "PaLM", set = "GSM8K";
+  const series = () => {
+    const f = T2[fam];
+    const [std, cot] = f[set];
+    return [
+      { name: "standard prompting", points: f.sizes.map((s, i) => [s, std[i]]) },
+      { name: "chain-of-thought prompting", points: f.sizes.map((s, i) => [s, cot[i]]) },
+      { name: "prior supervised best", points: f.sizes.map((s) => [s, PRIOR[set]]) },
+    ];
+  };
+  const box = document.getElementById("scale-chart");
+  // Drawn at about the width it is shown, so the axis labels stay readable on a phone.
+  const chart = P.lineChart(box, {
+    series: series(), logX: true, yMin: 0, yMax: 100, width: Math.max(320, Math.min(640, box.clientWidth)), height: 280,
+    xLabel: "model size (billions of parameters)", yLabel: "solve rate (%)",
+    xFmt: (v) => `${+v.toPrecision(3)}B`, yFmt: (v) => `${+v.toFixed(1)}%`,
+    readout: document.getElementById("scale-readout"),
+    ariaLabel: "Solve rate against model size, standard against chain-of-thought prompting",
+  });
+  const wire = (attr, set_) => document.querySelectorAll(`[data-${attr}]`).forEach((b) => b.addEventListener("click", () => {
+    set_(b.dataset[attr]);
+    document.querySelectorAll(`[data-${attr}]`).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    chart.update(series());
+    document.getElementById("scale-readout").textContent = `${fam} on ${set}: hover the chart or use the arrow keys to read each size.`;
+  }));
+  wire("fam", (v) => (fam = v));
+  wire("set", (v) => (set = v));
+}
+
+/* ---- Figure 5: ablations, LaMDA 137B on GSM8K (Table 6) ---- */
+function ablationBars() {
+  const rows = [["Standard prompting", 6.5], ["Equation only", 5.4], ["Variable compute only", 6.4], ["Reasoning after answer", 6.1], ["Chain of thought", 14.3]];
+  const cols = COLS;
+  document.getElementById("ablation-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">LaMDA 137B, GSM8K solve rate, axis 0 to 20% (Wei et al., 2022, Table 6, CC BY 4.0)</div>` +
+    rows.map(([k, v]) => barRow(k, v, 20, `${v}%`, k === "Chain of thought" ? "var(--accent)" : PLAIN, cols)).join("");
+}
+
+/* ---- Figure 6: robustness, LaMDA 137B on GSM8K (Table 6) ---- */
+function robustBars() {
+  const rows = [["Standard prompting", 6.5], ["Chain of thought, annotator A", 14.3], ["Annotator B", 15.5], ["Annotator C", 17.6], ["Concise style (A)", 11.1], ["GSM8K exemplars, set α", 12.6], ["GSM8K exemplars, set β", 12.7], ["GSM8K exemplars, set γ", 12.6]];
+  const cols = COLS;
+  document.getElementById("robust-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">LaMDA 137B, GSM8K solve rate, axis 0 to 20% (Wei et al., 2022, Table 6, CC BY 4.0)</div>` +
+    rows.map(([k, v]) => barRow(k, v, 20, `${v}%`, k === "Standard prompting" ? PLAIN : "var(--accent)", cols)).join("");
+}
+
+/* ---- Figure 7: commonsense, PaLM 540B (Table 4) ---- */
+function csBars() {
+  const rows = [["CSQA", 78.1, 79.9], ["StrategyQA", 68.6, 77.8], ["Date", 49.0, 65.3], ["Sports", 80.5, 95.4], ["SayCan", 80.8, 91.7]];
+  const cols = COLS;
+  document.getElementById("cs-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>standard</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>chain of thought (striped)</span><span>PaLM 540B, axis 0 to 100% (Table 4, CC BY 4.0)</span></div>` +
+    rows.map(([k, a, b]) => barRow(k, a, 100, `${a.toFixed(1)}%`, PLAIN, cols) + barRow("", b, 100, `${b.toFixed(1)}%`, STRIPED, cols)).join("");
+}
+
+/* ---- Figure 8: symbolic, PaLM 540B (Table 5) ---- */
+const SYM = {
+  letters: { 2: [7.6, 99.4], 3: [0.2, 94.8], 4: [0.0, 63.0] },
+  coin: { 2: [98.1, 100.0], 3: [49.3, 98.6], 4: [54.8, 90.2] },
+};
+function symBars() {
+  const cols = COLS;
+  const rows = [];
+  [["Last letters", "letters"], ["Coin flip", "coin"]].forEach(([name, key]) =>
+    [2, 3, 4].forEach((n) => rows.push([`${name}: ${n}${n > 2 ? " (OOD)" : ""}`, ...SYM[key][n]])));
+  document.getElementById("sym-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>standard</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>chain of thought (striped)</span><span>PaLM 540B, axis 0 to 100% (Table 5, CC BY 4.0)</span></div>` +
+    rows.map(([k, a, b]) => barRow(k, a, 100, `${a.toFixed(1)}%`, PLAIN, cols) + barRow("", b, 100, `${b.toFixed(1)}%`, STRIPED, cols)).join("");
+}
+
+/* ---- the coin-flip puzzle and its chain ---- */
+function coinDemo() {
+  const NAMES = ["Phoebe", "Osvaldo", "Ka", "Sherrie"];
+  const people = [[NAMES[0], true], [NAMES[1], false]];
+  const box = document.getElementById("coin-people");
+  const list = (xs) => (xs.length <= 2 ? xs.join(" and ") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+  function render() {
+    box.innerHTML = "";
+    people.forEach((p, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(p[1]));
+      b.textContent = `${p[0]}: ${p[1] ? "flips" : "does not flip"}`;
+      b.addEventListener("click", () => { p[1] = !p[1]; render(); });
+      box.appendChild(b);
+    });
+    const q = "A coin is heads up. " + people.map(([n, f]) => `${n} ${f ? "flips" : "does not flip"} the coin.`).join(" ") + " Is the coin still heads up?";
+    const flippers = people.filter((p) => p[1]).map((p) => p[0]);
+    const k = flippers.length;
+    let chain;
+    if (k === 0) chain = "The coin was flipped by no one. So the coin was flipped 0 times. The coin started heads up, and it was not flipped, so it is still heads up. So the answer is yes.";
+    else {
+      const even = k % 2 === 0;
+      chain = `The coin was flipped by ${list(flippers)}. So the coin was flipped ${k} time${k === 1 ? "" : "s"}, which is an ${even ? "even" : "odd"} number. The coin started heads up, so after an ${even ? "even" : "odd"} number of flips, it will ${even ? "still be heads up" : "be tails up"}. So the answer is ${even ? "yes" : "no"}.`;
+    }
+    document.getElementById("coin-q").innerHTML = `<strong>Q:</strong> ${q}`;
+    document.getElementById("coin-chain").innerHTML = `<strong>A:</strong> ${chain}`;
+    const n = people.length;
+    const [std, cot] = SYM.coin[n];
+    document.getElementById("coin-readout").textContent =
+      `${n} people: ${n === 2 ? "the same length as every exemplar (in domain)" : "longer than every exemplar (out of distribution)"}. ` +
+      `PaLM 540B on puzzles of this length: ${std}% with standard prompting, ${cot}% with chain of thought (Table 5).`;
+    document.getElementById("coin-add").disabled = n >= 4;
+    document.getElementById("coin-remove").disabled = n <= 2;
+  }
+  document.getElementById("coin-add").addEventListener("click", () => { if (people.length < 4) { people.push([NAMES[people.length], true]); render(); } });
+  document.getElementById("coin-remove").addEventListener("click", () => { if (people.length > 2) { people.pop(); render(); } });
+  render();
+}
+</script>
+</body>
+</html>
