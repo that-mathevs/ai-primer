@@ -28,6 +28,9 @@ Run `make test` after each merge, before the next one.
 
 ## 2. The gate
 
+Stage everything first (`git add -A`): some checks only see files git knows
+about, so a new file that isn't staged passes locally and fails on CI.
+
 ```bash
 make test && make docs && make sitecheck && make browsercheck
 make links        # network; before a push that adds or changes a URL
