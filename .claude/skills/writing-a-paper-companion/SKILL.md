@@ -119,7 +119,7 @@ worktree, merged later with `shipping-the-primer`. When you are one of them:
 
 - Branch from the latest `main`, one branch per job: `git checkout -b companion/<name> main`.
   Commit, but leave pushing and merging to whoever merges.
-- Grep `primer/glossary.py` before adding a term: another page may have
+- Grep [`primer/glossary.py`](../../../primer/glossary.py) before adding a term: another page may have
   added it already, and a term defined twice fails the suite.
 - The scratchpad is shared: keep scratch files in a subfolder named after
   your branch.
