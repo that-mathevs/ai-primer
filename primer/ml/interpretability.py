@@ -959,6 +959,7 @@ model's activity unexplained.
   https://arxiv.org/abs/2209.10652. Showed with small ReLU models that
   sparse features are stored in superposition, and when and how the
   geometry changes.
+  [Annotated companion](../../papers/toy-models-of-superposition.html)
 - **Bricken et al., *Towards Monosemanticity: Decomposing Language Models
   With Dictionary Learning* (2023)**:
   https://transformer-circuits.pub/2023/monosemantic-features/index.html.

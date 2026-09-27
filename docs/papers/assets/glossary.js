@@ -64,6 +64,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/reinforcement.html",
   "term": "advantage"
  },
+ "adversarial example": {
+  "def": "An input changed by a small, deliberately chosen amount so that a model gets it wrong, often in a way a person would never notice.",
+  "lesson": null,
+  "term": "adversarial example"
+ },
  "agent": {
   "def": "A system where a language model decides which tools to call, looks at the results and decides the next step, in a loop until done.",
   "lesson": "primer/agents/agent_loop.html",
@@ -524,6 +529,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/planning.html",
   "term": "compounding error"
  },
+ "compressed sensing": {
+  "def": "Recovering a long vector from far fewer measurements of it, which is possible when the vector is known to be sparse (mostly zeros).",
+  "lesson": null,
+  "term": "compressed sensing"
+ },
  "compute-bound": {
   "def": "Limited by arithmetic throughput, as in prefill.",
   "lesson": "primer/ml/inference.html",
@@ -793,6 +803,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The slope of a function at a point: how much the output changes per tiny nudge of the input.",
   "lesson": "primer/notation.html",
   "term": "derivative"
+ },
+ "dictionary learning": {
+  "def": "Finding a set of directions, usually more than there are dimensions, such that every data point is a sparse combination of a few of them; also called sparse coding. A sparse autoencoder is one way to do it.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "dictionary learning"
  },
  "diffusion model": {
   "def": "A generator that learns to turn random noise into data by removing a little noise at a time.",
@@ -2164,6 +2179,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/optimizers.html",
   "term": "momentum"
  },
+ "monosemantic": {
+  "def": "Responding to one understandable thing only: said of a neuron, or of a feature a sparse autoencoder finds.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "monosemantic"
+ },
  "mrr": {
   "def": "Mean reciprocal rank: the average of 1 / (position of the first relevant result).",
   "lesson": "primer/ml/metrics.html",
@@ -2638,6 +2658,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Splitting work so the part that reads untrusted content can't take dangerous actions.",
   "lesson": "primer/agents/guardrails.html",
   "term": "privilege separation"
+ },
+ "privileged basis": {
+  "def": "Directions made special by the architecture, such as neurons followed by an activation function that acts on each number separately. Only in a privileged basis does asking what one neuron means make sense.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "privileged basis"
  },
  "probability density": {
   "def": "How thickly a continuous distribution's samples cover each spot: high where they crowd, zero where none ever land. It is the height of the bump, and its area adds up to 1.",
