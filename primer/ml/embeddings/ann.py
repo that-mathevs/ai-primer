@@ -6,9 +6,138 @@ Run: `python -m primer.ml.embeddings.ann`
 New to the notation? `primer.notation` explains every symbol used here from
 zero (vectors, Σ, logarithms, big-O).
 
-## The everyday picture
+## Level 1: The practitioner's guide
 
-You've just moved to a new country and want the house nearest to a landmark.
+**In one sentence.** An approximate nearest neighbor (ANN) index finds the
+stored vectors most similar to a query without comparing it against every
+one, trading a small, measurable loss of accuracy for searches that stay
+fast and affordable as a collection grows to millions of vectors.
+
+**When you need it.** Every search over embeddings ends the same way: the
+question becomes a vector, and the answers are the stored vectors nearest to
+it. The honest way to find them is a **flat search**, one comparison per
+stored vector, and it is exact. It is also the ground truth every index is
+judged against, and below about a million vectors it is often the right
+choice: simple, exact, fast enough. You need an index when the collection
+outgrows it. At 10 million vectors of 1,536 dimensions a flat search costs
+about 15 billion multiply-adds per query, and the raw vectors alone take
+about 61 GB of memory (this lesson's `storage_estimate` does the sum). The
+tell: query latency grows in step with the number of documents, or the
+vectors no longer fit in one machine's memory.
+
+**Your options.** Four ideas cover almost every vector database in use, and
+a fifth takes them past the size of one machine's memory. From the simplest
+to the most scalable:
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| Flat search | Compares the query with every stored vector | Exact results: recall 1.0, by definition | One comparison per stored vector per query; every vector in memory | NumPy, FAISS `Flat`, a pgvector column with no index |
+| IVF (inverted file) | Sorts the vectors into clusters ahead of time; a query opens only the `nprobe` nearest clusters | High recall at a fraction of the work, rising with `nprobe` until it equals a flat scan | A k-means training step before the first insert, and retraining when the data drifts | FAISS `IVF`, pgvector `ivfflat` |
+| PQ (product quantization) | Compresses each vector to a few bytes and scores by table lookup | A collection 8 to 64 times smaller in memory, and a good shortlist | Lossy scores: re-score the shortlist with exact vectors or recall suffers | FAISS `IVF...,PQ`, ScaNN |
+| HNSW (layered graph) | Links each vector to a few neighbors on stacked layers; a query hops from coarse to fine | High recall at low latency, tuned per query with `efSearch`, with no training step | Memory for every vector plus its links; slow builds at scale | hnswlib, FAISS `HNSW`, pgvector `hnsw`, Elasticsearch, Qdrant |
+| Disk-resident graph | Keeps the graph and full vectors on an SSD and a compressed copy in memory | A billion vectors on one machine | SSD reads per query and a long build | DiskANN |
+
+**How to choose.** Start from the size of the collection and the memory you
+have.
+
+- Under about a million vectors: flat search. Measure it before you build
+  anything; it may already be fast enough, and it is what you will compare
+  every index against.
+- Millions of vectors, memory to spare: HNSW. It is the default in most
+  vector databases because it gives high recall at low latency with no
+  training step. Set `M` around 16 (32 to 64 for high-dimensional data),
+  build with `efConstruction` of 100 to 400, then tune `efSearch` at query
+  time.
+- Millions of vectors, memory tight: IVF with PQ codes, re-scoring a
+  shortlist with the exact vectors. Choose `nlist` near the square root of
+  N (FAISS's guidelines say 4√N to 16√N below a million vectors, with 30 to
+  256 training vectors per cluster), then tune `nprobe`.
+- Billions of vectors: IVF-PQ, HNSW sharded across machines, or a disk-based
+  graph. DiskANN indexes a billion points on one workstation with 64 GB of
+  memory and an SSD.
+- Whatever you pick, measure recall@k against a flat index on your own
+  vectors while you turn the dial, then check the 95th-percentile latency.
+  A benchmark on other data predicts little, because the shape of the data
+  decides where the curve flattens.
+
+**What it costs.** Three currencies: memory, build time and recall.
+
+- Memory. Raw float32 vectors cost 4 bytes per dimension: about 3 GB for a
+  million 768-dimensional vectors, 3 TB for a billion. HNSW adds its links,
+  roughly `M` times 8 to 10 bytes per vector by hnswlib's estimate (1.69 MB
+  against the flat index's 1.28 MB in this lesson's run on 5,000 vectors of
+  64 dimensions). PQ goes the other way: 96 one-byte codes for a 3,072-byte
+  vector is a 32× saving, so a billion vectors fit in about 100 GB instead
+  of 3 TB.
+- Build time. Flat builds instantly and IVF needs one k-means pass. HNSW
+  inserts each vector by first searching for its neighbors, so a build is
+  one search per vector: the slowest to build in this lesson's run, and
+  pgvector documents the same trade (HNSW: a better speed-recall trade-off,
+  slower builds, more memory; IVFFlat: the reverse).
+- Recall. Every index has one dial, and the last few points of recall are
+  the expensive ones. In this lesson's run, HNSW at `efSearch` 10 reaches
+  recall@10 of 0.49 while comparing 5.5% of the collection, and 0.99 at 160
+  while comparing 36%. IVF at `nprobe` 1 gives 0.33, at 16 gives 0.96, and
+  at 70 (every list) gives 1.0. PQ scores alone at 8 bytes per vector give
+  0.35; re-scoring the top 100 with exact vectors lifts that to 0.88.
+- Latency. This lesson's pure-Python timings are only relative; FAISS or
+  hnswlib run the same searches around 100× faster. DiskANN reports more
+  than 5,000 queries per second at under 3 ms mean latency on a billion
+  points.
+
+**What breaks.**
+
+- **Recall you never measured.** An index that scored 0.99 on a benchmark
+  can do worse on your vectors, because ANN accuracy depends on the data's
+  structure. Keep a flat index of a sample and measure recall@k against it.
+- **A neighbor across a cluster boundary.** IVF's blind spot: the true
+  nearest vector sits in a cell the query didn't open. Raise `nprobe`, and
+  retrain the centroids when the data changes a lot.
+- **Ranking by compressed scores.** PQ is excellent at shortlisting and poor
+  at final ranking: at 8 bytes per vector it finds under half of the true
+  top 10 on its own. Always re-score the shortlist with the exact vectors.
+- **Running out of memory.** HNSW must hold every vector and every link in
+  memory. When it no longer fits, move to IVF-PQ, shard across machines, or
+  use a disk-based graph.
+- **A greedy walk stuck in a corner.** A search that only hops to closer
+  neighbors stops at a point with none closer even when a closer one
+  exists; the beam (`efSearch`) protects against that, and can never be set
+  below k.
+- **A filter applied after the search.** Keep only the results a user may
+  see after asking for the top 10, and you can be left with none. Qdrant's
+  documentation describes extra graph edges from indexed metadata so filters
+  apply during the search; where your database filters afterwards, ask for
+  more candidates than you need.
+
+**In the wild.** FAISS, Meta's library, ships every index in this lesson
+and publishes guidelines that pick one by collection size. hnswlib is the
+reference HNSW implementation from the paper's authors, and its parameter
+guide is where this lesson's knob table comes from. Databases have absorbed
+the same indexes: pgvector adds `hnsw` (defaults `m` 16, `ef_construction`
+64, `ef_search` 40) and `ivfflat` indexes to PostgreSQL; Elasticsearch's
+`dense_vector` fields index with HNSW (`m` 16, `ef_construction` 100) and
+offer quantized variants; Qdrant builds every collection on a filterable
+HNSW (`m` 16, `ef_construct` 100). Google's ScaNN pairs partitioning with
+anisotropic quantization and re-scoring. DiskANN (Subramanya et al.,
+NeurIPS 2019) put a billion points on one workstation by keeping the graph
+on an SSD. ANN-Benchmarks publishes recall-versus-throughput curves across
+these libraries. The papers behind this lesson (HNSW, product quantization
+and the Faiss library) are listed at the end with their companions.
+
+**Go deeper.** Level 2 builds each index by hand on eight points you can
+check with a pencil: the flat scan, IVF's centroids and cells, PQ's
+codebooks and lookup tables, and HNSW's layered graph with its greedy
+descent, beam search and the random draw that decides which vectors become
+highways. Then it measures all four on 5,000 vectors and draws the
+recall-versus-work curves. If you only needed to choose an index and set
+its dial, you are done.
+
+## Level 2: How it works, from scratch
+
+Level 2 builds every index above from nothing, starting with a picture and
+eight points on a map.
+
+**The everyday picture.** You've just moved to a new country and want the house nearest to a landmark.
 You could walk up to every house in the country and measure the distance.
 That's always right, but it takes forever. Or you could do what everyone
 actually does: take the **highway** to the right region, switch to **main

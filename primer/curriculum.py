@@ -321,7 +321,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.ml.embeddings.compression",
 
     # embeddings, searching them
-    "primer.ml.embeddings.ann",
     "primer.ml.embeddings.retrieval",
     "primer.ml.embeddings.clustering",
     "primer.ml.embeddings.operations",
