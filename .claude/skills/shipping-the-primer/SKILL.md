@@ -35,9 +35,12 @@ Stage everything first (`git add -A`): some checks only see files git knows
 about, so a new file that isn't staged passes locally and fails on CI.
 
 ```bash
-make test && make docs && make sitecheck && make browsercheck
+make gate         # test, docs, sitecheck, browsercheck; stops at the first failure
 make links        # network; before a push that adds or changes a URL
 ```
+
+Commit only after `make gate` has passed in the same command, as in
+`make gate && git commit ...`, so a red gate can never reach main.
 
 `make links` lists servers that refuse automated checks (dl.acm.org and some
 doi.org links answer 403) as "check by hand": confirm each one is the right
