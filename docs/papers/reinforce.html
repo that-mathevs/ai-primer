@@ -353,7 +353,7 @@ r_bar = gamma * r + (1 - gamma) * r_bar
 round(r_bar, 2)  # → 0.6</code></pre>
 <p>It stays a REINFORCE algorithm as long as r̄ is never computed from the current output or the current reward, which is why the average is updated only <em>after</em> the step. The paper notes that the analysis offers no basis for comparing baselines, but that reinforcement comparison is generally believed to perform better; Section 8.3 returns to this.</p>
 <h4>Why it matters</h4>
-<p>A learned baseline became the <span class="t" data-t="critic">critic</span> of <span class="t" data-t="actor-critic">actor-critic</span> methods and the <span class="t" data-t="value network">value network</span> of <span class="t" data-t="ppo">PPO</span>. GRPO goes back to something closer to this paper: the baseline is simply the average reward of other answers to the same prompt. The lesson's <a data-lesson="primer/ml/reinforcement.html#train_reinforce"><code>train_reinforce</code></a> uses a running-average baseline.</p>
+<p>A learned baseline became the <span class="t" data-t="critic">critic</span> of <span class="t" data-t="actor-critic">actor-critic</span> methods and the <span class="t" data-t="value network">value network</span> of <span class="t" data-t="ppo">PPO</span>. GRPO goes back to something closer to this paper: the baseline is simply the average reward of other answers to the same prompt (the <a href="deepseek-r1.html">DeepSeek-R1 companion</a> shows it training a reasoning model). The lesson's <a data-lesson="primer/ml/reinforcement.html#train_reinforce"><code>train_reinforce</code></a> uses a running-average baseline.</p>
 </section>
 
 <section id="s5">

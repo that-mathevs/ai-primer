@@ -1559,6 +1559,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/fine_tuning.html",
   "term": "Jaccard similarity"
  },
+ "jailbreak": {
+  "def": "A prompt crafted to talk a model out of its safety training, such as a role-play or a disguised request, so it produces what it would normally refuse.",
+  "lesson": "primer/agents/guardrails.html",
+  "term": "jailbreak"
+ },
  "jensen-shannon divergence": {
   "def": "A measure of how different two distributions are; stuck at log 2 whenever they don't overlap.",
   "lesson": "primer/ml/generative/gans.html",
@@ -2693,6 +2698,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Learning from a score for what you did, rather than from the correct answer.",
   "lesson": "primer/ml/reinforcement.html",
   "term": "reinforcement learning"
+ },
+ "rejection sampling": {
+  "def": "Generating many candidate outputs and keeping only those that pass a check, such as a correct final answer, often to use as training data.",
+  "lesson": null,
+  "term": "rejection sampling"
  },
  "release gate": {
   "def": "Limits set before measuring; a release goes ahead only if every evaluation is within its limit.",

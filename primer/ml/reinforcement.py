@@ -889,6 +889,7 @@ time against it without the reward drifting away from correctness.
   via Reinforcement Learning* (2025)**: https://arxiv.org/abs/2501.12948.
   Showed GRPO with rule-based, verifiable rewards alone can teach a model to
   produce long, self-checking chains of thought.
+  [Annotated companion](../../papers/deepseek-r1.html)
 - **Gao, Schulman & Hilton, *Scaling Laws for Reward Model
   Overoptimization* (2022)**: https://arxiv.org/abs/2210.10760. Measured how
   true quality rises and then falls as a policy is optimised further against
