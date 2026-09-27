@@ -1031,7 +1031,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.classical"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "trees-beat-deep-learning-on-tables",

@@ -429,6 +429,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/tokenization.html",
   "term": "byte-level BPE"
  },
+ "cache miss": {
+  "def": "When the processor needs a number that is not in its small, fast cache and must wait for the much slower main memory, which can cost as much time as hundreds of arithmetic operations.",
+  "lesson": "primer/ml/hardware.html",
+  "term": "cache miss"
+ },
  "calibration": {
   "def": "How well a model's confidence matches how often it is right: a calibrated model is right about 80% of the time when it says 80%.",
   "lesson": "primer/ml/losses.html",

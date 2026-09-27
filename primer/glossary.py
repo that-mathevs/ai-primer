@@ -591,6 +591,7 @@ GLOSSARY: dict[str, Entry] = {
     'bootstrap sample': _E('A resample of the training rows drawn with replacement, so some rows repeat and about 37% are left out.', 'primer.ml.classical'),
     'bottleneck': _E('The narrow middle of an autoencoder: too small to copy through, it forces the network to keep only what matters.', 'primer.ml.generative.autoencoders', scope=('primer/ml/generative/autoencoders',)),
     'bounding box': _E('A rectangle, given by its corner coordinates, that marks where one object sits in an image.', None),
+    'cache miss': _E('When the processor needs a number that is not in its small, fast cache and must wait for the much slower main memory, which can cost as much time as hundreds of arithmetic operations.', 'primer.ml.hardware'),
     'canary string': _E('A unique marker in benchmark files so trainers can filter out copies.', 'primer.ml.benchmarks'),
     'catastrophic forgetting': _E('When training on a new task alone erodes or erases skills a model already had.', 'primer.ml.fine_tuning'),
     'chain of thought': _E('Intermediate reasoning steps a model writes before its final answer, each one readable by the next forward pass.', 'primer.ml.reasoning'),

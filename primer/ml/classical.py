@@ -987,6 +987,7 @@ or when the model must be trained end to end with other neural parts.
   https://arxiv.org/abs/1603.02754. A regularized, second-order boosting
   objective with fast, sparsity-aware split finding, which made boosted
   trees the default on tabular problems.
+  [Annotated companion](../../papers/xgboost.html)
 - **Grinsztajn, Oyallon and Varoquaux, *Why do tree-based models still
   outperform deep learning on tabular data?* (2022)**:
   https://arxiv.org/abs/2207.08815. A benchmark on 45 medium-sized tabular
