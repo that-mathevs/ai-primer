@@ -1424,6 +1424,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/notation.html",
   "term": "gradient"
  },
+ "gradient ascent": {
+  "def": "Nudging every weight along its gradient to make a quantity larger: the mirror image of gradient descent. Used to maximise a reward, or, run on a loss, to make a model worse at a task on purpose.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "gradient ascent"
+ },
  "gradient boosting": {
   "def": "Adding small trees one at a time, each fit to the current errors, with each step shrunk by a learning rate.",
   "lesson": "primer/ml/classical.html",
@@ -1749,6 +1754,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/inference.html",
   "term": "int8 quantization"
  },
+ "inter-annotator agreement": {
+  "def": "How often two people labelling the same items independently give the same label. It caps how finely any evaluation built on those labels can tell two models apart.",
+  "lesson": "primer/ml/fine_tuning.html",
+  "term": "inter-annotator agreement"
+ },
  "interference": {
   "def": "Signals getting in each other's way: other features leaking into one feature's reading (superposition), or merged task vectors changing the same weights in opposite directions (model merging).",
   "lesson": "primer/ml/interpretability.html",
@@ -1978,6 +1988,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Private data, untrusted content and a way to send data out, all in one agent: together they allow data theft.",
   "lesson": "primer/agents/guardrails.html",
   "term": "lethal trifecta"
+ },
+ "likert scale": {
+  "def": "A rating on a short fixed ladder of labelled points, such as 1 (not helpful) to 6 (highly helpful), averaged over many items to compare systems.",
+  "lesson": "primer/agents/evals.html",
+  "term": "Likert scale"
  },
  "linear attention": {
   "def": "Attention variants that avoid scoring every pair of tokens, so cost grows in proportion to n instead of n².",
@@ -2553,6 +2568,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A rule giving, at every moment, how fast something is changing. Solving it means following that rule forward in time, for example with small Euler steps.",
   "lesson": "primer/ml/generative/diffusion.html",
   "term": "ordinary differential equation"
+ },
+ "orthogonal": {
+  "def": "At right angles: two vectors whose dot product, and so whose cosine similarity, is zero, so moving along one does not move you along the other.",
+  "lesson": "primer/ml/embeddings/similarity.html",
+  "term": "orthogonal"
  },
  "otlp": {
   "def": "The OpenTelemetry Protocol: the wire format exporters use to ship telemetry.",
@@ -3504,6 +3524,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/metrics.html",
   "term": "Spearman correlation"
  },
+ "special token": {
+  "def": "A token reserved for structure rather than text, such as a turn marker or an end-of-text marker. The model learns when to emit it, and generation stops at the end marker.",
+  "lesson": "primer/ml/fine_tuning.html",
+  "term": "special token"
+ },
  "specification gaming": {
   "def": "Another name for reward hacking: satisfying the letter of an objective but not its intent.",
   "lesson": "primer/ml/reinforcement.html",
@@ -4108,6 +4133,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Reusing the same filter at every position, so the parameter count doesn't grow with image size.",
   "lesson": "primer/ml/cnn_rnn.html",
   "term": "weight sharing"
+ },
+ "weight space": {
+  "def": "The space of every possible setting of a model's weights: one axis per weight, one point per model. Fine-tuning moves a model from one point to another.",
+  "lesson": "primer/ml/fine_tuning.html",
+  "term": "weight space"
  },
  "weight tying": {
   "def": "Reusing the token embedding table as the output layer, so the vector that reads a token in also scores it on the way out.",

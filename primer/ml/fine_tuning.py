@@ -1165,6 +1165,7 @@ either way.
   https://arxiv.org/abs/2212.04089. Defined task vectors as fine-tuned
   minus pretrained weights and showed that adding them combines skills,
   and negating them removes a behaviour.
+  [Annotated companion](../../papers/task-arithmetic.html)
 - **Wortsman et al., *Model soups: averaging weights of multiple fine-tuned
   models improves accuracy without increasing inference time* (2022)**:
   https://arxiv.org/abs/2203.05482. Showed that averaging the weights of
@@ -1185,6 +1186,7 @@ either way.
   https://arxiv.org/abs/2305.11206. Fine-tuned a large base model on 1,000
   carefully curated examples and got a strong assistant, evidence that
   example quality matters more than quantity.
+  [Annotated companion](../../papers/lima.html)
 - **Lee et al., *Deduplicating Training Data Makes Language Models Better*
   (2021)**: https://arxiv.org/abs/2107.06499. Found widespread near-duplicates
   in standard datasets, including between training and test sets, and
