@@ -157,7 +157,7 @@ window.PRIMER_GLOSSARY = {
  "arena": {
   "def": "Ratings built from people voting between two anonymous answers.",
   "lesson": "primer/ml/benchmarks.html",
-  "term": "arena"
+  "term": "Arena"
  },
  "argmax": {
   "def": "The position of the largest value in a list, rather than the value itself.",
@@ -1397,7 +1397,7 @@ window.PRIMER_GLOSSARY = {
  "genai semantic conventions": {
   "def": "OpenTelemetry's standard attribute names for model and agent spans, such as gen_ai.request.model.",
   "lesson": "primer/agents/observability.html",
-  "term": "genai semantic conventions"
+  "term": "GenAI semantic conventions"
  },
  "generalization gap": {
   "def": "Validation loss minus training loss; when it keeps growing, the model is memorising.",
@@ -2642,7 +2642,7 @@ window.PRIMER_GLOSSARY = {
  "otlp": {
   "def": "The OpenTelemetry Protocol: the wire format exporters use to ship telemetry.",
   "lesson": "primer/agents/observability.html",
-  "term": "otlp"
+  "term": "OTLP"
  },
  "out-of-bag": {
   "def": "The rows left out of a tree's bootstrap sample, usable as free validation data for that tree.",
