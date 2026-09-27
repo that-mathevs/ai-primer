@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Query Attention, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Shazeer (2019), Fast Transformer Decoding: One Write-Head is All You Need, the paper that introduced multi-query attention.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="multi-query-attention">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background: neural attention</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Dot-product attention</a></li>
+          <li><a href="#s2-2">2.2 Multi-head attention</a></li>
+          <li><a href="#s2-3">2.3 Batched: many queries at once</a></li>
+          <li><a href="#s2-3-1">2.3.1 Why batched attention is fast</a></li>
+          <li><a href="#s2-4">2.4 Incremental: one token at a time</a></li>
+          <li><a href="#s2-4-1">2.4.1 Why incremental attention is slow</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Multi-query attention</a>
+        <ol>
+          <li><a href="#s3-1">3.1 The analysis again</a></li>
+          <li><a href="#ratio">Try it: batch size and length</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Setup</a></li>
+          <li><a href="#s4-2">4.2 Quality</a></li>
+          <li><a href="#s4-3">4.3 Speed</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Conclusion</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Multi-query attention, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Noam Shazeer (2019), <em>Fast Transformer Decoding: One Write-Head is All You Need</em>: a four-page paper that let every attention head share one set of keys and values, and made generating text roughly twelve times faster in its test.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1911.02150">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1911.02150">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1911.02150">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is distributed on arXiv under arXiv's non-exclusive licence, so its tables appear here only as a few selected rows or as redrawn charts, always attributed. The paper has no figures; the diagrams here are drawn from its code and its analysis. The equations are reproduced because mathematics is not copyrightable. Every section heading links to the original.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap, and so does every symbol in every equation.</li>
+  <li>The diagram in §3 is live: hover or tap a part to see what it holds and how big it is. The chart after §3.1 has a slider for the batch size.</li>
+</ul>
+<p>You will get the most from this page after the <a href="attention-is-all-you-need.html">attention companion</a> (which introduced the multi-head attention this paper modifies) and the KV-cache section of <a class="lesson" data-lesson="primer/ml/inference.html">the inference lesson</a>. Every idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150">original</a></span></h2>
+<blockquote class="quote">“We propose a variant called multi-query attention, where the keys and values are shared across all of the different attention “heads”, greatly reducing the size of these tensors and hence the memory bandwidth requirements of incremental decoding.”<cite>Shazeer (2019), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Eight researchers work in one library. Each has a different question, but in the old arrangement each also kept a private copy of the whole card catalogue, and every time anyone wanted to look something up, all eight catalogues had to be wheeled out of storage. The new arrangement keeps eight researchers with eight questions and <em>one</em> shared catalogue. The questions are just as varied; the trolley is eight times lighter.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Training a <span class="t" data-t="transformer">Transformer</span> is fast, but generating from it one token at a time is slow, because every step reloads the large stored <span class="t" data-t="key">keys</span> and <span class="t" data-t="value">values</span> from memory.</li>
+  <li><span class="t" data-t="multi-query attention">Multi-query attention</span> keeps many <span class="t" data-t="query">query</span> heads but only one key head and one value head, so there is far less to reload.</li>
+  <li>On English-to-German translation, the decoder ran about 12 times faster per token, and quality fell only slightly (and less than any other way of shrinking the keys and values that the paper tried).</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Sharing keys and values between heads is now standard in large language models. The in-between version, <span class="t" data-t="grouped-query attention">grouped-query attention</span>, shares one key/value head among a group of query heads; Mistral 7B uses 8 for its 32 query heads. Both descend from this paper.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A chef who cooks one dish at a time and must fetch every ingredient from a cellar for each dish spends most of the evening on the stairs, not at the stove. The chef is not slow at cooking; the stairs are the bottleneck. A <span class="t" data-t="gpu">GPU</span> generating text is that chef: its arithmetic is fast, but for each new token it must fetch a lot of stored data from its main memory, and the fetching sets the pace. The paper calls such generation <span class="t" data-t="decode">incremental inference</span>.</p>
+<h3 class="rung">Tiny example</h3>
+<p>To write a 128-token sentence, a model runs 128 separate steps, and step 100 cannot start until step 99 has chosen its token. In training, by contrast, all 128 positions of a known sentence are processed in one pass. The work in the two cases is about the same; what differs is how often the same stored numbers have to be reloaded.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The paper's plan is to measure the problem precisely (§2), change the architecture so the problem shrinks (§3), and check that the model is still good (§4). The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> separates the two phases of generation, the parallel <span class="t" data-t="prefill">prefill</span> and the one-token-at-a-time <span class="t" data-t="decode">decode</span>, for the same reason.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background: neural attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S2">original</a></span></h2>
+<p>The paper explains attention through short TensorFlow functions written with <span class="t" data-tip-title="einsum" data-tip="Einstein summation: a one-line way to write a tensor operation by naming each tensor's dimensions with letters. &quot;hk,hmk-&gt;hm&quot; means: for each h and m, multiply along the shared letter k and add up. Letters missing from the output are summed away.">einsum</span>, a notation that names every dimension of every <span class="t" data-t="tensor">tensor</span> with a letter. It is worth learning the letters, because the paper's whole idea is one letter:</p>
+<div class="tablewrap"><table>
+  <caption>The dimension letters used throughout the paper</caption>
+  <thead><tr><th>Letter</th><th>Meaning</th><th>In the paper's model</th></tr></thead>
+  <tbody>
+    <tr><td><code>d</code></td><td>width of every token's vector</td><td class="num">1,024</td></tr>
+    <tr><td><code>h</code></td><td>number of attention heads</td><td class="num">8</td></tr>
+    <tr><td><code>k</code>, <code>v</code></td><td>width of one head's keys and values</td><td class="num">128</td></tr>
+    <tr><td><code>m</code></td><td>number of positions being attended to (the memory)</td><td class="num">up to 128</td></tr>
+    <tr><td><code>n</code></td><td>number of query positions</td><td class="num">up to 128</td></tr>
+    <tr><td><code>b</code></td><td>batch size: independent sequences processed together</td><td class="num">1,024 in the speed test</td></tr>
+  </tbody>
+</table></div>
+
+<section id="s2-1">
+<h3>2.1 Dot-product attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>You walk into a room with a question. Every person there wears a name badge (a key) and holds a note (a value). You compare your question with each badge, decide how much each person is worth listening to, and leave with a blend of their notes, mostly from the people whose badges matched best. That is <span class="t" data-t="attention">attention</span> for a single query.</p>
+<h4>Tiny example</h4>
+<p>One query q = (1, 0) and three positions with keys (1, 0), (0, 1), (1, 1) and one-number values 1, 2, 3. The scores are the <span class="t" data-t="dot product">dot products</span> 1, 0, 1. <span class="t" data-t="softmax">Softmax</span> turns them into shares 0.422, 0.155, 0.422, and the output is 0.422 × 1 + 0.155 × 2 + 0.422 × 3 = <strong>2.0</strong>.</p>
+<div class="eq" data-tex="\htmlData{sym=y}{y} = \htmlData{sym=softmax}{\text{softmax}}\big(\htmlData{sym=q}{q}\,\htmlData{sym=KT}{K^{\top}}\big)\,\htmlData{sym=V}{V}" data-fallback="y = softmax(q Kᵀ) V"></div>
+<div class="symtable" data-syms="y,softmax,q,KT,V"></div>
+<p class="inwords"><strong>In words:</strong> “score the query against every key, turn the scores into shares that add up to 1, and hand back the values blended by those shares.”</p>
+<p class="inwords"><strong>With the numbers:</strong> q Kᵀ = (1, 0, 1); softmax gives (0.422, 0.155, 0.422); y = 0.422 × 1 + 0.155 × 2 + 0.422 × 3 = 2.0. The paper leaves out the usual division by √k and notes that it can be folded into the query projection.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+q = [1.0, 0.0]
+K = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+V = [1.0, 2.0, 3.0]
+# logits = einsum("k,mk-&gt;m", q, K): one dot product per position
+logits = [sum(q_i * k_i for q_i, k_i in zip(q, K_m)) for K_m in K]
+logits  # → [1.0, 0.0, 1.0]
+# weights = softmax(logits)
+exps = [math.exp(s) for s in logits]
+weights = [e / sum(exps) for e in exps]
+[round(w, 3) for w in weights]  # → [0.422, 0.155, 0.422]
+# y = einsum("m,mv-&gt;v", weights, V)
+round(sum(w * v for w, v in zip(weights, V)), 3)  # → 2.0</code></pre>
+<h4>Why it matters</h4>
+<p>Notice what the output needs: <em>every</em> key and <em>every</em> value. However short the query, all of K and V must be read. That fact is the whole story of this paper. The <a data-lesson="primer/ml/attention.html#scaled_dot_product_attention"><code>scaled_dot_product_attention</code></a> function in the attention lesson is the same computation for many queries at once.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Multi-head attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S2.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Instead of one person asking one question, send h people into the room, each with their own question <em>and their own way of reading the badges and notes</em>. One cares who did what, another which word a pronoun refers to. Afterwards their findings are translated back into the room's common language and added together. That is <span class="t" data-t="multi-head attention">multi-head attention</span>, from <a href="attention-is-all-you-need.html#s3-2-2">the Transformer paper</a>.</p>
+<h4>Tiny example</h4>
+<p>In the paper's model, d = 1,024 and h = 8 heads of width k = 128. Each head has four learned <span class="t" data-t="matrix">matrices</span> of size 1,024 × 128: one each to make its query, keys, values, and to project its output back. Stacked over the 8 heads, each of the four projection tensors P<sub>q</sub>, P<sub>k</sub>, P<sub>v</sub>, P<sub>o</sub> holds 8 × 1,024 × 128 = 1,048,576 numbers, which is exactly 1,024², because 8 × 128 = 1,024.</p>
+<div class="eq" data-tex="\htmlData{sym=oi}{o_i} = \htmlData{sym=softmax}{\text{softmax}}\Big(\htmlData{sym=x}{x}\,\htmlData{sym=Pqi}{P_{q,i}}\,\big(\htmlData{sym=M}{M}\,\htmlData{sym=Pki}{P_{k,i}}\big)^{\htmlData{sym=T}{\top}}\Big)\,\htmlData{sym=M}{M}\,\htmlData{sym=Pvi}{P_{v,i}}" data-fallback="o_i = softmax( x P_q,i (M P_k,i)ᵀ ) M P_v,i"></div>
+<div class="eq" data-tex="\htmlData{sym=y}{y} = \htmlData{sym=sumi}{\sum_{i=1}^{h}} \htmlData{sym=oi}{o_i}\,\htmlData{sym=Poi}{P_{o,i}}^{\htmlData{sym=T}{\top}}" data-fallback="y = Σ_i o_i P_o,iᵀ"></div>
+<div class="symtable" data-syms="oi,x,Pqi,M,Pki,T,Pvi,softmax,y,sumi,Poi"></div>
+<p class="inwords"><strong>In words:</strong> “for each head, make a query from the input and keys and values from the memory, each with that head's own matrices; run attention; project the result back to width d; and add up the heads.” This is the paper's einsum code written as one line; the paper writes the head index and the head count with the same letter h, and this page uses i for the index.</p>
+<p class="inwords"><strong>With the numbers:</strong> each P holds h × d × k = 8 × 1,024 × 128 = 1,048,576 numbers, so one attention layer has 4 × 1,048,576 = 4,194,304 of them. The keys this layer computes for m positions form a tensor of h × m × k numbers: 8 × 128 × 128 = 131,072 for a 128-token memory.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>d, h, k, m = 1024, 8, 128, 128
+# P_q, P_k, P_v and P_o each have shape [h, d, k]
+P = h * d * k
+P  # → 1048576
+# the same as d², because h · k = d
+P == d * d  # → True
+# four projections in one attention layer
+4 * P  # → 4194304
+# K = einsum("md,hdk-&gt;hmk", M, P_k): one key per head per position
+h * m * k  # → 131072</code></pre>
+<h4>Why it matters</h4>
+<p>Look at the shape of K: it has an <code>h</code> in it. Every head makes its own keys and values from the same memory. Hold on to that letter; §3 deletes it. The lesson's <a data-lesson="primer/ml/attention.html#MultiHeadAttention"><code>MultiHeadAttention</code></a> builds this layer from scratch.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 Batched: many queries at once <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If a hundred people have questions for the same room, you open the doors once and let them all in together. In training, a model knows every position of the target sentence in advance, so it computes the queries for all n positions at once, and processes b unrelated sentences side by side as a <span class="t" data-t="batch">batch</span>. A <span class="t" data-t="causal mask">mask</span> of −∞ on the forbidden scores stops each position from reading the ones after it.</p>
+<h4>Tiny example</h4>
+<p>The training batches in the paper hold 128 sentences of 256 target tokens: 32,768 query positions per step. All of them use the same projection matrices, which are loaded from memory once per step and then used 32,768 times.</p>
+<h4>Why it matters</h4>
+<p>“Loaded once, used many times” is the property that makes training efficient on modern hardware. The next section counts it.</p>
+</section>
+
+<section id="s2-3-1">
+<h3>2.3.1 Why batched attention is fast <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S2.SS3.SSS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A factory's speed can be limited by its machines or by its delivery trucks. What matters is the ratio: how many parts arrive per unit of machining. Modern chips, the paper notes, can do about a hundred times more arithmetic than their memory can feed them, so the ratio of <em>numbers fetched</em> to <em>operations done</em> must be small, or the machines sit idle. This ratio is the inverse of what the primer calls <span class="t" data-t="arithmetic intensity">arithmetic intensity</span>.</p>
+<h4>Tiny example</h4>
+<p>With the training batch above (b = 128, n = 256) and the paper's widths (d = 1,024, h = 8), one attention layer does about b·n·d² = 34 billion operations and touches about 102 million numbers: the activations (b·n·d = 34 million), the attention weights (b·h·n² = 67 million) and the projections (d² = 1 million). That is about 3 numbers fetched per thousand operations.</p>
+<div class="eq" data-tex="\text{arithmetic} = \htmlData{sym=Theta}{\Theta}(\htmlData{sym=b}{b}\,\htmlData{sym=n}{n}\,\htmlData{sym=d}{d}^2)" data-fallback="arithmetic = Θ(b n d²)"></div>
+<div class="eq" data-tex="\text{memory} = \htmlData{sym=O}{O}(\htmlData{sym=b}{b}\htmlData{sym=n}{n}\htmlData{sym=d}{d} + \htmlData{sym=b}{b}\htmlData{sym=h}{h}\htmlData{sym=n}{n}^2 + \htmlData{sym=d}{d}^2)" data-fallback="memory = O(bnd + bhn² + d²)"></div>
+<div class="eq" data-tex="\frac{\text{memory}}{\text{arithmetic}} = \htmlData{sym=O}{O}\!\left(\frac{1}{\htmlData{sym=k}{k}} + \frac{1}{\htmlData{sym=b}{b}\htmlData{sym=n}{n}}\right)" data-fallback="memory / arithmetic = O(1/k + 1/(bn))"></div>
+<div class="symtable" data-syms="Theta,O,b,n,d,h,k"></div>
+<p class="inwords"><strong>In words:</strong> “the work grows with the batch, the length and the width squared; the data touched is the activations, the attention weights and the weights of the projections; divide one by the other and what is left is one over the head width plus one over the number of query positions, both small.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the exact ratio is (33,554,432 + 67,108,864 + 1,048,576) / 34,359,738,368 = <strong>0.0030</strong>, under the bound 1/k + 1/(bn) = 1/128 + 1/32,768 = 0.0078. The paper assumes k = d/h and n ≤ d, which both hold here (256 ≤ 1,024).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>b, n, d, h = 128, 256, 1024, 8
+k = d // h
+# activations: X, M, Q, K, V, O and Y, each about b·n·d numbers
+b * n * d  # → 33554432
+# the logits and the weights: b·h·n²
+b * h * n * n  # → 67108864
+# the four projection tensors: d² each
+d * d  # → 1048576
+arithmetic = b * n * d * d
+memory = b * n * d + b * h * n * n + d * d
+round(memory / arithmetic, 4)  # → 0.003
+# the paper's bound, 1/k + 1/(bn)
+round(1 / k + 1 / (b * n), 4)  # → 0.0078</code></pre>
+<h4>Why it matters</h4>
+<p>A ratio far below 1 means the chip can be kept busy: the data arrives faster than it is consumed. This is the <span class="t" data-t="compute-bound">compute-bound</span> regime, and it is why training and prefill run near a chip's peak. The <a data-lesson="primer/ml/inference.html#arithmetic_intensity"><code>arithmetic_intensity</code></a> function in the inference lesson computes the same idea for a whole model's weights.</p>
+</section>
+
+<section id="s2-4">
+<h3>2.4 Incremental: one token at a time <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S2.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>When the model writes, the token it chooses at one position becomes the input at the next, so the positions can no longer be processed together. The model keeps a notebook of every earlier position's keys and values (today called the <span class="t" data-t="kv cache">KV cache</span>) and, for each new token, writes one more line in it and then reads the whole notebook.</p>
+<h4>Tiny example</h4>
+<p>The paper's function <code>MultiheadSelfAttentionIncremental</code> receives the new token's vector x, of shape [b, d], and the cached <code>prev_K</code> and <code>prev_V</code>, of shape [b, h, m, k]. It computes one query per head, appends one new key and value per head to the cache (making m + 1 positions), runs attention, and returns the output together with the longer cache. Every call reads the entire cache.</p>
+<p><strong>A note for careful readers of the paper's code:</strong> the incremental listings use <code>M</code> where they mean the new input <code>x</code>, and <code>O</code> where they mean the lower-case <code>o</code> computed a line earlier. The multi-query version in §3 also keeps <code>axis=2</code> when appending the new key, which was right for the four-dimensional multi-head cache but not for the three-dimensional shared one, whose position axis is 1. They are typos; the shapes in the docstrings make the intent clear.</p>
+<h4>Why it matters</h4>
+<p>This is exactly how every chat model generates today. The <a data-lesson="primer/ml/inference.html#TinyDecoder"><code>TinyDecoder</code></a> in the inference lesson generates with and without such a cache and counts the work saved.</p>
+</section>
+
+<section id="s2-4-1">
+<h3>2.4.1 Why incremental attention is slow <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S2.SS4.SSS1">original</a></span></h3>
+<blockquote class="quote">“When n ≈ d or b ≈ 1, the ratio is close to 1, causing memory bandwidth to be a major performance bottleneck on modern computing hardware.”<cite>Shazeer (2019), §2.4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Back to the chef. With a big batch, each trip to the cellar for the recipe book (the weights) serves a thousand dishes, so that trip is cheap. But each dish also has its own notebook (its KV cache), and that notebook must be carried up for its dish alone, every single step. Batching does nothing for it.</p>
+<h4>Tiny example</h4>
+<p>One decoder self-attention layer, batch b = 1,024, at step m = 128: the cached keys and values are 2 × b × h × m × k = 2 × 1,024 × 8 × 128 × 128 = <strong>268 million</strong> numbers, while the four projection tensors are 4 × 1,024² = <strong>4.2 million</strong>. The step reads 64 times more cache than weights, and it does only about one multiply-add with each cached number it reads.</p>
+<div class="eq" data-tex="\text{memory} = \htmlData{sym=Theta}{\Theta}(\htmlData{sym=b}{b}\,\htmlData{sym=n}{n}^2 \htmlData{sym=d}{d} + \htmlData{sym=n}{n}\,\htmlData{sym=d}{d}^2)" data-fallback="memory = Θ(b n² d + n d²)"></div>
+<div class="eq" data-tex="\frac{\text{memory}}{\text{arithmetic}} = \htmlData{sym=Theta}{\Theta}\!\left(\frac{\htmlData{sym=n}{n}}{\htmlData{sym=d}{d}} + \frac{1}{\htmlData{sym=b}{b}}\right)" data-fallback="memory / arithmetic = Θ(n/d + 1/b)"></div>
+<div class="symtable" data-syms="Theta,b,n,d"></div>
+<p class="inwords"><strong>In words:</strong> “across n steps the work is the same as in training, b·n·d², but now every step rereads the whole cache (b·n·d numbers, n times over) and the weights (d², n times over); divide, and the ratio is the length over the width, plus one over the batch.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper's speed test uses b = 1,024 and n = 128 with d = 1,024. The ratio is 128 / 1,024 + 1 / 1,024 = 0.125 + 0.001 = <strong>0.126</strong>, over 40 times the 0.003 of training. With a single sequence, b = 1, it is 0.125 + 1 = <strong>1.125</strong>: roughly one number fetched per operation.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>n, d, h, k = 128, 1024, 8, 128
+def ratio(b):
+    # memory / arithmetic for multi-head incremental decoding: n/d + 1/b
+    return n / d + 1 / b
+round(ratio(1024), 3)  # → 0.126
+ratio(1)  # → 1.125
+# one layer's cache at step m = 128, batch 1,024: 2 · b · h · m · k
+2 * 1024 * h * 128 * k  # → 268435456
+# against its four projection tensors
+4 * d * d  # → 4194304</code></pre>
+<h4>Why it matters</h4>
+<p>The paper names two ways to push the ratio down. The 1/b term is easy: use a bigger batch, if memory allows. The n/d term is the hard one, because it comes from rereading the cache. One fix is to attend to fewer positions (a local window, as in Mistral 7B's <span class="t" data-t="sliding-window attention">sliding-window attention</span>). This paper's fix is orthogonal: keep every position, but make each position's keys and values smaller. The paper describes the cache's size as b·h·m·k = b·n²; under its own assumptions (h·k = d, m = n) that product is b·n·d per step, and the n² appears once all n steps are added up, as in the formula above.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Multi-query attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S3">original</a></span></h2>
+<blockquote class="quote">“Multi-query attention is identical except that the different heads share a single set of keys and values.”<cite>Shazeer (2019), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Back to the room of badges and notes. Multi-head attention gave each of the h questioners their own private way of reading every badge and every note, and so a private copy of all of them. Multi-query attention keeps the h different questions but gives everyone the same badges and the same notes. Different questions still pick out different people; the room just stops storing h copies of everything.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Two query heads, q<sub>1</sub> = (1, 0) and q<sub>2</sub> = (0, 1), share the three keys and values from §2.1. Head 1 scores (1, 0, 1) and returns 2.0, as before. Head 2 scores (0, 1, 1), gets shares (0.155, 0.422, 0.422), and returns <strong>2.267</strong>. Two heads, two different answers, one set of keys and values: 3 × 2 = 6 key numbers stored instead of the 2 × 3 × 2 = 12 that two private key sets would need.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+K = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+V = [1.0, 2.0, 3.0]
+def head(q):
+    # the same dot-product attention as §2.1, against the shared K and V
+    s = [sum(a * b for a, b in zip(q, K_m)) for K_m in K]
+    e = [math.exp(x) for x in s]
+    return round(sum(e_j / sum(e) * v for e_j, v in zip(e, V)), 3)
+head([1.0, 0.0])  # → 2.0
+head([0.0, 1.0])  # → 2.267
+# key numbers stored: shared, then private per head
+len(K) * 2, 2 * len(K) * 2  # → (6, 12)</code></pre>
+<h3 class="rung">Diagram: one decoding step, before and after</h3>
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 490" role="img" aria-label="One decoding step in multi-head attention, with four key/value caches, and in multi-query attention, with one shared cache">
+    <text x="150" y="14" text-anchor="middle" class="lbl">Multi-head: h = 4, four caches</text>
+    <path class="wire" d="M150,184 V174 H45 V158 M150,184 V174 H113 V158 M150,184 V174 H181 V158 M150,184 V174 H249 V158"/>
+    <path class="wire" d="M45,132 V106 M113,132 V106 M181,132 V106 M249,132 V106"/>
+    <g class="blk attn" data-block="mha_cache" aria-label="Multi-head: four private key and value caches">
+      <rect x="16" y="26" width="58" height="80" rx="5"/><rect x="84" y="26" width="58" height="80" rx="5"/><rect x="152" y="26" width="58" height="80" rx="5"/><rect x="220" y="26" width="58" height="80" rx="5"/>
+      <path class="wire" d="M20,54 H70 M20,70 H70 M20,86 H70 M20,102 H70 M88,54 H138 M88,70 H138 M88,86 H138 M88,102 H138 M156,54 H206 M156,70 H206 M156,86 H206 M156,102 H206 M224,54 H274 M224,70 H274 M224,86 H274 M224,102 H274"/>
+      <text x="45" y="43" text-anchor="middle">K₁ V₁</text><text x="113" y="43" text-anchor="middle">K₂ V₂</text><text x="181" y="43" text-anchor="middle">K₃ V₃</text><text x="249" y="43" text-anchor="middle">K₄ V₄</text>
+    </g>
+    <g class="blk lin" data-block="mha_q" aria-label="Multi-head: four query heads">
+      <rect x="16" y="132" width="58" height="26" rx="6"/><rect x="84" y="132" width="58" height="26" rx="6"/><rect x="152" y="132" width="58" height="26" rx="6"/><rect x="220" y="132" width="58" height="26" rx="6"/>
+      <text x="45" y="149" text-anchor="middle">q₁</text><text x="113" y="149" text-anchor="middle">q₂</text><text x="181" y="149" text-anchor="middle">q₃</text><text x="249" y="149" text-anchor="middle">q₄</text>
+    </g>
+    <g class="blk plain" data-block="xtok" aria-label="Multi-head: the new token's vector x"><rect x="95" y="184" width="110" height="26" rx="6"/><text x="150" y="201" text-anchor="middle">new token x</text></g>
+    <text x="150" y="230" text-anchor="middle" class="lbl">cache read per step: 4 × m × 2k numbers</text>
+    <path class="wire" d="M10,244 H290" style="stroke-dasharray:4 4"/>
+    <text x="150" y="266" text-anchor="middle" class="lbl">Multi-query: h = 4, one shared cache</text>
+    <path class="wire" d="M150,436 V426 H45 V410 M150,436 V426 H113 V410 M150,436 V426 H181 V410 M150,436 V426 H249 V410"/>
+    <path class="wire" d="M45,384 L138,358 M113,384 L146,358 M181,384 L154,358 M249,384 L162,358"/>
+    <g class="blk attn" data-block="mqa_cache" aria-label="Multi-query: one shared key and value cache">
+      <rect x="121" y="278" width="58" height="80" rx="5"/>
+      <path class="wire" d="M125,306 H175 M125,322 H175 M125,338 H175 M125,354 H175"/>
+      <text x="150" y="295" text-anchor="middle">K V</text>
+    </g>
+    <g class="blk lin" data-block="mqa_q" aria-label="Multi-query: four query heads">
+      <rect x="16" y="384" width="58" height="26" rx="6"/><rect x="84" y="384" width="58" height="26" rx="6"/><rect x="152" y="384" width="58" height="26" rx="6"/><rect x="220" y="384" width="58" height="26" rx="6"/>
+      <text x="45" y="401" text-anchor="middle">q₁</text><text x="113" y="401" text-anchor="middle">q₂</text><text x="181" y="401" text-anchor="middle">q₃</text><text x="249" y="401" text-anchor="middle">q₄</text>
+    </g>
+    <g class="blk plain" data-block="xtok" aria-label="Multi-query: the new token's vector x"><rect x="95" y="436" width="110" height="26" rx="6"/><text x="150" y="453" text-anchor="middle">new token x</text></g>
+    <text x="150" y="482" text-anchor="middle" class="lbl">cache read per step: 1 × m × 2k numbers</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with the <strong>new token x</strong> in the top half, then compare the two halves' caches.</p></div>
+  </div>
+  <figcaption>One step of incremental decoding, drawn from the paper's two code listings (§2.4 and §3). The paper itself has no figures.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top half is multi-head attention, the bottom half multi-query; read each from the bottom up. The new token's vector x is projected into four queries, one per head, in both designs. In the top half, each query reads its own cache: four tall boxes, each holding m positions (the horizontal lines) of keys and values of width k. In the bottom half, all four queries read the same single box. Every query still has its own line up to a cache, so the heads still ask four different questions, but the memory to be fetched at every step is four times smaller here, and h times smaller in general. The label under each half counts the numbers read from the cache per sequence per step.</p>
+<h3 class="rung">The change in code</h3>
+<p>The paper's instruction is literally to delete a letter: remove <code>h</code> from every einsum wherever it indexes the keys, the values, P<sub>k</sub> or P<sub>v</sub>. P<sub>k</sub> goes from shape [h, d, k] to [d, k]; the cache goes from [b, h, m, k] to [b, m, k]; the score line becomes <code class="example">einsum("bhk,bmk-&gt;bhm", q, K)</code>, so every head's query is dotted with the same keys.</p>
+<h3 class="rung">Why it matters</h3>
+<p>In the primer's <a data-lesson="primer/ml/attention.html#MultiHeadAttention"><code>MultiHeadAttention</code></a>, multi-query attention is one argument: <code>n_kv_heads=1</code>. <a data-lesson="primer/ml/attention.html#MultiHeadAttention.kv_params"><code>MultiHeadAttention.kv_params</code></a> counts the key and value weights that shrink, and the inference lesson's <a data-lesson="primer/ml/inference.html#kv_cache_bytes_per_token"><code>kv_cache_bytes_per_token</code></a> shows the cache shrinking by the same factor.</p>
+
+<section id="s3-1">
+<h3>3.1 The analysis again <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Same chef, same thousand dishes, but each dish's notebook is now h times thinner. The trip to the cellar for the notebook still happens every step, it just carries much less.</p>
+<h4>Tiny example</h4>
+<p>At b = 1,024, m = 128, the cache read per layer per step drops from 268 million numbers to 2 × 1,024 × 128 × 128 = <strong>33.5 million</strong>: 8 times less, one factor of h.</p>
+<div class="eq" data-tex="\text{memory} = \htmlData{sym=Theta}{\Theta}(\htmlData{sym=b}{b}\htmlData{sym=n}{n}\htmlData{sym=d}{d} + \htmlData{sym=b}{b}\,\htmlData{sym=n}{n}^2 \htmlData{sym=k}{k} + \htmlData{sym=n}{n}\,\htmlData{sym=d}{d}^2)" data-fallback="memory = Θ(bnd + b n² k + n d²)"></div>
+<div class="eq" data-tex="\frac{\text{memory}}{\text{arithmetic}} = \htmlData{sym=Theta}{\Theta}\!\left(\frac{1}{\htmlData{sym=d}{d}} + \frac{\htmlData{sym=n}{n}}{\htmlData{sym=d}{d}\,\htmlData{sym=h}{h}} + \frac{1}{\htmlData{sym=b}{b}}\right)" data-fallback="memory / arithmetic = Θ(1/d + n/(dh) + 1/b)"></div>
+<div class="symtable" data-syms="Theta,b,n,d,k,h"></div>
+<p class="inwords"><strong>In words:</strong> “the cache term now has a k where it had a d, because only one head's worth of keys and values is stored; dividing by the unchanged work, the troublesome n/d term shrinks by a factor of h.”</p>
+<p class="inwords"><strong>With the numbers:</strong> b = 1,024, n = 128, d = 1,024, h = 8: 1/1,024 + 128/8,192 + 1/1,024 = 0.001 + 0.0156 + 0.001 = <strong>0.0176</strong>, against 0.126 for multi-head: 7.2 times less memory traffic per operation. With b = 1 it is 1.017 against 1.125: almost no gain, because the weights, not the cache, dominate a batch of one.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>n, d, h = 128, 1024, 8
+k = d // h
+def mha(b):
+    # n/d + 1/b
+    return n / d + 1 / b
+def mqa(b):
+    # 1/d + n/(dh) + 1/b
+    return 1 / d + n / (d * h) + 1 / b
+round(mqa(1024), 4)  # → 0.0176
+round(mha(1024) / mqa(1024), 1)  # → 7.2
+round(mqa(1), 3), mha(1)  # → (1.017, 1.125)
+# one layer's cache read at step 128, batch 1,024: 2 · b · m · k
+2 * 1024 * 128 * k  # → 33554432</code></pre>
+<h4>Why it matters</h4>
+<p>The analysis predicts <em>when</em> the trick pays: large batches and long sequences, exactly the setting of a busy server. That prediction is what the chart below lets you explore, and what §4.3 tests.</p>
+</section>
+
+<section id="ratio">
+<h3>Try it: batch size and length</h3>
+<p>Drag the slider to change the batch size b. The chart plots the two ratios from §2.4.1 and §3.1 against the sequence length n, with d = 1,024 and h = 8 as in the paper. Lower is better: it means fewer numbers fetched per operation.</p>
+<div class="plot" id="ratio-plot">
+  <div class="controls"><label for="ratio-b">batch size b = <strong id="ratio-b-v">1,024</strong></label><input type="range" id="ratio-b" min="0" max="10" step="1" value="10"></div>
+  <div id="ratio-chart"></div>
+  <p class="readout" id="ratio-readout">Hover or tap the chart to read both ratios at one length.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the sequence length n on a logarithmic scale, with a point at every doubling from 16 to 1,024 tokens; the y-axis is the memory-to-arithmetic ratio, constant factors dropped as in the paper. The solid line is multi-head attention and the dashed line multi-query. At the paper's batch of 1,024, the multi-head line climbs steadily with length (it is mostly n/d), while the multi-query line climbs eight times more slowly, so the gap widens as sequences get longer. Now drag the batch down to 1: both lines jump to just above 1 and nearly merge, because with one sequence the weights dominate and sharing keys and values saves almost nothing. Multi-query attention is a large-batch, long-sequence optimization.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S4">original</a></span></h2>
+
+<section id="s4-1">
+<h3>4.1 Setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A fair race needs equal cars. Deleting the h from P<sub>k</sub> and P<sub>v</sub> removes weights, so a multi-query model starts with fewer <span class="t" data-t="parameters">parameters</span> than the baseline and would be expected to do a little worse for that reason alone. The paper gives the removed weights back to the <span class="t" data-t="feed-forward network">feed-forward networks</span>, widening them until the total count matches.</p>
+<h4>Tiny example</h4>
+<p>The translation baseline is an <span class="t" data-t="encoder-decoder">encoder-decoder</span> Transformer with 6 layers, d = 1,024, feed-forward width d<sub>ff</sub> = 4,096, h = 8 and d<sub>k</sub> = d<sub>v</sub> = 128: 211 million parameters. Every attention layer (encoder self-attention, decoder self-attention and <span class="t" data-t="encoder-decoder attention">encoder-decoder attention</span>) becomes multi-query, and d<sub>ff</sub> grows from 4,096 to 5,440. The paper states the new width; the accounting below, which is this page's own, shows why it is exactly right, assuming 6 encoder layers and 6 decoder layers as in the original Transformer.</p>
+<div class="eq" data-tex="\htmlData{sym=Lattn}{L_{\text{attn}}} \cdot 2\,(\htmlData{sym=h}{h} - 1)\,\htmlData{sym=d}{d}\,\htmlData{sym=k}{k} = \htmlData{sym=Lffn}{L_{\text{ffn}}} \cdot 2\,\htmlData{sym=d}{d}\,\htmlData{sym=Dff}{\Delta d_{\text{ff}}}" data-fallback="L_attn · 2 (h − 1) d k = L_ffn · 2 d Δd_ff"></div>
+<div class="symtable" data-syms="Lattn,h,d,k,Lffn,Dff"></div>
+<p class="inwords"><strong>In words:</strong> “the weights removed from the key and value projections of every attention layer equal the weights added to the two matrices of every feed-forward layer.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 18 attention layers (6 + 6 + 6) each lose 2 × 7 × 1,024 × 128 = 1,835,008 weights, 33,030,144 in all. 12 feed-forward layers each gain 2 × 1,024 × 1,344 = 2,752,512, also <strong>33,030,144</strong>. The language model (6 decoder-only layers, d<sub>ff</sub> from 8,192 to 9,088) balances the same way: 11,010,048 on each side.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>d, h, k = 1024, 8, 128
+def removed(L_attn):
+    # each layer's P_k and P_v go from [h, d, k] to [d, k]
+    return L_attn * 2 * (h - 1) * d * k
+def added(L_ffn, d_ff_old, d_ff_new):
+    # each feed-forward layer has a d × d_ff matrix in and a d_ff × d matrix out
+    return L_ffn * 2 * d * (d_ff_new - d_ff_old)
+# translation: 18 attention layers, 12 feed-forward layers
+removed(18), added(12, 4096, 5440)  # → (33030144, 33030144)
+# language model: 6 of each
+removed(6), added(6, 8192, 9088)  # → (11010048, 11010048)</code></pre>
+<p>Two more families of models go into the race. <strong>Local</strong> versions restrict decoder self-attention to the current position and the previous 31, to show that windows and multi-query attention combine. And <strong>smaller multi-head</strong> models shrink the keys and values the obvious way, by using fewer heads (h = 1, 2, 4) or narrower ones (d<sub>k</sub> = d<sub>v</sub> = 16, 32, 64), again with wider feed-forward layers to keep the count equal. Training ran for 100,000 steps on a 32-core <span class="t" data-tip-title="TPU" data-tip="Tensor Processing Unit: Google's chip for neural-network arithmetic. Like a GPU, it does far more arithmetic per second than its memory can feed it.">TPU</span> v3 cluster, about 2 hours per model. The paper also trains decoder-only language models on the <span class="t" data-tip-title="Billion-Word Benchmark" data-tip="A language-modelling benchmark of about a billion words of news text (Chelba et al., 2013). Models are compared by perplexity on held-out text.">Billion-Word Language Modeling Benchmark</span> (192 million parameters each).</p>
+<h4>Why it matters</h4>
+<p>Matching parameter counts is what makes the comparison honest: any quality difference is caused by how the weights are used, not by how many there are.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Quality <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If you make everyone share one catalogue, you worry the questions get worse. The test: measure translation quality with <span class="t" data-t="bleu">BLEU</span> (higher is better) and the model's surprise at the reference translation with <span class="t" data-t="perplexity">perplexity</span> (lower is better), for every variant.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1 (WMT14 English-German, development set), from Shazeer (2019), reproduced with attribution</caption>
+  <thead><tr><th>Attention</th><th class="num">h</th><th class="num">d<sub>k</sub>, d<sub>v</sub></th><th class="num">d<sub>ff</sub></th><th class="num">ln(PPL)</th><th class="num">BLEU</th></tr></thead>
+  <tbody>
+    <tr><td>multi-head (baseline)</td><td class="num">8</td><td class="num">128</td><td class="num">4,096</td><td class="num">1.424</td><td class="num">26.7</td></tr>
+    <tr class="hl"><td>multi-query</td><td class="num">8</td><td class="num">128</td><td class="num">5,440</td><td class="num">1.439</td><td class="num">26.5</td></tr>
+    <tr><td>multi-head, fewer heads</td><td class="num">2</td><td class="num">64</td><td class="num">6,784</td><td class="num">1.480</td><td class="num">26.2</td></tr>
+    <tr><td>multi-head, one head</td><td class="num">1</td><td class="num">128</td><td class="num">6,784</td><td class="num">1.518</td><td class="num">25.8</td></tr>
+  </tbody>
+</table></div>
+<h4>Tiny example</h4>
+<p>The table lists the <span class="t" data-t="logarithm">natural logarithm</span> of perplexity. Undoing it: e<sup>1.424</sup> = 4.15 for the baseline and e<sup>1.439</sup> = 4.22 for multi-query, a 1.5% rise in perplexity per <span class="t" data-t="subword unit">subword token</span>. The best of the “fewer or narrower heads” models reaches e<sup>1.480</sup> = 4.39, a 5.8% rise.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+base, mqa, fewer = 1.424, 1.439, 1.480
+# perplexity is e to the logged value
+round(math.exp(base), 2), round(math.exp(mqa), 2), round(math.exp(fewer), 2)  # → (4.15, 4.22, 4.39)
+# rise over the baseline, in percent
+round(100 * (math.exp(mqa - base) - 1), 1)  # → 1.5
+round(100 * (math.exp(fewer - base) - 1), 1)  # → 5.8</code></pre>
+<p>On the test set with <span class="t" data-t="beam search">beam search</span> (4 beams), multi-query scored 28.5 BLEU against the baseline's 28.4, the highest in the table; with <span class="t" data-t="greedy decoding">greedy decoding</span> it scored 27.5 against 27.7. On the Billion-Word benchmark, per-word perplexity was 29.9 for the baseline and 30.2 for multi-query, while every smaller multi-head model landed between 30.9 and 31.2.</p>
+<h4>Why it matters</h4>
+<p>The key comparison is not multi-query against the baseline but multi-query against the other ways of shrinking K and V. Shrinking the number or width of heads also shrinks the <em>queries</em>, and quality drops more. Keeping h separate queries while sharing the keys and values is the cheap cut.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Speed <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The paper times everything on one 8-core TPU v2, as a cost per token: the total time of a step divided by the tokens that step produced.</p>
+<h4>Tiny example</h4>
+<p>For the baseline, generating a batch of 1,024 sentences took 47 ms per decoder step, one token per sentence: 47 / 1,024 = 45.9 μs per token, which the paper rounds to 46. The multi-query decoder took 3.9 ms per step: 3.8 μs per token. The encoder, which reads all 128 source tokens of all 1,024 sentences in one parallel pass, took 222 ms, only 1.7 μs per token.</p>
+<div class="eq" data-tex="\htmlData{sym=tok}{t_{\text{token}}} = \frac{\htmlData{sym=Tstep}{T_{\text{step}}}}{\htmlData{sym=b}{b}\cdot\htmlData{sym=ntok}{n_{\text{step}}}}" data-fallback="t_token = T_step / (b · n_step)"></div>
+<div class="symtable" data-syms="tok,Tstep,b,ntok"></div>
+<p class="inwords"><strong>In words:</strong> “the cost of one token is the time of a step shared out over every token that step produced.”</p>
+<p class="inwords"><strong>With the numbers:</strong> baseline decoder 47 ms / (1,024 × 1) = 45.9 μs; multi-query decoder 3.9 ms / 1,024 = 3.8 μs; baseline encoder 222 ms / (1,024 × 128) = 1.69 μs; multi-query encoder 195 ms / (1,024 × 128) = 1.49 μs. The decoder speedup is 46 / 3.8 = <strong>12.1 times</strong>. Training barely moves: 433 ms against 425 ms per step of 32,768 tokens, 13.2 against 13.0 μs per token.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>b, src = 1024, 128
+def t_token(T_step_ms, n_step):
+    # milliseconds per step, shared over b · n_step tokens, in microseconds
+    return T_step_ms / (b * n_step) * 1000
+round(t_token(47, 1), 1), round(t_token(3.9, 1), 1)  # → (45.9, 3.8)
+round(t_token(222, src), 2), round(t_token(195, src), 2)  # → (1.69, 1.49)
+# decoder speedup, from the paper's rounded values
+round(46 / 3.8, 1)  # → 12.1
+# training, per (input + target) token: 32,768 per step
+round(433 / 32768 * 1000, 1), round(425 / 32768 * 1000, 1)  # → (13.2, 13.0)</code></pre>
+<div class="plot" id="speed-plot"><div id="speed-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> the bars redraw the decoder column of the paper's Table 2, in TPU-microseconds per output token; solid bars are multi-head models, striped bars multi-query. Each group has its own axis, because beam search costs several times more. Greedy decoding: 46 → 3.8, and with a 32-token local window, 23 → 3.3. Beam-4 search: 203 → 32, and 47 → 16 with the local window. In greedy decoding the local window alone halves the multi-head cost, multi-query alone cuts it by about 12, and together they cut it by 14: the two ideas attack different factors of the same cache (how many positions, and how big each one is).</p>
+<p>The paper notes one caveat about the setup: to keep tensor shapes fixed, the cache was padded to its maximum length (128, or 32 for local attention), so every step cost the same; a growing cache would have saved time on the early steps.</p>
+<h4>Why it matters</h4>
+<p>The predicted gain (about 7 times less memory traffic per operation, §3.1) and the measured one (12 times faster decoding) point the same way; the analysis drops constant factors, so the two need not match exactly. Training speed is unchanged, which confirms that the saving comes entirely from the one-token-at-a-time setting.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1911.02150#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The whole paper is one move: find the number that is reloaded every step, and stop storing h copies of it.</p>
+<h3 class="rung">What it concludes</h3>
+<p>Multi-query attention has much lower memory-bandwidth needs during incremental decoding, and the author expects it to make attention-based models practical where inference speed is critical. The experiments use models of about 200 million parameters and one design, a single shared key/value head; sharing one key/value head among each <em>group</em> of query heads was left to later work.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Development</th><th>What it changed</th><th>Build it</th></tr></thead>
+  <tbody>
+    <tr><td><span class="t" data-t="grouped-query attention">Grouped-query attention</span> (Ainslie et al., 2023)</td><td>A middle ground: a few key/value heads, each shared by a group of query heads, recovering most of multi-head quality at most of multi-query's saving</td><td><a data-lesson="primer/ml/attention.html#MultiHeadAttention"><code>MultiHeadAttention</code></a> with 1 &lt; <code>n_kv_heads</code> &lt; <code>n_heads</code></td></tr>
+    <tr><td>Mistral 7B (2023)</td><td>32 query heads share 8 key/value heads, combined with a sliding window: the two cuts of §4.3, at scale</td><td><a data-lesson="primer/ml/efficient_architectures.html#sliding_window_decode"><code>sliding_window_decode</code></a></td></tr>
+    <tr><td><a href="paged-attention.html">PagedAttention</a> (2023)</td><td>Once the cache is smaller, the next problem is packing many sequences' caches into memory without waste</td><td><a data-lesson="primer/ml/inference.html#kv_cache_bytes">KV-cache memory</a></td></tr>
+    <tr><td><span class="t" data-t="multi-head latent attention">Multi-head latent attention</span> (DeepSeek-V2, 2024)</td><td>Cache one small latent vector per token and rebuild every head's keys and values from it</td><td><a data-lesson="primer/ml/efficient_architectures.html#LatentKVAttention"><code>LatentKVAttention</code></a></td></tr>
+    <tr><td><a href="flashattention.html">FlashAttention</a> (2022)</td><td>A different memory problem: the n × n score matrix in training and prefill, solved by computing attention in tiles without changing the model</td><td><a class="lesson" data-lesson="primer/ml/attention.html">attention lesson</a></td></tr>
+  </tbody>
+</table></div>
+<p>The <a data-lesson="primer/ml/efficient_architectures.html#cache_bytes_by_method">efficient architectures lesson</a> puts all of these cache-shrinking ideas on one chart, from multi-head attention's full cache down to a state-space model's fixed one.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Noam Shazeer, <em>Fast Transformer Decoding: One Write-Head is All You Need</em>, 2019. <a href="https://arxiv.org/abs/1911.02150">arXiv:1911.02150</a>. Quotations are brief and attributed; table rows are selected and attributed; the diagrams are drawn from the paper's code. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    // 2.1
+    y: { tex: "y", name: "Output vector", meaning: "What attention hands back for this query: a blend of the values.", shape: "v numbers (d after the output projection in 2.2)", example: "2.0 in the tiny example" },
+    softmax: { tex: "\\text{softmax}", name: "Softmax", meaning: "Exponentiate every score and divide by the total, giving positive shares that add up to 1.", shape: "keeps the shape: m shares", example: "(1, 0, 1) → (0.422, 0.155, 0.422)" },
+    q: { tex: "q", name: "Query vector", meaning: "What this position is looking for.", shape: "k numbers", example: "(1, 0)" },
+    KT: { tex: "K^{\\top}", name: "Keys, transposed", meaning: "One key per memory position, stacked as rows and then flipped to columns (the ᵀ), so that q Kᵀ is every dot product of the query with a key at once.", shape: "k × m", example: "keys (1, 0), (0, 1), (1, 1)" },
+    V: { tex: "V", name: "Values", meaning: "One value per memory position: the information each position hands over when attended to.", shape: "m × v", example: "1, 2, 3 (one number each)" },
+    // 2.2
+    sumi: { tex: "\\sum_{i=1}^{h}", name: "Sum over the heads", meaning: "Run the expression once for each head i, from 1 to h, and add the results. The paper's code does this with the einsum \"hv,hdv->d\", which sums away the h.", shape: "a vector of d numbers", example: "8 heads in the paper's model" },
+    oi: { tex: "o_i", name: "Output of head i", meaning: "What head i finds: its attention result, a blend of its own values, before projecting back to width d.", shape: "v numbers", example: "128 numbers per head" },
+    x: { tex: "x", name: "Input vector", meaning: "The vector of the position asking the question.", shape: "d numbers", example: "d = 1,024" },
+    M: { tex: "M", name: "Memory", meaning: "The m input vectors being attended to. In self-attention they are the sequence's own positions; in encoder-decoder attention, the encoder's outputs.", shape: "m × d", example: "up to 128 × 1,024" },
+    Pqi: { tex: "P_{q,i}", name: "Query projection of head i", meaning: "A learned matrix that turns the input into head i's query.", shape: "d × k (all heads together: [h, d, k])", example: "1,024 × 128" },
+    Pki: { tex: "P_{k,i}", name: "Key projection of head i", meaning: "A learned matrix that turns the memory into head i's keys. Multi-query attention replaces all h of them by one.", shape: "d × k (all heads: [h, d, k])", example: "1,024 × 128" },
+    Pvi: { tex: "P_{v,i}", name: "Value projection of head i", meaning: "A learned matrix that turns the memory into head i's values. Multi-query attention replaces all h of them by one.", shape: "d × v (all heads: [h, d, v])", example: "1,024 × 128" },
+    Poi: { tex: "P_{o,i}", name: "Output projection of head i", meaning: "A learned matrix that maps head i's result back to width d; transposed (ᵀ) here because the paper stores it as d × v.", shape: "d × v (all heads: [h, d, v])", example: "1,024 × 128" },
+    T: { tex: "\\top", name: "Transpose", meaning: "Flip a matrix so its rows become columns. It lines up the shapes so the products make sense.", shape: "an operation", example: "m × k becomes k × m" },
+    // analysis
+    Theta: { tex: "\\Theta", name: "Big-Theta", meaning: "“Grows exactly like”, ignoring constant factors: Θ(bnd²) means doubling b doubles the work, doubling d quadruples it.", shape: "a growth rate", example: "Θ(b n d²)" },
+    O: { tex: "O", name: "Big-O", meaning: "“Grows at most like”, ignoring constant factors. An upper bound, where Θ is exact.", shape: "a growth rate", example: "O(1/k + 1/(bn))" },
+    b: { tex: "b", name: "Batch size", meaning: "How many independent sequences are processed together.", shape: "a whole number", example: "128 in training, 1,024 in the speed test" },
+    n: { tex: "n", name: "Sequence length", meaning: "How many positions there are. The paper assumes the memory has the same length, m = n, and that n ≤ d.", shape: "a whole number", example: "256 in training, 128 in the speed test" },
+    d: { tex: "d", name: "Model width", meaning: "How many numbers make up each token's vector.", shape: "a whole number", example: "1,024" },
+    h: { tex: "h", name: "Number of heads", meaning: "How many attention heads run side by side. In multi-query attention, the number of query heads; there is still only one key head and one value head.", shape: "a whole number", example: "8" },
+    k: { tex: "k", name: "Head width", meaning: "How many numbers are in one head's key (and value). The paper assumes k = d / h.", shape: "a whole number", example: "1,024 / 8 = 128" },
+    // 4.1
+    Lattn: { tex: "L_{\\text{attn}}", name: "Attention layers", meaning: "How many attention layers the model has, each of which loses its per-head key and value projections.", shape: "a whole number", example: "18 for translation (6 encoder self, 6 decoder self, 6 encoder-decoder); 6 for the language model" },
+    Lffn: { tex: "L_{\\text{ffn}}", name: "Feed-forward layers", meaning: "How many feed-forward layers the model has, each of which is widened.", shape: "a whole number", example: "12 for translation, 6 for the language model" },
+    Dff: { tex: "\\Delta d_{\\text{ff}}", name: "Added feed-forward width", meaning: "How much wider each feed-forward layer's hidden layer becomes (the Δ means “change in”).", shape: "a whole number", example: "5,440 − 4,096 = 1,344" },
+    // 4.3
+    tok: { tex: "t_{\\text{token}}", name: "Time per token", meaning: "The amortized cost of producing one token: what Table 2 reports.", shape: "microseconds (μs)", example: "45.9 μs for the multi-head decoder" },
+    Tstep: { tex: "T_{\\text{step}}", name: "Time per step", meaning: "The measured time of one call: one decoder step, or the whole encoder pass.", shape: "milliseconds", example: "47 ms per decoder step" },
+    ntok: { tex: "n_{\\text{step}}", name: "Tokens per sequence per step", meaning: "How many positions of each sequence one step produces: 1 for a decoder step, all 128 source tokens for the encoder.", shape: "a whole number", example: "1 (decoder) or 128 (encoder)" },
+  },
+
+  blocks: {
+    xtok: { title: "The new token's vector", body: "<p>The token chosen at the previous step, as a vector of d numbers per sequence in the batch. It is the only new input this step: from it come the queries and one new key and value to append to the cache.</p>", shape: "[b, d]: 1,024 × 1,024 in the speed test" },
+    mha_q: { title: "Query heads (multi-head)", body: "<p>h separate queries, each made from x by its own slice of P<sub>q</sub>. Each is dotted only with its own head's keys.</p>", shape: "[b, h, k]" },
+    mha_cache: { title: "Private caches (multi-head)", body: "<p>Every head keeps its own keys and values for all m earlier positions. All h of them are read in full at every step, for every sequence in the batch. This is the tensor whose size drives the n/d term.</p>", shape: "prev_K, prev_V: [b, h, m, k] each", lesson: "primer/ml/inference.html" },
+    mqa_q: { title: "Query heads (multi-query)", body: "<p>Still h separate queries with their own projections, so the heads still ask different questions. Only the h in the keys and values is deleted, never the one in the queries.</p>", shape: "[b, h, k]" },
+    mqa_cache: { title: "Shared cache (multi-query)", body: "<p>One set of keys and values for all heads: h times smaller, so each step fetches h times fewer numbers. The score einsum becomes \"bhk,bmk->bhm\": every head's query against the same keys.</p>", shape: "prev_K, prev_V: [b, m, k] each", lesson: "primer/ml/attention.html" },
+  },
+
+  onReady(P) {
+    ratioChart(P);
+    speedBars();
+  },
+};
+
+/* ---- the two memory-to-arithmetic ratios against length, for a chosen batch ---- */
+function ratioChart(P) {
+  const d = 1024, h = 8;
+  const lens = [16, 32, 64, 128, 256, 512, 1024];
+  const mha = (n, b) => n / d + 1 / b;
+  const mqa = (n, b) => 1 / d + n / (d * h) + 1 / b;
+  const slider = document.getElementById("ratio-b"), label = document.getElementById("ratio-b-v");
+  const series = (b) => [
+    { name: "multi-head", points: lens.map((n) => [n, mha(n, b)]) },
+    { name: "multi-query", points: lens.map((n) => [n, mqa(n, b)]) },
+  ];
+  const b0 = Math.pow(2, +slider.value);
+  const chart = P.lineChart(document.getElementById("ratio-chart"), {
+    series: series(b0), xLabel: "sequence length n", yLabel: "memory / arithmetic", logX: true, yMin: 0, width: 380, height: 250,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("ratio-readout"), ariaLabel: "Memory-to-arithmetic ratio against sequence length for multi-head and multi-query attention",
+  });
+  slider.addEventListener("input", () => {
+    const b = Math.pow(2, +slider.value);
+    label.textContent = b.toLocaleString("en-US");
+    chart.update(series(b));
+    document.getElementById("ratio-readout").innerHTML = `b = ${b.toLocaleString("en-US")}, n = 128: multi-head <strong>${mha(128, b).toFixed(3)}</strong>, multi-query <strong>${mqa(128, b).toFixed(3)}</strong>, ${(mha(128, b) / mqa(128, b)).toFixed(1)} times less traffic.`;
+  });
+}
+
+/* ---- Table 2, decoder cost per token ---- */
+function speedBars() {
+  const row = (label, value, max, striped) => {
+    const w = Math.max(0, Math.min(100, (value / max) * 100));
+    const style = striped ? "background:var(--hatch) var(--accent)" : "";
+    return `<div class="share-row" style="grid-template-columns:9.5rem minmax(0,1fr) 3rem"><span>${label}</span><div><div class="share-bar" style="width:${w.toFixed(1)}%;${style}"></div></div><span>${value}</span></div>`;
+  };
+  const group = (title, max, rows) => `<p class="legend" style="margin:.6rem 0 .3rem"><strong>${title}</strong></p>` + rows.map(([l, v, s]) => row(l, v, max, s)).join("");
+  document.getElementById("speed-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .3rem">Decoder cost, TPU-μs per output token (Shazeer 2019, Table 2). Solid: multi-head. Striped: multi-query.</div>` +
+    group("Greedy decoding (axis 0 to 50)", 50, [["multi-head", 46, false], ["multi-query", 3.8, true], ["multi-head local", 23, false], ["multi-query local", 3.3, true]]) +
+    group("Beam-4 search (axis 0 to 210)", 210, [["multi-head", 203, false], ["multi-query", 32, true], ["multi-head local", 47, false], ["multi-query local", 16, true]]);
+}
+</script>
+</body>
+</html>

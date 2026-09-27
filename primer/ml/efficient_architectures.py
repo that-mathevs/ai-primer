@@ -1199,6 +1199,7 @@ fraction of layers that are SSMs.
 - **Shazeer, *Fast Transformer Decoding: One Write-Head is All You Need*
   (2019)**: https://arxiv.org/abs/1911.02150. Introduced multi-query
   attention, one shared key/value head for all query heads.
+  [Annotated companion](../../papers/multi-query-attention.html)
 - **DeepSeek-AI, *DeepSeek-V2* (2024)**: https://arxiv.org/abs/2405.04434.
   Introduced multi-head latent attention, caching a small latent per token
   instead of full keys and values.
