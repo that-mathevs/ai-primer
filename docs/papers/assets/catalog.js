@@ -645,7 +645,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.reasoning"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "training-verifiers",

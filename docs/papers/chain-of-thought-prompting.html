@@ -189,7 +189,7 @@ step1 + 6  # → 9</code></pre>
   <li><strong>Benchmarks:</strong> GSM8K, SVAMP, ASDiv, AQuA (multiple choice) and MAWPS, five collections of maths word problems.</li>
   <li><strong>Prompts:</strong> one hand-written set of eight <span class="t" data-t="exemplar">exemplars</span> for every benchmark except AQuA, which used four from its own training set. The authors note the exemplars were not tuned.</li>
   <li><strong>Models:</strong> GPT-3 (four sizes, 350M to 175B), LaMDA (422M to 137B), PaLM (8B, 62B, 540B), UL2 20B and Codex.</li>
-  <li><strong>Decoding:</strong> <span class="t" data-t="greedy decoding">greedy</span>: always the single most likely next token, so one chain per question. (The paper points to follow-up work that samples many chains and votes; the <a data-lesson="primer/ml/reasoning.html">reasoning lesson</a> builds it.)</li>
+  <li><strong>Decoding:</strong> <span class="t" data-t="greedy decoding">greedy</span>: always the single most likely next token, so one chain per question. (The paper points to follow-up work that samples many chains and votes; that is the <a href="self-consistency.html">self-consistency companion</a>.)</li>
 </ul>
 <h4>Why it matters</h4>
 <p>The comparison is clean: same model, same questions, same number of examples. The only variable is whether the examples show their working, so any difference in accuracy is caused by the chains.</p>
@@ -262,7 +262,8 @@ round(56.9 / 17.9, 2)  # → 3.18</code></pre>
 <h4>The math: why the order matters</h4>
 <p>A language model writes left to right, and each piece is predicted from everything before it. So the chance of writing a chain <em>and then</em> an answer splits into two factors, and so does the reverse order.</p>
 <div class="eq" data-tex="\htmlData{sym=P}{P}(\htmlData{sym=c}{c}, \htmlData{sym=y}{y} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) = \htmlData{sym=P}{P}(\htmlData{sym=c}{c} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) \htmlData{sym=cdot}{\cdot} \htmlData{sym=P}{P}(\htmlData{sym=y}{y} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}, \htmlData{sym=c}{c})" data-fallback="P(c, y | E, x) = P(c | E, x) · P(y | E, x, c)"></div>
-<div class="eq" data-tex="\text{answer first:}\quad \htmlData{sym=P}{P}(\htmlData{sym=y}{y}, \htmlData{sym=c}{c} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) = \htmlData{sym=P}{P}(\htmlData{sym=y}{y} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) \htmlData{sym=cdot}{\cdot} \htmlData{sym=P}{P}(\htmlData{sym=c}{c} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}, \htmlData{sym=y}{y})" data-fallback="answer first: P(y, c | E, x) = P(y | E, x) · P(c | E, x, y)"></div>
+<p>And with the answer written first:</p>
+<div class="eq" data-tex="\htmlData{sym=P}{P}(\htmlData{sym=y}{y}, \htmlData{sym=c}{c} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) = \htmlData{sym=P}{P}(\htmlData{sym=y}{y} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}) \htmlData{sym=cdot}{\cdot} \htmlData{sym=P}{P}(\htmlData{sym=c}{c} \htmlData{sym=given}{\mid} \htmlData{sym=E}{E}, \htmlData{sym=x}{x}, \htmlData{sym=y}{y})" data-fallback="P(y, c | E, x) = P(y | E, x) · P(c | E, x, y)"></div>
 <div class="symtable" data-syms="E,x,c,y,P,given,cdot"></div>
 <p class="inwords"><strong>In words:</strong> “the chance of writing this chain and then this answer is the chance of the chain, times the chance of the answer once the chain is on the page. Put the answer first and its chance is fixed before any working exists; the chain written afterwards cannot change it.”</p>
 <p class="inwords"><strong>With the numbers (illustrative, not from the paper):</strong> for the apples question, say the model writes the chain “23 − 20 = 3. 3 + 6 = 9.” with probability 0.40. With 3 and 6 on the page, writing 9 next is nearly a copy: probability 0.98. The pair together: 0.40 × 0.98 = 0.392. Answering first, the model must produce 9 with no working, say with probability 0.10, and that 0.10 is the accuracy no matter how good the explanation that follows.</p>
@@ -277,7 +278,7 @@ round(p_c * p_y_given_c, 3)  # → 0.392
 # answer first: P(y | E, x) is settled before any working is written
 p_y = 0.10
 p_y  # → 0.1</code></pre>
-<p>Adding up the first product over <em>every</em> chain that ends in 9 gives the model's full chance of answering 9. Greedy decoding follows one chain only; the self-consistency paper (Wang et al., 2022) samples many and lets their answers vote, which estimates that sum.</p>
+<p>Adding up the first product over <em>every</em> chain that ends in 9 gives the model's full chance of answering 9. Greedy decoding follows one chain only; the <a href="self-consistency.html">self-consistency paper</a> samples many and lets their answers vote, which estimates that sum.</p>
 <h4>Why it matters today</h4>
 <p>The dots result is subtle and still debated. Extra tokens are extra computation, as §2 argued, but the dots carry nothing from one pass to the next: the benefit needs the intermediate results to be <em>written down</em> where the next pass can read them. The lesson's toy model makes the same point: its running total survives only because it is written into the text.</p>
 </section>
@@ -399,7 +400,7 @@ sum(f) % 2 == 0  # → False
   <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
   <tbody>
     <tr><td>Eight hand-written worked examples in the prompt</td><td>Models trained to reason; often a plain instruction, or nothing, is enough to start a chain</td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
-    <tr><td>One greedy chain per question</td><td>Many sampled chains and a vote, or a verifier picking the best</td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
+    <tr><td>One greedy chain per question</td><td>Many sampled chains and a vote, or a verifier picking the best</td><td><a href="self-consistency.html">self-consistency companion</a></td></tr>
     <tr><td>Chains a few sentences long</td><td>Thousands of <span class="t" data-t="thinking budget">thinking tokens</span>, with a budget the caller sets</td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
     <tr><td>Hand-graded error analysis</td><td>Automatic checks: unit tests, exact-match answers, step-level verifiers</td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
     <tr><td>An external calculator bolted on afterwards</td><td>Tool calls in the middle of reasoning</td><td><a href="react.html">ReAct companion</a></td></tr>

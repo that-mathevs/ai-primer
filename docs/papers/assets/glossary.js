@@ -354,6 +354,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/tokenization.html",
   "term": "byte-level BPE"
  },
+ "calibration": {
+  "def": "How well a model's confidence matches how often it is right: a calibrated model is right about 80% of the time when it says 80%.",
+  "lesson": "primer/ml/losses.html",
+  "term": "calibration"
+ },
  "canary release": {
   "def": "Sending a small share of traffic to a new version first and watching its metrics before rolling out further.",
   "lesson": "primer/agents/deployment.html",

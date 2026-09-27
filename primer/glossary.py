@@ -185,6 +185,7 @@ GLOSSARY: dict[str, Entry] = {
     "ndcg": _E("A ranking score that gives more credit for relevant results near the top and handles degrees of relevance.", MET),
     "bleu": _E("A score that counts overlapping word sequences with a reference text. Cheap, but blind to paraphrase.", MET),
     "ablation": _E("Removing or replacing one part of a method and measuring again, to find out which part the gains come from."),
+    'calibration': _E("How well a model's confidence matches how often it is right: a calibrated model is right about 80% of the time when it says 80%.", LOSS, scope=('primer/ml/losses', 'primer/ml/alignment')),
     # --- embeddings -----------------------------------------------------------
     "embedding": _E("A learned vector for a piece of content, arranged so that similar meanings end up close together.", W2V),
     "cosine similarity": _E("How closely two vectors point in the same direction, from −1 (opposite) to 1 (identical), ignoring their lengths.", SIM),

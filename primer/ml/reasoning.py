@@ -851,6 +851,7 @@ record of the computation.
   Language Models* (2022)**: https://arxiv.org/abs/2203.11171. Introduced
   sampling many chains of thought and taking a majority vote over their
   final answers.
+  [Annotated companion](../../papers/self-consistency.html)
 - **Cobbe et al., *Training Verifiers to Solve Math Word Problems*
   (2021)**: https://arxiv.org/abs/2110.14168. Introduced the GSM8K dataset
   and showed that a trained verifier picking the best of many sampled
