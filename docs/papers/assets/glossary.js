@@ -184,6 +184,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/autoencoders.html",
   "term": "autoencoder"
  },
+ "automated interpretability": {
+  "def": "Using a language model to explain a feature or neuron from examples of when it fires, then scoring the explanation by how well the model predicts new activations from it alone.",
+  "lesson": null,
+  "term": "automated interpretability"
+ },
  "autoregressive generation": {
   "def": "Producing text one token at a time, where each new token is predicted from all the tokens before it and then appended.",
   "lesson": "primer/ml/big_picture.html",
@@ -749,6 +754,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/diffusion.html",
   "term": "DDPM"
  },
+ "dead latent": {
+  "def": "A sparse autoencoder latent that has stopped firing on any input, wasting its slot in the dictionary; resampling it onto badly rebuilt inputs brings it back.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "dead latent"
+ },
  "debounce": {
   "def": "Waiting until a signal has settled before acting on it, so a burst of changes triggers one action.",
   "lesson": null,
@@ -1123,6 +1133,11 @@ window.PRIMER_GLOSSARY = {
   "def": "In linear attention, the function φ applied to queries and keys so that φ(q)·φ(k) replaces e^(q·k).",
   "lesson": "primer/ml/efficient_architectures.html",
   "term": "feature map"
+ },
+ "feature splitting": {
+  "def": "One feature in a small sparse autoencoder becoming several narrower features in a larger one, such as one base64 feature becoming separate features for letters, digits and encoded text.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "feature splitting"
  },
  "feed-forward network": {
   "def": "The small two-layer network in each transformer block that processes every token on its own after attention has mixed them.",
@@ -1723,6 +1738,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Storing cached keys and values in fewer bits, with one scale per vector.",
   "lesson": "primer/ml/efficient_architectures.html",
   "term": "kv-cache quantization"
+ },
+ "l0 norm": {
+  "def": "The number of non-zero entries in a vector. For a sparse autoencoder, how many latents fire on an input.",
+  "lesson": null,
+  "term": "L0 norm"
  },
  "l1 regularization": {
   "def": "Penalizing the sum of absolute weights, which drives unneeded weights to exactly zero.",
@@ -2488,6 +2508,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Principal component analysis: finding the directions along which data varies most, to draw or compress it with fewer numbers.",
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "PCA"
+ },
+ "pearson correlation": {
+  "def": "How closely two lists of numbers rise and fall together along a straight line, from −1 to 1; 0 means no straight-line relationship.",
+  "lesson": null,
+  "term": "pearson correlation"
  },
  "per-channel quantization": {
   "def": "One scale per weight row, so a single outlier doesn't coarsen all the others.",
@@ -3309,6 +3334,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/mcp.html",
   "term": "stdio transport"
  },
+ "steering": {
+  "def": "Changing a model's behaviour while it runs by editing an internal activation, such as adding or pinning a feature's direction.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "steering"
+ },
  "stochastic gradient descent": {
   "def": "Gradient descent where each step's slope is estimated from a small random batch instead of the whole dataset.",
   "lesson": "primer/ml/optimizers.html",
@@ -3633,6 +3663,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A number too small for its format, rounded to zero.",
   "lesson": "primer/ml/pretraining.html",
   "term": "underflow"
+ },
+ "unembedding": {
+  "def": "The final matrix of a language model: it turns the last hidden vector into one score (logit) per vocabulary token.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "unembedding"
  },
  "unigram tokenizer": {
   "def": "A subword tokenizer that starts from a huge vocabulary and repeatedly removes the pieces whose loss hurts least.",

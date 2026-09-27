@@ -965,6 +965,7 @@ model's activity unexplained.
   https://transformer-circuits.pub/2023/monosemantic-features/index.html.
   Trained sparse autoencoders on a small transformer and found thousands
   of interpretable features hidden in polysemantic neurons.
+  [Annotated companion](../../papers/towards-monosemanticity.html)
 - **Templeton et al., *Scaling Monosemanticity: Extracting Interpretable
   Features from Claude 3 Sonnet* (2024)**:
   https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html.
