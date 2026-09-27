@@ -111,3 +111,20 @@ at every figure on the page at phone width in both themes.
 One commit per companion, on your own branch. The message says what a reader
 can now do, in the repository's style:
 `GAN companion: the two-player game, the optimal discriminator derived, and the ring of eight Gaussians collapsing to one mode`.
+
+## Working as one of several agents
+
+Companions are often written by several agents at once, each in its own
+worktree, merged later with `shipping-the-primer`. When you are one of them:
+
+- Branch from the latest `main`, one branch per job: `git checkout -b companion/<name> main`.
+  Commit, but leave pushing and merging to whoever merges.
+- Grep `primer/glossary.py` before adding a term: another page may have
+  added it already, and a term defined twice fails the suite.
+- The scratchpad is shared: keep scratch files in a subfolder named after
+  your branch.
+- A bug outside your pages goes in your report, not in your commits.
+- Report, briefly: branch, one line per companion (sections covered, figures
+  drawn), glossary terms added, lessons linked, check results, and anything
+  you could not confirm in the source, including places the paper
+  contradicts itself.
