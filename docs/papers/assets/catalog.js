@@ -376,7 +376,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.alignment"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "red-teaming-lms",

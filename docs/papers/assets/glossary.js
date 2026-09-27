@@ -349,6 +349,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/tokenization.html",
   "term": "byte-level BPE"
  },
+ "calibration": {
+  "def": "How well stated probabilities match reality: of all the answers a calibrated model gives 70% to, about 70% are right.",
+  "lesson": "primer/ml/losses.html",
+  "term": "calibration"
+ },
  "canary release": {
   "def": "Sending a small share of traffic to a new version first and watching its metrics before rolling out further.",
   "lesson": "primer/agents/deployment.html",
@@ -2438,6 +2443,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The share of the top k search results that are relevant.",
   "lesson": "primer/ml/metrics.html",
   "term": "precision@k"
+ },
+ "preference model": {
+  "def": "Another name for a reward model: it scores a response so that the gap between two scores predicts which one people (or a model) prefer.",
+  "lesson": "primer/ml/training_stages.html",
+  "term": "preference model"
  },
  "preference tuning": {
   "def": "Training on which of two responses people preferred, to shape tone, helpfulness and safety.",
