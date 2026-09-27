@@ -6,9 +6,133 @@ Run: `python -m primer.ml.embeddings.retrieval`
 New to the notation (Σ, log, |d|)? `primer.notation` explains every symbol
 used here from zero.
 
-## The everyday picture
+## Level 1: The practitioner's guide
 
-You walk into a library with a question. Two librarians are on duty.
+**In one sentence.** Retrieval finds the few passages that answer a
+question, ranked best first, by running a keyword search and a meaning
+search side by side, fusing their rankings, and letting a slower, more
+careful model reorder the short list that survives.
+
+**When you need it.** You need retrieval whenever a model must answer from
+material it was not trained on and that material is too big to paste into
+the prompt: a knowledge base of tickets, manuals, contracts or code.
+Anthropic's contextual retrieval post puts the line at about 200,000 tokens
+(about 500 pages): below that, put the whole knowledge base in the prompt
+and skip retrieval. Above it, retrieval quality caps answer quality, because
+the language model can only use what retrieval hands it (`primer.agents.rag`).
+The tell that one search method is not enough: on this lesson's 20 labeled
+questions, keyword search alone puts the answer in the top 3 for 75% of them
+and meaning search alone for 90%, and their misses never overlap. Keyword
+search fails on paraphrases ("automobile reimbursement" when the document
+says "car" and "reimbursed"); meaning search puts the article for "ERR-4012"
+fourth. Fused, they reach 100%.
+
+**Your options.** From the cheapest to the most precise; in practice each
+stage feeds the next:
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| Keyword search (BM25) | Weighs each query word by rarity, saturates repeated mentions, discounts long documents | Exact matches on identifiers, codes and names, with no training | Nothing for synonyms: a document sharing no words scores 0 | Lucene, Elasticsearch, OpenSearch, any search engine |
+| Dense retrieval (bi-encoder) | Embeds every document once and the question at query time, then returns the nearest vectors | Paraphrases, synonyms, other languages | An embedding model and a vector index; exact tokens blur | An embedding model plus a vector index (`primer.ml.embeddings.ann`) |
+| Hybrid search (RRF) | Runs both and fuses the two rankings by position, never by score | The strengths of both, with no tuning | Two searches per query and a merge | Built into Elasticsearch and most vector databases |
+| Reranking (cross-encoder) | Reads the question and each shortlisted candidate together and reorders them | Catches hard negatives: right topic, wrong answer | One model pass per candidate, so it only ever sees a shortlist | sentence-transformers cross-encoders, Cohere Rerank |
+| Late interaction (ColBERT) | Keeps one vector per word and matches each question word to its best document word | Near cross-encoder precision with precomputed documents | 50 to 200 times the vector storage | ColBERT and ColBERTv2 |
+
+**How to choose.** Start from what your questions look like and how much
+latency you can spend.
+
+- Questions full of identifiers (error codes, product codes, ticket
+  numbers, names): keyword search is hard to beat and must be in the
+  pipeline. Company data is full of these.
+- Questions phrased differently from the documents (paraphrases, jargon,
+  other languages): dense retrieval. Read the model card for required
+  prefixes (`query: ` and `passage: ` for the E5 family) and use the same
+  model and settings at indexing and query time.
+- Almost always: both, fused with reciprocal rank fusion at its standard
+  constant of 60. It is cheap, needs no tuning, and on this lesson's
+  questions lifts recall@3 from 0.75 and 0.90 to 1.00.
+- When the top results are on the right topic but don't answer the question
+  (a password *reset* guide above the password *policy*): add a reranker
+  over a shortlist of 50 to 100, and measure recall and MRR with and without
+  it. Rerankers can demote a right answer too: this lesson's fixes the hard
+  negative and lowers MRR from 1.00 to 0.975 on the same 20 questions.
+- When one vector per document is too coarse and you can afford the
+  storage: late interaction.
+- Whatever you pick, decide the chunking first: split on structure, keep
+  headings with their content, add modest overlap, attach metadata. It often
+  matters more than the choice of embedding model. Then keep a small labeled
+  set of questions with known answer passages and measure recall@k on it.
+
+**What it costs.** Keyword and dense search are the cheap, wide stages:
+documents are indexed once, and a question costs one embedding plus a
+lookup that takes milliseconds over millions of documents. Fusion is a merge
+of two short lists. The reranker is where money and latency go: at 10 ms per
+pair on a GPU, scoring a million documents takes 10,000 seconds, and a
+shortlist of 50 takes 0.5 s (less when the pairs are batched), which is why
+the shortlist is capped. Late interaction trades that latency for storage:
+one vector per word instead of one per document. Preparing the chunks has a
+price too: Anthropic reports \$1.02 per million document tokens, once, to
+write a short context in front of every chunk with prompt caching, for a 49%
+cut in top-20 retrieval failures with hybrid search and a 67% cut with
+reranking added (from 5.7% to 1.9% on their evaluation). The cheapest item
+of all, and the one most teams skip, is a labeled set of a few dozen
+questions with known answer passages: it is the only instrument that shows
+the failures below.
+
+**What breaks.**
+
+- **The right page is never found.** If the passage is not in the top k, no
+  prompt change will fix the answer. Measure recall@k of retrieval alone
+  before touching the prompt.
+- **A forgotten prefix.** Index documents without the `passage: ` prefix a
+  model was trained with and nothing errors: vectors look normal, scores
+  look plausible, and in this lesson's simulation recall@3 falls from 0.92
+  to 0.75 and MRR from 0.875 to 0.57. Only a labeled set catches it.
+- **Scores added across systems.** BM25 scores run from 0 to about 20 and
+  cosine similarities from −1 to 1; add them and one system drowns the
+  other. Fuse ranks, not scores.
+- **Hard negatives.** A document on the right topic that doesn't answer the
+  question rises because it shares the words. A reranker reads the pair
+  together; when you fine-tune an embedding model, train it on such pairs
+  (`primer.ml.embeddings.contrastive`).
+- **A heading cut from its fact.** Fixed 40-word windows split the heading
+  "Home internet stipend" from "50 dollars per month" in this lesson's
+  handbook; a structure-aware chunk holds both. Parent-child retrieval
+  searches small children and returns their whole section.
+- **A reranker trusted blindly.** It is a model and can be wrong: this
+  lesson's demotes one correct answer while fixing another. Ship it only
+  when the numbers say so.
+- **A shortlist too short.** Give the reranker only the top result and it
+  cannot help. Anthropic's evaluation retrieved 150 chunks, reranked them
+  to 20, and found that passing 20 chunks to the model beat passing 10 or 5.
+
+**In the wild.** BM25 runs in any search engine: Lucene, Elasticsearch,
+OpenSearch. Elasticsearch's `rrf` retriever fuses a BM25 query with a kNN
+query by the same one-over-sixty-plus-rank rule (`rank_constant` 60 by
+default) with no weights to tune. Bi-encoders trace back to Sentence-BERT
+and Dense Passage Retrieval; the sentence-transformers library ships both
+bi-encoders and cross-encoder rerankers, and hosted rerankers such as Cohere
+Rerank take a query and a list of documents and return them ordered by
+relevance, cut to a `top_n`. Cross-encoder reranking with BERT is due to
+Nogueira and Cho, late interaction to ColBERT and ColBERTv2, and the E5
+models are the ones trained with the `query: ` and `passage: ` prefixes.
+Anthropic's contextual retrieval puts a generated context in front of every
+chunk and combines it with hybrid search and reranking. The papers behind
+this lesson are listed at the end with their companions.
+
+**Go deeper.** Level 2 builds every box of the pipeline by hand: BM25 on
+three one-line documents, the bi-encoder over this repo's toy embedder,
+reciprocal rank fusion on two ranks, a toy cross-encoder scoring a hard
+negative, ColBERT's MaxSim on two-number word vectors, the chunking
+arithmetic, and the forgotten-prefix bug measured. If you only needed to
+design the pipeline, you are done.
+
+## Level 2: How it works, from scratch
+
+Level 2 builds every box of that pipeline from nothing, starting in a
+library.
+
+**The everyday picture.** You walk into a library with a question. Two librarians are on duty.
 
 - **The keyword librarian** takes your words literally. They count how often
   each word of your question appears in each book, give *rare* words far more
