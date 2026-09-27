@@ -648,6 +648,7 @@ GLOSSARY: dict[str, Entry] = {
     'hidden tests': _E("Grading tests the agent never sees, so it can't pass by satisfying the tests instead of the intent.", 'primer.agents.coding_agents'),
     'host memory': _E("The CPU's main memory, reached from the GPU over a much slower link.", 'primer.ml.hardware'),
     'hybrid model': _E('A stack that mixes a few attention layers with many state-space layers.', 'primer.ml.efficient_architectures'),
+    'hyperparameter': _E('A setting chosen before training rather than learned from data, such as the learning rate, the model size or the number of epochs.', 'primer.ml.optimizers'),
     'imagenet': _E('A benchmark of about 1.3 million photos in 1,000 categories, the standard test of image classifiers; ImageNet-21k is its 14-million-photo, 21,000-category superset.', 'primer.ml.cnn_rnn'),
     'inductive bias': _E("The assumptions built into a model before it sees any data, such as a convolution's belief that nearby pixels matter most. Good assumptions help with little data; with enough data a model can learn them instead.", 'primer.ml.cnn_rnn'),
     'information gain': _E('How much a split lowers entropy; the tree picks the split that lowers it most.', 'primer.ml.classical'),

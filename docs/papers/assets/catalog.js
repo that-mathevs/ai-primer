@@ -689,7 +689,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.benchmarks"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "humaneval-pass-at-k",

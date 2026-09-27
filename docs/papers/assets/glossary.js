@@ -1469,6 +1469,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/rag.html",
   "term": "HyDE"
  },
+ "hyperparameter": {
+  "def": "A setting chosen before training rather than learned from data, such as the learning rate, the model size or the number of epochs.",
+  "lesson": "primer/ml/optimizers.html",
+  "term": "hyperparameter"
+ },
  "hysteresis": {
   "def": "Making the bar for changing state higher than the bar for staying, so a decision doesn't flicker between two close options.",
   "lesson": null,
