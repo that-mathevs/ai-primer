@@ -1024,6 +1024,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/diffusion.html",
   "term": "Euler step"
  },
+ "euler-maruyama step": {
+  "def": "The Euler step for a stochastic differential equation: move by the drift times the time step, then add a fresh random nudge whose size grows with the square root of the time step.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "Euler-Maruyama step"
+ },
  "eval": {
   "def": "A repeatable test of a model or agent's behavior on a fixed set of tasks with known good outcomes.",
   "lesson": "primer/agents/evals.html",
@@ -1187,7 +1192,7 @@ window.PRIMER_GLOSSARY = {
  "flow matching": {
   "def": "Training a network to output the velocity along paths from noise to data, then following it to generate.",
   "lesson": "primer/ml/generative/diffusion.html",
-  "term": "Flow Matching"
+  "term": "flow matching"
  },
  "forget gate": {
   "def": "The LSTM dial that decides what to erase from the cell state.",
@@ -1618,6 +1623,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Choosing the size of a network's random starting weights so signals neither shrink nor grow layer by layer.",
   "lesson": "primer/ml/deep_nets.html",
   "term": "initialization"
+ },
+ "inpainting": {
+  "def": "Filling in a missing or masked part of an image so that it fits the rest; a generative model does it by sampling only the unknown pixels.",
+  "lesson": null,
+  "term": "inpainting"
  },
  "input gate": {
   "def": "The LSTM dial that decides what new information to write into the cell state.",
@@ -2303,6 +2313,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Named-entity recognition: tagging names, places and organisations in text.",
   "lesson": "primer/agents/guardrails.html",
   "term": "NER"
+ },
+ "neural ode": {
+  "def": "A model whose output is found by following an ordinary differential equation whose rate of change is computed by a neural network; it can be run backwards and gives exact probabilities.",
+  "lesson": null,
+  "term": "neural ode"
  },
  "neuron": {
   "def": "Multiply each input by a weight, add them up with a bias, and pass the result through a nonlinear function.",
@@ -3359,6 +3374,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/mcp.html",
   "term": "stdio transport"
  },
+ "stochastic differential equation": {
+  "def": "A rule for how something changes over time with two parts: a steady drift, and random jitter of a set strength. The noising process of a diffusion model is one, and running it backwards generates data.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "stochastic differential equation"
+ },
  "stochastic gradient descent": {
   "def": "Gradient descent where each step's slope is estimated from a small random batch instead of the whole dataset.",
   "lesson": "primer/ml/optimizers.html",
@@ -3868,6 +3888,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Rescaling vectors so every direction has equal spread and no two directions are correlated.",
   "lesson": "primer/ml/embeddings/similarity.html",
   "term": "whitening"
+ },
+ "wiener process": {
+  "def": "Continuous random jitter, also called Brownian motion: over any short time dt it moves by a fresh bell-curve amount with variance dt, independent of everything before.",
+  "lesson": null,
+  "term": "Wiener process"
  },
  "win rate": {
   "def": "The share of head-to-head comparisons one model wins; 50% means the two are indistinguishable.",

@@ -1175,7 +1175,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.generative.diffusion"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "classifier-free-guidance",

@@ -949,6 +949,7 @@ gap.
   Differential Equations* (2020)**: https://arxiv.org/abs/2011.13456. Showed
   diffusion and score-based models are one family, described as continuous
   time processes.
+  [Annotated companion](../../../papers/score-sde.html)
 - **Ho and Salimans, *Classifier-Free Diffusion Guidance* (2022)**:
   https://arxiv.org/abs/2207.12598. Guidance from one network trained with
   and without the label, no separate classifier needed.
