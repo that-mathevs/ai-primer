@@ -3,6 +3,126 @@ r"""
 
 Run: `python -m primer.agents.planning`
 
+This lesson builds on the step-at-a-time loop from
+`primer.agents.agent_loop`, on tools from `primer.agents.tools`, and on
+task state kept outside the model from `primer.agents.memory`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Multi-step planning is how an agent gets a twenty-step
+job done when each step is only mostly reliable: write the steps down,
+check each one with something outside the model, save each result so a
+failure costs one step, and revise the plan from the point of failure
+rather than starting over.
+
+**When you need it.** The moment a task takes more than a handful of
+model calls in a row. The arithmetic is unforgiving: a step that succeeds
+95% of the time gives a ten-step task a 60% chance of finishing and a
+twenty-step task 36%; at fifty steps it is under 8%. Even a 99% step
+finishes a fifty-step task only 60% of the time. That is why a demo of a
+three-step task looks great and the same agent on a real twenty-step job
+disappoints. You don't need any of this for a task that is one or two calls
+long, or for a fixed sequence your code can run without asking a model
+what to do next. The tell: an agent that finishes the small cases and
+fails the long ones, and a bill that shows it restarting from step one
+after every stumble.
+
+**Your options.** From the simplest to the most robust; each later row
+usually keeps the earlier ones:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| One step at a time | The model decides the next action after each result | Adapts to anything it sees | Drifts on long tasks; nobody sees the intent before it acts | The agent loop |
+| A fixed workflow in code | Your code chains the calls in a known order (chaining, routing, parallel branches) | Predictable path, easy to test | Only for tasks whose steps you know in advance | Your code |
+| Plan-and-execute with replanning | The model writes the whole plan first, executes it step by step, and rewrites the rest on a failure while keeping finished work | A plan a person can read before it runs; recovery that routes around the failure | An extra planning call per replan, and a cap on replans | Your loop around the model |
+| Decomposition with checks | Each subtask has a definition of done that code can check | A failure is caught where it happens | Writing a check per subtask | Your code |
+| Checkpoints | Every subtask's output is saved; a retry reruns only the failed step | A failure costs one step, not the run | Storage for each output | Your code, or a workflow engine |
+| External verification with retries | Tests, a schema validator, a database query, or a separate grader with a rubric, fed back to the model | Concrete failures the model can fix; retries that actually help | The check itself, and one more call per retry | Outside the model |
+| Human review at critical points | A person approves before an expensive or irreversible step | Mistakes stop before they cost | Latency and attention | Your product |
+
+**How to choose.** Start with the simplest thing and add a row only when
+the numbers say so.
+
+- Steps you can list in advance: a workflow in code. Anthropic's guidance
+  is to find the simplest solution and add complexity only when needed,
+  reserving agents for open-ended problems where the steps cannot be
+  predicted.
+- Steps the model must discover: plan-and-execute, with replanning and a
+  replan limit so a planner that cannot adapt doesn't loop forever. In this
+  lesson the first plan uses a retired API, the second routes around it,
+  and the step that already succeeded is not run again.
+- Any task longer than a few steps: decompose into subtasks with checks,
+  and checkpoint. The expected work to finish a ten-step task at 95% per
+  step is 10.5 step runs with checkpoints against 13.4 restarting from
+  scratch; at fifty steps it is 53 against about 240.
+- Wherever a wrong step can hide: verify outside the model. Asked to
+  review its own leap-year function, this lesson's model approves the bug;
+  a test against 1900 catches it, and the second draft passes.
+- Wherever a mistake is expensive or irreversible: a person in the loop.
+- Whatever you pick, invest in the check before the retry. With a check
+  that catches every failure and one retry, a 95% step becomes 99.75%
+  and ten steps succeed 97.5% of the time; with a check that catches half,
+  77%; with no check, 60%. Retries are only as good as the check that
+  triggers them.
+
+**What it costs.** Planning costs one extra model call up front and one per
+replan. Checks cost engineering: a test suite, a schema, a query against
+the source of truth, sometimes a second model with a rubric. Retries cost a
+call each, but only for failures that were noticed. Checkpoints cost
+storage and a small amount of bookkeeping, and they are what stop the
+cost of a long task from growing exponentially: without them every extra
+step multiplies the expected work by about 1.05, which is a straight line
+on a log scale. Human review costs latency. Against all of this, the cost
+of doing nothing is a task that is abandoned and restarted, paying for the
+same steps over and over.
+
+**What breaks.**
+
+- **A plan reality has invalidated.** The API changed, the file moved, the
+  assumption was wrong. Treat the plan as a hypothesis and the first
+  failed step as evidence; replan from there, keeping what is done.
+- **Self-review that approves the bug.** The reviewer shares the author's
+  blind spots and can confidently reinforce a wrong answer. Put the check
+  outside the model.
+- **Retrying a failure nobody detected.** A silent failure gets no retry
+  and poisons every later step. Measure your check's detection rate; it
+  matters more than the retry count.
+- **Restarting from step one.** Without checkpoints a late failure throws
+  away all the work, and long runs become both unreliable and expensive.
+  Save every output; rerun only the failed step.
+- **A planner that loops.** Cap the replans and the total steps, and
+  report the failure instead of trying forever.
+- **Subtasks that cannot be checked.** "Reconcile the invoices" has no
+  definition of done; "each invoice appears exactly once in the match" does.
+  Make every subtask small, concrete and verifiable.
+
+**In the wild.** Wang et al. (2023), *Plan-and-Solve Prompting*, showed
+that asking a model to devise a plan and then carry it out cuts the
+missing-step errors of reasoning straight through. Shinn et al. (2023),
+*Reflexion*, turn external feedback such as failed tests into written
+lessons kept in memory for the next attempt, and report 91% pass@1 on
+HumanEval against 80% for the base model; the gains come from signals
+outside the model. Anthropic's *Building effective agents* names the
+workflow patterns in the table (prompt chaining, routing, parallelization,
+orchestrator-workers, evaluator-optimizer) and insists on stopping
+conditions such as a maximum number of iterations. Temporal is durable
+execution as a product: it persists a complete event history, and when a
+process dies another rebuilds the state and resumes where it stopped, with
+local variables intact. LangGraph's persistence and checkpoints are the
+same idea inside an agent framework.
+
+**Go deeper.** Level 2 builds the arithmetic and the remedies in plain
+Python: the compounding formula and its curves, a plan-and-execute loop
+that replans from a failed step, five subtasks with checks and the retry
+that reruns only one of them, the expected-cost formulas with and without
+checkpoints, and a reflection-versus-verification experiment on a
+leap-year function. If you only needed to choose, you are done.
+
+## Level 2: How it works, from scratch
+
+What follows measures the arithmetic, then builds the three remedies one
+mechanism at a time.
+
 An agent that does one thing is easy. An agent that does twenty things in a
 row mostly fails, for a reason that is pure arithmetic. This lesson measures
 that arithmetic, then builds the three remedies: **decompose** the task into
