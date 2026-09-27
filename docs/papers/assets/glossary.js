@@ -477,7 +477,7 @@ window.PRIMER_GLOSSARY = {
  "clip": {
   "def": "A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.",
   "lesson": "primer/ml/embeddings/contrastive.html",
-  "term": "clip"
+  "term": "CLIP"
  },
  "clustering": {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
@@ -2317,7 +2317,7 @@ window.PRIMER_GLOSSARY = {
  "ocr": {
   "def": "Optical character recognition: reading text from an image of a page.",
   "lesson": "primer/agents/rag.html",
-  "term": "ocr"
+  "term": "OCR"
  },
  "off-by-one error": {
   "def": "An index or count one position away from the right one.",

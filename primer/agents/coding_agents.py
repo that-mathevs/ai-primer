@@ -839,6 +839,7 @@ actions.
 - **Yao et al., *ReAct: Synergizing Reasoning and Acting in Language Models*
   (2022)**: https://arxiv.org/abs/2210.03629. The loop of reasoning, acting
   with a tool and observing the result, which both agents in this lesson run.
+  [Annotated companion](../../papers/react.html)
 
 ## Further reading
 

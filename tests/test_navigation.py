@@ -104,6 +104,16 @@ class TestEveryLessonMeetsTheStandard:
         lessons_of = {p["slug"]: p["lessons"] for p in catalog()}
         assert sorted(s for s in slugs if s in lessons_of and lesson.module not in lessons_of[s]) == []
 
+    def test_given_the_lesson_cites_a_paper_that_has_a_companion_it_links_the_companion(self, lesson):
+        from tools.docsite import catalog
+
+        # A reader at the citation should reach the walkthrough; a companion written later must be linked back.
+        doc = importlib.import_module(lesson.module).__doc__ or ""
+        papers = doc.split("## The papers behind this lesson")[-1].split("## Further reading")[0]
+        cited = [p["slug"] for p in catalog()
+                 if p["exists"] and lesson.module in p["lessons"] and any(src in papers for src in p["sources"])]
+        assert sorted(s for s in cited if f"papers/{s}.html" not in papers) == []
+
 
 class TestTheSite:
     def test_given_the_curriculum_the_home_page_links_every_lesson(self):

@@ -881,6 +881,7 @@ time against it without the reward drifting away from correctness.
   human feedback* (InstructGPT, 2022)**: https://arxiv.org/abs/2203.02155.
   Used PPO with a per-token KL penalty to a reference model to tune a
   language model against a learned reward model.
+  [Annotated companion](../../papers/instructgpt.html)
 - **Shao et al., *DeepSeekMath: Pushing the Limits of Mathematical
   Reasoning in Open Language Models* (2024)**:
   https://arxiv.org/abs/2402.03300. Introduced GRPO, replacing PPO's value

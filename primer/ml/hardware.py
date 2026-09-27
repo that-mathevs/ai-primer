@@ -951,6 +951,7 @@ software.
   with IO-Awareness* (2022)**: https://arxiv.org/abs/2205.14135. Applied
   tiling to attention so the score matrix never reaches HBM, showing that
   counting memory traffic rather than FLOPs is what makes attention fast.
+  [Annotated companion](../../papers/flashattention.html)
 - **Micikevicius et al., *Mixed Precision Training* (2017)**:
   https://arxiv.org/abs/1710.03740. Showed that networks train in 16-bit
   floats with fp32 master weights, fp32 accumulation and loss scaling.

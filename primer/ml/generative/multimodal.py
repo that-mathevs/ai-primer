@@ -1015,6 +1015,7 @@ split the video and summarise the parts.
   Language Supervision* (CLIP, 2021)**: https://arxiv.org/abs/2103.00020.
   Trained an image encoder and a text encoder into one shared space; its
   image encoder is the starting point of many vision-language models.
+  [Annotated companion](../../../papers/clip.html)
 - **Alayrac et al., *Flamingo: a Visual Language Model for Few-Shot
   Learning* (2022)**: https://arxiv.org/abs/2204.14198. Connected a frozen
   vision encoder to a frozen language model through new cross-attention

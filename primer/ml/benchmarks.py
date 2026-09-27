@@ -1226,6 +1226,7 @@ Bradley-Terry fit separates the style preference from the model's strength.
   https://arxiv.org/abs/2005.14165. The GPT-3 paper, which measured
   benchmark contamination by n-gram overlap with the training data and
   compared scores on clean and dirty subsets.
+  [Annotated companion](../../papers/gpt-3.html)
 - **Recht et al., *Do ImageNet Classifiers Generalize to ImageNet?*
   (2019)**: https://arxiv.org/abs/1902.10811. Rebuilt a benchmark's test
   set from scratch and found accuracy fell sharply while model rankings

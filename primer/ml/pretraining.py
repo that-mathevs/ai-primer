@@ -1726,6 +1726,7 @@ checkpoints and less waste.
 - **Hoffmann et al., *Training Compute-Optimal Large Language Models*
   (2022)**: https://arxiv.org/abs/2203.15556. Found that parameters and
   training tokens should grow together, about 20 tokens per parameter.
+  [Annotated companion](../../papers/scaling-laws.html)
 - **Shumailov et al., *The Curse of Recursion: Training on Generated Data
   Makes Models Forget* (2023)**: https://arxiv.org/abs/2305.17493. Showed
   that models trained recursively on their own outputs lose the tails of the
