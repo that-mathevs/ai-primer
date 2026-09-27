@@ -4,9 +4,128 @@ r"""
 Run: `python -m primer.ml.inference`
 
 New to the notation? `primer.notation` explains every symbol used here from
-zero.
+zero. This lesson builds on attention from `primer.ml.attention` and the
+transformer from `primer.ml.transformer`.
 
-## The idea
+## Level 1: The practitioner's guide
+
+**In one sentence.** Inference is everything that happens when a trained
+model answers a request, and its cost and speed are governed by one fact:
+each generated token reads every weight from memory, so the levers that
+matter (caching, batching, quantization, speculation, sampling settings)
+are all ways to read less or to reuse each read.
+
+**When you need it.** You need this lesson the day a model leaves the
+notebook: when you set `temperature` and `top_p` on a request, when someone
+asks why the first token takes two seconds, when a GPU bill arrives, or when
+you decide whether to serve a model yourself. The tell is a latency or cost
+question you can only answer by guessing. The numbers here replace the
+guess. This lesson's model of an 8-billion-parameter network at 16 bits on
+an H100-class GPU (3.35 TB/s of memory bandwidth, about 10¹⁵ operations per
+second, the constants in this module) reads a 1,000-token prompt in about
+16 ms but then produces at most about 209 tokens per second for a single
+user, because every token needs all 16 GB of weights read again (4.78 ms
+each). A lone request uses well under 1% of the GPU's arithmetic. You do not
+need this lesson for a prototype at ten requests a day; you need it before
+the first load test.
+
+**Your options.** The levers a practitioner can pull, roughly from the
+cheapest to the most involved:
+
+| Lever | What it does | What it buys you | What it costs | Where it lives |
+|---|---|---|---|---|
+| Sampling settings | Temperature reshapes the token probabilities; top-k and top-p cut the unlikely tail | Control over variety: T = 0 for extraction and tool calls, higher for ideas | Nothing in compute; wrong settings cost quality | The request |
+| Prompt caching | Reuses the prefill of a shared prefix (system prompt, tools, documents) across calls | This lesson's 100 calls with a 10,000-token prefix: \$0.48 instead of \$3.15, an 85% saving, and a faster first token | A cache write at about 1.25× the input price on the first call (Anthropic's prompt caching docs) | The provider, or your server's prefix cache |
+| Quantization | Stores weights at 8 or 4 bits instead of 16 | A 70B model in 35 GB instead of 140 GB, and faster memory-bound decode | 8-bit is nearly lossless; naive 4-bit loses small weights (the lesson's 0.02 rounds to 0) unless a smarter method such as GPTQ or AWQ is used | The model files and the server |
+| A model with grouped-query attention | Fewer key/value heads means a smaller KV cache per token | 8 KV heads instead of 32 fit four times as many long conversations per GPU | A model choice made at training time; you can only pick a model that has it | The model architecture |
+| Continuous batching | Seats a new request the moment any slot frees, instead of waiting for the whole batch | In this lesson's 32-request simulation, 82% slot utilisation instead of 60%, in fewer steps | Nothing beyond a server that does it (they all do now) | The inference server |
+| Speculative decoding | A small model drafts several tokens; the big one verifies them in one pass | With an 80% acceptance rate and 4 drafts, 3.36 tokens per big-model pass instead of 1, with the same output distribution | A draft model to run, and gains that shrink when the draft guesses badly or the server is already batch-saturated | The inference server |
+| A hosted API | Someone else runs all of the above | No GPUs to size, caching and batching done for you | A per-token price, and less control over settings and residency | The provider |
+
+**How to choose.** Start from the symptom.
+
+- Slow first token: the prompt is long. Trim it, or put its stable part
+  first and let prompt caching skip its prefill.
+- Slow streaming: decode is memory-bound. Quantize, batch more requests
+  together, or add speculative decoding.
+- Running out of GPU memory as traffic grows: it is the KV cache, not the
+  weights. Do the arithmetic (weights plus cache per token times context
+  times concurrent requests) before renting a bigger card; prefer a model
+  with grouped-query attention and cap the context you allow.
+- Answers that vary when you want them stable: temperature 0 and a
+  validator, not a hope. Answers that all sound the same when you want
+  range: raise the temperature and let top-p keep the tail sane.
+- Deciding whether to self-host: only when volume, privacy or a model the
+  APIs do not offer justifies owning the batching and memory problems above.
+- Whatever you pick, measure time to first token and tokens per second
+  separately. They are set by different phases and fixed by different
+  levers.
+
+**What it costs.** Money follows tokens, and tokens follow decode. Prefill
+of 1,000 tokens costs 16 ms of a GPU's full compute; each output token costs
+a full read of the weights, so output tokens are the expensive ones, and
+providers price them that way. Memory sets capacity: on this lesson's
+Llama-3-8B-shaped model each token of context holds about 128 KB of keys and
+values, a 32,000-token conversation holds 4.2 GB, and an 80 GB GPU with 16
+GB of weights fits 15 such conversations at once. Batching is what makes
+serving economical: one read of the weights serves every request in the
+batch, which is why the roofline figure in Level 2 shows a batch of 64
+reaching 21% of the GPU's arithmetic where a single user reaches 0.3%. Prompt
+caching costs a little on the first call and saves most of the input bill
+after it; Anthropic prices a five-minute cache write at 1.25× and a read at
+0.1× the input price, with a one-hour write at 2× (its prompt caching
+docs). Quantization costs a little quality for a large memory saving.
+Speculative decoding costs a second model and a more complex server.
+
+**What breaks.**
+
+- **Temperature 0 still varies.** Floating-point addition depends on order,
+  and GPU kernels change their order with the batch they land in. One
+  published measurement found 80 distinct completions in 1,000 runs at
+  temperature 0, identical for the first 102 tokens and then diverging
+  (Thinking Machines, *Defeating Nondeterminism in LLM Inference*). Treat
+  determinism as reduced, not guaranteed, and validate outputs.
+- **A timestamp at the top of the prompt** silently disables prompt
+  caching, because a cache matches only up to the first differing token.
+  Stable content first, volatile content last; on Anthropic's API the order
+  is tools, then system, then messages.
+- **Short prompts are not cached.** Providers set a minimum cacheable
+  length (Anthropic's is between 512 and 4,096 tokens depending on the
+  model) and return no error below it; the bill just does not fall.
+- **A long-context feature exhausts memory.** Doubling the context you
+  allow doubles the cache per request and halves the requests that fit.
+- **Naive 4-bit quantization erases small weights.** Use a method that
+  compensates (GPTQ, AWQ) and check quality on your own evaluation, not on
+  the model card.
+- **Top-k with a fixed k** cuts too much when the model is unsure and too
+  little when it is confident; top-p adapts, which is why it is the usual
+  default.
+- **Speculation that guesses badly** costs more than it saves: the big
+  model's pass still runs, and every rejected draft is wasted work.
+
+**In the wild.** vLLM's documentation lists continuous batching, chunked
+prefill, prefix caching, PagedAttention for KV memory, speculative decoding
+(n-gram and EAGLE drafts among others) and quantization from FP8 to INT4,
+GPTQ and AWQ, behind an OpenAI-compatible API. SGLang offers the same set
+with RadixAttention for prefix caching; NVIDIA's TensorRT-LLM does it with
+custom kernels and FP8 and FP4 formats on NVIDIA GPUs; llama.cpp runs
+quantized models from 1.5-bit to 8-bit on CPUs and Apple silicon. Hugging
+Face's Transformers exposes the sampling knobs (greedy by default, sampling
+with `do_sample`, beam search with `num_beams`). Hosted APIs expose prompt
+caching explicitly, with Anthropic's linked in Further reading. The ideas
+come from the papers at the end of this lesson: speculative decoding
+(Leviathan, Kalman and Matias), PagedAttention (Kwon et al.), FlashAttention
+(Dao et al.), LLM.int8() and GPTQ for quantization, and nucleus sampling
+(Holtzman et al.).
+
+**Go deeper.** Level 2 builds each lever from nothing: the roofline that
+explains why decode is memory-bound, a tiny decoder with and without a KV
+cache whose outputs match to ten decimal places, the temperature and top-p
+arithmetic, the accept-or-reject rule that makes speculative decoding exact,
+a quantizer in five lines, and simulations of both batching policies. If you
+only needed to size a deployment or set a request, you are done.
+
+## Level 2: How it works, from scratch
 
 Training happens once; inference happens every time anyone uses the model,
 so this is where the money goes. Generating text has two very different

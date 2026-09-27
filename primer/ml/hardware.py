@@ -3,7 +3,131 @@ r"""
 
 Run: `python -m primer.ml.hardware`
 
-## The idea
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on the cost arithmetic of `primer.ml.inference`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** The hardware under a model is thousands of simple
+multipliers starved by slow memory, so what you rent or buy is decided by
+bytes (does the model fit, how fast can its weights be read, how fast can
+chips talk) and the number format you store those bytes in is the cheapest
+lever you have.
+
+**When you need it.** You need this the day you have to pick a machine: a
+laptop for local experiments, a cloud GPU for a demo, a multi-GPU server
+for serving a 70-billion-parameter model, or a cluster for training. You
+also need it when a model runs far slower than its FLOP count suggests. The
+tell is a spec sheet you cannot read: teraFLOPS, HBM, NVLink, bf16, FP8, and
+no idea which number will bite. This lesson's imaginary datacenter GPU
+does about 10¹⁵ operations per second but reads only 3.35 TB/s, so any work
+doing fewer than about 299 operations per byte fetched leaves the
+multipliers idle; generating one token for one user does about 1. You do not
+need this lesson while you call a hosted API: the provider has done the
+sizing for you. You need it the moment the bill or the latency makes you
+consider doing it yourself.
+
+**Your options.** From the least hardware to the most, at what each can
+hold and how its parts talk:
+
+| Option | What it is | What fits, roughly | What it costs | Where it lives |
+|---|---|---|---|---|
+| A hosted API | Someone else's GPUs behind a per-token price | Any model they offer, at any scale | Money per token, no capacity planning, no control over the machine | The provider |
+| A laptop or consumer GPU | One chip with a few to a few tens of gigabytes of memory, no fast links | Small models, or larger ones quantized to 4 bits: an 8B model at 4 bits is 4 GB, a 70B is 35 GB (this lesson's memory math) | Cheap and private; slow per token, one user at a time | Your desk |
+| One datacenter GPU | 80 GB of HBM at 3.35 TB/s (NVIDIA's H100 SXM specification, and this lesson's constants) | A 70B model only at 8 bits (70 GB, 10 GB of cache left) or 4 bits (35 GB, 45 GB left); a 16-bit 70B does not fit | Rental by the hour; the whole card even when one user uses 0.3% of it | A cloud instance or a rack |
+| One machine, several GPUs on fast links | Chips joined at hundreds of GB/s (NVLink is 900 GB/s on an H100 SXM; this lesson models 500) | A model split across the GPUs, exchanging partial results inside every layer | Several cards' rent; the fast links are what you are paying for | A cloud instance or a rack |
+| Many machines over a network | Machines joined at tens of GB/s per GPU (this lesson models 50) | Training runs and fleets: each machine holds a copy or a slice, and they talk once per step | The most money and the most engineering; the network becomes the bottleneck | A cluster |
+
+**How to choose.** Start from the model's size in bytes and the number
+format you are willing to run it in.
+
+- Compute the weights first: parameters times bytes per weight. If they
+  fit in one GPU with room for the KV cache, stop there; one chip with no
+  links is the simplest system you can operate.
+- If they do not fit, drop the format before adding chips: 8-bit weights
+  halve the bytes and, on this lesson's numbers, cut the lower bound on
+  decode time for a 70B model from 41.8 ms to 20.9 ms per token, and 4-bit
+  to 10.4 ms. Check quality on your own tasks afterwards.
+- If they still do not fit, add GPUs inside one machine, where the links
+  are fast enough to split a layer across chips.
+- Cross to many machines only for training or for a fleet, and design the
+  split so that the chatty parallelism (tensor parallelism, talking inside
+  every layer) stays within a machine and only once-per-step traffic
+  crosses the network.
+- For training, pick bf16 for the multiplies and keep fp32 master weights:
+  a gradient of 10⁻⁸ becomes exactly 0 in fp16 but survives in bf16, and a
+  weight update of 0.001 vanishes in bf16 unless the master copy is fp32
+  (this lesson's format table). FP8 training is real and works on models up
+  to 175B parameters with no hyperparameter changes (Micikevicius et al.,
+  *FP8 Formats for Deep Learning*), but it needs software that handles the
+  scaling for you.
+- Whatever you pick, measure what fraction of peak FLOPS you reach. If it
+  is 80%, you are at least 80% compute-bound; if it is a few percent, you are
+  moving bytes, and more arithmetic will not help (Horace He, *Making Deep
+  Learning Go Brrrr*).
+
+**What it costs.** Memory is the price of admission and bandwidth is the
+speed limit. Reading 16 GB of weights once takes 4.78 ms from HBM on this
+lesson's GPU, 320 ms from the host's memory, 67 times slower: a model
+"offloaded" to CPU memory runs, but each token waits that much longer.
+Formats set both bills: halving the bits halves the bytes moved, doubles the
+operations per byte a tiled kernel achieves (63 becomes 126 in this lesson's
+4096 × 4096 example), and shrinks the multiplier itself (an fp32 multiplier
+needs 576 cells of silicon, an fp8 one 16), which is why accelerators list
+roughly double the peak throughput at each halving of the format (the H100
+lists 1,979 TFLOPS at bf16 and 3,958 at FP8, both with sparsity). What a
+format costs you in return is range or precision: fp16 tops out at 65,504,
+fp8 E4M3 at 448, and int4 holds only 15 levels, so small weights vanish
+without a per-row scale. Links cost time at scale: on this lesson's numbers
+an all-reduce of a 14 GB gradient across 8 GPUs takes 49 ms inside a machine
+and 490 ms across machines, against 690 ms of arithmetic per step, so the
+same run spends 7% of its time talking on fast links and 71% over a network.
+Power is part of the rent too: an H100 SXM is rated up to 700 W.
+
+**What breaks.**
+
+- **The model "fits" and then does not.** Weights are the fixed cost; the KV
+  cache grows with every token of every conversation, and activations and
+  the serving software take several more gigabytes. Size for weights plus
+  cache plus headroom, not weights alone.
+- **A big GPU idles on a small job.** A single user's decode reads every
+  weight to do two operations with it. Without batching, most of the card
+  you rent does nothing.
+- **fp16 training silently zeros gradients**: it loses precision below
+  6 × 10⁻⁵ and rounds anything under about 3 × 10⁻⁸ to zero (this lesson's
+  format table). Use loss scaling, or use bf16, which trains to fp32
+  quality with no hyperparameter changes (Kalamkar et al.).
+- **bf16 swallows small updates**: 1 + 0.001 rounds back to 1. Keep master
+  weights and long running sums in fp32.
+- **fp8 overflows**: 500 in E4M3 is not a number. The format needs per-tensor
+  scaling that the training or serving library supplies; do not cast by hand.
+- **Offloading to host memory** makes a model fit at the price of tens of
+  times slower steps. It is for experiments, not for serving.
+- **Tensor parallelism across a network** stalls in every layer. Keep it on
+  the fast links inside a machine.
+
+**In the wild.** NVIDIA's H100 specification gives the numbers this
+lesson rounds (80 GB at 3.35 TB/s, 900 GB/s NVLink). The formats each have a paper: Kalamkar et al. studied bf16 for training,
+and Micikevicius et al. proposed the two fp8 encodings, E4M3 and E5M2, and
+earlier the mixed-precision recipe (fp32 master weights, loss scaling) that
+PyTorch's automatic mixed precision, linked in Further reading, implements.
+The roofline model this lesson uses to decide
+memory-bound from compute-bound is Williams, Waterman and Patterson's, and
+FlashAttention (Dao et al.) is the best-known application of tiling to a
+model. Megatron-LM (Shoeybi et al.) is the tensor parallelism that lives on
+fast links, and Horovod (Sergeev and Del Balso) brought the ring all-reduce
+to deep learning. *How to Scale Your Model*, linked in Further reading,
+carries the same arithmetic through TPUs and GPUs to full training runs.
+
+**Go deeper.** Level 2 builds each number here from nothing: a matrix
+multiply counted by hand, a memory hierarchy with its six levels, a tiled
+multiply whose traffic you can watch fall, a 16-bit float encoded bit by bit
+and every format's range and precision derived from its bit widths, a ring
+all-reduce simulated on four GPUs, and the serving-fit table computed from
+the formulas. If you only needed to choose a machine and a format, you are
+done.
+
+## Level 2: How it works, from scratch
 
 Every lesson so far has counted operations: so many multiplies per token,
 so many parameters. This lesson looks at the machine that performs them,

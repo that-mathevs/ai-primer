@@ -3,7 +3,128 @@ r"""
 
 Run: `python -m primer.ml.reasoning`
 
-## The everyday picture
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on sampling from `primer.ml.inference` and on
+reinforcement learning from `primer.ml.reinforcement`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** A reasoning model writes intermediate steps before it
+answers, buying accuracy with tokens, and the practitioner's job is to
+decide, task by task, how many of those tokens to pay for and how to check
+what comes back.
+
+**When you need it.** You need thinking when a task has steps that depend
+on each other: multi-step arithmetic, a proof, a plan, code that must
+satisfy several constraints at once, a diagnosis from several clues. The
+tell is a model that answers instantly and confidently, and is wrong in a
+way that a moment's working would have caught. This lesson's toy model
+shows the shape of the gain: answering in one token it is right on
+one-step sums and on about 5% of the rest; allowed to write one step per
+token it is right every time, at one token per step. You do not need
+thinking for lookups, formatting, classification or short factual
+answers: there the extra tokens cost money and latency and buy nothing,
+and published work finds reasoning models spending hundreds of tokens on
+problems like 2 + 3 (Chen et al., 2024). The question is never "thinking
+on or off" but "how much, and checked how".
+
+**Your options.** From the cheapest to the most certain:
+
+| Option | What it does | What it buys | What it costs | Where it lives |
+|---|---|---|---|---|
+| No thinking | The model answers at once | Lowest latency and cost | Wrong on anything with more serial steps than one pass can do | The request |
+| Ask for steps in the prompt | "Think step by step", or a worked example with its steps | A real gain on arithmetic and logic from any capable model (Kojima et al.; Wei et al.) | Longer answers; the steps are visible and count as output | Your prompt |
+| A reasoning model with a thinking budget | A model trained to think, with a cap or an effort setting on how long | Accuracy that rises roughly with the logarithm of the budget, then flattens | Thinking tokens are billed as output; latency grows with the chain | The request: Anthropic's API takes a `budget_tokens` target (minimum 1,024) or an effort level |
+| Sample several and vote | Several independent chains; return the most common final answer | A solid gain when the model is right more often than any one wrong answer | n times the tokens; no extra waiting if run side by side; needs answers that compare exactly | Your code |
+| Sample several and verify | Several chains; keep the one that passes a check (tests, an exact answer, a proof checker, or a learned verifier) | With a reliable check, "right sometimes" becomes "right almost always": pass@n | n times the tokens plus the checker; a learned verifier can be gamed | Your code and your checker |
+| Train with verifiable rewards | Reinforcement learning on problems a program can grade | A model whose long, self-checking chains emerge on their own (DeepSeek-R1) | A training run, a graded problem set, and reward design that decides how long it thinks | Training |
+
+**How to choose.** Route by two questions: does the task need serial
+steps, and can a program check the answer?
+
+- Easy or latency-critical: no thinking, or the smallest budget the API
+  allows, and measure whether accuracy moves at all.
+- Hard and checkable (code with tests, math with a known answer, a schema
+  to validate): think, sample several, keep what passes. This is where
+  spare compute turns into accuracy almost for free; in this lesson's
+  experiment, one sample is right 38% of the time, eight with a step
+  checker 96%.
+- Hard and not checkable (judgement, writing, open-ended analysis): think
+  with a capped budget, and vote only when answers can be compared exactly.
+  Gains here are smaller and voting flattens after a few samples.
+- Choosing between a bigger model and more thinking: on problems a small
+  model solves sometimes, Snell et al. (2024) found test-time compute can
+  beat a 14× larger model at matched FLOPs, and adapting the budget per
+  prompt beats a flat budget by more than 4×.
+- Whatever you pick, measure accuracy and cost per task, and raise the
+  budget only where the measurement says it pays.
+
+**What it costs.** Thinking is paid per token, as output. Eight chains of
+2,000 tokens at an illustrative \$10 per million output tokens cost 16
+cents a question; one chain costs 2 cents, and both take 40 seconds at 50
+tokens per second when the eight run side by side (this lesson's cost
+formula). Thinking wider costs money; thinking longer costs money and
+time. Anthropic's extended thinking documentation puts the practical range at about
+1,024 tokens for simple tasks and 16,000 or more for complex ones, with
+diminishing returns, and recommend batch processing above 32,000 because
+the requests run long enough to hit timeouts; they also bill thinking as
+output and report it separately in the response's usage. Changing the
+budget between requests invalidates prompt caching, because the budget is
+rendered into the prompt, so hold it stable within a conversation.
+
+**What breaks.**
+
+- **Overthinking.** Rewarded for correctness alone, nothing tells a model
+  to stop, so easy questions get long chains. Route easy work away from
+  thinking and cap budgets everywhere else.
+- **Votes that agree on the same mistake.** Samples from one model share
+  its blind spots; in this lesson's simulation, 31 votes with a 0.9 shared
+  error rate are no better than one. Diversity (different prompts, a
+  tool that computes) helps more than more samples.
+- **Voting on a minority-right model.** A yes/no question answered right
+  40% of the time gets worse with more votes: 0.32 at five. Voting
+  amplifies the common answer, right or wrong.
+- **A verifier with gaps.** More samples mean more chances to find a wrong
+  answer the checker likes; Cobbe et al. (2021) saw best-of-n accuracy
+  fall again after a few hundred samples, and Brown et al. (2024) found
+  voting and reward models plateau beyond several hundred samples where no
+  automatic check exists. Programs beat learned checkers where a program
+  exists.
+- **Slips compound.** At a 2% slip rate a 50-step chain is clean 36% of
+  the time and a 200-step chain 2%. Long chains need per-step checks or a
+  lower slip rate, not just more length.
+- **The chain is not a confession.** Turpin et al. (2023) planted a hidden
+  bias in prompts; answers followed it and the written reasoning never
+  mentioned it. Read the chain as evidence, not as the cause.
+- **A length penalty that bites harder than its size.** In this lesson's
+  training toy, GRPO's division by the group's spread turns a 0.01 penalty
+  into a full advantage, and the easiest problems shrink to one token at
+  the cost of accuracy. Reward shape decides how long a model thinks.
+
+**In the wild.** Chain-of-thought prompting (Wei et al.) and "let's think
+step by step" (Kojima et al.) are the prompt-level versions;
+self-consistency (Wang et al.) is the vote; Cobbe et al. trained the first
+outcome verifiers on GSM8K and Lightman et al. trained a process reward
+model on 800,000 step labels. DeepSeek-R1 showed that reinforcement
+learning with verifiable rewards alone produces self-reflection and
+verification in the chain, using the GRPO recipe from DeepSeekMath (Shao
+et al.). Hosted APIs expose the budget dial directly: Anthropic's
+extended thinking takes a `budget_tokens` target and returns thinking
+blocks alongside the answer, with newer models replacing the fixed budget
+by an effort setting the model spends adaptively (its extended thinking
+documentation). Brown et al.'s *Large Language Monkeys* is the reference
+for how far repeated sampling scales when a checker exists: on SWE-bench
+Lite, from 15.9% of issues solved with one sample to 56% with 250.
+
+**Go deeper.** Level 2 builds each piece with a toy model that can do one
+addition per token: why writing steps adds serial computation, the
+budget-accuracy curve, the voting formula and its failure under shared
+mistakes, outcome and process verifiers with pass@n, a reinforcement
+learning loop in which longer thinking emerges from correctness alone,
+and the arithmetic of compounding slips and cost. If you only needed to
+set a budget and a check, you are done.
+
+## Level 2: How it works, from scratch
 
 Ask someone to multiply 37 by 48 in their head, instantly, and they will
 probably guess. Hand them a pencil and a minute and they will get it right.

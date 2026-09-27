@@ -3,7 +3,133 @@ r"""
 
 Run: `python -m primer.ml.efficient_architectures`
 
-## The idea
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on attention from `primer.ml.attention` and the KV
+cache from `primer.ml.inference`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Long context is paid for twice, in compute that grows
+with the square of the length and in cache memory that grows with the
+length, and every "efficient" architecture is a different bargain about
+which tokens a model keeps exactly, which it summarizes, and how compactly
+it stores them.
+
+**When you need it.** You need this when a model's context window is part
+of your design: a whole codebase in the prompt, a day-long conversation, a
+document set that will not fit in retrieval, or an agent that runs for
+hundreds of steps. You also need it when choosing between models whose
+cards list different attention designs (grouped-query, sliding-window,
+hybrid Mamba, latent attention), because those words decide what the model
+will cost you per conversation and what it will forget. The tell is a
+context length that sounds like a solved problem. On this lesson's
+Llama-3-8B-shaped model, a 128,000-token conversation holds 17.2 GB of
+cache and a million-token one 137 GB, more than an 80 GB GPU before any
+weights are loaded, and the attention work grows 16,384-fold across that
+same range (this lesson's context-cost table). You do not need this lesson
+for prompts of a few thousand tokens: at that length full attention is
+cheap and exact, and nothing here beats it.
+
+**Your options.** Each is a design you choose by choosing a model, or a
+setting you apply to one, from the most exact to the most compact:
+
+| Option | What it does | What it keeps | What it costs | Where it lives |
+|---|---|---|---|---|
+| Full attention with grouped-query heads | Every token reads every earlier token; several query heads share each key/value head | Exact recall of everything in context | 128 KB per token with 8 KV heads on the 8B example, four times less than 32 heads; still 17 GB at 128k | The model's architecture |
+| Sliding-window and interleaved layers | Each token reads the last w tokens; depth relays information further; some models keep a few full-attention layers | Exact recall inside the window, relayed and weaker beyond it | A cache capped at w tokens: 0.54 GB for a 4,096 window on the 8B example, whatever the length | The model's architecture |
+| Attention sinks with a window | Keeps the first few tokens plus a recent window at serving time | Fluent streaming without limit; no recall of the dropped middle | Nearly nothing; StreamingLLM reports streaming to 4 million tokens and up to 22.2× speedup over recomputation | The inference server |
+| Hybrid state-space and attention | Most layers carry a fixed-size state; one in several is attention | Exact lookup through the attention layers, cheap everything else | On the 8B shape, 4 attention layers in 32 cut the 128k cache from 17.2 GB to 2.15 GB (this lesson's hybrid formula) | The model's architecture |
+| Pure state-space or linear attention | Every layer summarizes the past into a fixed state | Fluent long text; blurrier exact recall | A cache that never grows (4 MB for the whole 8B-shaped stack in this lesson's demo); weaker copying of exact tokens from far back | The model's architecture |
+| Latent KV cache | Caches a short latent per token and rebuilds keys and values from it | Exact outputs, by construction | DeepSeek-V2 caches 576 numbers per token per layer instead of 32,768 (about 57× less) at the price of extra matrix work | The model's architecture |
+| A quantized KV cache | Stores cached keys and values at 8 or 4 bits with one scale per vector | Slightly rounded attention | 3.9× smaller at 4 bits; under 1% output error at 8 bits and about 12% at 4 bits on random data (this lesson's measurement) | The inference server |
+
+**How to choose.** Start from what the task needs to find, not from the
+advertised window.
+
+- Exact lookups across a long input (a function name in a repository, a
+  clause in a contract): keep full attention in enough layers. A
+  grouped-query model, or a hybrid with attention layers, and a budget for
+  the cache.
+- Long, fluent, forward-moving text (a running transcript, a stream) with
+  no need to quote the distant past: a sliding-window or state-space model
+  is far cheaper, and a sink-plus-window server setting keeps even a
+  full-attention model streaming.
+- Many concurrent long conversations on fixed hardware: the cache per
+  token is your capacity. Prefer fewer KV heads or a latent cache, then
+  quantize the cache, then cap the context you allow.
+- A context window claimed at 128k or more: test the model at the length
+  you will use. RULER (Hsieh et al., 2024) found that of 17 models claiming
+  32k tokens or more, only half held up at 32k, and *Lost in the Middle*
+  (Liu et al., 2023) found accuracy highest when the relevant passage sits
+  at the start or the end of the input and worst in the middle.
+- Whatever you pick, put the facts the model must use where the design
+  keeps them exactly: inside the window, near the ends, or in the prompt of
+  a retrieval step (`primer.agents.rag`) instead of a million-token dump.
+
+**What it costs.** Two meters run at once. Compute is the square of the
+length and is paid at prefill: on 4,096 tokens, full attention scores 32
+times as many pairs as a 64-token window (this lesson's demo). Memory is
+linear in the length and is paid for as long as a conversation stays open;
+it decides how many users a GPU serves. The compressions differ in what
+they charge: grouped-query heads cost a little modelling capacity; the
+window costs direct access beyond it; a fixed state costs sharp recall
+(in this lesson's comparison, softmax attention puts up to 0.46 of a row
+on its favourite key where linear attention manages 0.21); the latent
+cache costs extra matrix work and care with positions; quantization costs
+precision. The gains are large: Mamba reports 5× the inference throughput
+of a transformer with linear scaling in length, DeepSeek-V2 reports a KV
+cache 93.3% smaller and 5.76× the generation throughput of its
+predecessor, and Jamba fits a 256k-context model on one 80 GB GPU (each
+paper's abstract).
+
+**What breaks.**
+
+- **The fact was outside the window.** A sliding-window model can be
+  influenced by a token 131,040 positions back (Mistral 7B's 32 layers of
+  4,096), but only by relay through about 25 hops, so a distant fact
+  arrives weakened. Do not expect exact quotes from beyond the window.
+- **A plain window drops the first tokens and the model falls apart.**
+  Trained models park attention on the first few tokens (attention sinks);
+  keep them when you truncate.
+- **A fixed-size state cannot copy.** Pure state-space and linear-attention
+  models do worse at reproducing a specific token from far back. If the
+  task is retrieval or copying, keep attention layers.
+- **The advertised context is not the effective context.** Test at your
+  length with your task, in the middle of the input, not only with a
+  needle at the end.
+- **A sparse pattern that saves no time.** Skipped pairs only save work
+  when the kernel skips whole blocks of the score matrix; a pattern drawn
+  token by token costs as much as full attention.
+- **A quantized cache that changes answers.** Keys carry a few channels
+  with large values; quantizing per token can lose them. Check outputs on
+  your own data, and use a scheme like KIVI's (keys per channel, values
+  per token) at low bit widths.
+
+**In the wild.** Mistral 7B (Jiang et al.) shipped sliding-window attention
+with a rolling-buffer cache; Llama 3 uses grouped-query attention, the
+design this lesson's 8 KV heads mirror (Grattafiori et al., in
+`primer.ml.inference`). Jamba (Lieber et al.) interleaves one attention
+layer among Mamba layers; Mamba itself (Gu and Dao) and Mamba-2 (Dao and
+Gu) are the state-space models; the Sparse Transformer (Child et al.),
+Longformer (Beltagy et al.) and BigBird (Zaheer et al.) are the sparse
+patterns; StreamingLLM (Xiao et al.) is the sink-plus-window trick;
+DeepSeek-V2 introduced the latent cache; KIVI (Liu et al.) reaches a 2-bit
+cache. RULER and *Lost in the Middle* are the two tests to run before
+trusting a context length. Inference servers expose the serving-side
+options: vLLM and SGLang list quantization and prefix caching among their
+features, and the paged KV memory both use is what makes a growing cache
+manageable at all (`primer.ml.inference`).
+
+**Go deeper.** Level 2 builds every row of the table from nothing: the two
+bills counted for real context lengths, the window mask and the reach it
+gives a stack of layers, sparse patterns with their pair counts, linear
+attention as a running sum, a state-space model that is both a loop and a
+convolution, Mamba's per-token step size on a recall task, the parallel
+scan that trains it, the latent cache with its absorbed query, and a
+quantized cache with its error measured. If you only needed to pick a
+model and size its cache, you are done.
+
+## Level 2: How it works, from scratch
 
 Attention (see `primer.ml.attention`) lets every token look at every earlier
 token. That is where its power comes from, and it is also where its bill comes
