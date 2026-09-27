@@ -936,7 +936,14 @@
         watchReadouts();
       });
     }).observe(document.querySelector("main") || document.body, { childList: true, subtree: true });
+    // Logged as text naming the page, so tools/browsercheck.py can read them from the console.
+    const slug = document.body.dataset.paper || location.pathname;
     const missing = P.missingTerms();
-    if (missing.length) console.info("papers.js: glossary keys with no definition:", missing);
+    if (missing.length) console.warn("papers.js: glossary keys with no definition on " + slug + ": " + missing.join(", "));
+    const unnoted = (attr, notes) =>
+      [...new Set([...document.querySelectorAll(`[${attr}]`)].map((el) => el.getAttribute(attr)))].filter((k) => !notes[k]);
+    const syms = unnoted("data-sym", page.symbols), parts = unnoted("data-block", page.blocks);
+    if (syms.length) console.warn("papers.js: symbols with no note on " + slug + ": " + syms.join(", "));
+    if (parts.length) console.warn("papers.js: diagram parts with no note on " + slug + ": " + parts.join(", "));
   });
 })();

@@ -1058,6 +1058,45 @@ class TestEveryPageWorksWithAKeyboardAndAScreenReader:
         results = [{"page": "a.html", "a11y": ["image without alt text: x.svg"]}, {"page": "b.html", "a11y": []}]
         assert [r["page"] for r in accessibility_problems(results)] == ["a.html"]
 
+
+class TestEveryPageRunsItsScriptsCleanly:
+    # Headless Chrome writes each page's console to stderr; tools/browsercheck.py reads the problems out of it.
+    LOG = (
+        '[1:2:0927/091831.9:INFO:CONSOLE:1] "Uncaught ReferenceError: draw is not defined", '
+        "source: http://127.0.0.1:8765/papers/gans.html (412)\n"
+        '[1:2:0927/091831.9:INFO:CONSOLE:9] "papers.js: symbols with no note on gans: Dstar", '
+        "source: http://127.0.0.1:8765/papers/assets/papers.js (941)\n"
+        '[1:2:0927/091831.9:INFO:CONSOLE:3] "theme: dark", source: http://127.0.0.1:8765/index.html (3)\n'
+    )
+
+    def test_given_a_page_that_throws_the_error_is_reported_against_that_page(self):
+        from tools.browsercheck import console_problems
+
+        assert console_problems(self.LOG)["papers/gans.html"] == ["Uncaught ReferenceError: draw is not defined"]
+
+    def test_given_a_companion_warning_about_its_own_markup_it_is_reported(self):
+        from tools.browsercheck import console_problems
+
+        # The shared script logs it, so the source names papers.js and the message names the page.
+        assert "papers.js: symbols with no note on gans: Dstar" in console_problems(self.LOG)["papers/assets/papers.js"]
+
+    def test_given_an_ordinary_log_line_nothing_is_reported(self):
+        from tools.browsercheck import console_problems
+
+        assert "index.html" not in console_problems(self.LOG)
+
+    def test_given_the_companion_script_it_warns_about_symbols_and_blocks_with_no_note(self):
+        script = (ROOT / "docs" / "papers" / "assets" / "papers.js").read_text()
+
+        # A symbol or diagram part with no note shows "No note yet" only when hovered, which no check would see.
+        assert "symbols with no note on " in script and "diagram parts with no note on " in script
+
+    def test_given_the_companion_script_it_names_undefined_glossary_keys_in_words(self):
+        script = (ROOT / "docs" / "papers" / "assets" / "papers.js").read_text()
+
+        # Logged as text, not an array object, so the browser check can read the keys.
+        assert "glossary keys with no definition on " in script and 'missing.join(", ")' in script
+
     def test_given_the_glossary_script_a_focused_term_is_described_by_its_definition(self):
         from tools.docsite import TOOLTIP_ASSETS
 

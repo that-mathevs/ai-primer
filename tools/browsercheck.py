@@ -17,6 +17,8 @@ frame in headless Chrome, after its scripts have run, then checks:
    definition sits right after it, so Tab reaches its "Learn it" link.
 6. Every interactive visualization drew itself, is a named group, and every
    control in it has a label, so it works from the keyboard and is announced.
+7. No script throws, and no paper companion uses a glossary key, equation
+   symbol or diagram part it never explains (papers.js warns in the console).
 
 Needs Chrome or Chromium. Without one it says so and exits cleanly, since the
 rest of the checks run without a browser.
@@ -124,6 +126,18 @@ def accessibility_problems(results: list[dict]) -> list[dict]:
     return [r for r in results if r.get("a11y")]
 
 
+CONSOLE_LINE = re.compile(r':CONSOLE[^\]]*\] "(.*)", source: https?://[^/]+/(\S*) \(\d+\)$', re.M)
+
+
+def console_problems(log: str) -> dict[str, list[str]]:
+    """Uncaught errors and companion authoring warnings in Chrome's console log, by the file that logged them."""
+    problems: dict[str, list[str]] = {}
+    for message, source in CONSOLE_LINE.findall(log):
+        if message.startswith(("Uncaught", "papers.js: ", "symtable: ")):
+            problems.setdefault(source, []).append(message)
+    return problems
+
+
 def main() -> int:
     browser = chrome()
     if browser is None:
@@ -140,11 +154,13 @@ def main() -> int:
         with socketserver.TCPServer(("127.0.0.1", 0), handler) as server:
             threading.Thread(target=server.serve_forever, daemon=True).start()
             url = f"http://127.0.0.1:{server.server_address[1]}/{PROBE}"
-            dom = subprocess.run(
-                [browser, "--headless=new", "--disable-gpu", "--no-sandbox",
+            # --enable-logging=stderr writes every frame's console, uncaught errors included, to stderr.
+            run = subprocess.run(
+                [browser, "--headless=new", "--disable-gpu", "--no-sandbox", "--enable-logging=stderr", "--v=0",
                  f"--virtual-time-budget={len(pages) * 2500}", "--dump-dom", url],
                 capture_output=True, text=True, timeout=600,
-            ).stdout
+            )
+            dom = run.stdout
             server.shutdown()
     finally:
         (SITE / PROBE).unlink(missing_ok=True)
@@ -165,7 +181,13 @@ def main() -> int:
         print(f"  ✗ {r['page']}:")
         for item in r["a11y"][:6]:
             print(f"      {item}")
-    return 1 if bad or barriers or len(results) != len(pages) else 0
+    errors = console_problems(run.stderr)
+    print(f"script errors and companion warnings: {sum(len(m) for m in errors.values())}")
+    for source, messages in errors.items():
+        print(f"  ✗ {source}:")
+        for message in messages[:6]:
+            print(f"      {message}")
+    return 1 if bad or barriers or errors or len(results) != len(pages) else 0
 
 
 if __name__ == "__main__":
