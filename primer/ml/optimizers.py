@@ -170,7 +170,7 @@ After two steps plain descent is at 0.64; momentum is already at 0.46.
 ```mermaid
 flowchart LR
   G[Slope now g_t] --> V["Velocity v_t = β·v_(t−1) + g_t<br/>(remember 90% of the old speed)"]
-  VO[Old velocity v_(t−1)] --> V
+  VO["Old velocity v_(t−1)"] --> V
   V --> S["Step: w − η·v_t"]
   S --> VO
 ```

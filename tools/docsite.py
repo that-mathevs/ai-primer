@@ -770,8 +770,14 @@ import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.mi
 mermaid.initialize({ startOnLoad: false });
 const diagrams = [...document.querySelectorAll("div.mermaid")];
 for (const [i, el] of diagrams.entries()) {
-  const { svg } = await mermaid.render(`diagram-${i + 1}`, el.textContent);
-  el.innerHTML = svg;
+  // One diagram that fails to parse must not leave the rest of the page undrawn; report it and go on.
+  try {
+    const { svg } = await mermaid.render(`diagram-${i + 1}`, el.textContent);
+    el.innerHTML = svg;
+  } catch (e) {
+    console.error("Uncaught diagram error in diagram " + (i + 1) + ": " + (e && e.message ? e.message : e));
+    continue;
+  }
   // Name each diagram, and let its "Reading it" paragraph describe it to screen readers.
   const drawing = el.querySelector("svg");
   drawing.setAttribute("role", "img");

@@ -312,10 +312,10 @@ that order. The relevant documents are d3 (very relevant, grade 3), d4
 flowchart LR
   G[Golden set<br/>query + relevant doc ids] --> R[Retriever]
   R --> K[Ranked top-k list]
-  K --> RK[recall@k<br/>did we find them?]
-  K --> PK[precision@k<br/>how much noise?]
+  K --> RK["recall@k<br/>did we find them?"]
+  K --> PK["precision@k<br/>how much noise?"]
   K --> RR[MRR<br/>how high is the first hit?]
-  K --> ND[nDCG@k<br/>are the best ones on top?]
+  K --> ND["nDCG@k<br/>are the best ones on top?"]
   G --> RK & PK & RR & ND
 ```
 

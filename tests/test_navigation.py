@@ -1090,6 +1090,31 @@ class TestEveryPageRunsItsScriptsCleanly:
         # The shared script logs it, so the source names papers.js and the message names the page.
         assert "papers.js: symbols with no note on gans: Dstar" in console_problems(self.LOG)["papers/assets/papers.js"]
 
+    def test_given_an_error_whose_message_spans_several_lines_it_is_reported(self):
+        from tools.browsercheck import console_problems
+
+        # Mermaid's parse errors quote the offending line and a caret underneath it.
+        log = ('[1:2:0927/131611.6:INFO:CONSOLE:9] "Uncaught Error: Parse error on line 4:\n'
+               '...RK[recall@k<br/>\n----------------------^\nExpecting \'SQE\'", '
+               "source: http://127.0.0.1:8803/primer/ml/metrics.html (9)\n")
+        assert console_problems(log)["primer/ml/metrics.html"][0].startswith("Uncaught Error: Parse error on line 4:")
+
+    def test_given_the_diagram_script_one_broken_diagram_does_not_stop_the_rest(self):
+        from tools.docsite import DIAGRAM_SCRIPT
+
+        # A parse error used to end the loop, leaving every later diagram on the page undrawn.
+        assert "try {" in DIAGRAM_SCRIPT and "catch" in DIAGRAM_SCRIPT
+
+    def test_given_the_diagram_script_a_broken_diagram_is_reported_as_an_error(self):
+        from tools.docsite import DIAGRAM_SCRIPT
+
+        assert 'console.error("Uncaught diagram error' in DIAGRAM_SCRIPT
+
+    def test_given_the_browser_probe_it_reports_every_diagram_that_did_not_draw(self):
+        from tools.browsercheck import PROBE_PAGE
+
+        assert '"diagram " + (n + 1) + " did not draw"' in PROBE_PAGE
+
     def test_given_an_ordinary_log_line_nothing_is_reported(self):
         from tools.browsercheck import console_problems
 
@@ -1235,3 +1260,94 @@ class TestLandingABranch:
         from tools.land import conflicts_needing_a_person
 
         assert conflicts_needing_a_person(["docs/papers/assets/glossary.js", "primer/ml/reasoning.py"]) == ["primer/ml/reasoning.py"]
+
+
+class TestFigureWordsStayReadable:
+    # tools/figures.py draws every figure and fails one whose words a line or another panel runs through.
+
+    @staticmethod
+    def figure(**kw):
+        mpl = pytest.importorskip("matplotlib")
+        mpl.use("Agg")
+        import matplotlib.pyplot as plt
+
+        return plt.subplots(**kw)
+
+    def test_given_a_line_that_runs_off_the_top_under_the_title_it_is_reported(self):
+        from tools.figures import text_collisions
+
+        fig, ax = self.figure()
+        ax.set_title("Loss per step")
+        ax.plot([0, 1], [0, 10])
+        ax.set_ylim(0, 5)  # the line leaves the plot at the top edge, right under the title
+        assert any("title" in p for p in text_collisions(fig))
+
+    def test_given_a_line_kept_inside_the_plot_nothing_is_reported(self):
+        from tools.figures import text_collisions
+
+        fig, ax = self.figure()
+        ax.set_title("Loss per step")
+        ax.plot([0, 1], [0, 4])
+        ax.set_ylim(0, 5)
+        assert text_collisions(fig) == []
+
+    def test_given_a_label_a_line_passes_through_it_is_reported(self):
+        from tools.figures import text_collisions
+
+        fig, ax = self.figure()
+        ax.plot([0, 1], [0.5, 0.5])
+        ax.text(0.5, 0.5, "crossing here", ha="center", va="center")
+        assert any("crossing here" in p for p in text_collisions(fig))
+
+    def test_given_panels_so_close_one_panels_labels_sit_on_the_other_it_is_reported(self):
+        from tools.figures import text_collisions
+
+        fig, (left, right) = self.figure(ncols=2, figsize=(4, 2))
+        fig.subplots_adjust(wspace=0)
+        right.set_yticks([0, 1], ["a long tick label", "another long one"])
+        assert any("another panel" in p for p in text_collisions(fig))
+
+    def test_given_panels_with_room_between_them_nothing_is_reported(self):
+        from tools.figures import text_collisions
+
+        fig, (left, right) = self.figure(ncols=2, figsize=(8, 3), constrained_layout=True)
+        right.set_yticks([0, 1], ["a long tick label", "another long one"])
+        assert text_collisions(fig) == []
+
+    def test_given_a_guide_line_that_stops_at_the_top_edge_the_title_is_not_reported(self):
+        from tools.figures import text_collisions
+
+        # axvline spans the plot exactly; stopping at the edge isn't running into the title.
+        fig, ax = self.figure()
+        ax.set_title("Same mean, different spread")
+        ax.plot([0, 1], [0, 1])
+        ax.axvline(0.5, linestyle="--")
+        assert text_collisions(fig) == []
+
+    def test_given_a_line_that_ends_at_its_label_it_is_not_reported(self):
+        from tools.figures import text_collisions
+
+        # A graph edge ends at the node its letter sits on: it points at the label, it doesn't cross it.
+        fig, ax = self.figure()
+        ax.plot([0, 1], [0, 1])
+        ax.text(1, 1, "H", ha="center", va="center")
+        ax.set_xlim(-0.2, 1.2)
+        ax.set_ylim(-0.2, 1.2)
+        assert text_collisions(fig) == []
+
+    def test_given_a_line_that_runs_off_the_bottom_it_is_reported_as_running_into_the_tick_labels(self):
+        from tools.figures import text_collisions
+
+        fig, ax = self.figure()
+        ax.plot([0, 1], [1, -5])
+        ax.set_ylim(0, 1)
+        assert any("bottom" in p for p in text_collisions(fig))
+
+    def test_given_an_arrow_that_ends_on_another_label_it_is_reported(self):
+        from tools.figures import text_collisions
+
+        # An arrowhead drawn over a word hides it, whichever label the arrow belongs to.
+        fig, ax = self.figure()
+        ax.text(0.5, 0.5, "2/4", ha="center", va="center")
+        ax.annotate("note", xy=(0.5, 0.5), xytext=(0.9, 0.9), arrowprops=dict(arrowstyle="->"))
+        assert any("2/4" in p for p in text_collisions(fig))

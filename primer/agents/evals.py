@@ -276,7 +276,7 @@ sequenceDiagram
   participant E as Eval runner
   Dev->>CI: change the prompt (v2)
   CI->>E: run golden set on v1 and v2
-  E-->>CI: v1: 4/4 pass; v2: 3/4 pass
+  E-->>CI: v1: 4/4 pass, v2: 3/4 pass
   CI->>CI: task refund-over-limit passed before, fails now
   CI-->>Dev: release blocked, with the failing trace
 ```

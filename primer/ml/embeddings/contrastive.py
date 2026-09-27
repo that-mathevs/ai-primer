@@ -302,7 +302,7 @@ flowchart LR
   L[Logs: real questions +<br/>the document that resolved each] --> P[Positive pairs]
   P --> MINE[Mine hard negatives:<br/>top results that are wrong]
   MINE --> T[Fine-tune with InfoNCE,<br/>in-batch + hard negatives]
-  T --> E[Evaluate recall@k<br/>on a held-out set]
+  T --> E["Evaluate recall@k<br/>on a held-out set"]
   E -->|better than base model| D[Re-embed corpus, deploy]
   E -->|not better| P
 ```

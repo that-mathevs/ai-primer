@@ -12,7 +12,7 @@ frame in headless Chrome, after its scripts have run, then checks:
 2. Nothing focusable sits inside content hidden from screen readers
    (aria-hidden): a keyboard user would land on something that says nothing.
 3. Every image has alt text.
-4. Every diagram is named, and described by its "Reading it" paragraph.
+4. Every diagram drew, is named, and is described by its "Reading it" paragraph.
 5. A focused glossary term is described by its definition, and the
    definition sits right after it, so Tab reaches its "Learn it" link.
 6. Every interactive visualization drew itself, is a named group, and every
@@ -70,7 +70,9 @@ function next() {
     doc.querySelectorAll("img").forEach((img) => {
       if (!(img.getAttribute("alt") || "").trim()) a11y.push("image without alt text: " + img.getAttribute("src"));
     });
-    doc.querySelectorAll("div.mermaid svg").forEach((svg, n) => {
+    doc.querySelectorAll("div.mermaid").forEach((diagram, n) => {
+      const svg = diagram.querySelector("svg");
+      if (!svg || /Syntax error/.test(diagram.textContent)) { a11y.push("diagram " + (n + 1) + " did not draw"); return; }
       const described = svg.getAttribute("aria-describedby");
       if (svg.getAttribute("role") !== "img" || !svg.getAttribute("aria-label")) a11y.push("diagram " + (n + 1) + " has no name");
       else if (!described || !doc.getElementById(described)) a11y.push("diagram " + (n + 1) + " has no description");
@@ -126,7 +128,8 @@ def accessibility_problems(results: list[dict]) -> list[dict]:
     return [r for r in results if r.get("a11y")]
 
 
-CONSOLE_LINE = re.compile(r':CONSOLE[^\]]*\] "(.*)", source: https?://[^/]+/(\S*) \(\d+\)$', re.M)
+# A message can span lines (mermaid quotes the bad line with a caret under it), so match lazily across them.
+CONSOLE_LINE = re.compile(r':CONSOLE[^\]]*\] "(.*?)", source: https?://[^/]+/(\S*) \(\d+\)$', re.M | re.S)
 
 
 def console_problems(log: str) -> dict[str, list[str]]:

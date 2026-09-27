@@ -61,6 +61,109 @@ SLOW_SECONDS = 20  # a lesson's figures should render fast enough to rebuild the
 IMG_RE = re.compile(r"!\[[^\]]*\]\(figures/([\w.]+)\.svg\)")
 
 
+def _clipped(p, q, box):
+    """The part of segment p→q inside box (Liang-Barsky), or None: lines are drawn clipped to their plot."""
+    (x0, y0), (x1, y1) = p, q
+    dx, dy = x1 - x0, y1 - y0
+    lo, hi = 0.0, 1.0
+    for d, dist in ((-dx, x0 - box.x0), (dx, box.x1 - x0), (-dy, y0 - box.y0), (dy, box.y1 - y0)):
+        if d == 0:
+            if dist < 0:
+                return None
+        else:
+            t = dist / d
+            if d < 0:
+                lo = max(lo, t)
+            else:
+                hi = min(hi, t)
+    if lo > hi:
+        return None
+    return (x0 + lo * dx, y0 + lo * dy), (x0 + hi * dx, y0 + hi * dy)
+
+
+def _crosses(p, q, box) -> bool:
+    return _clipped(p, q, box) is not None
+
+
+def text_collisions(fig) -> list[str]:
+    """Words in the figure that a drawn line runs through, or that sit on another panel.
+
+    Words just outside a plot own the edge they face: a line that leaves the plot under the
+    title runs into the title, one that leaves through the bottom runs into the x-axis
+    labels, and one that leaves through the left runs into the y-axis labels (a guide that
+    merely stops at an edge leaves nothing). Inside the plot, a line runs through a label
+    when it crosses it; a plotted line that ends at the label (an edge to its node) points
+    at it, but an annotation arrow's head always covers what it lands on.
+    """
+    import math
+
+    from matplotlib.transforms import Bbox
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    panels = [ax for ax in fig.axes if ax.get_visible()]
+    problems: list[str] = []
+    for ax in panels:
+        plot = ax.get_window_extent(renderer)
+        titles = [t for t in (ax.title, ax._left_title, ax._right_title) if t.get_text()]
+        words = [(f"axis label '{t.get_text()}'", t) for t in (ax.xaxis.label, ax.yaxis.label) if t.get_text()]
+        words += [(f"tick label '{t.get_text()}'", t)
+                  for t in ax.get_xticklabels() + ax.get_yticklabels() if t.get_visible() and t.get_text()]
+        words += [(f"label '{t.get_text()}'", t) for t in ax.texts if t.get_visible() and t.get_text().strip()]
+        # (segment as drawn, endpoints that end a plotted line, the annotation it belongs to)
+        segments: list[tuple] = []
+        exits: dict[str, list[float]] = {"top": [], "bottom": [], "left": []}
+        for line in ax.lines:
+            if not line.get_visible() or line.get_linestyle() in ("None", "none", "", " "):
+                continue
+            points = line.get_transform().transform(line.get_path().vertices)
+            last = len(points) - 1
+            for i, (p, q) in enumerate(zip(points[:-1], points[1:])):
+                if not all(math.isfinite(v) for v in (*p, *q)):
+                    continue
+                seg = _clipped(p, q, plot) if line.get_clip_on() else (p, q)
+                if not seg:
+                    continue
+                ends = [pt for pt, j in ((seg[0], i), (seg[1], i + 1)) if j in (0, last) and pt in (tuple(p), tuple(q))]
+                segments.append((seg, ends, None))
+                if line.get_clip_on():
+                    for pt, orig in ((seg[0], p), (seg[1], q)):
+                        if orig[1] > plot.y1 + 1e-6 and abs(pt[1] - plot.y1) < 0.5:
+                            exits["top"].append(pt[0])
+                        elif orig[1] < plot.y0 - 1e-6 and abs(pt[1] - plot.y0) < 0.5:
+                            exits["bottom"].append(pt[0])
+                        elif orig[0] < plot.x0 - 1e-6 and abs(pt[0] - plot.x0) < 0.5:
+                            exits["left"].append(pt[1])
+        for note in ax.texts:
+            arrow = getattr(note, "arrow_patch", None)
+            if note.get_visible() and arrow is not None:
+                points = arrow.get_transform().transform(arrow.get_path().vertices)
+                segments += [((p, q), [], note) for p, q in zip(points[:-1], points[1:])]
+        for title in titles:
+            box = title.get_window_extent(renderer)
+            if any(box.x0 <= x <= box.x1 for x in exits["top"]) or any(
+                _crosses(*seg, box.shrunk(0.98, 0.9)) for seg, _, _ in segments
+            ):
+                problems.append(f"a line runs into the title '{title.get_text()}'")
+        if exits["bottom"] and (ax.xaxis.label.get_text() or any(t.get_text() for t in ax.get_xticklabels())):
+            problems.append("a line runs off the bottom of the plot into the x-axis labels")
+        if exits["left"] and any(t.get_text() for t in ax.get_yticklabels()):
+            problems.append("a line runs off the left of the plot into the y-axis labels")
+        for name, text in words:
+            box = text.get_window_extent(renderer).shrunk(0.98, 0.9)
+            if any(_crosses(*seg, box) and owner is not text and not any(box.contains(*pt) for pt in ends)
+                   for seg, ends, owner in segments):
+                problems.append(f"a line runs into the {name}")
+            for other in panels:
+                if other is ax:
+                    continue
+                overlap = Bbox.intersection(box, other.get_window_extent(renderer))
+                if overlap is not None and overlap.width > 2 and overlap.height > 2:
+                    problems.append(f"the {name} sits on another panel")
+                    break
+    return sorted(set(problems))
+
+
 def lesson_modules(filter_text: str = ""):
     import primer
 
