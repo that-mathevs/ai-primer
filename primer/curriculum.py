@@ -300,7 +300,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.ml.reasoning",
 
     # measuring
-    "primer.ml.losses",
     "primer.ml.metrics",
     "primer.ml.benchmarks",
     "primer.ml.regularization",
