@@ -472,7 +472,7 @@ window.PRIMER_GLOSSARY = {
  "clip": {
   "def": "A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.",
   "lesson": "primer/ml/embeddings/contrastive.html",
-  "term": "CLIP"
+  "term": "clip"
  },
  "clustering": {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
@@ -1967,7 +1967,7 @@ window.PRIMER_GLOSSARY = {
  "maj@k": {
   "def": "A score for sampling k answers per question and keeping the most common final answer: the share of questions where that majority answer is right.",
   "lesson": "primer/ml/reasoning.html",
-  "term": "maj@k"
+  "term": "Maj@K"
  },
  "majority voting": {
   "def": "Choosing the answer that the most samples agree on.",
