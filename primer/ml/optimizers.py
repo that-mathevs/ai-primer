@@ -3,6 +3,124 @@ r"""
 
 Run: `python -m primer.ml.optimizers`
 
+New to the notation (∇, η, β)? `primer.notation` builds every symbol used
+here from zero. This lesson builds on the training loop and the gradient
+from `primer.ml.neural_net`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** An optimizer is the rule that turns "the slope of the
+loss here" into "the step every weight takes", and the handful of settings
+that come with it (learning rate, momentum, the two Adam betas, weight
+decay, warmup, clipping) are most of what a training recipe consists of.
+
+**When you need it.** You need this the moment a training or fine-tuning
+job asks you for a learning rate, and again the first time a loss curve
+spikes, turns NaN, or flattens long before the model is any good. The tell:
+a config with `lr`, `betas`, `weight_decay`, `warmup_steps` and
+`max_grad_norm` copied from someone else's run, and a paper's training
+section that reads as Greek (β₁ = 0.9, β₂ = 0.95, ε = 10⁻⁵) rather than as
+choices. You don't need it to call a trained model, and a hosted
+fine-tuning API chooses the optimizer for you; what you set there is the
+learning rate and how long to train, which is still the most important
+choice on this page. One number from this lesson shows how much the rule
+matters: in a narrow valley, 100 steps of momentum reach a loss more than
+10,000 times lower than 100 steps of plain gradient descent at the same
+learning rate.
+
+**Your options.** The rules, plus two add-ons that ride on any of them,
+from the simplest to the one transformers use:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Plain SGD | Steps against the current batch's slope, scaled by the learning rate | The simplest rule, nothing to tune but η | The steepest direction caps η, so it creeps along gentle valley floors: loss 1.56 after 100 steps here | Your training script, no extra memory |
+| SGD with momentum | Keeps a velocity: 90% of the last one plus the new slope | Consistent directions speed up and zig-zags cancel: loss 6.6 × 10⁻⁵ after the same 100 steps | One extra number per weight, and overshoot past the minimum before it settles | The default for CNNs |
+| Adam | Gives every weight its own step: its average gradient divided by its typical gradient size; the first step is exactly η whatever the gradient | One learning rate works across weights whose gradients differ by orders of magnitude | Two extra numbers per weight; unreliable averages in the first steps; an L2 penalty added to its gradient loses its meaning | Most training scripts |
+| AdamW | Adam, with weight decay applied straight to the weights instead of through the gradient | λ means what it says: shrink by η × λ per step | The same memory as Adam | The transformer default; PyTorch's `AdamW` ships with lr 0.001, betas (0.9, 0.999), eps 10⁻⁸, weight_decay 0.01 |
+| Warmup then decay (a schedule on top) | Ramps η from 0 to its peak, then lowers it along a cosine or a straight line to a floor | No full-size steps while the weights are random and Adam's averages unsettled; a gentle finish into a good minimum | Two more settings, warmup steps and total steps, so the run's length must be known up front | The scheduler |
+| Gradient clipping (on top) | Rescales the whole gradient when its combined length exceeds a limit, direction unchanged | A rare spike becomes a blip instead of a wrecked run | One norm per step; it can hide a network that explodes every step | One line before the optimizer step |
+
+**How to choose.** Start from the architecture, then from the size.
+
+- A transformer, pretraining or fine-tuning: AdamW, warmup, a cosine or
+  linear decay, clipping at 1.0. That is the Llama 2 recipe (AdamW with
+  β₁ = 0.9, β₂ = 0.95, ε = 10⁻⁵, 2000 warmup steps, cosine decay to 10% of
+  the peak, weight decay 0.1, clipping 1.0) and the shape of Hugging Face's
+  `TrainingArguments` defaults (AdamW, a linear schedule, max_grad_norm
+  1.0).
+- A convolutional network: SGD with momentum 0.9, still the default there.
+- The learning rate itself: the fastest one that doesn't blow up, found by
+  trying a few. Bigger models take smaller rates (Llama 2 uses 3 × 10⁻⁴ for
+  its 7B and 13B models and 1.5 × 10⁻⁴ for 34B and 70B), and fine-tuning
+  takes smaller rates than pretraining (Hugging Face defaults to 5 × 10⁻⁵).
+- A published recipe you are reproducing: copy every setting, betas
+  included. The transformer paper's β₂ = 0.98 and Llama 2's 0.95 are both
+  deliberate departures from Adam's 0.999.
+- Whatever you pick, the learning rate is the single most important
+  hyperparameter, and a schedule is part of it: the peak, the warmup and
+  the total steps are one decision.
+
+**What it costs.** Memory: momentum keeps one extra number per weight and
+Adam or AdamW keep two, so the optimizer state of a large model is twice
+the size of the weights it trains, which is a large part of why training
+needs more memory than serving. Compute: a few operations per weight per
+step, small beside the forward and backward passes. Time: warmup and decay
+need the total step count, so the budget is fixed before the run starts,
+and a run stopped halfway never reached its low learning rate. Quality:
+on this lesson's narrow valley, after 300 steps plain SGD sits at a loss
+of 3.7 × 10⁻³, Adam at 1.1 × 10⁻¹¹ and momentum at 1.8 × 10⁻¹²; the rule
+decides whether a fixed budget of steps gets there at all.
+
+**What breaks.**
+
+- **Loss spikes, then NaN.** The learning rate is too high: on a bowl with
+  slope 2w, any η above 1 makes every step overshoot further than the last.
+  Lower it, add warmup, clip.
+- **Loss barely moves.** Too low: at η = 0.001 the bowl's weight is still at
+  0.98 after ten steps. Raise it until training becomes unstable, then
+  back off.
+- **Weight decay that does nothing, or too much.** An L2 penalty inside
+  Adam gets divided by the typical gradient size, so λ = 0.1 and λ = 0.001
+  shrink a weight by the same amount. Use AdamW, where λ = 0.1 means 0.99
+  per step and 0.001 means 0.9999.
+- **Divergence in the first hundred steps with Adam.** No warmup: its
+  averages are built from a handful of steps and the weights are random.
+- **Overshoot.** Momentum swings hard, across the valley and past the
+  minimum, before it settles; the trajectory figure in Level 2 shows it. A
+  smaller β or a smaller η calms it.
+- **Clipping on every step.** The gradient is exploding, not spiking; the
+  fix is initialization or normalization (`primer.ml.deep_nets`), and
+  clipping is hiding it.
+- **A schedule cut short.** Cosine decay reaches its floor only at the
+  planned last step; stop early and the model never settled.
+
+**In the wild.** *Attention Is All You Need* trained with Adam at β₁ = 0.9,
+β₂ = 0.98, ε = 10⁻⁹, a learning rate that rises linearly for 4000 warmup
+steps and then falls with the inverse square root of the step. Llama 2
+used AdamW with the recipe above. PyTorch ships `torch.optim.SGD`
+(momentum as an argument), `Adam` and `AdamW`, and clips with
+`torch.nn.utils.clip_grad_norm_`, which measures the norm over all
+parameters "as if the norms of the individual gradients were concatenated
+into a single vector". Hugging Face's `TrainingArguments` defaults to
+AdamW (`adamw_torch_fused` on recent PyTorch), learning_rate 5e-5,
+weight_decay 0.0, betas 0.9 and 0.999, epsilon 1e-8, a linear schedule
+with no warmup and max_grad_norm 1.0. The rules come from Kingma and Ba
+(Adam, 2014), Loshchilov and Hutter (AdamW, 2017, and cosine annealing,
+2016), Sutskever et al. (momentum, 2013) and Pascanu et al. (clipping,
+2012), all linked at the end of the lesson.
+
+**Go deeper.** Level 2 walks each rule down the same bowl with two-row
+tables you can check by hand, races SGD, momentum and Adam across a narrow
+valley, shows why an L2 penalty inside Adam stops meaning anything, draws
+the warmup-and-cosine curve, and clips (3, 4) down to (0.6, 0.8). If you
+only needed to fill in a config, you are done.
+
+## Level 2: How it works, from scratch
+
+Every optimizer runs the same loop: feel the slope, turn it into a step,
+take it, repeat. This level builds each rule on a one-number valley you
+can check by hand, then lets them race across a valley that is not round.
+
 ## The idea: walking downhill in fog
 
 You're on a hillside in thick fog and want to reach the lowest point in the
