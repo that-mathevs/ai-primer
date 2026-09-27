@@ -76,6 +76,7 @@ GLOSSARY: dict[str, Entry] = {
     "loss function": _E("The rule that turns predictions and correct answers into the loss. Choosing it defines what the model learns.", LOSS),
     "gradient descent": _E("Training by repeatedly taking a small step downhill: nudge every weight against its gradient to lower the loss.", OPT),
     "learning rate": _E("How big a step each training update takes. Too high and training blows up; too low and it crawls.", OPT),
+    "hyperparameter": _E("A setting people choose before training rather than one the model learns, such as the learning rate, the batch size or PPO's clip range.", OPT),
     "optimizer": _E("The rule that turns gradients into weight updates, such as SGD, momentum or Adam.", OPT),
     "adam": _E("An optimizer that adapts the step size for each weight using running averages of its gradients.", OPT),
     "adamw": _E("Adam with weight decay applied separately from the gradient step. The default optimizer for transformers.", OPT),
@@ -549,6 +550,7 @@ GLOSSARY: dict[str, Entry] = {
     # Added with the lessons on training at scale, reasoning, generation, and more.
     'activation checkpointing': _E("Keeping only each layer's input and recomputing the rest during the backward pass.", 'primer.ml.pretraining'),
     'activation patching': _E('Copying one activation from a clean run into a corrupted run to measure how much of the right answer returns; also called causal tracing.', 'primer.ml.interpretability'),
+    'actor-critic': _E('A reinforcement learner in two parts: the actor (the policy) chooses actions, and the critic (a value network) predicts the reward to expect, which serves as the baseline.', 'primer.ml.reinforcement'),
     'advantage': _E('How much better an action did than typical: reward minus baseline.', 'primer.ml.reinforcement', scope=('primer/ml/reinforcement',)),
     'alignment': _E("Making a model's behaviour match what we want (helpful, honest, harmless), not just the measurements we optimize.", 'primer.ml.alignment', scope=('primer/ml/alignment',)),
     'all-reduce': _E('Summing a value across GPUs so every GPU ends up holding the total.', 'primer.ml.hardware'),
@@ -633,6 +635,7 @@ GLOSSARY: dict[str, Entry] = {
     'hidden tests': _E("Grading tests the agent never sees, so it can't pass by satisfying the tests instead of the intent.", 'primer.agents.coding_agents'),
     'host memory': _E("The CPU's main memory, reached from the GPU over a much slower link.", 'primer.ml.hardware'),
     'hybrid model': _E('A stack that mixes a few attention layers with many state-space layers.', 'primer.ml.efficient_architectures'),
+    'importance sampling': _E('Estimating an average under one distribution from samples drawn under another, by weighting each sample by the ratio of its two probabilities.', 'primer.ml.reinforcement'),
     'information gain': _E('How much a split lowers entropy; the tree picks the split that lowers it most.', 'primer.ml.classical'),
     'interference': _E("Signals getting in each other's way: other features leaking into one feature's reading (superposition), or merged task vectors changing the same weights in opposite directions (model merging).", 'primer.ml.interpretability', scope=('primer/ml/fine_tuning', 'primer/ml/interpretability')),
     'interpretability': _E("Studying what a model's internal numbers represent, and which of them cause its outputs.", 'primer.ml.interpretability'),

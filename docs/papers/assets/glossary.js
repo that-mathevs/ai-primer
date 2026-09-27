@@ -29,6 +29,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/interpretability.html",
   "term": "activation patching"
  },
+ "actor-critic": {
+  "def": "A reinforcement learner in two parts: the actor (the policy) chooses actions, and the critic (a value network) predicts the reward to expect, which serves as the baseline.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "actor-critic"
+ },
  "adagrad": {
   "def": "An optimizer that divides each weight's step by the square root of the sum of all its past squared gradients, so steps only ever shrink.",
   "lesson": "primer/ml/optimizers.html",
@@ -1404,6 +1409,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/rag.html",
   "term": "HyDE"
  },
+ "hyperparameter": {
+  "def": "A setting people choose before training rather than one the model learns, such as the learning rate, the batch size or PPO's clip range.",
+  "lesson": "primer/ml/optimizers.html",
+  "term": "hyperparameter"
+ },
  "hysteresis": {
   "def": "Making the bar for changing state higher than the bar for staying, so a decision doesn't flicker between two close options.",
   "lesson": null,
@@ -1428,6 +1438,11 @@ window.PRIMER_GLOSSARY = {
   "def": "In DPO, β times the log of how much more likely training has made a response than the reference model did.",
   "lesson": "primer/ml/training_stages.html",
   "term": "implicit reward"
+ },
+ "importance sampling": {
+  "def": "Estimating an average under one distribution from samples drawn under another, by weighting each sample by the ratio of its two probabilities.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "importance sampling"
  },
  "in-batch negatives": {
   "def": "Using the other examples in a training batch as free wrong answers for each query.",
