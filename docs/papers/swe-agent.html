@@ -1,0 +1,908 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SWE-agent, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Yang et al. (2024), SWE-agent: the agent-computer interface, a small set of commands and feedback formats designed for language models, that lifted SWE-bench from 3.8% to 12.5%.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  pre.term { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; overflow-x: auto; font-size: 0.78rem; line-height: 1.45; white-space: pre; }
+  .step-nav { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body data-paper="swe-agent">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 The agent-computer interface</a></li>
+      <li><a href="#s3">3 SWE-agent's interface</a>
+        <ol>
+          <li><a href="#s3-search">Search and navigation</a></li>
+          <li><a href="#s3-viewer">The file viewer</a></li>
+          <li><a href="#s3-edit">The editor and its linter</a></li>
+          <li><a href="#s3-context">Context management</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experimental setup</a>
+        <ol>
+          <li><a href="#s4-passk">Six runs and pass@k</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Results</a>
+        <ol>
+          <li><a href="#s5-1">5.1 What each part of the interface is worth</a></li>
+          <li><a href="#s5-2">5.2 How the agent behaves</a></li>
+          <li><a href="#s5-traj">Try it: one real run, step by step</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Related work and 7 Discussion</a></li>
+      <li><a href="#appb">Appendix B: tuning and outcomes</a></li>
+      <li><a href="#appc">Appendix C: the prompts</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Yang, Jimenez, Wettig, Lieret, Yao, Narasimhan and Press (2024): the same language model resolves three times as many real GitHub issues when the commands it is given, and the replies it gets back, are designed for a model instead of a person.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2405.15793">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2405.15793">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2405.15793">Paper as HTML (ar5iv)</a>
+    <a class="btn" href="https://github.com/SWE-agent/SWE-agent">SWE-agent on GitHub</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is published on arXiv under a Creative Commons Attribution 4.0 licence (CC BY 4.0), which allows reproducing its tables with credit: numbers restated from its tables are attributed where they appear, and its figures are redrawn from scratch. It follows the latest arXiv version (v3, 2024). The paper has no equations of its own; the ones here are this page's way of writing down its rules and its arithmetic, with every symbol decoded. Short pieces of tool output are quoted from the paper's printed trajectories so you can see the exact format. Numbers the paper does not give are labelled illustrative, and places where the paper disagrees with itself are pointed out where they occur.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#fig-viewer">file viewer</a> and the <a href="#fig-edit">editor</a> are working miniatures of SWE-agent's: scroll a toy file through a window, then try four edits and watch the linter accept or reject them.</li>
+  <li>The <a href="#fig-context">context chart</a> shows how collapsing old observations keeps a long run inside the context window.</li>
+  <li>The <a href="#s5-traj">trajectory stepper</a> replays one real run from the paper, action by action.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/agents/coding_agents.html">coding agents lesson</a> builds a small coding agent with tools shaped by the same ideas, and the <a href="swe-bench.html">SWE-bench companion</a> explains the benchmark every number here comes from.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We posit that LM agents represent a new category of end users with their own needs and abilities, and would benefit from specially-built interfaces to the software they use.”<cite>Yang et al. (2024), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2405.15793">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A carpenter with a good workbench, clamps and a sharp saw builds more than the same carpenter with a kitchen knife. Nothing about the carpenter changed. This paper keeps the model fixed and changes the workbench.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>An <span class="t" data-t="agent-computer interface">agent-computer interface</span> (ACI)</strong>: the set of commands an <span class="t" data-t="agent">agent</span> can issue and the format of what comes back, designed for a language model the way an editor is designed for a person.</li>
+  <li><strong>SWE-agent</strong>: GPT-4 Turbo with such an interface resolves 12.47% of the 2,294 SWE-bench tasks, against 3.79% for the best non-interactive system before it.</li>
+  <li><strong>Interface design matters on its own</strong>: on the 300-task Lite subset, the same model resolves 18.0% with the interface and 11.0% with a plain Linux shell.</li>
+  <li><strong>87.7%</strong> on HumanEvalFix, a set of short debugging problems.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The paper named something every agent builder now thinks about: the tools are part of the system, and how their output reads to a model matters as much as what they can do. The <a data-lesson="primer/agents/tools.html">tools lesson</a> teaches the same lesson for any agent.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>People don't write software in a bare terminal if they can help it. They use an editor that shows line numbers, jumps to definitions, underlines typos as they type. A language model given only a Linux shell is a programmer without any of that: every file view is a <code class="example">cat</code> that floods the screen, every edit a fragile <code class="example">sed</code> command, and a mistake produces no warning at all.</p>
+<h3 class="rung">Tiny example: the same model, three setups</h3>
+<div class="tablewrap"><table>
+  <caption>GPT-4 Turbo on SWE-bench Lite (300 tasks), from Table 1 of Yang et al. (2024).</caption>
+  <thead><tr><th>Setup</th><th class="num">Resolved</th></tr></thead>
+  <tbody>
+    <tr><td>Retrieval, one prompt, one patch (the SWE-bench paper's baseline)</td><td class="num">2.67%</td></tr>
+    <tr><td>A Linux shell, no demonstration</td><td class="num">7.33%</td></tr>
+    <tr><td>A Linux shell, with a demonstration run</td><td class="num">11.00%</td></tr>
+    <tr class="hl"><td>SWE-agent's interface</td><td class="num">18.00%</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> every row is the same model on the same 300 tasks. The first jump, from one-shot retrieval to any interactive shell, is what acting and looking buys: the model can search, run code and try again. The last jump, from shell to SWE-agent, is what better tools buy. The model's weights never change.</p>
+<h3 class="rung">The whole paper in one picture</h3>
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 300" role="img" aria-label="The language model sends a thought and a command to the agent-computer interface; the interface runs it on the computer, which holds the repository, a shell and tests, and returns concise, formatted feedback to the model">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk lin" data-block="lm"><rect x="120" y="8" width="140" height="42" rx="8"/><text x="190" y="34" text-anchor="middle">Language model</text></g>
+    <g class="blk frame" data-block="aci"><rect x="6" y="70" width="368" height="152" rx="10"/></g>
+    <text x="190" y="87" text-anchor="middle" class="lbl">Agent-computer interface</text>
+    <g class="blk soft" data-block="feedback"><rect x="14" y="96" width="172" height="118" rx="7"/><text x="100" y="116" text-anchor="middle">Feedback</text><text x="100" y="136" text-anchor="middle">numbered file window</text><text x="100" y="154" text-anchor="middle">capped search lists</text><text x="100" y="172" text-anchor="middle">lint errors</text><text x="100" y="190" text-anchor="middle">collapsed history</text></g>
+    <g class="blk ff" data-block="commands"><rect x="194" y="96" width="172" height="118" rx="7"/><text x="280" y="116" text-anchor="middle">Commands</text><text x="280" y="136" text-anchor="middle">find_file, search_dir</text><text x="280" y="154" text-anchor="middle">open, goto, scroll</text><text x="280" y="172" text-anchor="middle">edit n:m, create</text><text x="280" y="190" text-anchor="middle">submit, any bash</text></g>
+    <g class="blk emb" data-block="computer"><rect x="110" y="242" width="160" height="50" rx="8"/><text x="190" y="263" text-anchor="middle">Computer: repository,</text><text x="190" y="280" text-anchor="middle">shell, tests</text></g>
+    <path class="wire" d="M230,50 V62 H280 V94" marker-end="url(#arr)"/>
+    <path class="wire" d="M280,214 V230 H220 V240" marker-end="url(#arr)"/>
+    <path class="wire" d="M160,242 V230 H100 V216" marker-end="url(#arr)"/>
+    <path class="wire" d="M100,96 V62 H150 V52" marker-end="url(#arr)"/>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. The loop runs clockwise: model, commands, computer, feedback, model.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn with the components of its §3. Based on Yang et al. (2024), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> follow the arrows clockwise. The model never touches the computer. It writes a thought and one command, the interface (the dashed frame) runs the command against the repository in a sandboxed shell, and what returns is not the raw output but a view shaped for the model: a numbered window of a file, a short list of search hits, a syntax error with the lines around it. The paper's claim is that both halves of the frame, what the model can say and what it hears back, are design decisions that change results.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Before this paper, work on coding agents mostly asked which model, which prompt, or whether to let it run code. SWE-agent adds a fourth question with a measurable answer: what should the model's tools look like? The paper's two contributions are the concept (the ACI) and an open-source system built on it.</p>
+</section>
+
+<section id="s2">
+<h2>2 The agent-computer interface <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S2">original</a></span></h2>
+<blockquote class="quote">“The ACI specifies both the commands available to the LM and how the environment state is communicated back to the LM.”<cite>Yang et al. (2024), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A car's controls are designed for human hands and eyes: a wheel, pedals, a speedometer you glance at. A self-driving system doesn't need the wheel; it needs precise sensor readings and precise commands. Building one by sitting a robot in the driver's seat to turn the wheel would work badly. Giving a language model a terminal built for people is the same mistake.</p>
+<h3 class="rung">Tiny example: what's different about a model as a user</h3>
+<ul>
+  <li><strong>It cannot skim.</strong> A person scrolls past 500 irrelevant lines of <code class="example">grep</code> output in a second. For a model, every line is <span class="t" data-t="token">tokens</span> in its context, paid for and able to distract it.</li>
+  <li><strong>It cannot see the screen.</strong> Graphical editors signal a lot visually. A model needs the same signals as text: line numbers, how many lines are above and below, an explicit error message.</li>
+  <li><strong>It is bad at bookkeeping.</strong> Working out the arguments for “show me the next 100 lines” from memory, or a multi-line <code class="example">sed</code> command, is exactly the arithmetic models get wrong.</li>
+</ul>
+<h3 class="rung">Diagram: four principles</h3>
+<figure class="ix" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 250" role="img" aria-label="Four design principles for agent-computer interfaces: simple actions, compact actions, informative but concise feedback, and guardrails">
+    <g class="blk ff" data-block="p1"><rect x="10" y="10" width="135" height="110" rx="8"/><text x="77" y="50" text-anchor="middle">1 Simple</text><text x="77" y="70" text-anchor="middle">few options,</text><text x="77" y="88" text-anchor="middle">short docs</text></g>
+    <g class="blk norm" data-block="p2"><rect x="155" y="10" width="135" height="110" rx="8"/><text x="222" y="50" text-anchor="middle">2 Compact</text><text x="222" y="70" text-anchor="middle">one action for</text><text x="222" y="88" text-anchor="middle">one operation</text></g>
+    <g class="blk soft" data-block="p3"><rect x="10" y="130" width="135" height="110" rx="8"/><text x="77" y="170" text-anchor="middle">3 Informative,</text><text x="77" y="188" text-anchor="middle">concise</text><text x="77" y="206" text-anchor="middle">feedback</text></g>
+    <g class="blk attn" data-block="p4"><rect x="155" y="130" width="135" height="110" rx="8"/><text x="222" y="170" text-anchor="middle">4 Guardrails</text><text x="222" y="188" text-anchor="middle">catch mistakes</text><text x="222" y="206" text-anchor="middle">early</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a principle to see the paper's example and the part of the interface that follows it.</p></div>
+  </div>
+  <figcaption>The four design principles of §2 of Yang et al. (2024), drawn as cards.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top row is about what the model can <em>say</em>: a few simple commands (1), each doing a whole operation in one step (2). The bottom row is about what it <em>hears back</em>: enough to know what happened and no more (3), and a check that catches a mistake before it spreads (4). Every command in <a href="#s3">§3</a> can be traced to one or more of these cards.</p>
+<h3 class="rung">The math: why compact actions matter</h3>
+<p>Principle 2 has a simple arithmetic behind it. If each step of a multi-step procedure goes right with probability p, independently, the whole procedure goes right only if every step does.</p>
+<div class="eq" data-tex="\htmlData{sym=Pall}{P_{\text{all}}} = \htmlData{sym=p}{p}^{\htmlData{sym=nsteps}{n}}" data-fallback="P_all = p^n"></div>
+<div class="symtable" data-syms="p,nsteps,Pall"></div>
+<p class="inwords"><strong>In words:</strong> “the chance that an n-step procedure succeeds is the per-step chance multiplied by itself n times.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a model that gets 90% of commands right edits a three-line block with one <code class="example">edit</code> command 90% of the time. Doing the same with four separate <code class="example">sed</code> calls, each needing the right line number and escaping, succeeds 0.9<sup>4</sup> = 66% of the time.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>p = 0.9
+# one compact command, then four fiddly ones
+round(p ** 1, 2), round(p ** 4, 2)  # → (0.9, 0.66)</code></pre>
+<p>The <a data-lesson="primer/agents/tools.html#chain_success"><code>chain_success</code></a> function in the tools lesson is this formula, applied to choosing between five small tools and one larger one.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The authors arrived at these principles the way interface designers do: they watched the agent work on development tasks, noted where it stumbled, changed the interface, and ran a small <span class="t" data-t="hyperparameter">hyperparameter</span> sweep. The model stays fixed throughout: every gain in this paper comes from the interface.</p>
+</section>
+
+<section id="s3">
+<h2>3 SWE-agent's interface <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S3">original</a></span></h2>
+<p>At each step the model writes a thought and a command, in the pattern of <span class="t" data-t="react">ReAct</span> (the <a href="react.html">ReAct companion</a> takes it apart), and gets the command's result back. Four components make up the interface: search and navigation, a file viewer, a file editor, and context management. Ordinary Linux commands remain available alongside them.</p>
+</section>
+
+<section id="s3-search">
+<h3>Search and navigation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Ask a librarian where books on Roman roads are and a good one says “three shelves, mostly in history, aisle 4”. A bad one reads you every catalogue entry containing the word “road”.</p>
+<h4>Tiny example: three commands and one rule</h4>
+<p><code class="example">find_file</code> looks for a file by name, <code class="example">search_dir</code> for a string in every file under a directory, <code class="example">search_file</code> for a string in one file. The rule: at most 50 results. Here is <code class="example">search_dir "notes"</code> from one of the paper's printed runs (pylint, Appendix D), shortened:</p>
+<pre class="term"><code class="example">Found 24 matches for "notes" in /pylint-dev__pylint:
+/pylint-dev__pylint/ChangeLog (2 matches)
+/pylint-dev__pylint/examples/pylintrc (2 matches)
+/pylint-dev__pylint/pylint/checkers/misc.py (9 matches)
+...
+End of matches for "notes" in /pylint-dev__pylint</code></pre>
+<p>One line per file, with a count, and the agent's next thought was that <code class="example">misc.py</code>, with the most matches, was the place to look. When a search is too broad, the reply is a request instead of a flood; from the sympy run: “More than 182 files matched for "Derivative" in /sympy__sympy. Please narrow your search.”</p>
+<figure class="ix wide" id="fig5">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 280" role="img" aria-label="Three search interfaces side by side: shell-only grep prints every matching line; iterative search shows one result at a time with next and previous; summarized search lists files with match counts and asks for a narrower query above 50 results">
+    <g class="blk emb" data-block="s_shell"><rect x="6" y="10" width="118" height="260" rx="8"/><text x="65" y="32" text-anchor="middle">Shell-only</text><text x="65" y="56" text-anchor="middle">grep -rn notes .</text><text x="65" y="84" text-anchor="middle">every matching</text><text x="65" y="100" text-anchor="middle">line, from every</text><text x="65" y="116" text-anchor="middle">file, all at once</text><text x="65" y="150" text-anchor="middle">or cd, ls, cat</text><text x="65" y="166" text-anchor="middle">through folders</text><text x="65" y="220" text-anchor="middle">No search tool:</text><text x="65" y="238" text-anchor="middle">15.7%</text></g>
+    <g class="blk norm" data-block="s_iter"><rect x="131" y="10" width="118" height="260" rx="8"/><text x="190" y="32" text-anchor="middle">Iterative</text><text x="190" y="56" text-anchor="middle">result 1 of 24,</text><text x="190" y="72" text-anchor="middle">with context</text><text x="190" y="100" text-anchor="middle">next, prev</text><text x="190" y="134" text-anchor="middle">agents tend to</text><text x="190" y="150" text-anchor="middle">visit every one</text><text x="190" y="220" text-anchor="middle">Iterative:</text><text x="190" y="238" text-anchor="middle">12.0%</text></g>
+    <g class="blk soft" data-block="s_sum"><rect x="256" y="10" width="118" height="260" rx="8" stroke-width="3"/><text x="315" y="32" text-anchor="middle">Summarized</text><text x="315" y="56" text-anchor="middle">files with match</text><text x="315" y="72" text-anchor="middle">counts, up to 50</text><text x="315" y="100" text-anchor="middle">over 50: “narrow</text><text x="315" y="116" text-anchor="middle">your search”</text><text x="315" y="220" text-anchor="middle">Summarized:</text><text x="315" y="238" text-anchor="middle">18.0%</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a column.</p></div>
+  </div>
+  <figcaption>The paper's comparison of search interfaces (its Figure 5), redrawn as three columns with the Lite resolved rates of its Table 3. Based on Yang et al. (2024), Figure 5 and Table 3.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the columns are three ways to search, each tried with GPT-4 Turbo on SWE-bench Lite. The middle one is modelled on editors people like: step through hits one at a time. It did worst, worse even than no search tool at all (12.0% against 15.7%), because given many results the agent dutifully called <code class="example">next</code> until it had visited every one, burning its budget and context. The green column wins by giving the whole picture in a few lines and refusing to give more. (The paper's text calls this comparison Figure 6; it is its Figure 5.)</p>
+<h4>Why it matters</h4>
+<p>A search tool for a model should return locations, not contents, and cap its output. The <a data-lesson="primer/agents/coding_agents.html#Workspace.search"><code>Workspace.search</code></a> tool in the coding agents lesson does both, with a cap of 20 hits and a request for a narrower pattern above it. The paper notes the cost of the rule: a rejected search means another model call.</p>
+</section>
+
+<section id="s3-viewer">
+<h3>The file viewer <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S3">original</a></span></h3>
+<blockquote class="quote">“The file viewer presents a window of at most 100 lines of the file at a time.”<cite>Yang et al. (2024), §3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Reading a long contract through a letterbox-sized window you can slide up and down, with page numbers printed in the margin and a note saying “12 pages above, 40 below”. You never lose your place, and you never have the whole contract dumped on your desk.</p>
+<h4>Tiny example: a window on a file</h4>
+<p><code class="example">open path</code> shows the first window; <code class="example">goto n</code> jumps so line n is in view; <code class="example">scroll_down</code> and <code class="example">scroll_up</code> move a whole window. Every view starts with the file's path and length and says how many lines are hidden above and below, and every line carries its number. Those numbers are what the <code class="example">edit</code> command takes, so the agent never has to count. (The paper's command table, its Table 4, swaps two descriptions: it says <code class="example">scroll_down</code> moves the window up and <code class="example">scroll_up</code> down.)</p>
+<p><strong>Try it:</strong> a 30-line toy file, loosely modelled on the pvlib file in the paper's Figure 11. Change the window size, jump to a line, scroll, and read the output exactly as the agent would. Notice what happens to the “more lines” notes, and how many scrolls it takes to see everything with a small window.</p>
+<div class="plot" id="fig-viewer">
+  <div class="controls ui"><label for="win">Window size W = <strong id="win-v">10</strong> lines</label><input type="range" id="win" min="3" max="30" step="1" value="10"></div>
+  <div class="controls ui step-nav"><label for="goto-n">goto</label> <input type="number" id="goto-n" min="1" max="30" value="9" style="width:4.5rem"> <button type="button" id="goto-btn">Run goto</button> <button type="button" id="up-btn">scroll_up</button> <button type="button" id="down-btn">scroll_down</button></div>
+  <pre class="term" id="viewer-out"></pre>
+  <p class="readout" id="viewer-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grey box is the whole observation the model receives. The first line says which file and how long; the notes in brackets say how much is hidden; each code line starts with its number. With W = 10 the file takes 3 windows to read, with W = 3 it takes 10. At W = 30 the whole file fits, and on a real 1,890-line file that would be the “full file” setting that the paper found hurt.</p>
+<h4>The math: windows and tokens</h4>
+<div class="eq" data-tex="\htmlData{sym=nviews}{n_{\text{views}}} = \htmlData{sym=ceil}{\left\lceil \frac{\htmlData{sym=L}{L}}{\htmlData{sym=W}{W}} \right\rceil}, \qquad \htmlData{sym=Tview}{T_{\text{view}}} = \min(\htmlData{sym=W}{W}, \htmlData{sym=L}{L}) \cdot \htmlData{sym=tau}{\tau}" data-fallback="n_views = ⌈L / W⌉,  T_view = min(W, L) · τ"></div>
+<div class="symtable" data-syms="L,W,ceil,nviews,tau,Tview"></div>
+<p class="inwords"><strong>In words:</strong> “reading a whole file takes the file length divided by the window size, rounded up, views; each view costs the lines it shows times the tokens per line.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the pvlib file in the paper's Figure 11 has 1,890 lines. At the default W = 100 that is 19 views to read it all, each about 1,000 tokens at an illustrative 10 tokens per line. The whole file in one view would be 18,900 tokens; a 30-line window needs 63 views.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+L, tau = 1890, 10
+# n_views for the default window, then for 30 lines
+math.ceil(L / 100), math.ceil(L / 30)  # → (19, 63)
+# T_view for a 100-line window, and for the whole file at once
+min(100, L) * tau, min(L, L) * tau  # → (1000, 18900)</code></pre>
+<p>Neither extreme wins. In the paper's ablation (<a href="#s5-1">§5.1</a>), 30 lines resolved 14.3% of Lite, the whole file 12.7%, and 100 lines 18.0%. Too small a window means many steps and lost context between them; too large a window means the relevant lines are buried.</p>
+<h4>Why it matters</h4>
+<p>The viewer turns a stateless shell into a stateful tool: the interface remembers which file is open and where, so “the next 100 lines” is one word, <code class="example">scroll_down</code>, instead of a command whose arguments the model must compute. The <a data-lesson="primer/agents/coding_agents.html#Workspace.read_file"><code>Workspace.read_file</code></a> tool in the coding agents lesson returns a whole file, which is fine for its 7-line files; real repositories need a window.</p>
+</section>
+
+<section id="s3-edit">
+<h3>The editor and its linter <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S3">original</a></span></h3>
+<blockquote class="quote">“Invalid edits are discarded, and the agent is asked to try editing the file again.”<cite>Yang et al. (2024), §3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A word processor that refuses to save a document with a sentence that doesn't parse, shows you the sentence as you typed it next to the version before, and tells you what's wrong. Annoying for a person on a good day; invaluable for someone who can't see the page.</p>
+<h4>Tiny example: <code class="example">edit n:m</code></h4>
+<p><code class="example">edit 404:407</code> followed by some lines and <code class="example">end_of_edit</code> replaces lines 404 to 407 of the open file with those lines, in one step. After the edit, a <span class="t" data-t="linter">linter</span> (flake8, limited to a few codes for undefined names, bad indentation and syntax errors) checks the file. If it complains, the edit is reverted and the agent gets a message with three parts: the errors, how the file would have looked, and how it looks now. If not, the viewer shows the updated lines at once.</p>
+<p><strong>Try it:</strong> the task is to remove the parameter <code class="example">orientation_strategy</code> from <code class="example">basic_chain</code> in the toy file. Pick an edit and see what the interface says. The checker here is a tiny stand-in for flake8 that knows three of its codes: F821 (undefined name), E111 (indentation not a multiple of four) and E999 (syntax error).</p>
+<div class="plot" id="fig-edit">
+  <div class="controls ui"><label for="edit-pick">Edit</label> <select id="edit-pick" style="max-width:100%"></select></div>
+  <pre class="term" id="edit-out"></pre>
+  <p class="readout" id="edit-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grey box is the agent's next observation. Deleting the parameter first (the paper's own Figure 11 example) leaves two uses of the name in the body, so F821 fires twice and nothing changes. Deleting lines 7 to 11 in one go takes line 8 with it, the one that closes the signature's bracket: a syntax error. Re-indenting with three spaces trips E111. Only the order the guardrail forces works: remove the code that uses the parameter first, then the parameter. The paper names this trade-off: the guardrail sometimes dictates the order of edits.</p>
+<h4>The math: how often editing goes wrong, and recovers</h4>
+<p>From the paper's analysis of GPT-4 Turbo on the full benchmark: 1,185 of 2,294 runs (51.7%) had at least one edit rejected by the linter. What happens next can be measured.</p>
+<div class="eq" data-tex="\htmlData{sym=rrec}{r_{\text{rec}}} = \frac{\htmlData{sym=Srec}{S}}{\htmlData{sym=Srec}{S} + \htmlData{sym=Urec}{U}}" data-fallback="r_rec = S / (S + U)"></div>
+<div class="symtable" data-syms="Srec,Urec,rrec"></div>
+<p class="inwords"><strong>In words:</strong> “the recovery rate is the number of runs of failed edits that end in a successful edit, divided by all runs of failed edits.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the 286 resolved runs, 135 streaks of failed edits, 104 recovered: 0.77. Across all runs, 810 recovered and 555 did not: 0.59. The paper also gives the chance an edit attempt eventually succeeds: 90.5% for a fresh attempt, 57.2% once one failure has happened, so 42.8% of the time a first failure is never recovered from.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># r_rec = S / (S + U), in resolved runs, then in all runs
+S, U = 104, 135 - 104
+round(S / (S + U), 2)  # → 0.77
+round(810 / (810 + 555), 2)  # → 0.59
+# a first failure that is never recovered from
+round(1 - 0.572, 3)  # → 0.428
+# runs with at least one failed edit, of the 2,294
+round(100 * 1185 / 2294, 1)  # → 51.7</code></pre>
+<p>One number in this appendix doesn't add up: the paper says 113 of the 286 resolved runs, “31.5%”, had a failed edit, but 113 / 286 is 39.5%.</p>
+<pre class="in-python"><code>round(100 * 113 / 286, 1)  # → 39.5</code></pre>
+<h4>Why it matters</h4>
+<p>A bad edit that is kept breaks the file, the next run of the code fails for a reason unrelated to the issue, and the agent chases its own mistake: the paper's “cascading” failures. The linter stops that at the first step. Turning linting off cost 3 points on Lite (18.0% to 15.0%), and without the edit command at all (only <code class="example">sed</code> and shell redirection) the agent fell to 10.3%. The <a data-lesson="primer/agents/coding_agents.html#Workspace.edit_file"><code>Workspace.edit_file</code></a> tool in the coding agents lesson is built on the same idea from the other side: it refuses an edit whose target text is missing or ambiguous, and says how to fix the call.</p>
+</section>
+
+<section id="s3-context">
+<h3>Context management <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A detective's notebook keeps the last few pages of notes in full and, for everything older, one line each: “Tuesday: interviewed the gardener, alibi checks out.” The plan and the trail survive; the transcripts don't clutter the desk.</p>
+<h4>Tiny example</h4>
+<p>SWE-agent keeps the system prompt, the demonstration and the issue at the top of every call. Of the observations (the tool outputs), only the last 5 are shown in full; each older one is collapsed to a single line. Two more rules: a command with no output gets an explicit line (“Your command ran successfully and did not produce any output”) so the agent doesn't run extra commands to find out what happened; and when a malformed reply is followed by a valid one, the malformed reply and its error message are removed from the history.</p>
+<h4>The math: how big the context gets</h4>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=Cfull}{C_{\text{full}}(t)} &amp;= \htmlData{sym=S}{S} + \htmlData{sym=sumall}{\sum_{j=1}^{t}} \htmlData{sym=oj}{o_j} \\ \htmlData{sym=C5}{C_{5}(t)} &amp;= \htmlData{sym=S}{S} + \htmlData{sym=sumlast}{\sum_{j=t-4}^{t}} \htmlData{sym=oj}{o_j} + (\htmlData{sym=t}{t} - 5)\,\htmlData{sym=c}{c} \end{aligned}" data-fallback="C_full(t) = S + Σ_{j=1}^{t} o_j;  C_5(t) = S + Σ_{j=t−4}^{t} o_j + (t − 5) c"></div>
+<div class="symtable" data-syms="t,S,oj,c,sumall,sumlast,Cfull,C5"></div>
+<p class="inwords"><strong>In words:</strong> “with full history, the context after t steps is the fixed start plus every observation so far; with the last-5 rule, it is the fixed start, the five newest observations in full, and one short line for each older one.” (For t of 5 or fewer the two are the same.)</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a fixed start of 2,000 tokens, observations of 800 tokens, collapsed lines of 10 tokens. After 20 steps, full history holds 2,000 + 20 × 800 = 18,000 tokens; the last-5 rule holds 2,000 + 5 × 800 + 15 × 10 = 6,150. The model's own thoughts and commands are left out of both for simplicity.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>S, o, c, t = 2000, 800, 10, 20
+obs = [o] * t
+# C_full(t): every observation in full
+S + sum(obs)  # → 18000
+# C_5(t): the last five in full, one line for each older one
+S + sum(obs[-5:]) + (t - 5) * c  # → 6150</code></pre>
+<div class="plot" id="fig-context">
+  <div class="controls ui"><label for="obs">Tokens per observation, o = <strong id="obs-v">800</strong></label><input type="range" id="obs" min="200" max="3000" step="100" value="800"></div>
+  <div id="context-chart"></div>
+  <p class="readout" id="context-readout">Hover the chart, or tab to it and use the arrow keys, to read the context size at each step.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the step of the run, up to 40 (the paper's $4 budget ended runs somewhere between steps 30 and 40); the y-axis is tokens in the context, from the formula above with a 2,000-token start and 10-token collapsed lines (illustrative). The full-history line climbs by a whole observation per step; the last-5 line flattens after step 5 and climbs by one short line per step. The flat dotted line is GPT-4 Turbo's 128,000-token window. Push the slider to 3,000 and full history nearly fills the window by step 40, while last-5 stays under 20,000.</p>
+<h4>Why it matters</h4>
+<p>In the paper's ablation, keeping the full history cost 3 points on Lite (18.0% to 15.0%), and the hyperparameter sweep in <a href="#appb">Appendix B</a> preferred last-5 for GPT-4 Turbo at both window sizes and both temperatures. Collapsing isn't only about fitting: stale file views in the history can mislead the agent about what a file now contains. The context lesson builds the same idea as a rolling summary in <a data-lesson="primer/agents/context.html#summarize_turns"><code>summarize_turns</code></a>, and <a data-lesson="primer/agents/context.html#compress_tool_output"><code>compress_tool_output</code></a> trims each tool result to what the task needs.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experimental setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>To show a new workbench helps, give the same carpenter the same jobs with the old tools and the new, and count finished jobs. Also count the cost, since the new workbench might just be slower and more thorough.</p>
+<h3 class="rung">Tiny example: the setup in five lines</h3>
+<ul>
+  <li><strong>Tasks</strong>: all 2,294 of SWE-bench for the headline, the 300 of SWE-bench Lite for ablations, and HumanEvalFix (164 short buggy functions per language) for basic editing.</li>
+  <li><strong>Models</strong>: GPT-4 Turbo (128k-token window) and Claude 3 Opus (200k). Llama 3 and DeepSeek Coder were tried and did poorly as agents; Llama 3's 8k window was too small.</li>
+  <li><strong>Baselines</strong>: the SWE-bench paper's retrieval setup (BM25 files in one prompt, one patch out), and a Shell-only agent in the InterCode environment, which gets a Linux shell and nothing else.</li>
+  <li><strong>Metrics</strong>: % resolved (<span class="t" data-t="pass@1">pass@1</span>, one run per task) and the average API cost per resolved task.</li>
+  <li><strong>Budget</strong>: $4 per task; a run that hits it has its edits so far submitted automatically.</li>
+</ul>
+<div class="plot" id="fig-t1">
+  <div id="t1-bars"></div>
+  <p class="readout" id="t1-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each system has two bars, from Table 1 of the paper: the percentage of SWE-bench Lite resolved (solid, axis 0 to 20%) and the average cost (striped, axis 0 to 3 dollars). Read down the solid bars: retrieval at the top of the list, the plain shell in the middle, SWE-agent at the bottom for both models, with the longest bars. The striped bars go the other way: acting costs more than one prompt. On the full 2,294 tasks the paper reports SWE-agent at 12.47% with GPT-4 Turbo and 10.46% with Claude 3 Opus.</p>
+<h3 class="rung">The math: points, ratios and folds</h3>
+<p>The paper reports its gains three ways, and they sound very different.</p>
+<div class="eq" data-tex="\htmlData{sym=dpp}{\Delta} = \htmlData{sym=a}{a} - \htmlData{sym=bb}{b}, \qquad \htmlData{sym=rel}{\text{rel}} = \frac{\htmlData{sym=a}{a} - \htmlData{sym=bb}{b}}{\htmlData{sym=bb}{b}}, \qquad \htmlData{sym=fold}{\text{fold}} = \frac{\htmlData{sym=a}{a}}{\htmlData{sym=bb}{b}}" data-fallback="Δ = a − b,  rel = (a − b) / b,  fold = a / b"></div>
+<div class="symtable" data-syms="a,bb,dpp,rel,fold"></div>
+<p class="inwords"><strong>In words:</strong> “the difference in <span class="t" data-t="percentage point">percentage points</span> subtracts the rates; the relative gain divides that difference by the old rate; the fold is the new rate divided by the old.”</p>
+<p class="inwords"><strong>With the numbers:</strong> SWE-agent against the shell with a demonstration, 18.00% against 11.00%: 7.0 points, a 64% relative gain (the paper's “64%”). Against the shell without a demonstration, 7.33%: 10.67 points (the introduction's “10.7 percentage points”, which compares with that weaker shell). Against retrieval, 2.67%: 6.7 times (the paper's “6.7-fold”). And the cost, in dollars per resolved task: 1.67 against 0.13 is 12.8 times, and for Claude 3 Opus 2.18 against 0.25 is 8.7 times, the paper's “8-13x”.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>a = 18.00
+# b: the shell with a demonstration
+b = 11.00
+round(a - b, 2), round((a - b) / b, 3)  # → (7.0, 0.636)
+# b: the shell without one, then retrieval
+round(a - 7.33, 2), round(a / 2.67, 1)  # → (10.67, 6.7)
+# cost folds, GPT-4 Turbo then Claude 3 Opus
+round(1.67 / 0.13, 1), round(2.18 / 0.25, 1)  # → (12.8, 8.7)</code></pre>
+<h3 class="rung">HumanEvalFix</h3>
+<div class="tablewrap"><table>
+  <caption>Table 2 of Yang et al. (2024): pass@1 on HumanEvalFix. Scores other than SWE-agent's are as reported in earlier work.</caption>
+  <thead><tr><th>Model</th><th class="num">Python</th><th class="num">JS</th><th class="num">Java</th></tr></thead>
+  <tbody>
+    <tr><td>CodeLLaMa-instruct-13B</td><td class="num">29.2</td><td class="num">19.5</td><td class="num">32.3</td></tr>
+    <tr><td>GPT-4</td><td class="num">47.0</td><td class="num">48.2</td><td class="num">50.0</td></tr>
+    <tr><td>DeepseekCoder-CodeAlpaca-6.7B</td><td class="num">49.4</td><td class="num">51.8</td><td class="num">45.1</td></tr>
+    <tr><td>WaveCoder-DS-6.7B</td><td class="num">57.9</td><td class="num">52.4</td><td class="num">57.3</td></tr>
+    <tr class="hl"><td>SWE-agent with GPT-4 Turbo</td><td class="num">87.7</td><td class="num">89.7</td><td class="num">87.9</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> HumanEvalFix gives a buggy function and its tests and asks for the fix, with no repository to search. SWE-agent runs with the same configuration apart from a demonstration in the right language, and beats the best earlier score in each language by about 30 points or more. The paper's §5 gives the result as 88.3%, while its abstract and this table give 87.7% for Python; neither 88.3 nor any average of the three columns (88.4) matches exactly.</p>
+<h3 class="rung">Why it matters</h3>
+<p>A result reported only as “64% better” or only as “7 points better” can mislead in either direction; the page's formula shows why both are true at once. The cost column matters as much: an agent that resolves more tasks but costs 13 times as much per attempt has to be judged on cost per resolved task, which the coding agents lesson computes in <a data-lesson="primer/agents/coding_agents.html#cost_per_resolved"><code>cost_per_resolved</code></a>.</p>
+</section>
+
+<section id="s4-passk">
+<h3>Six runs and pass@k <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#A2.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A basketball player who makes 18% of shots from half court will usually miss, but let them shoot six times and they may well score once. Which number describes them depends on how many shots you allow.</p>
+<h4>Tiny example</h4>
+<p>The authors ran SWE-agent with GPT-4 Turbo on Lite six times. The six resolved rates were 17.33, 18.00, 18.00, 18.67, 17.33 and 18.33%: an average of 17.94%, with little spread. But the tasks solved changed between runs: counting a task solved if any of k runs solved it, the rate rises to 32.67% at k = 6.</p>
+<div class="eq" data-tex="\htmlData{sym=passk}{\text{pass@}k} = 1 - \frac{\htmlData{sym=binfail}{\binom{n-c}{k}}}{\htmlData{sym=binall}{\binom{n}{k}}}" data-fallback="pass@k = 1 − C(n − c, k) / C(n, k)"></div>
+<div class="symtable" data-syms="n,cc,k,binall,binfail,passk"></div>
+<p class="inwords"><strong>In words:</strong> “for one task run n times and solved in c of them, pass@k is one minus the share of all groups of k runs that contain no success; the benchmark's figure averages this over tasks.” This is the unbiased estimator from the <a href="humaneval-pass-at-k.html">HumanEval companion</a>; the paper does not print its formula, but its pass@1 equals the mean of the six runs, which this estimator guarantees.</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a task solved in c = 2 of n = 6 runs has pass@1 = 2/6 = 0.33, pass@3 = 1 − C(4, 3)/C(6, 3) = 1 − 4/20 = 0.8, and pass@6 = 1. From the paper's Table 10, the mean of the six runs is 17.94%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>from math import comb
+n, c = 6, 2
+[round(1 - comb(n - c, k) / comb(n, k), 2) for k in (1, 3)]  # → [0.33, 0.8]
+# pass@1 over the benchmark is the mean of the six runs
+runs = [17.33, 18.00, 18.00, 18.67, 17.33, 18.33]
+round(sum(runs) / len(runs), 2)  # → 17.94</code></pre>
+<div class="plot" id="fig-passk">
+  <div id="passk-chart"></div>
+  <p class="readout" id="passk-readout">Hover the chart, or tab to it and use the arrow keys, to read pass@k at each k.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is k, the number of runs allowed; the y-axis is the percentage of Lite tasks solved by at least one of them, from Table 10 of the paper. The curve climbs fast and then flattens: the second run adds 6 points, the sixth only 1.3. The gap between 17.94% and 32.67% is tasks the agent can solve but doesn't reliably: its per-task behaviour varies a lot even though its average barely moves.</p>
+<h4>Why it matters</h4>
+<p>A user running an agent once gets pass@1. The gap to pass@6 is the prize for anything that can tell a good run from a bad one, such as running the tests or a <span class="t" data-t="verifier">verifier</span>, which is why so much later work generates several attempts and picks one. The coding agents lesson computes the same estimator in <a data-lesson="primer/agents/coding_agents.html#pass_at_k"><code>pass_at_k</code></a>.</p>
+</section>
+
+<section id="s5">
+<h2>5 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S5">original</a></span></h2>
+<blockquote class="quote">“An LM-friendly ACI's value is confirmed by SWE-agent's 64% relative increase compared to Shell-only, both with GPT-4 Turbo.”<cite>Yang et al. (2024), §5</cite></blockquote>
+<p>The headline: 12.47% (286 of 2,294) of the full benchmark and 18.00% (54 of 300) of Lite, both with GPT-4 Turbo. Two appendix results round it out: success is unrelated to the issue's age (a check against memorized fixes), and the interactive agent finds the right files more often than retrieval does, with a file-level <span class="t" data-t="f1">F1</span> score of 59.05% against 45.47% for BM25 with Claude 3 Opus.</p>
+<pre class="in-python"><code># 286 of 2,294 and 54 of 300
+round(100 * 286 / 2294, 2), round(100 * 54 / 300, 2)  # → (12.47, 18.0)</code></pre>
+</section>
+
+<section id="s5-1">
+<h3>5.1 What each part of the interface is worth <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S5.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To find out which of your habits makes you sleep well, change one at a time and keep a diary. An <span class="t" data-t="ablation">ablation</span> does that for a system: swap one component for an alternative, keep everything else, and measure.</p>
+<h4>Tiny example: one swap</h4>
+<p>Replace the 100-line viewer with one that shows whole files, keep everything else: Lite drops from 18.0% to 12.7%, 16 fewer tasks resolved out of 300.</p>
+<pre class="in-python"><code># 18.0% and 12.7% of 300 tasks
+round(0.180 * 300), round(0.127 * 300)  # → (54, 38)</code></pre>
+<div class="plot" id="fig-ablate">
+  <div id="ablate-bars"></div>
+  <p class="readout" id="ablate-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> Table 3 of the paper, SWE-bench Lite with GPT-4 Turbo. Bars are grouped by component; the striped bar in each group is SWE-agent's choice, which is always 18.0% because it is the same full system. Every alternative is lower. The biggest drops come from the editor (no edit command: 10.3%) and search (iterative search: 12.0%); the smallest from dropping the demonstration (16.3%). Each number is one run of 300 tasks, and <a href="#s4-passk">the six repeated runs</a> varied between 17.33% and 18.67%, so differences below a point or so are within run-to-run noise.</p>
+<h4>Why it matters</h4>
+<p>Three lessons carry beyond this paper. Interfaces designed for people can be worse than nothing for a model (iterative search below no search). Consolidating an operation into one command helps more than any other single change (the editor). And feedback has a size sweet spot (the viewer). The authors compare their design process to the user studies of human-computer interaction, with a model as the user.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 How the agent behaves <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S5.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Watch an experienced engineer fix a bug and you see a rhythm: reproduce it, find where it lives, change something, run again, repeat, and stop when it's fixed. The paper finds the same rhythm in the agent's logs, without anyone programming it in beyond a tip in the prompt.</p>
+<h4>Tiny example: the most common openings</h4>
+<p>In the 286 resolved runs, the three-action pattern <code class="example">create, edit, python</code> (make a file, write a reproduction script into it, run it) starts at turns 1 to 3 in 156 runs, by far the most common. The alternative opening is localization: <code class="example">search_dir, open, search_file</code> (21 runs). From turn 5 on, the most common actions are <code class="example">edit</code> and <code class="example">python</code>, alternating. A frequent ending is <code class="example">python, rm, submit</code>: run the check once more, delete the scratch script, submit.</p>
+<figure class="ix wide" id="fig7">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 290" role="img" aria-label="The phases of a typical run: reproduce the bug and localize the code, in either order, then a loop of edit and run, then submit; runs that hit the cost budget are submitted automatically">
+    <defs><marker id="arr7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk plain" data-block="ph_issue"><rect x="130" y="8" width="120" height="34" rx="7"/><text x="190" y="30" text-anchor="middle">Issue</text></g>
+    <path class="wire" d="M170,42 V52 H80 V64" marker-end="url(#arr7)"/>
+    <path class="wire" d="M210,42 V52 H300 V64" marker-end="url(#arr7)"/>
+    <g class="blk norm" data-block="ph_repro"><rect x="10" y="66" width="140" height="56" rx="7"/><text x="80" y="88" text-anchor="middle">Reproduce</text><text x="80" y="106" text-anchor="middle">create, edit, python</text></g>
+    <g class="blk emb" data-block="ph_local"><rect x="230" y="66" width="140" height="56" rx="7"/><text x="300" y="88" text-anchor="middle">Localize</text><text x="300" y="106" text-anchor="middle">search, open, goto</text></g>
+    <path class="wire" d="M150,94 H228" marker-end="url(#arr7)"/>
+    <path class="wire" d="M80,122 V148 H150 V160" marker-end="url(#arr7)"/>
+    <path class="wire" d="M300,122 V148 H230 V160" marker-end="url(#arr7)"/>
+    <g class="blk ff" data-block="ph_edit"><rect x="110" y="162" width="70" height="44" rx="7"/><text x="145" y="189" text-anchor="middle">edit</text></g>
+    <g class="blk attn" data-block="ph_run"><rect x="200" y="162" width="70" height="44" rx="7"/><text x="235" y="189" text-anchor="middle">python</text></g>
+    <path class="wire" d="M180,176 H198" marker-end="url(#arr7)"/>
+    <path class="wire" d="M200,194 H182" marker-end="url(#arr7)"/>
+    <path class="wire" d="M190,206 V234" marker-end="url(#arr7)"/>
+    <g class="blk soft" data-block="ph_submit"><rect x="60" y="236" width="140" height="44" rx="7" stroke-width="3"/><text x="130" y="263" text-anchor="middle">submit</text></g>
+    <g class="blk plain" data-block="ph_exit"><rect x="220" y="236" width="150" height="44" rx="7"/><text x="295" y="255" text-anchor="middle">exit_cost: budget</text><text x="295" y="271" text-anchor="middle">hit, auto-submit</text></g>
+    <path class="wire" d="M270,190 H310 V234" marker-end="url(#arr7)"/>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a phase.</p></div>
+  </div>
+  <figcaption>The phases of a SWE-agent run as described in §5.2 and Appendix B.3 of Yang et al. (2024), drawn as a flow. Based on its Figure 7 and Table 8.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> runs begin at the top and go to either reproduction or localization first; the arrow between them shows that one often leads into the other. Then comes the small loop in the middle, edit and run, which the paper's action counts show dominating from turn 5 onward, with more searching and scrolling mixed in when a change breaks something elsewhere. Two exits: an intentional <code class="example">submit</code> (green, thick border), or running out of budget, when the edits so far are submitted automatically.</p>
+<h4>The math: succeeding quickly, failing slowly</h4>
+<div class="eq" data-tex="\htmlData{sym=Pcond}{P(\text{resolved} \mid \text{end})} = \frac{\htmlData{sym=Nre}{N_{\text{resolved, end}}}}{\htmlData{sym=Ne}{N_{\text{end}}}}" data-fallback="P(resolved | end) = N_resolved,end / N_end"></div>
+<div class="symtable" data-syms="Ne,Nre,Pcond"></div>
+<p class="inwords"><strong>In words:</strong> “among runs that ended a given way, the share that resolved their task.”</p>
+<p class="inwords"><strong>With the numbers:</strong> from Table 13 of the paper (GPT-4 Turbo, full benchmark), 1,589 runs ended with <code class="example">submit</code> and 266 of them resolved their task: 16.7%. 630 ran out of budget with edits to submit, and 20 resolved: 3.2%. Of the 286 resolved runs, 266 (93.0%) submitted on their own. The paper's text gives 14.3% for the first figure, which its own table doesn't reproduce, and its Table 13 rows for all tasks add up to 2,268 rather than 2,294 (and to 2,004 for Claude 3 Opus).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># P(resolved | submit) and P(resolved | out of budget)
+round(100 * 266 / 1589, 1), round(100 * 20 / 630, 1)  # → (16.7, 3.2)
+# resolved runs that submitted on their own
+round(100 * 266 / 286, 1)  # → 93.0
+# the "All" row of Table 13 for GPT-4 Turbo
+sum([1589, 630, 48, 1])  # → 2268</code></pre>
+<p>Claude 3 Opus shows a similar mismatch: Table 1 gives it 13.00% of Lite, which is 39 tasks, while Table 13 and Figure 14 count 35 resolved Lite runs (11.67%).</p>
+<pre class="in-python"><code>round(0.13 * 300), round(100 * 35 / 300, 2)  # → (39, 11.67)</code></pre>
+<p>Resolved runs are short: a median of 12 turns and 1.21 dollars, against 21 turns and 2.52 dollars for unresolved ones (the paper calls the second pair a mean, the first a median). So the authors doubt a bigger budget would help much: if the first 10 to 20 turns don't find a fix, later turns mostly keep editing locally instead of trying a different approach.</p>
+<h4>Why failures happen</h4>
+<p>For the 248 unresolved Lite runs, GPT-4o sorted each trajectory into one of nine categories; on 15 runs the authors labelled by hand, it agreed with them 87% of the time. About half the failures (52.0%) are an incorrect or overly specific implementation: a change in a reasonable place that doesn't fix the issue, or fixes only the exact case in the issue. Another 23.4% are failed edit recovery, the agent stuck in a loop of rejected edits. The rest, under 25% together, include not reproducing the bug, never opening the right file, running out of budget, and giving up early.</p>
+<h4>Why it matters</h4>
+<p>An agent's log is a dataset. Counting actions per turn, which pairs follow which, and how runs end tells you where the interface or the model falls short, the way a product team reads usage analytics. The paper's findings (fast successes, slow failures, cascading edits) are the kind that change how a system is built: cap budgets, detect edit loops, and invest in better editing.</p>
+</section>
+
+<section id="s5-traj">
+<h3>Try it: one real run, step by step</h3>
+<h4>Everyday picture</h4>
+<p>A flight recorder, replayed: every control input and every instrument reading, in order.</p>
+<p><strong>Try it:</strong> step through SWE-agent's successful run on <code class="example">psf__requests-2317</code> from the paper's Appendix D. Each step shows the command the agent issued, a summary of its reasoning, and what came back (tool output quoted briefly, the rest summarized).</p>
+<div class="plot" id="fig-traj">
+  <div class="controls ui step-nav"><button type="button" id="traj-prev">Previous step</button> <button type="button" id="traj-next">Next step</button> <span id="traj-pos"></span></div>
+  <pre class="term" id="traj-out"></pre>
+  <p class="readout" id="traj-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the issue says requests turns the method <code class="example">b'GET'</code> into the string <code class="example">"b'GET'"</code> on Python 3, so servers answer 404. Steps 1 to 4 are localization: find the file, open it, search it for the call named in the issue, jump to line 428. Step 5 is the fix, one edit. Steps 6 to 8 check it with a small script. Steps 9 and 10 clean up and submit. Ten actions, no failed edit. The evaluation passes, though the real fix used an existing helper, <code class="example">to_native_string</code>, where the agent wrote its own decode: the same habit of ignoring existing utilities that the SWE-bench paper found in single-shot patches.</p>
+<h4>Why it matters</h4>
+<p>This is the edit-run-test loop of the coding agents lesson (<a data-lesson="primer/agents/coding_agents.html#fix_until_green"><code>fix_until_green</code></a>, driven there by the scripted <a data-lesson="primer/agents/coding_agents.html#careful_fixer"><code>careful_fixer</code></a>) running on a real repository. One difference is worth noticing: here the agent decides when it's done and submits, and the hidden tests judge afterwards. In the lesson's harness, a test run decides “done”, and a model that claims success without passing tests is sent back to work.</p>
+</section>
+
+<section id="s6">
+<h2>6 Related work and 7 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Human-computer interaction as a field grew up studying how people use software and designing it around them. The authors propose the same discipline for a new kind of user.</p>
+<h3 class="rung">What came before</h3>
+<p>Code benchmarks (HumanEval and its extensions) were short and self-contained, and the top method on HumanEval had reached 94.4%. Software engineering benchmarks such as SWE-bench asked for repository-level work. Language agents had spread to web navigation, computer control and code, usually with interfaces made for people (a shell, a Python interpreter). The authors believe SWE-agent is the first agent for end-to-end software engineering.</p>
+<h3 class="rung">Limitations, risks, and what's next</h3>
+<ul>
+  <li><strong>Small toolkit</strong>: no web browsing or static analysis yet, though the configuration makes adding tools easy.</li>
+  <li><strong>Manual design</strong>: the interface and its prompt tips came from people reading trajectories; automating that is open.</li>
+  <li><strong>Scope</strong>: software engineering only; whether the principles transfer to other domains is untested.</li>
+  <li><strong>Safety</strong>: model-written code runs in throwaway Docker <span class="t" data-t="container">containers</span>, for inference and for evaluation, which the authors note are weaker isolation than virtualized hardware but adequate for code not written to escape. They also warn of fake “harnesses” that plant malicious instructions in issue text, and of agents producing malicious code.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The containment point is the same one the coding agents lesson makes with <a data-lesson="primer/agents/coding_agents.html#run_sandboxed"><code>run_sandboxed</code></a>: in-process limits are useful, but code a model writes belongs in a separate, disposable environment with no network or secrets it doesn't need.</p>
+</section>
+
+<section id="appb">
+<h2>Appendix B: tuning and outcomes <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#A2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Before a race, a team tries a few tyre pressures on a short practice lap. They don't test every combination on the real course.</p>
+<h3 class="rung">Tiny example: the sweep</h3>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 5 of Yang et al. (2024): % resolved on 37 development tasks, mean of 5 samples, GPT-4 Turbo.</caption>
+  <thead><tr><th class="num">Temperature</th><th class="num">Window</th><th>History</th><th class="num">Resolved</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td class="num">0.0</td><td class="num">100</td><td>Last 5 observations</td><td class="num">15.1</td></tr>
+    <tr><td class="num">0.0</td><td class="num">100</td><td>Full</td><td class="num">14.1</td></tr>
+    <tr><td class="num">0.0</td><td class="num">200</td><td>Last 5 observations</td><td class="num">10.8</td></tr>
+    <tr><td class="num">0.0</td><td class="num">200</td><td>Full</td><td class="num">9.2</td></tr>
+    <tr><td class="num">0.2</td><td class="num">100</td><td>Last 5 observations</td><td class="num">12.4</td></tr>
+    <tr><td class="num">0.2</td><td class="num">200</td><td>Full</td><td class="num">8.7</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the highlighted row is the configuration used for every main result: <span class="t" data-t="temperature">temperature</span> 0, a 100-line window, last-5 history. For GPT-4 Turbo, the smaller window beat 200 lines in every pairing, and last-5 beat full history in every pairing. Claude 3 Opus tied three ways at 8.1%, including this configuration, so the same one was used for both models. With only 37 tasks, one task is 2.7 points, so small differences here are fragile.</p>
+<pre class="in-python"><code># one task out of 37, in percentage points
+round(100 / 37, 1)  # → 2.7</code></pre>
+<h3 class="rung">Larger patches than the real fixes</h3>
+<p>Unlike the one-shot models of the SWE-bench paper, whose patches were smaller than the real fixes, SWE-agent's patches are larger: over all tasks, GPT-4 Turbo's median patch adds 12 lines against 7 for the real fix. The authors put most of the difference down to reproduction code left in the patch. Resolved patches are smaller (a median of 3 lines added), consistent with multi-place changes still being hard.</p>
+<h3 class="rung">Why it matters</h3>
+<p>A tuning set of 37 tasks and an ablation on 300 are what a single research group can afford at a few dollars per run. Reading the results well means keeping their noise in mind, and the paper's own repeated runs give a good yardstick for it.</p>
+</section>
+
+<section id="appc">
+<h2>Appendix C: the prompts <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2405.15793#A3">original</a></span></h2>
+<blockquote class="quote">“Across templates, we find that providing tips which tell agents to not make specific mistakes, avoid common pitfalls, and use helpful execution signals are effective for eliciting more successful problem solving.”<cite>Yang et al. (2024), Appendix C</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A new hire's first-day pack: how the office works, one worked example of a finished job, today's assignment with a list of tips collected from everyone who stumbled before, and then short daily updates.</p>
+<h3 class="rung">Tiny example: the messages of a run</h3>
+<figure class="ix" id="fig26">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 330" role="img" aria-label="Prompt flow: a system message, an optional demonstration, and the issue with tips come first; then each model reply is checked; a malformed reply gets an error message, a command with output gets the next-step template, and a command with no output gets an explicit no-output message">
+    <defs><marker id="arr26" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk plain" data-block="c_sys"><rect x="10" y="8" width="280" height="34" rx="6"/><text x="150" y="30" text-anchor="middle">System: setting, commands, format</text></g>
+    <g class="blk lin" data-block="c_demo"><rect x="10" y="48" width="280" height="34" rx="6"/><text x="150" y="70" text-anchor="middle">Demonstration (optional)</text></g>
+    <g class="blk norm" data-block="c_issue"><rect x="10" y="88" width="280" height="34" rx="6"/><text x="150" y="110" text-anchor="middle">Issue, instructions, tips</text></g>
+    <path class="wire" d="M150,122 V140" marker-end="url(#arr26)"/>
+    <g class="blk ff" data-block="c_reply"><rect x="70" y="142" width="160" height="40" rx="6"/><text x="150" y="160" text-anchor="middle">Model reply:</text><text x="150" y="175" text-anchor="middle">discussion + command</text></g>
+    <path class="wire" d="M100,182 V214" marker-end="url(#arr26)"/>
+    <path class="wire" d="M150,182 V214" marker-end="url(#arr26)"/>
+    <path class="wire" d="M200,182 V214" marker-end="url(#arr26)"/>
+    <g class="blk attn" data-block="c_err"><rect x="6" y="216" width="92" height="64" rx="6"/><text x="52" y="238" text-anchor="middle">malformed:</text><text x="52" y="254" text-anchor="middle">error</text><text x="52" y="270" text-anchor="middle">message</text></g>
+    <g class="blk soft" data-block="c_next"><rect x="104" y="216" width="92" height="64" rx="6"/><text x="150" y="238" text-anchor="middle">output:</text><text x="150" y="254" text-anchor="middle">next-step</text><text x="150" y="270" text-anchor="middle">template</text></g>
+    <g class="blk emb" data-block="c_none"><rect x="202" y="216" width="92" height="64" rx="6"/><text x="248" y="238" text-anchor="middle">no output:</text><text x="248" y="254" text-anchor="middle">“ran</text><text x="248" y="270" text-anchor="middle">successfully”</text></g>
+    <path class="wire" d="M150,280 V300 H2 V162 H68" marker-end="url(#arr26)"/>
+    <text x="150" y="318" text-anchor="middle" class="lbl">back to the model, until submit</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a message.</p></div>
+  </div>
+  <figcaption>The prompt workflow of Appendix C of Yang et al. (2024), redrawn from its Figure 26.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the three boxes at the top are sent once and never collapsed. Then the loop: every model reply is checked for the format (one discussion, one command). A malformed reply gets the error message on the left; three malformed replies in a row end the run. A valid command's output goes back through the next-step template, which appends the open file and working directory; a command with no output gets the explicit message on the right. The long arrow closes the loop.</p>
+<h3 class="rung">The tips, briefly</h3>
+<p>The issue message ends with six tips, each written after watching agents fail on development tasks: reproduce the bug first and re-run the reproduction after fixing; if a command fails, don't repeat it unchanged; use <code class="example">goto 583</code> instead of scrolling repeatedly; search the repository for how an input file is used; watch which file is open and which directory you're in; check every edit for wrong line numbers or indentation. The system prompt adds two warnings in capitals, one about indentation and one against issuing two commands at once. The authors also note that the system prompt says interactive programs like <code class="example">python</code> or <code class="example">vim</code> can't be used, since the environment has no interactive session; scripts can still be run.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Much of an agent's behaviour is set in plain English, and the authors say so: their tips don't scale as a method, but they work. Several tips also have a matching guardrail in the tools, which enforces what the prompt only asks: the linter backs up the reminder about indentation, and the search cap backs up the advice to search specifically. The <a data-lesson="primer/agents/tools.html">tools lesson</a> makes the same point about tool descriptions as prompts.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>What it became</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>Commands and feedback designed for a model</td><td>Tool design as a first-class part of any agent: compact results, explicit errors, few well-described tools</td><td><a data-lesson="primer/agents/tools.html">tools lesson</a></td></tr>
+    <tr><td>Search capped at 50 results</td><td>Search that returns locations and asks for a narrower query</td><td><a data-lesson="primer/agents/coding_agents.html#Workspace.search"><code>Workspace.search</code></a></td></tr>
+    <tr><td>Edits checked by a linter before they are kept</td><td>Edit tools that fail loudly and say how to retry</td><td><a data-lesson="primer/agents/coding_agents.html#Workspace.edit_file"><code>Workspace.edit_file</code></a></td></tr>
+    <tr><td>Last 5 observations in full</td><td>Rolling summaries and trimmed tool output</td><td><a data-lesson="primer/agents/context.html#summarize_turns"><code>summarize_turns</code></a></td></tr>
+    <tr><td>Docker containers for model-written code</td><td>Sandboxes with no network or secrets</td><td><a data-lesson="primer/agents/coding_agents.html#run_sandboxed"><code>run_sandboxed</code></a></td></tr>
+    <tr><td>12.47% on SWE-bench</td><td>The benchmark's grading rules, explained</td><td><a href="swe-bench.html">SWE-bench companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan and Ofir Press, <em>SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering</em> (2024). <a href="https://arxiv.org/abs/2405.15793">arXiv:2405.15793</a>, licensed CC BY 4.0. Quoted sentences, short pieces of quoted tool output and numbers restated from its tables are attributed where they appear; every figure is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    p: { tex: "p", name: "Per-step success", meaning: "The chance that one command is chosen and filled in correctly, assumed the same and independent for every step.", shape: "0 to 1", example: "0.9 (illustrative)" },
+    nsteps: { tex: "n", name: "Steps", meaning: "How many separate commands the operation takes.", shape: "a whole number", example: "1 with edit, 4 with sed" },
+    Pall: { tex: "P_{\\text{all}}", name: "Whole operation succeeds", meaning: "The chance that every one of the n steps goes right.", shape: "0 to 1", example: "0.9⁴ = 0.66" },
+    L: { tex: "L", name: "File length", meaning: "Lines in the open file.", shape: "a count", example: "1,890 (pvlib's modelchain.py)" },
+    W: { tex: "W", name: "Window size", meaning: "How many lines the viewer shows at once; SWE-agent uses 100.", shape: "a count", example: "100" },
+    ceil: { tex: "\\lceil \\cdot \\rceil", name: "Round up", meaning: "The ceiling: the next whole number at or above the value, because a partly filled window is still a view.", shape: "", example: "⌈18.9⌉ = 19" },
+    nviews: { tex: "n_{\\text{views}}", name: "Views to read the file", meaning: "How many windows it takes to see every line once.", shape: "a count", example: "19" },
+    tau: { tex: "\\tau", name: "Tokens per line", meaning: "Average tokens in one line of code (τ is the Greek letter tau).", shape: "a number", example: "10 (illustrative)" },
+    Tview: { tex: "T_{\\text{view}}", name: "Tokens per view", meaning: "What one observation from the viewer costs in context.", shape: "a count", example: "1,000" },
+    Srec: { tex: "S", name: "Recovered streaks", meaning: "Runs of consecutive failed edits followed immediately by a successful edit.", shape: "a count", example: "104 in resolved runs" },
+    Urec: { tex: "U", name: "Unrecovered streaks", meaning: "Runs of consecutive failed edits followed by something other than an edit.", shape: "a count", example: "31 in resolved runs" },
+    rrec: { tex: "r_{\\text{rec}}", name: "Recovery rate", meaning: "The share of failed-edit streaks that end in a successful edit.", shape: "0 to 1", example: "0.77" },
+    t: { tex: "t", name: "Step", meaning: "How many commands the agent has issued so far.", shape: "1, 2, 3, …", example: "20" },
+    S: { tex: "S", name: "Fixed start", meaning: "Tokens sent on every call and never collapsed: system prompt, demonstration and issue.", shape: "a count", example: "2,000 (illustrative)" },
+    oj: { tex: "o_j", name: "Observation j", meaning: "Tokens in the output of the j-th command.", shape: "a count", example: "800 (illustrative)" },
+    c: { tex: "c", name: "Collapsed line", meaning: "Tokens left of an observation once it is collapsed to one line.", shape: "a count", example: "10 (illustrative)" },
+    sumall: { tex: "\\sum_{j=1}^{t}", name: "Sum over every observation", meaning: "Add up every observation from the first to the t-th.", shape: "", example: "20 × 800" },
+    sumlast: { tex: "\\sum_{j=t-4}^{t}", name: "Sum over the last five", meaning: "Add up only the five newest observations, t − 4 to t.", shape: "", example: "5 × 800" },
+    Cfull: { tex: "C_{\\text{full}}(t)", name: "Context, full history", meaning: "Tokens in the context after t steps if nothing is collapsed.", shape: "a count", example: "18,000" },
+    C5: { tex: "C_{5}(t)", name: "Context, last-5 rule", meaning: "Tokens in the context after t steps with SWE-agent's rule (for t above 5).", shape: "a count", example: "6,150" },
+    a: { tex: "a", name: "New rate", meaning: "The resolved rate of the system being compared.", shape: "a percentage", example: "18.00%" },
+    bb: { tex: "b", name: "Old rate", meaning: "The resolved rate of the baseline.", shape: "a percentage", example: "11.00%" },
+    dpp: { tex: "\\Delta", name: "Difference in points", meaning: "The plain difference between the two percentages, in percentage points.", shape: "points", example: "7.0" },
+    rel: { tex: "\\text{rel}", name: "Relative gain", meaning: "The difference as a share of the old rate.", shape: "a ratio", example: "0.636, “64%”" },
+    fold: { tex: "\\text{fold}", name: "Fold", meaning: "How many times the old rate the new one is.", shape: "a ratio", example: "6.7× against retrieval" },
+    n: { tex: "n", name: "Runs", meaning: "How many times the agent was run on each task.", shape: "a whole number", example: "6" },
+    cc: { tex: "c", name: "Successful runs", meaning: "How many of the n runs resolved this task.", shape: "0 to n", example: "2 (illustrative)" },
+    k: { tex: "k", name: "Runs allowed", meaning: "How many runs may be tried; the task counts if any one resolves it.", shape: "1 to n", example: "3" },
+    binall: { tex: "\\binom{n}{k}", name: "n choose k", meaning: "The number of different groups of k runs that can be picked from n, ignoring order.", shape: "a whole number", example: "C(6, 3) = 20" },
+    binfail: { tex: "\\binom{n-c}{k}", name: "Groups of failed runs only", meaning: "Groups of k runs picked only from the n − c that failed.", shape: "a whole number", example: "C(4, 3) = 4" },
+    passk: { tex: "\\text{pass@}k", name: "pass@k", meaning: "The chance that at least one of k runs, picked at random from the n, resolves the task; averaged over tasks for the benchmark.", shape: "0 to 1", example: "0.8 for this task; 27.35% at k = 3 in Table 10" },
+    Ne: { tex: "N_{\\text{end}}", name: "Runs ending this way", meaning: "Runs that ended in a given way, such as with submit.", shape: "a count", example: "1,589" },
+    Nre: { tex: "N_{\\text{resolved, end}}", name: "Resolved runs ending this way", meaning: "Of those runs, the ones that resolved their task.", shape: "a count", example: "266" },
+    Pcond: { tex: "P(\\text{resolved} \\mid \\text{end})", name: "Chance of success, given the ending", meaning: "The share of runs ending a given way that resolved their task. The bar reads “given”.", shape: "0 to 1", example: "16.7% for submit" },
+  },
+  blocks: {
+    lm: { title: "The language model", body: "<p>GPT-4 Turbo or Claude 3 Opus, unchanged. Each turn it writes a short discussion (its reasoning) and exactly one command.</p>", lesson: "primer/agents/agent_loop.html" },
+    aci: { title: "The agent-computer interface", body: "<p>Everything between the model and the machine: which commands exist, how they are documented, how their output is formatted, and how the history is trimmed before each call.</p>" },
+    commands: { title: "Commands", body: "<p>A dozen special commands (search, file viewer, editor, submit) on top of the ordinary shell. Each has a short docstring that goes into the system prompt.</p>", lesson: "primer/agents/coding_agents.html#CODING_TOOL_DEFS" },
+    feedback: { title: "Feedback", body: "<p>Results shaped for a model: a numbered 100-line window, search summaries capped at 50, linter errors with before and after views, a line saying a silent command worked, and history where old observations are collapsed.</p>" },
+    computer: { title: "The computer", body: "<p>The task's repository in a Docker container with a shell. Anything the agent runs, including tests and scripts it writes, runs here.</p>", lesson: "primer/agents/coding_agents.html#run_sandboxed" },
+    p1: { title: "1 Simple actions", body: "<p>Bash commands can have dozens of options. SWE-agent's commands have a few arguments and one-line docs, so the model needs few demonstrations to use them.</p>" },
+    p2: { title: "2 Compact actions", body: "<p>An important operation should take one action, not several composed across turns. <code>edit n:m</code> replaces a whole block in one step, where the shell would need several <code>sed</code> calls.</p>", lesson: "primer/agents/tools.html#chain_success" },
+    p3: { title: "3 Informative, concise feedback", body: "<p>Say what changed and nothing more: after an edit, show the updated lines; after a search, list files and counts; for a silent command, say it succeeded.</p>" },
+    p4: { title: "4 Guardrails", body: "<p>Catch mistakes before they spread. The linter rejects edits that introduce syntax errors or undefined names, so a bad edit never reaches the file.</p>" },
+    s_shell: { title: "Shell-only", body: "<p><code>grep</code> and <code>find</code> can print many lines of irrelevant results, and exploring with chains of <code>cd</code>, <code>ls</code> and <code>cat</code> is extremely slow. With no special search tool, SWE-agent resolves 15.7% of Lite.</p>" },
+    s_iter: { title: "Iterative search", body: "<p>Like an editor's find: one result at a time, with some lines of context, and <code>next</code> and <code>prev</code> to move. Agents tended to call <code>next</code> until they had seen every result, exhausting budget and context: 12.0%.</p>" },
+    s_sum: { title: "Summarized search", body: "<p>SWE-agent's choice: every matching file with its number of matches, and above 50 results a request to narrow the search instead of the results. 18.0%.</p>", lesson: "primer/agents/coding_agents.html#Workspace.search" },
+    ph_issue: { title: "The issue", body: "<p>Shown once, in the instance message, with the tips.</p>" },
+    ph_repro: { title: "Reproduce", body: "<p>Create a script, write the issue's example into it, run it. The pattern create, edit, python opens 156 of the 286 resolved runs.</p>" },
+    ph_local: { title: "Localize", body: "<p>A broad directory search, then open a file and search within it or jump to a line: search_dir, open, search_file, goto. It can come first or follow reproduction.</p>" },
+    ph_edit: { title: "edit", body: "<p>From turn 5 onward, edit is the most common action. Failed edits (linter rejections) happen in 51.7% of runs.</p>" },
+    ph_run: { title: "python", body: "<p>Re-run the reproduction script or the tests to see whether the edit worked. Its distribution over turns closely tracks edit's.</p>" },
+    ph_submit: { title: "submit", body: "<p>Turns the accumulated edits into a patch and ends the run. 93.0% of resolved runs end this way.</p>" },
+    ph_exit: { title: "exit_cost", body: "<p>The $4 budget ran out, typically between turns 30 and 40; any edits made are submitted automatically. Only 3.2% of such runs resolve their task.</p>" },
+    c_sys: { title: "System template", body: "<p>The setting (a command line with a special file viewer), the documentation of every command, a warning about indentation, the reply format (one discussion and one command), and a note that interactive programs aren't supported. Same for every task.</p>", lesson: "primer/agents/llm.html" },
+    c_demo: { title: "Demonstration", body: "<p>One successful trajectory from the development set, either as a single message or replayed turn by turn. The authors think it mainly teaches command format. Dropping it cost 1.7 points on Lite.</p>" },
+    c_issue: { title: "Instance message", body: "<p>The issue text, a reminder of the key rules, and six tips learned from failures, ending with a shell prompt showing the open file and directory.</p>" },
+    c_reply: { title: "The model's reply", body: "<p>A discussion and one command in a code block. The authors also tried JSON and XML formats for the same pair.</p>" },
+    c_err: { title: "Format error", body: "<p>Explains the required format again. Once a valid reply follows, the malformed one and this message are deleted from the history. Three in a row end the run.</p>" },
+    c_next: { title: "Next-step template", body: "<p>The command's output, then the open file and the working directory, then a prompt. Used on almost every turn.</p>" },
+    c_none: { title: "No-output message", body: "<p>“Your command ran successfully and did not produce any output.” Without it, agents ran extra commands to check what a silent command had done.</p>" },
+  },
+  onReady(P) { viewerPlay(); editPlay(); contextChart(P); t1Bars(); passkChart(P); ablateBars(); trajectory(); },
+};
+
+/* ---- a toy file, a SWE-agent style viewer, and a stand-in for flake8 ---- */
+const CHAIN = [
+  '"""Toy power model, loosely after pvlib\'s modelchain.py."""',
+  "",
+  "",
+  "def basic_chain(times, latitude, longitude,",
+  "                module_parameters,",
+  "                surface_tilt=None, surface_azimuth=None,",
+  "                orientation_strategy=None,",
+  "                altitude=None):",
+  "    if orientation_strategy is not None:",
+  "        surface_tilt, surface_azimuth = get_orientation(",
+  "            orientation_strategy, latitude=latitude)",
+  "    if surface_tilt is None or surface_azimuth is None:",
+  '        raise ValueError("need surface_tilt and surface_azimuth")',
+  "    if altitude is None:",
+  "        altitude = 0",
+  "    return run_model(times, latitude, longitude, module_parameters,",
+  "                     surface_tilt, surface_azimuth, altitude)",
+  "",
+  "",
+  "def get_orientation(strategy, latitude=None):",
+  '    if strategy == "south_at_latitude_tilt":',
+  "        return latitude, 180",
+  '    if strategy == "flat":',
+  "        return 0, 180",
+  '    raise ValueError("unknown strategy: " + strategy)',
+  "",
+  "",
+  "def run_model(times, latitude, longitude, module_parameters,",
+  "              surface_tilt, surface_azimuth, altitude):",
+  "    return [latitude, longitude, surface_tilt, surface_azimuth, altitude]",
+];
+const PATH = "/toy__power/power/chain.py";
+
+// The viewer's output, in the format of the paper's Figures 3 and 11: a header, then the window.
+function view(lines, first, window) {
+  const start = Math.max(1, Math.min(first, Math.max(1, lines.length - window + 1)));
+  const end = Math.min(lines.length, start + window - 1);
+  const out = [`[File: ${PATH} (${lines.length} lines total)]`];
+  if (start > 1) out.push(`(${start - 1} more lines above)`);
+  for (let n = start; n <= end; n++) out.push(`${n}:${lines[n - 1]}`);
+  if (end < lines.length) out.push(`(${lines.length - end} more lines below)`);
+  return { text: out.join("\n"), start, end };
+}
+
+// edit n:m: replace lines n..m (inclusive) with the replacement lines.
+function applyEdit(lines, n, m, repl) {
+  return [...lines.slice(0, n - 1), ...repl, ...lines.slice(m)];
+}
+
+const KEYWORDS = new Set(["def", "if", "is", "not", "None", "or", "and", "return", "raise", "ValueError", "True", "False", "in", "for", "else"]);
+
+// Three of the codes SWE-agent's flake8 call selects, for this toy file only:
+// E999 (an unclosed bracket), E111 (indentation not a multiple of four), F821 (a name used but never defined).
+function lint(lines) {
+  const errors = [];
+  let depth = 0, opened = 0;
+  lines.forEach((raw, i) => {
+    const line = raw.replace(/"[^"]*"/g, '""');
+    const lead = raw.length - raw.trimStart().length;
+    // continuation lines inside brackets may be indented freely
+    if (depth === 0 && raw.trim() && lead % 4 !== 0) errors.push(`${i + 1}: E111 indentation is not a multiple of four`);
+    for (const ch of line) {
+      if (depth === 0 && (ch === "(" || ch === "[")) opened = i + 1;
+      depth += ch === "(" || ch === "[" ? 1 : ch === ")" || ch === "]" ? -1 : 0;
+    }
+  });
+  if (depth !== 0) errors.push(`${opened}: E999 SyntaxError: '(' was never closed`);
+  // names: split into functions, collect each one's parameters and assignments, then check every use
+  const funcs = [];
+  lines.forEach((l, i) => { if (l.startsWith("def ")) funcs.push(i); });
+  const defined = new Set(funcs.map((i) => lines[i].match(/^def (\w+)/)[1]));
+  funcs.forEach((s, k) => {
+    const end = k + 1 < funcs.length ? funcs[k + 1] : lines.length;
+    const text = lines.slice(s, end).map((l) => l.replace(/"[^"]*"/g, '""'));
+    let sigEnd = 0;
+    while (sigEnd < text.length - 1 && !/\):\s*$/.test(text[sigEnd])) sigEnd++;
+    const sig = text.slice(0, sigEnd + 1).join(" ").replace(/^def \w+\(/, "");
+    const local = new Set(sig.split(/[,()]/).map((p) => p.split("=")[0].trim().replace(":", "")).filter(Boolean));
+    text.slice(sigEnd + 1).forEach((l) => { const a = l.match(/^\s*([\w, ]+?)\s+=\s/); if (a) a[1].split(",").forEach((v) => local.add(v.trim())); });
+    text.slice(sigEnd + 1).forEach((l, j) => {
+      const cleaned = l.replace(/\b\w+=(?!=)/g, " ");
+      for (const name of cleaned.match(/\b[A-Za-z_]\w*\b/g) || []) {
+        if (!KEYWORDS.has(name) && !local.has(name) && !defined.has(name)) errors.push(`${s + sigEnd + j + 2}: F821 undefined name '${name}'`);
+      }
+    });
+  });
+  return errors;
+}
+
+function viewerPlay() {
+  const w = document.getElementById("win"), g = document.getElementById("goto-n"), out = document.getElementById("viewer-out"), ro = document.getElementById("viewer-readout");
+  let first = 1, last = "open " + PATH;
+  const draw = () => {
+    const W = +w.value;
+    document.getElementById("win-v").textContent = String(W);
+    const v = view(CHAIN, first, W);
+    first = v.start;
+    out.textContent = v.text + `\n(Open file: ${PATH})\n(Current directory: /toy__power)\nbash-$`;
+    ro.textContent = `After "${last}": lines ${v.start} to ${v.end} of ${CHAIN.length} shown. Reading the whole file with W = ${W} takes ${Math.ceil(CHAIN.length / W)} view${Math.ceil(CHAIN.length / W) === 1 ? "" : "s"}.`;
+  };
+  w.addEventListener("input", () => { last = `window ${w.value}`; draw(); });
+  document.getElementById("goto-btn").addEventListener("click", () => {
+    const n = Math.max(1, Math.min(CHAIN.length, Math.round(+g.value) || 1));
+    // SWE-agent's goto places the target line inside the window; here it sits about a third of the way down
+    first = Math.max(1, n - Math.floor(+w.value / 3));
+    last = `goto ${n}`; draw();
+  });
+  document.getElementById("up-btn").addEventListener("click", () => { first = Math.max(1, first - +w.value); last = "scroll_up"; draw(); });
+  document.getElementById("down-btn").addEventListener("click", () => { first = first + +w.value; last = "scroll_down"; draw(); });
+  draw();
+}
+
+const EDITS = [
+  ["Parameter first: edit 7:7", [[7, 7, []]]],
+  ["Lines 7 to 11 at once: edit 7:11", [[7, 11, []]]],
+  ["3-space indent: edit 14:15", [[14, 15, ["   if altitude is None:", "       altitude = 0"]]]],
+  ["If-block, then parameter: 9:11, 7:7", [[9, 11, []], [7, 7, []]]],
+];
+
+function editPlay() {
+  const sel = document.getElementById("edit-pick"), out = document.getElementById("edit-out"), ro = document.getElementById("edit-readout");
+  sel.innerHTML = EDITS.map((e, i) => `<option value="${i}">${e[0]}</option>`).join("");
+  const draw = () => {
+    const steps = EDITS[+sel.value][1];
+    let file = CHAIN.slice();
+    const msgs = [];
+    let ok = true;
+    for (const [n, m, repl] of steps) {
+      const next = applyEdit(file, n, m, repl);
+      const errs = lint(next);
+      const cmd = `edit ${n}:${m}` + (repl.length ? "\n" + repl.join("\n") : "") + "\nend_of_edit";
+      if (errs.length) {
+        const around = Math.max(1, n - 3);
+        msgs.push(`$ ${cmd}\nYour proposed edit has introduced new syntax error(s). Please understand the fixes and retry your edit command.\nERRORS:\n${errs.map((e) => "- " + e.replace(/^\d+: /, "")).join("\n")}\nThis is how your edit would have looked if applied\n${view(next, around, 8).text}\nThis is the original code before your edit\n${view(file, around, 8).text}\nYour changes have NOT been applied.`);
+        ok = false;
+        break;
+      }
+      file = next;
+      msgs.push(`$ ${cmd}\n${view(file, Math.max(1, n - 3), 8).text}\nFile updated.`);
+    }
+    out.textContent = msgs.join("\n\n");
+    ro.textContent = ok ? `Accepted: the file now has ${file.length} lines and orientation_strategy appears ${file.join("\n").split("orientation_strategy").length - 1} times.`
+      : `Rejected by the linter; the file is unchanged. Errors: ${lint(applyEdit(file, ...steps[msgs.length - 1])).join("; ")}.`;
+  };
+  sel.addEventListener("change", draw);
+  draw();
+}
+
+/* ---- §3: context size with full history and with the last-5 rule (illustrative sizes) ---- */
+function contextChart(P) {
+  const s = document.getElementById("obs"), box = document.getElementById("context-chart");
+  const S = 2000, c = 10, T = 40;
+  const series = (o) => {
+    const ts = Array.from({ length: T }, (_, i) => i + 1);
+    return [
+      { name: "full history", points: ts.map((t) => [t, S + t * o]) },
+      { name: "last 5 in full, older collapsed", points: ts.map((t) => [t, S + Math.min(t, 5) * o + Math.max(0, t - 5) * c]) },
+      { name: "GPT-4 Turbo's 128k window", points: ts.map((t) => [t, 128000]) },
+    ];
+  };
+  const chart = P.lineChart(box, {
+    series: series(+s.value), yMin: 0, yMax: 140000, width: Math.max(320, Math.min(640, box.clientWidth)), height: 280,
+    xLabel: "step of the run", yLabel: "tokens in context", xFmt: (v) => String(Math.round(v)), yFmt: (v) => `${Math.round(v / 1000)}k`,
+    readout: document.getElementById("context-readout"),
+    ariaLabel: "Context size by step for full history and for SWE-agent's last-5 rule, with GPT-4 Turbo's context window",
+  });
+  const redraw = () => {
+    const o = +s.value;
+    document.getElementById("obs-v").textContent = String(o);
+    chart.update(series(o));
+    document.getElementById("context-readout").textContent =
+      `With ${o}-token observations, at step 40: full history ${(S + 40 * o).toLocaleString("en-US")} tokens, last-5 rule ${(S + 5 * o + 35 * c).toLocaleString("en-US")} tokens.`;
+  };
+  s.addEventListener("input", redraw);
+}
+
+/* ---- Table 1: SWE-bench Lite, % resolved and average cost ---- */
+function t1Bars() {
+  const T1 = [["RAG, GPT-4 Turbo", 2.67, 0.13], ["RAG, Claude 3 Opus", 4.33, 0.25], ["Shell-only, no demo, GPT-4 Turbo", 7.33, 0.79], ["Shell-only, GPT-4 Turbo", 11.0, 1.46], ["SWE-agent, Claude 3 Opus", 13.0, 2.18], ["SWE-agent, GPT-4 Turbo", 18.0, 1.67]];
+  const cols = "minmax(7rem, 42%) minmax(0,1fr) 3.4rem";
+  const row = (label, w, text, bg) => `<div class="share-row" style="grid-template-columns:${cols}"><span>${label}</span><div><div class="share-bar" style="width:${w}%;background:${bg}"></div></div><span>${text}</span></div>`;
+  document.getElementById("t1-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--accent)"></i>% of Lite resolved, axis 0 to 20%</span><span><i class="hatch" style="background:var(--hatch) var(--soft-stroke)"></i>average cost in dollars (striped), axis 0 to 3</span></div>` +
+    T1.map(([m, r, c]) => row(m, (100 * r) / 20, r.toFixed(2) + "%", "var(--accent)") + row("", (100 * c) / 3, "$" + c.toFixed(2), "var(--hatch) var(--soft-stroke)")).join("");
+  document.getElementById("t1-readout").textContent =
+    "SWE-agent with GPT-4 Turbo resolves 18.00% of Lite at $1.67 on average; retrieval with the same model resolves 2.67% at $0.13.";
+}
+
+/* ---- Table 10: pass@k over six runs ---- */
+function passkChart(P) {
+  const box = document.getElementById("passk-chart");
+  const v = [17.94, 23.89, 27.35, 29.67, 31.33, 32.67];
+  P.lineChart(box, {
+    series: [{ name: "pass@k, SWE-agent with GPT-4 Turbo, Lite", points: v.map((y, i) => [i + 1, y]) }],
+    yMin: 0, yMax: 40, width: Math.max(320, Math.min(640, box.clientWidth)), height: 260,
+    xLabel: "k, runs allowed", yLabel: "% of Lite tasks solved", xFmt: (x) => String(Math.round(x)), yFmt: (y) => y.toFixed(2),
+    readout: document.getElementById("passk-readout"),
+    ariaLabel: "pass@k for k from 1 to 6 on SWE-bench Lite",
+  });
+}
+
+/* ---- Table 3: ablations on SWE-bench Lite, GPT-4 Turbo ---- */
+function ablateBars() {
+  const G = [
+    ["Editor", [["edit with linting (SWE-agent)", 18.0, true], ["edit without linting", 15.0], ["no edit command", 10.3]]],
+    ["Search", [["summarized (SWE-agent)", 18.0, true], ["iterative", 12.0], ["no search commands", 15.7]]],
+    ["File viewer", [["30 lines", 14.3], ["100 lines (SWE-agent)", 18.0, true], ["full file", 12.7]]],
+    ["Context", [["last 5 observations (SWE-agent)", 18.0, true], ["full history", 15.0], ["no demonstration", 16.3]]],
+  ];
+  const cols = "minmax(8rem, 46%) minmax(0,1fr) 3rem";
+  document.getElementById("ablate-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i class="hatch" style="background:var(--hatch) var(--soft-stroke)"></i>SWE-agent's choice (striped)</span><span><i style="background:var(--accent)"></i>alternative</span><span>% of Lite resolved, axis 0 to 20%</span></div>` +
+    G.map(([g, rows]) => `<p class="ui" style="margin:.6rem 0 .2rem;font-weight:600">${g}</p>` +
+      rows.map(([l, v, mine]) => `<div class="share-row" style="grid-template-columns:${cols}"><span>${l}</span><div><div class="share-bar" style="width:${(100 * v) / 20}%;background:${mine ? "var(--hatch) var(--soft-stroke)" : "var(--accent)"}"></div></div><span>${v.toFixed(1)}%</span></div>`).join("")).join("");
+  document.getElementById("ablate-readout").textContent =
+    "Largest drop: removing the edit command (18.0% to 10.3%). Smallest: dropping the demonstration (18.0% to 16.3%). Iterative search (12.0%) is worse than no search commands (15.7%).";
+}
+
+/* ---- Appendix D: the psf__requests-2317 trajectory, summarized ---- */
+const TRAJ = [
+  ["find_file \"sessions.py\"", "Find the file the issue names.", "Found 2 matches for \"sessions.py\" in /psf__requests:\n/psf__requests/build/lib/requests/sessions.py\n/psf__requests/requests/sessions.py", "Localization"],
+  ["open requests/sessions.py", "The copy under build/ is probably a build artifact; open the real one.", "[File: /psf__requests/requests/sessions.py (671 lines total)]\n1:# -*- coding: utf-8 -*-\n...\n(571 more lines below)", "Localization"],
+  ["search_file \"builtin_str\"", "The call isn't in the first 100 lines; search the open file for it.", "Found 2 matches for \"builtin_str\" in /psf__requests/requests/sessions.py:\nLine 16:from .compat import cookielib, OrderedDict, urljoin, urlparse, builtin_str\nLine 428:        method = builtin_str(method)\nEnd of matches for \"builtin_str\" in /psf__requests/requests/sessions.py", "Localization"],
+  ["goto 428", "Line 428 is the conversion; look at its surroundings.", "[File: /psf__requests/requests/sessions.py (671 lines total)]\n(412 more lines above)\n... the request() method, with line 428 in view ...", "Localization"],
+  ["edit 428:428\n        # Ensure method is a string, decode if it's a binary string\n        if isinstance(method, bytes):\n            method = method.decode('ascii')\n        method = builtin_str(method)\nend_of_edit", "Decode a bytes method before converting it.", "(the updated window, then)\nFile updated. Please review the changes and make sure they are correct (correct indentation, no duplicate lines, etc). Edit the file again if necessary.", "Editing"],
+  ["create reproduce_issue.py", "Write a script to check the fix.", "[File: /psf__requests/reproduce_issue.py (1 lines total)]\n1:", "Reproduction"],
+  ["edit 1:1\n... a script that sends a request with method b'GET' and prints the status code ...\nend_of_edit", "Send a request with a bytes method.", "[File: /psf__requests/reproduce_issue.py (16 lines total)]\n1:import requests\n...", "Reproduction"],
+  ["python reproduce_issue.py", "Run it.", "Response status code: 200\nScript completed successfully, no errors.", "Reproduction"],
+  ["rm reproduce_issue.py", "The check passed; remove the scratch script.", "(no output)", "Submission"],
+  ["submit", "The fix is verified; submit the changes.", "diff --git a/requests/sessions.py b/requests/sessions.py\n...", "Submission"],
+];
+function trajectory() {
+  let i = 0;
+  const out = document.getElementById("traj-out"), ro = document.getElementById("traj-readout"), pos = document.getElementById("traj-pos");
+  const prev = document.getElementById("traj-prev"), next = document.getElementById("traj-next");
+  const draw = () => {
+    const [cmd, why, obs, phase] = TRAJ[i];
+    pos.textContent = `Step ${i + 1} of ${TRAJ.length}`;
+    out.textContent = `DISCUSSION (summarized)\n${why}\n\nCOMMAND\n${cmd}\n\nOBSERVATION\n${obs}`;
+    ro.textContent = `Step ${i + 1}, ${phase}: ${cmd.split("\n")[0]}.`;
+    prev.disabled = i === 0;
+    next.disabled = i === TRAJ.length - 1;
+  };
+  prev.addEventListener("click", () => { if (i > 0) { i--; draw(); } });
+  next.addEventListener("click", () => { if (i < TRAJ.length - 1) { i++; draw(); } });
+  draw();
+}
+</script>
+</body>
+</html>

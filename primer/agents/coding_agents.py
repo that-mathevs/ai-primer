@@ -823,11 +823,13 @@ actions.
   real issues in open-source Python repositories, graded by the tests of the
   pull request that fixed each one: fail-to-pass and pass-to-pass tests and
   the resolved rate.
+  [Annotated companion](../../papers/swe-bench.html)
 - **Yang et al., *SWE-agent: Agent-Computer Interfaces Enable Automated
   Software Engineering* (2024)**: https://arxiv.org/abs/2405.15793. Showed
   that the design of the tools a coding agent gets (compact search results,
   file viewing in small windows, edits that report problems at once) changes
   how often it succeeds as much as the model does.
+  [Annotated companion](../../papers/swe-agent.html)
 - **Xie et al., *OSWorld: Benchmarking Multimodal Agents for Open-Ended Tasks
   in Real Computer Environments* (2024)**: https://arxiv.org/abs/2404.07972.
   A benchmark of real desktop tasks driven through screenshots, mouse and
