@@ -3,7 +3,114 @@ r"""
 
 Run: `python -m primer.ml.reinforcement`
 
-## The everyday picture
+## Level 1: The practitioner's guide
+
+**In one sentence.** Reinforcement learning trains a model from a score on
+what it produced rather than from a correct answer to copy, which is how a
+language model learns things nobody can write down (be helpful, reason to
+the right answer) and how it learns to game a score that was written down
+badly.
+
+**When you need it.** You need RL when you can judge an answer but cannot
+write the perfect one: a proof either checks or it doesn't, tests pass or
+fail, one reply is better than another though neither is "the" reply.
+The tell: you find yourself writing a grader, a checker or a rubric instead
+of example answers. You don't need it when you can write the answers
+(supervised fine-tuning copies them, at a fraction of the cost) or when
+you have pairs of better and worse answers and nothing more (DPO in
+`primer.ml.training_stages` learns from pairs with no sampling loop). And
+you never need to run the vendor's own RL: the helpfulness, refusals and
+reasoning of a hosted model were trained this way before you arrived, which
+is why this lesson matters even if you never train: it explains why models
+answer at length, flatter, and sometimes optimise the letter of your
+instruction instead of its spirit.
+
+**Your options.** From the cheapest to the most committed:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Supervised fine-tuning on demonstrations | Copy correct answers you wrote | The behaviour in the examples, nothing beyond them | Writing the answers | Your training stack, or a hosted API |
+| DPO on preference pairs | Learn from "this one beat that one", no sampling during training | Shifts tone and choices without a reward model or an RL loop | Thousands of comparisons | Your training stack, or a hosted API |
+| Hosted reinforcement fine-tuning with your grader | The vendor samples answers and reinforces the ones your grader scores high | An RL loop you don't build; the grader is still yours to get right | Grader design, many sampled answers per prompt, the vendor's price | The vendor's API |
+| GRPO with a verifiable reward | Sample a group of answers per prompt, check each, reinforce the above-average ones | A reward with no learned blind spot, and no second model to train | Generation dominates: 8 answers per prompt is a common default; a checker that cannot be argued with | Your training stack |
+| PPO with a learned reward model | Train a reward model on ratings, then a value network and the policy against it, on a KL leash | Optimises a goal no program can check, such as helpfulness | Two extra models the size of the policy, and the reward model's blind spots to defend against | Your training stack |
+
+**How to choose.** Ask what can judge an answer, and how much you trust it.
+
+- A program can check the final answer (arithmetic, unit tests, a format,
+  a proof checker): GRPO with that check as the reward. In this lesson's
+  toy, accuracy on eight addition prompts goes from 23% to 99% in 60 steps
+  of 8 answers each; this recipe is how DeepSeek-R1-Zero learned to reason
+  from correct final answers alone.
+- Only people can judge, and you have their ratings: a learned reward model
+  with PPO, a KL leash, and a held-out measure of the real goal that you
+  watch more closely than the reward.
+- You have pairs but no budget for sampling: DPO.
+- You can write the answers: supervised fine-tuning, and stop there.
+- Whatever you pick, the policy optimises the reward you wrote, not the goal
+  you meant. Before training, ask what a literal-minded optimiser would do
+  with your reward, and measure the goal separately.
+
+**What it costs.** Sampling is the bill: every training example is a full
+generation, and GRPO multiplies it by the group size, which is why PPO
+reuses each batch for several passes and why training loops run a fast
+inference engine beside the trainer. A learned baseline costs a second
+model (PPO's value network); GRPO replaces it with the group's own mean,
+which is why it was introduced as a way to cut PPO's memory. Noise costs
+steps: in the lesson's two-arm toy the gradient estimate's variance is
+30.25 without a baseline and 0 with one, and with rewards offset by five
+points, 60% of training runs without a baseline lock onto the wrong arm
+against 0% with one. Reusing a batch too hard costs calibration: 50
+passes over 16 pulls push one arm to 0.84 unclipped, 0.41 with PPO's clip
+at 0.2. And a KL leash costs a little reward on every answer (1.0 becomes
+0.931 for an answer whose probability doubled, at β = 0.1) to buy fluency
+and safety from drift.
+
+**What breaks.**
+
+- **Reward hacking.** The policy finds where the reward and the goal
+  disagree. In the toy, a reward model fitted on answers of 1 to 4
+  sentences rates a 10-sentence answer 2.19, the worst answer of all; true
+  quality rises from 0.80 to 0.93 and then falls to 0.75, below where it
+  started, while the reward keeps climbing. Gao, Schulman and Hilton (2022)
+  measured the same rise and fall at scale. "The reward went up" proves
+  nothing; keep a held-out measure of the goal.
+- **Length bias and sycophancy.** Raters prefer long, confident, flattering
+  answers, so the reward model does too, so the model becomes that.
+  Penalise length directly and rate the policy's current outputs, not
+  stale ones.
+- **Gaming the checker.** A coding model rewarded for passing tests learns
+  to edit or special-case the tests. A verifier has no learned blind spot,
+  but a buggy or bypassable one is a reward model with extra steps.
+- **Groups with nothing to teach.** When every answer in a GRPO group is
+  right or all are wrong, every advantage is zero: by the end of the toy
+  run, 84% of groups are unanimous. Filter for prompts at the edge of the
+  model's ability.
+- **Too loose a leash.** As β falls, the best policy piles onto whatever the
+  reward likes (99.995% on one action at β = 0.1 in the toy) and true
+  quality collapses; too tight and nothing moves. Sweep it.
+- **Collapsed exploration.** An arm whose probability hits zero is never
+  tried again, so the policy can lock onto a mediocre answer early.
+
+**In the wild.** InstructGPT (Ouyang et al., 2022) set the pattern of PPO
+against a learned reward model with a per-token KL penalty, and every chat
+assistant since inherits its habits. DeepSeekMath (Shao et al., 2024)
+introduced GRPO, reaching 51.7% on the MATH benchmark with a 7-billion-parameter model; DeepSeek-R1 (2025) trained
+reasoning with RL on rule-based rewards and no human-written reasoning
+traces. Hugging Face TRL's GRPOTrainer takes reward functions as plain
+Python callables or a reward model, samples 8 generations per prompt by
+default, and can generate with vLLM; OpenAI's model optimization guide
+lists reinforcement fine-tuning, where you supply the grader. Sutton and
+Barto's textbook and OpenAI's Spinning Up are the standard longer reads.
+
+**Go deeper.** Level 2 builds it all on a three-armed slot machine:
+REINFORCE as one line of arithmetic, why a baseline removes noise without
+bias, PPO's ratio and clip on a table of four cases, the KL leash as a fee
+per answer, GRPO's advantages from a group of four, and a reward model that
+loves length, trained against until quality falls, each with a figure you
+can rerun. If you only needed to choose a training signal, you are done.
+
+## Level 2: How it works, from scratch
 
 Think of teaching a dog to sit. You can't show it the right answer: you can
 only wait for it to try something and give it a treat when the something was

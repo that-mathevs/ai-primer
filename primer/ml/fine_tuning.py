@@ -13,7 +13,113 @@ all, preparing the data, the old skills the model loses along the way, the
 small dataset it memorises, and how two fine-tuned models can be merged into
 one by plain arithmetic on their weights.
 
-## The idea: an apprentice who already knows a lot
+## Level 1: The practitioner's guide
+
+**In one sentence.** Fine-tuning in practice is the work around the training
+run: deciding with an evaluation set whether to train at all, preparing
+examples that teach what you mean, keeping the skills the model already had,
+stopping before it memorises your data, and sometimes combining two
+fine-tunes by arithmetic on their weights instead of training a third.
+
+**When you need it.** You need this lesson when a fine-tune is on the table:
+a behaviour the best prompt cannot make consistent, or a long prompt sent so
+often that its tokens are most of the bill. The tell for the first is an
+eval score that stops improving however the prompt is reworded; the tell for
+the second is arithmetic. In this lesson's worked example, a 3,000-token
+prompt at \$2 per million tokens costs \$0.0060 per request, a tuned model
+that needs 300 tokens at \$4 per million costs \$0.0012, and a \$600
+fine-tune pays for itself after 125,000 requests (25 days at 5,000 a day;
+the prices are illustrative). You don't need fine-tuning to add facts,
+which go stale the day they change and belong in retrieval, and you don't
+need it while a clearer instruction with two examples still moves the eval.
+Nothing in this lesson matters until the eval exists: it is the first box of
+the decision, before any model.
+
+**Your options.** From the cheapest to the most committed:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| The best prompt, scored on the eval | Instructions and examples in the prompt, measured on a frozen held-out set | A baseline every other option must beat; survives a base-model upgrade | Tokens on every call | Your prompt |
+| Hosted supervised fine-tuning | Upload chat examples; the vendor applies the chat template, masks the user turns, trains and hosts | Consistent format and style without the long prompt | Curated examples, a training job, often a higher per-token price | The vendor's fine-tuning API |
+| LoRA on an open model | Train a small adapter beside frozen weights on your examples | Learns the task with less forgetting of the base model's skills (Biderman et al., 2024) | A GPU, data, a serving stack; may learn a hard new domain less completely | Your training stack |
+| Full fine-tune, with replay | Update every weight on your task mixed with a little general data | The largest change the model can make, and the old skills kept if you replay them | Multi-GPU training, the most forgetting when you don't replay, a copy of the model per variant | Your training stack |
+| Merge existing fine-tunes | Add each fine-tune's task vector (its change from the base) to the base, no training | Two separable skills in one model at no extra inference cost | An eval on every task; fails when the two changes fight | Your weights, with a merging toolkit |
+
+**How to choose.** Climb down only when the eval proves the rung above
+falls short.
+
+- A format or a house style: a few dozen to a few hundred excellent
+  examples, hosted or LoRA. Start with 50 to 100 and double only while a
+  doubling still beats the eval's margin of error (section 2e).
+- A behaviour that contradicts the base model ("always JSON" against "chat
+  naturally", "be terse" against "explain"): expect the old behaviour to
+  vanish wherever your data overrides it, and mix in general
+  instruction-following data so the model stays an assistant (section 3c).
+- A harder specialised skill: thousands of examples, and consider a full
+  fine-tune with replay, since LoRA learns less on a demanding domain.
+- Two skills trained separately, by different teams or on data that cannot
+  be pooled: try a merge first, and check the cosine between the task
+  vectors before you trust it (section 5b).
+- Whatever you pick, the fine-tune ships only if it beats the prompt on the
+  same held-out set by more than that set's margin of error, and a general
+  eval sits beside the task eval.
+
+**What it costs.** Money is the one-off cost of writing and checking data
+plus the run, against a per-request saving that may be zero if the tuned
+model is priced like the base one; the break-even rule in section 1 puts a
+number on it. Every new base model repeats the one-off cost. Data is the
+expensive part, and the eval is dearer than people expect: 100 held-out
+examples measured at 80% mean "somewhere between 72% and 88%", and it takes
+400 to halve that margin to ±3.9 points (this lesson's `margin_of_error`).
+Labels cost accuracy too: with 10% of reference labels wrong, a perfect
+model scores 90% and a 90% model scores 82%. Training itself is short.
+In the lesson's toy the new task is learned in 5 steps and every step after
+only erodes the general skill, and fine-tunes on small data run for a few
+epochs, with the best checkpoint shipped rather than the last.
+
+**What breaks.**
+
+- **The wrong chat template.** Training succeeds, the loss falls, and the
+  deployed model sees role markers it never learned. Use the exact template
+  the base model was trained with, and the system prompt you will deploy.
+- **Training on the user's turns.** Forget the loss mask and the model
+  learns to write questions. Hosted APIs mask for you; `render_chat` shows
+  which segments count.
+- **A leaking eval.** A training example that nearly copies a held-out one
+  turns the eval into a memory test. Freeze the held-out set first and
+  remove near-copies from training (Jaccard on word pairs, threshold 0.7 in
+  the toy).
+- **Forgetting.** Fine-tuning on one task takes the toy's general skill
+  from 0.99 to 0.655, and a task that contradicts an earlier one takes the
+  earlier one from 0.98 to 0.025. A lower learning rate only slows the
+  slide; 10 replayed examples in 210 bring it back to 0.945.
+- **Memorising a small dataset.** On 16 examples with 3 wrong labels,
+  validation loss bottoms out at epoch 70 (0.319) and has quadrupled
+  (1.277) by epoch 1,500. Checkpoint every epoch and ship the best.
+- **A merge that cancels.** Task vectors with a clearly negative cosine
+  (−0.25 in the toy) leave at least one skill at a coin flip whatever the
+  scale. Retrain jointly, or use a conflict-resolving merge.
+
+**In the wild.** Hosted fine-tuning APIs take chat-formatted examples and
+handle the template and the mask; OpenAI's model optimization guide lists
+supervised fine-tuning, DPO and reinforcement fine-tuning. For open models,
+Hugging Face TRL's SFTTrainer runs the supervised loop and PEFT supplies
+LoRA. Merging has its own toolkit: mergekit implements linear averaging,
+SLERP, task arithmetic, TIES, DARE and more. The evidence behind the advice
+is in the papers at the end of the lesson: LIMA's 1,000 curated examples,
+model soups for averaging fine-tunes of one task, task arithmetic for adding
+and subtracting them, TIES for resolving interference, elastic weight
+consolidation for when the old data is gone, and Biderman et al. on LoRA
+learning less and forgetting less.
+
+**Go deeper.** Level 2 puts every claim above on a 97-weight model you can
+train in a fraction of a second: the break-even formula, the chat mask,
+Jaccard deduplication, the margin of error and the label-noise ceiling,
+forgetting measured as distance from the base, the overfitting curve with
+early stopping, and task vectors merged at every scale. If you only needed
+to decide whether and how to fine-tune, you are done.
+
+## Level 2: How it works, from scratch
 
 Picture a skilled cook who joins your restaurant. They already know how to
 cook (that is the pretrained model). You want them to cook *your* menu, *your*

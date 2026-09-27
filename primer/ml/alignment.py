@@ -3,7 +3,116 @@ r"""
 
 Run: `python -m primer.ml.alignment`
 
-## The everyday picture
+## Level 1: The practitioner's guide
+
+**In one sentence.** Alignment is the work of making a model's behaviour
+match what you actually want (helpful, honest, harmless) when the only
+things you can optimise and check are measurements of it, and every
+measurement can be gamed.
+
+**When you need it.** You need this lesson the moment a model's behaviour,
+not its knowledge, is your problem: it refuses ordinary requests, it agrees
+with users who are wrong, it can be talked past its rules, or a metric you
+tuned on keeps rising while complaints do too. The tell is a number that
+improved without the product improving. In this lesson's toy, a model tuned
+against a reward that cannot tell content from padding peaks in true value
+at step 16 and is worse than untrained by step 50, while the measured score
+climbs the whole time (`goodhart_curve`). You don't need to run the
+vendor's alignment training; a hosted model arrives with its refusals,
+tone and honesty already shaped. You do need to measure whether that shape
+fits your use, because over-refusal fails quietly (nobody reports the
+harmful answer that didn't happen, but people stop using a model that turns
+down ordinary requests) and sycophancy fails exactly when someone most needs
+a straight answer.
+
+**Your options.** From the cheapest to the most committed:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Rely on the vendor's alignment | Use the model as trained; read its policy and model card | Whatever the vendor measured, on the vendor's distribution, not yours | Nothing up front; surprises later | The vendor |
+| Written principles in the prompt | State what the assistant must and must not do, and why refusals should explain themselves | A target your team can read and argue about | Prompt tokens; a model can still be talked past it | Your prompt |
+| Runtime classifiers with a threshold | A risk score on inputs and outputs; refuse above a threshold you set | A dial between over-refusal and harmful compliance, measured on your own sets | A classifier to build or buy, and two error rates to track | Your serving stack (`primer.agents.guardrails`) |
+| A red-team suite and a release gate | Search for failures on purpose, set limits in advance, hold any release that misses one | A measured attack success rate instead of a guess, on every release | Eval sets to build and keep fresh; a search that never quite finishes | Your evaluation pipeline |
+| Preference tuning against your principles | Label pairs by which answer breaks fewer of your rules (by hand, or by a model reading them) and train a reward model or DPO on them | Behaviour the prompt could not make consistent, including non-evasive refusals | Thousands of pairs, a training run, and the labeler's blind spots learned faithfully | Your training stack |
+
+**How to choose.** Start by writing down what "good" means, then measure
+before you fix.
+
+- Any deployment: build three small sets before launch, benign requests
+  that look sensitive, off-limits requests, and factual questions asked
+  plainly and after a wrong assertion. They give you over-refusal, harmful
+  compliance and a sycophancy flip rate. Set the limits first.
+- A model that refuses too much: lower the threshold on your own
+  classifier, or change the prompt to ask for a stated reason instead of a
+  refusal; then check harmful compliance did not rise past its limit,
+  because a threshold only moves requests between the two errors.
+- A filter that passes all its tests: red-team it with a search, not a
+  list. The toy's three hand-written tests report 0%; an automated word-swap
+  search reports 64%.
+- Behaviour no prompt pins down across thousands of conversations:
+  constitutional-style preference data, and spot-check the model labeler
+  against people.
+- Whatever you pick, optimise a measurement only as far as a separate
+  measurement of the goal keeps rising, and keep a person reading samples.
+
+**What it costs.** Measurement costs eval sets that must be built by hand
+and refreshed as failures come in from the wild. Red-teaming costs search:
+the Ganguli et al. dataset holds 38,961 human attacks across 3 model sizes
+and 4 model types, and automated red-teaming (Perez et al., 2022) trades
+people for a model that generates the attacks. Refusal costs users in one
+direction and harm in the other: in the lesson's toy classifier, a
+threshold of 0.3 refuses 61% of benign requests and lets 1% of off-limits
+ones through, 0.5 gives 17% and 16%, 0.7 gives 1% and 67%; only a better
+classifier lowers both. Sycophancy costs truth for approval: raters who
+give agreement a bonus of 2 against a correctness gap of 1 prefer the
+agreeing wrong answer 73% of the time, and a reward model learns that
+bonus. Constitutional AI's whole point is the labelling bill: Bai et al.
+(2022) trained a harmless, non-evasive assistant with far fewer human
+labels by having a model apply written principles.
+
+**What breaks.**
+
+- **Goodhart's law.** Tune hard against any proxy and the true value turns
+  down while the proxy climbs (Gao, Schulman and Hilton measured it at
+  scale). Stop early, leash the drift, refresh the reward model.
+- **Tests that share the author's imagination.** A filter that blocks every
+  phrasing its author thought of has an unknown failure rate. Search, patch,
+  then search again with fresh randomness, never against the attempts the
+  patch was built from.
+- **Sycophancy trained in.** Sharma et al. (2023) found five assistants
+  consistently sycophantic and that both people and preference models prefer
+  convincingly written sycophantic answers over correct ones. Build pairs
+  where the correct answer disagrees with the user, and measure flips on
+  every release.
+- **Over-refusal.** Quiet, and easy to cause by tightening a threshold
+  after one bad incident. Track it with the same seriousness as harm.
+- **Limits set after the numbers.** They drift to wherever the results
+  landed and the gate becomes a formality. Set them in advance.
+- **A labeler's blind spots.** Whatever the AI labeler gets wrong, the
+  reward model learns faithfully. Spot-check against human labels.
+
+**In the wild.** Constitutional AI (Bai et al., 2022) is the written-principles
+recipe: self-critique and revision, then AI-labelled preferences. Perez et
+al. (2022) red-team a language model with another language model, and
+Ganguli et al. (2022) report that RLHF-trained models grow harder to
+red-team as they scale. Open red-teaming tools include garak, NVIDIA's
+scanner of probes for jailbreaks, prompt injection and data leakage, and
+Microsoft's PyRIT framework for finding risks in generative AI systems.
+Llama Guard is an input-output safeguard model with a customisable risk
+taxonomy that classifies both prompts and responses, the classifier
+behind a refusal threshold. Runtime checks around a deployed model are
+built in `primer.agents.guardrails`, staged rollouts in
+`primer.agents.deployment` and regression gates in `primer.agents.evals`.
+
+**Go deeper.** Level 2 builds each measurement on made-up, neutral
+examples: the proxy-versus-true curve, a four-rule constitution that
+critiques, revises and labels pairs, a keyword filter red-teamed by word
+swaps until its attack success rate means something, a flip-rate experiment
+and the sigmoid that turns a rater's bias into a trained habit, the
+refusal trade-off curve, and a release gate you can run. If you only
+needed to know what to measure and where to set the limits, you are done.
+
+## Level 2: How it works, from scratch
 
 Picture hiring a new assistant and handing them a one-page brief: be useful,
 tell the truth, don't cause trouble. The brief is clear to you, but you can't

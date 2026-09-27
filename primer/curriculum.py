@@ -293,13 +293,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.ml.tokenization",
     "primer.ml.cnn_rnn",
 
-    # training
-    "primer.ml.training_stages",
-    "primer.ml.pretraining",
-    "primer.ml.fine_tuning",
-    "primer.ml.reinforcement",
-    "primer.ml.alignment",
-
     # serving
     "primer.ml.inference",
     "primer.ml.hardware",
