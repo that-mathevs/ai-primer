@@ -846,6 +846,7 @@ record of the computation.
   prompting with a few worked examples that include intermediate steps makes
   large models far better at arithmetic, commonsense and symbolic
   reasoning.
+  [Annotated companion](../../papers/chain-of-thought-prompting.html)
 - **Wang et al., *Self-Consistency Improves Chain of Thought Reasoning in
   Language Models* (2022)**: https://arxiv.org/abs/2203.11171. Introduced
   sampling many chains of thought and taking a majority vote over their

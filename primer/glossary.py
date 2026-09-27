@@ -168,6 +168,8 @@ GLOSSARY: dict[str, Entry] = {
     "weight decay": _E("Shrinking every weight slightly at each step, which penalizes large weights and keeps the model smoother.", REG),
     "early stopping": _E("Stopping training when the score on held-out data stops improving.", REG),
     "data leakage": _E("When information from the test set, or from the future, sneaks into training and inflates offline scores.", REG),
+    "out-of-distribution": _E("Unlike the examples a model learned from or was shown, such as longer or rarer inputs. Performance there is usually lower and harder to predict."),
+    "emergent ability": _E("A skill that is near chance in smaller models and appears sharply once a model is large enough, so it can't be predicted by extending the small models' trend."),
     "convolution": _E("Sliding a small grid of learned weights across an image and computing a weighted sum at every position, to find where a pattern appears.", CNN),
     "pooling": _E("Shrinking a feature map by keeping only the strongest (or average) value in each small window.", CNN),
     "rnn": _E("A recurrent neural network: it reads a sequence one step at a time, carrying a running summary called the hidden state.", CNN),
@@ -182,7 +184,7 @@ GLOSSARY: dict[str, Entry] = {
     "mrr": _E("Mean reciprocal rank: the average of 1 / (position of the first relevant result).", MET),
     "ndcg": _E("A ranking score that gives more credit for relevant results near the top and handles degrees of relevance.", MET),
     "bleu": _E("A score that counts overlapping word sequences with a reference text. Cheap, but blind to paraphrase.", MET),
-
+    "ablation": _E("Removing or replacing one part of a method and measuring again, to find out which part the gains come from."),
     # --- embeddings -----------------------------------------------------------
     "embedding": _E("A learned vector for a piece of content, arranged so that similar meanings end up close together.", W2V),
     "cosine similarity": _E("How closely two vectors point in the same direction, from −1 (opposite) to 1 (identical), ignoring their lengths.", SIM),
@@ -500,6 +502,7 @@ GLOSSARY: dict[str, Entry] = {
     'alignment tax': _E('Capability lost as a side effect of training a model to be helpful, honest and harmless.', 'primer.ml.training_stages'),
     'win rate': _E('The share of head-to-head comparisons one model wins; 50% means the two are indistinguishable.', 'primer.agents.evals'),
     'few-shot prompt': _E('A prompt that includes a few worked examples of the task before the real question.', 'primer.agents.context'),
+    'exemplar': _E('One worked example in a few-shot prompt: a question with its answer, and sometimes the steps that reach it.', 'primer.agents.context'),
     'linear probe': _E('Freezing a model and training only a simple linear classifier on its embeddings or internal activations, to measure what they encode.', 'primer.ml.embeddings.contrastive'),
     'zero-shot': _E('Doing a task with no task-specific training examples.', 'primer.ml.embeddings.contrastive'),
     'map@10': _E('Mean average precision over the top 10 results: rewards putting correct matches in the top 10, and higher up within it.', 'primer.ml.metrics'),

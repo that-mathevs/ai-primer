@@ -1,4 +1,9 @@
 window.PRIMER_GLOSSARY = {
+ "ablation": {
+  "def": "Removing or replacing one part of a method and measuring again, to find out which part the gains come from.",
+  "lesson": null,
+  "term": "ablation"
+ },
  "acceptance rate": {
   "def": "How often the big model keeps a drafted token in speculative decoding.",
   "lesson": "primer/ml/inference.html",
@@ -884,6 +889,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/word2vec.html",
   "term": "embedding"
  },
+ "emergent ability": {
+  "def": "A skill that is near chance in smaller models and appears sharply once a model is large enough, so it can't be predicted by extending the small models' trend.",
+  "lesson": null,
+  "term": "emergent ability"
+ },
  "encoder": {
   "def": "A transformer that reads the whole input at once, with every token seeing every other. Used for embeddings and classification.",
   "lesson": "primer/ml/transformer.html",
@@ -958,6 +968,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A quantity that never exceeds the log-probability a model gives the data; the VAE loss is its negative.",
   "lesson": "primer/ml/generative/autoencoders.html",
   "term": "evidence lower bound"
+ },
+ "exemplar": {
+  "def": "One worked example in a few-shot prompt: a question with its answer, and sometimes the steps that reach it.",
+  "lesson": "primer/agents/context.html",
+  "term": "exemplar"
  },
  "expectation": {
   "def": "The average of a quantity over many random draws, written E.",
@@ -2198,6 +2213,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The rows left out of a tree's bootstrap sample, usable as free validation data for that tree.",
   "lesson": "primer/ml/classical.html",
   "term": "out-of-bag"
+ },
+ "out-of-distribution": {
+  "def": "Unlike the examples a model learned from or was shown, such as longer or rarer inputs. Performance there is usually lower and harder to predict.",
+  "lesson": null,
+  "term": "out-of-distribution"
  },
  "outcome reward model": {
   "def": "A verifier that scores only the final answer.",
