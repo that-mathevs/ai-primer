@@ -869,6 +869,7 @@ record of the computation.
   Reasoning in Open Language Models* (2024)**:
   https://arxiv.org/abs/2402.03300. Introduced GRPO, reinforcement
   learning that uses a group of sampled answers as its own baseline.
+  [Annotated companion](../../papers/deepseekmath-grpo.html)
 - **DeepSeek-AI, *DeepSeek-R1: Incentivizing Reasoning Capability in LLMs
   via Reinforcement Learning* (2025)**: https://arxiv.org/abs/2501.12948.
   Showed that reinforcement learning with verifiable rewards alone makes

@@ -876,6 +876,7 @@ time against it without the reward drifting away from correctness.
 - **Schulman et al., *Proximal Policy Optimization Algorithms* (2017)**:
   https://arxiv.org/abs/1707.06347. Introduced the clipped probability-ratio
   objective that lets each batch be reused for several safe steps.
+  [Annotated companion](../../papers/ppo.html)
 - **Ouyang et al., *Training language models to follow instructions with
   human feedback* (InstructGPT, 2022)**: https://arxiv.org/abs/2203.02155.
   Used PPO with a per-token KL penalty to a reference model to tune a
@@ -884,6 +885,7 @@ time against it without the reward drifting away from correctness.
   Reasoning in Open Language Models* (2024)**:
   https://arxiv.org/abs/2402.03300. Introduced GRPO, replacing PPO's value
   network with group-relative advantages.
+  [Annotated companion](../../papers/deepseekmath-grpo.html)
 - **DeepSeek-AI, *DeepSeek-R1: Incentivizing Reasoning Capability in LLMs
   via Reinforcement Learning* (2025)**: https://arxiv.org/abs/2501.12948.
   Showed GRPO with rule-based, verifiable rewards alone can teach a model to

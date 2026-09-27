@@ -34,6 +34,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/interpretability.html",
   "term": "activation patching"
  },
+ "actor-critic": {
+  "def": "A reinforcement learner in two parts: the actor (the policy) chooses actions, and the critic (a value network) predicts the reward to expect, which serves as the baseline.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "actor-critic"
+ },
  "adagrad": {
   "def": "An optimizer that divides each weight's step by the square root of the sum of all its past squared gradients, so steps only ever shrink.",
   "lesson": "primer/ml/optimizers.html",
@@ -508,6 +513,11 @@ window.PRIMER_GLOSSARY = {
   "def": "In OpenTelemetry, the service that receives spans from apps and forwards them to storage backends.",
   "lesson": "primer/agents/observability.html",
   "term": "collector"
+ },
+ "common crawl": {
+  "def": "A nonprofit's public archive of the web, released as regular snapshots of billions of pages; the raw material of most pretraining data.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "Common Crawl"
  },
  "compounding error": {
   "def": "Small per-step failure rates multiplying over many steps: ten steps at 95% succeed only about 60% of the time.",
@@ -1354,6 +1364,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/cnn_rnn.html",
   "term": "GRU"
  },
+ "gsm8k": {
+  "def": "A benchmark of grade-school maths word problems (1,319 in its test set), scored by comparing the final number with the answer key.",
+  "lesson": "primer/ml/benchmarks.html",
+  "term": "GSM8K"
+ },
  "guardrail": {
   "def": "A check around the model that screens inputs, validates outputs or limits actions.",
   "lesson": "primer/agents/guardrails.html",
@@ -1469,6 +1484,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/rag.html",
   "term": "HyDE"
  },
+ "hyperparameter": {
+  "def": "A setting people choose before training rather than one the model learns, such as the learning rate, the batch size or PPO's clip range.",
+  "lesson": "primer/ml/optimizers.html",
+  "term": "hyperparameter"
+ },
  "hysteresis": {
   "def": "Making the bar for changing state higher than the bar for staying, so a decision doesn't flicker between two close options.",
   "lesson": null,
@@ -1498,6 +1518,11 @@ window.PRIMER_GLOSSARY = {
   "def": "In DPO, β times the log of how much more likely training has made a response than the reference model did.",
   "lesson": "primer/ml/training_stages.html",
   "term": "implicit reward"
+ },
+ "importance sampling": {
+  "def": "Estimating an average under one distribution from samples drawn under another, by weighting each sample by the ratio of its two probabilities.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "importance sampling"
  },
  "in-batch negatives": {
   "def": "Using the other examples in a training batch as free wrong answers for each query.",
@@ -1938,6 +1963,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Turning text in one language into another.",
   "lesson": "primer/ml/transformer.html",
   "term": "machine translation"
+ },
+ "maj@k": {
+  "def": "A score for sampling k answers per question and keeping the most common final answer: the share of questions where that majority answer is right.",
+  "lesson": "primer/ml/reasoning.html",
+  "term": "maj@k"
  },
  "majority voting": {
   "def": "Choosing the answer that the most samples agree on.",

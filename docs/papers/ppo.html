@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proximal Policy Optimization Algorithms, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Schulman et al. (2017), the paper that introduced PPO and its clipped probability-ratio objective.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="ppo">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#example">The running example</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Policy gradient methods</a></li>
+          <li><a href="#s2-2">2.2 Trust region methods</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Clipped surrogate objective</a></li>
+      <li><a href="#s4">4 Adaptive KL penalty</a></li>
+      <li><a href="#s5">5 Algorithm</a>
+        <ol>
+          <li><a href="#s5-1">The full objective</a></li>
+          <li><a href="#s5-2">Advantage estimates</a></li>
+          <li><a href="#s5-3">Algorithm 1</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Experiments</a>
+        <ol>
+          <li><a href="#s6-1">6.1 Comparing objectives</a></li>
+          <li><a href="#s6-2">6.2 Continuous control</a></li>
+          <li><a href="#s6-3">6.3 Humanoid running</a></li>
+          <li><a href="#s6-4">6.4 Atari</a></li>
+        </ol>
+      </li>
+      <li><a href="#s7">7 Conclusion</a></li>
+      <li><a href="#today">What changed since 2017</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Proximal Policy Optimization Algorithms, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Schulman, Wolski, Dhariwal, Radford and Klimov (2017), the paper that introduced PPO: reinforcement learning that reuses each batch of experience for several careful steps.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1707.06347">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1707.06347v2">PDF</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced with every symbol decoded; a few selected rows of the paper's tables appear with attribution. The paper's figures are redrawn from scratch, on a small example whose numbers you can check by hand, and are labelled as such. Every section heading links to the page of the original PDF (version 2) where that section starts: read it alongside.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the equation worked on real numbers, and the same numbers computed in plain Python.</li>
+  <li>The figures are live: drag the sliders, hover the curves, and tap the blocks of the algorithm diagram.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>. The code that builds PPO from scratch lives in the <a class="lesson" data-lesson="primer/ml/reinforcement.html">reinforcement learning lesson</a>.</p>
+</section>
+
+<section id="example">
+<h2>The running example</h2>
+<p>The paper tests PPO on simulated robots and video games. Those are too big to check by hand, so this page uses one tiny problem throughout, the same kind the <a data-lesson="primer/ml/reinforcement.html">reinforcement learning lesson</a> starts with: a <span class="t" data-t="multi-armed bandit">three-armed bandit</span>. There is one situation and three possible actions, called A, B and C.</p>
+<ul>
+  <li>The <span class="t" data-t="policy">policy</span> is three <span class="t" data-t="logits">logits</span> turned into probabilities by <span class="t" data-t="softmax">softmax</span>. It starts at logits (0, 0, 0), so each action has probability ⅓.</li>
+  <li>One batch of experience holds three samples. The policy tried C and it went well: <span class="t" data-t="advantage">advantage</span> +1. It tried A and it went badly: advantage −1. It tried B and it went a little well: advantage +0.5.</li>
+  <li>Later sections compare that starting policy with a candidate new one that gives A, B and C the probabilities 0.2, 0.3 and 0.5.</li>
+</ul>
+<p>An advantage says how much better an action did than typical for that situation; <a href="#s5-2">section 5</a> shows how the paper estimates it. Until then, take the three numbers as given.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=1">original</a></span></h2>
+<blockquote class="quote">“Whereas standard policy gradient methods perform one gradient update per data sample, we propose a novel objective function that enables multiple epochs of minibatch updates.”<cite>Schulman et al. (2017), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A tennis player records one practice session. Watching the video only once, making one small correction and throwing it away wastes most of what it could teach. Studying it several times is better, but each correction changes the player, and the further they drift from the person in the video, the less that video tells them. PPO studies each batch of experience several times, and it stops counting any improvement that would come from drifting too far from the policy that collected it.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A new family of <span class="t" data-t="policy gradient">policy gradient</span> methods, PPO, that alternate between collecting experience and optimizing a <span class="t" data-tip-title="Surrogate objective" data-tip="A stand-in for the true goal (the policy's expected reward) that can be computed from data already collected and whose improvement, near the old policy, predicts improvement in the true goal.">“surrogate” objective</span> on it for several <span class="t" data-t="epoch">epochs</span>.</li>
+  <li>Some of the benefits of <span class="t" data-tip-title="TRPO (trust region policy optimization)" data-tip="An earlier method by the same first author (2015). It maximizes the surrogate objective subject to a hard limit on how far the policy may move, measured by KL divergence, and solves that with second-order machinery. Reliable but complicated.">trust region policy optimization (TRPO)</span>, while much simpler to implement, more general, and more <span class="t" data-tip-title="Sample complexity" data-tip="How much experience (how many interactions with the environment) an algorithm needs to reach a given level of performance. Lower is better.">sample efficient</span> in their experiments.</li>
+  <li>On simulated robots and Atari games, PPO beats the other online policy gradient methods they compare against, and strikes a good balance between sample efficiency, simplicity and wall-clock time.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>PPO became a standard reinforcement learning algorithm, and it is the algorithm InstructGPT used to tune a language model from human feedback (<span class="t" data-t="rlhf">RLHF</span>). Its clipped ratio survives almost unchanged inside newer methods such as <span class="t" data-t="grpo">GRPO</span>.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=1">original</a></span></h2>
+<blockquote class="quote">“We propose a novel objective with clipped probability ratios, which forms a pessimistic estimate (i.e., lower bound) of the performance of the policy.”<cite>Schulman et al. (2017), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Three kinds of learner were competing in 2017. One tries to predict the long-run value of every move (<span class="t" data-tip-title="Q-learning" data-tip="A family of methods that learn Q(s, a), the expected total future reward of taking action a in situation s, and then act by picking the action with the highest Q. Deep Q-networks (DQN) learned to play Atari this way.">Q-learning</span>). One simply does more of whatever worked (“vanilla” policy gradients). One does more of whatever worked, but inside a carefully computed safety limit (TRPO). The paper wants the reliability of the third with the simplicity of the second.</p>
+<h3 class="rung">The problem, in the paper's words and ours</h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Approach</th><th>What goes wrong, per §1</th></tr></thead>
+  <tbody>
+    <tr><td>Q-learning with function approximation</td><td>Fails on many simple problems and is poorly understood; not shown to work well on continuous control</td></tr>
+    <tr><td>Vanilla policy gradients</td><td>Poor data efficiency and robustness: each sample is used for one small step</td></tr>
+    <tr><td>TRPO</td><td>Relatively complicated, and not compatible with noise such as <span class="t" data-t="dropout">dropout</span> or with sharing parameters between the policy and a value function</td></tr>
+  </tbody>
+</table></div>
+<p>The goal is an algorithm that is scalable, data efficient and robust (it works across many problems without retuning its <span class="t" data-t="hyperparameter">hyperparameters</span>), using only first-order optimization: plain gradients, the kind every deep learning library computes.</p>
+<h3 class="rung">Why it matters</h3>
+<p>“First-order only” is what made PPO spread. It needs nothing beyond the <span class="t" data-t="adam">Adam</span> optimizer and a loss function, so it slots into any training code, including code that trains billion-parameter language models.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background: policy optimization <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=2">original</a></span></h2>
+<p>Before PPO, the paper sets out the two ideas it combines: the policy gradient, and the trust region.</p>
+
+<section id="s2-1">
+<h3>2.1 Policy gradient methods <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=2">original</a></span></h3>
+<blockquote class="quote">“While it is appealing to perform multiple steps of optimization on this loss L<sup>PG</sup> using the same trajectory, doing so is not well-justified, and empirically it often leads to destructively large policy updates.”<cite>Schulman et al. (2017), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A basketball player practising free throws leans their form a little towards whatever they did before a shot that went in, and a little away from whatever they did before a miss. They never need to know the physics of why. That is a <span class="t" data-t="policy gradient">policy gradient</span>: make actions that did better than typical more likely, and actions that did worse less likely.</p>
+<h4>Tiny example</h4>
+<p>For a softmax policy, the direction in logit space that makes action <em>a</em> more likely is “1 for <em>a</em>, minus every action's probability”. At the uniform start that is (−⅓, −⅓, ⅔) for C, (⅔, −⅓, −⅓) for A and (−⅓, ⅔, −⅓) for B. Scale each by its sample's advantage and average over the batch:</p>
+<p>(1 × (−⅓, −⅓, ⅔) + (−1) × (⅔, −⅓, −⅓) + 0.5 × (−⅓, ⅔, −⅓)) / 3 = (−7/6, 1/3, 5/6) / 3 = <strong>(−0.389, 0.111, 0.278)</strong>.</p>
+<p>Push A down, C up, and B up a little. That is the step the batch asks for.</p>
+<div class="eq" data-tex="\htmlData{sym=ghat}{\hat{g}} = \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\Big[\htmlData{sym=nabla}{\nabla_\theta} \htmlData{sym=logpi}{\log \pi_\theta(a_t \mid s_t)}\, \htmlData{sym=Ahat}{\hat{A}_t}\Big]" data-fallback="ĝ = Ê_t[ ∇_θ log π_θ(a_t | s_t) Â_t ]   (1)"></div>
+<div class="eq" data-tex="\htmlData{sym=LPG}{L^{PG}(\theta)} = \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\Big[\htmlData{sym=logpi}{\log \pi_\theta(a_t \mid s_t)}\, \htmlData{sym=Ahat}{\hat{A}_t}\Big]" data-fallback="L^PG(θ) = Ê_t[ log π_θ(a_t | s_t) Â_t ]   (2)"></div>
+<div class="symtable" data-syms="ghat,Et,nabla,logpi,pitheta,at,st,Ahat,LPG"></div>
+<p class="inwords"><strong>In words:</strong> “the estimated policy gradient is the batch average of the direction that makes each sampled action more likely, weighted by how much better than typical that action did. <span class="m" data-tex="L^{PG}" data-fallback="L^PG"></span> is simply a number whose gradient is exactly that, so a library that computes gradients automatically can produce ĝ from it.”</p>
+<p class="inwords"><strong>With the numbers:</strong> ĝ = (−0.389, 0.111, 0.278), as above. <span class="m" data-tex="L^{PG}" data-fallback="L^PG"></span> itself at the start is log(⅓) × (1 − 1 + 0.5) / 3 = −1.0986 × 0.1667 = −0.183. Its value means little; its slope is what gets used.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+pi = [1 / 3, 1 / 3, 1 / 3]
+# the batch: (action, advantage) for C, A, B; actions 0, 1, 2 are A, B, C
+batch = [(2, 1.0), (0, -1.0), (1, 0.5)]
+# ∇_θ log π_θ(a) for a softmax policy: 1[k = a] − π(k), for each logit k
+def grad_log_pi(a):
+    return [(k == a) - pi[k] for k in range(3)]
+# ĝ = Ê_t[∇ log π(a_t) Â_t]: the batch average
+g_hat = [sum(grad_log_pi(a)[k] * A for a, A in batch) / len(batch) for k in range(3)]
+[round(g, 3) for g in g_hat]  # → [-0.389, 0.111, 0.278]
+# L^PG = Ê_t[log π(a_t) Â_t]
+round(sum(math.log(pi[a]) * A for a, A in batch) / len(batch), 3)  # → -0.183</code></pre>
+<p>The trouble, which the quote above names, is running many steps on <span class="m" data-tex="L^{PG}" data-fallback="L^PG"></span> with the same batch. Its gradient never switches off: as long as A's advantage is −1, every step pushes A's log-probability further down, even when A's probability is already 0.001. The figure in <a href="#fig-epochs">section 3</a> shows the result on our batch.</p>
+<h4>Why it matters today</h4>
+<p>This is <span class="t" data-t="reinforce">REINFORCE</span> with a <span class="t" data-t="baseline">baseline</span>, the starting point of every method on this page. For a language model, the actions are tokens and a sample is a whole answer, but the formula is unchanged. The lesson builds it as <a data-lesson="primer/ml/reinforcement.html#grad_log_prob"><code>grad_log_prob</code></a> and <a data-lesson="primer/ml/reinforcement.html#reinforce_step"><code>reinforce_step</code></a>.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Trust region methods <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=2">original</a></span></h3>
+<blockquote class="quote">“This problem can efficiently be approximately solved using the conjugate gradient algorithm, after making a linear approximation to the objective and a quadratic approximation to the constraint.”<cite>Schulman et al. (2017), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A hiker in fog can see the slope only a few metres around them. The map they draw from what they see is trustworthy inside that circle and fiction outside it. So they take the best step <em>inside the circle</em>, then look again. The circle is the <span class="t" data-tip-title="Trust region" data-tip="A neighbourhood around the current solution inside which a local approximation is trusted. Each step optimizes the approximation, but never leaves the neighbourhood.">trust region</span>. TRPO measures the circle's size with the <span class="t" data-t="kl divergence">KL divergence</span> between the old and new policy: how differently they behave, on average.</p>
+<h4>Tiny example</h4>
+<p>Suppose a step would move the policy from (⅓, ⅓, ⅓) to (0.2, 0.3, 0.5). The <span class="t" data-t="probability ratio">probability ratios</span>, new over old, are 0.6 for A, 0.9 for B and 1.5 for C. Weight each sample's advantage by its ratio and average: (1.5 × 1 + 0.6 × (−1) + 0.9 × 0.5) / 3 = 1.35 / 3 = <strong>0.45</strong>. That is the <span class="t" data-tip-title="Surrogate objective" data-tip="A stand-in for the true goal (the policy's expected reward) that can be computed from data already collected and whose improvement, near the old policy, predicts improvement in the true goal.">surrogate objective</span>: an estimate, from the old batch, of how much better the new policy would do. The KL divergence between the two policies is <strong>0.070</strong>. With a trust region of δ = 0.01 this step is too big, and TRPO would not take it.</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=maximize}{\underset{\theta}{\text{maximize}}}\;\; \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\!\left[\htmlData{sym=ratio}{\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}}\, \htmlData{sym=Ahat}{\hat{A}_t}\right] \\ \htmlData{sym=subjectto}{\text{subject to}} \\ \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\big[\htmlData{sym=KL}{\mathrm{KL}[\pi_{\theta_{\text{old}}}(\cdot \mid s_t),\, \pi_\theta(\cdot \mid s_t)]}\big] \le \htmlData{sym=delta}{\delta}\end{gathered}" data-fallback="maximize over θ: Ê_t[ π_θ(a_t|s_t) / π_θold(a_t|s_t) · Â_t ]   subject to   Ê_t[ KL[π_θold(·|s_t), π_θ(·|s_t)] ] ≤ δ   (3, 4)"></div>
+<div class="eq" data-tex="\begin{aligned}&\htmlData{sym=maximize}{\underset{\theta}{\text{maximize}}}\;\; \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\Bigg[\htmlData{sym=ratio}{\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}}\, \htmlData{sym=Ahat}{\hat{A}_t} \\ &\qquad\qquad - \htmlData{sym=beta}{\beta}\, \htmlData{sym=KL}{\mathrm{KL}[\pi_{\theta_{\text{old}}}(\cdot \mid s_t),\, \pi_\theta(\cdot \mid s_t)]}\Bigg]\end{aligned}" data-fallback="maximize over θ: Ê_t[ π_θ(a_t|s_t) / π_θold(a_t|s_t) · Â_t − β KL[π_θold(·|s_t), π_θ(·|s_t)] ]   (5)"></div>
+<div class="symtable" data-syms="maximize,ratio,thetaold,subjectto,KL,delta,beta"></div>
+<p class="inwords"><strong>In words:</strong> “TRPO: make the ratio-weighted advantage as large as possible, but keep the average KL divergence between the old and new policy below δ. The penalty version (5) instead subtracts β times that KL divergence and drops the hard limit.”</p>
+<p class="inwords"><strong>With the numbers:</strong> surrogate 0.45; KL 0.070 &gt; δ = 0.01, so the constraint fails. With a penalty of β = 1 the step scores 0.45 − 0.070 = 0.380.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+pi_old = [1 / 3, 1 / 3, 1 / 3]
+pi_new = [0.2, 0.3, 0.5]
+batch = [(2, 1.0), (0, -1.0), (1, 0.5)]
+# π_θ(a_t) / π_θold(a_t), for A, B, C
+[round(pi_new[k] / pi_old[k], 2) for k in range(3)]  # → [0.6, 0.9, 1.5]
+surrogate = sum(pi_new[a] / pi_old[a] * A for a, A in batch) / len(batch)
+round(surrogate, 2)  # → 0.45
+# KL[π_old, π_new] = Σ_a π_old(a) log(π_old(a) / π_new(a)); one state, so Ê_t is this one number
+kl = sum(p * math.log(p / q) for p, q in zip(pi_old, pi_new))
+round(kl, 3)  # → 0.07
+delta, beta = 0.01, 1.0
+kl &lt;= delta  # → False
+# the penalty form, equation (5)
+round(surrogate - beta * kl, 3)  # → 0.38</code></pre>
+<p>Why is a ratio allowed here at all? The batch was sampled from the old policy, but we want to judge the new one. Weighting each old sample by how much more (or less) likely the new policy makes it is <span class="t" data-t="importance sampling">importance sampling</span>: it turns an average over the old policy's actions into an estimate of the average over the new policy's. The estimate is good only while the two policies are close, which is exactly what the constraint protects.</p>
+<p>The paper explains why TRPO uses a hard limit rather than the penalty: no single β works well across problems, or even within one problem as learning changes its character. It then adds that simply choosing a fixed β and running <span class="t" data-t="stochastic gradient descent">SGD</span> on (5) is not enough to match TRPO. Something else is needed.</p>
+<h4>Why it matters today</h4>
+<p>The trust-region idea (improve, but only where your estimate is trustworthy) is the ancestor of every “leash” in modern fine-tuning. The conjugate-gradient machinery that TRPO needed to enforce it is what PPO throws away.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Clipped surrogate objective <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=3">original</a></span></h2>
+<blockquote class="quote">“With this scheme, we only ignore the change in probability ratio when it would make the objective improve, and we include it when it makes the objective worse.”<cite>Schulman et al. (2017), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A salesperson is paid a bonus on improvement over last month, but the bonus is capped at 20%: selling 50% more earns the same as selling 20% more. A drop, though, is never capped: every lost sale counts in full. Such a salesperson has no reason to take wild risks for a huge month, and every reason to avoid a bad one. PPO pays the policy in exactly this way. Gains from moving more than ε away from the old policy are not counted; losses always are.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Take the candidate new policy again, with ratios 0.6 (A), 0.9 (B) and 1.5 (C), and a clip range ε = 0.2, so ratios count only between 0.8 and 1.2.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Sample</th><th class="num">r</th><th class="num">Â</th><th class="num">r·Â</th><th class="num">clip(r)·Â</th><th class="num">min</th></tr></thead>
+  <tbody>
+    <tr><td>C</td><td class="num">1.5</td><td class="num">+1</td><td class="num">1.5</td><td class="num">1.2</td><td class="num"><strong>1.2</strong></td></tr>
+    <tr><td>A</td><td class="num">0.6</td><td class="num">−1</td><td class="num">−0.6</td><td class="num">−0.8</td><td class="num"><strong>−0.8</strong></td></tr>
+    <tr><td>B</td><td class="num">0.9</td><td class="num">+0.5</td><td class="num">0.45</td><td class="num">0.45</td><td class="num"><strong>0.45</strong></td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li><strong>C</strong> is a good action already boosted past the band: the gain beyond a ratio of 1.2 is not counted.</li>
+  <li><strong>A</strong> is a bad action already cut past the band: the gain from cutting it below 0.8 is not counted.</li>
+  <li><strong>B</strong> is inside the band, so it counts as usual. It moved the wrong way (a good action made less likely), so it lowers the score.</li>
+</ul>
+<p>The unclipped surrogate averages (1.5 − 0.6 + 0.45) / 3 = 0.45. The clipped one averages (1.2 − 0.8 + 0.45) / 3 = <strong>0.283</strong>: lower, because it refuses credit for the part of the move that went beyond the band.</p>
+<h3 class="rung">The math</h3>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=rt}{r_t(\theta)} = \htmlData{sym=ratio}{\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}} \\ \htmlData{sym=LCPI}{L^{CPI}(\theta)} = \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\big[\htmlData{sym=rt}{r_t(\theta)}\, \htmlData{sym=Ahat}{\hat{A}_t}\big]\end{gathered}" data-fallback="r_t(θ) = π_θ(a_t|s_t) / π_θold(a_t|s_t),   L^CPI(θ) = Ê_t[ r_t(θ) Â_t ]   (6)"></div>
+<div class="eq" data-tex="\begin{aligned}\htmlData{sym=LCLIP}{L^{CLIP}(\theta)} = \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\Big[&\htmlData{sym=min}{\min}\big(\htmlData{sym=rt}{r_t(\theta)}\,\htmlData{sym=Ahat}{\hat{A}_t},\\ &\htmlData{sym=clip}{\operatorname{clip}}(\htmlData{sym=rt}{r_t(\theta)},\, 1-\htmlData{sym=eps}{\epsilon},\, 1+\htmlData{sym=eps}{\epsilon})\,\htmlData{sym=Ahat}{\hat{A}_t}\big)\Big]\end{aligned}" data-fallback="L^CLIP(θ) = Ê_t[ min( r_t(θ) Â_t, clip(r_t(θ), 1 − ε, 1 + ε) Â_t ) ]   (7)"></div>
+<div class="symtable" data-syms="rt,LCPI,LCLIP,min,clip,eps"></div>
+<p class="inwords"><strong>In words:</strong> “for each sample, compute the ratio-weighted advantage twice, once with the ratio as it is and once with the ratio squeezed into the band from 1 − ε to 1 + ε; keep the smaller of the two, and average over the batch.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <span class="m" data-tex="L^{CPI}" data-fallback="L^CPI"></span> = 0.45 and <span class="m" data-tex="L^{CLIP}" data-fallback="L^CLIP"></span> = 0.283 for the candidate policy. At the old policy every ratio is 1, so both equal (1 − 1 + 0.5) / 3 = 0.167.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>pi_old = [1 / 3, 1 / 3, 1 / 3]
+pi_new = [0.2, 0.3, 0.5]
+batch = [(2, 1.0), (0, -1.0), (1, 0.5)]
+eps = 0.2
+def clip(x, lo, hi):
+    return max(lo, min(x, hi))
+def L_CPI(pi):
+    return sum(pi[a] / pi_old[a] * A for a, A in batch) / len(batch)
+def L_CLIP(pi):
+    # r_t(θ), then min(r·Â, clip(r, 1 − ε, 1 + ε)·Â), averaged
+    terms = [min(pi[a] / pi_old[a] * A, clip(pi[a] / pi_old[a], 1 - eps, 1 + eps) * A) for a, A in batch]
+    return sum(terms) / len(terms)
+round(L_CPI(pi_new), 3), round(L_CLIP(pi_new), 3)  # → (0.45, 0.283)
+# at the old policy the two agree
+round(L_CPI(pi_old), 3), round(L_CLIP(pi_old), 3)  # → (0.167, 0.167)</code></pre>
+
+<h3 class="rung">Figure 1, redrawn: one term of the objective</h3>
+<p><strong>Try it:</strong> the chart shows one sample's contribution as its ratio <em>r</em> moves. Switch the advantage between positive and negative, and drag ε to widen or narrow the band. Hover the chart (or focus it and use the arrow keys) to read both curves.</p>
+<div class="plot" id="fig1">
+  <div class="controls">
+    <span>Advantage:</span>
+    <button type="button" data-adv="1" aria-pressed="true">Â = +1</button>
+    <button type="button" data-adv="-1" aria-pressed="false">Â = −1</button>
+    <label for="fig1-eps">clip range ε = <strong id="fig1-eps-v">0.20</strong></label>
+    <input type="range" id="fig1-eps" min="0.05" max="0.5" step="0.05" value="0.2">
+  </div>
+  <div id="fig1-chart"></div>
+  <p class="readout" id="fig1-readout">Hover or tap the chart to read the objective at any ratio.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the probability ratio r, new over old; r = 1 is where optimization starts, because the new policy begins as a copy of the old. The solid line is the plain ratio-weighted advantage r·Â, a straight line through the origin. The dashed line is PPO's term. With a positive advantage, the two agree up to r = 1 + ε, then PPO's line goes flat: pushing the good action's probability any higher earns nothing, so its gradient is zero. With a negative advantage the flat part is on the left, below 1 − ε: cutting the bad action further earns nothing. On the other side of 1 the dashed line follows the solid one all the way, because the minimum always keeps the worse value: an update that makes a good action <em>less</em> likely, or a bad action <em>more</em> likely, is always charged in full. This is the paper's Figure 1, with the flat part and the start at r = 1 in the same places.</p>
+
+<h3 class="rung">Figure 2, redrawn: moving further along one update</h3>
+<p>The paper's second figure interpolates the policy from its old parameters towards an updated one and plots several objectives along the way. Here is the same picture for our toy batch, moving the logits from (0, 0, 0) along the policy gradient ĝ of <a href="#s2-1">section 2.1</a>: at step size s the logits are s × ĝ.</p>
+<div class="plot" id="fig2">
+  <div id="fig2-chart"></div>
+  <p class="readout" id="fig2-readout">Hover or tap the chart to read each objective at a step size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is how far the logits have moved along ĝ. <span class="m" data-tex="L^{CPI}" data-fallback="L^CPI"></span> (the unclipped surrogate) rises for ever: judged from the old batch, a bigger step always looks better, because it keeps pushing C up and A down. The KL divergence from the old policy rises too, faster and faster. <span class="m" data-tex="L^{CLIP}" data-fallback="L^CLIP"></span> starts on top of <span class="m" data-tex="L^{CPI}" data-fallback="L^CPI"></span> (the two agree to first order at the start, as the paper notes), bends away once A and then C leave the band (their terms go flat), peaks near a step of 1.65, and then falls. After the peak only B still counts, and along this direction B's probability first rises a little and then shrinks; B had a positive advantage, and a sample that moves the wrong way is always counted in full. So <span class="m" data-tex="L^{CLIP}" data-fallback="L^CLIP"></span> is never above <span class="m" data-tex="L^{CPI}" data-fallback="L^CPI"></span>, and it has a best step size, which <span class="m" data-tex="L^{CPI}" data-fallback="L^CPI"></span> lacks. Here the peak comes where the KL divergence is about 0.1; in the paper's version (the first update on the Hopper robot) it comes at about 0.02. These toy numbers are computed live from the three-sample batch, not taken from the paper.</p>
+
+<h3 class="rung">Many epochs on one batch</h3>
+<p id="fig-epochs"><strong>Try it:</strong> this is the experiment behind the paper's whole argument. Take our one batch of three samples and run 30 epochs of gradient ascent on it (learning rate 0.5), with three different objectives. Drag ε to see how the band changes where the clipped run stops.</p>
+<div class="plot" id="fig-drift">
+  <div class="controls">
+    <label for="drift-eps">clip range ε = <strong id="drift-eps-v">0.20</strong></label>
+    <input type="range" id="drift-eps" min="0.05" max="0.5" step="0.05" value="0.2">
+  </div>
+  <div id="drift-chart"></div>
+  <p class="readout" id="drift-readout">Hover or tap the chart to read the probability of action C after each epoch.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis counts passes over the same three samples; the y-axis is the probability of C, which started at ⅓. Stepping on <span class="m" data-tex="L^{PG}" data-fallback="L^PG"></span> or <span class="m" data-tex="L^{CPI}" data-fallback="L^CPI"></span> never stops: after 30 epochs C is above 0.8 and A is close to 0, all from one lucky pull of C and one unlucky pull of A. That is the “destructively large policy update” of §2.1. The clipped objective stops by itself after 7 epochs with ε = 0.2, once every sample's ratio has left the band on its favourable side (C's probability ends near 0.40, a ratio of about 1.2), because then every sample's gradient is zero. Widen ε and it stops later and further away; at ε = 0.5 it is still creeping at epoch 30. That built-in stopping point is what lets PPO reuse a batch safely.</p>
+<p><strong>In code:</strong> the lesson's <a data-lesson="primer/ml/reinforcement.html#ppo_clipped_objective"><code>ppo_clipped_objective</code></a> is equation (7), <a data-lesson="primer/ml/reinforcement.html#clipped_policy_update"><code>clipped_policy_update</code></a> makes several passes over one batch with or without the clip, and <a data-lesson="primer/ml/reinforcement.html#ppo_drift_experiment"><code>ppo_drift_experiment</code></a> runs the same comparison for 50 passes.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The clip replaced TRPO's second-order machinery with a few lines of code, and it outlived the robots it was tested on: GRPO, a later method used to train language models to reason, keeps the same clipped ratio. Its one weakness is visible in the chart too: the clip removes the <em>incentive</em> to move far, but it is not a hard wall. A single step can overshoot the band (at epoch 2, C's probability is 0.424, a ratio of about 1.27), and other samples or other minibatches can drag a ratio outside it.</p>
+</section>
+
+<section id="s4">
+<h2>4 Adaptive KL penalty coefficient <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=4">original</a></span></h2>
+<blockquote class="quote">“In our experiments, we found that the KL penalty performed worse than the clipped surrogate objective, however, we’ve included it here because it’s an important baseline.”<cite>Schulman et al. (2017), §4</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A thermostat does not know in advance how much heating a room needs. It measures, and if the room is too cold it turns the heat up, too warm and it turns it down. This section does the same for the penalty strength β of equation (5): pick a target amount of change per update, measure how much the policy actually changed, and double or halve β to steer towards the target.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Aim for a KL divergence of d<sub>targ</sub> = 0.01 per update, starting from β = 1. An update to (0.2, 0.3, 0.5) measures d = 0.070. That is above 1.5 × 0.01 = 0.015, so the policy moved too far and β doubles to <strong>2</strong>: the next update pays twice as much for drifting. Had d come out at 0.004, below 0.01 / 1.5 = 0.0067, β would halve instead. Anything between 0.0067 and 0.015 leaves β alone.</p>
+<div class="eq" data-tex="\begin{aligned}\htmlData{sym=LKLPEN}{L^{KLPEN}(\theta)} = \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\Bigg[&\htmlData{sym=ratio}{\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}}\, \htmlData{sym=Ahat}{\hat{A}_t} \\ &- \htmlData{sym=beta}{\beta}\, \htmlData{sym=KL}{\mathrm{KL}[\pi_{\theta_{\text{old}}}(\cdot \mid s_t),\, \pi_\theta(\cdot \mid s_t)]}\Bigg]\end{aligned}" data-fallback="L^KLPEN(θ) = Ê_t[ π_θ(a_t|s_t) / π_θold(a_t|s_t) · Â_t − β KL[π_θold(·|s_t), π_θ(·|s_t)] ]   (8)"></div>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=dmeas}{d} = \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\big[\htmlData{sym=KL}{\mathrm{KL}[\pi_{\theta_{\text{old}}}(\cdot \mid s_t),\, \pi_\theta(\cdot \mid s_t)]}\big] \\ \htmlData{sym=dmeas}{d} \lt \frac{\htmlData{sym=dtarg}{d_{targ}}}{1.5} \;\Rightarrow\; \htmlData{sym=beta}{\beta} \leftarrow \frac{\htmlData{sym=beta}{\beta}}{2} \\ \htmlData{sym=dmeas}{d} \gt 1.5\, \htmlData{sym=dtarg}{d_{targ}} \;\Rightarrow\; \htmlData{sym=beta}{\beta} \leftarrow 2\htmlData{sym=beta}{\beta}\end{gathered}" data-fallback="d = Ê_t[ KL[π_θold(·|s_t), π_θ(·|s_t)] ];  if d < d_targ / 1.5 then β ← β / 2;  if d > 1.5 d_targ then β ← 2β"></div>
+<div class="symtable" data-syms="LKLPEN,dmeas,dtarg,beta"></div>
+<p class="inwords"><strong>In words:</strong> “run several epochs on the penalized objective; then measure how far the policy actually moved. If it moved less than two thirds of the target, halve the penalty; if it moved more than one and a half times the target, double it; use the new β for the next update.”</p>
+<p class="inwords"><strong>With the numbers:</strong> <span class="m" data-tex="L^{KLPEN}" data-fallback="L^KLPEN"></span> for the candidate policy with β = 1 is 0.45 − 0.070 = 0.380. The measured d = 0.070 &gt; 0.015, so β becomes 2, and the same step would then score 0.45 − 2 × 0.070 = 0.310.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+pi_old = [1 / 3, 1 / 3, 1 / 3]
+pi_new = [0.2, 0.3, 0.5]
+# d = Ê_t[KL[π_old, π_new]]
+d = sum(p * math.log(p / q) for p, q in zip(pi_old, pi_new))
+def update_beta(beta, d, d_targ=0.01):
+    if d &lt; d_targ / 1.5:
+        return beta / 2
+    if d &gt; d_targ * 1.5:
+        return beta * 2
+    return beta
+update_beta(1.0, d)  # → 2.0
+update_beta(1.0, 0.004)  # → 0.5
+update_beta(1.0, 0.012)  # → 1.0
+# L^KLPEN with β = 1, then with the doubled β = 2
+round(0.45 - 1.0 * d, 3), round(0.45 - 2.0 * d, 3)  # → (0.38, 0.31)</code></pre>
+<p><strong>Try it:</strong> drag the measured KL divergence d and watch which band it lands in and what happens to β (target d<sub>targ</sub> = 0.01, current β = 1).</p>
+<div class="play" id="klplay">
+  <div class="sliders">
+    <label for="kl-d">measured d</label><input type="range" id="kl-d" min="-3.5" max="-1" step="0.005" value="-1.155"><output id="kl-d-v" for="kl-d">0.070</output>
+  </div>
+  <div id="kl-bands" aria-hidden="true"></div>
+  <p class="readout" id="kl-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the strip is a log scale of KL divergence from 0.0003 to 0.1, split into three bands at 0.0067 and 0.015. The marker is the measured d. In the left band (“halve β”) the policy barely moved, so the penalty was too strong; in the right band (“double β”) it moved too far, so the penalty was too weak; in the middle band β is left alone. Because each correction is a factor of two, β reaches a sensible size within a few updates wherever it started, which is why the paper says its initial value hardly matters.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>This variant lost to clipping in the paper's own tests (<a href="#s6-1">Table 1</a>), but the idea of a KL term survived in a different place. <span class="t" data-t="rlhf">RLHF</span> systems add a KL penalty between the policy and a frozen <span class="t" data-t="reference model">reference model</span> (the model before reinforcement learning), not the policy of the previous update, so the model does not drift far from fluent language while chasing reward. The lesson builds that version as <a data-lesson="primer/ml/reinforcement.html#kl_penalised_reward"><code>kl_penalised_reward</code></a>, and <a data-lesson="primer/ml/training_stages.html#kl_divergence"><code>kl_divergence</code></a> computes the KL itself.</p>
+</section>
+
+<section id="s5">
+<h2>5 Algorithm <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=4">original</a></span></h2>
+<blockquote class="quote">“The surrogate losses from the previous sections can be computed and differentiated with a minor change to a typical policy gradient implementation.”<cite>Schulman et al. (2017), §5</cite></blockquote>
+<p>This section puts the pieces into a working algorithm: a loss that also trains a value network, a way to estimate advantages, and the loop that ties them together.</p>
+
+<section id="s5-1">
+<h3>The full objective (equation 9) <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A sports team has players and a commentator. The players (the <span class="t" data-t="policy">policy</span>) choose what to do; the commentator (the <span class="t" data-t="value network">value network</span>) keeps saying how well things are likely to go from here. The commentator's guess is the “typical” that advantages are measured against, so it has to be trained too. That split is called <span class="t" data-t="actor-critic">actor-critic</span>. When players and commentator share one brain (one network), a single loss has to train both, and it helps to add a small bonus for keeping options open, so the team keeps trying new plays.</p>
+<h4>Tiny example</h4>
+<p>Take sample C with the candidate policy: its <span class="m" data-tex="L^{CLIP}" data-fallback="L^CLIP"></span> term is 1.2 (from the table in §3). Suppose the value network predicted 0.5 for this situation and the target it should have predicted is 0.81 (where 0.81 comes from is the next subsection): squared error (0.5 − 0.81)² = 0.0961. The candidate policy's <span class="t" data-t="entropy">entropy</span> is 1.030. With the paper's Atari settings c<sub>1</sub> = 1 and c<sub>2</sub> = 0.01, this sample contributes 1.2 − 1 × 0.0961 + 0.01 × 1.030 = <strong>1.114</strong>.</p>
+<div class="eq" data-tex="\begin{aligned}\htmlData{sym=Lfull}{L_t^{CLIP+VF+S}(\theta)} &= \htmlData{sym=Et}{\hat{\mathbb{E}}_t}\big[\htmlData{sym=LCLIPt}{L_t^{CLIP}(\theta)} \\ &\quad - \htmlData{sym=c1}{c_1}\, \htmlData{sym=LVF}{L_t^{VF}(\theta)} \\ &\quad + \htmlData{sym=c2}{c_2}\, \htmlData{sym=S}{S[\pi_\theta](s_t)}\big] \\ \htmlData{sym=LVF}{L_t^{VF}} &= \big(\htmlData{sym=Vtheta}{V_\theta(s_t)} - \htmlData{sym=Vtarg}{V_t^{targ}}\big)^2\end{aligned}" data-fallback="L_t^(CLIP+VF+S)(θ) = Ê_t[ L_t^CLIP(θ) − c1 L_t^VF(θ) + c2 S[π_θ](s_t) ],   L_t^VF = (V_θ(s_t) − V_t^targ)²   (9)"></div>
+<div class="symtable" data-syms="Lfull,LCLIPt,c1,LVF,Vtheta,Vtarg,c2,S"></div>
+<p class="inwords"><strong>In words:</strong> “for each timestep, take PPO's clipped term, subtract a multiple of the value network's squared error, add a small multiple of the policy's entropy, and average; then climb this with gradient ascent.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 1.2 − 1 × (0.5 − 0.81)² + 0.01 × 1.030 = 1.2 − 0.096 + 0.010 = 1.114.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+L_clip_t = 1.2
+V_theta, V_targ = 0.5, 0.81
+c1, c2 = 1.0, 0.01
+pi_new = [0.2, 0.3, 0.5]
+# L^VF = (V_θ(s_t) − V_targ)²
+L_vf = (V_theta - V_targ) ** 2
+round(L_vf, 4)  # → 0.0961
+# S = −Σ π log π: the entropy
+S = -sum(p * math.log(p) for p in pi_new)
+round(S, 3)  # → 1.03
+round(L_clip_t - c1 * L_vf + c2 * S, 3)  # → 1.114</code></pre>
+<p>The minus sign on the value error is because the whole expression is <em>maximized</em>: climbing it means making the value error smaller. The entropy bonus rewards spreading probability out, the same <span class="t" data-t="exploration">exploration</span> pressure that keeps the bandit from committing too early. In the robot experiments of §6.1 the paper uses separate networks for the policy and the value function (so c<sub>1</sub> does not matter) and no entropy bonus.</p>
+</section>
+
+<section id="s5-2">
+<h3>Advantage estimates (equations 10 to 12) <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>How good was a chess move? You could wait for the end of the game, but the result depends on dozens of later moves, so it is a noisy verdict. You could ask a commentator how the position looks one move later, but the commentator may be wrong. <span class="t" data-tip-title="Generalized advantage estimation (GAE)" data-tip="An advantage estimate that blends one-step, two-step, three-step (and so on) look-aheads, each trusting the value network after that many real rewards, with weights that shrink by a factor λ per extra step. λ = 0 trusts the value network after one step; λ = 1 uses real rewards all the way.">Generalized advantage estimation</span> blends the two: look ahead a few real steps, then trust the commentator, with a dial λ that sets how far you look before trusting.</p>
+<h4>Tiny example</h4>
+<p>A three-step episode earns rewards 0, 0, 1 (the only reward comes at the end). The value network's guesses for the three situations are 0.5, 0.6 and 0.8, and 0 after the episode ends. With discount γ = 0.9, each step's <em>surprise</em> is δ<sub>t</sub> = reward + γ × next guess − this guess:</p>
+<ul>
+  <li>δ<sub>0</sub> = 0 + 0.9 × 0.6 − 0.5 = 0.04</li>
+  <li>δ<sub>1</sub> = 0 + 0.9 × 0.8 − 0.6 = 0.12</li>
+  <li>δ<sub>2</sub> = 1 + 0.9 × 0 − 0.8 = 0.20</li>
+</ul>
+<p>With λ = 0.8, each advantage adds up the surprises from that step on, shrinking by γλ = 0.72 per step: Â<sub>2</sub> = 0.20, Â<sub>1</sub> = 0.12 + 0.72 × 0.20 = 0.264, Â<sub>0</sub> = 0.04 + 0.72 × 0.264 = <strong>0.230</strong>. With λ = 1 the first advantage is 0.31: the true discounted reward 0.9² × 1 = 0.81, minus the guess 0.5. That 0.81 is the target the value network was chasing in the previous subsection.</p>
+<div class="eq" data-tex="\begin{aligned}\htmlData{sym=Ahat}{\hat{A}_t} = -\htmlData{sym=V}{V(s_t)} &+ \htmlData{sym=rew}{r_t} + \htmlData{sym=gamma}{\gamma}\, \htmlData{sym=rew}{r_{t+1}} + \cdots \\ &+ \htmlData{sym=gamma}{\gamma}^{\htmlData{sym=T}{T}-t-1}\, \htmlData{sym=rew}{r_{T-1}} + \htmlData{sym=gamma}{\gamma}^{\htmlData{sym=T}{T}-t}\, \htmlData{sym=V}{V(s_T)}\end{aligned}" data-fallback="Â_t = −V(s_t) + r_t + γ r_(t+1) + ··· + γ^(T−t−1) r_(T−1) + γ^(T−t) V(s_T)   (10)"></div>
+<div class="eq" data-tex="\begin{aligned}\htmlData{sym=Ahat}{\hat{A}_t} &= \htmlData{sym=deltat}{\delta_t} + (\htmlData{sym=gamma}{\gamma}\htmlData{sym=lambda}{\lambda})\,\htmlData{sym=deltat}{\delta_{t+1}} + \cdots \\ &\quad + (\htmlData{sym=gamma}{\gamma}\htmlData{sym=lambda}{\lambda})^{\htmlData{sym=T}{T}-t-1}\,\htmlData{sym=deltat}{\delta_{T-1}} \\ \htmlData{sym=deltat}{\delta_t} &= \htmlData{sym=rew}{r_t} + \htmlData{sym=gamma}{\gamma}\, \htmlData{sym=V}{V(s_{t+1})} - \htmlData{sym=V}{V(s_t)}\end{aligned}" data-fallback="Â_t = δ_t + (γλ) δ_(t+1) + ··· + (γλ)^(T−t−1) δ_(T−1),   δ_t = r_t + γ V(s_(t+1)) − V(s_t)   (11, 12)"></div>
+<div class="symtable" data-syms="V,rew,gamma,T,deltat,lambda"></div>
+<p class="inwords"><strong>In words:</strong> “(10): the advantage is the discounted rewards actually received until the end of the segment, plus the value network's guess for what comes after, minus its guess for where we stood. (11, 12): equivalently, add up each step's surprise (reward plus discounted next guess, minus this guess), shrinking by γλ per step; with λ = 1 this is exactly (10).”</p>
+<p class="inwords"><strong>With the numbers:</strong> δ = (0.04, 0.12, 0.20); with λ = 0.8, Â = (0.230, 0.264, 0.200); with λ = 1, Â<sub>0</sub> = −0.5 + 0 + 0.9 × 0 + 0.81 × 1 = 0.31, and the δ sum gives the same 0.04 + 0.9 × 0.12 + 0.81 × 0.20 = 0.31.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>r = [0.0, 0.0, 1.0]
+# V(s_0), V(s_1), V(s_2), and V(s_T) = 0 after the episode ends
+V = [0.5, 0.6, 0.8, 0.0]
+gamma, T = 0.9, 3
+# δ_t = r_t + γ V(s_(t+1)) − V(s_t)
+delta = [r[t] + gamma * V[t + 1] - V[t] for t in range(T)]
+[round(d, 2) for d in delta]  # → [0.04, 0.12, 0.2]
+def gae(lam):
+    # Â_t = Σ_l (γλ)^l δ_(t+l)
+    return [sum((gamma * lam) ** l * delta[t + l] for l in range(T - t)) for t in range(T)]
+[round(A, 3) for A in gae(0.8)]  # → [0.23, 0.264, 0.2]
+# equation (10) at t = 0: −V(s_0) + r_0 + γ r_1 + γ² r_2 + γ³ V(s_3)
+round(-V[0] + sum(gamma ** k * r[k] for k in range(T)) + gamma ** T * V[T], 3)  # → 0.31
+# λ = 1 gives the same number
+round(gae(1.0)[0], 3)  # → 0.31</code></pre>
+<p>A note on the printed equations: in (10) and (11) the paper writes the exponent of the last reward and the last δ as T − t + 1. Counting powers (the reward k steps after t carries γ<sup>k</sup>, and the last reward, r<sub>T−1</sub>, is T − 1 − t steps after t) gives T − t − 1, which is what is shown here and what the Python checks.</p>
+<p><strong>Try it:</strong> drag λ and γ and watch the three advantages. At λ = 0 each advantage is just its own step's surprise; at λ = 1 each one sees every real reward to the end.</p>
+<div class="play" id="gaeplay">
+  <div class="sliders">
+    <label for="gae-lam">λ (lambda)</label><input type="range" id="gae-lam" min="0" max="1" step="0.05" value="0.8"><output id="gae-lam-v" for="gae-lam">0.80</output>
+    <label for="gae-gam">γ (gamma)</label><input type="range" id="gae-gam" min="0.5" max="1" step="0.01" value="0.9"><output id="gae-gam-v" for="gae-gam">0.90</output>
+  </div>
+  <div class="shares" id="gae-bars"></div>
+  <p class="readout" id="gae-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each row is one step of the episode. The first number is the surprise δ<sub>t</sub>, which depends only on γ; the bar and the second number are the advantage Â<sub>t</sub> (a striped bar means a negative advantage, which appears when γ is small enough that the next state's guess no longer covers this one's). The last step's advantage never changes with λ: nothing comes after it. The earliest step changes most, because it has the most future to blend in. Small λ leans on the value network (less noise, but its mistakes pass straight through); λ near 1 leans on real rewards (unbiased, but noisier over long episodes). The paper uses γ = 0.99 and λ = 0.95 in every experiment.</p>
+</section>
+
+<section id="s5-3">
+<h3>Algorithm 1: PPO, actor-critic style <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A coach sends N scouts out at once. Each plays T moves with the current playbook and brings back notes. The coach grades every move against the commentator's expectations, then studies the whole pile of notes K times over, in small handfuls, adjusting the playbook as they go. Then the new playbook goes out with the scouts and the cycle repeats.</p>
+<figure class="ix" id="alg1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 440" role="img" aria-label="Algorithm 1, the PPO loop, as a diagram">
+    <defs><marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="loop" aria-label="The outer loop, one iteration"><rect x="6" y="6" width="308" height="428" rx="14"/></g>
+    <text x="18" y="26" class="lbl">for iteration = 1, 2, …</text>
+    <path class="wire" d="M160,112 V136" marker-end="url(#arrA)"/>
+    <path class="wire" d="M160,190 V214" marker-end="url(#arrA)"/>
+    <path class="wire" d="M160,262 V286" marker-end="url(#arrA)"/>
+    <path class="wire" d="M160,344 V368" marker-end="url(#arrA)"/>
+    <path class="wire" d="M252,163 H232" marker-end="url(#arrA)"/>
+    <path class="wire" d="M60,392 H24 V70 H48" marker-end="url(#arrA)"/>
+    <g class="blk emb" data-block="actors" aria-label="N actors each run the old policy for T timesteps">
+      <rect class="ghost" x="62" y="42" width="196" height="62" rx="8"/><rect class="ghost" x="56" y="46" width="196" height="62" rx="8"/><rect x="50" y="50" width="196" height="62" rx="8"/>
+      <text x="148" y="74" text-anchor="middle">N actors each run π<tspan baseline-shift="sub" style="font-size:9px">old</tspan></text><text x="148" y="92" text-anchor="middle">for T timesteps</text>
+    </g>
+    <g class="blk norm" data-block="adv" aria-label="Compute advantage estimates"><rect x="70" y="136" width="162" height="54" rx="8"/><text x="151" y="158" text-anchor="middle">Advantages</text><text x="151" y="176" text-anchor="middle">Â<tspan baseline-shift="sub" style="font-size:9px">1</tspan> … Â<tspan baseline-shift="sub" style="font-size:9px">T</tspan> (GAE)</text></g>
+    <g class="blk lin" data-block="valuenet" aria-label="Value network"><rect x="252" y="140" width="56" height="46" rx="8"/><text x="280" y="160" text-anchor="middle">V(s)</text><text x="280" y="176" text-anchor="middle" class="lbl">critic</text></g>
+    <g class="blk plain" data-block="buffer" aria-label="The batch of N times T timesteps"><rect x="70" y="214" width="180" height="48" rx="8"/><text x="160" y="235" text-anchor="middle">Batch of N·T timesteps</text><text x="160" y="252" text-anchor="middle" class="lbl">states, actions, Â, old probs</text></g>
+    <g class="blk attn" data-block="optimize" aria-label="K epochs of minibatch gradient ascent on the surrogate"><rect x="50" y="286" width="220" height="58" rx="8"/><text x="160" y="309" text-anchor="middle">K epochs of minibatch SGD</text><text x="160" y="328" text-anchor="middle">(size M) on L, e.g. L<tspan baseline-shift="super" style="font-size:9px">CLIP</tspan></text></g>
+    <g class="blk soft" data-block="sync" aria-label="Copy the new parameters into the old policy"><rect x="60" y="368" width="200" height="46" rx="8"/><text x="160" y="396" text-anchor="middle">θ<tspan baseline-shift="sub" style="font-size:9px">old</tspan> ← θ</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start at the top with the <strong>actors</strong>.</p></div>
+  </div>
+  <figcaption>Algorithm 1 of the paper, drawn as a diagram. Based on Schulman et al. (2017), Algorithm 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the top down, then follow the wire on the left back up. The stacked boxes at the top are N copies of the frozen old policy, each collecting T timesteps of experience in its own copy of the environment. The value network (the small box on the right) feeds the advantage estimates of the previous subsection. Everything lands in one batch of N·T timesteps, which also records each action's probability under the old policy, needed for the ratio. The wide box below the batch is the part that is new in PPO: K full passes over that batch, in minibatches of M timesteps, climbing the clipped objective. Finally the old policy is overwritten with the new one, and the loop starts again with fresh experience. The only expensive part, running the environment, happens once per iteration; the batch is then reused K times.</p>
+<h4>Why it matters today</h4>
+<p>Swap “environment” for “a language model writing answers to prompts” and “reward” for “a reward model's score”, and this diagram is the reinforcement learning stage of RLHF. The costly step there is generation, which is why reusing each batch for several epochs matters even more.</p>
+</section>
+</section>
+
+<section id="s6">
+<h2>6 Experiments <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=5">original</a></span></h2>
+<blockquote class="quote">“Note that the score is negative for the setting without clipping or penalties, because for one environment (half cheetah) it leads to a very negative score, which is worse than the initial random policy.”<cite>Schulman et al. (2017), §6.1</cite></blockquote>
+
+<section id="s6-1">
+<h3>6.1 Comparison of surrogate objectives <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Before comparing PPO with other people's algorithms, the paper holds a tryout between its own variants: no clip and no penalty, the clip at three widths, and the KL penalty (fixed or adaptive) at several strengths. Each variant plays seven different sports and is graded on one common scale.</p>
+<h4>The setup</h4>
+<ul>
+  <li>7 simulated robot tasks in OpenAI Gym on the <span class="t" data-tip-title="MuJoCo" data-tip="A physics engine for simulating jointed bodies (robot arms, walkers, swimmers). The paper's robot tasks, such as HalfCheetah and Hopper, run on it.">MuJoCo</span> physics engine (HalfCheetah, Hopper, InvertedDoublePendulum, InvertedPendulum, Reacher, Swimmer, Walker2d), one million timesteps of training each, 3 random seeds per task.</li>
+  <li>The policy is a small network with two hidden layers of 64 units and tanh activations, outputting the mean of a <span class="t" data-tip-title="Gaussian policy" data-tip="For actions that are real numbers (how hard to push each joint), the policy outputs a mean for each one and samples the action from a bell curve around it. Its spread is learned too.">Gaussian</span> over actions. The policy and value function do not share parameters, and there is no entropy bonus.</li>
+  <li>Each run is scored by its average total reward over the last 100 episodes, then shifted and scaled per task so that a random policy scores 0 and the best result scores 1, and averaged over the 21 runs.</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, reproduced with attribution (Schulman et al., 2017). Average normalized score over 21 runs</caption>
+  <thead><tr><th>Variant</th><th class="num">Score</th></tr></thead>
+  <tbody>
+    <tr><td>No clipping or penalty</td><td class="num">−0.39</td></tr>
+    <tr><td>Clipping, ε = 0.1</td><td class="num">0.76</td></tr>
+    <tr class="hl"><td>Clipping, ε = 0.2</td><td class="num">0.82</td></tr>
+    <tr><td>Clipping, ε = 0.3</td><td class="num">0.70</td></tr>
+    <tr><td>Adaptive KL, d<sub>targ</sub> = 0.01 (best adaptive setting)</td><td class="num">0.74</td></tr>
+    <tr><td>Fixed KL, β = 0.3</td><td class="num">0.62</td></tr>
+    <tr><td>Fixed KL, β = 3 (best fixed setting)</td><td class="num">0.72</td></tr>
+  </tbody>
+</table></div>
+<figure class="ix" id="fig-table1">
+  <svg viewBox="0 0 360 250" role="img" aria-label="Bar chart of the selected rows of Table 1: normalized score for each variant, from minus 0.39 for no clipping to 0.82 for clipping at 0.2">
+    <line x1="213" y1="20" x2="213" y2="226" stroke="var(--wire)" stroke-width="1"/>
+    <line x1="340" y1="20" x2="340" y2="226" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text x="213" y="242" text-anchor="middle" class="lbl">0</text>
+    <text x="340" y="242" text-anchor="middle" class="lbl">1</text>
+    <text x="150" y="242" text-anchor="middle" class="lbl">−0.5</text>
+    <g>
+      <text x="4" y="42" class="lbl">no clip or penalty</text><rect x="164" y="30" width="49" height="16" rx="3" fill="var(--card)" stroke="var(--active)" stroke-width="1.6" stroke-dasharray="4 2"/><text x="160" y="42" text-anchor="end">−0.39</text>
+      <text x="4" y="70" class="lbl">clip ε = 0.1</text><rect x="213" y="58" width="97" height="16" rx="3" fill="var(--accent)"/><text x="314" y="70">0.76</text>
+      <text x="4" y="98" class="lbl">clip ε = 0.2</text><rect x="213" y="86" width="104" height="16" rx="3" fill="var(--accent)"/><text x="321" y="98">0.82</text>
+      <text x="4" y="126" class="lbl">clip ε = 0.3</text><rect x="213" y="114" width="89" height="16" rx="3" fill="var(--accent)"/><text x="306" y="126">0.70</text>
+      <text x="4" y="154" class="lbl">adaptive KL 0.01</text><rect x="213" y="142" width="94" height="16" rx="3" fill="var(--wire)"/><text x="311" y="154">0.74</text>
+      <text x="4" y="182" class="lbl">fixed KL β = 0.3</text><rect x="213" y="170" width="79" height="16" rx="3" fill="var(--wire)"/><text x="296" y="182">0.62</text>
+      <text x="4" y="210" class="lbl">fixed KL β = 3</text><rect x="213" y="198" width="91" height="16" rx="3" fill="var(--wire)"/><text x="308" y="210">0.72</text>
+    </g>
+  </svg>
+  <figcaption>The selected rows of Table 1 as bars. Drawn from the numbers in Schulman et al. (2017), Table 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each bar is one variant's average normalized score; the solid vertical line is 0 (a random policy) and the dashed one is 1 (the best result on each task). The three clipped variants (filled in the accent colour) are all at or near the top, with ε = 0.2 best at 0.82. The KL-penalty variants (grey) do reasonably, 0.62 to 0.74, but depend more on their setting. The dashed outline pointing left of zero is the plain surrogate with neither clip nor penalty: reusing the batch without a brake made one task, HalfCheetah, worse than random, and dragged the average to −0.39. That single bar is the case for the whole paper.</p>
+<p>The paper also reports trying clipping in log space, with no improvement. For completeness, the hyperparameters behind these runs (Table 3 of the paper) are: horizon T = 2048, Adam step size 3 × 10<sup>−4</sup>, 10 epochs, <span class="t" data-t="batch">minibatch</span> size 64, γ = 0.99, λ = 0.95.</p>
+<h4>Why it matters today</h4>
+<p>Robustness was the paper's goal, and this table is its evidence. Each setting uses one set of hyperparameters across all seven tasks. In the full table, ε = 0.2 beats every KL setting (adaptive ones score 0.68 to 0.74, fixed ones 0.62 to 0.72), and removing the brake altogether is a disaster. The lesson's code uses the same ε = 0.2.</p>
+</section>
+
+<section id="s6-2">
+<h3>6.2 Comparison with other algorithms, continuous control <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=6">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Now PPO with ε = 0.2 plays the same seven robot tasks against tuned versions of the established methods: TRPO, the <span class="t" data-tip-title="Cross-entropy method (CEM)" data-tip="A simple search method: sample many candidate policies, keep the best few, fit a new sampling distribution to them, and repeat. No gradients.">cross-entropy method</span>, vanilla policy gradient with an adaptive step size, <span class="t" data-tip-title="A2C (advantage actor-critic)" data-tip="Advantage actor-critic, a synchronous version of the A3C method: a policy-gradient method that uses a learned value function as its baseline and takes one gradient step per batch of experience.">A2C</span>, and A2C with a trust region.</p>
+<h4>What the paper reports</h4>
+<p>The learning curves (the paper's Figure 3, one panel per task over one million timesteps) show PPO outperforming the previous methods on almost all of the seven tasks. The paper gives the curves only as plots, so this page does not redraw them: read them in the original.</p>
+<h4>Why it matters</h4>
+<p>This was the headline for practitioners: the simple method was also the strongest on the standard benchmark of the day.</p>
+</section>
+
+<section id="s6-3">
+<h3>6.3 Showcase: humanoid running and steering <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=7">original</a></span></h3>
+<p><strong>Everyday picture:</strong> a stick-figure robot learns to run towards a flag, turn when the flag moves, and get up again when cubes knock it over. The paper trains three such 3D humanoid tasks in Roboschool (running forward; running to a flag that moves every 200 timesteps or when reached; and the same while being pelted by cubes), with 32 or 128 parallel actors. The learning curves (Figure 4) run for 50 to 100 million timesteps, and the still frames (Figure 5) show the robot turning towards a new target. The paper notes that concurrent work by Heess et al. used the adaptive KL variant of §4 to learn locomotion for 3D robots.</p>
+<p><strong>Why it matters:</strong> high-dimensional control with many parallel actors is exactly the setting where TRPO's second-order step was expensive; PPO handled it with plain minibatch gradient steps.</p>
+</section>
+
+<section id="s6-4">
+<h3>6.4 Comparison with other algorithms on Atari <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=8">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The last tryout is 49 Atari video games, against well-tuned A2C and <span class="t" data-tip-title="ACER" data-tip="Actor-critic with experience replay (Wang et al., 2016): an actor-critic method that also learns from stored past experience. The paper describes PPO as performing similarly to it on Atari while being much simpler.">ACER</span>. A game is “won” by whichever algorithm has the higher score averaged over three runs.</p>
+<h4>What the paper reports</h4>
+<ul>
+  <li>Scored by average reward over the whole of training (which favours fast learning): PPO won 30 games, ACER 18, A2C 1, with no ties.</li>
+  <li>Scored by average reward over the last 100 episodes (which favours final performance): ACER won 28, PPO 19, A2C 1, with 1 tie.</li>
+</ul>
+<p>So on Atari PPO beats A2C clearly and is roughly level with ACER, and the paper points out (§1) that it gets there while being much simpler. The Atari settings (Table 5) use 8 actors, T = 128, 3 epochs, a clip range of 0.1 × α and an Adam step size of 2.5 × 10<sup>−4</sup> × α, where α shrinks linearly from 1 to 0 over training, plus c<sub>1</sub> = 1 and c<sub>2</sub> = 0.01 in the objective of equation (9). Appendix B gives learning curves and scores against A2C for all 49 games.</p>
+<h4>Why it matters</h4>
+<p>One algorithm, with modest retuning, worked on both continuous robot control and pixel-based games. That generality, more than any single score, is why PPO became the default.</p>
+</section>
+</section>
+
+<section id="s7">
+<h2>7 Conclusion <span class="orig">· <a href="https://arxiv.org/pdf/1707.06347v2#page=8">original</a></span></h2>
+<blockquote class="quote">“These methods have the stability and reliability of trust-region methods but are much simpler to implement…”<cite>Schulman et al. (2017), §7</cite></blockquote>
+<p>The paper's summary: PPO uses multiple epochs of stochastic gradient ascent for each policy update, keeps the stability of trust-region methods, needs only a few lines of change to a vanilla policy-gradient implementation, works with a shared policy-and-value network, and performs better overall. The whole idea fits in one sentence: reuse each batch, but stop counting improvement once the policy has moved more than ε from the one that collected it.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2017</h2>
+<p>PPO's core, the clipped ratio, is unchanged. What changed is mostly what it is used to train:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Read more</th></tr></thead>
+  <tbody>
+    <tr><td>Robots and Atari games</td><td>Language models, with a reward model's score as the reward (RLHF)</td><td>Tuning a model towards human preferences is a reinforcement learning problem, and PPO was the stable tool at hand</td><td><a href="instructgpt.html">InstructGPT companion</a></td></tr>
+    <tr><td>KL penalty to the previous policy (§4, lost to clipping)</td><td>Clipping plus a KL penalty to a frozen reference model</td><td>Keeps the model near fluent language and away from reward-model blind spots</td><td><a data-lesson="primer/ml/reinforcement.html">reinforcement lesson</a></td></tr>
+    <tr><td>A learned value network as the baseline</td><td>Often dropped for language models: the average reward of several answers to the same prompt</td><td>A value network as large as the model doubles memory and must itself be trained</td><td><a href="deepseekmath-grpo.html">GRPO companion</a></td></tr>
+    <tr><td>Reinforcement learning to use preferences at all</td><td>Sometimes skipped: preference pairs trained on directly</td><td>DPO shows the preference objective can be optimized without sampling or a reward model</td><td><a href="dpo.html">DPO companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford and Oleg Klimov, <em>Proximal Policy Optimization Algorithms</em>, 2017. <a href="https://arxiv.org/abs/1707.06347">arXiv:1707.06347</a>. Quotations are brief and attributed; a few selected table rows are reproduced with attribution; figures are redrawn on a toy example. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // 2.1
+    ghat: { tex: "\\hat{g}", name: "Estimated policy gradient", meaning: "One slope per policy parameter: the direction to move the parameters so that expected reward rises fastest, estimated from one batch. The hat means “estimated from samples”.", shape: "as many numbers as the policy has parameters", example: "(−0.389, 0.111, 0.278) for the three logits" },
+    Et: { tex: "\\hat{\\mathbb{E}}_t", name: "Batch average over timesteps", meaning: "The average of the bracket over every timestep t in the collected batch. The hat marks it as an average over a finite sample, standing in for the true expected value.", shape: "one number (or one vector, for ĝ)", example: "average over the 3 samples" },
+    nabla: { tex: "\\nabla_\\theta", name: "Gradient with respect to θ", meaning: "For each parameter in θ, how much the expression rises if that parameter rises a little, collected into a vector.", shape: "same shape as θ", example: "3 slopes, one per logit" },
+    logpi: { tex: "\\log \\pi_\\theta(a_t \\mid s_t)", name: "Log-probability of the action taken", meaning: "The natural logarithm of the probability the policy gave to the action it actually took, in the situation it was in. Its gradient points towards making that action more likely.", shape: "one number, at most 0", example: "log(⅓) = −1.099 at the start" },
+    pitheta: { tex: "\\pi_\\theta", name: "The policy", meaning: "The learner: given a situation, a probability for every possible action. θ is the list of its parameters (here, three logits; in the paper, a neural network's weights).", shape: "a probability for each action", example: "(⅓, ⅓, ⅓) at the start" },
+    at: { tex: "a_t", name: "Action at timestep t", meaning: "What the policy did at step t. For a language model, one generated token.", shape: "one of the possible actions", example: "C" },
+    st: { tex: "s_t", name: "State at timestep t", meaning: "The situation the policy saw before acting: the robot's joint angles, the game screen, or for a language model the prompt plus the tokens so far. The bar “|” reads “given”.", shape: "whatever the environment provides", example: "the bandit has a single state" },
+    Ahat: { tex: "\\hat{A}_t", name: "Advantage estimate", meaning: "How much better than typical the action at step t turned out, estimated from the batch (section 5 shows how). Positive means make it more likely; negative, less likely.", shape: "one number per timestep", example: "+1 for C, −1 for A, +0.5 for B" },
+    LPG: { tex: "L^{PG}(\\theta)", name: "Policy-gradient objective", meaning: "A number built so that its gradient is ĝ. Automatic-differentiation libraries compute ĝ by differentiating it. Stepping on it many times with one batch is unsafe (§2.1).", shape: "one number", example: "−0.183 at the start" },
+    // 2.2
+    maximize: { tex: "\\underset{\\theta}{\\text{maximize}}", name: "Maximize over θ", meaning: "Choose the policy parameters θ that make the expression that follows as large as possible.", shape: "an instruction, not a number", example: "" },
+    ratio: { tex: "\\frac{\\pi_\\theta(a_t \\mid s_t)}{\\pi_{\\theta_{old}}(a_t \\mid s_t)}", name: "Probability ratio", meaning: "How much more (above 1) or less (below 1) likely the new policy makes the sampled action than the policy that collected it. Weighting by it is importance sampling: it lets old samples judge a new policy.", shape: "one positive number per timestep", example: "1.5 for C, 0.6 for A, 0.9 for B" },
+    thetaold: { tex: "\\theta_{old}", name: "Old parameters", meaning: "The policy parameters before this update: the frozen policy that collected the batch.", shape: "same shape as θ", example: "logits (0, 0, 0)" },
+    subjectto: { tex: "\\text{subject to}", name: "Subject to", meaning: "“While obeying the condition that follows”: a hard limit the maximization may not break.", shape: "an instruction", example: "" },
+    KL: { tex: "\\mathrm{KL}[\\pi_{\\theta_{old}}, \\pi_\\theta]", name: "KL divergence from the old policy to the new", meaning: "How differently the two policies behave in state s_t: Σ over actions of π_old(a) log(π_old(a) / π_new(a)). Zero only when they agree. The dot means “over all actions”.", shape: "one number, at least 0", example: "0.070 from (⅓, ⅓, ⅓) to (0.2, 0.3, 0.5)" },
+    delta: { tex: "\\delta", name: "Trust-region size", meaning: "The largest average KL divergence TRPO allows per update.", shape: "a small positive number", example: "0.01 (illustrative)" },
+    beta: { tex: "\\beta", name: "Penalty strength", meaning: "How much each unit of KL divergence costs in the objective. Fixed in (5); doubled or halved after each update in §4.", shape: "a positive number", example: "1, then 2 after the too-large update" },
+    // 3
+    rt: { tex: "r_t(\\theta)", name: "Probability ratio r_t", meaning: "Shorthand for the ratio new over old for the sample at step t. It equals 1 when θ = θ_old. (Section 5 reuses the letter r for rewards; they are different things.)", shape: "one positive number per timestep", example: "r = 1.5 for C" },
+    LCPI: { tex: "L^{CPI}(\\theta)", name: "Unclipped surrogate objective", meaning: "The ratio-weighted advantage averaged over the batch, the objective TRPO maximizes. CPI stands for conservative policy iteration, the 2002 work that proposed it.", shape: "one number", example: "0.45 for the candidate policy" },
+    LCLIP: { tex: "L^{CLIP}(\\theta)", name: "Clipped surrogate objective", meaning: "PPO's objective: for each sample the smaller of the plain and the clipped ratio-weighted advantage, averaged. A pessimistic (lower) estimate of the unclipped surrogate.", shape: "one number", example: "0.283 for the candidate policy" },
+    min: { tex: "\\min", name: "Minimum", meaning: "Keep the smaller of the two values. This makes the objective pessimistic: gains beyond the band are ignored, losses never are.", shape: "one number", example: "min(1.5, 1.2) = 1.2 for C" },
+    clip: { tex: "\\operatorname{clip}", name: "Clip", meaning: "clip(x, lo, hi) returns x, pushed back to lo if it is below and to hi if it is above.", shape: "one number between lo and hi", example: "clip(1.5, 0.8, 1.2) = 1.2" },
+    eps: { tex: "\\epsilon", name: "Clip range", meaning: "How far the ratio may move from 1 before further movement stops counting. A hyperparameter; 0.2 did best in the paper's robot tests.", shape: "a small positive number", example: "0.2" },
+    // 4
+    LKLPEN: { tex: "L^{KLPEN}(\\theta)", name: "KL-penalized objective", meaning: "The unclipped surrogate minus β times the average KL divergence from the old policy. The alternative to clipping that §4 tests.", shape: "one number", example: "0.380 with β = 1" },
+    dmeas: { tex: "d", name: "Measured KL divergence", meaning: "After the update's epochs, the average KL divergence between the old policy and the new one: how far the policy actually moved.", shape: "one number, at least 0", example: "0.070" },
+    dtarg: { tex: "d_{targ}", name: "Target KL divergence", meaning: "How far you want each update to move the policy. β is adjusted to steer d towards it.", shape: "a small positive number", example: "0.01" },
+    // 5
+    Lfull: { tex: "L_t^{CLIP+VF+S}(\\theta)", name: "The combined objective", meaning: "Everything PPO climbs when one network holds both the policy and the value function: the clipped term, minus the value error, plus the entropy bonus.", shape: "one number", example: "1.114 for sample C" },
+    LCLIPt: { tex: "L_t^{CLIP}(\\theta)", name: "Clipped term for timestep t", meaning: "One sample's min(r·Â, clip(r)·Â), before averaging.", shape: "one number", example: "1.2 for C" },
+    c1: { tex: "c_1", name: "Value-loss weight", meaning: "How much the value network's error counts against the policy's objective.", shape: "a positive number", example: "1 (the paper's Atari setting)" },
+    LVF: { tex: "L_t^{VF}", name: "Value-function loss", meaning: "The squared gap between the value network's prediction and its target at step t.", shape: "one number, at least 0", example: "(0.5 − 0.81)² = 0.0961" },
+    Vtheta: { tex: "V_\\theta(s_t)", name: "Value network's prediction", meaning: "The critic's guess of the discounted reward to come from state s_t. It shares parameters θ with the policy when they are one network.", shape: "one number", example: "0.5" },
+    Vtarg: { tex: "V_t^{targ}", name: "Value target", meaning: "What the value network should have predicted: for example the discounted rewards actually received, as computed in the next subsection.", shape: "one number", example: "0.81" },
+    c2: { tex: "c_2", name: "Entropy weight", meaning: "How much the entropy bonus counts.", shape: "a small positive number", example: "0.01 (the paper's Atari setting)" },
+    S: { tex: "S[\\pi_\\theta](s_t)", name: "Entropy bonus", meaning: "The entropy of the policy's action probabilities in state s_t, −Σ π log π: high when probability is spread out, zero when one action is certain. Rewarding it keeps the policy exploring.", shape: "one number, at least 0", example: "1.030 for (0.2, 0.3, 0.5)" },
+    V: { tex: "V(s)", name: "State-value function", meaning: "The value network's estimate of the discounted reward to come from state s. After the end of an episode it is 0.", shape: "one number per state", example: "V(s₀) = 0.5, V(s₁) = 0.6, V(s₂) = 0.8, V(s₃) = 0" },
+    rew: { tex: "r_t", name: "Reward at timestep t", meaning: "The number the environment returned after the action at step t. The paper reuses the letter r here; this is a reward, not the probability ratio of section 3.", shape: "one number per timestep", example: "0, 0, 1" },
+    gamma: { tex: "\\gamma", name: "Discount factor", meaning: "How much a reward one step later is worth compared with one now. Each extra step of delay multiplies a reward's weight by γ.", shape: "between 0 and 1", example: "0.9 here; 0.99 in the paper" },
+    T: { tex: "T", name: "Segment length", meaning: "How many timesteps each actor collects before an update. Advantages look only as far as the end of the segment and use V(s_T) for everything after.", shape: "a whole number", example: "3 here; 2048 in the robot tests, 128 on Atari" },
+    deltat: { tex: "\\delta_t", name: "One-step surprise (TD error)", meaning: "Reward plus the discounted guess for the next state, minus the guess for this state: how much better step t went than the value network expected.", shape: "one number per timestep", example: "δ₀ = 0.04, δ₁ = 0.12, δ₂ = 0.20" },
+    lambda: { tex: "\\lambda", name: "GAE parameter", meaning: "How far to look ahead with real rewards before trusting the value network. 0 uses one step; 1 uses every step to the end (equation 10).", shape: "between 0 and 1", example: "0.8 here; 0.95 in the paper" },
+  },
+
+  blocks: {
+    loop: { title: "The outer loop", body: "<p>One iteration: collect fresh experience with the current policy, then optimize on it. The paper repeats this until the training budget runs out (one million timesteps for the robot tasks).</p>" },
+    actors: { title: "N actors run π_old for T timesteps", body: "<p>N copies of the current policy, frozen as π<sub>old</sub>, each act in their own copy of the environment for T steps. Sampling is the expensive part; running many actors in parallel makes it faster. The paper uses T = 2048 on the robot tasks and 8 actors with T = 128 each on Atari.</p>", shape: "N × T timesteps" },
+    adv: { title: "Compute advantages Â₁ … Â_T", body: "<p>For each timestep, how much better than expected the action turned out, using the rewards collected and the value network's guesses: equations (10) to (12), with γ = 0.99 and λ = 0.95 in the paper.</p>", shape: "one number per timestep", lesson: "primer/ml/reinforcement.html" },
+    valuenet: { title: "Value network V(s): the critic", body: "<p>Predicts the discounted reward to come from each state. Its predictions are the baseline the advantages are measured against, and it is trained alongside the policy with the squared-error term of equation (9).</p>", shape: "one number per state", lesson: "primer/ml/reinforcement.html" },
+    buffer: { title: "The batch", body: "<p>Everything collected this iteration: states, actions, advantages, value targets, and each action's probability under π<sub>old</sub>, which the ratio's denominator needs. It is used K times and then thrown away.</p>", shape: "N·T rows" },
+    optimize: { title: "K epochs of minibatch updates on L", body: "<p>The new part. Shuffle the batch, cut it into minibatches of M timesteps, and take a gradient step (usually with Adam) on the clipped objective for each; repeat the whole pass K times. The clip keeps these repeated steps from running away (see the epochs chart in §3).</p>", shape: "K × (N·T / M) gradient steps", lesson: "primer/ml/reinforcement.html#clipped_policy_update" },
+    sync: { title: "θ_old ← θ", body: "<p>The updated policy becomes the new sampler. All ratios reset to 1 for the next batch, which is why the band 1 ± ε is measured from the start of each iteration, not from the start of training.</p>", shape: "copy the parameters" },
+  },
+
+  onReady(P) {
+    clipFigure(P);
+    interpolationFigure(P);
+    driftFigure(P);
+    klBands();
+    gaeBars();
+  },
+};
+
+/* ---- the toy batch shared by the figures ---- */
+const TOY = { old: [1 / 3, 1 / 3, 1 / 3], batch: [[2, 1], [0, -1], [1, 0.5]] };
+const softmax = (z) => { const e = z.map(Math.exp); const s = e.reduce((a, b) => a + b, 0); return e.map((v) => v / s); };
+const clipTo = (x, lo, hi) => Math.max(lo, Math.min(x, hi));
+
+/* ---- Figure 1: one term of L^CLIP against the ratio ---- */
+function clipFigure(P) {
+  let A = 1;
+  const slider = document.getElementById("fig1-eps");
+  const label = document.getElementById("fig1-eps-v");
+  const series = () => {
+    const eps = +slider.value;
+    const rs = [];
+    for (let i = 0; i <= 200; i++) rs.push(i / 100);
+    return [
+      { name: "r·Â (no clip)", points: rs.map((r) => [r, r * A]) },
+      { name: "PPO term: min(r·Â, clip(r)·Â)", points: rs.map((r) => [r, Math.min(r * A, clipTo(r, 1 - eps, 1 + eps) * A)]) },
+    ];
+  };
+  // The axis follows the advantage's sign, so the interesting half fills the chart.
+  const opts = {
+    series: series(), xLabel: "probability ratio r", yLabel: "objective for one sample",
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(1), yMin: -0.2, yMax: 2.1, width: 460, height: 320,
+    readout: document.getElementById("fig1-readout"), ariaLabel: "One term of the clipped objective against the probability ratio",
+  };
+  const chart = P.lineChart(document.getElementById("fig1-chart"), opts);
+  slider.addEventListener("input", () => { label.textContent = (+slider.value).toFixed(2); chart.update(series()); });
+  document.querySelectorAll("[data-adv]").forEach((b) => b.addEventListener("click", () => {
+    A = +b.dataset.adv;
+    [opts.yMin, opts.yMax] = A > 0 ? [-0.2, 2.1] : [-2.1, 0.2];
+    document.querySelectorAll("[data-adv]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    chart.update(series());
+  }));
+}
+
+/* ---- Figure 2: objectives along the policy-gradient direction ---- */
+function interpolationFigure(P) {
+  const { old, batch } = TOY;
+  const eps = 0.2;
+  const g = [0, 1, 2].map((k) => batch.reduce((s, [a, A]) => s + A * ((k === a ? 1 : 0) - old[k]), 0) / batch.length);
+  const cpi = [], clipOnly = [], lclip = [], kl = [];
+  for (let i = 0; i <= 80; i++) {
+    const s = i / 20;
+    const p = softmax(g.map((v) => v * s));
+    const rs = batch.map(([a]) => p[a] / old[a]);
+    const avg = (f) => batch.reduce((acc, [a, A], j) => acc + f(rs[j], A), 0) / batch.length;
+    cpi.push([s, avg((r, A) => r * A)]);
+    clipOnly.push([s, avg((r, A) => clipTo(r, 1 - eps, 1 + eps) * A)]);
+    lclip.push([s, avg((r, A) => Math.min(r * A, clipTo(r, 1 - eps, 1 + eps) * A))]);
+    kl.push([s, old.reduce((acc, q, k) => acc + q * Math.log(q / p[k]), 0)]);
+  }
+  P.lineChart(document.getElementById("fig2-chart"), {
+    series: [
+      { name: "KL from the old policy", points: kl },
+      { name: "L^CPI: mean of r·Â", points: cpi },
+      { name: "mean of clip(r)·Â", points: clipOnly },
+      { name: "L^CLIP", points: lclip },
+    ],
+    xLabel: "step size s along ĝ", yLabel: "value", xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(3),
+    width: 460, height: 320, readout: document.getElementById("fig2-readout"), ariaLabel: "Surrogate objectives and KL divergence along the policy gradient direction",
+  });
+}
+
+/* ---- Many epochs on one batch: L^PG, L^CPI and L^CLIP ---- */
+function driftFigure(P) {
+  const { old, batch } = TOY;
+  const slider = document.getElementById("drift-eps");
+  const label = document.getElementById("drift-eps-v");
+  const run = (kind, eps) => {
+    let z = [0, 0, 0];
+    const pts = [[0, 1 / 3]];
+    for (let e = 1; e <= 30; e++) {
+      const p = softmax(z);
+      const grad = [0, 0, 0];
+      batch.forEach(([a, A]) => {
+        const r = p[a] / old[a];
+        let w = A;
+        if (kind !== "pg") {
+          const clipped = (A > 0 && r > 1 + eps) || (A < 0 && r < 1 - eps);
+          if (kind === "clip" && clipped) return;
+          w = A * r;
+        }
+        for (let k = 0; k < 3; k++) grad[k] += (w * ((k === a ? 1 : 0) - p[k])) / batch.length;
+      });
+      z = z.map((v, k) => v + 0.5 * grad[k]);
+      pts.push([e, softmax(z)[2]]);
+    }
+    return pts;
+  };
+  const series = () => {
+    const eps = +slider.value;
+    return [
+      { name: "steps on L^PG", points: run("pg", eps) },
+      { name: "steps on L^CPI (no clip)", points: run("cpi", eps) },
+      { name: "steps on L^CLIP", points: run("clip", eps) },
+    ];
+  };
+  const chart = P.lineChart(document.getElementById("drift-chart"), {
+    series: series(), xLabel: "epoch", yLabel: "probability of C", xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(3),
+    yMin: 0, yMax: 1, width: 460, height: 320, readout: document.getElementById("drift-readout"), ariaLabel: "Probability of action C after each epoch on one batch",
+  });
+  slider.addEventListener("input", () => { label.textContent = (+slider.value).toFixed(2); chart.update(series()); });
+}
+
+/* ---- Adaptive KL: which band the measured divergence lands in ---- */
+function klBands() {
+  const slider = document.getElementById("kl-d");
+  const out = document.getElementById("kl-d-v");
+  const bands = document.getElementById("kl-bands");
+  const readout = document.getElementById("kl-readout");
+  const lo = -3.5, hi = -1, targ = 0.01;
+  const pos = (v) => ((Math.log10(v) - lo) / (hi - lo)) * 100;
+  function draw() {
+    const d = Math.pow(10, +slider.value);
+    out.textContent = d.toFixed(4);
+    const a = pos(targ / 1.5), b = pos(targ * 1.5);
+    bands.innerHTML =
+      `<div style="position:relative;height:2.6rem;margin:.8rem 0 .3rem;font:0.72rem ui-sans-serif,system-ui,sans-serif">` +
+      `<div style="position:absolute;left:0;width:${a}%;top:0;bottom:0;background:var(--ff);border:1px solid var(--ff-stroke);border-radius:6px 0 0 6px;display:flex;align-items:center;justify-content:center">halve β</div>` +
+      `<div style="position:absolute;left:${a}%;width:${b - a}%;top:0;bottom:0;background:var(--soft);border:1px solid var(--soft-stroke);display:flex;align-items:center;justify-content:center">keep</div>` +
+      `<div style="position:absolute;left:${b}%;right:0;top:0;bottom:0;background:var(--attn);border:1px solid var(--attn-stroke);border-radius:0 6px 6px 0;display:flex;align-items:center;justify-content:center">double β</div>` +
+      `<div style="position:absolute;left:calc(${pos(d)}% - 2px);width:4px;top:-6px;bottom:-6px;background:var(--active);border-radius:2px"></div></div>`;
+    const beta = d < targ / 1.5 ? 0.5 : d > targ * 1.5 ? 2 : 1;
+    const why = d < targ / 1.5 ? `below ${(targ / 1.5).toFixed(4)}: the policy barely moved, so the penalty halves` : d > targ * 1.5 ? `above ${(targ * 1.5).toFixed(3)}: the policy moved too far, so the penalty doubles` : `between ${(targ / 1.5).toFixed(4)} and ${(targ * 1.5).toFixed(3)}: close enough to the target, so β stays`;
+    readout.innerHTML = `d = <strong>${d.toFixed(4)}</strong> is ${why}. Next update: <strong>β = ${beta}</strong>.`;
+  }
+  slider.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- GAE: advantages of a three-step episode ---- */
+function gaeBars() {
+  const lam = document.getElementById("gae-lam");
+  const gam = document.getElementById("gae-gam");
+  const lamV = document.getElementById("gae-lam-v");
+  const gamV = document.getElementById("gae-gam-v");
+  const box = document.getElementById("gae-bars");
+  const readout = document.getElementById("gae-readout");
+  const r = [0, 0, 1], V = [0.5, 0.6, 0.8, 0];
+  function draw() {
+    const l = +lam.value, g = +gam.value;
+    lamV.textContent = l.toFixed(2);
+    gamV.textContent = g.toFixed(2);
+    const delta = r.map((rt, t) => rt + g * V[t + 1] - V[t]);
+    const A = delta.map((_, t) => delta.slice(t).reduce((s, d, i) => s + Math.pow(g * l, i) * d, 0));
+    box.innerHTML = A.map((a, t) =>
+      // Negative advantages get stripes as well as a different colour, so the sign never rests on colour alone.
+      `<div class="share-row" style="grid-template-columns:6.6rem minmax(0,1fr) 4.6rem"><span>step ${t}: δ ${delta[t].toFixed(3)}</span><div><div class="share-bar" style="width:${Math.max(1, Math.min(100, (Math.abs(a) / 0.5) * 100)).toFixed(1)}%;${a < 0 ? "background:var(--hatch) var(--active)" : ""}"></div></div><span>Â ${a.toFixed(3)}</span></div>`
+    ).join("");
+    readout.innerHTML = `With γ = ${g.toFixed(2)} and λ = ${l.toFixed(2)}, each step's surprise is discounted by γλ = ${(g * l).toFixed(3)} per step of distance. Advantages: <strong>${A.map((a) => a.toFixed(3)).join(", ")}</strong>.`;
+  }
+  lam.addEventListener("input", draw);
+  gam.addEventListener("input", draw);
+  draw();
+}
+</script>
+</body>
+</html>
