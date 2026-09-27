@@ -2,12 +2,10 @@
 
 **Modern AI from first principles: every concept explained, implemented and tested.**
 
-This is an effort to explain how modern AI works, from the ground up, in a way that is 
-accessible to anyone with a basic understanding of programming and math. It is not a course, 
-but a reference that you can read in any order, with each lesson building on the previous ones. 
-I made this because people kept asking me how modern AI works, and I wanted to have a single place to 
-point them to. Despite what most "AI people" say, you don't need to be a PhD in math or computer science 
-to understand how AI works.
+This is an effort to explain how modern AI works, from the ground up, in a way that is
+accessible to anyone with a basic understanding of programming and math. It is not a course,
+but a reference that you can read in any order, with each lesson building on the previous ones.
+You don't need a PhD in math or computer science to understand how AI works.
 
 ## 👉 Read it here: [that-mathevs.github.io/ai-primer](https://that-mathevs.github.io/ai-primer/)
 

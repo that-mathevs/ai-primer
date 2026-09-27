@@ -1076,9 +1076,11 @@ class TestTheTitle:
         home = render_home()
         assert "<title>AI Primer</title>" in home and "<h1>AI Primer</h1>" in home
 
-    def test_given_the_readme_it_opens_with_the_title_and_why_it_was_made(self):
+    def test_given_the_readme_it_opens_with_the_title_and_says_nothing_about_its_author(self):
+        # The primer is about the ideas, not the person who wrote it.
         opening = (ROOT / "README.md").read_text().split("## ")[0]
-        assert opening.startswith("# AI Primer\n") and "kept asking me how modern AI works" in opening
+        first_person = re.findall(r"\b(?:I|me|my|I've|I'm)\b", opening)
+        assert opening.startswith("# AI Primer\n") and first_person == []
 
     def test_given_every_bar_and_footer_the_old_title_is_gone(self):
         from tools.docsite import lesson_nav, site_nav
