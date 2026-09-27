@@ -294,7 +294,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.ml.cnn_rnn",
 
     # serving
-    "primer.ml.efficient_architectures",
     "primer.ml.reasoning",
 
     # measuring
