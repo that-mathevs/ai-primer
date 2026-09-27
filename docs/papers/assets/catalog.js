@@ -822,7 +822,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.efficient_architectures"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "attention-sinks",
@@ -855,7 +855,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.efficient_architectures"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "deepseek-v2",
