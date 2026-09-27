@@ -3,7 +3,138 @@ r"""
 
 Run: `python -m primer.ml.generative.autoencoders`
 
-## The everyday picture
+This lesson builds on the two-layer network and training loop of
+`primer.ml.neural_net` and the Adam optimizer of `primer.ml.optimizers`;
+`primer.notation` explains every symbol from zero.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** An autoencoder is a pair of networks trained to squeeze
+data through a narrow code and rebuild it, which makes it a learned lossy
+compressor; a variational autoencoder (VAE) also shapes the code space so
+that a random code decodes to something sensible, which makes it a
+generator and, far more often today, the compressed space that bigger
+generators (diffusion models, transformers) work inside.
+
+**When you need it.** Three tells. You have unlabelled data and want a
+compact, meaningful representation of each item (a fingerprint for search,
+a small input for another model, a way to flag the items that don't fit):
+that is a plain autoencoder. You want to generate or edit new items and
+need a smooth space where nearby codes mean similar outputs: that is a VAE.
+You are building or running an image, audio or video generator: there is
+almost certainly an autoencoder at both ends of it, and its settings
+(downsampling factor, latent channels, scale factor, precision) are yours
+to get right. You don't need one for compression that must be exact (a zip
+file is lossless; an autoencoder never is), and you rarely train one for
+images or audio yourself any more: pretrained ones are downloadable, and
+their quality took a great deal of data to reach. The number that shows
+the naive path failing: in this lesson a plain autoencoder rebuilds 8 × 8
+pen strokes from two numbers with an error of 0.07 (99% of the picture kept,
+against 50% for PCA), yet decoding random codes drawn from the standard bell
+curve gives junk 76% of the time. Compression is not generation.
+
+**Your options.** From the cheapest to the most capable:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| PCA | Fits a flat sheet through the data; an item's code is where it lands on the sheet | The best any flat code can do under squared error; no training loop | One matrix decomposition; poor rebuilds of curved data (50% kept here) | A library call |
+| Plain autoencoder | A bent encoder and decoder trained only to rebuild the input | Far better rebuilds on curved data (99% kept here); a code that flags anomalies and can denoise | A training run; a code space with holes, so no generation | Your training loop |
+| VAE | The encoder emits a fuzzy region per item and pays rent for straying from the standard bell curve | Random codes decode sensibly (36% junk here, against 76%); smooth interpolation | Blurrier rebuilds; a β to tune; posterior collapse if you overdo it | Your training loop, or a pretrained one |
+| Latent autoencoder for diffusion | A VAE with a tiny KL weight; the diffusion model generates inside its code space | 48 times fewer numbers for a 512 × 512 image, so training and sampling become affordable | A ceiling on detail set by the decoder; scaling, precision and memory settings to respect | Downloaded with the diffusion model |
+| VQ-VAE and VQGAN | Snaps each code vector to the nearest entry of a learned codebook, so an item becomes a grid of token ids | Tokens a transformer reads and writes like words; sharper output when an adversarial loss is added (VQGAN) | A codebook to keep in use; a discrete space with no straight-line interpolation | A pretrained tokenizer |
+| Neural audio codec | The same recipe for sound: encoder, residual quantizer, decoder, reconstruction plus adversarial losses | Speech and music at 3 to 18 kbit/s, streamable in real time | A model at both ends of the wire | SoundStream, EnCodec |
+
+**How to choose.** Start from what you want the code for.
+
+- Compact features for search, clustering or a downstream model, and no
+  generation: try PCA first (Level 2 shows it is exactly the autoencoder
+  with no bends). Train an autoencoder when the data is curved and PCA's
+  rebuilds are poor, as they are here.
+- Flagging oddities (fraud, a failing machine): a plain autoencoder trained
+  on normal data, with an alarm on rebuild error.
+- Generating or editing new items in a small domain, or sliders that mean
+  something: a VAE, with β chosen by looking at samples, not at the loss.
+- Generating images, audio or video at real resolution: don't generate
+  with the VAE. Use it as the compressor and let diffusion or a transformer
+  do the generating, and download the autoencoder that generator was
+  trained with, because the pair is matched.
+- Feeding images or audio into a language-model-style transformer: a VQ
+  tokenizer or a neural codec.
+- Whatever you pick, look at the rebuilds before anything else. The
+  decoder's rebuild quality is the ceiling of every generator that works in
+  its space; no generator can produce detail the decoder cannot paint.
+
+**What it costs.** Training cost is dominated by data: the autoencoder must
+see enough of the domain to rebuild it. At run time it is cheap: one
+encoder pass on the way in and one decoder pass on the way out, against the
+many passes of the generator between them. That is the economics of latent
+diffusion. Rombach et al. tried downsampling factors
+from 1 (raw pixels) to 32 and found factors 4 and 8 the sweet spot; after
+two million training steps the pixel-space model trailed the factor-8 model
+by 38 FID points, and on inpainting the latent models ran at least 2.7 times
+faster. Memory: at high resolution the decoder's activations fill the GPU,
+which is why the diffusers `AutoencoderKL` offers tiled encoding and
+decoding (constant memory, at the risk of faint tile seams) and runs the
+SDXL autoencoder in float32 by default. Quality has a measured ceiling: the
+Stable Diffusion 3 paper reports that widening the latent from 4 to 8 to 16
+channels drops reconstruction FID from 2.41 to 1.56 to 1.06 and raises PSNR
+from 25.12 to 26.40 to 28.62, which is why newer models carry 16-channel
+latents at the price of a harder generation task. β is a dial with a bottom:
+in this lesson, samples land nearest real strokes at β = 0.3 (median
+distance 0.56) and further at both β = 0.01 (2.40) and β = 3 (4.73). Tokens
+cost context: DALL-E's discrete VAE turns a 256 × 256 image into 32 × 32 =
+1,024 tokens from a codebook of 8,192, cutting the transformer's context
+192-fold.
+
+**What breaks.**
+
+- **Holes.** A plain autoencoder's codes land wherever training put them
+  (from −24 to 14 here), with empty fields between; 44% of random codes
+  drawn even from inside that range decode to junk. If you need to sample,
+  you need the KL rent: use a VAE.
+- **Blur.** Under squared error the best guess for an uncertain pixel is
+  the average, so a VAE whose regions overlap paints averages. Lower β for
+  sharper rebuilds, or add an adversarial loss as VQGAN does, or stop asking
+  the VAE to generate and let a stronger model do it in its space.
+- **Posterior collapse.** Raise β too far and every region becomes the
+  standard bell curve, the code carries nothing, and the decoder emits the
+  same average picture for every code (β = 3 here: KL exactly 0, rebuild
+  error 6.08, one grey smudge). Watch the KL term; zero is a symptom.
+- **Forgetting the latent scale.** Diffusion libraries multiply latents by
+  a scaling factor (0.18215 for Stable Diffusion's autoencoder) so they have
+  unit variance for the generator, and divide it back out before decoding.
+  Skip either step and the generator sees data it never trained on.
+- **Precision.** The Stable Diffusion autoencoders overflow in float16 at
+  high resolution; run them in float32 or use a checkpoint fine-tuned for
+  half precision.
+- **Dead codebook entries.** In a VQ model, entries nothing maps to waste
+  the vocabulary. DALL-E raised its KL weight to 6.6 to promote codebook
+  usage; if your tokens cluster on a few ids, that is the dial.
+- **A mismatched pair.** Latents from one autoencoder decoded by another
+  are junk. Keep the encoder, the generator and the decoder that were
+  trained together.
+
+**In the wild.** Stable Diffusion's KL-regularised autoencoder (8 times
+downsampling, 4 latent channels) ships with every Stable Diffusion model
+and is `AutoencoderKL` in Hugging Face diffusers; Stable Diffusion 3 moved
+to 16 channels. VQGAN (Esser, Rombach and Ommer) adds an adversarial loss
+to a VQ-VAE and puts a transformer over its tokens; the original VQ-VAE
+compressed 128 × 128 images to a 32 × 32 grid over a codebook of 512, about
+42.6 times fewer bits, and generated with a PixelCNN over the grid; DALL-E's
+discrete VAE with 8,192 codes fed its text-to-image transformer. For sound,
+SoundStream (a convolutional encoder and decoder around a residual vector
+quantizer, 3 to 18 kbit/s, and at 3 kbit/s preferred over Opus at 12) and
+EnCodec (a streaming encoder-decoder with a multiscale spectrogram
+adversary, at 24 kHz mono and 48 kHz stereo) are the same recipe at audio's
+scale. Every paper is linked at the end of the lesson.
+
+**Go deeper.** Level 2 builds both halves by hand on 8 × 8 pen strokes,
+shows where a plain autoencoder's holes come from, then adds the VAE's two
+pieces (the reparameterization trick and the KL rent) with numbers you can
+check, and sweeps β to watch holes give way to blur and then collapse. If
+you only needed to choose, you are done.
+
+## Level 2: How it works, from scratch
 
 You phone a friend and describe a picture so they can draw it, but you are
 allowed to say only two numbers. You would agree on a system first: the first
