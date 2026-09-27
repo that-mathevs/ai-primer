@@ -34,6 +34,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/interpretability.html",
   "term": "activation patching"
  },
+ "active learning": {
+  "def": "Choosing which examples to label next by what the current model is likely to get wrong, so each paid label teaches more.",
+  "lesson": null,
+  "term": "active learning"
+ },
  "actor-critic": {
   "def": "A reinforcement learner in two parts: the actor (the policy) chooses actions, and the critic (a value network) predicts the reward to expect, which serves as the baseline.",
   "lesson": "primer/ml/reinforcement.html",
@@ -59,10 +64,20 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/training_stages.html",
   "term": "adapter"
  },
+ "adaptive layer norm": {
+  "def": "Layer normalization whose scale and shift are computed from a conditioning signal, such as the noise step and class label, instead of being fixed learned weights. Diffusion transformers use it to tell every block what to make (adaLN).",
+  "lesson": "primer/ml/deep_nets.html",
+  "term": "adaptive layer norm"
+ },
  "advantage": {
   "def": "How much better an action did than typical: reward minus baseline.",
   "lesson": "primer/ml/reinforcement.html",
   "term": "advantage"
+ },
+ "adversarial example": {
+  "def": "An input changed by a small, deliberately chosen amount so that a model gets it wrong, often in a way a person would never notice.",
+  "lesson": null,
+  "term": "adversarial example"
  },
  "agent": {
   "def": "A system where a language model decides which tools to call, looks at the results and decides the next step, in a loop until done.",
@@ -183,6 +198,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A network that squeezes its input into a small code and rebuilds the input from it, trained only to make the rebuild match.",
   "lesson": "primer/ml/generative/autoencoders.html",
   "term": "autoencoder"
+ },
+ "automated interpretability": {
+  "def": "Using a language model to explain a feature or neuron from examples of when it fires, then scoring the explanation by how well the model predicts new activations from it alone.",
+  "lesson": null,
+  "term": "automated interpretability"
  },
  "autoregressive generation": {
   "def": "Producing text one token at a time, where each new token is predicted from all the tokens before it and then appended.",
@@ -497,7 +517,7 @@ window.PRIMER_GLOSSARY = {
  "clip": {
   "def": "A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.",
   "lesson": "primer/ml/embeddings/contrastive.html",
-  "term": "CLIP"
+  "term": "clip"
  },
  "clustering": {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
@@ -548,6 +568,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Small per-step failure rates multiplying over many steps: ten steps at 95% succeed only about 60% of the time.",
   "lesson": "primer/agents/planning.html",
   "term": "compounding error"
+ },
+ "compressed sensing": {
+  "def": "Recovering a long vector from far fewer measurements of it, which is possible when the vector is known to be sparse (mostly zeros).",
+  "lesson": null,
+  "term": "compressed sensing"
  },
  "compute-bound": {
   "def": "Limited by arithmetic throughput, as in prefill.",
@@ -769,6 +794,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/diffusion.html",
   "term": "DDPM"
  },
+ "dead latent": {
+  "def": "A sparse autoencoder latent that has stopped firing on any input, wasting its slot in the dictionary; resampling it onto badly rebuilt inputs brings it back.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "dead latent"
+ },
  "debounce": {
   "def": "Waiting until a signal has settled before acting on it, so a burst of changes triggers one action.",
   "lesson": null,
@@ -823,6 +853,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The slope of a function at a point: how much the output changes per tiny nudge of the input.",
   "lesson": "primer/notation.html",
   "term": "derivative"
+ },
+ "dictionary learning": {
+  "def": "Finding a set of directions, usually more than there are dimensions, such that every data point is a sparse combination of a few of them; also called sparse coding. A sparse autoencoder is one way to do it.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "dictionary learning"
  },
  "diff": {
   "def": "A text listing, file by file, which lines to remove (marked −) and which to add (marked +), with a few unchanged lines around each change so a tool can find the spot. Saved to a file, it is a patch that can be applied to another copy of the code.",
@@ -1089,6 +1124,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/failures.html",
   "term": "exponential backoff"
  },
+ "exponential moving average": {
+  "def": "A running average that keeps most of its old value and mixes in a small share of each new one, so recent values count most. Adam keeps its moments this way, and diffusion models sample with such an average of their weights.",
+  "lesson": "primer/ml/optimizers.html",
+  "term": "exponential moving average"
+ },
  "external fragmentation": {
   "def": "Free memory split into gaps too small to use.",
   "lesson": "primer/ml/inference.html",
@@ -1113,6 +1153,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The share of an answer's claims that are supported by the retrieved sources.",
   "lesson": "primer/agents/evals.html",
   "term": "faithfulness"
+ },
+ "false positive": {
+  "def": "Something flagged as positive that is actually negative, such as a solution graded correct because its final answer matches although its reasoning is wrong.",
+  "lesson": "primer/ml/metrics.html",
+  "term": "false positive"
  },
  "false-positive rate": {
   "def": "The share of real negatives the model wrongly flags.",
@@ -1153,6 +1198,11 @@ window.PRIMER_GLOSSARY = {
   "def": "In linear attention, the function φ applied to queries and keys so that φ(q)·φ(k) replaces e^(q·k).",
   "lesson": "primer/ml/efficient_architectures.html",
   "term": "feature map"
+ },
+ "feature splitting": {
+  "def": "One feature in a small sparse autoencoder becoming several narrower features in a larger one, such as one base64 feature becoming separate features for letters, digits and encoded text.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "feature splitting"
  },
  "feed-forward network": {
   "def": "The small two-layer network in each transformer block that processes every token on its own after attention has mixed them.",
@@ -1639,6 +1689,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/deep_nets.html",
   "term": "initialization"
  },
+ "inpainting": {
+  "def": "Filling a masked or missing region of an image with new content that fits the rest of the picture.",
+  "lesson": null,
+  "term": "inpainting"
+ },
  "input gate": {
   "def": "The LSTM dial that decides what new information to write into the cell state.",
   "lesson": "primer/ml/cnn_rnn.html",
@@ -1709,6 +1764,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/fine_tuning.html",
   "term": "Jaccard similarity"
  },
+ "jailbreak": {
+  "def": "A prompt crafted to talk a model out of its safety training, such as a role-play or a disguised request, so it produces what it would normally refuse.",
+  "lesson": "primer/agents/guardrails.html",
+  "term": "jailbreak"
+ },
  "jensen-shannon divergence": {
   "def": "A measure of how different two distributions are; stuck at log 2 whenever they don't overlap.",
   "lesson": "primer/ml/generative/gans.html",
@@ -1778,6 +1838,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Storing cached keys and values in fewer bits, with one scale per vector.",
   "lesson": "primer/ml/efficient_architectures.html",
   "term": "kv-cache quantization"
+ },
+ "l0 norm": {
+  "def": "The number of non-zero entries in a vector. For a sparse autoencoder, how many latents fire on an input.",
+  "lesson": null,
+  "term": "L0 norm"
  },
  "l1 regularization": {
   "def": "Penalizing the sum of absolute weights, which drives unneeded weights to exactly zero.",
@@ -2239,6 +2304,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/optimizers.html",
   "term": "momentum"
  },
+ "monosemantic": {
+  "def": "Responding to one understandable thing only: said of a neuron, or of a feature a sparse autoencoder finds.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "monosemantic"
+ },
  "mrr": {
   "def": "Mean reciprocal rank: the average of 1 / (position of the first relevant result).",
   "lesson": "primer/ml/metrics.html",
@@ -2444,6 +2514,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/reasoning.html",
   "term": "outcome reward model"
  },
+ "outcome supervision": {
+  "def": "Training a reward model from the final result alone: each solution is labelled right or wrong by its answer, never step by step.",
+  "lesson": "primer/ml/reasoning.html",
+  "term": "outcome supervision"
+ },
  "outer product": {
   "def": "A column vector times a row vector, giving a table whose entry (m, c) is the product of their m-th and c-th numbers.",
   "lesson": "primer/ml/efficient_architectures.html",
@@ -2549,6 +2624,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "PCA"
  },
+ "pearson correlation": {
+  "def": "How closely two lists of numbers rise and fall together along a straight line, from −1 to 1; 0 means no straight-line relationship.",
+  "lesson": null,
+  "term": "pearson correlation"
+ },
  "per-channel quantization": {
   "def": "One scale per weight row, so a single outlier doesn't coarsen all the others.",
   "lesson": "primer/ml/inference.html",
@@ -2558,6 +2638,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The plain difference between two percentages: going from 11% to 18% is a rise of 7 percentage points, which is a 64% relative rise.",
   "lesson": null,
   "term": "percentage point"
+ },
+ "perceptual loss": {
+  "def": "A loss that compares two images through the features of a pretrained network rather than pixel by pixel, so it punishes the differences a person would notice. LPIPS is a widely used one.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "perceptual loss"
  },
  "permission-aware retrieval": {
   "def": "Filtering out documents a user may not read before anything is ranked or shown to the model.",
@@ -2724,6 +2809,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/guardrails.html",
   "term": "privilege separation"
  },
+ "privileged basis": {
+  "def": "Directions made special by the architecture, such as neurons followed by an activation function that acts on each number separately. Only in a privileged basis does asking what one neuron means make sense.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "privileged basis"
+ },
  "probability density": {
   "def": "How thickly a continuous distribution's samples cover each spot: high where they crowd, zero where none ever land. It is the height of the bump, and its area adds up to 1.",
   "lesson": "primer/ml/generative/gans.html",
@@ -2758,6 +2848,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A verifier that scores each intermediate step.",
   "lesson": "primer/ml/reasoning.html",
   "term": "process reward model"
+ },
+ "process supervision": {
+  "def": "Training a reward model from labels on each intermediate step, so it learns where a solution went wrong.",
+  "lesson": "primer/ml/reasoning.html",
+  "term": "process supervision"
  },
  "product quantization": {
   "def": "Compressing a vector by splitting it into chunks and replacing each chunk with the ID of its nearest entry in a small codebook.",
@@ -2938,6 +3033,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Learning from a score for what you did, rather than from the correct answer.",
   "lesson": "primer/ml/reinforcement.html",
   "term": "reinforcement learning"
+ },
+ "rejection sampling": {
+  "def": "Generating many candidate outputs and keeping only those that pass a check, such as a correct final answer, often to use as training data.",
+  "lesson": null,
+  "term": "rejection sampling"
  },
  "release gate": {
   "def": "Limits set before measuring; a release goes ahead only if every evaluation is within its limit.",
@@ -3128,6 +3228,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Storing each number as one of 256 levels (one byte) instead of a 4-byte float.",
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "scalar quantization"
+ },
+ "scaling law": {
+  "def": "A smooth, predictable rule for how a model's loss falls as its size, data or compute grows: a straight line on log-log axes. It lets small runs forecast a big model's quality.",
+  "lesson": "primer/ml/transformer.html",
+  "term": "scaling law"
  },
  "score": {
   "def": "The direction in which data gets more crowded fastest; the noise guess, flipped and rescaled.",
@@ -3394,6 +3499,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/mcp.html",
   "term": "stdio transport"
  },
+ "steering": {
+  "def": "Changing a model's behaviour while it runs by editing an internal activation, such as adding or pinning a feature's direction.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "steering"
+ },
  "stochastic gradient descent": {
   "def": "Gradient descent where each step's slope is estimated from a small random batch instead of the whole dataset.",
   "lesson": "primer/ml/optimizers.html",
@@ -3448,6 +3558,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A piece of a word, from a single character to a whole frequent word; a fixed set of them can spell any word.",
   "lesson": "primer/ml/tokenization.html",
   "term": "subword unit"
+ },
+ "super-resolution": {
+  "def": "Turning a low-resolution image into a plausible higher-resolution one; most of the fine detail has to be invented, not recovered.",
+  "lesson": null,
+  "term": "super-resolution"
  },
  "superposition": {
   "def": "Storing more features than there are neurons, as nearly perpendicular directions.",
@@ -3719,6 +3834,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "UMAP"
  },
+ "unbiased estimate": {
+  "def": "An estimate that is right on average: any single one may be off, but the errors cancel over many tries.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "unbiased estimate"
+ },
  "unbiased estimator": {
   "def": "A way of estimating a number from random data whose average, over every dataset you might have drawn, equals the true value: it is not systematically high or low.",
   "lesson": "primer/ml/benchmarks.html",
@@ -3733,6 +3853,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A number too small for its format, rounded to zero.",
   "lesson": "primer/ml/pretraining.html",
   "term": "underflow"
+ },
+ "unembedding": {
+  "def": "The final matrix of a language model: it turns the last hidden vector into one score (logit) per vocabulary token.",
+  "lesson": "primer/ml/interpretability.html",
+  "term": "unembedding"
  },
  "unigram tokenizer": {
   "def": "A subword tokenizer that starts from a huge vocabulary and repeatedly removes the pieces whose loss hurts least.",
@@ -3768,6 +3893,11 @@ window.PRIMER_GLOSSARY = {
   "def": "In attention, the information a token hands over when others attend to it.",
   "lesson": "primer/ml/attention.html",
   "term": "value"
+ },
+ "value function": {
+  "def": "A prediction, made partway through a task, of how well it will end from here. A verifier that scores a solution after every token is one.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "value function"
  },
  "value network": {
   "def": "A second model (the critic) that predicts expected reward, used as PPO's baseline.",
