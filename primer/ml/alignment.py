@@ -785,6 +785,7 @@ measurements into a decision made in advance.
   Overoptimization* (2022)**: https://arxiv.org/abs/2210.10760. Measured
   Goodhart's law for reward models: the true reward rises then falls as a
   policy is optimized harder against a proxy.
+  [Annotated companion](../../papers/reward-model-overoptimization.html)
 
 ## Further reading
 

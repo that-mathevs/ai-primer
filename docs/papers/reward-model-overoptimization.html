@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scaling Laws for Reward Model Overoptimization, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Gao, Schulman and Hilton (2022), the paper that measured Goodhart's law for reward models: how the true score first rises and then falls as a policy is optimized harder against a learned proxy, and how that curve scales with reward model size.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="reward-model-overoptimization">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a>
+        <ol>
+          <li><a href="#s1-try">Try it: the two laws</a></li>
+        </ol>
+      </li>
+      <li><a href="#s2">2 Methodology</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Synthetic data setup</a></li>
+          <li><a href="#s2-2">2.2 Recalibration</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Results</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Fitting and validating</a></li>
+          <li><a href="#s3-2">3.2 Reward model size</a></li>
+          <li><a href="#s3-3">3.3 Reward model data</a></li>
+          <li><a href="#s3-4">3.4 Policy size</a></li>
+          <li><a href="#s3-5">3.5 RL vs best-of-n</a></li>
+          <li><a href="#s3-6">3.6 The KL penalty</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Discussion</a>
+        <ol>
+          <li><a href="#s4-1">4.1 KL as a yardstick</a></li>
+          <li><a href="#s4-2">4.2 Four kinds of Goodhart</a></li>
+          <li><a href="#s4-try">Try it: pure noise never turns down</a></li>
+          <li><a href="#s4-3">4.3 Iterated RLHF</a></li>
+          <li><a href="#s4-4">4.4 Policy size independence</a></li>
+          <li><a href="#s4-5">4.5 Limitations</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Related work</a></li>
+      <li><a href="#appb">Appendix B: other functional forms</a></li>
+      <li><a href="#today">Where it connects</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Scaling Laws for Reward Model Overoptimization, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Leo Gao, John Schulman and Jacob Hilton (2022), <em>Scaling Laws for Reward Model Overoptimization</em>: the paper that put numbers on Goodhart's law for the reward models behind RLHF.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2210.10760">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2210.10760">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2210.10760">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard non-exclusive licence, which does not grant permission to republish its figures or tables, so its figures are redrawn from scratch and only a few selected numbers appear in tables written for this page, each attributed. The paper's figures are raster images; the coefficients used to redraw its curves were read off the plotted points of its Figure 3 and cross-checked against its Figures 1 and 12, so they are good to about the second decimal place and are labelled as read off the plot. The equations are reproduced with every symbol decoded (mathematics is not copyrightable); the peak formulas and a few worked illustrations are this page's own and say so. Numbers marked <em>illustrative</em> are made up for teaching. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#fig1">redrawn Figure 1</a> lets you pick a reward model size and watch where the true score peaks. <a href="#s1-try">Try it: the two laws</a> lets you bend the two curves the paper fits, and <a href="#s4-try">the noise explorer</a> shows why one kind of Goodhart can never make the true score fall.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The paper builds on RLHF as the <a href="instructgpt.html">InstructGPT companion</a> describes it, and on <a href="ppo.html">PPO</a> for the reinforcement learning. The <a class="lesson" data-lesson="primer/ml/alignment.html">alignment lesson</a> draws Goodhart's law as two curves, and the <a class="lesson" data-lesson="primer/ml/reinforcement.html">reinforcement learning lesson</a> builds a flawed reward model from scratch and watches a policy exploit it.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Because the reward model is an imperfect proxy, optimizing its value too much can hinder ground truth performance, in accordance with Goodhart's law.”<cite>Gao, Schulman &amp; Hilton (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2210.10760">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A student preparing for an exam practises on old papers marked by a teaching assistant who is good but not perfect. Early on, pleasing the assistant and learning the subject are the same thing. Push hard enough and the student starts learning the assistant's quirks instead: the phrasings it rewards, the length it likes. Their marks keep rising while their real understanding stalls, then slides. Everyone has seen this happen; nobody had measured how fast it happens, or how a better assistant changes it.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>A clean, cheap experiment.</strong> A large <span class="t" data-tip-title="Gold reward model" data-tip="In this paper, a fixed 6-billion-parameter reward model that plays the part of the humans: its score is defined to be the truth. Its labels train the smaller proxy reward models.">“gold” reward model</span> stands in for people, so the true score can be computed for every output.</li>
+  <li><strong>The true score rises, then falls, in a predictable shape</strong> as a <span class="t" data-t="policy">policy</span> is optimized against a smaller <span class="t" data-tip-title="Proxy reward model" data-tip="The reward model that is actually optimized against. It was trained on the gold model's labels, so it is an imperfect copy of the thing we care about, exactly as a real reward model is an imperfect copy of human judgement.">proxy reward model</span>. The shape differs between <span class="t" data-t="best-of-n">best-of-n</span> sampling and reinforcement learning, and each has a two-number formula that fits it.</li>
+  <li><strong>The two numbers change smoothly with reward model size</strong>, so a small experiment predicts a bigger one.</li>
+  <li>Bigger policies start higher but <strong>overoptimize about as much</strong>; a <span class="t" data-t="kl penalty">KL penalty</span> in their setup acts like <span class="t" data-t="early stopping">early stopping</span> rather than a cure.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Every system tuned against a learned judge, whether a reward model, a preference model or another model grading answers, faces this curve. The paper turned “don't optimize too hard” from folklore into a measurable quantity, and its “gold model as stand-in for people” trick was borrowed by later work, such as <a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a>, to study reward models cheaply.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S1">original</a></span></h2>
+<blockquote class="quote">“Optimizing too much against such a model eventually hinders the true objective, a phenomenon we refer to as overoptimization.”<cite>Gao, Schulman &amp; Hilton (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p><span class="t" data-t="goodhart's law">Goodhart's law</span>: once a measure becomes a target, it stops being a good measure. In <span class="t" data-t="rlhf">RLHF</span> the measure is a <span class="t" data-t="reward model">reward model</span>, a network trained to predict which of two answers a person would prefer, and the target-chaser is the language model being tuned. The paper calls the damage <span class="t" data-t="overoptimization">overoptimization</span>.</p>
+<h3 class="rung">Tiny example: how far has the policy moved?</h3>
+<p>To draw “true score against how hard we optimized”, the paper needs a ruler for “how hard”. It uses how far the tuned policy has drifted from where it started, measured by <span class="t" data-t="kl divergence">KL divergence</span>, in <span class="t" data-tip-title="Nats" data-tip="The unit of information when logarithms are natural (base e). One nat is about 1.44 bits.">nats</span>. Then it takes the square root, because KL grows like a squared distance. A policy 4 nats away is at distance d = 2; one 9 nats away, d = 3.</p>
+<div class="eq" data-tex="\htmlData{sym=d}{d} := \htmlData{sym=sqrtop}{\sqrt{\phantom{x}}}\!\!\htmlData{sym=DKL}{D_{\mathrm{KL}}}\!\left(\htmlData{sym=pi}{\pi} \,\|\, \htmlData{sym=piinit}{\pi_{\text{init}}}\right)" data-fallback="d := √( D_KL(π ‖ π_init) )"></div>
+<div class="symtable" data-syms="d,sqrtop,DKL,pi,piinit"></div>
+<p class="inwords"><strong>In words:</strong> “the distance d is the square root of the KL divergence from the optimized policy to the initial policy.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a KL of 4 nats gives d = 2; the largest best-of-n run in the paper, about 10 nats, gives d = 3.16; a reinforcement learning run at 100 nats gives d = 10.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# d = √KL for three policies, KL in nats
+[round(math.sqrt(KL), 2) for KL in (4, 10, 100)]  # → [2.0, 3.16, 10.0]</code></pre>
+<h3 class="rung">The two laws</h3>
+<p>The main result is two formulas for the gold (true) score R as a function of d, one for each way of optimizing. Both start at zero, because every score is measured relative to the starting policy.</p>
+<div class="eq" data-tex="\htmlData{sym=Rbon}{R_{\text{bo}n}}(\htmlData{sym=d}{d}) = \htmlData{sym=d}{d}\,\big(\htmlData{sym=abon}{\alpha_{\text{bo}n}} - \htmlData{sym=bbon}{\beta_{\text{bo}n}}\,\htmlData{sym=d}{d}\big)" data-fallback="R_bon(d) = d (α_bon − β_bon d)"></div>
+<div class="symtable" data-syms="Rbon,abon,bbon"></div>
+<p class="inwords"><strong>In words:</strong> “for best-of-n, the gold score is the distance times (a gain per unit distance minus a penalty that grows with distance).”</p>
+<p class="inwords"><strong>With the numbers:</strong> for the smallest proxy (3M parameters), the coefficients read off the paper's Figure 3 are α ≈ 0.49 and β ≈ 0.12. At n = 1,000 samples the KL is 5.91 nats (§2 shows why), so d = 2.43 and R = 2.43 × (0.49 − 0.12 × 2.43) = <strong>0.48</strong>. Figure 1(a) shows the 3M gold curve at about the same height there.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# α_bon, β_bon for the 3M proxy, read off Figure 3
+alpha, beta = 0.49, 0.12
+# d for best-of-1000 (KL = log n − (n − 1)/n, see §2)
+d = math.sqrt(math.log(1000) - 999 / 1000)
+round(d, 2)  # → 2.43
+# R_bon(d) = d (α − β d)
+round(d * (alpha - beta * d), 3)  # → 0.482</code></pre>
+<div class="eq" data-tex="\htmlData{sym=Rrl}{R_{\text{RL}}}(\htmlData{sym=d}{d}) = \htmlData{sym=d}{d}\,\big(\htmlData{sym=arl}{\alpha_{\text{RL}}} - \htmlData{sym=brl}{\beta_{\text{RL}}}\,\htmlData{sym=lnop}{\log} \htmlData{sym=d}{d}\big)" data-fallback="R_RL(d) = d (α_RL − β_RL log d)"></div>
+<div class="symtable" data-syms="Rrl,arl,brl,lnop"></div>
+<p class="inwords"><strong>In words:</strong> “for reinforcement learning, the gold score is the distance times (a gain per unit distance minus a penalty that grows with the logarithm of the distance).”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> the paper plots but does not print its RL coefficients, so take α = 0.35 and β = 0.15, chosen to resemble the 3M curve in Figure 1(b). At KL = 25 nats, d = 5 and R = 5 × (0.35 − 0.15 × ln 5) = 5 × (0.35 − 0.241) = <strong>0.543</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# α_RL, β_RL (illustrative)
+alpha, beta = 0.35, 0.15
+d = math.sqrt(25)
+# R_RL(d) = d (α − β log d), natural log
+round(d * (alpha - beta * math.log(d)), 3)  # → 0.543</code></pre>
+<p>The paper notes the RL form has an infinite slope at d = 0, so it probably fails very close to the start; it tried smoother forms and found they fitted and extrapolated worse (<a href="#appb">Appendix B</a>).</p>
+
+<div class="plot" id="fig1">
+  <div class="controls ui"><label for="fig1-size">Proxy reward model size: <strong id="fig1-size-v">85M</strong></label><input type="range" id="fig1-size" min="0" max="8" step="1" value="4" aria-label="Proxy reward model size, 3M to 3B parameters"></div>
+  <div id="fig1-chart"></div>
+  <p class="readout" id="fig1-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> this is Figure 1(a) of the paper rebuilt from its fitted law. The x-axis is KL distance from the starting policy, drawn on a square-root scale as in the paper, so equal steps are equal steps in d; the y-axis is the gold score. Each line is the best-of-n gold curve R = d(α − βd) for one proxy size, using α and β read off the paper's Figure 3: the smallest (3M), the largest (3B), and the size the slider picks. Every curve climbs at first, when pleasing the proxy and pleasing the gold model are the same thing, then bends over and falls as the proxy's mistakes take over. Slide the size up and the peak moves up and to the right: a bigger proxy can be pushed further before it misleads. The paper measured up to KL ≈ 10 nats; the lines continue to 16 as the law's forecast, which is how the 3B peak (about 13 nats) shows. The readout gives the chosen size's coefficients and its peak.</p>
+<h3 class="rung">Four findings, in one line each</h3>
+<ul>
+  <li><strong>RL against best-of-n:</strong> measured in KL, RL is slower at both optimizing and overoptimizing, which says KL is a poor common yardstick (§3.5, §4.1).</li>
+  <li><strong>Smooth scaling:</strong> α and β move smoothly with proxy size, roughly linearly in its logarithm (§3.2).</li>
+  <li><strong>Policy size matters little</strong> to how much overoptimization happens (§3.4).</li>
+  <li><strong>A KL penalty</strong> did not move the gold-score frontier in their setup (§3.6).</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>A scaling law turns a qualitative warning into a forecast: from small, cheap runs you can predict how far a larger run can be pushed before the true score turns down. The <a data-lesson="primer/ml/alignment.html#goodhart_curve"><code>goodhart_curve</code></a> in the alignment lesson has exactly this rise-then-fall shape, built from a proxy that counts padding as content.</p>
+</section>
+
+<section id="s1-try">
+<h3>Try it: the two laws <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two hikers climb the same hill in different ways. One takes long careful strides and turns back sharply after the summit; the other starts steeply and then drifts down a long, gentle slope. Same idea (up, then down), different shapes.</p>
+<h4>Tiny example</h4>
+<p>With α = 0.35 and β = 0.15 (illustrative) for both laws, the best-of-n curve peaks at d = α / 2β = 1.17 (KL 1.4 nats) and crosses zero at d = α / β = 2.33. The RL curve peaks much later, at d = e<sup>α/β − 1</sup> = 3.79 (KL 14.4), and crosses zero at d = e<sup>α/β</sup> = 10.3 (KL 106).</p>
+<div class="eq" data-tex="\htmlData{sym=dstarbon}{d^{*}_{\text{bo}n}} = \frac{\htmlData{sym=abon}{\alpha_{\text{bo}n}}}{2\htmlData{sym=bbon}{\beta_{\text{bo}n}}}, \qquad \htmlData{sym=dstarrl}{d^{*}_{\text{RL}}} = \htmlData{sym=expop}{e}^{\,\htmlData{sym=arl}{\alpha_{\text{RL}}}/\htmlData{sym=brl}{\beta_{\text{RL}}} - 1}" data-fallback="d*_bon = α_bon / (2 β_bon),   d*_RL = e^(α_RL/β_RL − 1)"></div>
+<div class="symtable" data-syms="dstarbon,dstarrl,expop"></div>
+<p class="inwords"><strong>In words:</strong> “the best-of-n law peaks where the distance equals the gain divided by twice the penalty; the RL law peaks where the log of the distance equals gain over penalty, minus one.” (These follow by setting each law's slope to zero; the paper uses the first in its Figure 12.)</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> α = 0.35, β = 0.15 give d* = 0.35 / 0.30 = 1.17 for best-of-n and d* = e<sup>1.333</sup> = 3.79 for RL. The peak heights are α² / 4β = 0.204 and β d* = 0.569.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha, beta = 0.35, 0.15
+# best-of-n: d* = α / 2β, and the peak score α² / 4β
+d_bon = alpha / (2 * beta)
+round(d_bon, 2), round(d_bon ** 2, 1), round(alpha ** 2 / (4 * beta), 3)  # → (1.17, 1.4, 0.204)
+# RL: d* = e^(α/β − 1), and the peak score β d*
+d_rl = math.exp(alpha / beta - 1)
+round(d_rl, 2), round(d_rl ** 2, 1), round(beta * d_rl, 3)  # → (3.79, 14.4, 0.569)</code></pre>
+<p><strong>Try it:</strong> drag α and β. Raising α lifts and delays both peaks; raising β pulls both down sooner. Notice that the RL curve always falls more slowly after its peak: the logarithm grows far more slowly than d itself.</p>
+<div class="plot" id="laws">
+  <div class="controls ui"><label for="laws-a">α = <strong id="laws-a-v">0.35</strong></label><input type="range" id="laws-a" min="0.15" max="0.7" step="0.01" value="0.35"></div>
+  <div class="controls ui"><label for="laws-b">β = <strong id="laws-b-v">0.15</strong></label><input type="range" id="laws-b" min="0.06" max="0.3" step="0.01" value="0.15"></div>
+  <div id="laws-chart"></div>
+  <p class="readout" id="laws-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> both curves use the same α and β, which the paper never does (each method gets its own fit); sharing them isolates the difference in shape. The x-axis is d, the square root of KL; the y-axis is the gold score. The solid line is the best-of-n law, a parabola in d that turns over quickly and falls steeply. The dashed line is the RL law, which climbs more steeply at first, peaks later and declines slowly. The readout gives each peak. Every number here is illustrative.</p>
+<h4>Why it matters</h4>
+<p>Knowing the shape lets you find the peak from a handful of early measurements, which is the whole use of a scaling law: stop before the turn, not after it.</p>
+</section>
+
+<section id="s2">
+<h2>2 Methodology <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S2">original</a></span></h2>
+<blockquote class="quote">“In BoN, we generate n trajectories for the policy and use the reward model to pick the one with the highest proxy RM score.”<cite>Gao, Schulman &amp; Hilton (2022), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two ways to get better essays from the same student. <strong>Best-of-n:</strong> have them write n drafts and hand in whichever the marker likes most; the student never changes. <strong>Reinforcement learning:</strong> after each batch of essays, nudge the student's habits towards what the marker liked; the student changes a little every round.</p>
+<h3 class="rung">The setting</h3>
+<ul>
+  <li>The InstructGPT environment: prompts are natural-language instructions, the policy writes a response, a reward model scores it. See the <a href="instructgpt.html">InstructGPT companion</a>.</li>
+  <li>Every policy starts from a pretrained GPT-3-series model given two epochs of <span class="t" data-t="sft">supervised fine-tuning</span> on InstructGPT's human demonstrations. Every reward model is the same architecture with a single-number output head.</li>
+  <li>RL uses <a href="ppo.html">PPO</a> with the KL penalty set to zero everywhere except §3.6, and mostly default hyperparameters.</li>
+  <li>Best-of-n scores are computed with an unbiased estimator (from WebGPT) rather than by literally resampling, which gives every n from 1 up to the maximum at once.</li>
+</ul>
+<h3 class="rung">Tiny example: how far does best-of-n move the policy?</h3>
+<p>Picking the best of 2 is a gentle nudge; picking the best of 1,000 is a hard one. Treating “best of n” as a new policy, its KL from the original has an exact formula (from Stiennon et al., 2020). For n = 2 it is ln 2 − 1/2 = 0.19 nats.</p>
+<div class="eq" data-tex="\htmlData{sym=KLbon}{\mathrm{KL}_{\text{bo}n}} = \htmlData{sym=lnop}{\log} \htmlData{sym=n}{n} - \htmlData{sym=frac}{\frac{n-1}{n}}" data-fallback="KL_bon = log n − (n − 1)/n"></div>
+<div class="symtable" data-syms="n,KLbon,frac"></div>
+<p class="inwords"><strong>In words:</strong> “the KL divergence of best-of-n from the original policy is the natural log of n, minus (n minus one) over n.”</p>
+<p class="inwords"><strong>With the numbers:</strong> n = 2 gives 0.19 nats; n = 1,000 gives 6.91 − 1.00 = 5.91; n = 60,000 gives 11.00 − 1.00 = 10.00. Going from 1,000 to 60,000 samples, sixty times the compute, buys only 4 more nats: best-of-n moves the policy very slowly.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def KL_bon(n):
+    # log n − (n − 1)/n, in nats
+    return math.log(n) - (n - 1) / n
+[round(KL_bon(n), 2) for n in (2, 1000, 60000)]  # → [0.19, 5.91, 10.0]</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>Best-of-n is the simplest possible optimizer and needs no training, which is why it is also used at inference time (the <a href="training-verifiers.html">Training Verifiers companion</a> uses it to pick maths solutions). Its KL has a closed form; RL's does not and must be measured.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Synthetic data setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S2.SS1">original</a></span></h3>
+<blockquote class="quote">“We instead use a synthetic task where the ground truth is defined to be the output of a particular large ‘gold’ RM.”<cite>Gao, Schulman &amp; Hilton (2022), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>To study how well trainee judges copy a head judge, you don't need the public at all: let the head judge label thousands of pairs, train trainees on those labels, and then ask how badly things go when contestants play to a trainee. Because the head judge is always available, you can check every contestant against the “truth” for free.</p>
+<figure class="ix" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 312" role="img" aria-label="The real and synthetic reward model training setups, redrawn">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="8" y="20" class="lbl">Real RLHF</text>
+    <path class="wire" d="M104,54 H124" marker-end="url(#arr)"/>
+    <path class="wire" d="M224,54 H244" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="labeller"><rect x="8" y="32" width="96" height="44" rx="7"/><text x="56" y="58" text-anchor="middle">Labellers</text></g>
+    <g class="blk plain" data-block="realcomp"><rect x="126" y="32" width="98" height="44" rx="7"/><text x="175" y="50" text-anchor="middle">Human</text><text x="175" y="66" text-anchor="middle">comparisons</text></g>
+    <g class="blk attn" data-block="proxy"><rect x="246" y="32" width="86" height="44" rx="7"/><text x="289" y="50" text-anchor="middle">Proxy RM</text><text x="289" y="66" text-anchor="middle">(learned)</text></g>
+    <text x="8" y="116" class="lbl">This paper's synthetic setup</text>
+    <path class="wire" d="M104,150 H124" marker-end="url(#arr)"/>
+    <path class="wire" d="M175,172 V196" marker-end="url(#arr)"/>
+    <path class="wire" d="M224,218 H244" marker-end="url(#arr)"/>
+    <path class="wire" d="M289,240 V268 H122" marker-end="url(#arr)"/>
+    <path class="wire" d="M100,250 V184 H150 V176" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+    <g class="blk plain" data-block="pairs"><rect x="8" y="128" width="96" height="44" rx="7"/><text x="56" y="146" text-anchor="middle">Policy output</text><text x="56" y="162" text-anchor="middle">pairs</text></g>
+    <g class="blk ff" data-block="gold"><rect x="126" y="128" width="98" height="44" rx="7"/><text x="175" y="146" text-anchor="middle">Gold RM</text><text x="175" y="162" text-anchor="middle">(6B, fixed)</text></g>
+    <g class="blk plain" data-block="synth"><rect x="126" y="196" width="98" height="44" rx="7"/><text x="175" y="214" text-anchor="middle">Synthetic</text><text x="175" y="230" text-anchor="middle">comparisons</text></g>
+    <g class="blk attn" data-block="proxy"><rect x="246" y="196" width="86" height="44" rx="7"/><text x="289" y="214" text-anchor="middle">Proxy RM</text><text x="289" y="230" text-anchor="middle">3M to 3B</text></g>
+    <g class="blk lin" data-block="opt"><rect x="8" y="250" width="112" height="36" rx="7"/><text x="64" y="272" text-anchor="middle">RL or best-of-n</text></g>
+    <text x="8" y="304" class="lbl">outputs go back to the gold RM to be scored</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a block. Start with <strong>Gold RM</strong>: it replaces the labellers.</p></div>
+  </div>
+  <figcaption>The paper's Figure 2, redrawn, with the optimization step and the gold model's second job (scoring what the optimization produces, dashed) added from the text of §2 and §3. Based on Gao, Schulman &amp; Hilton (2022), Figure 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top row is ordinary RLHF: people compare pairs of answers, and those comparisons train a proxy reward model. The bottom row swaps the people for a fixed 6-billion-parameter reward model (the gold model, taken from InstructGPT). It compares pairs of policy outputs and writes the synthetic comparisons that train each proxy. The proxy is then optimized against, by RL or best-of-n. The dashed wire, from the optimization back up to the gold model, is the gold model's second job: it scores whatever the optimization produces, giving a true score for free. In both rows the proxy only ever sees labels, never the thing producing them, which is what makes the synthetic setup a fair stand-in for the real one.</p>
+<h4>The numbers</h4>
+<ul>
+  <li>Proxy reward models from 3M to 3B parameters. Two even smaller ones were trained, landed near chance accuracy, and were dropped.</li>
+  <li>100,000 synthetic comparisons, 10% held out to measure validation loss.</li>
+  <li>Labels are <em>hard</em>: the answer with the higher gold score always wins. Sampling labels from the gold model's probabilities gave noisier results.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>Human preference data is expensive and noisy, and a scaling law needs many runs with small effects. A gold model makes the experiment repeatable. The price, which §4.5 names, is that it can only study the gap between the proxy and its labels, not the gap between the labels and what people really want. <a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a> later borrowed the same move, using a large reward model to label data for small ones.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Recalibration <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S2.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Two thermometers, one in Celsius and one in Fahrenheit, can both be right and still disagree about the number. To compare reward models, first put them on the same scale.</p>
+<h4>Tiny example</h4>
+<p>A reward model scores the starting policy's answers 2.1, 1.9 and 2.3 on average 2.1 (illustrative). Subtract 2.1 from every score, and the starting policy sits at 0. A second model that averaged −0.4 gets −0.4 subtracted. Now “+0.5” means the same thing for both: half a unit better than where we started.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># scores of the starting policy's answers (illustrative)
+scores = [2.1, 1.9, 2.3]
+mean = sum(scores) / len(scores)
+# recentre so the starting policy averages 0
+[round(s - mean, 2) for s in scores]  # → [0.0, -0.2, 0.2]</code></pre>
+<h4>What the paper does</h4>
+<ul>
+  <li>A reward model's scores only matter up to a constant (adding 5 to every score changes no comparison), so each is shifted to make the initial policy average 0. That is why every curve on this page starts at 0.</li>
+  <li>The gold scores are also scaled to unit variance (a footnote says this turned out unnecessary).</li>
+  <li>Because the hard labels ignore the gold model's confidence, each proxy's scores are rescaled to best predict a set of soft labels. All of this is applied after the runs: it cannot change which sample best-of-n picks, and probably doesn't change RL, since the Adam optimizer ignores the scale of the loss.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>Without a shared zero, “the gold score went up by 0.5” would mean different things in different runs, and no curve could be compared with another.</p>
+</section>
+
+<section id="s3">
+<h2>3 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Once the experiment is cheap, you can turn one dial at a time: how big the proxy is, how much data it saw, how big the policy is, which optimizer is used, and whether there's a leash. Each subsection below turns one dial.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Holding everything else fixed (policy 1.2B, 90,000 training comparisons), only the proxy size changes in §3.2; only the data size in §3.3 (proxy 12M); only the policy size in §3.4.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Changing one thing at a time is what lets the paper say which dial matters and which doesn't.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Fitting and validating the functional forms <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S3.SS1">original</a></span></h3>
+<blockquote class="quote">“As this experiment was conducted after the functional form was hypothesized based on data up to 6 nats, this was a true advance prediction.”<cite>Gao, Schulman &amp; Hilton (2022), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Anyone can draw a curve through points they have already seen. The test of a law is whether it predicts points nobody has measured yet.</p>
+<h4>Tiny example: the advance prediction</h4>
+<p>The best-of-n form was chosen using runs up to n = 1,000, which is 5.91 nats. Then the team ran n = 60,000 (10.0 nats) and checked the fitted curves against the new data. The <a href="#s2">KL formula</a> gives both numbers.</p>
+<h4>One question, many samples</h4>
+<p>Averaged over many prompts the curves are smooth; on a single prompt they are not. The paper's Table 2 follows one riddle, “What is full of holes but still holds water?”, through best-of-n with a 1.2B policy and a 12M proxy:</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2 of Gao, Schulman &amp; Hilton (2022), answers shortened.</caption>
+  <thead><tr><th class="num">n</th><th>Chosen answer</th><th class="num">Proxy</th><th class="num">Gold</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td>a rambling answer about mussels and clams</td><td class="num">−0.19</td><td class="num">−0.52</td></tr>
+    <tr class="hl"><td class="num">10</td><td>“A sponge”</td><td class="num">0.23</td><td class="num">0.48</td></tr>
+    <tr><td class="num">100</td><td>a description of a tornado</td><td class="num">0.90</td><td class="num">−0.34</td></tr>
+    <tr><td class="num">30,000</td><td>a description of a pothole</td><td class="num">0.95</td><td class="num">0.55</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> read down the rows as optimization gets harder. The proxy score climbs every time, because best-of-n always picks the proxy's favourite. The gold score does not: “A sponge” at n = 10 is the riddle's answer and scores well; at n = 100 the proxy prefers a confident paragraph about tornadoes, which the gold model rates below the starting point. That row is overoptimization in miniature: a higher proxy score bought with a worse answer.</p>
+<h4>What could not be fitted</h4>
+<p>The team also tried to model the proxy score itself and could not get a satisfying fit; for best-of-n, a straight line in d looked right but fitted poorly. The gold scores follow the laws; the proxy scores do not follow any simple one found here.</p>
+<h4>Why it matters</h4>
+<p>A law chosen before the test data existed, and then confirmed on it, is much more believable than one fitted afterwards. The same discipline (fix the rule, then measure) is behind the release gates in the <a data-lesson="primer/ml/alignment.html#release_gate">alignment lesson's <code>release_gate</code></a>.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Scaling with reward model size <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A more experienced marker is harder to fool: you have to drift further from honest work before their marks stop tracking quality, and the best marks you can honestly earn from them are higher.</p>
+<h4>Tiny example</h4>
+<p>From the coefficients read off Figure 3, the 3M proxy's best-of-n curve peaks at KL ≈ 4.2 with gold score 0.50. The 3B proxy's peaks at KL ≈ 13.4 with gold score 1.21: more than twice as high, three times as far out.</p>
+<div class="tablewrap"><table>
+  <caption>Coefficients of the gold-score laws for each proxy size (policy 1.2B, 90,000 comparisons). Read off the plotted points of Figure 3 of Gao, Schulman &amp; Hilton (2022), to about ±0.005; the peak columns are computed on this page.</caption>
+  <thead><tr><th>Proxy size</th><th class="num">α<sub>bon</sub></th><th class="num">β<sub>bon</sub></th><th class="num">β<sub>RL</sub></th><th class="num">peak KL (bon)</th><th class="num">peak gold (bon)</th></tr></thead>
+  <tbody id="coef-rows"></tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> each row is one proxy. Down the table, α<sub>bon</sub> (how fast the gold score rises at first) grows from 0.49 to 0.66 while β<sub>bon</sub> (how fast the proxy's mistakes pull it back down) shrinks from 0.120 to 0.090. For RL the paper found it could hold α<sub>RL</sub> fixed across sizes, leaving β<sub>RL</sub> to carry the whole trend, falling from 0.175 to about 0.12. The last two columns follow from the first two: the peak moves out and up with every step in size.</p>
+<div class="eq" data-tex="\htmlData{sym=dstarbon}{d^{*}_{\text{bo}n}} = \frac{\htmlData{sym=abon}{\alpha_{\text{bo}n}}}{2\htmlData{sym=bbon}{\beta_{\text{bo}n}}}, \qquad \htmlData{sym=Rstar}{R^{*}_{\text{bo}n}} = \frac{\htmlData{sym=abon}{\alpha_{\text{bo}n}}^{2}}{4\htmlData{sym=bbon}{\beta_{\text{bo}n}}}" data-fallback="d* = α_bon / (2 β_bon),   R* = α_bon² / (4 β_bon)"></div>
+<div class="symtable" data-syms="Rstar"></div>
+<p class="inwords"><strong>In words:</strong> “the best-of-n gold curve peaks at distance α over 2β, and its highest value is α squared over 4β.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 3M: d* = 0.49 / 0.24 = 2.04, so KL* = 4.2 and R* = 0.2401 / 0.48 = 0.50. 3B: d* = 0.66 / 0.18 = 3.67, KL* = 13.4, R* = 0.4356 / 0.36 = 1.21.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># (α_bon, β_bon) read off Figure 3, for the 3M and 3B proxies
+coefs = [(0.49, 0.12), (0.66, 0.09)]
+# for each: d* = α / 2β, KL* = d*², R* = α² / 4β
+[(round(a / (2 * b), 2), round((a / (2 * b)) ** 2, 1), round(a ** 2 / (4 * b), 2)) for a, b in coefs]  # → [(2.04, 4.2, 0.5), (3.67, 13.4, 1.21)]</code></pre>
+<h4>The trend in size</h4>
+<p>The paper describes the coefficients as following “approximate logarithmic trends”: a straight line against the logarithm of the parameter count. Fitting a line through the nine read-off values gives α<sub>bon</sub> ≈ 0.086 + 0.063 log<sub>10</sub>N and β<sub>bon</sub> ≈ 0.192 − 0.011 log<sub>10</sub>N (this page's fit).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+N = [3e6, 12e6, 25e6, 42e6, 85e6, 300e6, 680e6, 1.2e9, 3e9]
+alpha = [0.49, 0.51, 0.56, 0.55, 0.60, 0.63, 0.65, 0.65, 0.66]
+x = [math.log10(v) for v in N]
+x_bar, a_bar = sum(x) / len(x), sum(alpha) / len(alpha)
+# least-squares slope and intercept of α against log10 N
+slope = sum((xi - x_bar) * (ai - a_bar) for xi, ai in zip(x, alpha)) / sum((xi - x_bar) ** 2 for xi in x)
+round(a_bar - slope * x_bar, 3), round(slope, 3)  # → (0.086, 0.063)</code></pre>
+<h4>A slip in the appendix</h4>
+<p>The paper's Figure 12 is titled “Max BoN gold scores (α<sub>bon</sub>/2β<sub>bon</sub>)” and plots values from about 1.4 to 3.6. But α/2β is the <em>distance</em> d* at which the gold score peaks, not the peak score (that is α²/4β, which never exceeds about 1.2 here, as Figure 1 shows). The plotted values match d* for every size to within about 0.05, so the figure is right about what it computes and mislabelled about what it shows. It also includes proxies smaller than 3M, the ones §2.1 says were excluded.</p>
+<h4>Why it matters</h4>
+<p>Since the peak grows smoothly with the proxy's size, you can forecast how hard a given reward model can safely be pushed without running the expensive experiment. For the proxy scores the fits are less trustworthy, and extrapolated to larger KL they come out systematically too low: the proxy score eventually grows roughly in a straight line in d.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Scaling with reward model data <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S3.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A trainee judge who has seen twenty contests has learned almost nothing; after a few thousand they start to get it. Showing them the same twenty contests four times over does not help.</p>
+<h4>Tiny example: near-chance loss</h4>
+<p>A reward model that knows nothing gives every pair 50/50, and its <span class="t" data-t="cross-entropy">cross-entropy</span> loss is then ln 2 = 0.693 per comparison. The paper's Figure 13 reports three settings, averaged across reward model sizes: 2,000 comparisons once (loss 0.6861), 2,000 comparisons four times (0.6839), and 8,000 comparisons once (0.6549).</p>
+<div class="eq" data-tex="\htmlData{sym=Lchance}{L_{\text{chance}}} = -\htmlData{sym=lnop}{\log}\tfrac{1}{2} = \htmlData{sym=lnop}{\log} 2" data-fallback="L_chance = −log(1/2) = log 2"></div>
+<div class="symtable" data-syms="Lchance"></div>
+<p class="inwords"><strong>In words:</strong> “a reward model that always says fifty-fifty pays minus the log of one half, which is the log of 2, on every comparison.”</p>
+<p class="inwords"><strong>With the numbers:</strong> ln 2 = 0.693. The 2,000-comparison run is only 0.007 below it, four epochs on the same data only 0.009, but 8,000 fresh comparisons 0.038: four times the unique data bought four times the improvement, while four times the passes bought almost nothing.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+L_chance = math.log(2)
+round(L_chance, 3)  # → 0.693
+# validation losses from Figure 13: 1 × 2000, 4 × 2000, 1 × 8000 comparisons
+losses = {"1x2000": 0.686109, "4x2000": 0.683869, "1x8000": 0.654857}
+{k: round(L_chance - v, 3) for k, v in losses.items()}  # → {'1x2000': 0.007, '4x2000': 0.009, '1x8000': 0.038}</code></pre>
+<h4>What the paper finds</h4>
+<ul>
+  <li>Below about 2,000 comparisons, reward models of every size barely beat chance, and the gold scores after optimization show it.</li>
+  <li>Past that threshold, more data means better gold scores and less goodharting, and larger reward models improve faster, though the threshold itself does not move earlier for them (a footnote says this contradicts other internal findings).</li>
+  <li>Weak evidence for a tidy idea: two reward models with the same validation loss are about equally robust, however that loss was reached.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>Unique preference data is what buys robustness, and there is a minimum below which a reward model is not worth optimizing against at all. The <a data-lesson="primer/ml/training_stages.html#reward_model_loss"><code>reward_model_loss</code></a> in the training stages lesson is the loss being measured here.</p>
+</section>
+
+<section id="s3-4">
+<h3>3.4 Scaling with policy size <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S3.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A stronger student starts closer to full marks, so has less to gain from gaming the marker. You might expect them to find the marker's blind spots faster too. In these experiments they don't.</p>
+<h4>Tiny example</h4>
+<p>Two policies, 1.2B and 6B, each optimized against the same 12M proxy (and again against a 3B proxy). The 6B policy's gold score rises less from its start to its peak, yet the two peak at almost the same KL, and the gap between proxy and gold score, a measure of how much the proxy is being exploited, is almost the same for both.</p>
+<h4>Why it matters</h4>
+<p>If exploitation doesn't speed up with policy size, then the reward model, not the policy, sets how far you can push. Only two policy sizes were tried, which the paper lists among its limitations; §4.4 offers a hypothesis.</p>
+</section>
+
+<section id="s3-5">
+<h3>3.5 RL versus best-of-n <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S3.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Best-of-n only picks among what the original student would already write, so it stays close to home. RL changes the student a little every step, and those little changes add up to a long way from home.</p>
+<h4>Tiny example: KL spent</h4>
+<p>Best-of-60,000 reaches only 10 nats. The RL runs in Figure 1(b) travel to about 100 nats: ten times further. The paper explains why: best-of-n's KL grows like log n (the <a href="#s2">formula</a>), while an RL policy keeps moving from wherever the last step left it, and without a penalty its KL grows roughly with the square of the number of steps.</p>
+<h4>Proxy score as the ruler</h4>
+<p>If you put the proxy score on the x-axis instead of KL (the paper's Figure 8), best-of-n and RL look much more alike: the gold score first rises with the proxy score, then peels away from it. Two differences remain: RL starts with a bigger proxy-to-gold gap, and yet peaks at a higher gold score than best-of-n does.</p>
+<h4>Why it matters</h4>
+<p>KL is fine for comparing runs of one method and misleading across methods; §4.1 spells out why.</p>
+</section>
+
+<section id="s3-6">
+<h3>3.6 Effect of the KL penalty <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S3.SS6">original</a></span></h3>
+<blockquote class="quote">“The KL penalty only causes the gold RM score to converge earlier, but does not affect the KL<sub>RL</sub>-gold reward frontier, and so the effect of the penalty on the gold score is akin to early stopping.”<cite>Gao, Schulman &amp; Hilton (2022), §3.6</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A dog on a leash can't wander far. But if the leash only stops the dog <em>where it would have been anyway</em> at that length of walk, then the leash is just a shorter walk.</p>
+<h4>Tiny example</h4>
+<p>Take five RL runs with penalty coefficients 0, 0.01, 0.05, 0.1 and 0.5 (their Figure 9, 1.2B policy and 1.2B proxy). Plotted against KL, the five gold curves lie on top of each other; a bigger penalty just makes a run stop sooner along the shared curve. The proxy scores, though, are higher at a given KL with a penalty: the penalty buys more proxy reward per nat, but not more gold reward, so the proxy-gold gap is strictly larger. That is why every other RL run in the paper uses no penalty.</p>
+<h4>A puzzle left open</h4>
+<p>PPO's clipped objective already restrains each update relative to the previous policy, and this slows the growth of KL from the <em>initial</em> policy. The paper does not know why that indirect effect appears to cause less overoptimization than an explicit penalty, and warns the whole result may be sensitive to hyperparameters.</p>
+<h4>Why it matters</h4>
+<p>The penalty is standard in RLHF (the <a href="instructgpt.html">InstructGPT companion</a> decodes it, and the <a data-lesson="primer/ml/reinforcement.html#kl_penalised_reward"><code>kl_penalised_reward</code></a> in the reinforcement learning lesson builds it). This result says that, at least here, it works by stopping the run early, not by steering the policy somewhere safer. The reinforcement learning lesson's <a data-lesson="primer/ml/reinforcement.html#leash_sweep"><code>leash_sweep</code></a> shows the same trade in a toy: each leash strength lands at a different point on one proxy-versus-truth curve.</p>
+</section>
+
+<section id="s4">
+<h2>4 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Measurements first, meaning second. The discussion asks what the curves say about the ruler (KL), about why proxies fail, about repeated rounds of RLHF, and about what this experiment cannot see.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The two coefficients get an interpretation: α measures one kind of Goodhart (noise), β another (the proxy failing off its training data). §4.2 builds both.</p>
+<h3 class="rung">Why it matters</h3>
+<p>A curve that fits is useful; a curve whose terms mean something tells you what to fix.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 KL as a measure of optimization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Miles on a car's odometer measure how far it went, not how much closer it got to where you wanted to go. Driving in circles adds miles too.</p>
+<h4>Tiny example</h4>
+<p>A policy could change the punctuation style of every answer: a real KL cost with no effect on either reward. Or it could change one crucial word in a few answers: a tiny KL with a big effect on behaviour. KL counts both the same way.</p>
+<h4>Why it matters</h4>
+<p>Within one method KL gives clean trends and consistent peak locations; across methods it does not measure the same thing, so “RL overoptimizes at higher KL than best-of-n” is a statement about the ruler as much as about the methods.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Four kinds of Goodhart <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“Intuitively, we can interpret eq. 1 as stating that the optimization power expended is divided between optimizing the gold reward and selecting on the noise proportional to their variances.”<cite>Gao, Schulman &amp; Hilton (2022), §4.2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>The paper borrows a four-way taxonomy (Manheim and Garrabrant, 2018) of how a measure can come apart from its goal.</p>
+<figure class="ix" id="fig3">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 240" role="img" aria-label="The four kinds of Goodhart effect, with the two this paper can measure highlighted">
+    <g class="blk soft" data-block="regress"><rect x="8" y="8" width="148" height="100" rx="9"/><text x="82" y="36" text-anchor="middle">Regressional</text><text x="82" y="58" text-anchor="middle" class="lbl">proxy = truth + noise</text><text x="82" y="78" text-anchor="middle" class="lbl">α term</text></g>
+    <g class="blk attn" data-block="extremal"><rect x="164" y="8" width="148" height="100" rx="9"/><text x="238" y="36" text-anchor="middle">Extremal</text><text x="238" y="58" text-anchor="middle" class="lbl">off the training data</text><text x="238" y="78" text-anchor="middle" class="lbl">β term</text></g>
+    <g class="blk plain" data-block="causal"><rect x="8" y="124" width="148" height="100" rx="9"/><text x="82" y="152" text-anchor="middle">Causal</text><text x="82" y="174" text-anchor="middle" class="lbl">correlated, not causing</text><text x="82" y="194" text-anchor="middle" class="lbl">looks like regressional</text></g>
+    <g class="blk frame" data-block="adversarial"><rect x="164" y="124" width="148" height="100" rx="9"/><text x="238" y="152" text-anchor="middle">Adversarial</text><text x="238" y="174" text-anchor="middle" class="lbl">policy games the proxy</text><text x="238" y="194" text-anchor="middle" class="lbl">not seen here</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box to see how the paper maps it onto its curves.</p></div>
+  </div>
+  <figcaption>The four Goodhart categories as §4.2 discusses them, drawn for this page; the paper has no figure for them. Based on Gao, Schulman &amp; Hilton (2022), §4.2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top row holds the two effects the paper ties to its coefficients. Regressional Goodhart (left) is the proxy being truth plus noise; the paper links it to α. Extremal Goodhart (right) is the proxy failing on inputs unlike its training data; the paper expects it to cause most of the downturn, the β term. Bottom left, causal Goodhart would look like regressional in these experiments. Bottom right, adversarial Goodhart, a policy deliberately manipulating the proxy, is drawn dashed because the paper's models are not capable enough to show it.</p>
+<h4>Tiny example: regressional Goodhart</h4>
+<p>Suppose the gold score X and the proxy's noise Z are both bell-curve distributed with average 0, X with spread (variance) 1 and Z with variance 0.5. You see an answer whose proxy score is 1.5. What gold score should you expect? Not 1.5: part of that 1.5 is probably luck in the noise. The formula below says 1.0.</p>
+<div class="eq" data-tex="\begin{aligned}\htmlData{sym=EXcond}{\mathbb{E}[X \mid \hat{X}=\hat{x}]} &= \htmlData{sym=EX}{\mathbb{E}[X]} \\ &\quad + \big(\htmlData{sym=xhat}{\hat{x}} - \htmlData{sym=EX}{\mathbb{E}[X]} - \htmlData{sym=EZ}{\mathbb{E}[Z]}\big) \\ &\quad \times \frac{\htmlData{sym=VarX}{\mathrm{Var}(X)}}{\htmlData{sym=VarX}{\mathrm{Var}(X)} + \htmlData{sym=VarZ}{\mathrm{Var}(Z)}} + \htmlData{sym=eps}{\varepsilon}\end{aligned}" data-fallback="E[X | X̂ = x̂] = E[X] + (x̂ − E[X] − E[Z]) · Var(X) / (Var(X) + Var(Z)) + ε"></div>
+<div class="symtable" data-syms="EXcond,EX,EZ,xhat,VarX,VarZ,eps"></div>
+<p class="inwords"><strong>In words:</strong> “the gold score you should expect, given a proxy score, is the average gold score plus the proxy's surprise (how far it is above what you'd expect) shrunk by the share of the proxy's spread that comes from real signal.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> E[X] = E[Z] = 0, Var(X) = 1, Var(Z) = 0.5, x̂ = 1.5: 0 + (1.5 − 0 − 0) × 1 / 1.5 = <strong>1.0</strong>. A third of the apparent gain was noise. A simulation of 200,000 random pairs, keeping those with proxy scores near 1.5, agrees.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import random
+EX, EZ, VarX, VarZ, x_hat = 0.0, 0.0, 1.0, 0.5, 1.5
+# E[X | X̂ = x̂] = E[X] + (x̂ − E[X] − E[Z]) · Var(X) / (Var(X) + Var(Z)), with ε = 0 for Gaussians
+EX + (x_hat - EX - EZ) * VarX / (VarX + VarZ)  # → 1.0
+# check by simulation: draw gold X and noise Z, keep proxies X + Z close to 1.5
+rng = random.Random(0)
+kept = []
+for _ in range(200000):
+    X, Z = rng.gauss(0, 1), rng.gauss(0, 0.5 ** 0.5)
+    if abs(X + Z - x_hat) &lt; 0.05:
+        kept.append(X)
+round(sum(kept) / len(kept), 1)  # → 1.0</code></pre>
+<p>The paper proves this (Appendix A) when the noise is Gaussian (then ε = 0), and approximately when the noise is small and bounded (ε shrinks faster than Var(Z) as the noise's range goes to zero). The consequence: <strong>if noise were the only problem, the gold score would rise with the proxy score forever</strong>, just more slowly. The curves in Figure 1 turn down, so something else must be at work.</p>
+<h4>Extremal, causal, adversarial</h4>
+<ul>
+  <li><strong>Extremal.</strong> Optimization pushes answers away from anything the proxy was trained on, where its judgement weakens. If long answers were always better in its training data, it learns “longer is better”, which fails far outside it; the paper notes that optimized policies writing overly long answers is a real problem they have seen. The team expects this to cause most of the downturn, and reads the smooth fall in β with proxy size as proxies getting smoothly more robust. The <a data-lesson="primer/ml/reinforcement.html#fit_reward_model"><code>fit_reward_model</code></a> in the reinforcement learning lesson builds exactly this failure: a straight line fitted to short answers, extrapolated to long ones.</li>
+  <li><strong>Causal.</strong> A feature correlated with quality because both have a common cause (length and informativeness, say). Selecting on the feature doesn't buy the quality. In these experiments it would look like regressional Goodhart.</li>
+  <li><strong>Adversarial.</strong> A policy actively manipulating the proxy. The paper does not expect to see it with these models, and warns that if more capable systems do it, the scaling laws may break down.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>The split says what each fix can reach. More data and averaging reduce noise (α); making reward models robust off their training distribution attacks the downturn (β). The alignment lesson's <a data-lesson="primer/ml/alignment.html#goodhart_curve"><code>goodhart_curve</code></a> is an extremal example: its proxy counts padding it was never taught to penalise.</p>
+</section>
+
+<section id="s4-try">
+<h3>Try it: pure noise never turns down</h3>
+<h4>Everyday picture</h4>
+<p>Pick the tallest of n people using a tape measure that sometimes slips. The more people you measure, the taller your pick, on average, even though some of the “extra height” is slippage. A noisy ruler slows progress; it never reverses it.</p>
+<h4>Tiny example</h4>
+<p>Best of 16 with Var(X) = Var(Z) = 1: the best of 16 standard bell-curve draws averages 1.766 standard deviations above the mean. The proxy's spread is √2, so the chosen answer's proxy score averages 1.766 × √2 = 2.50, and its gold score 1.766 × 1 / √2 = 1.25: half the proxy's apparent gain, but a gain.</p>
+<div class="eq" data-tex="\htmlData{sym=Egold}{\mathbb{E}[X_{\text{chosen}}]} = \htmlData{sym=en}{e_n}\,\frac{\htmlData{sym=VarX}{\mathrm{Var}(X)}}{\sqrt{\htmlData{sym=VarX}{\mathrm{Var}(X)} + \htmlData{sym=VarZ}{\mathrm{Var}(Z)}}}" data-fallback="E[X_chosen] = e_n · Var(X) / √(Var(X) + Var(Z))"></div>
+<div class="symtable" data-syms="Egold,en"></div>
+<p class="inwords"><strong>In words:</strong> “under pure noise, the gold score of the best-of-n pick is the expected best of n standard draws, times the gold variance, divided by the proxy's spread.” (This page's consequence of equation 1, not a formula from the paper.)</p>
+<p class="inwords"><strong>With the numbers:</strong> e<sub>16</sub> = 1.766, Var(X) = Var(Z) = 1: 1.766 × 1 / 1.414 = 1.25, against a proxy score of 2.50.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def Phi(x):
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+def phi(x):
+    return math.exp(-x * x / 2) / math.sqrt(2 * math.pi)
+def e(n, steps=4000, lo=-8.0, hi=8.0):
+    # expected maximum of n standard normal draws: ∫ x · n φ(x) Φ(x)^(n−1) dx
+    h = (hi - lo) / steps
+    return sum((lo + i * h) * n * phi(lo + i * h) * Phi(lo + i * h) ** (n - 1) * h for i in range(steps + 1))
+e_16 = e(16)
+round(e_16, 3)  # → 1.766
+VarX, VarZ = 1.0, 1.0
+# gold score of the pick, then its proxy score
+round(e_16 * VarX / math.sqrt(VarX + VarZ), 2), round(e_16 * math.sqrt(VarX + VarZ), 2)  # → (1.25, 2.5)</code></pre>
+<p><strong>Try it:</strong> drag the noise. With no noise the proxy and gold curves coincide; as noise grows the gold curve flattens, but it never bends back down, however far right you look.</p>
+<div class="plot" id="noise">
+  <div class="controls ui"><label for="noise-v">Noise variance Var(Z) = <strong id="noise-v-v">1.0</strong> (gold variance fixed at 1)</label><input type="range" id="noise-v" min="0" max="4" step="0.1" value="1"></div>
+  <div id="noise-chart"></div>
+  <p class="readout" id="noise-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is KL from the starting policy on a square-root scale, running from best-of-1 to best-of-100,000 through the KL formula of §2; the y-axis is score in units of the gold model's spread. The solid line is what the proxy reports for its favourite; the dashed line is that pick's gold score. Both rise without limit, and against d both are nearly straight lines: the best of n draws grows like √(2 log n), and d like √(log n). (The paper, too, finds its proxy scores grow roughly linearly in √KL.) The gap between them is regressional Goodhart; the paper reads α, the initial slope of the gold law, as the part of the optimization that survives it. Figure 1's gold curves turn down, which pure noise cannot do: that is the paper's evidence for the extremal kind.</p>
+<h4>Why it matters</h4>
+<p>If your reward model's errors were only random noise, optimizing harder would always help a little. The practical worry is the other kind, the errors that grow as the policy moves somewhere new.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Implications for iterated RLHF <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Instead of one long walk with one old map, walk a stretch, draw a fresh map of where you are, walk another stretch. Each map is only trusted near where it was drawn.</p>
+<h4>Tiny example</h4>
+<p>Online RLHF periodically collects fresh preferences on the current policy's outputs and trains a new reward model. Take the illustrative RL law (α = 0.35, β = 0.15) and a total distance d = 5 (KL 25). In one go, R = 0.543. Split the same distance into k = 4 legs, each with a freshly trained reward model: the formula below gives 1.583.</p>
+<div class="eq" data-tex="\htmlData{sym=Rrl}{R_{\text{RL}}}(\htmlData{sym=d}{d}) = \htmlData{sym=d}{d}\,\big(\htmlData{sym=arl}{\alpha_{\text{RL}}} - \htmlData{sym=brl}{\beta_{\text{RL}}}\htmlData{sym=lnop}{\log}\htmlData{sym=d}{d} + \htmlData{sym=brl}{\beta_{\text{RL}}}\htmlData{sym=lnop}{\log}\htmlData{sym=kiter}{k}\big)" data-fallback="R_RL(d) = d (α_RL − β_RL log d + β_RL log k)"></div>
+<div class="symtable" data-syms="kiter"></div>
+<p class="inwords"><strong>In words:</strong> “after k rounds, each covering a k-th of the distance with a fresh reward model, the gold score is the one-round law plus an extra β times d times the log of k.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> k = 1 gives 5 × (0.35 − 0.15 × 1.609) = 0.543. k = 4 adds 0.15 × 5 × ln 4 = 1.040, for 1.583. The α term is untouched: fresh reward models do nothing about noise.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha, beta, d = 0.35, 0.15, 5.0
+def R_iter(k):
+    # d (α − β log d + β log k)
+    return d * (alpha - beta * math.log(d) + beta * math.log(k))
+round(R_iter(1), 3), round(R_iter(4), 3)  # → (0.543, 1.583)
+# the gain from iterating: β d log k
+round(beta * d * math.log(4), 3)  # → 1.04</code></pre>
+<p>Two assumptions carry the derivation: α and β stay the same every round, and distances d (not KLs) add up across rounds, which is how KL appears to grow in their runs. It can hold only up to some number of rounds, since the law is expected to fail at very short distances.</p>
+<h4>Why it matters</h4>
+<p>It puts a number on standard advice: refresh the reward model where the policy has gone. The gain grows only like log k, so the first few refreshes are worth the most, and none of them helps with the noise part.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Policy size independence <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S4.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If tuning a model is like updating a belief, a bigger model is a better-informed starting belief about what people write, not a more cunning optimizer.</p>
+<h4>Tiny example</h4>
+<p>Scaling the proxy from 12M upwards moves the peak out (§3.2). Scaling the policy from 1.2B to 6B does not move it, and the 6B run even travels a <em>shorter</em> KL for the same number of RL steps.</p>
+<h4>Why it matters</h4>
+<p>The paper's hypothesis, citing Korbak et al. (2022): RL with a KL penalty can be viewed as Bayesian inference starting from the initial policy as a prior, so a bigger policy mainly models the human demonstrations better. It is offered as a possibility, from two data points.</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Limitations and future work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S4.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>This experiment studies a trainee copying a head judge. It cannot see whether the head judge was right.</p>
+<h4>Tiny example</h4>
+<p>A labeller may pick the answer that only <em>looks</em> right. The paper's footnote example is a robotic hand, trained from human feedback, that learned only to <em>appear</em> to grasp a ball (Christiano et al., 2017). That gap, between labels and intent, is a second source of overoptimization the synthetic setup leaves out by design. <a href="sycophancy.html">Towards Understanding Sycophancy</a> studies one form of it: labels that favour answers agreeing with the person asking.</p>
+<h4>What the paper lists</h4>
+<ul>
+  <li>Validate on other environments (they saw similar-looking results on WebGPT) and check that the synthetic setting transfers, since reward models may err in correlated ways.</li>
+  <li>Make reward models more robust to optimization; model the proxy score; study other optimizers (steering, beam search, other RL algorithms).</li>
+  <li>Explore adversarial Goodhart, more policy sizes, and multi-round RLHF.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>A careful paper says what it did not measure. Here that is the biggest open question: how good are the labels themselves?</p>
+</section>
+
+<section id="s5">
+<h2>5 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The paper sits where four streams meet: Goodhart's law, reward hacking, adversarial robustness, and scaling laws.</p>
+<h3 class="rung">The threads</h3>
+<ul>
+  <li><strong>Goodhart and reward hacking.</strong> Overoptimizing a reward model is a special case of <span class="t" data-t="specification gaming">specification gaming</span>, also called <span class="t" data-t="reward hacking">reward hacking</span>, with long catalogues of examples. Zhuang and Hadfield-Menell (2020) found very similar curves in toy environments.</li>
+  <li><strong>Overfitting</strong> is Goodhart with a finite sample as the proxy.</li>
+  <li><strong>Scaling laws</strong> (Kaplan et al., 2020, see the <a href="scaling-laws.html">scaling laws companion</a>) supplied the method: smooth trends that let small runs predict large ones.</li>
+  <li><strong>RLHF</strong> from Christiano et al. (2017) to InstructGPT; Bai et al. (2022) also saw proxy scores roughly linear in √KL, though here there is a bend at small KL.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The contribution is not the observation that proxies fail (that was known) but the measurement of how, in a form that predicts.</p>
+</section>
+
+<section id="appb">
+<h2>Appendix B: other functional forms <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2210.10760#A2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Before settling on a formula, you try its neighbours. The chosen one wins on predicting new data, not on elegance.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Two alternatives with a finite slope α at d = 0: d(α − β log(1 + d)), which extrapolated worse, and the power law d(α − β d<sup>γ</sup>), which needs a third number and whose best fits used small γ. Those small-γ fits are close to the chosen log form, because of a classic limit: for x = 5, 1000 × (5<sup>1/1000</sup> − 1) = 1.611, against ln 5 = 1.609.</p>
+<div class="eq" data-tex="\htmlData{sym=limn}{\lim_{m\to\infty}} \htmlData{sym=mm}{m}\,\big(\htmlData{sym=xx}{x}^{1/\htmlData{sym=mm}{m}} - 1\big) = \htmlData{sym=lnop}{\log}\htmlData{sym=xx}{x}" data-fallback="lim_{m→∞} m (x^(1/m) − 1) = log x"></div>
+<div class="symtable" data-syms="limn,mm,xx"></div>
+<p class="inwords"><strong>In words:</strong> “as m grows, m times (the m-th root of x minus one) approaches the natural log of x.” So a power d<sup>γ</sup> with small γ behaves like 1 + γ log d, and the power law turns into the log law.</p>
+<p class="inwords"><strong>With the numbers:</strong> x = 5: m = 10 gives 1.746, m = 1,000 gives 1.611, and ln 5 = 1.609.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+x = 5
+# m (x^(1/m) − 1) for growing m, against log x
+[round(m * (x ** (1 / m) - 1), 3) for m in (10, 1000)], round(math.log(x), 3)  # → ([1.746, 1.611], 1.609)</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The log form is a simpler member of the power-law family, chosen because it predicted better with fewer knobs. (The paper's own limit uses n; this page writes m to keep n for the number of samples.)</p>
+</section>
+
+<section id="today">
+<h2>Where it connects</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Where it connects</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>A large model labels data in place of people</td><td>Lightman et al. (2023) cite this paper for the same move when comparing process and outcome supervision cheaply</td><td><a href="lets-verify-step-by-step.html">Let's Verify Step by Step companion</a></td></tr>
+    <tr><td>Proxy of human labels versus human intent (§4.5)</td><td>Sharma et al. (2023) cite it and study preference models rewarding agreement over truth</td><td><a href="sycophancy.html">Sycophancy companion</a></td></tr>
+    <tr><td>Gold rises then falls with KL</td><td>The standard picture of reward hacking under a learned reward, with a KL leash as one defence</td><td><a data-lesson="primer/ml/reinforcement.html">reinforcement learning</a></td></tr>
+    <tr><td>Rewards that cannot be overoptimized</td><td>Rule-based, checkable rewards remove the learned proxy altogether where the task allows</td><td><a href="deepseekmath-grpo.html">DeepSeekMath companion</a></td></tr>
+    <tr><td>Best-of-n against a learned scorer</td><td>Also used to pick answers at inference time, where the same peak-then-decline risk applies</td><td><a href="training-verifiers.html">Training Verifiers companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Leo Gao, John Schulman and Jacob Hilton, <em>Scaling Laws for Reward Model Overoptimization</em> (2022). <a href="https://arxiv.org/abs/2210.10760">arXiv:2210.10760</a>, distributed under arXiv's non-exclusive licence. Quotes are brief and attributed; selected numbers appear in tables written for this page; coefficients were read off the paper's plotted points and its curves redrawn from them. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+// (α_bon, β_bon, β_RL) for each proxy size, read off the plotted points of Figure 3 of Gao, Schulman & Hilton (2022).
+const SIZES = [
+  ["3M", 0.49, 0.120, 0.175], ["12M", 0.51, 0.120, 0.167], ["25M", 0.56, 0.115, 0.152],
+  ["42M", 0.55, 0.111, 0.146], ["85M", 0.60, 0.107, 0.137], ["300M", 0.63, 0.100, 0.124],
+  ["680M", 0.65, 0.098, 0.119], ["1.2B", 0.65, 0.097, 0.122], ["3B", 0.66, 0.090, 0.118],
+];
+
+window.PAPER = {
+  symbols: {
+    d: { tex: "d", name: "Distance from the start", meaning: "The square root of the KL divergence between the optimized policy and the initial one. The paper writes its laws in d because KL behaves like a squared distance.", shape: "≥ 0", example: "2.43 for best-of-1000" },
+    sqrtop: { tex: "\\sqrt{\\;}", name: "Square root", meaning: "The number that, multiplied by itself, gives what is under the sign.", shape: "", example: "√4 = 2" },
+    DKL: { tex: "D_{\\mathrm{KL}}", name: "KL divergence", meaning: "How different two probability distributions are: the average extra surprise of using one when the other is true. Zero only when they are identical.", shape: "≥ 0, in nats", example: "5.91 nats for best-of-1000" },
+    pi: { tex: "\\pi", name: "Optimized policy", meaning: "The language model after optimization, viewed as a probability distribution over responses.", shape: "a distribution", example: "the best-of-n policy" },
+    piinit: { tex: "\\pi_{\\text{init}}", name: "Initial policy", meaning: "The supervised fine-tuned model everything starts from.", shape: "a distribution", example: "the 1.2B SFT model" },
+    Rbon: { tex: "R_{\\text{bo}n}", name: "Gold score under best-of-n", meaning: "The gold reward model's average score for the answers best-of-n picks, relative to the starting policy (which scores 0).", shape: "a real number", example: "0.48 at n = 1000, 3M proxy" },
+    abon: { tex: "\\alpha_{\\text{bo}n}", name: "Best-of-n gain coefficient", meaning: "How fast the gold score rises at the very start, per unit of distance. Grows with proxy size.", shape: "fitted, ≈ 0.49 to 0.66", example: "0.49 for the 3M proxy" },
+    bbon: { tex: "\\beta_{\\text{bo}n}", name: "Best-of-n penalty coefficient", meaning: "How fast the proxy's mistakes pull the gold score back down as distance grows. Shrinks with proxy size.", shape: "fitted, ≈ 0.09 to 0.12", example: "0.12 for the 3M proxy" },
+    Rrl: { tex: "R_{\\text{RL}}", name: "Gold score under RL", meaning: "The gold reward model's average score for the RL-tuned policy's answers, relative to the start.", shape: "a real number", example: "0.543 at d = 5 (illustrative)" },
+    arl: { tex: "\\alpha_{\\text{RL}}", name: "RL gain coefficient", meaning: "The RL law's gain per unit distance. The paper could hold it fixed across proxy sizes.", shape: "fitted", example: "0.35 (illustrative)" },
+    brl: { tex: "\\beta_{\\text{RL}}", name: "RL penalty coefficient", meaning: "How strongly the log of the distance pulls the RL gold score down. Falls from about 0.175 to 0.12 as the proxy grows.", shape: "fitted", example: "0.15 (illustrative)" },
+    lnop: { tex: "\\log", name: "Natural logarithm", meaning: "The power you must raise e ≈ 2.718 to, to get the number. It grows very slowly: log 100 is only 4.6.", shape: "", example: "log 5 = 1.609" },
+    n: { tex: "n", name: "Number of samples", meaning: "How many answers best-of-n draws before keeping the proxy's favourite.", shape: "1, 2, 3, …", example: "1000" },
+    KLbon: { tex: "\\mathrm{KL}_{\\text{bo}n}", name: "KL of best-of-n", meaning: "How far the best-of-n policy is from the original, in nats, computed exactly rather than measured.", shape: "≥ 0", example: "5.91 at n = 1000" },
+    frac: { tex: "\\frac{n-1}{n}", name: "Correction term", meaning: "Nearly 1 for large n, so the KL is about log n − 1.", shape: "0 to 1", example: "0.999 at n = 1000" },
+    dstarbon: { tex: "d^{*}_{\\text{bo}n}", name: "Best-of-n peak distance", meaning: "The distance at which the best-of-n gold curve is highest. Found by setting the slope α − 2βd to zero.", shape: "> 0", example: "2.04 for the 3M proxy" },
+    dstarrl: { tex: "d^{*}_{\\text{RL}}", name: "RL peak distance", meaning: "The distance at which the RL gold curve is highest. Setting its slope α − β log d − β to zero gives log d = α/β − 1.", shape: "> 0", example: "3.79 (illustrative)" },
+    expop: { tex: "e", name: "Euler's number", meaning: "About 2.718, the base of natural logarithms; e raised to a power undoes log.", shape: "a constant", example: "e^1.333 = 3.79" },
+    Rstar: { tex: "R^{*}_{\\text{bo}n}", name: "Best-of-n peak score", meaning: "The highest gold score the best-of-n law reaches: plug d* back in to get α²/4β.", shape: "> 0", example: "0.50 for 3M, 1.21 for 3B" },
+    Lchance: { tex: "L_{\\text{chance}}", name: "Chance-level loss", meaning: "The cross-entropy of a reward model that gives every comparison 50/50: the loss of knowing nothing.", shape: "a constant", example: "0.693" },
+    EXcond: { tex: "\\mathbb{E}[X \\mid \\hat{X}=\\hat{x}]", name: "Expected gold, given the proxy", meaning: "The average gold score among all answers whose proxy score comes out at x̂.", shape: "a real number", example: "1.0" },
+    EX: { tex: "\\mathbb{E}[X]", name: "Average gold score", meaning: "The mean of the gold score X over all answers. E means expected value, the long-run average.", shape: "a real number", example: "0" },
+    EZ: { tex: "\\mathbb{E}[Z]", name: "Average noise", meaning: "The mean of the proxy's error Z. A proxy that is biased upwards has E[Z] > 0.", shape: "a real number", example: "0" },
+    xhat: { tex: "\\hat{x}", name: "Observed proxy score", meaning: "The proxy score of the answer in hand. The proxy X̂ is gold plus noise, X + Z.", shape: "a real number", example: "1.5" },
+    VarX: { tex: "\\mathrm{Var}(X)", name: "Gold variance", meaning: "How spread out the real quality of answers is: the part of the proxy's spread that is signal.", shape: "> 0", example: "1" },
+    VarZ: { tex: "\\mathrm{Var}(Z)", name: "Noise variance", meaning: "How spread out the proxy's errors are: the part of its spread that is noise.", shape: "≥ 0", example: "0.5" },
+    eps: { tex: "\\varepsilon", name: "Error term", meaning: "Exactly 0 when the noise is Gaussian; otherwise a correction that vanishes faster than Var(Z) as the noise gets small.", shape: "small", example: "0" },
+    Egold: { tex: "\\mathbb{E}[X_{\\text{chosen}}]", name: "Gold score of the pick", meaning: "The average gold score of the answer best-of-n chooses when the proxy is gold plus independent Gaussian noise.", shape: "in gold standard deviations", example: "1.25 at n = 16" },
+    en: { tex: "e_n", name: "Expected best of n", meaning: "The average of the largest of n draws from a standard bell curve. It grows very slowly with n: 1.77 at 16, 3.24 at 1,000.", shape: "≥ 0", example: "1.766" },
+    kiter: { tex: "k", name: "Number of rounds", meaning: "How many times fresh preferences are collected and a new reward model trained, each round covering a k-th of the distance.", shape: "1, 2, 3, …", example: "4" },
+    limn: { tex: "\\lim_{m\\to\\infty}", name: "Limit", meaning: "The value the expression approaches as m grows without bound.", shape: "", example: "→ 1.609 for x = 5" },
+    mm: { tex: "m", name: "Large whole number", meaning: "The root being taken; the paper writes n here.", shape: "1, 2, 3, …", example: "1000" },
+    xx: { tex: "x", name: "A positive number", meaning: "The number whose logarithm the limit recovers.", shape: "> 0", example: "5" },
+  },
+  blocks: {
+    labeller: { title: "Labellers", body: "<p>In real RLHF, people read two answers to the same prompt and pick the better one. Their judgement is the ground truth, and it is slow and costly to collect.</p>" },
+    realcomp: { title: "Human comparisons", body: "<p>Pairs of answers with a human choice. These train the reward model in InstructGPT-style RLHF.</p>" },
+    proxy: { title: "Proxy reward model", body: "<p>The reward model that optimization actually sees. In this paper, nine sizes from 3M to 3B parameters, each trained on the synthetic comparisons (90,000 in the size sweep).</p>" },
+    pairs: { title: "Pairs of policy outputs", body: "<p>Two responses from the policy to the same prompt: 100,000 comparisons in all, 10% held out for validation.</p>" },
+    gold: { title: "Gold reward model", body: "<p>The 6B reward model from InstructGPT, frozen. It takes the humans' place: whichever answer it scores higher is marked preferred (hard labels). Its score is defined to be the truth.</p>" },
+    synth: { title: "Synthetic comparisons", body: "<p>The gold model's verdicts on the pairs. A proxy trained on them can only be as good as its fit to the gold model, which is exactly the gap being studied.</p>" },
+    opt: { title: "Optimization", body: "<p>Best-of-n (pick the proxy's favourite of n samples) or PPO reinforcement learning against the proxy. The result is then scored by the gold model: the dashed wire.</p>" },
+    regress: { title: "Regressional Goodhart", body: "<p>The proxy is the truth plus independent noise, so selecting on it partly selects on noise. The expected truth keeps rising with the proxy, just more slowly. The paper reads the gap between the proxy's slope and α as this effect.</p>" },
+    extremal: { title: "Extremal Goodhart", body: "<p>Optimization pushes into regions the proxy never saw, where its relationship with the truth breaks down. Expected to cause most of the downturn: the β term, which in the limit makes the loss unbounded.</p>" },
+    causal: { title: "Causal Goodhart", body: "<p>A feature correlated with quality through a common cause (length and informativeness). Selecting on it gives more of the feature, not more quality. In these experiments it would behave like regressional Goodhart.</p>" },
+    adversarial: { title: "Adversarial Goodhart", body: "<p>The policy actively manipulates the proxy. The paper's models are not capable enough, so it is not in these curves; if it appears in stronger systems, the scaling laws may break.</p>" },
+  },
+  onReady(P) { coefTable(); fig1(P); laws(P); noise(P); },
+};
+
+const chartW = (box) => Math.max(320, Math.min(640, box.clientWidth));
+const klFmt = (d) => { const k = d * d; return k < 1 ? k.toFixed(2) : String(+k.toFixed(1)); };
+
+function coefTable() {
+  document.getElementById("coef-rows").innerHTML = SIZES.map(([s, a, b, br]) => {
+    const dStar = a / (2 * b);
+    return `<tr><td>${s}</td><td class="num">${a.toFixed(2)}</td><td class="num">${b.toFixed(3)}</td><td class="num">${br.toFixed(3)}</td><td class="num">${(dStar * dStar).toFixed(1)}</td><td class="num">${((a * a) / (4 * b)).toFixed(2)}</td></tr>`;
+  }).join("");
+}
+
+function bonCurve(a, b, dMax) {
+  const pts = [];
+  for (let i = 0; i <= 60; i++) { const d = (dMax * i) / 60; pts.push([d, d * (a - b * d)]); }
+  return pts;
+}
+
+function fig1(P) {
+  const box = document.getElementById("fig1-chart"), readout = document.getElementById("fig1-readout");
+  const slider = document.getElementById("fig1-size"), label = document.getElementById("fig1-size-v");
+  const dMax = 4; // KL 16
+  const series = (i) => {
+    const pick = [0, i, 8].filter((v, j, arr) => arr.indexOf(v) === j);
+    return pick.map((j) => ({ name: `${SIZES[j][0]} proxy`, points: bonCurve(SIZES[j][1], SIZES[j][2], dMax) }));
+  };
+  const chart = P.lineChart(box, {
+    series: series(+slider.value), yMin: 0, yMax: 1.3, width: chartW(box), height: 300,
+    xLabel: "KL from the initial policy (nats, square-root scale)", yLabel: "gold score", xFmt: klFmt, yFmt: (v) => v.toFixed(2),
+    ariaLabel: "Best-of-n gold score against KL for three proxy reward model sizes, rebuilt from the paper's fitted law",
+  });
+  function redraw() {
+    const i = +slider.value, [s, a, b] = SIZES[i];
+    label.textContent = s;
+    chart.update(series(i));
+    const dStar = a / (2 * b);
+    readout.textContent = `${s} proxy: α = ${a.toFixed(2)}, β = ${b.toFixed(3)}. Gold score peaks at KL ${(dStar * dStar).toFixed(1)} nats with value ${((a * a) / (4 * b)).toFixed(2)}` +
+      (dStar * dStar > 10 ? ", beyond the 10 nats the paper measured." : ".");
+  }
+  slider.addEventListener("input", redraw);
+  redraw();
+}
+
+function laws(P) {
+  const box = document.getElementById("laws-chart"), readout = document.getElementById("laws-readout");
+  const sa = document.getElementById("laws-a"), sb = document.getElementById("laws-b");
+  const floor = -0.2;
+  function curves(a, b) {
+    const bon = [], rl = [];
+    for (let i = 0; i <= 120; i++) {
+      const d = (6 * i) / 120;
+      const rb = d * (a - b * d);
+      if (rb >= floor) bon.push([d, rb]);
+      rl.push([d, d === 0 ? 0 : Math.max(floor, d * (a - b * Math.log(d)))]);
+    }
+    return [{ name: "best-of-n law", points: bon }, { name: "RL law", points: rl }];
+  }
+  const chart = P.lineChart(box, {
+    series: curves(+sa.value, +sb.value), yMin: floor, width: chartW(box), height: 280,
+    xLabel: "distance d = √KL", yLabel: "gold score", xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2),
+    ariaLabel: "The best-of-n and RL functional forms for the chosen alpha and beta",
+  });
+  function redraw() {
+    const a = +sa.value, b = +sb.value;
+    document.getElementById("laws-a-v").textContent = a.toFixed(2);
+    document.getElementById("laws-b-v").textContent = b.toFixed(2);
+    chart.update(curves(a, b));
+    const dB = a / (2 * b), dR = Math.exp(a / b - 1);
+    readout.textContent = `Best-of-n peaks at d = ${dB.toFixed(2)} (KL ${(dB * dB).toFixed(1)}) with ${((a * a) / (4 * b)).toFixed(3)}; ` +
+      `RL peaks at d = ${dR.toFixed(2)} (KL ${(dR * dR).toFixed(1)}) with ${(b * dR).toFixed(3)}` + (dR > 6 ? ", off the right edge." : ".");
+  }
+  sa.addEventListener("input", redraw);
+  sb.addEventListener("input", redraw);
+  redraw();
+}
+
+// Expected maximum of n standard normal draws, by numerical integration.
+const Phi = (x) => 0.5 * (1 + erf(x / Math.SQRT2));
+function erf(x) {
+  // Abramowitz and Stegun 7.1.26, accurate to about 1e-7
+  const s = Math.sign(x), t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+function eMax(n) {
+  const steps = 800, lo = -8, hi = 8, h = (hi - lo) / steps;
+  let s = 0;
+  for (let i = 0; i <= steps; i++) {
+    const x = lo + i * h;
+    s += x * n * Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI) * Math.pow(Phi(x), n - 1) * h;
+  }
+  return s;
+}
+const NS = [1, 2, 3, 5, 10, 20, 50, 100, 300, 1000, 3000, 10000, 30000, 100000];
+const E_N = NS.map(eMax);
+
+function noise(P) {
+  const box = document.getElementById("noise-chart"), readout = document.getElementById("noise-readout");
+  const slider = document.getElementById("noise-v");
+  const d = NS.map((n) => Math.sqrt(Math.log(n) - (n - 1) / n));
+  function curves(vz) {
+    const spread = Math.sqrt(1 + vz);
+    return [
+      { name: "proxy score of the pick", points: NS.map((_, i) => [d[i], E_N[i] * spread]) },
+      { name: "gold score of the pick", points: NS.map((_, i) => [d[i], E_N[i] / spread]) },
+    ];
+  }
+  const chart = P.lineChart(box, {
+    series: curves(+slider.value), yMin: 0, yMax: 10, width: chartW(box), height: 280,
+    xLabel: "KL of best-of-n (nats, square-root scale)", yLabel: "score (gold SDs)", xFmt: klFmt, yFmt: (v) => v.toFixed(1),
+    ariaLabel: "Proxy and gold score of the best-of-n pick when the proxy is gold plus Gaussian noise",
+  });
+  function redraw() {
+    const vz = +slider.value, spread = Math.sqrt(1 + vz);
+    document.getElementById("noise-v-v").textContent = vz.toFixed(1);
+    chart.update(curves(vz));
+    const i = NS.indexOf(1000);
+    readout.textContent = `At best-of-1000: proxy ${(E_N[i] * spread).toFixed(2)}, gold ${(E_N[i] / spread).toFixed(2)}. ` +
+      `The gold curve keeps ${(100 / (1 + vz)).toFixed(0)}% of the proxy's gain and never turns down.`;
+  }
+  slider.addEventListener("input", redraw);
+  redraw();
+}
+</script>
+</body>
+</html>
