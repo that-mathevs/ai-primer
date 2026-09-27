@@ -1099,6 +1099,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/evals.html",
   "term": "faithfulness"
  },
+ "false positive": {
+  "def": "Something flagged as positive that is actually negative, such as a solution graded correct because its final answer matches although its reasoning is wrong.",
+  "lesson": "primer/ml/metrics.html",
+  "term": "false positive"
+ },
  "false-positive rate": {
   "def": "The share of real negatives the model wrongly flags.",
   "lesson": "primer/ml/metrics.html",
@@ -3733,6 +3738,11 @@ window.PRIMER_GLOSSARY = {
   "def": "In attention, the information a token hands over when others attend to it.",
   "lesson": "primer/ml/attention.html",
   "term": "value"
+ },
+ "value function": {
+  "def": "A prediction, made partway through a task, of how well it will end from here. A verifier that scores a solution after every token is one.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "value function"
  },
  "value network": {
   "def": "A second model (the critic) that predicts expected reward, used as PPO's baseline.",

@@ -856,6 +856,7 @@ record of the computation.
   (2021)**: https://arxiv.org/abs/2110.14168. Introduced the GSM8K dataset
   and showed that a trained verifier picking the best of many sampled
   solutions beats fine-tuning alone.
+  [Annotated companion](../../papers/training-verifiers.html)
 - **Lightman et al., *Let's Verify Step by Step* (2023)**:
   https://arxiv.org/abs/2305.20050. Showed that process supervision, a
   reward model trained on labels for each step, selects correct solutions
