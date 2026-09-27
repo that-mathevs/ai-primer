@@ -3,6 +3,127 @@ r"""
 
 Run: `python -m primer.agents.tools`
 
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on the tool-call exchange in `primer.agents.llm`
+and on the loop that runs it in `primer.agents.agent_loop`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** A tool is a function you let the model ask for, and
+tool design is everything that decides whether the request it fills in is
+the right one, has correct arguments, and is safe to carry out: the
+definition the model reads, the checks your code runs, and the gates in
+front of the real system.
+
+**When you need it.** The moment a model's output does something rather
+than says something: looks up a record, refunds a payment, sends an email.
+A chatbot that only answers from its weights has no tools and needs none of
+this. A one-off script with one read-only tool needs the definition and
+little else. Everything in this lesson becomes necessary as soon as a tool
+writes, costs money or can be called by a model that was misled. The tell:
+if a wrong tool call would be visible to a customer, an auditor or a bank,
+you need the checks. Two of this lesson's measurements show how much the
+design decides. The same three tools, described vaguely ("search stuff"),
+get the right tool for 2 of 6 requests; described precisely (what it does,
+when to use it, when not to), 6 of 6. And a job that takes five tool calls
+in a row, each 97% likely to be right, succeeds 85.9% of the time, so
+about one run in seven fails; as one high-level call it succeeds 97% of
+the time.
+
+**Your options.** Six layers of protection between the model's request and
+the real system, from the cheapest to the most certain. They stack; a
+production registry has all of them.
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| A schema in the definition | A JSON Schema tells the model which fields exist, their types and which are required | Nothing by itself; the model does its best to match | A few tokens per tool per call | Your tool definition |
+| Strict mode | The provider constrains the model's output, token by token, to your schema | Arguments in exactly the schema's shape and a tool name that exists (Claude's strict tool use; OpenAI's strict mode) | A schema written to the provider's rules (`additionalProperties: false`, required fields); the compiled grammar is cached | The model server |
+| Validation in your registry | Checks shape and then business rules, and returns every problem with what a correct value looks like | A wrong call never reaches the system, and the model can fix all its mistakes in one retry (four at once in the lesson's example) | A validator and the rules; error messages worth writing | Your code |
+| Descriptions and consolidation | Precise descriptions, few parameters, `enum`s for closed sets, and one high-level tool in place of a chain | The right tool chosen far more often (6 of 6 against 2 of 6 here), and fewer chances to fail in a row | Writing, and an evaluation set to measure selection | Your tool definitions |
+| Loading only the relevant tools | Retrieval over the catalogue picks the few tools a request needs (5 of 30 in the lesson), or the provider searches it on demand | Selection accuracy holds as the catalogue grows; far fewer definition tokens per call | One embedding or search per request; the top few most-used tools kept always loaded | Your code, or the model server (Claude's tool search) |
+| Safety gates | Scopes per agent, a dry run that describes instead of acting, human approval over a threshold, an idempotency key on every write | Least privilege, rehearsals, a person's sign-off, and a retry that cannot repeat a refund | A credential model, an approver in the loop, a store of keys and results | Your code, directly in front of the real system |
+
+**How to choose.** Decide by what the tool can do, not by how clever the
+model is.
+
+- Read-only lookups: a schema, a good description, and validation that
+  returns actionable errors. Strict mode if the provider offers it; it
+  removes a class of retries for free.
+- Anything that writes: all of the above, plus an idempotency key on the
+  call and business-rule checks before it runs. `C-999` fits the pattern
+  `^C-\d+$` and is still a customer that does not exist.
+- Anything irreversible or over a money threshold: an approval rule, and a
+  declined message that tells the model not to retry.
+- Any agent that reads untrusted text (email, web pages, documents): the
+  narrowest scopes you can give it, so a tricked model *cannot* refund, not
+  merely should not.
+- A catalogue past a few dozen tools: load per request, or route to a
+  sub-agent that holds only its own tools. Claude's docs put the accuracy
+  drop past 30 to 50 tools and recommend search from 10 tools up.
+- Whatever you pick, prefer fewer, higher-level tools. A chain of five
+  calls compounds five chances to go wrong; the sequencing belongs in
+  tested code, not in the model.
+
+**What it costs.** Tokens: every definition is re-sent on every call, so a
+long catalogue is a standing charge. Claude's tool-search docs put a
+typical multi-server setup (GitHub, Slack, Sentry, Grafana, Splunk) at about
+55,000 tokens of definitions before any work is done, and on-demand loading
+cuts that by over 85%. Tool results cost tokens too: Anthropic's tool-writing
+guide reports that a concise response format used about a third of the
+tokens of a detailed one, and that Claude Code caps a tool response at
+25,000 tokens by default. Latency: validation is microseconds; an approval
+gate is however long a person takes, so the call parks as
+`awaiting_approval` rather than blocking. Quality: descriptions are the
+cheapest lever, and the lesson's 2-of-6 to 6-of-6 swing cost only words.
+Effort: the registry in this lesson, with every gate, is a few hundred lines,
+and the idempotency store can be a dictionary until it needs to survive a
+restart.
+
+**What breaks.**
+
+- **Schema-valid, false.** Strict mode and schemas prove shape, not truth.
+  Keep the business-rule check, and return an error that says how to find
+  the right id.
+- **"Invalid input."** A bare error makes the model guess. List every
+  problem with the expected format ("date as YYYY-MM-DD"); the model fixes
+  them all in one retry.
+- **Vague descriptions.** A model that cannot tell the tools apart picks
+  the first one every time; in the lesson it got exactly the two requests
+  that happened to belong to that tool.
+- **Too many tools.** Selection accuracy falls and definition tokens climb
+  together. Load per request.
+- **A retry that pays twice.** A refund that times out after the bank
+  processed it gets retried. Without a key the customer gets \$40; with the
+  same key the registry returns the stored result and refunds once.
+  Stripe's API keeps a key's first result and returns it on every repeat.
+- **A persistent model after a decline.** "Declined" alone invites another
+  attempt. Say "do not retry, tell the user".
+- **One admin credential.** If the agent is tricked, it can do anything
+  the credential allows. Scope per tool and per agent.
+
+**In the wild.** Claude's Messages API accepts `strict: true` on a tool and
+guarantees the arguments match the schema and the name is valid; its tool
+search tool defers tool definitions and loads them when the model searches
+for them; OpenAI's function calling has a strict mode its guide recommends
+always enabling. Anthropic's *Writing effective tools for agents* is the
+design reference behind sections 3 and 4 here: a few thoughtful tools over
+one per endpoint, consistent namespacing (`asana_search`, `jira_search`),
+responses that return meaning rather than identifiers, and evaluations
+built from dozens of real prompt and response pairs. Stripe's idempotent
+requests are the canonical form of the idempotency key: a client-chosen
+key, the first result saved and replayed, keys pruned after 24 hours.
+Toolformer (Schick et al., 2023) is the paper that showed a model can learn
+when and how to call an API, which is why today's models emit tool calls
+at all.
+
+**Go deeper.** Level 2 writes the tool call out message by message, walks
+a call through every diamond of the registry in the order they are checked,
+measures the description experiment and the compounding formula, builds
+tool retrieval from cosine similarity, and replays the lost-reply refund
+with and without a key. If you only needed to choose, you are done.
+
+## Level 2: How it works, from scratch
+
 A language model can only produce text. A **tool** is how that text turns
 into an action: looking up a record, refunding a payment, sending an email.
 This lesson builds a tool registry from scratch and shows the six things

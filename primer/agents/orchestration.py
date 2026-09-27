@@ -3,6 +3,124 @@ r"""
 
 Run: `python -m primer.agents.orchestration`
 
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on the message exchange and tool calling in
+`primer.agents.llm`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Orchestration is the decision of how much of a
+system's control flow the model gets to decide, from none (code runs fixed
+steps and asks the model to fill each one) to all of it (a team of models
+steering each other), and the named patterns in between.
+
+**When you need it.** You face this decision the moment a task needs more
+than one model call: a document pipeline, a support desk, a research
+assistant, anything that must look something up and then act. The tell that
+you have chosen wrongly in one direction is a fixed pipeline that keeps
+growing special cases for requests it didn't anticipate; the tell in the
+other is an agent that spends a minute and a thousand tokens on a request a
+two-step script answered correctly every time. Anthropic's *Building
+effective agents*, the post these pattern names come from, draws the line
+this way: workflows are model calls "orchestrated through predefined code
+paths"; agents are systems where the model "dynamically directs its own
+processes and tool usage". It also gives the rule: find the simplest
+solution possible, and add complexity only when needed. You don't need
+orchestration at all when one call with retrieval and a few examples in the
+prompt answers the question; that post says many applications stop there.
+
+This lesson measures the cost of each step up on one question ("How many PTO
+days do I get, and what is the meal per-diem?"). A fixed workflow answers it
+in 2 calls and 93 tokens; a router in 2 calls and 105 tokens; an agent loop
+in 2 calls and about 990 tokens, ten times the workflow, because it re-sends
+its tool definitions and results on every call; a supervisor with two
+specialists in 4 calls and about 600 tokens. Same answer, four prices.
+
+**Your options.** Seven designs, from the least autonomy to the most:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Fixed workflow (prompt chaining with gates) | Code runs steps in order; the model fills each one; a code check between steps stops a bad result | The same steps every time; a failed gate stops before the next call is paid for or misled | 2 calls and 93 tokens on the lesson's question; a gate per hand-off to write | Your code |
+| Router | One cheap classifier call picks a handler; unknown labels go to a fallback | Exactly one path per request, and never a crash on a label the model invented | One extra call (105 tokens here) and a fallback handler | Your code, with one model decision |
+| Parallelization (sectioning, voting) | Independent pieces run at once, or several judges answer the same prompt and the majority wins | Wall-clock time of the slowest branch; three 80%-accurate judges make an 89.6% panel if they err independently | n times the tokens for n branches | Your code (a thread pool) |
+| Evaluator-optimizer | One call drafts, another critiques, until it passes or the round limit hits | A checked result, or a flagged best effort at the limit | Up to two calls per round (2 rounds in the lesson's example) | Your code |
+| Agent loop | The model picks tools and decides when it is done | Handles requests you did not anticipate | About 990 tokens for the lesson's question, ten times the workflow; less predictability | The model decides; your loop enforces the budget (`primer.agents.agent_loop`) |
+| Orchestrator-workers, multi-agent | A lead model splits the work, specialists each get only their brief, a synthesizer combines | Focused context per specialist and parallel work; subtasks decided at run time | 4 calls and about 600 tokens here; in Anthropic's production research system, about 15 times the tokens of a chat | Several model roles, coordinated by your code |
+| Explicit state machine with checkpoints | Code owns every state and transition; the model is consulted at a few named nodes; the run is saved after each step | Auditable, testable transitions and a crash that costs one step, not the run | A state model to design and a store for checkpoints | Your code, or a durable-execution engine |
+
+**How to choose.** Start from whether the *steps* vary between requests, or
+only what happens inside each step.
+
+- Steps known in advance, variation inside them (invoice intake: classify,
+  extract, validate, approve, post): a fixed workflow or state machine, with
+  the model at the judgement nodes only.
+- A few kinds of request, each with its own handling: a router in front of
+  the workflows, with a fallback that is safe rather than clever.
+- One hard judgement call: voting, but vary the prompt, model or evidence,
+  because copies of the same model tend to make the same mistake.
+- Quality that a checker can state as criteria (a citation present, a test
+  passing): evaluator-optimizer, with a round limit.
+- The path depends on what is discovered along the way: an agent loop.
+- Work that is separable and too big for one context (independent research
+  threads, per-document processing): orchestrator-workers. Not for tasks
+  where every part needs the same context or depends on the others; the
+  same Anthropic report found most coding tasks fall on that side.
+- Whatever you pick, code owns the transitions you need to audit, and the
+  model decides only where judgement is needed.
+
+**What it costs.** Tokens, first: each rung up the spectrum multiplies
+them, from 93 to 105 to about 990 to about 600 on one toy question, and
+Anthropic reports agents using about 4 times the tokens of a chat and
+multi-agent systems about 15 times. Latency: a chain is the sum of its
+calls, a parallel fan-out is its slowest branch, and every hand-off in a
+multi-agent design adds a call. Quality: multi-agent can win (that report
+measured a 90.2% improvement over a single agent on an internal research
+evaluation) when the work parallelizes, and loses context at every hand-off
+when it does not. Effort: every pattern in this lesson is under 100 lines
+of plain Python; a framework adds tracing, persistence and approval hooks,
+and hidden assumptions. Crashes: without checkpoints, a rerun after a
+crash repeats every model call (4 instead of 2 in the lesson's invoice
+run) and risks a different answer the second time.
+
+**What breaks.**
+
+- **A router that trusts the label.** The classifier returns free text
+  (`"Billing-ish, maybe refunds?"`). Normalize it, accept only known
+  labels, send the rest to a fallback, and log the misses.
+- **A gate that isn't there.** Without a check between chain steps, a
+  one-line outline becomes a paid-for, confident draft of nothing.
+- **Correlated voters.** Five copies of one model with one prompt agree on
+  the same error; the majority formula assumes independence.
+- **An evaluator that is never satisfied.** No round limit, no exit. Put
+  the limit in, and flag what came out at the limit.
+- **Lost hand-offs.** A specialist knows only what the supervisor wrote in
+  its brief. Whatever the supervisor forgot is gone. Test that each
+  specialist sees only its own task, and that a delegation to a specialist
+  that doesn't exist is reported, not crashed on.
+- **No checkpoint.** A crash on the last step restarts from the first,
+  doubling cost and, combined with a non-idempotent side effect, posting an
+  invoice twice.
+
+**In the wild.** The pattern names come from Anthropic's *Building
+effective agents*, which also advises starting with the model API directly
+before reaching for a framework. LangGraph models a workflow as a graph
+with explicit state and checkpoints, which is the state-machine row above.
+The Claude Agent SDK and the OpenAI Agents SDK ship vendor-built agent
+loops, tools and hand-offs. CrewAI and AutoGen are built around multi-agent
+teams. Temporal provides durable execution for any code: each completed
+step's result is stored and a crashed run resumes from there. Anthropic's
+own research feature is an orchestrator-workers system with a lead model
+and parallel subagents, and its engineering report is the source of the
+token multipliers above.
+
+**Go deeper.** Level 2 builds every pattern in a few dozen lines each and
+measures it: the four-rung cost table, a chain with a gate, a router with a
+fallback, voting with the formula for why independent judges help, a
+supervisor whose specialists see only their brief, and an invoice state
+machine that survives a crash. If you only needed to choose, you are done.
+
+## Level 2: How it works, from scratch
+
 "Agent" covers everything from one model call inside ordinary code to a
 team of models steering each other. This lesson lays out that range, builds
 each named pattern in a few dozen lines, and measures what each step up

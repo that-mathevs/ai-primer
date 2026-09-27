@@ -3,6 +3,125 @@ r"""
 
 Run: `python -m primer.agents.agent_loop`
 
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This lesson builds on the message format and tool calling in
+`primer.agents.llm` and on the autonomy spectrum in
+`primer.agents.orchestration`.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** The agent loop is the piece of code that calls the
+model, runs the tools it asks for, sends the results back and repeats until
+the model says it is done or a limit you set says it is done for it.
+
+**When you need it.** You need a loop whenever the model has to take more
+than one step whose order it decides: look something up, then act on what
+it found, then check. One call with one tool call you run once is not a
+loop, and neither is a fixed pipeline where your code decides the steps
+(`primer.agents.orchestration`). You need the *production* loop, rather
+than the ten-line version, the moment real money and real side effects are
+attached, because the ten-line version has no way to stop. In this
+lesson's happy path, one question ("How many PTO days does alice have
+left, and what rolls over?") takes 2 model calls and 2 tool calls run in
+parallel, and stops because the model said `end_turn`. In the same
+lesson, a model that keeps searching stops only because a token budget
+tripped: 11 calls in, the running total passes 12,000 tokens (12,990) and
+the run ends with an estimated cost of \$0.07. The tell that you need the
+controls: you cannot say, for every run that ended, *why* it ended.
+
+**Your options.** Six ways to run the loop, from the least machinery to the
+most:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| No loop | One model call; if it asks for a tool, run it once and call once more | Bounded cost: at most two calls | Nothing that needs a second decision gets done | Your code |
+| The SDK's tool runner | Drives the request, run, reply cycle until the model returns no tool call or `max_iterations` is reached | The plumbing done right: results paired by id, one message per turn, type-checked inputs | Per-turn controls are limited; Claude's docs point you to the manual loop for approval, custom logging or conditional execution | The provider's SDK (seven languages for Claude) |
+| The ten-line loop | Call, run tools, append results, repeat while `stop_reason` is `tool_use` | Full control of every turn | Every production failure is yours: it can run forever, repeat itself, crash on a tool error or execute a half-written call | Your code |
+| The production loop (this lesson) | The ten-line loop plus a step limit, token and dollar budgets, loop detection, errors returned as results, a hand-off tool and parallel tool execution | A named stop cause for every run, one of seven | A config to tune (steps, tokens, dollars, repeat threshold) and a test per control | Your code |
+| A framework's loop | The loop with tracing, persistence and hand-offs built in, and its own limit (`max_turns`, a recursion limit) | Standard patterns and observability without writing them | A dependency, its assumptions and its defaults (LangGraph's recursion limit defaults to 1,000 steps) | LangGraph, the OpenAI Agents SDK, the Claude Agent SDK |
+| A hosted loop | The provider runs the loop and a sandbox for the tools; you send messages and tool results | No loop code, no state files, per-session containers | Session runtime on top of tokens (Claude Managed Agents lists \$0.08 per session-hour) and less say over each turn | The provider's servers |
+
+**How to choose.** Start from what can go wrong and who pays for it.
+
+- A prototype, a notebook, a one-off script: the tool runner. It gets the
+  message pairing right, which is the part people get wrong first.
+- Production with side effects (writes, emails, refunds): own the loop, or
+  use a framework whose per-turn hooks you have read. You need an approval
+  gate, a budget in dollars, and a hand-off to a person, in exactly your
+  shape.
+- Many independent tool calls per turn (three lookups): make sure whatever
+  you use runs them concurrently and returns all results in one message.
+  The lesson's latency figure shows serial time climbing with every tool
+  while concurrent time flattens at the slowest call.
+- Long-running or scheduled agents you would rather not host: a hosted loop,
+  if its controls cover your approval and budget needs.
+- Whatever you pick, set every limit before the first real run: steps,
+  tokens, dollars and a repeat threshold. This lesson's defaults are 10
+  steps, 50,000 tokens, and a stop when the same tool is asked for with the
+  same arguments 3 times.
+
+**What it costs.** Input tokens grow with the square of the number of
+steps, because each call re-sends the whole history: with 500 new tokens a
+step, 10 steps send 27,500 input tokens rather than the 5,000 a flat
+per-step cost suggests, and 20 steps send 105,000, almost four times ten
+steps' total. At Claude Opus 5's list prices (\$5 per million input tokens
+and \$25 per million output, the defaults in this lesson's `AgentConfig`),
+the runaway run above cost about 7 cents before its 12,000-token budget
+stopped it. Latency is one round trip per model call plus the slowest tool
+in each turn; a serial loop adds every tool's time instead. The controls
+themselves cost nothing per call: loop detection is a dictionary of (tool,
+arguments) counts, and a budget is a comparison.
+
+**What breaks.**
+
+- **The model never says "done".** Without a step limit the loop runs
+  until the money does. Set `max_steps`, and treat hitting it as an outcome
+  to monitor, not an error to hide.
+- **The same call, again and again.** A model retrying one search burns a
+  call per repeat and never progresses. Count (tool, canonical arguments)
+  and stop at a threshold.
+- **A half-written tool call.** A reply cut off by `max_tokens` can end
+  mid-argument. Check the stop reason before running anything; a truncated
+  call must never execute.
+- **A tool throws.** Crashing the loop discards the work so far; swallowing
+  the error makes the model guess. Return the failure as an error result
+  with a message the model can act on ("as_of must be YYYY-MM-DD"); in the
+  lesson, the model fixes its own call on the next step.
+- **A tool the model made up.** An unknown name is a `KeyError` in a naive
+  loop. Answer with an error result listing the real tools.
+- **Results split across messages.** The API pairs each request and result
+  by id inside one user turn; splitting them breaks the pairing and teaches
+  the model to stop making parallel calls.
+- **Guessing outside its authority.** A refund over the limit needs a
+  person. Make hand-off a tool, so it ends the run with a logged reason
+  instead of a confident wrong answer.
+
+**In the wild.** ReAct (Yao et al., 2022) named the pattern the loop
+implements: a short piece of reasoning, an action, an observation, repeated.
+Claude's SDKs ship a tool runner that loops until the model returns no tool
+use or `max_iterations` is reached, and their docs send you to the manual
+loop when you need approval or custom logging. The OpenAI Agents SDK runs
+the same call, classify, run-tools cycle and raises `MaxTurnsExceeded` past
+`max_turns`. LangGraph bounds a graph with a recursion limit and raises
+`GraphRecursionError` when it trips. Anthropic's *Building effective agents*
+adds the operational advice: agents trade cost and latency for open-ended
+capability, so test them in sandboxes and put guardrails in. Every one of
+these products is this lesson's diamond ("done, or budget, or step limit?")
+with a different name on it.
+
+**Go deeper.** Level 2 traces one round trip message by message, orders the
+seven exits the way the loop checks them and says why that order matters,
+fans tool calls out and back in, and derives the quadratic cost with a
+formula you can rerun against the budget-burner demo. If you only needed to
+choose, you are done.
+
+## Level 2: How it works, from scratch
+
+The loop itself is ten lines: call the model, run the tools it asks for,
+append the results, repeat until it stops asking. Everything else in this
+lesson exists because the ten-line version fails in production, and each
+failure gets a named control.
+
 ## The idea
 
 **Everyday picture.** A new assistant runs errands for you. They can't do

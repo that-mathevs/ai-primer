@@ -3,6 +3,126 @@ r"""
 
 Run: `python -m primer.agents.llm`
 
+New to the notation? `primer.notation` explains every symbol used here from
+zero. This is the first lesson of the agents part: it builds on how a model
+produces text (`primer.ml.inference`), and every later agent lesson builds on
+it.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** Talking to a model means sending it the whole
+conversation so far as a list of messages and getting one message back, and
+tool calling is the case where that message is a structured request ("run
+`get_weather` with `{"city": "Paris"}`") that your code may carry out and
+answer.
+
+**When you need it.** Every system built on a language model does this,
+from a one-shot classifier to a multi-agent research team, so the message
+format is not optional. Tool calling is. You need it the moment the model
+must reach past its own weights: look something up, run a query, compute a
+number, send an email, change a record. You don't need it when the answer is
+words the model already knows, and you don't need it when one structured
+answer is enough (a label, a JSON row): that is structured output
+(`primer.ml.structured_output`), which is a tool call without the "run it and
+come back" step. The tell: if your code reads the model's prose to decide
+which function to call, or scrapes a city name out of a sentence, you need
+tool calling. The model was trained to hand you that request as data.
+
+Two facts about the exchange decide most of what follows, and both come from
+this lesson's traced example. First, the model executes nothing: the reply
+to "What's the weather in Paris?" is a `tool_use` block asking for
+`get_weather`, and the 18°C comes from your code running the function and
+sending the result back. Second, the model keeps no state between calls, so
+every call carries the whole history again. In the lesson's ten-call loop,
+that turns a conversation 7,000 tokens long into 42,500 input tokens billed.
+
+**Your options.** Five ways to get an action out of a model, from the
+cheapest to the most certain:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| A scripted stand-in | A function you write plays the model, replying by rule | The exact reply you scripted, every run, offline | Nothing per call; proves nothing about a real model | Your tests and demos |
+| A local open model, text only | Weights on your own machine answer in plain text | Privacy: nothing leaves the box; no per-token bill | Hardware, smaller models, and your own parsing if you need actions | Your machine (Ollama and similar) |
+| Text you parse | Ask the model to write the action in prose, then match it with a regular expression | Nothing; it works until the wording drifts | A parser you maintain and a retry loop | Your code |
+| Native tool calling | The model replies with a typed `tool_use` block: a name, an id, and the arguments as a parsed JSON object | A request in your schema's shape; with strict mode, exactly your schema | Tokens for the tool definitions, a tool-use system prompt the API adds (286 tokens on Claude Opus 5, per the pricing page), and one extra round trip per call | The model server produces it; your code runs it |
+| Server-side tools | The provider runs the tool (web search, web fetch, code execution) and returns the result in the same reply | The result arrives with no handler code on your side | Per-use fees on some tools (Claude's web search is \$10 per 1,000 searches) and no control over execution | The model server |
+
+**How to choose.** Start from what has to happen, and who is allowed to make
+it happen.
+
+- Testing the code around the model (a loop, a budget, an approval step):
+  the scripted stand-in. It reproduces a model that loops, calls the wrong
+  tool or follows an injected instruction on cue, which a real model rarely
+  does when you want it to.
+- Private data, no budget, or a laptop on a plane: a local open model. Keep
+  it to text unless the model and server both support tool calling (Ollama
+  does, for models trained for it; this lesson's local adapter is text only).
+- Anything a program acts on: native tool calling, never parsed prose. Turn
+  on strict mode when the arguments feed straight into code.
+- Web search or sandboxed code that you would otherwise host yourself: a
+  server-side tool, if its fees and its lack of a hook for your own checks
+  suit you.
+- Whatever you pick, your code stays the only thing that acts. Validate the
+  arguments, check permissions, then run the tool; the model only asks.
+
+**What it costs.** Input tokens are billed on the whole history, every call,
+so the cost of a loop grows with the square of its length: the lesson's ten
+calls bill 42,500 tokens, six times the 7,000-token conversation they end
+with, and the tenth call alone re-sends 6,500. At Claude Opus 5's list price
+of \$5 per million input tokens (the pricing page, fetched for this guide)
+that is about 21 cents per ten-step task before any output; on Haiku 4.5 at
+\$1 per million, about 4 cents. Prompt caching sells re-read tokens at a
+tenth of the price, which is why it is the first lever on any loop
+(`primer.agents.cost`). Tool definitions ride along on every call too, so a
+long tool list is a standing charge. Latency is one network round trip per
+model call plus the tool's own time, and a tool call always means at least
+two model calls.
+
+**What breaks.**
+
+- **Dropping the assistant turn.** Append the exact content blocks the model
+  returned, not just their text: the ids in them are how the next call
+  matches results to requests, and real APIs can include blocks (thinking)
+  that must go back unchanged.
+- **Unmatched ids.** A `tool_result` whose `tool_use_id` matches no request
+  answers nothing. Return one result per request, and all of them in a single
+  user message when the model asked for several.
+- **Swallowing failures.** A tool that throws and returns nothing leaves the
+  model waiting. Send a result flagged as an error with a message the model
+  can act on, so it can retry or ask.
+- **Trusting the request.** Arguments arrive as a parsed object in the
+  shape of your schema, not as safe values. Validate them and check
+  permissions before running anything; the model is never a security
+  boundary.
+- **Ignoring `stop_reason`.** `tool_use` means run tools and call again;
+  `end_turn` means done; `max_tokens` means the reply was cut off and its
+  JSON may be incomplete; `refusal` means the model declined. A loop that
+  checks only for text gets all four wrong.
+- **Missing arguments guessed.** Asked for the weather with no city, a model
+  may invent one rather than ask (Claude's tool-use docs call the asking
+  behaviour model-dependent and not guaranteed). Make optional what is optional, and validate the
+  rest.
+
+**In the wild.** Claude's Messages API is the shape this lesson uses
+directly: `tool_use` and `tool_result` blocks, `stop_reason`, parallel tool
+calls, `strict: true` for schema-exact arguments, and server tools (web
+search, web fetch, code execution) alongside the client tools you run. Its
+SDKs add a tool runner that drives the request, run, reply loop for you.
+OpenAI's function calling is the same five-step round trip in different
+field names, with its own strict mode; the guide recommends turning it on.
+Ollama exposes tool calling for local models, where again the model returns
+the call and your code runs it. Every agent framework, from the smallest
+loop to a multi-agent system, is built on this exchange, and the papers
+behind it (Toolformer, ReAct) are in this lesson's papers section.
+
+**Go deeper.** Level 2 traces the four messages of one tool call by hand,
+lays out the message format field by field, shows the one interface that a
+scripted model and a real one both implement, and derives the quadratic
+cost of a loop with a formula you can rerun. If you only needed to choose,
+you are done.
+
+## Level 2: How it works, from scratch
+
 Every applied-AI system in this primer, from a one-shot classifier to a
 multi-agent research team, talks to the model the same way: it sends a list
 of **messages** and gets one message back. This lesson shows that exchange
