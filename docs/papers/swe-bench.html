@@ -100,7 +100,7 @@
   <li>A training set of about 19,000 further issues from 37 other repositories, and two <span class="t" data-t="fine-tuning">fine-tuned</span> models, SWE-Llama 7b and 13b.</li>
 </ul>
 <h3 class="rung">Why it matters today</h3>
-<p>SWE-bench turned “can it write a function?” into “can it do a software engineer's task?”, and graded it by running tests rather than by comparing text. It became a standard measure for coding <span class="t" data-t="agent">agents</span>, starting with SWE-agent (<a href="https://arxiv.org/abs/2405.15793">Yang et al., 2024</a>), which lifted the resolved rate to 12.5% by letting a model work inside the repository.</p>
+<p>SWE-bench turned “can it write a function?” into “can it do a software engineer's task?”, and graded it by running tests rather than by comparing text. It became a standard measure for coding <span class="t" data-t="agent">agents</span>, starting with the <a href="swe-agent.html">SWE-agent companion</a>'s paper, which lifted the resolved rate to 12.5% by letting a model work inside the repository.</p>
 </section>
 
 <section id="s1">
@@ -388,7 +388,7 @@ round(100 - 51.27, 2)  # → 48.73</code></pre>
 </figure>
 <p class="reading"><strong>Reading it:</strong> read top to bottom, in the order the model reads. The pink part is nearly all of the length: the retrieved files. The example patch is there to show the format: the paper notes that models likely see few patch files in training, and many of their patches fail to apply. The request at the bottom asks for exactly one patch that can be applied with <code class="example">git apply</code>. The model gets one reply, generated with <span class="t" data-t="greedy decoding">greedy decoding</span>, and no second chance.</p>
 <h4>Why it matters</h4>
-<p>The template shows what the baseline cannot do: ask a question, open another file, or run anything. Every piece of context must be chosen before the model starts. The authors' own list of future directions names the alternative, “agent-based approaches”, and a follow-up paper by several of the same authors (SWE-agent, <a href="https://arxiv.org/abs/2405.15793">arXiv:2405.15793</a>) built it.</p>
+<p>The template shows what the baseline cannot do: ask a question, open another file, or run anything. Every piece of context must be chosen before the model starts. The authors' own list of future directions names the alternative, “agent-based approaches”, and a follow-up paper by several of the same authors (<a href="swe-agent.html">SWE-agent</a>) built it.</p>
 </section>
 
 <section id="s4-3">
@@ -601,8 +601,8 @@ round(471 / (471 + 436), 2)  # → 0.52</code></pre>
 <div class="tablewrap"><table>
   <thead><tr><th>In the paper</th><th>What came later</th><th>Learn it</th></tr></thead>
   <tbody>
-    <tr><td>One prompt, one reply, files chosen by BM25</td><td>Agents that search, open files, edit and run tests in the repository: SWE-agent (Yang et al., 2024, <a href="https://arxiv.org/abs/2405.15793">arXiv:2405.15793</a>) resolved 12.47% of the full benchmark, against 3.79% for the best retrieval baseline</td><td><a data-lesson="primer/agents/coding_agents.html#fix_until_green">an edit-run-test loop</a></td></tr>
-    <tr><td>300-task Lite subset</td><td>Used for cheaper comparisons, such as SWE-agent's ablations</td><td><a data-lesson="primer/agents/coding_agents.html#MINI_BENCH">a mini benchmark</a></td></tr>
+    <tr><td>One prompt, one reply, files chosen by BM25</td><td>Agents that search, open files, edit and run tests in the repository: SWE-agent (Yang et al., 2024, <a href="https://arxiv.org/abs/2405.15793">arXiv:2405.15793</a>) resolved 12.47% of the full benchmark, against 3.79% for the best retrieval baseline</td><td><a href="swe-agent.html">SWE-agent companion</a></td></tr>
+    <tr><td>300-task Lite subset</td><td>Used for cheaper comparisons, such as SWE-agent's ablations</td><td><a href="swe-agent.html#s5-1">SWE-agent's ablations</a></td></tr>
     <tr><td>Fail-to-pass and pass-to-pass tests, resolved rate</td><td>A common way to grade agent-written code changes</td><td><a data-lesson="primer/agents/coding_agents.html#benchmark">a three-task version</a></td></tr>
     <tr><td>Collection that keeps running on new issues</td><td>A defence against contamination, as the original tasks become public</td><td><a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a></td></tr>
     <tr><td>Localization as the bottleneck</td><td>Search tools built for models, and reading code in small windows</td><td><a data-lesson="primer/agents/coding_agents.html#Workspace.search"><code>Workspace.search</code></a></td></tr>

@@ -256,7 +256,7 @@ GLOSSARY: dict[str, Entry] = {
     'accuracy': _E('The share of all predictions that were correct. Misleading when one class is rare.', 'primer.ml.metrics'),
     'agent-computer interface': _E('The commands an agent can call and the exact form of what comes back to it, designed for a language model the way a code editor is designed for a person.', 'primer.agents.coding_agents'),
     'confusion matrix': _E('The four counts behind every classification metric: hits, false alarms, misses and correct passes.', 'primer.ml.metrics'),
-    'container': _E("An isolated copy of an operating system's user space for one program: its own files, processes and network settings, started from an image and thrown away afterwards.", 'primer.agents.coding_agents', scope=('primer/agents/',)),
+    'container': _E("An isolated copy of an operating system's user space for one program: its own files, processes and network settings, started from an image and thrown away afterwards.", 'primer.agents.coding_agents', scope=('primer/agents/coding_agents',)),
     'diff': _E('A text listing, file by file, which lines to remove (marked −) and which to add (marked +), with a few unchanged lines around each change so a tool can find the spot. Saved to a file, it is a patch that can be applied to another copy of the code.', 'primer.agents.coding_agents'),
     'fault localization': _E('Finding which files, functions and lines cause a bug, before trying to fix it.', 'primer.agents.coding_agents'),
     'linter': _E('A program that reads code without running it and reports likely mistakes, such as a syntax error, bad indentation or a name that is never defined.', None),
