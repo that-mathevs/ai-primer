@@ -944,6 +944,7 @@ gap.
 - **Song, Meng and Ermon, *Denoising Diffusion Implicit Models* (2020)**:
   https://arxiv.org/abs/2010.02502. Deterministic sampling with big jumps,
   using the same trained network.
+  [Annotated companion](../../../papers/ddim.html)
 - **Song et al., *Score-Based Generative Modeling through Stochastic
   Differential Equations* (2020)**: https://arxiv.org/abs/2011.13456. Showed
   diffusion and score-based models are one family, described as continuous
@@ -951,6 +952,7 @@ gap.
 - **Ho and Salimans, *Classifier-Free Diffusion Guidance* (2022)**:
   https://arxiv.org/abs/2207.12598. Guidance from one network trained with
   and without the label, no separate classifier needed.
+  [Annotated companion](../../../papers/classifier-free-guidance.html)
 - **Rombach et al., *High-Resolution Image Synthesis with Latent Diffusion
   Models* (2021)**: https://arxiv.org/abs/2112.10752. Denoising in an
   autoencoder's latent space, with text via cross-attention: the basis of

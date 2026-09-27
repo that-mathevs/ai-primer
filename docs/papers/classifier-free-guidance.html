@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classifier-Free Diffusion Guidance, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Ho and Salimans (2022), the paper that made diffusion models follow their prompts closely by mixing two guesses from one network, with no classifier at all.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .cf-canvas { display: block; width: 100%; max-width: 460px; height: auto; margin: 0.4rem auto; }
+  .cf-toggle { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  /* Charts are drawn narrow so their labels stay legible on a phone; on a wide screen they stop growing. */
+  .plot svg[role="slider"] { max-width: 600px; margin: 0 auto; }
+  .note { border-left: 4px solid var(--accent); padding: 0.5rem 0.8rem; background: var(--quote-bg); border-radius: 6px; }
+</style>
+</head>
+<body data-paper="classifier-free-guidance">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Background</a></li>
+      <li><a href="#s3">3 Guidance</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Classifier guidance</a></li>
+          <li><a href="#s3-2">3.2 Classifier-free guidance</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Guidance strength</a></li>
+          <li><a href="#s4-2">4.2 How often to drop the label</a></li>
+          <li><a href="#s4-3">4.3 Number of sampling steps</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Discussion</a></li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#today">What changed since 2022</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Classifier-Free Diffusion Guidance, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Ho and Salimans (2022), the paper that made diffusion models stick closely to what they were asked for by asking one network two questions (“with the label?” and “without?”) and pushing past the difference.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2207.12598">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2207.12598">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2207.12598">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, which does not grant permission to republish its tables, so only a few selected rows appear here, each attributed; its sample images are not reproduced, and its plotted figures are redrawn from scratch from the numbers the paper prints. The worked numbers come from toy examples built on this page, not from the paper, unless a sentence says otherwise. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols.</li>
+  <li>The diagrams and pictures are live: hover or tap the parts, drag the sliders, and the readouts say what changed.</li>
+</ul>
+<p>Each idea is explained in the same order: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>.</p>
+<div class="note">
+  <p style="margin:0 0 .5rem"><strong>Two warnings about notation.</strong> First, this paper writes a noisy picture as <strong>z</strong> and the clean one as <strong>x</strong>, and it measures the noise level by λ, the <span class="t" data-t="signal-to-noise ratio">log signal-to-noise ratio</span>. Its <strong>α<sub>λ</sub> is a scale, not a share</strong>: z = α<sub>λ</sub>x + σ<sub>λ</sub>ε with α<sub>λ</sub>² + σ<sub>λ</sub>² = 1. So α<sub>λ</sub> here is √ᾱ<sub>t</sub> in the <a href="ddpm.html">DDPM companion</a> and √α<sub>t</sub> in the <a href="ddim.html">DDIM companion</a>.</p>
+  <p style="margin:0">Second, the <strong>guidance weight w</strong> is counted from a different zero than in the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>. Here w = 0 means “the plain labelled guess, no guidance”. In the lesson, w = 1 means that. So the lesson's weight is this paper's w plus 1: the lesson's w = 3 is the paper's w = 2.</p>
+</div>
+<div class="play">
+  <p style="margin:0"><strong>The toys.</strong> The one-pixel toy from the DDIM companion: a clean value <strong>x = 2.0</strong>, noised to a level with α<sub>λ</sub> = 0.8 and σ<sub>λ</sub> = 0.6 by the noise ε = 0.5, gives <strong>z = 1.9</strong>. And a two-class toy for guidance: class “+” is the clean value +2 and class “−” is −2, equally common. At the same noise level each class's noisy values form a bell curve centred at ±1.6 with variance 0.36, and we look at the ambiguous noisy value <strong>z = 0.1</strong>.</p>
+</div>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We show that guidance can be indeed performed by a pure generative model without such a classifier…”<cite>Ho and Salimans (2022), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2207.12598">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A caricaturist draws a famous face by noticing what makes it different from an average face (the big chin, the heavy eyebrows) and exaggerating exactly that difference. Classifier-free guidance does the same: it asks a <span class="t" data-t="diffusion model">diffusion model</span> “what would you draw if told the label?” and “what would you draw anyway?”, then pushes further in the direction of the difference.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><span class="t" data-t="classifier guidance">Classifier guidance</span>, an earlier method, trades sample diversity for sample quality after training, like the truncation trick of GANs, but needs a separately trained image classifier.</li>
+  <li>The same trade-off can be had with no classifier: train one diffusion model both with and without its label, and at sampling time mix its two noise guesses.</li>
+  <li>This <span class="t" data-t="classifier-free guidance">classifier-free guidance</span> reaches a quality/diversity trade-off similar to classifier guidance on ImageNet.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Almost every text-to-image and text-to-video diffusion system uses this trick; the “<span class="t" data-t="guidance scale">guidance scale</span>” slider in image tools is its w. It is also why each sampling step of such systems usually costs two network passes.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S1">original</a></span></h2>
+<blockquote class="quote">“Classifier guidance complicates the diffusion model training pipeline because it requires training an extra classifier, and this classifier must be trained on noisy data so it is generally not possible to plug in a pre-trained classifier.”<cite>Ho and Salimans (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Imagine steering a sketch artist with an art critic who shouts “more dog!” after every stroke. It works, but you must hire a critic who can recognise a dog in a half-finished, smudged sketch, and ordinary critics trained on finished paintings cannot. Worse, an artist who learns to please one critic may learn to fool it rather than to draw better dogs.</p>
+<h3 class="rung">Tiny example</h3>
+<p>An off-the-shelf classifier has only ever seen clean images like x = 2.0. During sampling it would be shown noisy values like z = 0.1 at a heavy noise level, where both classes are plausible (the two-class toy gives 71% “+”). A classifier for guidance must be trained on exactly such noisy inputs, at every noise level.</p>
+<h3 class="rung">The paper's questions</h3>
+<ul>
+  <li>Can guidance be done <em>without</em> a classifier?</li>
+  <li>Classifier guidance steps along a classifier's gradient, which looks like a gradient-based <span class="t" data-tip-title="Adversarial attack" data-tip="A small change to an input, chosen by following a classifier's gradient, that changes the classifier's answer without changing what a person would see.">adversarial attack</span> on that classifier. Does it score well on classifier-based metrics like <span class="t" data-t="inception score">Inception score</span> and <span class="t" data-t="fid">FID</span> only because it fools classifiers?</li>
+  <li>The answer to both, shown here: guidance works with a pure generative model, and reaches the same trade-off without any classifier gradient.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>Removing the classifier removed a whole second model from the pipeline, and with it the limit that guidance only works for labels a classifier can recognise. That is what let guidance follow free text prompts.</p>
+</section>
+
+<section id="s2">
+<h2>2 Background <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Instead of numbering noise levels 1 to 1,000, the paper describes each level by a single dial: the log of how much louder the signal is than the noise. Turn the dial down and the picture fades into static; the model learns to turn it back up. This is the same <span class="t" data-t="forward process">forward process</span> as DDPM, just labelled by a continuous number instead of a step count.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The toy pixel at z = 1.9 has signal variance 0.8² = 0.64 and noise variance 0.6² = 0.36. The ratio is 0.64/0.36 = 1.778, and its logarithm is λ = 0.575.</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=qzx}{q(\mathbf{z}_\lambda\mid\mathbf{x})} = \htmlData{sym=Ngauss}{\mathcal{N}}\big(\htmlData{sym=alam}{\alpha_\lambda}\,\htmlData{sym=xclean}{\mathbf{x}},\ \htmlData{sym=slam2}{\sigma_\lambda^2}\htmlData{sym=I}{\mathbf{I}}\big) \\ \htmlData{sym=alam2}{\alpha_\lambda^2} = \frac{1}{1+e^{-\htmlData{sym=lam}{\lambda}}} \\ \htmlData{sym=slam2}{\sigma_\lambda^2} = 1-\htmlData{sym=alam2}{\alpha_\lambda^2}\end{gathered}" data-fallback="q(z_λ | x) = N(α_λ x, σ_λ² I),  α_λ² = 1/(1 + e^(−λ)),  σ_λ² = 1 − α_λ²"></div>
+<div class="symtable" data-syms="qzx,alam,xclean,slam2,alam2,lam"></div>
+<p class="inwords"><strong>In words:</strong> “a noisy picture at level λ is the clean picture scaled by α<sub>λ</sub> plus noise of variance σ<sub>λ</sub>²; the two variances always add up to 1, and λ = log(α<sub>λ</sub>²/σ<sub>λ</sub>²) says how they are split.”</p>
+<p class="inwords"><strong>With the numbers:</strong> λ = log(0.64/0.36) = 0.5754; then 1/(1 + e<sup>−0.5754</sup>) = 1/(1 + 0.5625) = 0.64 = α<sub>λ</sub>², and σ<sub>λ</sub>² = 0.36. The toy pixel: 0.8 × 2.0 + 0.6 × 0.5 = 1.9. At λ = 0 signal and noise are equal (α<sub>λ</sub>² = 0.5); the forward process runs toward smaller λ.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# λ: the log of signal variance over noise variance
+lam = math.log(0.64 / 0.36)
+round(lam, 4)  # → 0.5754
+# α_λ² = 1 / (1 + e^(−λ)) and σ_λ² = 1 − α_λ²
+alpha2 = 1 / (1 + math.exp(-lam))
+round(alpha2, 4), round(1 - alpha2, 4)  # → (0.64, 0.36)
+# z = α_λ x + σ_λ ε
+round(math.sqrt(alpha2) * 2.0 + math.sqrt(1 - alpha2) * 0.5, 4)  # → 1.9</code></pre>
+<h3 class="rung">Moving between two levels</h3>
+<p>Going from a cleaner level λ′ to a noisier level λ is itself a small forward step (equation 2), and running it backwards when the clean picture is known gives a bell curve with a known centre and width (equation 3), exactly the DDPM backward step of the <a href="ddpm.html#s2">DDPM companion</a>:</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=vstep}{\sigma^2_{\lambda\mid\lambda'}} = \big(1-\htmlData{sym=eratio}{e^{\lambda-\lambda'}}\big)\,\htmlData{sym=slam2}{\sigma_\lambda^2} \\ \htmlData{sym=mutilde}{\tilde{\boldsymbol{\mu}}_{\lambda'\mid\lambda}(\mathbf{z}_\lambda,\mathbf{x})} = \htmlData{sym=eratio}{e^{\lambda-\lambda'}}\,\htmlData{sym=aratio}{(\alpha_{\lambda'}/\alpha_\lambda)}\,\htmlData{sym=zlam}{\mathbf{z}_\lambda} + \big(1-\htmlData{sym=eratio}{e^{\lambda-\lambda'}}\big)\,\htmlData{sym=alamp}{\alpha_{\lambda'}}\,\htmlData{sym=xclean}{\mathbf{x}} \\ \htmlData{sym=vtilde}{\tilde\sigma^2_{\lambda'\mid\lambda}} = \big(1-\htmlData{sym=eratio}{e^{\lambda-\lambda'}}\big)\,\htmlData{sym=slamp2}{\sigma_{\lambda'}^2}\end{gathered}" data-fallback="σ²_(λ|λ′) = (1 − e^(λ−λ′)) σ_λ²,  μ̃_(λ′|λ)(z_λ, x) = e^(λ−λ′)(α_λ′/α_λ) z_λ + (1 − e^(λ−λ′)) α_λ′ x,  σ̃²_(λ′|λ) = (1 − e^(λ−λ′)) σ_λ′²"></div>
+<div class="symtable" data-syms="vstep,eratio,mutilde,aratio,zlam,alamp,vtilde,slamp2"></div>
+<p class="inwords"><strong>In words:</strong> “the forward step between two levels adds a share (1 − e<sup>λ−λ′</sup>) of the noisier level's noise; run backwards knowing x, the cleaner level is a blend of the noisy value and the clean one, with a smaller spread.”</p>
+<p class="inwords"><strong>With the numbers:</strong> take the cleaner level λ′ = log(0.96/0.04) = 3.178. Then e<sup>λ−λ′</sup> = 1.778/24 = 0.0741, so the forward step adds noise of variance 0.9259 × 0.36 = 0.3333. Backwards from z = 1.9 with x = 2.0: 0.0741 × (0.9798/0.8) × 1.9 + 0.9259 × 0.9798 × 2.0 = 1.9868, with variance 0.9259 × 0.04 = 0.0370. Both numbers match the DDIM companion's toy step exactly.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+lam, lam_p = math.log(0.64 / 0.36), math.log(0.96 / 0.04)
+a, a_p = 0.8, math.sqrt(0.96)
+s2, s2_p = 0.36, 0.04
+e = math.exp(lam - lam_p)
+round(e, 4), round((1 - e) * s2, 4)  # → (0.0741, 0.3333)
+# μ̃ and σ̃² going back from z = 1.9 with x = 2.0
+z, x = 1.9, 2.0
+round(e * (a_p / a) * z + (1 - e) * a_p * x, 4), round((1 - e) * s2_p, 4)  # → (1.9868, 0.037)</code></pre>
+<h3 class="rung">The reverse process and the training loss</h3>
+<p>The model's step backwards is the same bell curve with the model's guess of x in place of the real one. Its width is a blend, set by a knob v, of the two widths above:</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=pstep}{p_\theta(\mathbf{z}_{\lambda'}\mid\mathbf{z}_\lambda)} = \htmlData{sym=Ngauss}{\mathcal{N}}\Big(\htmlData{sym=mutilde}{\tilde{\boldsymbol{\mu}}_{\lambda'\mid\lambda}}\big(\mathbf{z}_\lambda,\ \htmlData{sym=xtheta}{\mathbf{x}_\theta(\mathbf{z}_\lambda)}\big),\ \big(\htmlData{sym=vtilde}{\tilde\sigma^2_{\lambda'\mid\lambda}}\big)^{1-\htmlData{sym=vknob}{v}}\big(\htmlData{sym=vstep}{\sigma^2_{\lambda\mid\lambda'}}\big)^{\htmlData{sym=vknob}{v}}\Big) \\ \htmlData{sym=xtheta}{\mathbf{x}_\theta(\mathbf{z}_\lambda)} = \big(\htmlData{sym=zlam}{\mathbf{z}_\lambda} - \htmlData{sym=slam}{\sigma_\lambda}\,\htmlData{sym=epstheta}{\boldsymbol{\epsilon}_\theta(\mathbf{z}_\lambda)}\big)/\htmlData{sym=alam}{\alpha_\lambda}\end{gathered}" data-fallback="p_θ(z_λ′ | z_λ) = N(μ̃_(λ′|λ)(z_λ, x_θ(z_λ)), (σ̃²)^(1−v) (σ²_(λ|λ′))^v),  x_θ(z_λ) = (z_λ − σ_λ ε_θ(z_λ))/α_λ"></div>
+<div class="symtable" data-syms="pstep,xtheta,vknob,slam,epstheta"></div>
+<p class="inwords"><strong>In words:</strong> “guess the clean picture by removing the guessed noise, take the known backward step toward that guess, and pick a spread between the small backward one (v = 0) and the larger forward one (v = 1).”</p>
+<p class="inwords"><strong>With the numbers:</strong> with a perfect noise guess of 0.5, x<sub>θ</sub> = (1.9 − 0.6 × 0.5)/0.8 = 2.0. With v = 0.3 (the paper's 64 × 64 setting), the spread is 0.0370<sup>0.7</sup> × 0.3333<sup>0.3</sup> = 0.0716: about twice the small one, a fifth of the large one.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>z, sigma, alpha, eps_hat = 1.9, 0.6, 0.8, 0.5
+# x_θ(z) = (z − σ ε_θ) / α
+round((z - sigma * eps_hat) / alpha, 4)  # → 2.0
+# the reverse variance: (σ̃²)^(1 − v) (σ²_(λ|λ′))^v, with v = 0.3
+v, small, large = 0.3, 0.037037, 0.333333
+round(small ** (1 - v) * large ** v, 4)  # → 0.0716</code></pre>
+<p>Training is DDPM's noise-guessing loss, with the level λ drawn at random:</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=Eepslam}{\mathbb{E}_{\boldsymbol{\epsilon},\lambda}}\Big[\big\Vert \htmlData{sym=epstheta}{\boldsymbol{\epsilon}_\theta(\mathbf{z}_\lambda)} - \htmlData{sym=epstrue}{\boldsymbol{\epsilon}}\big\Vert_2^2\Big] \\ \htmlData{sym=lam}{\lambda} = -2\log\tan(\htmlData{sym=acoef}{a}\,\htmlData{sym=uunif}{u} + \htmlData{sym=bcoef}{b})\end{gathered}" data-fallback="E_(ε, λ)[ ‖ε_θ(z_λ) − ε‖² ],  λ = −2 log tan(a u + b)"></div>
+<div class="symtable" data-syms="Eepslam,epstrue,acoef,uunif,bcoef"></div>
+<p class="inwords"><strong>In words:</strong> “noise a real picture to a random level, ask the network for the noise, and score the squared miss; pick the level by pushing a uniform number u through a curve that spends more time near the middle levels.”</p>
+<p class="inwords"><strong>With the numbers:</strong> one example with the guess 0.4 against the true 0.5 scores 0.01. With the paper's endpoints λ<sub>min</sub> = −20 and λ<sub>max</sub> = 20, u = 0 gives λ = 20 (almost clean), u = 0.5 gives λ = 0 (half signal, half noise), and u = 1 gives −20 (almost pure noise).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+round((0.4 - 0.5) ** 2, 4)  # → 0.01
+lam_min, lam_max = -20, 20
+b = math.atan(math.exp(-lam_max / 2))
+a = math.atan(math.exp(-lam_min / 2)) - b
+def lam(u):
+    # + 0.0 turns a rounded −0.0 into 0.0
+    return round(-2 * math.log(math.tan(a * u + b)), 4) + 0.0
+[lam(u) for u in (0.0, 0.25, 0.5, 0.75, 1.0)]  # → [20.0, 1.7626, 0.0, -1.7626, -20.0]</code></pre>
+<h3 class="rung">The noise guess is the score</h3>
+<p>Because the loss is <span class="t" data-t="denoising score matching">denoising score matching</span>, the noise guess estimates the <span class="t" data-t="score">score</span>, the direction in which noisy data gets denser, flipped and scaled:</p>
+<div class="eq" data-tex="\htmlData{sym=epstheta}{\boldsymbol{\epsilon}_\theta(\mathbf{z}_\lambda)} \approx -\htmlData{sym=slam}{\sigma_\lambda}\,\htmlData{sym=gradlogp}{\nabla_{\mathbf{z}_\lambda}\log p(\mathbf{z}_\lambda)}" data-fallback="ε_θ(z_λ) ≈ −σ_λ ∇ log p(z_λ)"></div>
+<div class="symtable" data-syms="gradlogp"></div>
+<p class="inwords"><strong>In words:</strong> “the best noise guess points the opposite way to uphill-in-probability, scaled by the noise level.”</p>
+<p class="inwords"><strong>With the numbers:</strong> if the data were the single value 2.0, noisy values at this level form N(1.6, 0.36), whose score at 1.9 is −(1.9 − 1.6)/0.36 = −0.8333. Times −0.6 gives 0.5, exactly the noise.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>z, centre, var, sigma = 1.9, 1.6, 0.36, 0.6
+# ∇ log N(z; centre, var) = −(z − centre) / var
+score = -(z - centre) / var
+round(score, 4), round(-sigma * score, 4)  # → (-0.8333, 0.5)</code></pre>
+<p>For a class-conditional model “the only modification” is that the network also receives the label c: ε<sub>θ</sub>(z<sub>λ</sub>, c).</p>
+<h3 class="rung">Why it matters</h3>
+<p>The score view is what makes guidance possible: scores of different distributions can be added and scaled, because adding log-probabilities multiplies probabilities. Guidance is built entirely from that move. The paper also notes, and it matters later, that a network's output need not be the gradient of <em>any</em> function.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#train_noise_predictor"><code>train_noise_predictor</code></a> trains the noise guesser; <a data-lesson="primer/ml/generative/diffusion.html#noise_to_score"><code>noise_to_score</code></a> turns a noise guess into a score.</p>
+</section>
+
+<section id="s3">
+<h2>3 Guidance <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S3">original</a></span></h2>
+<blockquote class="quote">“Unfortunately, straightforward attempts of implementing truncation or low temperature sampling in diffusion models are ineffective.”<cite>Ho and Salimans (2022), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Many generators have a “play it safe” knob. A GAN can be fed only typical noise (the <span class="t" data-tip-title="Truncation trick" data-tip="Feeding a GAN's generator only noise drawn close to the centre of its distribution, resampling anything too far out. Samples become more typical and cleaner, and less varied.">truncation trick</span>); a flow model or a language model can sample at low <span class="t" data-t="temperature">temperature</span>. Each trades variety for samples that look more typical and cleaner.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Lowering the temperature of a bell curve N(0, 1) to 0.5 means raising its density to the power 1/0.5 = 2 and renormalising: e<sup>−x²/2</sup> squared is e<sup>−x²</sup>, the bell curve N(0, 0.5). Same centre, spread shrunk from 1 to 0.707: fewer unusual samples.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+temperature = 0.5
+# (e^(−x²/2))^(1/T) = e^(−x²/(2T)): a bell curve with variance T
+variance = temperature
+round(variance, 4), round(math.sqrt(variance), 4)  # → (0.5, 0.7071)</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>For diffusion models the obvious versions of this knob (scale up the noise guesses, or add less noise while sampling) give blurry, low-quality samples, as the earlier work the paper builds on found. Something else was needed.</p>
+
+<section id="s3-1">
+<h3>3.1 Classifier guidance <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>At every step, show the half-finished sample to a classifier trained on noisy images, ask how to change it to look more like the label, and nudge it that way as well as along the diffusion model's own direction. The strength of the nudge is w.</p>
+<h4>Tiny example</h4>
+<p>In the two-class toy at z = 0.1, a perfect noisy-data classifier says “+” with probability 0.7087, and the slope of its log-probability is +2.59: move right to become more “+”. The class-conditional noise guess for “+” is (0.1 − 1.6)/0.6 = −2.5. With w = 1, the guided guess is −2.5 − 1 × 0.6 × 2.59 = −4.05: a guess of more negative noise, so a step that moves z further right, toward “+”.</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=epstilde}{\tilde{\boldsymbol{\epsilon}}_\theta(\mathbf{z}_\lambda,\mathbf{c})} = \htmlData{sym=epsc}{\boldsymbol{\epsilon}_\theta(\mathbf{z}_\lambda,\mathbf{c})} \\ - \htmlData{sym=w}{w}\,\htmlData{sym=slam}{\sigma_\lambda}\,\htmlData{sym=gradcls}{\nabla_{\mathbf{z}_\lambda}\log p_\theta(\mathbf{c}\mid\mathbf{z}_\lambda)} \\ \approx -\htmlData{sym=slam}{\sigma_\lambda}\,\nabla_{\mathbf{z}_\lambda}\big[\htmlData{sym=logpzc}{\log p(\mathbf{z}_\lambda\mid\mathbf{c})} + \htmlData{sym=w}{w}\,\htmlData{sym=logpcz}{\log p_\theta(\mathbf{c}\mid\mathbf{z}_\lambda)}\big]\end{gathered}" data-fallback="ε̃_θ(z_λ, c) = ε_θ(z_λ, c) − w σ_λ ∇ log p_θ(c | z_λ) ≈ −σ_λ ∇[log p(z_λ | c) + w log p_θ(c | z_λ)]"></div>
+<div class="symtable" data-syms="epstilde,epsc,w,gradcls,logpzc,logpcz"></div>
+<p class="inwords"><strong>In words:</strong> “the guided noise guess is the labelled guess minus w times the classifier's push toward the label, rescaled; it is the noise guess you would get for a distribution whose log-probability adds w times the classifier's log-probability.”</p>
+<p class="inwords"><strong>With the numbers:</strong> −2.5 − 1 × 0.6 × 2.5897 = −4.0538. The classifier's slope comes from Bayes' rule on the two bell curves at centres ±1.6 with variance 0.36: log-odds 8.889 × z, so a slope of 8.889 × (1 − 0.7087) = 2.5897.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+z, sigma, var = 0.1, 0.6, 0.36
+# p(+ | z) by Bayes' rule: a logistic curve in z, with slope k = 2 × 1.6 × 2 / (2 × 0.36)
+k = 4 * 1.6 / (2 * var)
+p_plus = 1 / (1 + math.exp(-k * z))
+round(p_plus, 4), round(k, 3)  # → (0.7087, 8.889)
+# ∇ log p(+ | z) = k (1 − p)
+grad = k * (1 - p_plus)
+eps_c = (z - 1.6) / sigma
+round(grad, 4), round(eps_c, 4)  # → (2.5897, -2.5)
+# ε̃ = ε_c − w σ ∇ log p(c | z), with w = 1
+round(eps_c - 1 * sigma * grad, 4)  # → -4.0538</code></pre>
+<p>Using ε̃ in place of the labelled guess samples, approximately, from a sharpened distribution:</p>
+<div class="eq" data-tex="\htmlData{sym=ptilde}{\tilde p_\theta(\mathbf{z}_\lambda\mid\mathbf{c})} \propto \htmlData{sym=pzc}{p_\theta(\mathbf{z}_\lambda\mid\mathbf{c})}\ \htmlData{sym=pcz}{p_\theta(\mathbf{c}\mid\mathbf{z}_\lambda)}^{\htmlData{sym=w}{w}}" data-fallback="p̃_θ(z_λ | c) ∝ p_θ(z_λ | c) p_θ(c | z_λ)^w"></div>
+<div class="symtable" data-syms="ptilde,pzc,pcz"></div>
+<p class="inwords"><strong>In words:</strong> “take the class's own distribution and multiply in the classifier's confidence w times: places where the classifier is unsure lose weight, places where it is sure keep theirs.”</p>
+<p class="inwords"><strong>With the numbers:</strong> compare the ambiguous z = 0.1 with the class centre 1.6, where the classifier is certain. Unguided, z = 0.1 is 0.0439 times as likely as 1.6. With w = 1 that falls to 0.0311 (× 0.7087), and with w = 3 to 0.0156 (× 0.7087³). Ambiguous samples are squeezed out.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def density(z, centre, var=0.36):
+    return math.exp(-(z - centre) ** 2 / (2 * var)) / math.sqrt(2 * math.pi * var)
+def p_plus(z):
+    return density(z, 1.6) / (density(z, 1.6) + density(z, -1.6))
+# p(z | c) p(c | z)^w at z = 0.1, relative to the class centre z = 1.6
+ratio = density(0.1, 1.6) / density(1.6, 1.6)
+[round(ratio * (p_plus(0.1) / p_plus(1.6)) ** w, 4) for w in (0, 1, 3)]  # → [0.0439, 0.0311, 0.0156]</code></pre>
+<p><strong>Try it:</strong> the paper's Figure 2 shows three classes, each a round bell curve in the plane. Drag w and watch each class's guided distribution.</p>
+<div class="plot" id="fig2">
+  <div class="controls"><label for="f2-w">guidance w = <strong id="f2-wv">0.0</strong></label><input type="range" id="f2-w" min="0" max="4" step="0.1" value="0"></div>
+  <canvas id="f2-canvas" class="cf-canvas" width="600" height="600" aria-label="The density of three classes in the plane, each a mixture component, after multiplying each class by its classifier confidence raised to the power w."></canvas>
+  <p class="readout" id="f2-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each colour is one class (its data a round bell curve of spread 0.7 around a centre 1.0 from the middle, illustrative numbers), and the brightness is the density of the equal mixture of the three guided class distributions p(x | c) p(c | x)<sup>w</sup>, each renormalised, computed exactly on a grid. At w = 0 it is the plain data distribution: three overlapping blobs that blur into one another in the middle. Drag w up and each class retreats from the others: its mass moves outward, away from where the classifier could confuse it, and bunches into a smaller, lopsided region, no longer a round bell curve. The readout tracks one class. That is the paper's Figure 2, redrawn: higher confidence and lower variety, the Inception-score-up, diversity-down trade in miniature.</p>
+<h4>Guiding an unconditional model</h4>
+<p>The paper also notes that guiding an <em>unconditional</em> model with weight w + 1 gives the same thing as guiding a conditional model with weight w, since, by Bayes' rule, p(z | c) is proportional to p(z) p(c | z):</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=epsu}{\boldsymbol{\epsilon}_\theta(\mathbf{z}_\lambda)} - (\htmlData{sym=w}{w}+1)\,\htmlData{sym=slam}{\sigma_\lambda}\,\htmlData{sym=gradcls}{\nabla_{\mathbf{z}_\lambda}\log p_\theta(\mathbf{c}\mid\mathbf{z}_\lambda)} \\ \approx -\htmlData{sym=slam}{\sigma_\lambda}\,\nabla_{\mathbf{z}_\lambda}\big[\htmlData{sym=logpzc}{\log p(\mathbf{z}_\lambda\mid\mathbf{c})} + \htmlData{sym=w}{w}\,\htmlData{sym=logpcz}{\log p_\theta(\mathbf{c}\mid\mathbf{z}_\lambda)}\big]\end{gathered}" data-fallback="ε_θ(z_λ) − (w + 1) σ_λ ∇ log p_θ(c | z_λ) ≈ −σ_λ ∇[log p(z_λ | c) + w log p_θ(c | z_λ)]"></div>
+<div class="symtable" data-syms="epsu"></div>
+<p class="inwords"><strong>In words:</strong> “start from the unlabelled noise guess and push toward the label once more than before: the first push turns the unlabelled guess into the labelled one, the rest is guidance.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the toy's unlabelled guess at z = 0.1 is −0.9462 (computed in §3.2 below). −0.9462 − 2 × 0.6 × 2.5897 = −4.0538: the same guided guess as before.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>eps_u, sigma, grad, w = -0.946191, 0.6, 2.589682, 1
+# ε_u − (w + 1) σ ∇ log p(c | z)
+round(eps_u - (w + 1) * sigma * grad, 4)  # → -4.0538</code></pre>
+<p>In theory the two are the same; in practice the earlier work got its best results guiding an already conditional model, so the paper stays with that.</p>
+<h4>Why it matters today</h4>
+<p>Classifier guidance showed that a diffusion model can be sharpened after training, with one knob. Its costs (a second, noise-trained classifier, and steps along that classifier's gradient) are what the next section removes.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Classifier-free guidance <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S3.SS2">original</a></span></h3>
+<blockquote class="quote">“Eq. 6 has no classifier gradient present, so taking a step in the ε̃<sub>θ</sub> direction cannot be interpreted as a gradient-based adversarial attack on an image classifier.”<cite>Ho and Salimans (2022), §3.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Instead of hiring a critic, teach the artist to draw both ways: sometimes you tell them the subject, sometimes you don't. Then, while drawing, the artist compares “what I'd draw for a dog” with “what I'd draw for anything” and exaggerates the difference. The difference between those two is itself a critic's opinion, recovered without a critic.</p>
+<h4>Tiny example</h4>
+<p>At some step the unlabelled guess is 0.2 and the labelled guess is 0.5 (the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>'s numbers). The label moves the guess by 0.3. With w = 2, go 2 × 0.3 = 0.6 past the labelled guess: 1.1.</p>
+<figure class="ix wide" id="fig-algs">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 360" role="img" aria-label="Algorithm 1, joint training with the label sometimes dropped, and Algorithm 2, sampling with two network calls mixed at every step">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="82" y="16" text-anchor="middle" class="lbl">Algorithm 1: training</text>
+    <text x="258" y="16" text-anchor="middle" class="lbl">Algorithm 2: sampling</text>
+    <path class="wire" d="M82,56 V74" marker-end="url(#arr)"/>
+    <path class="wire" d="M82,104 V122" marker-end="url(#arr)"/>
+    <path class="wire" d="M82,152 V170" marker-end="url(#arr)"/>
+    <path class="wire" d="M82,200 V218" marker-end="url(#arr)"/>
+    <path class="wire" d="M82,248 V266" marker-end="url(#arr)"/>
+    <path class="wire" d="M20,281 H8 V40 H18" marker-end="url(#arr)"/>
+    <text x="4" y="330" class="lbl">repeat until converged</text>
+    <g class="blk emb" data-block="t1"><rect x="20" y="26" width="124" height="30" rx="6"/><text x="82" y="46" text-anchor="middle">data (x, c)</text></g>
+    <g class="blk attn" data-block="t2"><rect x="20" y="74" width="124" height="30" rx="6"/><text x="82" y="94" text-anchor="middle">sometimes c ← ∅</text></g>
+    <g class="blk plain" data-block="t3"><rect x="20" y="122" width="124" height="30" rx="6"/><text x="82" y="142" text-anchor="middle">λ ~ p(λ), ε ~ N(0, I)</text></g>
+    <g class="blk norm" data-block="t4"><rect x="20" y="170" width="124" height="30" rx="6"/><text x="82" y="190" text-anchor="middle">z = α x + σ ε</text></g>
+    <g class="blk lin" data-block="t5"><rect x="20" y="218" width="124" height="30" rx="6"/><text x="82" y="238" text-anchor="middle">‖ε_θ(z, c) − ε‖²</text></g>
+    <g class="blk soft" data-block="t6"><rect x="20" y="266" width="124" height="30" rx="6"/><text x="82" y="286" text-anchor="middle">gradient step</text></g>
+    <path class="wire" d="M258,56 V70 H222 V84" marker-end="url(#arr)"/>
+    <path class="wire" d="M258,56 V70 H296 V84" marker-end="url(#arr)"/>
+    <path class="wire" d="M222,114 V128 H250 V140" marker-end="url(#arr)"/>
+    <path class="wire" d="M296,114 V128 H266 V140" marker-end="url(#arr)"/>
+    <path class="wire" d="M258,170 V188" marker-end="url(#arr)"/>
+    <path class="wire" d="M258,218 V236" marker-end="url(#arr)"/>
+    <path class="wire" d="M258,266 V284" marker-end="url(#arr)"/>
+    <path class="wire" d="M196,251 H184 V41 H196" marker-end="url(#arr)"/>
+    <text x="180" y="150" class="lbl" transform="rotate(-90 180 150)" text-anchor="middle">next level</text>
+    <g class="blk plain" data-block="s1"><rect x="198" y="26" width="120" height="30" rx="6"/><text x="258" y="46" text-anchor="middle">z ~ N(0, I)</text></g>
+    <g class="blk lin" data-block="s2c"><rect x="192" y="84" width="60" height="30" rx="6"/><text x="222" y="104" text-anchor="middle">ε(z, c)</text></g>
+    <g class="blk lin" data-block="s2u"><rect x="266" y="84" width="60" height="30" rx="6"/><text x="296" y="104" text-anchor="middle">ε(z, ∅)</text></g>
+    <g class="blk attn" data-block="s3"><rect x="194" y="140" width="128" height="30" rx="6"/><text x="258" y="160" text-anchor="middle">(1+w)ε_c − w ε_u</text></g>
+    <g class="blk norm" data-block="s4"><rect x="198" y="188" width="120" height="30" rx="6"/><text x="258" y="208" text-anchor="middle">x̃ = (z − σ ε̃)/α</text></g>
+    <g class="blk soft" data-block="s5"><rect x="198" y="236" width="120" height="30" rx="6"/><text x="258" y="256" text-anchor="middle">sampler step</text></g>
+    <g class="blk emb" data-block="s6"><rect x="208" y="284" width="100" height="30" rx="6"/><text x="258" y="304" text-anchor="middle">return x̃</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step. Training is on the left, sampling on the right.</p></div>
+  </div>
+  <figcaption>Algorithms 1 and 2 of the paper, redrawn as flow diagrams. Based on Ho and Salimans (2022), Algorithms 1 and 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> on the left, training is DDPM's loop with one extra box, the second from the top: with probability p<sub>uncond</sub> the label is replaced by the null label ∅, so the same network learns both the labelled and the unlabelled guess. Everything else (pick a level, noise the picture, score the noise guess, take a gradient step) is unchanged. On the right, sampling starts from pure noise, and at every level calls the network <em>twice</em>, once with the label and once with ∅. The two guesses meet in the mixing box, (1 + w)ε<sub>c</sub> − w ε<sub>u</sub>, which is the whole of classifier-free guidance. The mixed guess predicts a clean picture x̃, and an ordinary sampler step (the paper's own, or DDIM, as its Algorithm 2 notes) moves to the next level. After the last level, x̃ is the output.</p>
+<h4>The formula</h4>
+<div class="eq" data-tex="\htmlData{sym=epstilde}{\tilde{\boldsymbol{\epsilon}}_\theta(\mathbf{z}_\lambda,\mathbf{c})} = (1+\htmlData{sym=w}{w})\,\htmlData{sym=epsc}{\boldsymbol{\epsilon}_\theta(\mathbf{z}_\lambda,\mathbf{c})} - \htmlData{sym=w}{w}\,\htmlData{sym=epsu}{\boldsymbol{\epsilon}_\theta(\mathbf{z}_\lambda)}" data-fallback="ε̃_θ(z_λ, c) = (1 + w) ε_θ(z_λ, c) − w ε_θ(z_λ)"></div>
+<div class="symtable" data-syms="epstilde,epsc,epsu,w"></div>
+<p class="inwords"><strong>In words:</strong> “take the labelled guess, and move w times further in the direction from the unlabelled guess to the labelled one.” Rearranged, it is ε<sub>u</sub> + (1 + w)(ε<sub>c</sub> − ε<sub>u</sub>), which is the diffusion lesson's formula with its weight equal to 1 + w.</p>
+<p class="inwords"><strong>With the numbers:</strong> (1 + 2) × 0.5 − 2 × 0.2 = 1.5 − 0.4 = 1.1. At w = 0 it is 0.5, the plain labelled guess. The lesson writes the same mix as 0.2 + 3 × (0.5 − 0.2) = 1.1, with its weight 3.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>eps_c, eps_u = 0.5, 0.2
+# the paper: ε̃ = (1 + w) ε_c − w ε_u
+[round((1 + w) * eps_c - w * eps_u, 2) for w in (0, 1, 2)]  # → [0.5, 0.8, 1.1]
+# the lesson: ε_u + w_lesson (ε_c − ε_u), with w_lesson = 1 + w
+[round(eps_u + (1 + w) * (eps_c - eps_u), 2) for w in (0, 1, 2)]  # → [0.5, 0.8, 1.1]</code></pre>
+<h4>The implicit classifier</h4>
+<p>Where does the formula come from? Bayes' rule gives a classifier hidden inside any pair of conditional and unconditional models, p<sup>i</sup>(c | z) ∝ p(z | c)/p(z). Its slope can be read off the two exact noise guesses:</p>
+<div class="eq" data-tex="\htmlData{sym=gradimp}{\nabla_{\mathbf{z}_\lambda}\log p^{i}(\mathbf{c}\mid\mathbf{z}_\lambda)} = -\frac{1}{\htmlData{sym=slam}{\sigma_\lambda}}\big[\htmlData{sym=epsstarc}{\boldsymbol{\epsilon}^*(\mathbf{z}_\lambda,\mathbf{c})} - \htmlData{sym=epsstaru}{\boldsymbol{\epsilon}^*(\mathbf{z}_\lambda)}\big]" data-fallback="∇ log p^i(c | z_λ) = −(1/σ_λ)[ε*(z_λ, c) − ε*(z_λ)]"></div>
+<div class="symtable" data-syms="gradimp,epsstarc,epsstaru"></div>
+<p class="inwords"><strong>In words:</strong> “the difference between the labelled and the unlabelled noise guess, flipped and rescaled, is exactly the slope of the classifier that Bayes' rule hides in the two models.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the two-class toy at z = 0.1, the exact labelled guess is −2.5 and the exact unlabelled guess (averaging the two classes' guesses by their 71% / 29% odds) is −0.9462. Then −(−2.5 + 0.9462)/0.6 = 2.5897: the classifier slope of §3.1, found with no classifier. Plug it into classifier guidance with w = 1 and you get (1 + 1) × (−2.5) − 1 × (−0.9462) = −4.0538, equation 6 exactly.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+z, sigma, var = 0.1, 0.6, 0.36
+centres = [1.6, -1.6]
+# the two classes' odds at z, by Bayes' rule
+dens = [math.exp(-(z - m) ** 2 / (2 * var)) for m in centres]
+odds = [d / sum(dens) for d in dens]
+# exact noise guesses: labelled "+", and unlabelled (the odds-weighted average)
+eps_c = (z - centres[0]) / sigma
+eps_u = sum(p * (z - m) / sigma for p, m in zip(odds, centres))
+round(eps_c, 4), round(eps_u, 4)  # → (-2.5, -0.9462)
+# the implicit classifier's slope, and equation 6 with w = 1
+round(-(eps_c - eps_u) / sigma, 4), round(2 * eps_c - eps_u, 4)  # → (2.5897, -4.0538)</code></pre>
+<p>The paper stresses a subtlety. With <em>exact</em> scores the two methods agree, as above. But a trained network's outputs are not guaranteed to be the slope of any function at all (they need not form a <span class="t" data-tip-title="Conservative vector field" data-tip="A field of arrows that is the slope of some single function, like the downhill directions on a landscape. Walking any loop in it gains nothing. A neural network's output arrows need not have this property.">conservative vector field</span>), so the learned difference ε<sub>θ</sub>(z, c) − ε<sub>θ</sub>(z) is in general not the slope of any classifier. Classifier-free guidance is <em>inspired</em> by an implicit classifier, not equal to one, and so it cannot be an adversarial attack on one.</p>
+<p>It was also not obvious that it would work: a classifier built from a generative model by Bayes' rule is often worse than one trained directly, and can behave badly when the model is imperfect. The experiments are the evidence.</p>
+<p><strong>Try it:</strong> the same three classes as Figure 2 above, but now actually <em>sampled</em>: 300 samples of the top class, using the exact labelled and unlabelled noise guesses, equation 6, and 50 DDIM steps (see the <a href="ddim.html">DDIM companion</a>). Drag w and compare the dots with the shaded target.</p>
+<div class="plot" id="fig-sampler">
+  <div class="controls"><label for="cs-w">guidance w = <strong id="cs-wv">0.0</strong></label><input type="range" id="cs-w" min="0" max="4" step="0.5" value="0"></div>
+  <canvas id="cs-canvas" class="cf-canvas" width="600" height="600" aria-label="Three hundred samples of the top class drawn with classifier-free guidance, over the shaded guided distribution of that class."></canvas>
+  <p class="readout" id="cs-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the shading is the top class's guided target p(x | c) p(c | x)<sup>w</sup> from Figure 2, and the dots are what guided sampling actually produces from the same 300 starting noises. At w = 0 the dots roughly match the class's plain bell curve (300 samples and 50 big steps leave small differences in the readout). As w grows the dots move up and away from the other two classes and tighten, just as the shading does, but much further: at w = 4 the samples' centre is about 2.5 from the middle, against 1.45 for the shaded target. The reason is that guidance is applied at <em>every</em> noise level, including the very noisy ones where the classes overlap heavily and the push is strong. So guided sampling only approximates the sharpened distribution of §3.1, and overshoots it toward exaggeration; the paper, for its part, notes that strongly guided ImageNet samples show saturated colours.</p>
+<h4>Why it matters today</h4>
+<p>This is the whole method, and it is a few lines of code: drop the label now and then while training; run the network twice and mix while sampling. It needs no classifier, so the “label” can be anything the network can read, such as a sentence.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#network_inputs"><code>network_inputs</code></a> adds the one-hot label with its extra “no label” slot, <a data-lesson="primer/ml/generative/diffusion.html#train_noise_predictor"><code>train_noise_predictor</code></a> hides labels at random (Algorithm 1), <a data-lesson="primer/ml/generative/diffusion.html#guided_noise"><code>guided_noise</code></a> is equation 6 in the lesson's form, and <a data-lesson="primer/ml/generative/diffusion.html#ddim_sample"><code>ddim_sample</code></a> applies it at every jump (Algorithm 2 with a DDIM step).</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A proof of concept, not a race: take the architecture and settings the classifier-guidance work had tuned, train one network both ways, and see whether sweeping w traces the same quality-versus-variety curve.</p>
+<h3 class="rung">The setup</h3>
+<div class="tablewrap"><table>
+  <caption>Settings stated in §4 of Ho and Salimans (2022), collected into one table</caption>
+  <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Data</td><td>class-conditional <span class="t" data-t="imagenet">ImageNet</span>, downsampled to 64 × 64 and 128 × 128</td></tr>
+    <tr><td>Network</td><td>the same architecture and hyperparameters as the earlier classifier-guided models (a <span class="t" data-t="u-net">U-Net</span>), with continuous-time training</td></tr>
+    <tr><td>Noise levels</td><td>λ<sub>min</sub> = −20, λ<sub>max</sub> = 20</td></tr>
+    <tr><td>Training</td><td>400 thousand steps at 64 × 64; 2.7 million at 128 × 128</td></tr>
+    <tr><td>Sampler variance knob v</td><td>0.3 at 64 × 64; 0.2 at 128 × 128</td></tr>
+    <tr><td>Sweep</td><td>w from 0 to 4 in steps of 0.1 (the tables print 0 to 1 and then 2, 3, 4); FID and Inception score from 50,000 samples each</td></tr>
+  </tbody>
+</table></div>
+<h3 class="rung">Tiny example</h3>
+<p>The two scores pull in different directions. <span class="t" data-t="fid">FID</span> compares the whole cloud of samples with real images, so it punishes lost variety; lower is better. <span class="t" data-t="inception score">Inception score</span> rewards each sample being confidently one class and the classes being varied; higher is better. Guidance buys confidence with variety, so it should push both numbers up: a better Inception score and a worse FID.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Because the settings were tuned for classifier guidance and one network does double duty (less capacity than a model plus a classifier), any good result here is, if anything, an underestimate.</p>
+
+<section id="s4-1">
+<h3>4.1 Varying the classifier-free guidance strength <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“…here we clearly see that increasing classifier-free guidance strength has the expected effect of decreasing sample variety and increasing individual sample fidelity.”<cite>Ho and Salimans (2022), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Turn the dial and the gallery changes character: at w = 0 a varied crowd of dogs, some odd; at w = 3 or 4, every dog is an unmistakable textbook dog, in saturated colours, and they start to look alike. The paper's image figures show exactly this for the malamute class.</p>
+<h4>Tiny example</h4>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, ImageNet 64 × 64 with p<sub>uncond</sub> = 0.1, reproduced with attribution (Ho and Salimans, 2022)</caption>
+  <thead><tr><th>w</th><th class="num">FID (lower is better)</th><th class="num">Inception score (higher is better)</th></tr></thead>
+  <tbody>
+    <tr><td>0 (no guidance)</td><td class="num">1.8</td><td class="num">53.71</td></tr>
+    <tr class="hl"><td>0.1</td><td class="num">1.55</td><td class="num">66.11</td></tr>
+    <tr><td>1.0</td><td class="num">12.6</td><td class="num">170.1</td></tr>
+    <tr><td>4.0</td><td class="num">26.22</td><td class="num">260.2</td></tr>
+  </tbody>
+</table></div>
+<p>A little guidance helps both scores (FID 1.8 → 1.55, the best in the table). More guidance keeps raising the Inception score, to 260, while FID climbs to 26: every sample more convincing, the collection less like the real, varied data.</p>
+<div class="plot" id="fig4">
+  <div id="f4-chart"></div>
+  <p class="readout" id="f4-readout">Hover or use the arrow keys to read FID and Inception score along each curve.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each line is one trained model, and each point on it is one guidance weight w: the x-axis is Inception score, the y-axis is FID. Guidance grows from left to right along every line, from w = 0 at the far left to w = 4 at the far right, because Inception score rises steadily with w. Look first at the bottom-left corner: the lines dip slightly (FID improves) for the first small step of guidance, then turn up. After that it is a straight trade: every gain in Inception score is paid for in FID. The three lines are three values of p<sub>uncond</sub> (§4.2). This is the paper's Figure 4, redrawn from the numbers in its Table 1.</p>
+<p>The paper's best 128 × 128 numbers beat the classifier-guided model it compares with at w = 0.3 (FID 2.43 against 2.97), and at w = 4 beat BigGAN-deep at its best-Inception-score setting on both scores (FID 21.53 against 25, Inception score 421.03 against 253, all from its Table 2).</p>
+<p class="inwords">One sentence in §4.1 reads the wrong way round: it describes “FID monotonically decreasing and IS monotonically increasing with w”, but the paper's own tables and figures show FID <em>increasing</em> with w beyond the first small step, as the chart above does. The trade-off the sentence goes on to describe is the one the numbers show.</p>
+<h4>Why it matters today</h4>
+<p>The shape of this curve is why products expose w as a knob and pick a default well above 0: people usually prefer each image to follow the prompt convincingly over the collection matching the data's variety.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#guidance_sweep"><code>guidance_sweep</code></a> measures the lesson's version of this trade: the share of samples on the requested blob and their spread, at several weights.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Varying the unconditional training probability <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>How often should the artist practise without being told the subject? Enough to know what “anything” looks like, but not so often that the labelled drawing suffers.</p>
+<h4>Tiny example</h4>
+<p>Out of 400,000 training steps with p<sub>uncond</sub> = 0.1, about 40,000 steps' worth of examples are unlabelled. At 0.5, half of all training goes to the unlabelled task.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>steps = 400_000
+# how many steps' worth of examples train the unlabelled guess
+[int(steps * p) for p in (0.1, 0.2, 0.5)]  # → [40000, 80000, 200000]</code></pre>
+<p>In the chart above, the p<sub>uncond</sub> = 0.5 line sits above the other two all the way along (worse FID at the same Inception score), while 0.1 and 0.2 are almost on top of each other. So a small share of the network's effort, 10 to 20%, is enough for the unlabelled guess that guidance needs. The paper notes the parallel with classifier guidance, where small classifiers were found to suffice.</p>
+<h4>Why it matters today</h4>
+<p>Dropping the condition 10 to 20% of the time, replacing it with an empty or null prompt, became the default recipe for training text-conditioned diffusion models.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#train_noise_predictor"><code>train_noise_predictor</code></a> takes p<sub>uncond</sub> as an argument, 0.2 by default.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Varying the number of sampling steps <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>More steps give a more careful drawing, but here every step costs two network calls instead of one. A fair race counts calls, not steps.</p>
+<h4>Tiny example</h4>
+<p>256 guided steps cost 2 × 256 = 512 network passes. The classifier-guided model the paper compares against used about 256 steps of the same architecture (plus its classifier). So, as the paper says, the fair comparison in network passes is its T = 128 setting, whose best FID (3.02, at w = 0.4) is worse than the classifier-guided 2.97.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>calls_per_step = 2
+# network passes for the paper's three step counts
+[T * calls_per_step for T in (128, 256, 1024)]  # → [256, 512, 2048]</code></pre>
+<div class="plot" id="fig5">
+  <div id="f5-chart"></div>
+  <p class="readout" id="f5-readout">Hover or use the arrow keys to read FID and Inception score along each curve.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> as in the chart of §4.1, each line traces w from 0 (left) to 4 (right), with Inception score across and FID up; here the lines are the 128 × 128 model sampled with T = 128, 256 and 1,024 steps. The T = 128 line sits a little above the other two for small w, where FID is lowest, while 256 and 1,024 steps almost coincide. So T = 256 is the good balance the paper names. This is the paper's Figure 5, redrawn from its Table 2. (The printed Figure 5 labels its third line T = 512, but its caption, the text and Table 2 all say 1,024; this redraw uses the table.)</p>
+<h4>Why it matters today</h4>
+<p>The doubled cost is real and still paid; a common implementation runs the conditional and unconditional passes together as one batch of two. Cutting the step count, with samplers like DDIM, matters twice as much when every step costs double.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S5">original</a></span></h2>
+<blockquote class="quote">“The most practical advantage of our classifier-free guidance method is its extreme simplicity…”<cite>Ho and Salimans (2022), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The paper's own summary of why guidance works: it makes a sample more likely under the labelled model and <em>less</em> likely under the unlabelled one. Aim for “very dog” and away from “generic picture”.</p>
+<h3 class="rung">What it says</h3>
+<ul>
+  <li><strong>Simplicity:</strong> one line in training (randomly drop the condition) and one in sampling (mix the two guesses).</li>
+  <li><strong>No classifier gradients:</strong> the guided sampler's steps need not resemble any classifier's gradient, so good classifier-based scores cannot be blamed on fooling a classifier.</li>
+  <li><strong>A negative term:</strong> the −w ε<sub>θ</sub>(z) part pushes away from the unlabelled model, which the authors expect to be useful elsewhere.</li>
+  <li><strong>Cost:</strong> two passes of the full model per step, where a classifier can be small; injecting the condition late in the network might help.</li>
+  <li><strong>Diversity:</strong> any method that buys quality with diversity may hurt applications where parts of the data are under-represented.</li>
+</ul>
+<h3 class="rung">Tiny example: no unconditional model needed, with few classes</h3>
+<p>If there are only a few classes and their frequencies are known, the unlabelled distribution is just the frequency-weighted sum of the labelled ones, so it need not be trained at all:</p>
+<div class="eq" data-tex="\htmlData{sym=sumc}{\sum_{\mathbf{c}}}\,\htmlData{sym=pxc}{p(\mathbf{x}\mid\mathbf{c})}\,\htmlData{sym=pc}{p(\mathbf{c})} = \htmlData{sym=px}{p(\mathbf{x})}" data-fallback="Σ_c p(x | c) p(c) = p(x)"></div>
+<div class="symtable" data-syms="sumc,pxc,pc,px"></div>
+<p class="inwords"><strong>In words:</strong> “the chance of an example overall is its chance within each class, weighted by how common the class is, added up.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the two-class toy at z = 0.1, the classes' densities are 0.0292 and 0.0120; with equal frequencies the overall density is 0.5 × 0.0292 + 0.5 × 0.0120 = 0.0206. The catch: one network pass per class, which is hopeless for ImageNet's 1,000 classes or for free text.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def density(z, centre, var=0.36):
+    return math.exp(-(z - centre) ** 2 / (2 * var)) / math.sqrt(2 * math.pi * var)
+z, classes = 0.1, {+1.6: 0.5, -1.6: 0.5}
+# p(z | c) for each class, then Σ_c p(z | c) p(c)
+[round(density(z, c), 4) for c in classes]  # → [0.0292, 0.012]
+round(sum(density(z, c) * p for c, p in classes.items()), 4)  # → 0.0206</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>The “negative term” turned out to be widely useful: image tools let you replace the empty prompt in the unlabelled pass with a <em>negative prompt</em>, steering away from things you do not want. And the diversity concern is a standing one for any strongly guided generator.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2207.12598#S6">original</a></span></h2>
+<h3 class="rung">What the paper concludes</h3>
+<p>Classifier-free guidance increases sample quality while decreasing diversity, like classifier guidance without the classifier. Pure generative diffusion models can therefore maximise classifier-based quality scores without any classifier gradients.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The whole paper fits in the toy: one network that knows both −2.5 (labelled) and −0.9462 (unlabelled) at z = 0.1 can produce the classifier-guided −4.0538 without ever having trained a classifier.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The authors hoped for “a wider variety of settings and data modalities”. That is what happened: the same two-pass mix steers image, video and audio diffusion models, and flow matching models too, since they also produce a direction from two conditionings that can be mixed.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2022</h2>
+<p>The mixing formula is unchanged in most systems. What surrounds it has moved on:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where to read</th></tr></thead>
+  <tbody>
+    <tr><td>Class labels</td><td>Text prompts, read by cross-attention; the null label is an empty prompt</td><td>Ask for anything describable</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a></td></tr>
+    <tr><td>Pixel-space ImageNet models</td><td>Guidance inside latent diffusion and flow matching models</td><td>Cheaper steps, straighter paths</td><td><a href="flow-matching.html">flow matching companion</a></td></tr>
+    <tr><td>256 to 1,024 steps, two passes each</td><td>DDIM-style samplers with tens of steps, still two passes</td><td>Every pass costs time</td><td><a href="ddim.html">DDIM companion</a></td></tr>
+    <tr><td>Unlabelled pass as the anchor</td><td>Negative prompts in its place</td><td>Steer away from what you do not want</td><td><a href="#s5">§5 above</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Jonathan Ho and Tim Salimans, <em>Classifier-Free Diffusion Guidance</em>, 2022 (a short version appeared at the NeurIPS 2021 Workshop on Deep Generative Models and Downstream Applications). <a href="https://arxiv.org/abs/2207.12598">arXiv:2207.12598</a>. Quotations are brief and attributed; selected table rows are reproduced with attribution, its plotted figures are redrawn from its printed numbers, and its sample images are not reproduced. All explanations, diagrams, worked numbers and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // eq 1
+    qzx: { tex: "q(\\mathbf{z}_\\lambda\\mid\\mathbf{x})", name: "The forward process at level λ", meaning: "Where a clean picture lands after noising to level λ, in one jump.", shape: "a bell curve", example: "N(1.6, 0.36) for x = 2.0" },
+    Ngauss: { tex: "\\mathcal{N}", name: "Normal (Gaussian) density", meaning: "The bell curve: N(m, v) has centre m and variance v.", shape: "a density", example: "" },
+    alam: { tex: "\\alpha_\\lambda", name: "Signal scale", meaning: "How much the clean picture is scaled by at level λ. A scale, not a share: its square is the share.", shape: "0 … 1", example: "0.8" },
+    xclean: { tex: "\\mathbf{x}", name: "The clean picture", meaning: "A real example. This paper writes clean data as x and noisy data as z.", shape: "same size as a picture", example: "2.0" },
+    slam2: { tex: "\\sigma_\\lambda^2", name: "Noise variance at level λ", meaning: "How much variance the noise holds: 1 − α_λ².", shape: "0 … 1", example: "0.36" },
+    alam2: { tex: "\\alpha_\\lambda^2", name: "Signal share", meaning: "The share of variance that is still signal: a logistic curve of λ.", shape: "0 … 1", example: "0.64" },
+    lam: { tex: "\\lambda", name: "Log signal-to-noise ratio", meaning: "“Lambda”: log(α_λ²/σ_λ²). Large is almost clean, 0 is half and half, very negative is almost pure noise.", shape: "−20 … 20 in the paper", example: "0.5754" },
+    I: { tex: "\\mathbf{I}", name: "Identity matrix", meaning: "Every pixel gets its own independent noise.", shape: "D × D", example: "" },
+    // eq 2, 3
+    vstep: { tex: "\\sigma^2_{\\lambda\\mid\\lambda'}", name: "Noise added between two levels", meaning: "The variance of noise the forward process adds going from the cleaner level λ′ to the noisier λ.", shape: "0 … 1", example: "0.3333" },
+    eratio: { tex: "e^{\\lambda-\\lambda'}", name: "Ratio of the two levels' signal-to-noise", meaning: "The noisier level's signal-to-noise ratio over the cleaner one's: below 1.", shape: "0 … 1", example: "1.778/24 = 0.0741" },
+    mutilde: { tex: "\\tilde{\\boldsymbol{\\mu}}_{\\lambda'\\mid\\lambda}", name: "The true backward centre", meaning: "Where the cleaner level was, given the noisy value and the clean picture: a blend of the two.", shape: "same size as a picture", example: "1.9868" },
+    aratio: { tex: "\\alpha_{\\lambda'}/\\alpha_\\lambda", name: "Signal-scale ratio", meaning: "Rescales the noisy value to the cleaner level's signal scale.", shape: "≥ 1", example: "0.9798/0.8 = 1.2247" },
+    zlam: { tex: "\\mathbf{z}_\\lambda", name: "The noisy picture at level λ", meaning: "What the network sees.", shape: "same size as a picture", example: "1.9 (one-pixel toy); 0.1 (two-class toy)" },
+    alamp: { tex: "\\alpha_{\\lambda'}", name: "Cleaner level's signal scale", meaning: "The signal scale at the cleaner level λ′.", shape: "0 … 1", example: "√0.96 = 0.9798" },
+    vtilde: { tex: "\\tilde\\sigma^2_{\\lambda'\\mid\\lambda}", name: "The true backward variance", meaning: "The spread of the backward step when the clean picture is known: smaller than the forward step's.", shape: "0 … 1", example: "0.0370" },
+    slamp2: { tex: "\\sigma_{\\lambda'}^2", name: "Cleaner level's noise variance", meaning: "Noise variance at the cleaner level λ′.", shape: "0 … 1", example: "0.04" },
+    // eq 4
+    pstep: { tex: "p_\\theta(\\mathbf{z}_{\\lambda'}\\mid\\mathbf{z}_\\lambda)", name: "One learned step back", meaning: "The model's step from a noisier level to a cleaner one.", shape: "a bell curve", example: "" },
+    xtheta: { tex: "\\mathbf{x}_\\theta(\\mathbf{z}_\\lambda)", name: "Predicted clean picture", meaning: "The network's noise guess turned into a guess of x.", shape: "same size as a picture", example: "2.0" },
+    vknob: { tex: "v", name: "Variance knob", meaning: "Blends the small backward variance (v = 0) and the larger forward one (v = 1) in log space. A fixed hyperparameter.", shape: "0 … 1", example: "0.3 (64 × 64), 0.2 (128 × 128)" },
+    slam: { tex: "\\sigma_\\lambda", name: "Noise scale", meaning: "How loud the noise in z_λ is.", shape: "0 … 1", example: "0.6" },
+    epstheta: { tex: "\\boldsymbol{\\epsilon}_\\theta(\\mathbf{z}_\\lambda)", name: "The network's noise guess", meaning: "The trained network's estimate of the noise in z_λ (it also receives λ, left out of the notation).", shape: "same size as a picture", example: "0.5" },
+    // eq 5
+    Eepslam: { tex: "\\mathbb{E}_{\\boldsymbol{\\epsilon},\\lambda}", name: "Average over noise and levels", meaning: "Average over random noise draws, random levels λ from p(λ), and (implicitly) real pictures.", shape: "one number", example: "" },
+    epstrue: { tex: "\\boldsymbol{\\epsilon}", name: "The real noise", meaning: "The noise actually drawn: the answer the guess is graded against.", shape: "same size as a picture", example: "0.5" },
+    acoef: { tex: "a", name: "Spread of the level curve", meaning: "arctan(e^(−λ_min/2)) − b: sets how u maps onto the range of λ.", shape: "about π/2", example: "1.5707" },
+    uunif: { tex: "u", name: "A uniform draw", meaning: "A random number between 0 and 1, pushed through the curve to pick a level.", shape: "0 … 1", example: "0, 0.25, 0.5, 0.75, 1" },
+    bcoef: { tex: "b", name: "Offset of the level curve", meaning: "arctan(e^(−λ_max/2)): makes u = 0 land on λ_max.", shape: "tiny", example: "4.5 × 10⁻⁵" },
+    gradlogp: { tex: "\\nabla\\log p(\\mathbf{z}_\\lambda)", name: "The score", meaning: "The slope of log-probability of the noisy data: which way the noisy data gets denser.", shape: "same size as a picture", example: "−0.8333" },
+    // §3.1
+    epstilde: { tex: "\\tilde{\\boldsymbol{\\epsilon}}_\\theta", name: "The guided noise guess", meaning: "“Epsilon tilde”: the guess the sampler uses instead of the plain labelled one.", shape: "same size as a picture", example: "−4.0538 (two-class toy); 1.1 (lesson's numbers)" },
+    epsc: { tex: "\\boldsymbol{\\epsilon}_\\theta(\\mathbf{z},\\mathbf{c})", name: "The labelled noise guess", meaning: "The network's noise guess when told the label c.", shape: "same size as a picture", example: "−2.5; 0.5" },
+    w: { tex: "w", name: "Guidance weight", meaning: "How hard to push toward the label. 0 is no guidance; larger trades variety for fidelity. The diffusion lesson's weight is this w plus 1.", shape: "0 … 4 in the paper", example: "1, 2" },
+    gradcls: { tex: "\\nabla\\log p_\\theta(\\mathbf{c}\\mid\\mathbf{z})", name: "The classifier's slope", meaning: "Which way to change the noisy picture to make a classifier more sure of label c.", shape: "same size as a picture", example: "2.5897" },
+    logpzc: { tex: "\\log p(\\mathbf{z}\\mid\\mathbf{c})", name: "Log-probability given the label", meaning: "How likely the noisy picture is among noisy pictures of class c.", shape: "one number", example: "" },
+    logpcz: { tex: "\\log p_\\theta(\\mathbf{c}\\mid\\mathbf{z})", name: "Classifier's log-confidence", meaning: "How sure a classifier is that the noisy picture shows class c, as a log-probability.", shape: "≤ 0", example: "log 0.7087" },
+    ptilde: { tex: "\\tilde p_\\theta(\\mathbf{z}\\mid\\mathbf{c})", name: "The guided distribution", meaning: "What guidance approximately samples from: the class distribution sharpened by the classifier's confidence.", shape: "a density", example: "" },
+    pzc: { tex: "p_\\theta(\\mathbf{z}\\mid\\mathbf{c})", name: "The class's own distribution", meaning: "The model's distribution of noisy pictures of class c.", shape: "a density", example: "N(1.6, 0.36) for “+”" },
+    pcz: { tex: "p_\\theta(\\mathbf{c}\\mid\\mathbf{z})", name: "Classifier's confidence", meaning: "The probability a classifier gives class c for this noisy picture.", shape: "0 … 1", example: "0.7087 at z = 0.1" },
+    epsu: { tex: "\\boldsymbol{\\epsilon}_\\theta(\\mathbf{z})", name: "The unlabelled noise guess", meaning: "The network's noise guess when given the null label ∅ instead of c.", shape: "same size as a picture", example: "−0.9462; 0.2" },
+    // implicit classifier
+    gradimp: { tex: "\\nabla\\log p^{i}(\\mathbf{c}\\mid\\mathbf{z})", name: "The implicit classifier's slope", meaning: "The slope of the classifier that Bayes' rule hides inside a labelled and an unlabelled model: p^i(c | z) ∝ p(z | c)/p(z).", shape: "same size as a picture", example: "2.5897" },
+    epsstarc: { tex: "\\boldsymbol{\\epsilon}^*(\\mathbf{z},\\mathbf{c})", name: "Exact labelled noise guess", meaning: "The best possible labelled guess, from the true scores (a star marks exact, not learned).", shape: "same size as a picture", example: "−2.5" },
+    epsstaru: { tex: "\\boldsymbol{\\epsilon}^*(\\mathbf{z})", name: "Exact unlabelled noise guess", meaning: "The best possible unlabelled guess: the odds-weighted average of the classes' guesses.", shape: "same size as a picture", example: "−0.9462" },
+    // §5
+    sumc: { tex: "\\sum_{\\mathbf{c}}", name: "Sum over classes", meaning: "Add one term per possible label.", shape: "one number", example: "two classes" },
+    pxc: { tex: "p(\\mathbf{x}\\mid\\mathbf{c})", name: "Probability within a class", meaning: "How likely x is among examples of class c.", shape: "a density", example: "0.0292 and 0.0120" },
+    pc: { tex: "p(\\mathbf{c})", name: "How common the class is", meaning: "The share of the data with label c.", shape: "0 … 1, summing to 1", example: "0.5 each" },
+    px: { tex: "p(\\mathbf{x})", name: "Overall probability", meaning: "How likely x is with no label given.", shape: "a density", example: "0.0206" },
+  },
+
+  blocks: {
+    t1: { title: "A labelled example", body: "<p>(x, c) from the dataset: a picture and its label (an ImageNet class in the paper).</p>" },
+    t2: { title: "Sometimes drop the label", body: "<p>With probability p<sub>uncond</sub>, replace c by the null label ∅. This one line is the whole training change. The paper found 0.1 to 0.2 best.</p>", lesson: "primer/ml/generative/diffusion.html#train_noise_predictor" },
+    t3: { title: "Pick a level and a noise", body: "<p>λ from the paper's level distribution; ε from the standard bell curve.</p>" },
+    t4: { title: "Noise the picture", body: "<p>z = α<sub>λ</sub> x + σ<sub>λ</sub> ε, the one-jump forward process.</p>", lesson: "primer/ml/generative/diffusion.html#add_noise" },
+    t5: { title: "Score the noise guess", body: "<p>‖ε<sub>θ</sub>(z, c) − ε‖², with c possibly ∅: one network learns both guesses.</p>" },
+    t6: { title: "Gradient step", body: "<p>Update the network and repeat until converged.</p>" },
+    s1: { title: "Start from noise", body: "<p>z ~ N(0, I) at the noisiest level λ<sub>min</sub>.</p>" },
+    s2c: { title: "Labelled guess", body: "<p>ε<sub>θ</sub>(z, c): one full network pass with the label.</p>", lesson: "primer/ml/generative/diffusion.html#NoisePredictor" },
+    s2u: { title: "Unlabelled guess", body: "<p>ε<sub>θ</sub>(z, ∅): a second full pass with the null label. Twice the cost of an unguided step.</p>" },
+    s3: { title: "Mix: equation 6", body: "<p>ε̃ = (1 + w) ε<sub>c</sub> − w ε<sub>u</sub>. The only sampling change. Lesson numbers: 3 × 0.5 − 2 × 0.2 = 1.1.</p>", lesson: "primer/ml/generative/diffusion.html#guided_noise" },
+    s4: { title: "Predict the clean picture", body: "<p>x̃ = (z − σ<sub>λ</sub> ε̃)/α<sub>λ</sub>, using the guided guess.</p>" },
+    s5: { title: "One sampler step", body: "<p>Move to the next, cleaner level: the paper's ancestral step, or, as its Algorithm 2 notes, another sampler such as DDIM.</p>", lesson: "primer/ml/generative/diffusion.html#ddim_step" },
+    s6: { title: "Return the picture", body: "<p>After the cleanest level, the last predicted clean picture x̃ is the sample.</p>", lesson: "primer/ml/generative/diffusion.html#ddim_sample" },
+  },
+
+  onReady(P) {
+    figure2(P);
+    samplerFigure(P);
+    fig4Chart(P);
+    fig5Chart(P);
+  },
+};
+
+/* ---- three classes in the plane: exact densities, classifier, and noise guesses ---- */
+const CF = (() => {
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const S = 0.7; // each class: a round bell curve of spread 0.7
+  const MU = [90, 210, 330].map((d) => [Math.cos((d * Math.PI) / 180), Math.sin((d * Math.PI) / 180)]);
+  const colors = () => [css("--ff-stroke"), css("--attn-stroke"), css("--emb-stroke")];
+  // log p(x | k) up to a shared constant, and p(k | x) by Bayes' rule (equal priors)
+  function logp(x) { return MU.map((m) => -((x[0] - m[0]) ** 2 + (x[1] - m[1]) ** 2) / (2 * S * S)); }
+  function post(lp) { const mx = Math.max(...lp), e = lp.map((l) => Math.exp(l - mx)), W = e.reduce((a, b) => a + b, 0); return e.map((v) => v / W); }
+  // The guided class densities p(x | c) p(c | x)^w on a grid, each normalised.
+  function guidedGrid(w, n = 120, R = 3.2) {
+    const cells = [], sums = [0, 0, 0];
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const x = [-R + ((j + 0.5) * 2 * R) / n, R - ((i + 0.5) * 2 * R) / n];
+      const lp = logp(x), pc = post(lp);
+      const g = lp.map((l, k) => Math.exp(l) * Math.pow(pc[k], w));
+      g.forEach((v, k) => (sums[k] += v));
+      cells.push({ i, j, x, g });
+    }
+    cells.forEach((c) => (c.g = c.g.map((v, k) => v / sums[k])));
+    return { cells, n, R };
+  }
+  function stats(grid, k) {
+    let m = [0, 0], s = 0;
+    grid.cells.forEach((c) => { m[0] += c.g[k] * c.x[0]; m[1] += c.g[k] * c.x[1]; });
+    grid.cells.forEach((c) => { s += c.g[k] * ((c.x[0] - m[0]) ** 2 + (c.x[1] - m[1]) ** 2); });
+    return { mean: m, spread: Math.sqrt(s) };
+  }
+  // Turn any CSS colour into [r, g, b] by letting a canvas parse it.
+  const probe = document.createElement("canvas").getContext("2d");
+  function rgb(c) {
+    probe.fillStyle = "#000"; probe.fillStyle = c || "#000";
+    const v = probe.fillStyle;
+    if (v[0] === "#") return [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16));
+    return v.match(/[\d.]+/g).slice(0, 3).map(Number);
+  }
+  // Paint: brightness from the density, colour from which class it belongs to, blended onto the card colour.
+  function paint(ctx, canvas, grid, only = null) {
+    const W = canvas.width, H = canvas.height, cell = W / grid.n;
+    const bg = rgb(css("--card") || "#fff"), cols = colors().map(rgb);
+    ctx.fillStyle = `rgb(${bg.join(",")})`; ctx.fillRect(0, 0, W, H);
+    const ks = only === null ? [0, 1, 2] : [only];
+    const tot = grid.cells.map((c) => ks.reduce((a, k) => a + c.g[k], 0));
+    const mx = Math.max(...tot);
+    grid.cells.forEach((c, idx) => {
+      const t = tot[idx] / mx;
+      if (t < 0.01) return;
+      const a = Math.pow(t, 0.7) * 0.9;
+      const mix = [0, 1, 2].map((ch) => ks.reduce((acc, k) => acc + (c.g[k] / tot[idx]) * cols[k][ch], 0));
+      ctx.fillStyle = `rgb(${mix.map((m, ch) => Math.round(bg[ch] * (1 - a) + m * a)).join(",")})`;
+      ctx.fillRect(Math.floor(c.j * cell), Math.floor(c.i * cell), Math.ceil(cell) + 1, Math.ceil(cell) + 1);
+    });
+  }
+  function toPx(canvas, R, x) { return [((x[0] + R) / (2 * R)) * canvas.width, ((R - x[1]) / (2 * R)) * canvas.height]; }
+  // Exact noise guesses at DDIM signal share A (this page's α_λ²): labelled for class k, and unlabelled.
+  function eps(z, A, k) {
+    const a = Math.sqrt(A), sig = Math.sqrt(1 - A), v = A * S * S + 1 - A;
+    const d = MU.map((m) => [z[0] - a * m[0], z[1] - a * m[1]]);
+    const lw = d.map((q) => -(q[0] * q[0] + q[1] * q[1]) / (2 * v));
+    const r = post(lw);
+    const ek = d.map((q) => [(sig * q[0]) / v, (sig * q[1]) / v]);
+    return { c: ek[k], u: [0, 1].map((i) => ek.reduce((acc, e, j) => acc + r[j] * e[i], 0)) };
+  }
+  function rng(seed) {
+    return () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let r = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function normals(n, seed) {
+    const r = rng(seed);
+    const g = () => { const u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+    return Array.from({ length: n }, () => [g(), g()]);
+  }
+  // DDPM's 1,000-level schedule (as in the DDIM companion), sampled with 50 DDIM jumps.
+  const T = 1000, AL = [1];
+  for (let i = 0; i < T; i++) AL.push(AL[i] * (1 - (1e-4 + ((0.02 - 1e-4) * i) / (T - 1))));
+  function sample(starts, k, w, steps = 50) {
+    const seq = Array.from({ length: steps }, (_, i) => Math.floor((T / steps) * (steps - i) + 1e-9)).concat([0]);
+    return starts.map((z0) => {
+      let z = z0;
+      for (let i = 0; i < steps; i++) {
+        const At = AL[seq[i]], As = AL[seq[i + 1]];
+        const e = eps(z, At, k);
+        const g = [0, 1].map((d) => (1 + w) * e.c[d] - w * e.u[d]); // equation 6
+        const x0 = [0, 1].map((d) => (z[d] - Math.sqrt(1 - At) * g[d]) / Math.sqrt(At));
+        z = [0, 1].map((d) => Math.sqrt(As) * x0[d] + Math.sqrt(1 - As) * g[d]);
+      }
+      return z;
+    });
+  }
+  return { css, S, MU, colors, guidedGrid, stats, paint, toPx, sample, normals };
+})();
+
+/* ---- Figure 2: the mixture of guided class densities ---- */
+function figure2(P) {
+  const canvas = document.getElementById("f2-canvas"), ctx = canvas.getContext("2d");
+  const slider = document.getElementById("f2-w"), label = document.getElementById("f2-wv"), readout = document.getElementById("f2-readout");
+  function draw() {
+    const w = +slider.value;
+    label.textContent = w.toFixed(1);
+    const grid = CF.guidedGrid(w);
+    CF.paint(ctx, canvas, grid);
+    const fg = CF.css("--fg");
+    CF.MU.forEach((m) => { const [px, py] = CF.toPx(canvas, grid.R, m); ctx.strokeStyle = fg; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(px - 9, py); ctx.lineTo(px + 9, py); ctx.moveTo(px, py - 9); ctx.lineTo(px, py + 9); ctx.stroke(); });
+    const st = CF.stats(grid, 0);
+    readout.innerHTML = `w = ${w.toFixed(1)}: the top class's guided distribution has its centre <strong>${Math.hypot(...st.mean).toFixed(2)}</strong> from the middle (its data centre is 1.00) and spread <strong>${st.spread.toFixed(2)}</strong> (0.99 unguided). Crosses mark the classes' data centres.`;
+  }
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- §3.2: guided DDIM sampling of the top class, against its guided target ---- */
+function samplerFigure(P) {
+  const canvas = document.getElementById("cs-canvas"), ctx = canvas.getContext("2d");
+  const slider = document.getElementById("cs-w"), label = document.getElementById("cs-wv"), readout = document.getElementById("cs-readout");
+  const starts = CF.normals(300, 9);
+  const cache = {};
+  function draw() {
+    const w = +slider.value;
+    label.textContent = w.toFixed(1);
+    const grid = CF.guidedGrid(w, 100, 4.2);
+    CF.paint(ctx, canvas, grid, 0);
+    const xs = cache[w] || (cache[w] = CF.sample(starts, 0, w));
+    const fg = CF.css("--fg");
+    ctx.fillStyle = fg;
+    xs.forEach((x) => { const [px, py] = CF.toPx(canvas, grid.R, x); ctx.beginPath(); ctx.arc(px, py, 3.5, 0, 2 * Math.PI); ctx.fill(); });
+    CF.MU.forEach((m) => { const [px, py] = CF.toPx(canvas, grid.R, m); ctx.strokeStyle = fg; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(px - 9, py); ctx.lineTo(px + 9, py); ctx.moveTo(px, py - 9); ctx.lineTo(px, py + 9); ctx.stroke(); });
+    const mean = [0, 1].map((d) => xs.reduce((a, x) => a + x[d], 0) / xs.length);
+    const spread = Math.sqrt(xs.reduce((a, x) => a + (x[0] - mean[0]) ** 2 + (x[1] - mean[1]) ** 2, 0) / xs.length);
+    const st = CF.stats(grid, 0);
+    readout.innerHTML = `w = ${w.toFixed(1)} (the diffusion lesson's ${(w + 1).toFixed(1)}): the samples' centre is <strong>${Math.hypot(...mean).toFixed(2)}</strong> from the middle and their spread <strong>${spread.toFixed(2)}</strong>; the shaded target's are ${Math.hypot(...st.mean).toFixed(2)} and ${st.spread.toFixed(2)}.`;
+  }
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- Figure 4 from Table 1: FID against Inception score, one line per p_uncond ---- */
+function fig4Chart(P) {
+  // Table 1 of the paper, ImageNet 64 × 64: w = 0, 0.1, …, 1.0, 2, 3, 4; [IS, FID] for p_uncond = 0.1 / 0.2 / 0.5.
+  const is = [[53.71, 52.9, 47.61], [66.11, 64.58, 56.1], [78.91, 76.99, 65.6], [92.8, 88.64, 74.92], [106.2, 101.11, 84.27], [119.3, 112.15, 92.95], [131.1, 122.13, 102], [141.8, 131.6, 109.8], [151.6, 140.82, 116.9], [161, 150.26, 124.6], [170.1, 158.29, 131.1], [225.5, 212.98, 183], [250.4, 237.65, 208.9], [260.2, 248.97, 225.1]];
+  const fid = [[1.8, 1.8, 2.21], [1.55, 1.62, 1.91], [2.04, 2.1, 2.08], [3.03, 2.93, 2.65], [4.3, 4, 3.44], [5.74, 5.19, 4.34], [7.19, 6.48, 5.27], [8.62, 7.73, 6.23], [10.08, 8.9, 7.25], [11.41, 10.09, 8.21], [12.6, 11.21, 9.13], [21.03, 18.79, 16.16], [24.83, 22.36, 19.75], [26.22, 23.84, 21.48]];
+  const names = ["p_uncond = 0.1", "p_uncond = 0.2", "p_uncond = 0.5"];
+  P.lineChart(document.getElementById("f4-chart"), {
+    series: names.map((name, k) => ({ name, points: is.map((row, i) => [row[k], fid[i][k]]) })),
+    xLabel: "Inception score (higher is better)", yLabel: "FID (lower is better)", width: 440, height: 300, yMin: 0,
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("f4-readout"), ariaLabel: "FID against Inception score as the guidance weight grows, for three unconditional training probabilities, from Table 1 of the paper",
+  });
+}
+
+/* ---- Figure 5 from Table 2: FID against Inception score, one line per step count ---- */
+function fig5Chart(P) {
+  // Table 2 of the paper, ImageNet 128 × 128: w = 0, 0.1, …, 1.0, 2, 3, 4; [IS, FID] for T = 128 / 256 / 1024.
+  const is = [[81.46, 82.45, 81.54], [105.01, 106.12, 104.67], [130.79, 132.54, 130.09], [156.09, 158.47, 156], [183.01, 183.41, 180.88], [206.94, 207.98, 204.31], [227.72, 228.83, 226.76], [247.92, 249.25, 247.89], [265.54, 267.99, 265.52], [280.19, 283.41, 281.14], [295.29, 297.98, 294.56], [378.56, 377.37, 373.18], [409.16, 407.44, 405.68], [422.29, 421.03, 419.06]];
+  const fid = [[8.11, 7.27, 7.22], [5.31, 4.53, 4.5], [3.7, 3.03, 3], [3.04, 2.43, 2.43], [3.02, 2.49, 2.48], [3.43, 2.98, 2.96], [4.09, 3.76, 3.73], [4.96, 4.67, 4.69], [5.93, 5.74, 5.71], [6.89, 6.8, 6.81], [7.88, 7.86, 7.8], [15.9, 15.93, 15.75], [19.77, 19.77, 19.56], [21.55, 21.53, 21.45]];
+  const names = ["T = 128 steps", "T = 256 steps", "T = 1024 steps"];
+  P.lineChart(document.getElementById("f5-chart"), {
+    series: names.map((name, k) => ({ name, points: is.map((row, i) => [row[k], fid[i][k]]) })),
+    xLabel: "Inception score (higher is better)", yLabel: "FID (lower is better)", width: 440, height: 300, yMin: 0,
+    xFmt: (v) => v.toFixed(1), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("f5-readout"), ariaLabel: "FID against Inception score as the guidance weight grows, for three numbers of sampling steps, from Table 2 of the paper",
+  });
+}
+</script>
+</body>
+</html>
