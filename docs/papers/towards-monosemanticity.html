@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Towards Monosemanticity, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Bricken et al. (2023), Towards Monosemanticity: a sparse autoencoder pulls thousands of interpretable features out of a 512-neuron layer.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="towards-monosemanticity">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#intro">Introduction and results</a></li>
+      <li><a href="#s1">1 Problem setup</a>
+        <ol>
+          <li><a href="#s1-1">Features as a decomposition</a></li>
+          <li><a href="#s1-2">What makes a good decomposition</a></li>
+          <li><a href="#s1-3">Why not change the architecture?</a></li>
+          <li><a href="#s1-4">Why a sparse autoencoder</a></li>
+          <li><a href="#s1-5">The autoencoder, precisely</a></li>
+          <li><a href="#s1-6">Is it working?</a></li>
+          <li><a href="#s1-7">The one-layer model</a></li>
+        </ol>
+      </li>
+      <li><a href="#s2">2 Four features up close</a>
+        <ol>
+          <li><a href="#s2-1">Arabic script</a></li>
+          <li><a href="#s2-2">DNA, base64, Hebrew</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Global analysis</a>
+        <ol>
+          <li><a href="#s3-1">How interpretable is a typical feature?</a></li>
+          <li><a href="#s3-2">How much does it explain?</a></li>
+          <li><a href="#s3-3">Model or data?</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Phenomenology</a>
+        <ol>
+          <li><a href="#s4-1">Feature motifs</a></li>
+          <li><a href="#s4-2">Feature splitting</a></li>
+          <li><a href="#s4-3">Universality</a></li>
+          <li><a href="#s4-4">Finite state automata</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Related work</a></li>
+      <li><a href="#s6">6 Discussion</a></li>
+      <li><a href="#s7">7 Comments and replications</a></li>
+      <li><a href="#today">Where it leads</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Towards Monosemanticity, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Bricken, Templeton, Batson, Chen, Jermyn and colleagues (2023), <em>Towards Monosemanticity: Decomposing Language Models With Dictionary Learning</em>: a sparse autoencoder turns a small transformer's 512 muddled neurons into thousands of features that each mean one thing.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://transformer-circuits.pub/2023/monosemantic-features/index.html">Article (Transformer Circuits)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the article section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The article is published on the web with no open licence, so none of its figures, tables or feature visualizations are reproduced: every picture here is drawn from scratch, and numbers in pictures either come from the article's text or from this primer's own code, labelled as such. Equations are reproduced with every symbol decoded; a few formulas that write out, in symbols, something the article says in words are labelled as this page's own, and numbers invented to make an example small are labelled illustrative. Read the original alongside: every section links to it, and its interactive feature browser is the best way to see the features themselves.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; many also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation comes with a table decoding it, a sentence reading it aloud, the numbers worked through, and the same numbers in Python.</li>
+  <li>The pictures are live: feed inputs to a tiny autoencoder and watch why its encoder must not simply copy its decoder, sweep the sparsity penalty, and step a chain of features through an HTML tag.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. This paper is the sequel to <a href="toy-models-of-superposition.html">Toy Models of Superposition</a>; read that companion first if “superposition” is new. The <a class="lesson" data-lesson="primer/ml/interpretability.html">interpretability lesson</a> builds the paper's tool, a <span class="t" data-t="sparse autoencoder">sparse autoencoder</span>, in NumPy and runs it on a toy whose true features are known.</p>
+</section>
+
+<section id="intro">
+<h2>Introduction and results <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html">original</a></span></h2>
+<blockquote class="quote">“Unfortunately, the most natural computational unit of the neural network – the neuron itself – turns out not to be a natural unit for human understanding.”<cite>Bricken et al. (2023), introduction</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>You record a choir with 512 microphones hung from the ceiling. Every microphone picks up several singers, so listening to one microphone gives you a muddle. But each singer's voice reaches the microphones in a fixed pattern, and at any moment only a few singers are singing. If you could learn each singer's pattern, you could turn 512 muddled recordings into thousands of clean voices, one per singer. That is what this paper does to one layer of a language model: the microphones are <span class="t" data-t="neuron">neurons</span>, the singers are <span class="t" data-t="feature">features</span>, and the tool that learns the patterns is a sparse autoencoder.</p>
+<p>The problem it attacks: many neurons are <span class="t" data-t="polysemantic neuron">polysemantic</span>. In the small language model studied here, one neuron responds to academic citations, English dialogue, HTTP requests and Korean text. The suspected cause is <span class="t" data-t="superposition">superposition</span>: the model stores more features than it has neurons, each feature a direction across many neurons. <a href="toy-models-of-superposition.html">Toy Models</a> proposed three ways out, and this paper reports what happened: building models without superposition didn't give clean neurons, classic <span class="t" data-t="dictionary learning">dictionary learning</span> overfit, and a deliberately weak method, the sparse autoencoder, worked.</p>
+<h3 class="rung">What they did</h3>
+<p>They trained a one-layer transformer whose <span class="t" data-t="mlp">MLP</span> layer has 512 neurons, recorded its MLP activations on 8 billion tokens, and trained sparse autoencoders to rewrite each activation as a sparse sum of learned feature directions, with between 512 (1×) and 131,072 (256×) features. Most of the analysis is on one run, called A/1, with 4,096 features.</p>
+<h3 class="rung">What they found</h3>
+<ul>
+  <li><strong>The features are far more <span class="t" data-t="monosemantic">monosemantic</span> than neurons</strong>, by four lines of evidence: detailed studies of a few features, blind human scoring, and two kinds of <span class="t" data-t="automated interpretability">automated interpretability</span>.</li>
+  <li><strong>Some features are invisible among neurons</strong>: a Hebrew feature isn't among the top examples of any neuron.</li>
+  <li><strong>Features steer the model</strong>: pinning the base64 feature on makes the model write base64; pinning the Arabic feature makes it write Arabic script.</li>
+  <li><strong>Features are roughly universal</strong>: autoencoders on two different transformers find similar features, more similar to each other than either model's neurons are.</li>
+  <li><strong>Features split</strong> as the dictionary grows: one base64 feature becomes three.</li>
+  <li><strong>512 neurons hold tens of thousands of features</strong>: bigger dictionaries keep finding new ones.</li>
+  <li><strong>Features chain</strong> into systems like <span class="t" data-t="finite-state machine">finite-state machines</span>, for example to write valid HTML.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>This is the paper that made sparse autoencoders a standard tool of the field. The next year, <em>Scaling Monosemanticity</em> (2024) applied the method to a production model, and features found this way have become a common way to name, monitor and <span class="t" data-t="steering">steer</span> what models represent. The lesson's <a data-lesson="primer/ml/interpretability.html#SparseAutoencoder"><code>SparseAutoencoder</code></a> is this paper's architecture, small enough to read in one sitting.</p>
+</section>
+
+<section id="s1">
+<h2>1 Problem setup <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#problem-setup">original</a></span></h2>
+<blockquote class="quote">“In some sense, this is the simplest language model we profoundly don't understand.”<cite>Bricken et al. (2023), Problem Setup</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>To understand a machine, take it apart into pieces you can understand one at a time. Without such pieces the number of possible internal states is astronomically large (the <span class="t" data-t="curse of dimensionality">curse of dimensionality</span>). An attention-only transformer could be analysed without looking at hidden activations at all, but as soon as a model has an MLP layer with a <span class="t" data-t="relu">ReLU</span>, you have to decompose that layer's activations. A one-layer transformer with one MLP is the smallest such model, so it is the target.</p>
+<h3 class="rung">Diagram: the setup</h3>
+<figure class="ix" id="fig-setup">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 330" role="img" aria-label="A one-layer transformer: tokens, embedding, attention, a 512-neuron MLP and the unembedding. A sparse autoencoder reads the MLP activations, expands them to 4,096 features and rebuilds them.">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="70" y="16" text-anchor="middle" class="lbl">the transformer</text>
+    <text x="250" y="16" text-anchor="middle" class="lbl">the sparse autoencoder</text>
+    <path class="wire" d="M70,300 V278" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,244 V222" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,188 V166" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,132 V110" marker-end="url(#arr)"/>
+    <path class="wire" d="M70,76 V56" marker-end="url(#arr)"/>
+    <path class="wire" d="M130,157 H176" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,236 V184" marker-end="url(#arr)" style="stroke-dasharray:4 3"/>
+    <path class="wire" d="M250,148 V118" marker-end="url(#arr)"/>
+    <path class="wire" d="M250,86 V56" marker-end="url(#arr)"/>
+    <g class="blk emb" data-block="tok"><rect x="10" y="300" width="120" height="26" rx="6"/><text x="70" y="318" text-anchor="middle">tokens (the Pile)</text></g>
+    <g class="blk emb" data-block="emb"><rect x="10" y="244" width="120" height="34" rx="6"/><text x="70" y="265" text-anchor="middle">embed, width 128</text></g>
+    <g class="blk attn" data-block="att"><rect x="10" y="188" width="120" height="34" rx="6"/><text x="70" y="209" text-anchor="middle">attention</text></g>
+    <g class="blk ff" data-block="mlp"><rect x="10" y="132" width="120" height="34" rx="6"/><text x="70" y="147" text-anchor="middle">MLP: 512 ReLU</text><text x="70" y="160" text-anchor="middle" class="lbl">neurons</text></g>
+    <g class="blk soft" data-block="unemb"><rect x="10" y="76" width="120" height="34" rx="6"/><text x="70" y="97" text-anchor="middle">unembedding</text></g>
+    <g class="blk plain" data-block="next"><rect x="10" y="30" width="120" height="26" rx="6"/><text x="70" y="48" text-anchor="middle">next-token logits</text></g>
+    <g class="blk lin" data-block="enc"><rect x="176" y="148" width="148" height="34" rx="6"/><text x="250" y="163" text-anchor="middle">encoder + ReLU</text><text x="250" y="176" text-anchor="middle" class="lbl">512 → 4,096</text></g>
+    <g class="blk norm" data-block="feats"><rect x="176" y="86" width="148" height="30" rx="6"/><text x="250" y="106" text-anchor="middle">features f (mostly 0)</text></g>
+    <g class="blk lin" data-block="dec"><rect x="176" y="22" width="148" height="34" rx="6"/><text x="250" y="37" text-anchor="middle">decoder (dictionary)</text><text x="250" y="50" text-anchor="middle" class="lbl">4,096 → 512</text></g>
+    <g class="blk plain" data-block="loss"><rect x="176" y="236" width="148" height="44" rx="6"/><text x="250" y="254" text-anchor="middle">loss: rebuild error</text><text x="250" y="270" text-anchor="middle">+ λ × total of f</text></g>
+    <text x="250" y="300" text-anchor="middle" class="lbl">trained on 8 billion activations</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a block. Start with <strong>MLP: 512 ReLU neurons</strong> on the left, then follow the arrow into the autoencoder.</p></div>
+  </div>
+  <figcaption>The paper's setup, drawn by this page from the article's description in “Problem Setup” and the appendix on transformer training. Sizes are the article's; A/1 has 4,096 features.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the left column is the transformer, bottom to top: tokens are embedded as 128 numbers, one attention layer mixes information between positions, the MLP's 512 ReLU neurons do the nonlinear work, and the <span class="t" data-t="unembedding">unembedding</span> turns the result into next-token scores. The right column is the autoencoder, trained afterwards and separately: it reads each token's 512 MLP activations, expands them into 4,096 feature strengths that are mostly zero, and rebuilds the 512 numbers from them. The dashed arrow is training: a loss made only of the rebuild error and the total feature strength adjusts the encoder and decoder. The transformer is never changed, and nothing about its output enters the autoencoder's training, which is what later makes the model's output a fair test of the features.</p>
+
+<section id="s1-1">
+<h3>Features as a decomposition <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#problem-setup-decomposition">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A paint colour can be written as a recipe: so much of this pigment, so much of that. The paper writes every activation as a recipe too: a fixed base, plus each feature's direction times how strongly that feature is present. The pigments are not the neurons; they can be any directions, and there are many more of them than neurons.</p>
+<h4>Tiny example</h4>
+<p>This page's illustrative numbers: a two-neuron activation x = (0.8, 0.6), no base (b = 0), and three feature directions, (1, 0), (0, 1) and (0.8, 0.6). With feature strengths (0, 0, 1), the recipe is 1 × (0.8, 0.6) = (0.8, 0.6): one feature explains the whole activation.</p>
+<div class="eq" data-tex="\htmlData{sym=xj}{\mathbf{x}^j} \approx \htmlData{sym=bvec}{\mathbf{b}} + \htmlData{sym=sumi}{\sum_i} \htmlData{sym=fi}{f_i(\mathbf{x}^j)}\,\htmlData{sym=di}{\mathbf{d}_i}" data-fallback="x^j ≈ b + Σ_i f_i(x^j) d_i   (1)"></div>
+<div class="eq" data-tex="\htmlData{sym=fi}{f_i(\mathbf{x})} = \htmlData{sym=relu}{\mathrm{ReLU}}\big(\htmlData{sym=We}{W_e}(\mathbf{x} - \htmlData{sym=bd}{\mathbf{b}_d}) + \htmlData{sym=be}{\mathbf{b}_e}\big)_i" data-fallback="f_i(x) = ReLU(W_e (x − b_d) + b_e)_i"></div>
+<div class="symtable" data-syms="xj,bvec,sumi,fi,di,relu,We,bd,be"></div>
+<p class="inwords"><strong>In words:</strong> “each activation is roughly a base vector plus a weighted sum of feature directions; a feature's weight on this input is computed by the encoder: shift the input, multiply by the encoder's weights, add a bias, and clip negatives to zero.” Equation (1) is numbered as in the paper.</p>
+<p class="inwords"><strong>With the numbers:</strong> b + 0 × (1, 0) + 0 × (0, 1) + 1 × (0.8, 0.6) = <strong>(0.8, 0.6)</strong> = x. The other recipe, 0.8 × (1, 0) + 0.6 × (0, 1), also gives (0.8, 0.6) but uses two features; §1.5 shows how the loss picks between them.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>b = [0.0, 0.0]
+d = [[1, 0], [0, 1], [0.8, 0.6]]
+f = [0, 0, 1]
+# x ≈ b + Σ_i f_i d_i
+[round(b[r] + sum(f_i * d_i[r] for f_i, d_i in zip(f, d)), 3) for r in range(2)]  # → [0.8, 0.6]</code></pre>
+<h4>Why it matters</h4>
+<p>This is just a matrix factorization, the kind dictionary learning has always used; the paper says so. What makes it a claim about the model is the expectation from <a href="toy-models-of-superposition.html">Toy Models</a> that the directions should be <em>overcomplete</em> (more directions than neurons) and the strengths <em>sparse</em> (few non-zero per input). The paper stays agnostic about whether features are the model's true parts or a convenient description, though universality (§4.3) suggests they are more than an artefact. The lesson's <a data-lesson="primer/ml/interpretability.html#compose_features"><code>compose_features</code></a> builds an activation from feature amounts exactly this way.</p>
+</section>
+
+<section id="s1-2">
+<h3>What makes a good decomposition <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#problem-setup-good-decomposition">original</a></span></h3>
+<p>The paper asks three things of a decomposition. You can describe when each feature fires, in a way that holds up on varied and even synthetic inputs. You can describe what each feature does downstream, consistently with the first description. And together the features account for a large share of what the layer does, measured by the loss. With that, you could explain a layer's output on an example feature by feature, monitor a model for a feature, change behaviour predictably by editing features, and show that a model has learned, and is using, some property of its data.</p>
+</section>
+
+<section id="s1-3">
+<h3>Why not change the architecture? <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#why-not-architectures">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If superposition is the problem, why not train models that can't do it, for example by forcing only one neuron to fire at a time? The authors tried, down to one-hot activations. Superposition went away, and the neurons were <em>still</em> polysemantic. A neuron that means “A or B” can beat a neuron that means “A”, even when there is no squeezing at all.</p>
+<h4>Tiny example</h4>
+<p>One neuron that either fires or doesn't. Four features, A, B, C, D, exactly one present per example, each predicting its own next token. <strong>Monosemantic</strong>: fire on A only and predict A; otherwise spread the prediction over B, C, D. <strong>Polysemantic</strong>: fire on A or B and spread over those two; otherwise spread over C and D.</p>
+<div class="eq" data-tex="\htmlData{sym=Lmono}{L_{\text{mono}}} = \tfrac{3}{4}\,\htmlData{sym=ln}{\ln} 3 \approx 0.8, \qquad \htmlData{sym=Lpoly}{L_{\text{poly}}} = \htmlData{sym=ln}{\ln} 2 \approx 0.7" data-fallback="L_mono = (3/4) ln 3 ≈ 0.8,   L_poly = ln 2 ≈ 0.7"></div>
+<div class="symtable" data-syms="Lmono,Lpoly,ln"></div>
+<p class="inwords"><strong>In words:</strong> “the one-feature neuron is perfect a quarter of the time and pays ln 3 the rest of the time; the two-feature neuron always pays ln 2; ln 2 is smaller, so the model prefers the polysemantic neuron.”</p>
+<p class="inwords"><strong>With the numbers:</strong> monosemantic: ¼ × 0 + ¾ × ln 3 = 0.75 × 1.0986 = <strong>0.824</strong>. Polysemantic: ½ × ln 2 + ½ × ln 2 = <strong>0.693</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# cross-entropy of a uniform guess over k tokens is ln k
+# mono: A (prob 1/4) is predicted exactly; otherwise uniform over B, C, D
+L_mono = 1/4 * 0 + 3/4 * math.log(3)
+# poly: fires on A or B (uniform over two); otherwise uniform over C, D
+L_poly = 1/2 * math.log(2) + 1/2 * math.log(2)
+round(L_mono, 3), round(L_poly, 3)  # → (0.824, 0.693)</code></pre>
+<h4>Why it matters</h4>
+<p>Language models are trained with <span class="t" data-t="cross-entropy">cross-entropy</span>, and under cross-entropy the authors conclude that models will generally prefer more features represented ambiguously to fewer represented cleanly, even when sparsity makes superposition impossible. Models trained on <span class="t" data-t="mean squared error">mean squared error</span> don't necessarily have this problem, which is why the autoencoder itself uses a squared-error loss: otherwise there could be superposition “all the way down”. So the paper decomposes a normal model after training rather than redesigning models.</p>
+</section>
+
+<section id="s1-4">
+<h3>Why a sparse autoencoder <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#setup-autoencoder-motivation">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Recovering thousands of feature strengths from 512 numbers is like working out a long shopping list from the total on the receipt. In general it can't be done. It becomes possible only if you know the list is short: few items, many possible items. That is <span class="t" data-t="compressed sensing">compressed sensing</span>, and doing it exactly is NP-hard (no known algorithm solves every case efficiently).</p>
+<h4>Why weak on purpose</h4>
+<p>Classic dictionary learning methods optimize each code carefully or search greedily. The authors chose something simpler for two reasons: a sparse autoencoder scales to billions of examples, and a powerful method might be <em>too</em> strong, recovering features from the activations that the model itself could never read. A sparse autoencoder is built like an MLP layer, one matrix and a ReLU, so it should be about as able as the model to pull features out of superposition. Its training sees only the activations, never the model's outputs, so downstream effects become an independent check.</p>
+</section>
+
+<section id="s1-5">
+<h3>The autoencoder, precisely <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#appendix-autoencoder">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The autoencoder has two halves with different jobs. The <strong>decoder</strong> is the dictionary: one direction per feature, each kept at length 1. The <strong>encoder</strong> is the detector: for each feature, a direction to measure along, and a threshold. The loss asks for two things: rebuild the activation well, and use as little total feature strength as possible.</p>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=xbar}{\bar{\mathbf{x}}} &amp;= \htmlData{sym=x}{\mathbf{x}} - \htmlData{sym=bd}{\mathbf{b}_d} \\ \htmlData{sym=fvec}{\mathbf{f}} &amp;= \htmlData{sym=relu}{\mathrm{ReLU}}(\htmlData{sym=We}{W_e}\,\htmlData{sym=xbar}{\bar{\mathbf{x}}} + \htmlData{sym=be}{\mathbf{b}_e}) \\ \htmlData{sym=xhat}{\hat{\mathbf{x}}} &amp;= \htmlData{sym=Wd}{W_d}\,\htmlData{sym=fvec}{\mathbf{f}} + \htmlData{sym=bd}{\mathbf{b}_d} \\ \htmlData{sym=calL}{\mathcal{L}} &amp;= \htmlData{sym=avgX}{\frac{1}{|X|}\sum_{\mathbf{x} \in X}} \htmlData{sym=sqerr}{\lVert \mathbf{x} - \hat{\mathbf{x}} \rVert_2^2} + \htmlData{sym=lam}{\lambda}\,\htmlData{sym=l1}{\lVert \mathbf{f} \rVert_1} \end{aligned}" data-fallback="x̄ = x − b_d;  f = ReLU(W_e x̄ + b_e);  x̂ = W_d f + b_d;  L = (1/|X|) Σ_x ‖x − x̂‖₂² + λ‖f‖₁"></div>
+<div class="symtable" data-syms="x,xbar,bd,fvec,We,be,xhat,Wd,calL,avgX,sqerr,lam,l1"></div>
+<p class="inwords"><strong>In words:</strong> “subtract the typical activation; measure every feature with the encoder and clip at zero; rebuild as a weighted sum of dictionary directions and add the typical activation back; and pay for the squared rebuild error plus λ times the total feature strength, averaged over the data.” The text adds two details the equation hides: the squared error is averaged over the vector's entries while the L1 penalty is summed, and every column of W<sub>d</sub> has length 1, so the penalty can't be dodged by shrinking codes and stretching directions.</p>
+<h4>Tiny example</h4>
+<p>This page's own illustrative autoencoder, with the dictionary from §1.1: directions (1, 0), (0, 1), (0.8, 0.6), no bias to subtract, and λ = 0.1. Its encoder is <em>not</em> the decoder flipped: each detector is tilted so it ignores the other features' directions (see the widget below). For x = (0.8, 0.6), the encoder returns f = (0, 0, 1), the rebuild is exact, and the loss is just the penalty, 0.1 × 1 = 0.1. The two-feature recipe (0.8, 0.6, 0) would also rebuild exactly but pay 0.1 × 1.4 = 0.14: the L1 penalty prefers the sparser explanation.</p>
+<p class="inwords"><strong>With the numbers:</strong> W<sub>e</sub>x̄ + b<sub>e</sub> = (0.8 − 0.8, −0.6 + 0.6, 3.2 + 1.8 − 4) = (0, 0, 1); f = <strong>(0, 0, 1)</strong>; x̂ = (0.8, 0.6); 𝓛 = 0 + 0.1 × 1 = <strong>0.1</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>lam = 0.1
+b_d = [0.0, 0.0]
+# decoder W_d: one unit-length direction per feature (stored here as a list of columns)
+W_d = [[1, 0], [0, 1], [0.8, 0.6]]
+# encoder W_e: one detector per feature, tilted away from the other features' directions
+W_e = [[1, -4/3], [-0.75, 1], [4, 3]]
+b_e = [0, 0, -4]
+x = [0.8, 0.6]
+# x̄ = x − b_d
+x_bar = [x[r] - b_d[r] for r in range(2)]
+# f = ReLU(W_e x̄ + b_e)
+f = [round(max(0.0, sum(w * v for w, v in zip(W_e[i], x_bar)) + b_e[i]), 6) for i in range(3)]
+f  # → [0.0, 0.0, 1.0]
+# x̂ = W_d f + b_d
+x_hat = [sum(f[i] * W_d[i][r] for i in range(3)) + b_d[r] for r in range(2)]
+# 𝓛 for this one example: ‖x − x̂‖² + λ ‖f‖₁
+round(sum((a - b) ** 2 for a, b in zip(x, x_hat)) + lam * sum(abs(v) for v in f), 3)  # → 0.1</code></pre>
+<h4>Try it: why the encoder isn't tied to the decoder</h4>
+<p>Many autoencoders reuse the decoder, flipped, as the encoder. The paper found that its trained encoders drift away from the decoders on purpose: similar features get detectors tilted apart so they don't set each other off. Feed the tiny autoencoder an input and compare a <strong>tied</strong> encoder (decoder flipped, no bias) with the tilted one above. Try each feature alone, then two at once.</p>
+<div class="plot" id="tie-play">
+  <div class="controls" id="tie-presets" role="group" aria-label="Preset inputs"></div>
+  <div class="sliders">
+    <label for="tie-x1">x₁</label><input type="range" id="tie-x1" min="0" max="1.2" step="0.01" value="0.8"><output id="tie-x1v">0.80</output>
+    <label for="tie-x2">x₂</label><input type="range" id="tie-x2" min="0" max="1.2" step="0.01" value="0.6"><output id="tie-x2v">0.60</output>
+  </div>
+  <div id="tie-bars"></div>
+  <p class="readout" id="tie-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the sliders set the two-neuron activation x. Each group of bars shows the three feature strengths an encoder produces for it, solid for the tied encoder and striped for the tilted one, and the readout gives each encoder's rebuild and its squared error. With x = (0.8, 0.6), exactly feature 3's direction, the tied encoder lights up all three features (0.8, 0.6 and 1) because the directions overlap, and its rebuild overshoots to (1.6, 1.2). The tilted encoder answers (0, 0, 1) and rebuilds exactly. The same holds for features 1 and 2 alone. Now set x = (0.5, 0.5), features 1 and 2 on together: the tilted encoder, built to answer one feature at a time, misses most of it. That is the bargain of superposition again: detectors tuned to ignore each other's typical leaks work when few features are on at once.</p>
+<h4>Sweeping the penalty</h4>
+<p>How strong should λ be? The paper watches the trade-off between how many features fire per token (the <span class="t" data-t="l0 norm">L0 norm</span>, which it generally keeps below 10 or 20) and how much of the model's behaviour the rebuild preserves. The same trade-off shows up on the lesson's toy, where the answer is known: five planted features in two dimensions, one on at a time in most examples.</p>
+<div class="plot" id="lam-plot">
+  <div id="lam-chart"></div>
+  <p class="readout" id="lam-readout">Hover or use the arrow keys on the chart to read each penalty.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> across is the penalty λ, on a log scale; each point is one autoencoder with 5 latents, trained by the lesson's <a data-lesson="primer/ml/interpretability.html#train_sae"><code>train_sae</code></a> on 20,000 hidden states of the pentagon toy (each feature on 5% of the time). The solid line is the worst match between a planted feature and its nearest latent (1 means found exactly, measured by <a data-lesson="primer/ml/interpretability.html#match_features"><code>match_features</code></a>); the dashed line is the share of variance the rebuild misses; the dotted line is the average number of latents active on an example with any feature on. With a tiny penalty the rebuild is perfect but about two latents fire per example and the worst match is only 0.8 to 0.9: many dictionaries rebuild a two-dimensional space, and nothing picks the true one. At λ = 0.3 about one latent fires per example, as in the data, and every planted feature is matched at 0.99, for 11% of variance left unexplained. Push harder and the penalty crushes the codes. The paper faces the same dial with no answer key, which is why its judgment of when a run is working leans on many signals at once.</p>
+<h4>Resampling dead latents</h4>
+<p>During training some latents stop firing altogether: <span class="t" data-t="dead latent">dead latents</span> (the paper says dead neurons). The paper revives them: at steps 25,000, 50,000, 75,000 and 100,000 it finds latents that haven't fired in the previous 12,500 steps, scores a random batch of inputs by the autoencoder's loss, and re-aims each dead latent at an input picked with probability proportional to its loss squared, so new features go where the dictionary is doing worst. The new encoder direction is scaled to 0.2 times the average live encoder length, with bias zero, so the revived latent fires only weakly at first.</p>
+<div class="eq" data-tex="\htmlData{sym=pk}{p_k} = \frac{\htmlData{sym=Lk}{L_k}^2}{\htmlData{sym=sumj}{\sum_j} \htmlData{sym=Lk}{L_j}^2}" data-fallback="p_k = L_k² / Σ_j L_j²"></div>
+<div class="symtable" data-syms="pk,Lk,sumj"></div>
+<p class="inwords"><strong>In words:</strong> “pick input k with probability proportional to the square of the autoencoder's loss on it.” This page's symbols for the article's sentence.</p>
+<p class="inwords"><strong>With the numbers:</strong> three inputs with losses 0.1, 0.2 and 0.7 (illustrative): squares 0.01, 0.04, 0.49, total 0.54, so probabilities <strong>0.019, 0.074, 0.907</strong>. Squaring makes the worst input dominate.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>L = [0.1, 0.2, 0.7]
+# p_k = L_k² / Σ_j L_j²
+[round(L_k ** 2 / sum(L_j ** 2 for L_j in L), 3) for L_k in L]  # → [0.019, 0.074, 0.907]</code></pre>
+<p>Other advice from the appendix: tie the pre-encoder bias to the decoder bias and start it at the <span class="t" data-tip-title="Geometric median" data-tip="The point that minimizes the total distance to all data points: a middle of the data that, unlike the average, isn't dragged far by a few outliers.">geometric median</span> of the data; train long after the loss looks flat; prefer lower learning rates; sample activations without repeating them; and, when keeping decoder columns at unit length, remove the part of each gradient that would change their length rather than renormalizing after every step.</p>
+<h4>Why it matters</h4>
+<p>These details decide whether an autoencoder finds features or garbage, and the lesson's implementation follows the same design: a decoder bias subtracted before encoding, separate encoder and decoder weights, and unit-length decoder columns (see <a data-lesson="primer/ml/interpretability.html#SparseAutoencoder.loss_and_grads"><code>SparseAutoencoder.loss_and_grads</code></a>, with every gradient derived by hand).</p>
+</section>
+
+<section id="s1-6">
+<h3>Is it working? <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#setup-autoencoder">original</a></span></h3>
+<p>Most of machine learning has a test loss to watch. Here there is none that settles the question. The authors tried an information-based score and found it didn't track interpretability, so they steer by several signals: reading features by hand; <em>feature density</em>, the fraction of tokens each feature fires on (the number of live features and how rare they get); the rebuild loss; and, early on, toy models where the true features are known. Scale mattered most: training the autoencoder on more data made features sharper, and in the end it saw 8 billion activations, in batches of 8,192 over a million steps.</p>
+</section>
+
+<section id="s1-7">
+<h3>The one-layer model <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#setup-transformer">original</a></span></h3>
+<p>The transformer has one attention block and one MLP block, a 128-number residual stream, 512 ReLU neurons, and was trained on 100 billion tokens of the Pile (a public text dataset, chosen so others can reproduce the work). One layer brings three advantages: fewer true features than a big model, so a moderate dictionary may cover them; cheap overtraining, which may make its superposition cleaner; and effects on the output that are nearly linear in the features, so they can be read off directly. A second transformer, “B”, identical except for its random seed, exists to test universality. Features are named run/number: A/1/3450 is feature 3450 of run 1 on transformer A. Runs A/0 to A/5 share one penalty and grow the dictionary.</p>
+</section>
+</section>
+
+<section id="s2">
+<h2>2 Four features up close <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#feature-analysis">original</a></span></h2>
+<blockquote class="quote">“The most important claim of our paper is that dictionary learning can extract features that are significantly more monosemantic than neurons.”<cite>Bricken et al. (2023), Detailed Investigations of Individual Features</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Before trusting a new instrument, test it on something you can check by other means. The authors pick four features whose meaning can be checked with a simple rule: text in Arabic script, DNA sequences, base64 strings and Hebrew text. For each they ask five questions. When it fires, is the context there (<em>specificity</em>)? When the context is there, does it fire (<em>sensitivity</em>)? Does it cause the right behaviour downstream? Is it just a neuron in disguise? Does another model have it too? The features are cherry-picked for being easy to check; §3 deals with the typical one.</p>
+<h3 class="rung">The proxies</h3>
+<p>For each context the authors write a scoring rule, a <em>proxy</em>: how much more likely a string is under the hypothesis than in ordinary text, as a log ratio. Ordinary text uses each token's overall frequency. Base64 treats every base64 character as a 1-in-64 draw and anything else as nearly impossible (10<sup>−10</sup>); DNA treats A, T, C, G as 1-in-4 draws; for Arabic and Hebrew, whether every character lies in the script's Unicode block.</p>
+<div class="eq" data-tex="\htmlData{sym=proxy}{\text{proxy}(s)} = \htmlData{sym=log}{\log}\frac{\htmlData{sym=Pctx}{P(s \mid \text{base64})}}{\htmlData{sym=Ps}{P(s)}}, \qquad \htmlData{sym=Pctx}{P(s \mid \text{base64})} = \htmlData{sym=prod}{\prod_{c \in s}} \htmlData{sym=Pc}{P(c)}, \qquad \htmlData{sym=Ps}{P(s)} = \htmlData{sym=prod}{\prod_{t \in s}} \htmlData{sym=pt}{p(t)}" data-fallback="proxy(s) = log P(s|base64)/P(s),  P(s|base64) = Π_c P(c),  P(s) = Π_t p(t)"></div>
+<div class="symtable" data-syms="proxy,s,Pctx,Ps,prod,Pc,pt,log"></div>
+<p class="inwords"><strong>In words:</strong> “score a string by how many times more likely it is as random base64 than as ordinary text, on a log scale: positive means it looks like base64.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the token “Qg” (two base64 characters) with an illustrative overall frequency of one in a million: ln((1/64)²) − ln(10<sup>−6</sup>) = −8.32 + 13.82 = <strong>5.5</strong>, strongly base64. The token “ the” (a space, then three letters) with frequency 0.03: the space isn't a base64 character, so ln(10<sup>−10</sup> × (1/64)³) − ln 0.03 = −35.5 + 3.5 = <strong>−32.0</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+import string
+BASE64 = set(string.ascii_letters + string.digits + "+/")
+def proxy(token, unigram_p):
+    # log P(s | base64): each base64 character is a 1-in-64 draw, anything else 1e-10
+    log_p_ctx = sum(math.log(1 / 64 if c in BASE64 else 1e-10) for c in token)
+    # log P(s): how common the token is overall (one token here, so one factor)
+    return round(log_p_ctx - math.log(unigram_p), 1)
+# the unigram frequencies are illustrative
+proxy("Qg", 1e-6)  # → 5.5
+proxy(" the", 0.03)  # → -32.0</code></pre>
+
+<section id="s2-1">
+<h3>The Arabic script feature, A/1/3450 <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#feature-arabic">original</a></span></h3>
+<h4>Specificity</h4>
+<p>Arabic-script text is rare in the data, 0.13% of training tokens, yet it is 81% of the tokens on which this feature fires. That share rises with the activation: 25% when the feature is barely on, 98% when its activation is above 5. So, weighted by how much it fires, the feature is almost entirely about Arabic script. (It fires on the <em>last</em> token of characters that the tokenizer splits into two; the weak activations on other text may be proxy errors, the tiny model's own mistakes, or unrecovered features leaking in.)</p>
+<div class="eq" data-tex="\htmlData{sym=lift}{\text{lift}} = \frac{\htmlData{sym=Pon}{P(\text{Arabic} \mid \text{feature on})}}{\htmlData{sym=Pbase}{P(\text{Arabic})}}" data-fallback="lift = P(Arabic | feature on) / P(Arabic)"></div>
+<div class="symtable" data-syms="lift,Pon,Pbase"></div>
+<p class="inwords"><strong>In words:</strong> “how many times more common Arabic script is among the tokens where the feature fires than among tokens in general.” This page's own summary of the article's two percentages.</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.81 / 0.0013 = <strong>623</strong>: when this feature is on, Arabic script is over six hundred times more likely than usual.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>P_on = 0.81
+P_base = 0.0013
+# lift = P(Arabic | feature on) / P(Arabic)
+round(P_on / P_base)  # → 623</code></pre>
+<h4>Sensitivity</h4>
+<p>The feature misses some Arabic tokens, such as the prefix “ال” (“al-”, the word for “the”); another Arabic feature, A/1/3134, fires exactly there, and A/1/3399 takes the first half of split characters. Several features share the script. Even so, the feature's activity correlates with the proxy at 0.74 (<span class="t" data-t="pearson correlation">Pearson</span>, over 40 million tokens).</p>
+<h4>Downstream effects</h4>
+<p>Three checks that the feature is part of the model's machinery, not just a pattern in the data. First, its <em>logit weights</em>: push the feature's direction through the rest of the model and see which next tokens it favours. Their distribution has a big mode at zero and a small separate mode of Arabic characters and the byte tokens that begin them. Second, ablation: set the feature to zero in context, and the model's predictions of Arabic tokens get worse. Third, pinning: set the feature to its maximum while sampling after the prompt “1,2,3,4,5,6,7,8,9,10”, and the model produces Arabic script.</p>
+<div class="eq" data-tex="\htmlData{sym=logitw}{\text{logit weights}} = \htmlData{sym=di}{\mathbf{d}_i}\,\htmlData{sym=Wdown}{W_{\text{down}}}\,\htmlData{sym=piproj}{\pi}\,\htmlData{sym=Lnorm}{L}\,\htmlData{sym=Wun}{W_{\text{unembed}}}" data-fallback="logit weights = d_i W_down π L W_unembed"></div>
+<div class="symtable" data-syms="logitw,di,Wdown,piproj,Lnorm,Wun"></div>
+<p class="inwords"><strong>In words:</strong> “take the feature's direction among the neurons, write it into the residual stream with the MLP's output weights, apply a linear stand-in for the final layer normalization (remove the mean, then rescale), and score every vocabulary token with the unembedding; then shift so the median token scores zero.”</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative sizes: 2 neurons, a 2-number residual stream, 3 tokens): d = (1, 0.5) → d W<sub>down</sub> = (1, 2) → minus the mean 1.5 gives (−0.5, 0.5) → scaled by 2 gives (−1, 1) → logits (−1, 1, 2) → minus the median 1 gives <strong>(−2, 0, 1)</strong>: the feature favours token 3 and disfavours token 1.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import statistics
+d = [1, 0.5]
+W_down = [[1, 1], [0, 2]]
+W_unembed = [[1, 0, -1], [0, 1, 1]]
+scale = [2, 2]
+# d W_down: the feature written into the residual stream
+r = [sum(d[n] * W_down[n][k] for n in range(2)) for k in range(2)]
+# π: remove the mean; L: the layer norm's scaling, as a diagonal
+mean = sum(r) / len(r)
+r = [(v - mean) * s for v, s in zip(r, scale)]
+# W_unembed: one score per token
+logits = [sum(r[k] * W_unembed[k][t] for k in range(2)) for t in range(3)]
+logits  # → [-1.0, 1.0, 2.0]
+# shift so the median logit weight is zero
+[v - statistics.median(logits) for v in logits]  # → [-2.0, 0.0, 1.0]</code></pre>
+<h4>Not a neuron, and universal</h4>
+<p>Only one neuron has any Arabic among its top 20 examples, and only one such example. The feature's direction is spread over neurons: its three largest coefficients are all negative, and 27 neurons have coefficients of at least 0.1 in size. The neuron most correlated with it, A/neurons/489, fires on a mixture of non-English languages, a sensible superposition since languages rarely co-occur. On transformer B, the most correlated feature, B/1/1334, matches at 0.91 and is, if anything, cleaner.</p>
+</section>
+
+<section id="s2-2">
+<h3>DNA, base64 and Hebrew <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#feature-dna">original</a></span></h3>
+<p>The same five checks, repeated. The numbers below are collected from the article's text.</p>
+<div class="tablewrap"><table>
+  <caption>The four features, numbers from Bricken et al. (2023), §“Detailed Investigations”</caption>
+  <thead><tr><th>Feature</th><th class="num">Correlation with its proxy</th><th class="num">Best match on transformer B</th><th>Closest neuron</th></tr></thead>
+  <tbody>
+    <tr><td>Arabic script, A/1/3450</td><td class="num">0.74</td><td class="num">0.91</td><td>a mix of non-English languages</td></tr>
+    <tr><td>DNA, A/1/2937</td><td class="num">0.8 (proxy made yes/no)</td><td class="num">0.92</td><td>DNA is a tiny sliver of its examples</td></tr>
+    <tr><td>base64, A/1/2357</td><td class="num">0.38</td><td class="num">0.85</td><td>correlation 0.18; also code, HTML, URLs</td></tr>
+    <tr><td>Hebrew, A/1/416</td><td class="num">0.55</td><td class="num">0.92</td><td>correlation 0.1; no neuron shows Hebrew in its top examples</td></tr>
+  </tbody>
+</table></div>
+<p><strong>DNA</strong> <span class="orig">(<a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#feature-dna">original</a>)</span>: the only feature devoted to DNA. Where it and the proxy disagree, the feature is almost always right: DNA with spaces (“TGG AGT”), or the “5'-” that announces a sequence is coming. By the end of a long sequence it is the only feature active. Its top logit weights are nucleotide combinations such as AGT and GCC.</p>
+<p><strong>base64</strong> <span class="orig">(<a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#feature-base64">original</a>)</span>: a feature the team had seen before as a neuron in an earlier model, a hint that it is universal. The low proxy correlation is mostly the proxy's fault: hexadecimal strings score as base64 but have a feature of their own, A/1/3817. Its logit weights shade gradually into base64 tokens, because many ordinary tokens (“fr”, say) also occur inside base64 strings.</p>
+<p><strong>Hebrew</strong> <span class="orig">(<a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#feature-hebrew">original</a>)</span>: the feature that is essentially invisible among neurons. A partner feature, A/1/1016, fires on the byte that begins most Hebrew characters and predicts the byte that completes them.</p>
+<h4>Why it matters</h4>
+<p>Each of these is an existence proof: a unit of the model's computation, specific, causal and reproducible across models, that no single neuron shows. That is what superposition predicted, and what reading neurons one by one would never find.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Global analysis <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#global-analysis">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Four good features could be luck. The next question is about the typical feature: pick one at random, and is it interpretable? Of A/1's 4,096 features, 168 are dead (they never fire on 100 million examples) and 292 are “ultralow density” (firing on fewer than one in a million and behaving oddly); both groups are set aside.</p>
+
+<section id="s3-1">
+<h3>How interpretable is a typical feature? <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#global-analysis-interp">original</a></span></h3>
+<h4>Three ways to score</h4>
+<ul>
+  <li><strong>A human, blind</strong> <span class="orig">(<a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#global-analysis-interp-manual">original</a>)</span>. One of the authors scored features and neurons without knowing which was which, on a rubric (below). To avoid the trap of only looking at top examples, where many polysemantic neurons look clean, examples were drawn evenly from 11 intervals across each unit's activation range. In all, 412 intervals across 162 features and neurons.</li>
+  <li><strong>A language model explaining activations</strong> <span class="orig">(<a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#global-analysis-interp-auto-acts">original</a>)</span>. Claude writes an explanation from examples, then, seeing only the explanation, predicts activations on 60 new nine-token examples (540 predictions); the score is the <span class="t" data-t="spearman correlation">Spearman correlation</span> between predicted and true activations.</li>
+  <li><strong>A language model predicting effects</strong> <span class="orig">(<a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#global-analysis-interp-auto-logits">original</a>)</span>. Given the explanation, decide whether a token is one the unit pushes up; half the tokens are its top logit weights and half random, so guessing scores 50%.</li>
+</ul>
+<h4>The rubric</h4>
+<p>The human's score adds up: confidence in the interpretation (0 to 3), how consistent the strongly activating tokens are with it (0 to 5), how consistent the pushed-up tokens are (0 to 3), a point if the inconsistent ones are clearly weaker (0 or 1), and how specific the interpretation is (0 to 3). A perfect logit score makes the extra point impossible, so the maximum is 14. Very roughly, the authors found a feature quite interpretable above 8.</p>
+<h4>Diagram: features against neurons</h4>
+<div class="plot" id="cmp-plot">
+  <div id="cmp-bars"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars compares A/1's features (solid) with the transformer's neurons (striped) on one measure, with numbers from the article's text; each bar's length is its share of that measure's full scale, given in the label. On the human rubric, the median feature interval scores 12 out of 14, a confident, specific interpretation consistent with what the feature pushes up; the median neuron scores 0: the annotator could not even form a hypothesis. On predicting pushed-up tokens, where chance is 50%, features average 74% against neurons' 58%. On finding the same unit in the second transformer, the median feature's best match correlates at 0.72, the median neuron's at 0.46. Every measure points the same way.</p>
+<h4>Caveats the paper raises</h4>
+<p>Most activations are small and fall in the weaker, less interpretable intervals; some features stay consistent across their whole range, others only in the top 60% or so, which may mean a learned direction sits at a slight angle to the true one. Most of a feature's effect comes from its large activations, which are the interpretable ones. The appendix adds a subtlety about automated scoring: weighting examples by how often they really occur (importance scoring) rewards explanations that say what a feature does <em>not</em> fire on, because features are so rare that predicting zero is almost always right.</p>
+</section>
+
+<section id="s3-2">
+<h3>How much of the model does this explain? <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#global-analysis-how-much">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Swap the MLP's real activations for the autoencoder's rebuild and see how much worse the model predicts text. Compare that with the damage of deleting the MLP entirely (setting its output to zero). The share of the damage the rebuild avoids is the share of the MLP's work the features capture.</p>
+<div class="eq" data-tex="\htmlData{sym=frac}{\text{recovered}} = \frac{\htmlData{sym=Labl}{L_{\text{zero}}} - \htmlData{sym=Lsae}{L_{\text{SAE}}}}{\htmlData{sym=Labl}{L_{\text{zero}}} - \htmlData{sym=Lorig}{L_{\text{model}}}}" data-fallback="recovered = (L_zero − L_SAE) / (L_zero − L_model)"></div>
+<div class="symtable" data-syms="frac,Labl,Lsae,Lorig"></div>
+<p class="inwords"><strong>In words:</strong> “of the loss the MLP saves compared with no MLP at all, how much is still saved when the MLP's activations are replaced by the autoencoder's rebuild.” This page's symbols for the article's description.</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative losses chosen to give A/1's result): model 3.00, rebuild 3.21, no MLP 4.00: (4.00 − 3.21)/(4.00 − 3.00) = <strong>0.79</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># illustrative losses (nats per token)
+L_model, L_SAE, L_zero = 3.00, 3.21, 4.00
+# (L_zero − L_SAE) / (L_zero − L_model)
+round((L_zero - L_SAE) / (L_zero - L_model), 2)  # → 0.79</code></pre>
+<p>For A/1, <strong>79%</strong> of the MLP's log-likelihood improvement survives. More features or a smaller penalty recover more: A/5, with 131,072 features and a penalty of 0.004, recovers 94.5%. The authors ask for these numbers to be taken with a grain of salt: there is probably a long tail of features, so each extra percent costs more, the baseline of deleting the MLP is harsh (making the percentage an overestimate), and some polysemanticity may hide in weak activations. The ablation and pinning experiments are what persuade them the 79% measures something real.</p>
+</section>
+
+<section id="s3-3">
+<h3>Do features describe the model or the data? <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#global-analysis-about-model">original</a></span></h3>
+<p>Activations reflect both the text and what the model does with it, so interpretable features might just be patterns in the text passing through. Two answers. First, the downstream effects (logit weights, ablations, pinned sampling) are never seen by the autoencoder, so if they make sense, that is a fact about the model. Second, a control: shuffle every weight matrix of the trained transformer, keeping the same numbers but destroying their structure, and run dictionary learning on that. Its features are mostly single tokens (“span”, “file”, “.”) plus features for arbitrary mixtures of contexts that the authors couldn't interpret. Training creates richer structure than the tokens alone. (Automated scoring actually rates the random model's features higher on median, because single-token features are trivially easy to predict; set those aside and they score like polysemantic neurons.)</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Phenomenology <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#phenomenology">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>With a working microscope, the next step is to look around and note what keeps turning up. Four patterns stand out.</p>
+
+<section id="s4-1">
+<h3>Feature motifs <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#phenomenology-feature-motifs">original</a></span></h3>
+<p>Most features are <strong>context features</strong> (DNA, base64) or <strong>token-in-context features</strong>: “the” in mathematics (A/0/341), “&lt;” in HTML (A/0/20). In A/4 there are more than a hundred features for the token “the” in different contexts. There are <strong>trigram</strong>-like features, such as one that predicts the “19” in “COVID-19”, and features for long specific phrases. In a one-layer model every feature is also an <strong>action</strong>: the base64 feature both detects base64 and makes base64 more likely next. The action view explains oddities: A/0/341 fires on “the” in maths, but also on “special” and “this”, because all of them are followed by a noun phrase it predicts, such as “denominator”.</p>
+</section>
+
+<section id="s4-2">
+<h3>Feature splitting <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#phenomenology-feature-splitting">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A map at three zoom levels: at the coarsest you see “city”, zoom in and it becomes districts, zoom again and streets. Dictionaries of different sizes are zoom levels on the same model. As the dictionary grows from 512 features (A/0) to 4,096 (A/1) to 16,384 (A/2), the number of base64 features goes from 1 to 3 to many more. This is <span class="t" data-t="feature splitting">feature splitting</span>.</p>
+<h4>Diagram: one base64 feature becomes three</h4>
+<figure class="ix" id="fig-split">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 220" role="img" aria-label="Feature A/0/45, which fires on all base64 tokens, splits in the larger dictionary A/1 into three features: letters, digits, and base64 that encodes text">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="8" y="20" class="lbl">A/0: 512 features</text>
+    <text x="8" y="212" class="lbl">A/1: 4,096 features</text>
+    <path class="wire" d="M165,70 L60,138" marker-end="url(#arr2)"/>
+    <path class="wire" d="M165,70 L165,138" marker-end="url(#arr2)"/>
+    <path class="wire" d="M165,70 L270,138" marker-end="url(#arr2)"/>
+    <g class="blk attn" data-block="b45"><rect x="85" y="30" width="160" height="40" rx="7"/><text x="165" y="48" text-anchor="middle">A/0/45</text><text x="165" y="62" text-anchor="middle" class="lbl">all base64 tokens</text></g>
+    <g class="blk ff" data-block="b2357"><rect x="6" y="140" width="104" height="52" rx="7"/><text x="58" y="160" text-anchor="middle">A/1/2357</text><text x="58" y="176" text-anchor="middle" class="lbl">letters</text></g>
+    <g class="blk emb" data-block="b2364"><rect x="113" y="140" width="104" height="52" rx="7"/><text x="165" y="160" text-anchor="middle">A/1/2364</text><text x="165" y="176" text-anchor="middle" class="lbl">single digits</text></g>
+    <g class="blk soft" data-block="b1544"><rect x="220" y="140" width="104" height="52" rx="7"/><text x="272" y="160" text-anchor="middle">A/1/1544</text><text x="272" y="176" text-anchor="middle" class="lbl">encoded text</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a feature. Start with <strong>A/0/45</strong> at the top, then each of its three children.</p></div>
+  </div>
+  <figcaption>Feature splitting in the base64 family, drawn by this page from the article's description in “Bug 2: Multiple Features for a Single Context”.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> top row, the small dictionary; bottom row, the larger one; arrows show which fine features jointly cover the coarse one's activations. One feature for all base64 becomes a letters feature, a digits feature and a feature for base64 that encodes readable ASCII text. The digits feature exists because of the tokenizer: two digits in a row would have been merged into one token, so a lone digit token tells the model the next token is not a digit, and this feature's logit weights for digits are much lower. The third was a surprise nobody went looking for: the clue was the token “ICAgICAg”, which is six spaces in base64.</p>
+<h4>A theory of splitting</h4>
+<p>The authors conjecture an ideal set of features that an unlimited dictionary would find, often in clusters of similar features the model packs tightly together. A limited dictionary returns features covering roughly the same territory, less specifically. Similar features have similar directions because they cause similar behaviour: several features that fire on periods would all predict a space and a capital letter next. This explains two apparent bugs. <strong>Single-token features</strong> in small dictionaries (one fires on every “ P”) are collapsed families that split into context-specific versions when given room. <strong>Several features for one context</strong> (three for base64) are genuine splits. It also means the “right” number of features matters less than feared: small dictionaries summarize, large ones refine. The splitting isn't a clean tree: in the maths and physics example, features at one level both split and merge at the next.</p>
+<h4>Why it matters</h4>
+<p>For a big model, the recipe becomes: read a coarse dictionary to map the territory, then a fine one to study the details. The lesson warns of the same effect: a bigger dictionary can split one feature into several finer ones, so feature counts depend on the dictionary's size and penalty.</p>
+</section>
+
+<section id="s4-3">
+<h3>Universality <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#phenomenology-universality">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If two people independently map the same coastline and draw the same bays, the bays are probably real. The authors compare features across the two transformers in two ways: <em>activation similarity</em> (do they fire on the same tokens?) and <em>logit weight similarity</em> (do they push up the same next tokens?).</p>
+<h4>What they found</h4>
+<p>For each feature in A/1, the best-matching feature in B/1 correlates at a median of <strong>0.72</strong>; for neurons across the two transformers, <strong>0.46</strong>. Logit weights agree less, because most of each feature's logit weights are small noise-like “interference” that the model doesn't need to control; only the important tokens agree. The starkest case: two PLOS ONE citation features (they fire on “pone” in citation strings and predict the “.” after it) correlate at 0.98 in activation but negatively in logit weights, with only the “.” token strongly weighted by both. So the authors combine the two views into an <em>attribution</em> score: a feature's activation on a token times its logit weight for the token that actually comes next.</p>
+<div class="eq" data-tex="\htmlData{sym=attr}{a_{ij}} = \htmlData{sym=fitj}{f_i(t_j)}\;\htmlData{sym=vik}{v_{i,t_{j+1}}}" data-fallback="a_ij = f_i(t_j) · v_(i, t_(j+1))"></div>
+<div class="symtable" data-syms="attr,fitj,vik"></div>
+<p class="inwords"><strong>In words:</strong> “how much feature i, at token j, pushed up the token that really came next: its activation times its logit weight for that next token.” It approximates the classic gradient-times-activation attribution, ignoring the softmax's and layer norm's denominators.</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative): the PLOS feature fires at 2.0 on “pone”, the next token is “.”, and its logit weight for “.” is 1.5: attribution 2.0 × 1.5 = <strong>3.0</strong>. On a token where it doesn't fire, 0 × anything = <strong>0</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># illustrative activations and logit weights
+f = {"pone": 2.0, "the": 0.0}
+v = {".": 1.5, "cat": 0.4}
+# a = f_i(t_j) · v_(i, t_(j+1)) for two (token, next token) pairs
+[f["pone"] * v["."], f["the"] * v["cat"]]  # → [3.0, 0.0]</code></pre>
+<p>Stacking these scores over many tokens and correlating them across models gives an <em>attribution similarity</em>, which tracks activation similarity closely: features that fire together across models also help predict the same tokens. The authors also find features resembling ones reported elsewhere: base64, hexadecimal and all-caps neurons from their earlier SoLU models; German and title-case detectors from other dictionary-learning work; region features (Australia, Canada, Africa) echoing “region neurons” in a vision model. Person detectors exist but are much narrower, and nothing like that model's emotion neurons turned up.</p>
+<h4>Why it matters</h4>
+<p>Universality is evidence that features aren't artefacts of one training run or of the autoencoder, and it is what lets lessons from one model carry to the next.</p>
+</section>
+
+<section id="s4-4">
+<h3>“Finite state automata” <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#phenomenology-fsa">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A relay race: each runner finishes their leg and hands the baton to the next, who was waiting for exactly that. Features do this through the text itself: one feature makes certain tokens likely, the model writes one of them, and that token switches on the next feature. The model never learned the chain as a unit; it emerges from patterns in the data. The simplest chain is a loop of one: a base64 feature predicts base64 tokens, which keep it on.</p>
+<h4>Diagram: writing HTML</h4>
+<figure class="ix" id="fig-fsa">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 250" role="img" aria-label="Four features in a cycle: open tag predicts a tag name, tag name predicts a tag close, tag close predicts whitespace, whitespace predicts a new open tag">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M150,50 H174" marker-end="url(#arr3)"/>
+    <path class="wire" d="M246,72 V168" marker-end="url(#arr3)"/>
+    <path class="wire" d="M176,190 H152" marker-end="url(#arr3)"/>
+    <path class="wire" d="M72,168 V72" marker-end="url(#arr3)"/>
+    <text x="162" y="40" text-anchor="middle" class="lbl">div</text>
+    <text x="256" y="124" class="lbl">&gt;</text>
+    <text x="163" y="226" text-anchor="middle" class="lbl">⏎ tabs</text>
+    <text x="46" y="124" text-anchor="end" class="lbl">&lt;</text>
+    <g class="blk attn" data-block="f20"><rect x="4" y="28" width="146" height="44" rx="7"/><text x="77" y="47" text-anchor="middle">A/0/20</text><text x="77" y="62" text-anchor="middle" class="lbl">on “&lt;”, predicts a name</text></g>
+    <g class="blk ff" data-block="f0"><rect x="176" y="28" width="140" height="44" rx="7"/><text x="246" y="47" text-anchor="middle">A/0/0</text><text x="246" y="62" text-anchor="middle" class="lbl">on name, predicts “&gt;”</text></g>
+    <g class="blk emb" data-block="f30"><rect x="176" y="168" width="140" height="44" rx="7"/><text x="246" y="187" text-anchor="middle">A/0/30</text><text x="246" y="202" text-anchor="middle" class="lbl">on “&gt;”, predicts space</text></g>
+    <g class="blk soft" data-block="f494"><rect x="4" y="168" width="146" height="44" rx="7"/><text x="77" y="187" text-anchor="middle">A/0/494</text><text x="77" y="202" text-anchor="middle" class="lbl">on space, predicts “&lt;”</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Tap a feature, or step through the text below. Start with <strong>A/0/20</strong> at the top left.</p></div>
+  </div>
+  <figcaption>The main path of the four-feature HTML system, drawn by this page from the article's list in “Finite State Automata”. The wire labels are the tokens passed along.</figcaption>
+</figure>
+<div class="play">
+  <p><button type="button" id="fsa-step">Next token</button> <button type="button" id="fsa-reset">Start again</button></p>
+  <p class="readout" id="fsa-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each box is a feature from the small dictionary A/0, labelled with the token it fires on and what it predicts; each arrow is a token the model writes, which wakes the next feature. Step through and the loop writes the article's prototypical sample, “&lt;div&gt;⏎ tabs &lt;span&gt;”: open a tag, name it, close it, indent, open another. It is a finite-state machine drawn in features, and a crude one: this small dictionary has no state for what happens when the name is followed by an attribute such as “href”, which in A/1 is a richer system.</p>
+<h4>Other chains</h4>
+<p>Two-feature loops are common where the tokenizer splits characters in two, as with Tamil or Chinese, one feature for the first byte and one for the second (for Chinese, one feature covers both whole characters and second halves, since both can be followed by the same things). Snake-case identifiers like ARRAY_MAX_VALUE alternate a capitals feature and an underscore feature. IRC chat logs have their own chain. And a chain in a larger dictionary, A/4, reproduces the licence boilerplate “MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE”, a small mechanism for memorization found in a model with only 512 neurons.</p>
+<h4>Why it matters</h4>
+<p>Features are not just labels; they compose into behaviour. Here they compose through the generated text, a different kind of circuit, and a hint of what to look for in models trained to act in the world, whose own outputs feed back into their inputs.</p>
+</section>
+</section>
+
+<section id="s5">
+<h2>5 Related work <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#related-work">original</a></span></h2>
+<p>Three threads. <strong>Superposition</strong>: since Toy Models, sparse probes have found likely examples in real models; the Othello exchange between Li et al. and Nanda et al. strengthened the features-as-directions view; and follow-up work found small datasets memorized in superposition, with a sharp transition to generalization. <strong>Disentanglement and architecture</strong>: disentanglement aims for as many factors as dimensions, where superposition expects more; attempts to force clean neurons, such as the SoLU activation, made some neurons cleaner and others worse. <strong>Dictionary learning on networks</strong>: sparse coding of word embeddings came first; closest in time, Sharkey, Cunningham and colleagues trained sparse autoencoders on transformers in parallel, published as interim reports and a manuscript with many of the same conclusions, and the authors credit them for focusing on the sparse autoencoder approach.</p>
+</section>
+
+<section id="s6">
+<h2>6 Discussion <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#discussion">original</a></span></h2>
+<blockquote class="quote">“This work has persuaded us that our previous model was missing something crucial.”<cite>Bricken et al. (2023), Theories of Superposition</cite></blockquote>
+<h3 class="rung">Superposition, revised</h3>
+<p>Toy Models suggested an <em>isotropic</em> picture: features as separate one-dimensional directions repelling each other into an even spread. The real features clump. Correlated activation is one reason; the authors suspect a bigger one is shared <em>actions</em>: the base64 digits feature predicts almost the same tokens as the letters feature, so their directions sit close together. Features might not even be one-dimensional; there may be continuous families, which would explain why splitting never seems to stop. Still, the results leave them more confident that some version of superposition and the linear representation hypothesis is true: the number of interpretable features, activations that behave like intensity or confidence, sensible logit weights, and interference weights are all what superposition predicts.</p>
+<h3 class="rung">Are hundreds of “the” features real? <span class="orig">(<a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#discussion-token-in-context">original</a>)</span></h3>
+<p>A separate feature for every (token, context) pair is a <em>local</em> code; a <em>compositional</em> code would have one “the” feature and one “physics” feature and add them. Either the model is compositional and the L1 penalty pushes the autoencoder towards the sparser local code, or the model really is partly local. The authors lean towards the second, at least in part: with a compositional code, the prediction after “the” in physics would be the sum of “what follows the” and “what appears in physics”, and a local code allows a sharper prediction than that sum.</p>
+<h3 class="rung">Future work <span class="orig">(<a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#discussion-future-work">original</a>)</span></h3>
+<p>The biggest open problem is scale. An autoencoder with a 100× expansion on one MLP layer of width 10,000 has about 20 billion parameters, and rare features may need a large share of the model's own training data, so the autoencoder could cost more than the model.</p>
+<div class="eq" data-tex="\htmlData{sym=params}{\text{params}} \approx 2 \times \htmlData{sym=dmlp}{d} \times (\htmlData{sym=Eexp}{E}\,\htmlData{sym=dmlp}{d})" data-fallback="params ≈ 2 × d × (E d)"></div>
+<div class="symtable" data-syms="params,dmlp,Eexp"></div>
+<p class="inwords"><strong>In words:</strong> “an encoder and a decoder, each connecting the layer's d numbers to E times as many features.” This page's own count behind the article's figure, ignoring the small biases.</p>
+<p class="inwords"><strong>With the numbers:</strong> 2 × 10,000 × 1,000,000 = <strong>20,000,000,000</strong>, about 20 billion. The paper's A/1: 2 × 512 × 4,096 = <strong>4,194,304</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def params(d, E):
+    # encoder (E·d × d) plus decoder (d × E·d)
+    return 2 * d * (E * d)
+params(10_000, 100)  # → 20000000000
+params(512, 8)  # → 4194304</code></pre>
+<p>Beyond scale: how the ideal expansion and data needs grow with model size (scaling laws for dictionary learning); a trustworthy way to tell good features from bad; turning many microscopic facts into an understanding of a whole model, which automated interpretability might help with; better algorithms than a plain L1 penalty; and whether attention layers hold superposition of their own.</p>
+</section>
+
+<section id="s7">
+<h2>7 Comments and replications <span class="orig">· <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html#comments">original</a></span></h2>
+<p>Neel Nanda replicated the core result on an open one-layer model with a <span class="t" data-t="gelu">GELU</span> MLP: a large fraction of the learned features were interpretable. His decoder directions were mostly spread across many neurons (92% dense; only 4% well explained by a single neuron). He found no dead features, but more than half formed an ultralow-frequency cluster that turned out to be nearly one repeated encoder direction, which reappeared across random seeds and which he couldn't interpret. And each feature's encoder and decoder directions differed (median cosine similarity 0.5), supporting untied weights: the encoder's job is detecting, avoiding interference from similar features, while the decoder's is representing the feature's true direction.</p>
+</section>
+
+<section id="today">
+<h2>Where it leads</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Idea in the paper</th><th>Why it lasts</th><th>Where to build it</th></tr></thead>
+  <tbody>
+    <tr><td>Decompose activations into many sparse directions</td><td>Turned “what does this neuron do?” into “which features are active?”</td><td><a data-lesson="primer/ml/interpretability.html#SparseAutoencoder">sparse autoencoder</a></td></tr>
+    <tr><td>Rebuild error plus an L1 penalty, unit-length dictionary</td><td>Still the baseline recipe that later variants modify</td><td><a data-lesson="primer/ml/interpretability.html#sae_objective">the objective</a>, <a data-lesson="primer/ml/interpretability.html#train_sae">training it</a></td></tr>
+    <tr><td>Check features by their effects, not just their activations</td><td>Ablation and pinning are the causal test a label needs</td><td><a data-lesson="primer/ml/interpretability.html#flip_effect">intervention in the lesson</a></td></tr>
+    <tr><td>Recovered loss as a coverage score</td><td>The standard way to report how much a dictionary explains</td><td><a data-lesson="primer/ml/interpretability.html">the lesson's limits section</a></td></tr>
+    <tr><td>Feature splitting and universality</td><td>Dictionaries are zoom levels; the same features recur across models</td><td><a data-lesson="primer/ml/interpretability.html#match_features">matching features</a></td></tr>
+    <tr><td>Scaling to production models</td><td>Done the next year in <em>Scaling Monosemanticity</em></td><td><a href="index.html">the papers index</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Trenton Bricken, Adly Templeton, Joshua Batson, Brian Chen, Adam Jermyn, Tom Conerly, Nicholas L Turner, Cem Anil, Carson Denison, Amanda Askell, Robert Lasenby, Yifan Wu, Shauna Kravec, Nicholas Schiefer, Tim Maxwell, Nicholas Joseph, Alex Tamkin, Karina Nguyen, Brayden McLean, Josiah E Burke, Tristan Hume, Shan Carter, Tom Henighan and Chris Olah, <em>Towards Monosemanticity: Decomposing Language Models With Dictionary Learning</em>, Transformer Circuits Thread, 2023. <a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html">transformer-circuits.pub/2023/monosemantic-features</a>. Quotations are brief and attributed. No figures, tables or visualizations are reproduced: the pictures are drawn from scratch, from the article's text or from this primer's own code, as labelled. All explanations, diagrams, examples and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+<script>
+window.PAPER = {
+  symbols: {
+    // §1.1
+    xj: { tex: "\\mathbf{x}^j", name: "Activation of example j", meaning: "The MLP's activation vector on one token (data point j).", shape: "d_MLP = 512 numbers (2 here)", example: "(0.8, 0.6)" },
+    bvec: { tex: "\\mathbf{b}", name: "Base", meaning: "A fixed bias vector: the part of the activation not explained by any feature.", shape: "512 numbers", example: "(0, 0)" },
+    sumi: { tex: "\\sum_i", name: "Sum over features", meaning: "Add up over every feature i in the dictionary.", shape: "", example: "3 features here, 4,096 in A/1" },
+    fi: { tex: "f_i(\\mathbf{x})", name: "Feature i's activation", meaning: "How strongly feature i is present in this input, as computed by the encoder. Zero most of the time.", shape: "one number ≥ 0", example: "1 for feature 3" },
+    di: { tex: "\\mathbf{d}_i", name: "Feature i's direction", meaning: "A unit vector among the neurons: column i of the decoder W_d.", shape: "512 numbers, length 1", example: "(0.8, 0.6)" },
+    relu: { tex: "\\mathrm{ReLU}", name: "ReLU", meaning: "Keep positives, turn negatives into 0, entry by entry. It makes most feature activations exactly zero.", shape: "keeps the shape", example: "ReLU(−0.2) = 0" },
+    We: { tex: "W_e", name: "Encoder weights", meaning: "One row per feature: the direction the encoder measures along to detect it. Not tied to the decoder.", shape: "m × n (4,096 × 512)", example: "rows (1, −4/3), (−0.75, 1), (4, 3)" },
+    bd: { tex: "\\mathbf{b}_d", name: "Decoder bias (pre-encoder bias)", meaning: "Added back after decoding and subtracted before encoding; started at the geometric median of the data.", shape: "n = 512 numbers", example: "(0, 0)" },
+    be: { tex: "\\mathbf{b}_e", name: "Encoder bias", meaning: "One threshold per feature, added before the ReLU; negative values demand stronger evidence.", shape: "m numbers", example: "(0, 0, −4)" },
+    // §1.3
+    Lmono: { tex: "L_{\\text{mono}}", name: "Loss with a monosemantic neuron", meaning: "Average cross-entropy when the single neuron fires only for feature A.", shape: "nats", example: "0.824" },
+    Lpoly: { tex: "L_{\\text{poly}}", name: "Loss with a polysemantic neuron", meaning: "Average cross-entropy when the neuron fires for A or B.", shape: "nats", example: "0.693" },
+    ln: { tex: "\\ln", name: "Natural logarithm", meaning: "ln k is the cross-entropy of guessing uniformly among k equally likely tokens.", shape: "one number", example: "ln 2 = 0.693, ln 3 = 1.099" },
+    // §1.5
+    x: { tex: "\\mathbf{x}", name: "Input activation", meaning: "One MLP activation vector from the transformer.", shape: "n = 512 numbers", example: "(0.8, 0.6)" },
+    xbar: { tex: "\\bar{\\mathbf{x}}", name: "Centred input", meaning: "The activation with the decoder bias subtracted.", shape: "n numbers", example: "(0.8, 0.6)" },
+    fvec: { tex: "\\mathbf{f}", name: "Feature activations", meaning: "All m feature strengths for this input: the learned features. Almost all are exactly 0.", shape: "m numbers (4,096 in A/1)", example: "(0, 0, 1)" },
+    xhat: { tex: "\\hat{\\mathbf{x}}", name: "Rebuilt activation", meaning: "The decoder's weighted sum of feature directions, plus the bias.", shape: "n numbers", example: "(0.8, 0.6)" },
+    Wd: { tex: "W_d", name: "Decoder weights: the dictionary", meaning: "Column i is feature i's direction d_i, kept at length 1.", shape: "n × m (512 × 4,096)", example: "columns (1, 0), (0, 1), (0.8, 0.6)" },
+    calL: { tex: "\\mathcal{L}", name: "Autoencoder loss", meaning: "What training minimizes: rebuild error plus sparsity penalty, averaged over the data.", shape: "one number", example: "0.1" },
+    avgX: { tex: "\\frac{1}{|X|}\\sum_{\\mathbf{x} \\in X}", name: "Average over the dataset", meaning: "Sum over every activation x in the data set X and divide by how many there are (|X|). In practice, a batch of 8,192.", shape: "", example: "one example here" },
+    sqerr: { tex: "\\lVert \\mathbf{x} - \\hat{\\mathbf{x}} \\rVert_2^2", name: "Squared rebuild error", meaning: "Square each entry of the difference and add them up. (The text says the paper averages over entries instead; that only rescales λ.)", shape: "one number ≥ 0", example: "0" },
+    lam: { tex: "\\lambda", name: "L1 coefficient", meaning: "How much each unit of total feature strength costs. Larger means sparser codes and worse rebuilds.", shape: "a small number, chosen", example: "0.1 here; 0.004 in run A/5" },
+    l1: { tex: "\\lVert \\mathbf{f} \\rVert_1", name: "L1 norm of the features", meaning: "The absolute values of all feature activations, added up: the total strength used.", shape: "one number ≥ 0", example: "1" },
+    pk: { tex: "p_k", name: "Pick probability", meaning: "Chance that input k is chosen to re-aim a dead latent.", shape: "0 to 1, summing to 1", example: "0.907" },
+    Lk: { tex: "L_k", name: "Loss on input k", meaning: "The autoencoder's loss on one input from a random batch of 819,200.", shape: "one number ≥ 0", example: "0.7" },
+    sumj: { tex: "\\sum_j", name: "Sum over the batch", meaning: "Add up over every scored input j.", shape: "", example: "3 inputs here" },
+    // §2
+    proxy: { tex: "\\text{proxy}(s)", name: "Proxy score", meaning: "A log likelihood ratio: positive when s looks more like the context than like ordinary text. Maximized over prefixes ending at the token.", shape: "one number", example: "5.5 for “Qg”" },
+    s: { tex: "s", name: "A string", meaning: "A token, or a few tokens ending at the one being scored.", shape: "text", example: "“Qg”" },
+    Pctx: { tex: "P(s \\mid \\text{base64})", name: "Probability under the hypothesis", meaning: "How likely the string is if it were random base64.", shape: "0 to 1", example: "(1/64)² = 0.000244" },
+    Ps: { tex: "P(s)", name: "Probability in ordinary text", meaning: "The product of each token's overall frequency (unigram probabilities).", shape: "0 to 1", example: "10⁻⁶ (illustrative)" },
+    prod: { tex: "\\prod", name: "Product", meaning: "Multiply together over every character c (or every token t) of the string.", shape: "", example: "two characters" },
+    Pc: { tex: "P(c)", name: "Character probability", meaning: "1/64 for a base64 character, 10⁻¹⁰ otherwise.", shape: "0 to 1", example: "1/64" },
+    pt: { tex: "p(t)", name: "Token frequency", meaning: "How often token t appears in the dataset.", shape: "0 to 1", example: "0.03 for “ the” (illustrative)" },
+    log: { tex: "\\log", name: "Logarithm", meaning: "Turns the ratio into a difference and products into sums. The page uses the natural log.", shape: "one number", example: "ln 10⁻⁶ = −13.8" },
+    lift: { tex: "\\text{lift}", name: "Lift", meaning: "How many times more common the context is when the feature fires than overall. (This page's summary.)", shape: "≥ 0", example: "623" },
+    Pon: { tex: "P(\\text{Arabic} \\mid \\text{feature on})", name: "Share of active tokens in Arabic", meaning: "Of the tokens where the feature fires, the fraction in Arabic script.", shape: "0 to 1", example: "0.81" },
+    Pbase: { tex: "P(\\text{Arabic})", name: "Share of all tokens in Arabic", meaning: "The fraction of training tokens in Arabic script.", shape: "0 to 1", example: "0.0013" },
+    logitw: { tex: "\\text{logit weights}", name: "Logit weights", meaning: "The direct effect of one unit of the feature on every vocabulary token's score, shifted so the median is 0.", shape: "one number per token", example: "(−2, 0, 1)" },
+    Wdown: { tex: "W_{\\text{down}}", name: "MLP output weights", meaning: "Writes the 512 neuron activations into the 128-number residual stream.", shape: "512 × 128 (2 × 2 here)", example: "rows (1, 1), (0, 2)" },
+    piproj: { tex: "\\pi", name: "Mean-removing projection", meaning: "Subtracts the average entry, the first half of the layer norm's linear stand-in.", shape: "128 × 128", example: "(1, 2) → (−0.5, 0.5)" },
+    Lnorm: { tex: "L", name: "Layer norm scaling", meaning: "A diagonal matrix approximating the final layer normalization's rescaling.", shape: "128 × 128, diagonal", example: "diag(2, 2)" },
+    Wun: { tex: "W_{\\text{unembed}}", name: "Unembedding", meaning: "Scores each vocabulary token from the residual stream.", shape: "128 × vocabulary (2 × 3 here)", example: "rows (1, 0, −1), (0, 1, 1)" },
+    // §3
+    frac: { tex: "\\text{recovered}", name: "Fraction of loss recovered", meaning: "Share of the MLP's contribution to the loss that survives replacing its activations by the autoencoder's rebuild.", shape: "0 to 1", example: "0.79 for A/1" },
+    Labl: { tex: "L_{\\text{zero}}", name: "Loss with the MLP zeroed", meaning: "The transformer's loss when the MLP's output is set to zero.", shape: "nats per token", example: "4.00 (illustrative)" },
+    Lsae: { tex: "L_{\\text{SAE}}", name: "Loss with the rebuild", meaning: "The loss when the MLP's activations are replaced by the autoencoder's output.", shape: "nats per token", example: "3.21 (illustrative)" },
+    Lorig: { tex: "L_{\\text{model}}", name: "The model's own loss", meaning: "The transformer's loss with nothing replaced.", shape: "nats per token", example: "3.00 (illustrative)" },
+    // §4
+    attr: { tex: "a_{ij}", name: "Attribution score", meaning: "How much feature i at token j pushed up the token that actually came next.", shape: "one number", example: "3.0" },
+    fitj: { tex: "f_i(t_j)", name: "Feature activation on token j", meaning: "Feature i's strength at position j.", shape: "≥ 0", example: "2.0" },
+    vik: { tex: "v_{i,t_{j+1}}", name: "Logit weight for the next token", meaning: "Feature i's logit weight for the token that really follows position j.", shape: "one number", example: "1.5 for “.”" },
+    // §6
+    params: { tex: "\\text{params}", name: "Autoencoder parameters", meaning: "Weights in the encoder and decoder together, ignoring the biases.", shape: "a count", example: "20 billion" },
+    dmlp: { tex: "d", name: "Layer width", meaning: "Neurons in the MLP layer being decomposed.", shape: "a whole number", example: "10,000 (512 in the paper's model)" },
+    Eexp: { tex: "E", name: "Expansion factor", meaning: "Features per neuron: the dictionary has E × d features.", shape: "a whole number", example: "100 (8 for A/1)" },
+  },
+
+  blocks: {
+    tok: { title: "Tokens", body: "<p>Text from the Pile, a public dataset, cut into tokens. The transformer trained on 100 billion of them.</p>", shape: "one token at a time" },
+    emb: { title: "Embedding", body: "<p>Each token becomes a vector of 128 numbers: the residual stream, which every layer reads and writes.</p>", shape: "128 numbers", lesson: "primer/ml/transformer.html" },
+    att: { title: "Attention", body: "<p>The one attention block, which moves information between positions. The paper doesn't decompose it; whether attention has superposition of its own is left open.</p>", shape: "128 → 128", lesson: "primer/ml/attention.html" },
+    mlp: { title: "MLP: 512 ReLU neurons", body: "<p>The layer being decomposed. Its 512 activations, recorded on 8 billion tokens, are the autoencoder's entire training data. Many of these neurons are polysemantic.</p>", shape: "128 → 512 → 128", lesson: "primer/ml/transformer.html" },
+    unemb: { title: "Unembedding", body: "<p>Turns the residual stream into one score per vocabulary token. Because the model has one layer, a feature's effect on these scores is nearly linear: its logit weights.</p>", shape: "128 → vocabulary" },
+    next: { title: "Next-token logits", body: "<p>The model's prediction. Never shown to the autoencoder, so the features' effects here are an independent test of them.</p>", shape: "one score per token" },
+    enc: { title: "Encoder + ReLU", body: "<p>f = ReLU(W<sub>e</sub>(x − b<sub>d</sub>) + b<sub>e</sub>). Detects each feature's strength; the ReLU and the L1 penalty make almost all of them exactly zero.</p>", shape: "512 → 4,096 (up to 131,072)", lesson: "primer/ml/interpretability.html#SparseAutoencoder" },
+    feats: { title: "Features f", body: "<p>The learned features: 4,096 strengths per token in A/1, of which only a handful are non-zero. Each one is what the paper names, tests and browses.</p>", shape: "4,096 numbers, sparse" },
+    dec: { title: "Decoder: the dictionary", body: "<p>x̂ = W<sub>d</sub> f + b<sub>d</sub>. Each column is a feature's direction among the 512 neurons, kept at length 1.</p>", shape: "4,096 → 512", lesson: "primer/ml/interpretability.html#SparseAutoencoder" },
+    loss: { title: "Autoencoder loss", body: "<p>Squared rebuild error plus λ times the total feature strength (the L1 norm). The first term wants accuracy, the second sparsity.</p>", shape: "one number", lesson: "primer/ml/interpretability.html#sae_objective" },
+    b45: { title: "A/0/45: base64", body: "<p>In the 512-feature dictionary, one feature fires on every token of base64 strings.</p>", shape: "1 feature" },
+    b2357: { title: "A/1/2357: base64 letters", body: "<p>Fires mainly on letter tokens inside base64. This is the base64 feature studied in §2.</p>", shape: "1 of 3" },
+    b2364: { title: "A/1/2364: base64 digits", body: "<p>Fires mainly on single-digit tokens inside base64, and predicts nearly the same tokens as the letters feature, except digits. The tokenizer would have merged two digits into one token, so after a lone digit the next token is not a digit.</p>", shape: "1 of 3" },
+    b1544: { title: "A/1/1544: base64 of text", body: "<p>Fires on base64 strings that decode to readable ASCII text. First clue: the token ICAgICAg, six spaces encoded in base64.</p>", shape: "1 of 3" },
+    f20: { title: "A/0/20: open tag", body: "<p>Fires on “&lt;” in HTML and predicts tag names.</p>", shape: "state 1" },
+    f0: { title: "A/0/0: tag name", body: "<p>Fires on tag names such as div and span and predicts the closing “&gt;”. It has no state for attributes like href, which lead somewhere more complex.</p>", shape: "state 2" },
+    f30: { title: "A/0/30: tag close", body: "<p>Fires on “&gt;” and predicts whitespace: a new line and indentation.</p>", shape: "state 3" },
+    f494: { title: "A/0/494: whitespace", body: "<p>Fires on whitespace and predicts a new “&lt;”, closing the loop.</p>", shape: "state 4" },
+  },
+
+  onReady(P) {
+    tieWidget();
+    lamChart(P);
+    compareBars();
+    fsaWidget();
+  },
+};
+
+function barRow(label, value, max, style, text, cols) {
+  const w = Math.max(0, Math.min(100, (value / max) * 100));
+  return `<div class="share-row" style="grid-template-columns:${cols || "6rem minmax(0,1fr) 3.4rem"}"><span>${label}</span><div><div class="share-bar" style="width:${w.toFixed(1)}%;${style || ""}"></div></div><span>${text}</span></div>`;
+}
+
+/* ---- §1.5: tied against tilted encoders on a three-direction dictionary ---- */
+function tieWidget() {
+  const D = [[1, 0], [0, 1], [0.8, 0.6]];
+  const Et = D, bt = [0, 0, 0];
+  const Eu = [[1, -4 / 3], [-0.75, 1], [4, 3]], bu = [0, 0, -4];
+  const s1 = document.getElementById("tie-x1"), s2 = document.getElementById("tie-x2");
+  const o1 = document.getElementById("tie-x1v"), o2 = document.getElementById("tie-x2v");
+  const bars = document.getElementById("tie-bars"), out = document.getElementById("tie-readout");
+  const presets = [["feature 1 alone", 1, 0], ["feature 2 alone", 0, 1], ["feature 3 alone", 0.8, 0.6], ["1 and 2 together", 0.5, 0.5]];
+  const box = document.getElementById("tie-presets");
+  presets.forEach(([name, a, b]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = name;
+    btn.addEventListener("click", () => { s1.value = a; s2.value = b; draw(); });
+    box.appendChild(btn);
+  });
+  const enc = (E, b, x) => E.map((row, i) => Math.max(0, row[0] * x[0] + row[1] * x[1] + b[i]));
+  const dec = (f) => [0, 1].map((r) => f.reduce((acc, v, i) => acc + v * D[i][r], 0));
+  const clean = (v) => (Math.abs(v) < 1e-9 ? 0 : v);
+  function draw() {
+    const x = [+s1.value, +s2.value];
+    o1.textContent = x[0].toFixed(2); o2.textContent = x[1].toFixed(2);
+    const ft = enc(Et, bt, x).map(clean), fu = enc(Eu, bu, x).map(clean);
+    const rt = dec(ft), ru = dec(fu);
+    const err = (r) => (x[0] - r[0]) ** 2 + (x[1] - r[1]) ** 2;
+    const cols = "7.5rem minmax(0,1fr) 3rem";
+    bars.innerHTML = `<div class="legend" style="margin:.4rem 0">Feature strengths, axis 0 to 2. Solid: tied encoder. Striped: tilted encoder.</div>` +
+      [0, 1, 2].map((i) => barRow(`feature ${i + 1}, tied`, ft[i], 2, "", ft[i].toFixed(2), cols) + barRow(`feature ${i + 1}, tilted`, fu[i], 2, "background:var(--hatch) var(--accent)", fu[i].toFixed(2), cols)).join("");
+    const f2 = (r) => `(${r[0].toFixed(2)}, ${r[1].toFixed(2)})`;
+    out.innerHTML = `x = ${f2(x)}. Tied rebuild ${f2(rt)}, squared error <strong>${err(rt).toFixed(3)}</strong>. Tilted rebuild ${f2(ru)}, squared error <strong>${err(ru).toFixed(3)}</strong>.`;
+  }
+  s1.addEventListener("input", draw);
+  s2.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- §1.5: the lesson's autoencoder on the pentagon toy, swept over λ (train_sae, 5 latents) ---- */
+function lamChart(P) {
+  const rows = [
+    [0.003, 0.905, 0.0, 1.98], [0.01, 0.8, 0.0, 1.86], [0.03, 0.792, 0.001, 1.78], [0.1, 0.868, 0.014, 1.87],
+    [0.2, 0.891, 0.051, 1.63], [0.3, 0.993, 0.106, 1.07], [0.6, 0.979, 0.236, 0.76], [1.0, 0.92, 0.536, 0.54],
+  ];
+  P.lineChart(document.getElementById("lam-chart"), {
+    series: [
+      { name: "worst feature match (cosine)", points: rows.map((r) => [r[0], r[1]]) },
+      { name: "variance unexplained", points: rows.map((r) => [r[0], r[2]]) },
+      { name: "latents active per example", points: rows.map((r) => [r[0], r[3]]) },
+    ],
+    xLabel: "penalty λ", yLabel: "value", logX: true, yMin: 0, yMax: 2, width: 380, height: 260,
+    xFmt: (v) => String(+v.toPrecision(2)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("lam-readout"), ariaLabel: "Worst feature match, unexplained variance and active latents against the sparsity penalty",
+  });
+}
+
+/* ---- §3.1: features against neurons, numbers from the article's text ---- */
+function compareBars() {
+  const cols = "8.2rem minmax(0,1fr) 3rem";
+  const striped = "background:var(--hatch) var(--wire)";
+  document.getElementById("cmp-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Solid: A/1 features. Striped: neurons.</div>` +
+    `<p class="readout" style="margin:.2rem 0">Human rubric, median (0 to 14)</p>` +
+    barRow("features", 12, 14, "", "12", cols) + barRow("neurons", 0, 14, striped, "0", cols) +
+    `<p class="readout" style="margin:.6rem 0 .2rem">Predicting pushed-up tokens, average (chance 50%)</p>` +
+    barRow("features", 74, 100, "", "74%", cols) + barRow("neurons", 58, 100, striped, "58%", cols) +
+    `<p class="readout" style="margin:.6rem 0 .2rem">Best match in the other transformer, median correlation</p>` +
+    barRow("features", 0.72, 1, "", "0.72", cols) + barRow("neurons", 0.46, 1, striped, "0.46", cols);
+}
+
+/* ---- §4.4: stepping the HTML automaton ---- */
+function fsaWidget() {
+  const steps = [
+    ["&lt;", "f20", "A/0/20 fires on “&lt;” and predicts a tag name."],
+    ["div", "f0", "A/0/0 fires on the tag name and predicts “&gt;”."],
+    ["&gt;", "f30", "A/0/30 fires on “&gt;” and predicts whitespace."],
+    ["⏎ tabs", "f494", "A/0/494 fires on the new line and indentation and predicts “&lt;”."],
+    ["&lt;", "f20", "Back to A/0/20: another tag opens."],
+    ["span", "f0", "A/0/0 again, on a different name."],
+    ["&gt;", "f30", "A/0/30 again: the loop could go on indefinitely."],
+  ];
+  let i = 0;
+  const out = document.getElementById("fsa-readout");
+  const light = (key) => document.querySelectorAll("#fig-fsa [data-block]").forEach((g) => g.classList.toggle("on", g.dataset.block === key));
+  function show() {
+    if (i === 0) { light(null); out.innerHTML = "Written so far: nothing. Press Next token."; return; }
+    const [, key, what] = steps[i - 1];
+    light(key);
+    out.innerHTML = `Written so far: <code>${steps.slice(0, i).map((s) => s[0]).join(" ")}</code>. ${what}`;
+  }
+  document.getElementById("fsa-step").addEventListener("click", () => { i = Math.min(steps.length, i + 1); show(); });
+  document.getElementById("fsa-reset").addEventListener("click", () => { i = 0; show(); });
+  show();
+}
+</script>
+</body>
+</html>
