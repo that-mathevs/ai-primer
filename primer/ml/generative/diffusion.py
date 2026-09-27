@@ -970,6 +970,7 @@ gap.
   https://arxiv.org/abs/2209.03003. Straight-line paths, and retraining on
   the model's own pairs to straighten the learned flow for few-step
   sampling.
+  [Annotated companion](../../../papers/rectified-flow.html)
 - **Esser et al., *Scaling Rectified Flow Transformers for High-Resolution
   Image Synthesis* (2024)**: https://arxiv.org/abs/2403.03206. Rectified
   flow with a transformer denoiser at scale: Stable Diffusion 3.

@@ -492,7 +492,7 @@ window.PRIMER_GLOSSARY = {
  "clip": {
   "def": "A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.",
   "lesson": "primer/ml/embeddings/contrastive.html",
-  "term": "CLIP"
+  "term": "clip"
  },
  "clustering": {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
@@ -683,6 +683,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Total spend divided by the number of tasks that succeeded, counting retries and cleanup.",
   "lesson": "primer/agents/cost.html",
   "term": "cost per successful task"
+ },
+ "coupling": {
+  "def": "A way of pairing draws from two distributions so that each side, on its own, still has its own distribution. Pairing noise with data at random is one coupling; sending each noise point to one definite data point is another.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "coupling"
  },
  "credit assignment": {
   "def": "Working out which of many earlier actions deserves the blame or credit for how an episode ended.",
@@ -1027,7 +1032,7 @@ window.PRIMER_GLOSSARY = {
  "euler-maruyama step": {
   "def": "The Euler step for a stochastic differential equation: move by the drift times the time step, then add a fresh random nudge whose size grows with the square root of the time step.",
   "lesson": "primer/ml/generative/diffusion.html",
-  "term": "Euler-Maruyama step"
+  "term": "euler-maruyama step"
  },
  "eval": {
   "def": "A repeatable test of a model or agent's behavior on a fixed set of tasks with known good outcomes.",
@@ -1887,7 +1892,7 @@ window.PRIMER_GLOSSARY = {
  "lipschitz": {
   "def": "A function is K-Lipschitz if its output never changes more than K times as fast as its input: a speed limit on its slope everywhere.",
   "lesson": "primer/ml/generative/gans.html",
-  "term": "lipschitz"
+  "term": "Lipschitz"
  },
  "llm": {
   "def": "Large language model: a transformer trained to predict the next token, then tuned to follow instructions.",
@@ -2884,6 +2889,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/planning.html",
   "term": "reflection"
  },
+ "reflow": {
+  "def": "Retraining a rectified flow on its own (noise, sample) pairs. The new pairs' straight lines rarely cross, so the new flow's paths are straighter and need fewer steps.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "reflow"
+ },
  "register": {
   "def": "The tiny storage right beside the arithmetic units, holding the numbers being worked on this instant.",
   "lesson": "primer/ml/hardware.html",
@@ -3297,7 +3307,7 @@ window.PRIMER_GLOSSARY = {
  "spearman correlation": {
   "def": "How well two rankings agree, from −1 (reversed) to 1 (identical).",
   "lesson": "primer/ml/metrics.html",
-  "term": "Spearman correlation"
+  "term": "spearman correlation"
  },
  "specification gaming": {
   "def": "Another name for reward hacking: satisfying the letter of an objective but not its intent.",
@@ -3892,7 +3902,7 @@ window.PRIMER_GLOSSARY = {
  "wiener process": {
   "def": "Continuous random jitter, also called Brownian motion: over any short time dt it moves by a fresh bell-curve amount with variance dt, independent of everything before.",
   "lesson": null,
-  "term": "Wiener process"
+  "term": "wiener process"
  },
  "win rate": {
   "def": "The share of head-to-head comparisons one model wins; 50% means the two are indistinguishable.",
