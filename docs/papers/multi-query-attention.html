@@ -90,7 +90,7 @@
   <li>On English-to-German translation, the decoder ran about 12 times faster per token, and quality fell only slightly (and less than any other way of shrinking the keys and values that the paper tried).</li>
 </ul>
 <h3 class="rung">Why it matters today</h3>
-<p>Sharing keys and values between heads is now standard in large language models. The in-between version, <span class="t" data-t="grouped-query attention">grouped-query attention</span>, shares one key/value head among a group of query heads; Mistral 7B uses 8 for its 32 query heads. Both descend from this paper.</p>
+<p>Sharing keys and values between heads is now standard in large language models. The in-between version, <span class="t" data-t="grouped-query attention">grouped-query attention</span>, shares one key/value head among a group of query heads; <a href="mistral-7b.html">Mistral 7B</a> uses 8 for its 32 query heads. Both descend from this paper.</p>
 </section>
 
 <section id="s1">
@@ -248,7 +248,7 @@ ratio(1)  # → 1.125
 # against its four projection tensors
 4 * d * d  # → 4194304</code></pre>
 <h4>Why it matters</h4>
-<p>The paper names two ways to push the ratio down. The 1/b term is easy: use a bigger batch, if memory allows. The n/d term is the hard one, because it comes from rereading the cache. One fix is to attend to fewer positions (a local window, as in Mistral 7B's <span class="t" data-t="sliding-window attention">sliding-window attention</span>). This paper's fix is orthogonal: keep every position, but make each position's keys and values smaller. The paper describes the cache's size as b·h·m·k = b·n²; under its own assumptions (h·k = d, m = n) that product is b·n·d per step, and the n² appears once all n steps are added up, as in the formula above.</p>
+<p>The paper names two ways to push the ratio down. The 1/b term is easy: use a bigger batch, if memory allows. The n/d term is the hard one, because it comes from rereading the cache. One fix is to attend to fewer positions (a local window, as in <a href="mistral-7b.html">Mistral 7B</a>'s <span class="t" data-t="sliding-window attention">sliding-window attention</span>). This paper's fix is orthogonal: keep every position, but make each position's keys and values smaller. The paper describes the cache's size as b·h·m·k = b·n²; under its own assumptions (h·k = d, m = n) that product is b·n·d per step, and the n² appears once all n steps are added up, as in the formula above.</p>
 </section>
 </section>
 
@@ -459,7 +459,7 @@ round(433 / 32768 * 1000, 1), round(425 / 32768 * 1000, 1)  # → (13.2, 13.0)</
   <thead><tr><th>Development</th><th>What it changed</th><th>Build it</th></tr></thead>
   <tbody>
     <tr><td><span class="t" data-t="grouped-query attention">Grouped-query attention</span> (Ainslie et al., 2023)</td><td>A middle ground: a few key/value heads, each shared by a group of query heads, recovering most of multi-head quality at most of multi-query's saving</td><td><a data-lesson="primer/ml/attention.html#MultiHeadAttention"><code>MultiHeadAttention</code></a> with 1 &lt; <code>n_kv_heads</code> &lt; <code>n_heads</code></td></tr>
-    <tr><td>Mistral 7B (2023)</td><td>32 query heads share 8 key/value heads, combined with a sliding window: the two cuts of §4.3, at scale</td><td><a data-lesson="primer/ml/efficient_architectures.html#sliding_window_decode"><code>sliding_window_decode</code></a></td></tr>
+    <tr><td><a href="mistral-7b.html">Mistral 7B</a> (2023)</td><td>32 query heads share 8 key/value heads, combined with a sliding window: the two cuts of §4.3, at scale</td><td><a data-lesson="primer/ml/efficient_architectures.html#sliding_window_decode"><code>sliding_window_decode</code></a></td></tr>
     <tr><td><a href="paged-attention.html">PagedAttention</a> (2023)</td><td>Once the cache is smaller, the next problem is packing many sequences' caches into memory without waste</td><td><a data-lesson="primer/ml/inference.html#kv_cache_bytes">KV-cache memory</a></td></tr>
     <tr><td><span class="t" data-t="multi-head latent attention">Multi-head latent attention</span> (DeepSeek-V2, 2024)</td><td>Cache one small latent vector per token and rebuild every head's keys and values from it</td><td><a data-lesson="primer/ml/efficient_architectures.html#LatentKVAttention"><code>LatentKVAttention</code></a></td></tr>
     <tr><td><a href="flashattention.html">FlashAttention</a> (2022)</td><td>A different memory problem: the n × n score matrix in training and prefill, solved by computing attention in tiles without changing the model</td><td><a class="lesson" data-lesson="primer/ml/attention.html">attention lesson</a></td></tr>

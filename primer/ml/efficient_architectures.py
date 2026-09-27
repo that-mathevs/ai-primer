@@ -1189,6 +1189,7 @@ fraction of layers that are SSMs.
 - **Jiang et al., *Mistral 7B* (2023)**: https://arxiv.org/abs/2310.06825.
   Used sliding-window attention with a rolling-buffer cache in a strong open
   model.
+  [Annotated companion](../../papers/mistral-7b.html)
 - **Xiao et al., *Efficient Streaming Language Models with Attention Sinks*
   (2023)**: https://arxiv.org/abs/2309.17453. Found that models lean on the
   first few tokens, and that keeping them plus a window allows streaming

@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mistral 7B, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Jiang et al. (2023), Mistral 7B: grouped-query attention, sliding-window attention, a rolling-buffer cache and chunked prefill in a 7-billion-parameter open model.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>/* page-local: pressed toggles, and the grids drawn by the widgets */
+button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--fg);font-weight:600}
+.gridsvg{display:block;width:100%;max-width:420px;margin:.4rem auto}
+.gridsvg text{font-size:10px;fill:var(--fg)}
+</style>
+</head>
+<body data-paper="mistral-7b">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Architectural details</a>
+        <ol>
+          <li><a href="#s2-1">The shape of the model, and GQA</a></li>
+          <li><a href="#s2-2">Sliding window attention</a></li>
+          <li><a href="#s2-3">Rolling buffer cache</a></li>
+          <li><a href="#s2-4">Pre-fill and chunking</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Results</a>
+        <ol>
+          <li><a href="#s3-1">The benchmarks</a></li>
+          <li><a href="#s3-2">Size and efficiency</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Instruction finetuning</a></li>
+      <li><a href="#s5">5 Guardrails</a>
+        <ol>
+          <li><a href="#s5-1">5.1 A system prompt</a></li>
+          <li><a href="#s5-2">5.2 Self-reflection as a moderator</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Mistral 7B, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Jiang, Sablayrolles, Mensch, Bamford, Chaplot, de las Casas, Bressand, Lengyel, Lample, Saulnier, Renard Lavaud, Lachaux, Stock, Le Scao, Lavril, Wang, Lacroix and El Sayed (2023), <em>Mistral 7B</em>: a small open model that beat a model twice its size, built on two ways of keeping the memory of a conversation small.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2310.06825">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2310.06825">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2310.06825">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes at most a sentence or two per section (clearly marked and attributed), and explains everything in its own words. The paper is released under a CC BY 4.0 licence; its tables are reproduced with attribution, and its figures are redrawn as new interactive diagrams with new example text (the opening of Dickens's <em>A Tale of Two Cities</em>, which is in the public domain). Every section heading links to the original.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to or tap any dotted word for a plain-English definition. Most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap, and so does every symbol in every equation.</li>
+  <li>Three of the paper's figures are redrawn as widgets: a <strong>window explorer</strong> in §2 with sliders for the window and the number of layers, a <strong>rolling buffer</strong> you can step through, and the <strong>chunked prefill</strong> mask, one chunk at a time.</li>
+</ul>
+<p>You will get the most from this page after the <a href="multi-query-attention.html">multi-query attention companion</a> (the idea behind grouped-query attention) and the sliding-window section of <a class="lesson" data-lesson="primer/ml/efficient_architectures.html">the efficient architectures lesson</a>, which builds every mechanism here in code. Every idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825">original</a></span></h2>
+<blockquote class="quote">“Mistral 7B outperforms the best open 13B model (Llama 2) across all evaluated benchmarks, and the best released 34B model (Llama 1) in reasoning, mathematics, and code generation.”<cite>Jiang et al. (2023), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two cars finish a race level. One has an engine twice the size. The smaller one is not just as good, it is cheaper to run for every mile afterwards. This paper's claim is that a language model's size should be judged the same way: not only by how well it scores, but by what it costs every time someone uses it.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A model with about 7 billion <span class="t" data-t="parameters">parameters</span> scores higher than Llama 2 13B on the benchmarks the authors ran (with one near-tie, below), and than Llama 1 34B in several categories.</li>
+  <li>Its attention uses <span class="t" data-t="grouped-query attention">grouped-query attention</span> (GQA) for faster generation and <span class="t" data-t="sliding-window attention">sliding-window attention</span> (SWA) so that long sequences cost less.</li>
+  <li>A version <span class="t" data-t="fine-tuning">fine-tuned</span> to follow instructions, Mistral 7B Instruct, beats Llama 2 13B Chat on human and automated comparisons.</li>
+  <li>The weights are released under the <span class="t" data-tip-title="Apache 2.0" data-tip="A permissive open-source licence: anyone may use, modify and redistribute the work, including commercially, as long as they keep the licence and notices.">Apache 2.0</span> licence.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The paper says little about how the model was trained (nothing about its training data) and a lot about the machinery of cheap inference. That machinery, sharing key/value heads and bounding the cache, is what this page is mostly about, and it is now common across open models.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A restaurant can serve more diners by hiring a bigger kitchen, or by redesigning the kitchen it has. The introduction argues that the field has mostly been building bigger kitchens (larger models), which raises the cost of every meal (<span class="t" data-t="latency">latency</span> and compute per answer), and that careful design can deliver the same food from a smaller one.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The two design choices each target one of the costs from the <a href="multi-query-attention.html">multi-query attention paper</a>. GQA shrinks <em>how big</em> each remembered token is: with 32 query heads sharing 8 key/value heads, every token's entry in the <span class="t" data-t="kv cache">KV cache</span> is 4 times smaller, so more conversations fit on a GPU at once, raising <span class="t" data-t="throughput">throughput</span>. SWA limits <em>how many</em> tokens each layer looks at, so the attention work and the cache stop growing with the length of the text.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The paper also points to deployment: a reference implementation, and serving through vLLM, the system built on <a href="paged-attention.html">PagedAttention</a>. Efficiency here is not a side note; it is the product.</p>
+</section>
+
+<section id="s2">
+<h2>2 Architectural details <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S2">original</a></span></h2>
+<p>Mistral 7B is a <span class="t" data-t="transformer">transformer</span>, and the paper describes it by how it differs from Llama. Everything it lists is about attention and its cache.</p>
+
+<section id="s2-1">
+<h3>The shape of the model, and GQA <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S2.T1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A model's shape is a short list of numbers, like a building's floor plan: how many floors, how wide each floor, how many rooms. From that list alone you can work out how much memory the model needs to remember each token of a conversation.</p>
+<div class="tablewrap"><table>
+  <caption>Table 1, reproduced with attribution (Jiang et al., 2023, CC BY 4.0): model architecture</caption>
+  <thead><tr><th>Parameter</th><th class="num">Value</th><th>What it means</th></tr></thead>
+  <tbody>
+    <tr><td><code>dim</code></td><td class="num">4,096</td><td>width of each token's vector</td></tr>
+    <tr><td><code>n_layers</code></td><td class="num">32</td><td>transformer blocks stacked</td></tr>
+    <tr><td><code>head_dim</code></td><td class="num">128</td><td>width of one attention head</td></tr>
+    <tr><td><code>hidden_dim</code></td><td class="num">14,336</td><td>inner width of each <span class="t" data-t="feed-forward network">feed-forward network</span></td></tr>
+    <tr><td><code>n_heads</code></td><td class="num">32</td><td>query heads per layer (32 × 128 = 4,096)</td></tr>
+    <tr class="hl"><td><code>n_kv_heads</code></td><td class="num">8</td><td>key/value heads per layer, each shared by 4 query heads</td></tr>
+    <tr class="hl"><td><code>window_size</code></td><td class="num">4,096</td><td>how far back each layer can look</td></tr>
+    <tr><td><code>context_len</code></td><td class="num">8,192</td><td>the <span class="t" data-t="context window">context length</span> listed for the model</td></tr>
+    <tr><td><code>vocab_size</code></td><td class="num">32,000</td><td>tokens in the <span class="t" data-t="vocabulary">vocabulary</span></td></tr>
+  </tbody>
+</table></div>
+<h4>Tiny example</h4>
+<p>Every token leaves behind one key and one value per key/value head in every layer. With 8 key/value heads of 128 numbers, 32 layers, and 16-bit numbers (2 bytes, an assumption: the paper does not state the precision), that is 2 × 32 × 8 × 128 × 2 = 131,072 bytes, <strong>128 KiB per token</strong>. If each of the 32 query heads kept its own keys and values, it would be 512 KiB.</p>
+<div class="eq" data-tex="\text{KV bytes per token} = \htmlData{sym=two}{2} \cdot \htmlData{sym=L}{L} \cdot \htmlData{sym=Hkv}{H_{kv}} \cdot \htmlData{sym=dh}{d_h} \cdot \htmlData{sym=bytes}{b}" data-fallback="KV bytes per token = 2 · L · H_kv · d_h · b"></div>
+<div class="eq" data-tex="\htmlData{sym=g}{g} = \frac{\htmlData{sym=H}{H}}{\htmlData{sym=Hkv}{H_{kv}}}" data-fallback="g = H / H_kv"></div>
+<div class="symtable" data-syms="two,L,Hkv,dh,bytes,H,g"></div>
+<p class="inwords"><strong>In words:</strong> “a key and a value, per key/value head, per layer, at so many bytes per number; and each key/value head is shared by g query heads.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 2 × 32 × 8 × 128 × 2 = 131,072 bytes; with H<sub>kv</sub> = H = 32 it would be 524,288. The group size is g = 32 / 8 = <strong>4</strong>, and the cache is 4 times smaller.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>L, H, H_kv, d_h, b = 32, 32, 8, 128, 2
+per_token = 2 * L * H_kv * d_h * b
+per_token  # → 131072
+# in KiB
+per_token / 1024  # → 128.0
+# if every query head had its own keys and values
+2 * L * H * d_h * b  # → 524288
+# query heads per key/value head
+g = H // H_kv
+g  # → 4</code></pre>
+<h4>Why it matters</h4>
+<p>Grouped-query attention sits between the two designs of the <a href="multi-query-attention.html">multi-query attention paper</a>: one key/value head per query head (multi-head) and one for all of them (multi-query). The paper cites Ainslie et al. (2023) for it and uses it, in its words, to accelerate inference and allow higher batch sizes. The primer's <a data-lesson="primer/ml/attention.html#MultiHeadAttention"><code>MultiHeadAttention</code></a> is grouped-query attention whenever <code>n_kv_heads</code> is smaller than <code>n_heads</code>, and <a data-lesson="primer/ml/inference.html#kv_cache_bytes_per_token"><code>kv_cache_bytes_per_token</code></a> is the formula above.</p>
+</section>
+
+<section id="s2-2">
+<h3>Sliding window attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S2.p2">original</a></span></h3>
+<blockquote class="quote">“SWA exploits the stacked layers of a transformer to attend information beyond the window size W.”<cite>Jiang et al. (2023), §2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A rumour passes down a line of people, but each person only talks to the few people nearest them. Nobody speaks to the far end of the line directly, yet the rumour gets there, one short hop at a time. In sliding-window attention each token, in each layer, attends only to a window of nearby earlier tokens. Because each layer reads the <em>previous layer's</em> results, which already mixed in their own neighbours, information hops further back with every layer.</p>
+<h4>Tiny example</h4>
+<p>Twelve tokens: “It was the best of times it was the worst of times”, numbered 0 to 11. With a window of 3, as in the paper's Figure 1, token 11 (“times”) reads tokens 9, 10 and 11 in each layer. After one layer it has heard from token 9; token 9 had itself heard from token 7 in the layer below; so after two layers token 11 reaches token 7, and after three layers token 5. Each layer adds 2 positions of reach.</p>
+<div class="plot" id="fig1">
+  <div class="controls"><label for="swa-w">window W = <strong id="swa-w-v">3</strong></label><input type="range" id="swa-w" min="2" max="6" step="1" value="3"></div>
+  <div class="controls"><label for="swa-k">layers k = <strong id="swa-k-v">3</strong></label><input type="range" id="swa-k" min="1" max="5" step="1" value="3"></div>
+  <svg id="swa-mask" class="gridsvg" viewBox="0 0 300 300" role="img" aria-label="One layer's sliding-window mask over twelve tokens"></svg>
+  <svg id="swa-stack" class="gridsvg" viewBox="0 0 300 180" role="img" aria-label="Which input tokens can reach the last token after k layers"></svg>
+  <p class="readout" id="swa-readout"></p>
+  <p class="legend" style="margin:.4rem 0 0">Figure 1 of the paper (the sliding-window mask and the effective context length), redrawn with new example text. Based on Jiang et al. (2023), Figure 1 (CC BY 4.0).</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the upper grid is one layer's mask, like the middle panel of the paper's figure: a row for each token doing the looking, a column for each token being looked at, filled where a score is computed; row 11, the token followed below, is drawn darker. It is a band of width W along the diagonal, never above it (no token sees the future). The lower picture stacks the layers, with the input at the bottom and the last layer on top. The filled cells in each row are the tokens that can still influence token 11 at the top: at every layer down, the band spreads W − 1 positions further back, so the bottom row shows everything token 11 can hear. Slide the window up and each layer's band widens; add layers and the reach grows in steps. With W = 3 and three layers, token 11 hears from tokens 5 to 11, and tokens 0 to 4 are out of reach, yet no single layer ever looked more than 2 positions back.</p>
+<div class="eq" data-tex="\htmlData{sym=hik}{h_i^{(k)}} \text{ attends to } \htmlData{sym=hjk}{h_j^{(k-1)}} \text{ for } \htmlData{sym=i}{i} - \htmlData{sym=W}{W} \le \htmlData{sym=j}{j} \le \htmlData{sym=i}{i}" data-fallback="h_i^(k) attends to h_j^(k−1) for i − W ≤ j ≤ i"></div>
+<div class="eq" data-tex="\text{span} = \htmlData{sym=W}{W} \times \htmlData{sym=kL}{k}" data-fallback="span = W × k"></div>
+<div class="symtable" data-syms="hik,hjk,i,j,W,kL"></div>
+<p class="inwords"><strong>In words:</strong> “the state at position i in layer k reads the previous layer's states from W positions back up to itself; stacking k such layers lets information travel up to W times k positions.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Mistral 7B has W = 4,096 and 32 layers, so the span is 4,096 × 32 = 131,072 tokens, the paper's “approximately 131K”. The widget, the paper's figures and the primer's lesson count the window as W positions <em>including the token itself</em>, which reaches W − 1 back per layer: 32 × 4,095 = 131,040. The paper's text counts from i − W to i, which is W + 1 positions. Either way the answer is about 131 thousand tokens from a window of 4 thousand.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>W, k = 4096, 32
+# the paper's span: W × k
+W * k  # → 131072
+# counting the window as W positions including the token itself
+k * (W - 1)  # → 131040
+# the tiny example: W = 3 (itself and 2 back), token 11, three layers
+w, layers, i = 3, 3, 11
+i - layers * (w - 1)  # → 5</code></pre>
+<p><strong>What it saves.</strong> The paper reports that at a sequence length of 16K with W = 4,096, changes it made to FlashAttention and xFormers give a 2x speed-up over a vanilla attention baseline. Counting pairs gives a sense of why (this page's own arithmetic, not a measurement): a full causal mask over 16,384 tokens scores 134 million query-key pairs per head, a window of 4,096 scores 58.7 million, 2.3 times fewer.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>n, W = 16384, 4096
+# full causal attention: token i reads i + 1 tokens
+full = sum(i + 1 for i in range(n))
+# sliding window: token i reads at most W tokens
+window = sum(min(i + 1, W) for i in range(n))
+full, window  # → (134225920, 58722304)
+round(full / window, 2)  # → 2.29</code></pre>
+<h4>Why it matters</h4>
+<p>The window turns attention's cost from growing with the square of the length to growing in proportion to it, while stacked layers keep a long, if indirect, reach. The price is that a fact from far back must survive several hops to arrive. The lesson builds the band with <a data-lesson="primer/ml/efficient_architectures.html#sliding_window_mask"><code>sliding_window_mask</code></a>, counts it with <a data-lesson="primer/ml/efficient_architectures.html#pairs_computed"><code>pairs_computed</code></a>, and checks the reach by applying the mask layer after layer in <a data-lesson="primer/ml/efficient_architectures.html#receptive_field"><code>receptive_field</code></a>, the same computation as the widget. The idea itself comes from earlier work the paper cites, Sparse Transformers and Longformer.</p>
+</section>
+
+<section id="s2-3">
+<h3>Rolling buffer cache <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S2.p3">original</a></span></h3>
+<blockquote class="quote">“On a sequence length of 32k tokens, this reduces the cache memory usage by 8x, without impacting the model quality.”<cite>Jiang et al. (2023), §2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A whiteboard with room for exactly W notes. When it is full, the next note is written over the oldest one. Since no layer ever looks more than W tokens back, the notes that get erased are exactly the ones nobody will read again.</p>
+<h4>Tiny example</h4>
+<p>With W = 4, token i goes into slot i mod 4, the remainder after dividing by 4. Tokens 0 to 3 fill slots 0 to 3. Token 4 (“of”) goes into slot 0, over token 0 (“It”); token 9 (“worst”) goes into slot 1, over token 5 (“times”). The board never grows.</p>
+<div class="plot" id="fig2">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center">
+    <button type="button" id="buf-step">Next token</button>
+    <button type="button" id="buf-reset">Reset</button>
+  </div>
+  <svg id="buf-svg" class="gridsvg" viewBox="0 0 300 132" role="img" aria-label="A rolling buffer of four slots holding the keys and values of the last four tokens"></svg>
+  <p class="readout" id="buf-readout"></p>
+  <p class="legend" style="margin:.4rem 0 0">Figure 2 of the paper (the rolling buffer cache), redrawn with new example text. Based on Jiang et al. (2023), Figure 2 (CC BY 4.0).</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> press <em>Next token</em> to generate one more token. The four boxes are the whole cache. The slot just written is filled solid, as the latest token is coloured in the paper's figure, and the row of words below shows the text so far, with the tokens still in the cache underlined. From token 4 on, each new token lands in slot i mod 4 and erases the token exactly four positions earlier, which has just left the window. The cache never holds more than four tokens, however long the text grows.</p>
+<div class="eq" data-tex="\htmlData{sym=slot}{\text{slot}}(\htmlData{sym=i}{i}) = \htmlData{sym=i}{i} \htmlData{sym=mod}{\bmod} \htmlData{sym=W}{W}" data-fallback="slot(i) = i mod W"></div>
+<div class="eq" data-tex="\text{tokens cached} = \htmlData{sym=min}{\min}(\htmlData{sym=n}{n}, \htmlData{sym=W}{W})" data-fallback="tokens cached = min(n, W)"></div>
+<div class="symtable" data-syms="slot,i,mod,W,min,n"></div>
+<p class="inwords"><strong>In words:</strong> “token i's keys and values go into slot i mod W, so the cache holds the last W tokens once there are more than W of them, and all of them before that.”</p>
+<p class="inwords"><strong>With the numbers:</strong> W = 4: tokens 4 and 9 land in slots 0 and 1. For Mistral 7B at n = 32,768 tokens, the cache holds 4,096 of them instead of 32,768: <strong>8 times less</strong>, the paper's figure. At 128 KiB per token (the GQA example above) that is 0.54 GB instead of 4.3 GB per sequence.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>W = 4
+# slot(i) = i mod W
+[i % W for i in range(12)]  # → [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]
+# Mistral 7B at 32k tokens
+W, n = 4096, 32768
+n / min(n, W)  # → 8.0
+per_token = 131072
+# gigabytes cached, with and without the buffer
+round(min(n, W) * per_token / 1e9, 2), round(n * per_token / 1e9, 2)  # → (0.54, 4.29)</code></pre>
+<h4>Why it matters</h4>
+<p>This is what makes the window pay off in memory, not only in compute: the cache has a fixed size, so a server knows in advance how much memory a conversation can ever need. The lesson's <a data-lesson="primer/ml/efficient_architectures.html#sliding_window_decode"><code>sliding_window_decode</code></a> generates token by token with exactly this buffer and checks that its outputs match the masked attention, and <a data-lesson="primer/ml/efficient_architectures.html#cache_bytes_by_method"><code>cache_bytes_by_method</code></a> plots the flat line it produces against every other design. One detail on the page of the paper: its text says Figure 2 shows W = 3, while the figure and its caption use W = 4.</p>
+</section>
+
+<section id="s2-4">
+<h3>Pre-fill and chunking <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S2.p4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The model writes its answer one token at a time, but the prompt is known in full before it starts, so its keys and values can be computed in advance: the <span class="t" data-t="prefill">prefill</span>. A very long prompt would need a very large block of attention scores all at once, so the paper cuts it into pieces and pre-fills them one after another, like reading a long letter a page at a time while keeping the last page in mind.</p>
+<h4>Tiny example</h4>
+<p>The 12-token sentence is split into three <span class="t" data-tip-title="Chunked prefill" data-tip="Processing a long prompt in fixed-size pieces instead of all at once. Each piece attends to itself and to the cached keys and values of the pieces before it, which caps the size of each attention computation.">chunks</span> of 4 (the paper chooses the chunk size equal to the window, here 4): “It was the best”, “of times it was”, “the worst of times”. When the third chunk is processed, its tokens attend to themselves with an ordinary <span class="t" data-t="causal mask">causal mask</span>, to the second chunk (now sitting in the cache) through the sliding window, and not at all to the first chunk, which is out of reach.</p>
+<div class="plot" id="fig3">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center">
+    <span>Chunk being pre-filled:</span>
+    <button type="button" data-chunk="0" aria-pressed="false">1</button>
+    <button type="button" data-chunk="1" aria-pressed="false">2</button>
+    <button type="button" data-chunk="2" aria-pressed="true">3</button>
+  </div>
+  <svg id="chunk-svg" class="gridsvg" viewBox="0 0 300 118" role="img" aria-label="The attention mask for one chunk of the prompt, over the past, the cache and the current chunk"></svg>
+  <p class="readout" id="chunk-readout"></p>
+  <p class="legend" style="margin:.4rem 0 0">Figure 3 of the paper (pre-fill and chunking), redrawn with new example text. Based on Jiang et al. (2023), Figure 3 (CC BY 4.0).</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each row is one token of the chunk being pre-filled, each column one token of the whole prompt, and a filled cell (marked 1) is a score that gets computed. The dashed lines split the columns into the <em>past</em> (chunks already dropped from the cache), the <em>cache</em> (the previous chunk) and the <em>current</em> chunk. For chunk 3 the current block is a lower triangle (causal), the cache block is an upper triangle (the window reaches into the previous chunk less and less as you go down), and the past block is empty. Together each row has exactly 4 filled cells: the same window as always. Chunk 1 has no cache to look at, and chunk 2 has no past.</p>
+<div class="eq" data-tex="\text{scores per chunk} \le \htmlData{sym=C}{C} \times (\htmlData{sym=W}{W} + \htmlData{sym=C}{C})" data-fallback="scores per chunk ≤ C × (W + C)"></div>
+<div class="symtable" data-syms="C,W"></div>
+<p class="inwords"><strong>In words:</strong> “each of the C tokens in a chunk is scored against at most the W cached tokens plus the C tokens of the chunk.” (This bound is this page's accounting; the paper draws it rather than writing it.)</p>
+<p class="inwords"><strong>With the numbers:</strong> in the tiny example, C = W = 4: at most 4 × 8 = 32 cells, of which the figure fills 16 (4 per row). For a 16,384-token prompt with C = W = 4,096, the largest block of scores is 4,096 × 8,192 = 33.5 million per head, against 16,384² = 268 million for the whole prompt at once: 8 times smaller.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def block(C, W):
+    # C queries against W cached keys plus the C keys of the chunk
+    return C * (W + C)
+block(4, 4)  # → 32
+n, C, W = 16384, 4096, 4096
+block(C, W), n * n  # → (33554432, 268435456)
+n * n // block(C, W)  # → 8</code></pre>
+<h4>Why it matters</h4>
+<p>Chunking caps the size of every attention computation during prefill, and with the rolling buffer it caps the cache too, so a prompt of any length fits in fixed memory. With the chunk size equal to the window, the rolling buffer holds exactly the previous chunk when the next one arrives, which is all the window can reach. The <a class="lesson" data-lesson="primer/ml/inference.html">inference lesson</a> explains why prefill and decode behave so differently in the first place.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S3">original</a></span></h2>
+
+<section id="s3-1">
+<h3>The benchmarks <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To compare two students fairly, you give them the same exams, marked the same way. The authors re-ran every model, their own and Llama's, through their own evaluation pipeline, rather than copying numbers from other papers. The exams are grouped into categories:</p>
+<ul>
+  <li><strong>Commonsense reasoning</strong> (<span class="t" data-t="zero-shot">0-shot</span>): HellaSwag, Winogrande, PIQA, SIQA, OpenbookQA, ARC-Easy, ARC-Challenge, CommonsenseQA.</li>
+  <li><strong>World knowledge</strong> (5-shot): NaturalQuestions, TriviaQA.</li>
+  <li><strong>Reading comprehension</strong> (0-shot): BoolQ, QuAC.</li>
+  <li><strong>Maths</strong>: <span class="t" data-t="gsm8k">GSM8K</span> (8-shot, <span class="t" data-t="maj@k">maj@8</span>) and MATH (4-shot, maj@4).</li>
+  <li><strong>Code</strong>: HumanEval (0-shot) and MBPP (3-shot). The <a href="humaneval-pass-at-k.html">HumanEval companion</a> explains how code is scored.</li>
+  <li><strong>Aggregated</strong>: <a href="mmlu.html">MMLU</a> (5-shot), BBH (3-shot), and AGI Eval (3 to 5 shots, English multiple-choice only).</li>
+</ul>
+<p>“5-shot” means five worked examples are placed in the <span class="t" data-t="few-shot prompt">prompt</span> before each question; “maj@8” means eight answers are sampled and the most common one counts.</p>
+<div class="tablewrap"><table>
+  <caption>Table 2, reproduced with attribution (Jiang et al., 2023, CC BY 4.0): Mistral 7B against Llama models</caption>
+  <thead><tr><th>Model</th><th class="num">MMLU</th><th class="num">HellaSwag</th><th class="num">WinoG</th><th class="num">PIQA</th><th class="num">Arc-e</th><th class="num">Arc-c</th><th class="num">NQ</th><th class="num">TriviaQA</th><th class="num">HumanEval</th><th class="num">MBPP</th><th class="num">MATH</th><th class="num">GSM8K</th></tr></thead>
+  <tbody>
+    <tr><td>Llama 2 7B</td><td class="num">44.4</td><td class="num">77.1</td><td class="num">69.5</td><td class="num">77.9</td><td class="num">68.7</td><td class="num">43.2</td><td class="num">24.7</td><td class="num">63.8</td><td class="num">11.6</td><td class="num">26.1</td><td class="num">3.9</td><td class="num">16.0</td></tr>
+    <tr><td>Llama 2 13B</td><td class="num">55.6</td><td class="num">80.7</td><td class="num">72.9</td><td class="num">80.8</td><td class="num">75.2</td><td class="num">48.8</td><td class="num">29.0</td><td class="num">69.6</td><td class="num">18.9</td><td class="num">35.4</td><td class="num">6.0</td><td class="num">34.3</td></tr>
+    <tr><td>Code Llama 7B (fine-tuned)</td><td class="num">36.9</td><td class="num">62.9</td><td class="num">62.3</td><td class="num">72.8</td><td class="num">59.4</td><td class="num">34.5</td><td class="num">11.0</td><td class="num">34.9</td><td class="num">31.1</td><td class="num">52.5</td><td class="num">5.2</td><td class="num">20.8</td></tr>
+    <tr class="hl"><td>Mistral 7B</td><td class="num">60.1</td><td class="num">81.3</td><td class="num">75.3</td><td class="num">83.0</td><td class="num">80.0</td><td class="num">55.5</td><td class="num">28.8</td><td class="num">69.9</td><td class="num">30.5</td><td class="num">47.5</td><td class="num">13.1</td><td class="num">52.2</td></tr>
+  </tbody>
+</table></div>
+<p>All numbers are accuracies in percent. Pick a benchmark to compare the four models:</p>
+<div class="plot" id="bench-plot">
+  <div class="controls"><label for="bench-pick">benchmark</label><select id="bench-pick"></select></div>
+  <div id="bench-bars"></div>
+  <p class="readout" id="bench-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is one model's accuracy on the chosen benchmark, on an axis from 0 to 100%, with its name on the left and its score on the right; Mistral 7B's bar is solid and the others are striped. On most benchmarks Mistral's bar is the longest, and on MMLU it leads Llama 2 13B by 4.5 points. Choose <em>HumanEval</em> or <em>MBPP</em> and Code Llama 7B, a model fine-tuned for code, comes out ahead, with Mistral close behind; Code Llama trails well behind on everything that is not code. Choose <em>NQ</em> (NaturalQuestions, a knowledge test) and Mistral's 28.8 sits just below Llama 2 13B's 29.0, the one column where the caption's “outperforms Llama 2 13B on all metrics” does not hold in its own table.</p>
+<h4>Why it matters</h4>
+<p>The paper lists two places where its evaluation differs from Llama 2's own: MBPP uses the hand-verified subset, and TriviaQA is asked without Wikipedia passages. Scores from different pipelines are not directly comparable, which is why re-running every model matters. The <a class="lesson" data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> covers what such numbers can and cannot tell you.</p>
+</section>
+
+<section id="s3-2">
+<h3>Size and efficiency <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S3.p4">original</a></span></h3>
+<blockquote class="quote">“On the Knowledge benchmarks, Mistral 7B’s performance achieves a lower compression rate of 1.9x, which is likely due to its limited parameter count that restricts the amount of knowledge it can store.”<cite>Jiang et al. (2023), §3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Line up the Llama 2 family by size (7B, 13B, 70B) and draw the curve of their scores. Put Mistral 7B's score on that curve and read off where a Llama 2 model would have to sit to score the same. That imaginary Llama's size is Mistral's <span class="t" data-tip-title="Equivalent model size" data-tip="The size a Llama 2 model would need, reading along the curve of the real Llama 2 sizes, to match Mistral 7B's score on a benchmark. The paper's measure of how efficiently Mistral uses its parameters.">equivalent model size</span>.</p>
+<h4>Tiny example</h4>
+<p>The paper's Figure 5 does this for four categories. On MMLU, Mistral's 60.1 matches a Llama 2 of about 23B, 3.3 times its size. On reasoning it matches about 38B (5.4 times), on comprehension about 21B (3 times), and on knowledge only 13B (1.9 times).</p>
+<div class="eq" data-tex="\text{compression} = \frac{\htmlData{sym=Neq}{N_{\text{equiv}}}}{\htmlData{sym=N7}{N_{\text{Mistral}}}}" data-fallback="compression = N_equiv / N_Mistral"></div>
+<div class="symtable" data-syms="Neq,N7"></div>
+<p class="inwords"><strong>In words:</strong> “how many times bigger a Llama 2 model would have to be to match Mistral 7B.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 23 / 7 = 3.3; 38 / 7 = 5.4; 21 / 7 = 3.0; 13 / 7 = 1.9, the ratios printed on the paper's figure.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>N_mistral = 7
+equivalent = {"MMLU": 23, "reasoning": 38, "comprehension": 21, "knowledge": 13}
+{k: round(v / N_mistral, 1) for k, v in equivalent.items()}  # → {'MMLU': 3.3, 'reasoning': 5.4, 'comprehension': 3.0, 'knowledge': 1.9}</code></pre>
+<div class="tablewrap"><table>
+  <caption>Equivalent Llama 2 sizes, read from the labels of Figure 5 (Jiang et al., 2023, CC BY 4.0)</caption>
+  <thead><tr><th>Category</th><th class="num">Equivalent Llama 2 size</th><th class="num">Compression</th></tr></thead>
+  <tbody>
+    <tr><td>Reasoning</td><td class="num">38B</td><td class="num">5.4×</td></tr>
+    <tr><td>MMLU</td><td class="num">23B</td><td class="num">3.3×</td></tr>
+    <tr><td>Comprehension</td><td class="num">21B</td><td class="num">3×</td></tr>
+    <tr class="hl"><td>Knowledge</td><td class="num">13B</td><td class="num">1.9×</td></tr>
+  </tbody>
+</table></div>
+<h4>Why it matters</h4>
+<p>The pattern is the interesting part. Skills (reasoning, reading, maths) compress well into a small model; facts do not, because every fact has to be stored somewhere in the weights. This is also why a small model paired with retrieval, which looks facts up instead of memorising them, is a common design (the <a class="lesson" data-lesson="primer/agents/rag.html">RAG lesson</a> builds one).</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Instruction finetuning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A <span class="t" data-t="base model">base model</span> continues text; it has not learned to answer. <span class="t" data-t="instruction tuning">Instruction tuning</span> trains it further on examples of instructions paired with good answers. The authors did this with public instruction datasets from Hugging Face, and say they used no proprietary data or special tricks, to show how easily the base model adapts.</p>
+<h3 class="rung">Tiny example</h3>
+<div class="tablewrap"><table>
+  <caption>Table 3, reproduced with attribution (Jiang et al., 2023, CC BY 4.0): chat models</caption>
+  <thead><tr><th>Model</th><th class="num">Chatbot Arena Elo</th><th class="num">MT-Bench</th></tr></thead>
+  <tbody>
+    <tr><td>WizardLM 13B v1.2</td><td class="num">1047</td><td class="num">7.2</td></tr>
+    <tr class="hl"><td>Mistral 7B Instruct</td><td class="num">1031</td><td class="num">6.84 ± 0.07</td></tr>
+    <tr><td>Llama 2 13B Chat</td><td class="num">1012</td><td class="num">6.65</td></tr>
+    <tr><td>Vicuna 13B</td><td class="num">1041</td><td class="num">6.57</td></tr>
+    <tr><td>Llama 2 7B Chat</td><td class="num">985</td><td class="num">6.27</td></tr>
+    <tr><td>Vicuna 7B</td><td class="num">997</td><td class="num">6.17</td></tr>
+    <tr><td>Alpaca 13B</td><td class="num">914</td><td class="num">4.53</td></tr>
+  </tbody>
+</table></div>
+<p><span class="t" data-tip-title="MT-Bench" data-tip="A set of multi-turn questions whose answers are graded from 1 to 10 by a strong language model acting as judge.">MT-Bench</span> is graded by a model acting as judge (the <a href="llm-as-judge.html">LLM-as-a-judge companion</a> covers it); the <span class="t" data-t="arena">Chatbot Arena</span> rating comes from people voting between two anonymous answers, turned into an <span class="t" data-t="elo rating">Elo rating</span>. Mistral 7B Instruct has the best MT-Bench score of the 7B models and sits between the 13B chat models. In a separate human comparison on llmboxing.com, as of 6 October 2023, people preferred Mistral 7B Instruct's answer 5,020 times and Llama 2 13B Chat's 4,143 times.</p>
+<div class="eq" data-tex="\htmlData{sym=PA}{P(A \text{ wins})} = \frac{1}{1 + 10^{(\htmlData{sym=RB}{R_B} - \htmlData{sym=RA}{R_A})/400}}" data-fallback="P(A wins) = 1 / (1 + 10^((R_B − R_A)/400))"></div>
+<div class="symtable" data-syms="PA,RA,RB"></div>
+<p class="inwords"><strong>In words:</strong> “the chance that A's answer is preferred depends only on the gap between the two ratings; every 400 points multiplies the odds by ten.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Mistral 7B Instruct (1031) against Llama 2 13B Chat (1012): a 19-point gap predicts that Mistral wins <strong>52.7%</strong> of comparisons. In the separate llmboxing comparison it won 5,020 of 9,163 votes, <strong>54.8%</strong>: the same direction, from different questions and different voters.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>R_A, R_B = 1031, 1012
+P_A = 1 / (1 + 10 ** ((R_B - R_A) / 400))
+round(P_A, 3)  # → 0.527
+# the human comparison on llmboxing.com
+round(5020 / (5020 + 4143), 3)  # → 0.548</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>A strong base model plus a simple, public fine-tune gave a competitive chat model. Much of what a chat model can do is already in the base model; instruction tuning mostly teaches it the format. The <a class="lesson" data-lesson="primer/ml/training_stages.html">training stages lesson</a> walks through pretraining, instruction tuning and preference tuning in order.</p>
+</section>
+
+<section id="s5">
+<h2>5 Adding guardrails for front-facing applications <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S5">original</a></span></h2>
+
+<section id="s5-1">
+<h3>5.1 A system prompt to enforce guardrails <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S5.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Before a new employee meets customers, a manager gives them a few sentences of standing instructions. A <span class="t" data-t="system prompt">system prompt</span> is that briefing for a model, and a <span class="t" data-t="guardrail">guardrail</span> is any rule that keeps its output in bounds. The paper's recommended briefing is four sentences:</p>
+<blockquote class="quote">“Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity.”<cite>Jiang et al. (2023), §5.1</cite></blockquote>
+<h4>Tiny example</h4>
+<div class="tablewrap"><table>
+  <caption>Table 4, reproduced with attribution (Jiang et al., 2023, CC BY 4.0): MT-Bench of Mistral 7B Instruct under different system prompts, mean of 10 runs</caption>
+  <thead><tr><th>System prompt</th><th class="num">MT-Bench</th></tr></thead>
+  <tbody>
+    <tr><td>none</td><td class="num">6.84 ± 0.07</td></tr>
+    <tr><td>Llama 2's system prompt</td><td class="num">6.38 ± 0.07</td></tr>
+    <tr class="hl"><td>Mistral's system prompt</td><td class="num">6.58 ± 0.05</td></tr>
+  </tbody>
+</table></div>
+<p>With its system prompt, the model declined all of a set of 175 unsafe prompts, at a cost of 0.26 MT-Bench points (about 4%) in helpfulness; Llama 2's system prompt, given to the same model, cost 0.46. The paper's example of the difference: asked how to kill a Linux process, Mistral 7B Instruct with its prompt explains the <code>kill</code> command, while Llama 2 13B Chat with its own prompt refuses. With no system prompt, both models answer correctly.</p>
+<h4>Why it matters</h4>
+<p>Guardrails move a model along a trade-off between usefulness and caution; refusing a harmless question about operating systems is the cost of leaning too far. The <a class="lesson" data-lesson="primer/agents/guardrails.html">guardrails lesson</a> builds input and output checks around a model rather than relying on the prompt alone.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 Content moderation with self-reflection <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S5.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The same model can be asked to act as a moderator: given a prompt, or an answer, say whether it is acceptable or falls into one of three categories (illegal activities, hateful or violent content, unqualified legal, medical or financial advice). The paper calls this <span class="t" data-tip-title="Self-reflection" data-tip="In this paper: prompting the model to classify a user's prompt, or its own generated answer, as acceptable or as belonging to a harmful category.">self-reflection</span>.</p>
+<h4>Tiny example</h4>
+<p>On the authors' balanced set of adversarial and ordinary prompts, counting acceptable prompts as positives, it reached a <span class="t" data-t="precision">precision</span> of 99.4% and a <span class="t" data-t="recall">recall</span> of 95.6%. The paper does not give counts, so take 1,000 acceptable prompts as an illustration: recall 95.6% means 956 of them are let through (44 wrongly flagged), and precision 99.4% means that among everything let through, about 6 were not acceptable.</p>
+<div class="eq" data-tex="\text{precision} = \frac{\htmlData{sym=TP}{TP}}{\htmlData{sym=TP}{TP} + \htmlData{sym=FP}{FP}}" data-fallback="precision = TP / (TP + FP)"></div>
+<div class="eq" data-tex="\text{recall} = \frac{\htmlData{sym=TP}{TP}}{\htmlData{sym=TP}{TP} + \htmlData{sym=FN}{FN}}" data-fallback="recall = TP / (TP + FN)"></div>
+<div class="symtable" data-syms="TP,FP,FN"></div>
+<p class="inwords"><strong>In words:</strong> “precision is the share of prompts let through that deserved it; recall is the share of acceptable prompts that were let through.”</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative counts): TP = 956, FN = 44, FP = 6: precision = 956 / 962 = 99.4%, recall = 956 / 1,000 = 95.6%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># illustrative counts matching the paper's rates
+TP, FN, FP = 956, 44, 6
+round(100 * TP / (TP + FP), 1)  # → 99.4
+round(100 * TP / (TP + FN), 1)  # → 95.6</code></pre>
+<h4>Why it matters</h4>
+<p>Because acceptable prompts are the positives, high precision means very little harmful content slips through as “acceptable”, and the 95.6% recall means about one acceptable prompt in 23 is wrongly flagged. The paper notes that users can choose which categories to filter for their own application. The <a class="lesson" data-lesson="primer/ml/metrics.html">metrics lesson</a> explains precision and recall and the trade-off between them.</p>
+</section>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06825#S6">original</a></span></h2>
+<blockquote class="quote">“…the problem is rather 3 dimensional (model capabilities, training cost, inference cost)…”<cite>Jiang et al. (2023), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Choosing a car by price and speed alone ignores what it costs to fuel. Earlier work on <span class="t" data-t="scaling law">scaling laws</span> (the paper cites Hoffmann et al., 2022, the <a href="scaling-laws.html">Chinchilla</a> study) asked how to get the best model for a fixed <em>training</em> budget. The authors add a third axis: what the model costs every time it is used.</p>
+<h3 class="rung">Tiny example</h3>
+<p>A model is trained once but may then answer millions of questions, so its inference bill keeps growing after its training bill has stopped. A 7B model that matches a 13B one costs roughly half as much per answer, for as long as it is used. The paper concludes that language models may compress knowledge more than was previously thought, and that much remains to be explored in getting the best performance from the smallest model.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Inference cost is now a first-class design goal, and every mechanism in §2 is an answer to it. The <a data-lesson="primer/ml/efficient_architectures.html#cache_bytes_by_method">efficient architectures lesson</a> compares them all on one chart.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Idea</th><th>Where it went</th><th>Build it</th></tr></thead>
+  <tbody>
+    <tr><td>Grouped-query attention</td><td>A common default for open models; the primer's running example, a Llama-3-8B-shaped model, uses 8 key/value heads for 32 query heads, exactly as Mistral 7B does</td><td><a data-lesson="primer/ml/attention.html#MultiHeadAttention"><code>MultiHeadAttention</code></a></td></tr>
+    <tr><td>Sliding windows with a rolling buffer</td><td>Later model families interleave sliding-window layers with a few full-attention layers, keeping exact long-range lookups where they are needed</td><td><a data-lesson="primer/ml/efficient_architectures.html#sliding_window_decode"><code>sliding_window_decode</code></a></td></tr>
+    <tr><td>Windows plus a few kept tokens</td><td><span class="t" data-t="attention sink">Attention sinks</span> (Xiao et al., 2023) keep the first few tokens alongside the window so generation can stream without limit</td><td><a data-lesson="primer/ml/efficient_architectures.html#global_local_mask"><code>global_local_mask</code></a></td></tr>
+    <tr><td>Bounded memory per conversation</td><td>Serving systems such as vLLM pack many such caches into GPU memory</td><td><a href="paged-attention.html">PagedAttention companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, Lélio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas Wang, Timothée Lacroix and William El Sayed, <em>Mistral 7B</em>, 2023. <a href="https://arxiv.org/abs/2310.06825">arXiv:2310.06825</a>, released under CC BY 4.0. Quotations are brief and attributed; Tables 1 to 4 are reproduced with attribution; figures are redrawn with new example text. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    // GQA
+    two: { tex: "2", name: "Key and value", meaning: "Each token stores two vectors per key/value head: a key and a value.", shape: "a constant", example: "2" },
+    L: { tex: "L", name: "Layers", meaning: "Every layer keeps its own keys and values for every token.", shape: "a whole number", example: "32 (n_layers)" },
+    Hkv: { tex: "H_{kv}", name: "Key/value heads", meaning: "How many separate sets of keys and values each layer stores.", shape: "a whole number", example: "8 (n_kv_heads)" },
+    dh: { tex: "d_h", name: "Head width", meaning: "How many numbers are in one key or one value.", shape: "a whole number", example: "128 (head_dim)" },
+    bytes: { tex: "b", name: "Bytes per number", meaning: "Storage for one number. 2 bytes at 16-bit precision, which this page assumes; the paper does not state it.", shape: "bytes", example: "2" },
+    H: { tex: "H", name: "Query heads", meaning: "How many attention heads ask their own question in each layer.", shape: "a whole number", example: "32 (n_heads)" },
+    g: { tex: "g", name: "Group size", meaning: "How many query heads share one key/value head. 1 is ordinary multi-head attention; H is multi-query attention.", shape: "a whole number that divides H", example: "32 / 8 = 4" },
+    // SWA
+    hik: { tex: "h_i^{(k)}", name: "Hidden state at position i, layer k", meaning: "The vector for token i after layer k. The superscript in brackets is a layer number, not a power.", shape: "a vector of 4,096 numbers", example: "token 11, “times”, in layer 3" },
+    hjk: { tex: "h_j^{(k-1)}", name: "Hidden state at position j, the layer below", meaning: "What position j looked like after the previous layer. Attention in layer k reads these.", shape: "a vector of 4,096 numbers", example: "tokens 9 and 10 in layer 2" },
+    i: { tex: "i", name: "Position of the token", meaning: "Where the token doing the looking sits in the sequence, counting from 0.", shape: "0, 1, 2, …", example: "11" },
+    j: { tex: "j", name: "Position being looked at", meaning: "An earlier position the token may read. Never later than i: the window is causal.", shape: "0 … i", example: "9, 10, 11" },
+    W: { tex: "W", name: "Window size", meaning: "How far back one layer can look. The paper's text counts from i − W to i; its figures count W positions including i.", shape: "a whole number", example: "4,096 in the model; 3 or 4 in the figures" },
+    kL: { tex: "k", name: "Number of layers stacked", meaning: "How many windowed layers the information passes through. (Here k counts layers, not a key width.)", shape: "a whole number", example: "32" },
+    // rolling buffer
+    slot: { tex: "\\text{slot}", name: "Cache slot", meaning: "Which of the W fixed places in the cache holds a token's keys and values.", shape: "0 … W − 1", example: "token 9 → slot 1 when W = 4" },
+    mod: { tex: "\\bmod", name: "Modulo", meaning: "The remainder after division: 9 mod 4 = 1, because 9 = 2 × 4 + 1. It wraps positions round the buffer like hours round a clock.", shape: "an operation", example: "9 mod 4 = 1" },
+    min: { tex: "\\min", name: "Minimum", meaning: "The smaller of the two numbers.", shape: "an operation", example: "min(32,768, 4,096) = 4,096" },
+    n: { tex: "n", name: "Sequence length", meaning: "How many tokens have been processed so far.", shape: "a whole number", example: "32,768" },
+    // chunking
+    C: { tex: "C", name: "Chunk size", meaning: "How many prompt tokens are pre-filled together. The paper suggests choosing it equal to the window.", shape: "a whole number", example: "4 in the figure, 4,096 for the model" },
+    // effective size
+    Neq: { tex: "N_{\\text{equiv}}", name: "Equivalent Llama 2 size", meaning: "The size, in billions of parameters, a Llama 2 model would need to match Mistral 7B, read off the Llama 2 curve in Figure 5.", shape: "billions of parameters", example: "23 on MMLU" },
+    N7: { tex: "N_{\\text{Mistral}}", name: "Mistral's size", meaning: "Mistral 7B's parameter count, taken as 7 billion in the paper's ratios.", shape: "billions of parameters", example: "7" },
+    // Elo
+    PA: { tex: "P(A \\text{ wins})", name: "Chance A is preferred", meaning: "The expected share of head-to-head comparisons that model A wins.", shape: "0 to 1", example: "0.527" },
+    RA: { tex: "R_A", name: "Rating of A", meaning: "Model A's Elo rating from Chatbot Arena.", shape: "a number, around 1,000", example: "1031 (Mistral 7B Instruct)" },
+    RB: { tex: "R_B", name: "Rating of B", meaning: "Model B's Elo rating.", shape: "a number, around 1,000", example: "1012 (Llama 2 13B Chat)" },
+    // precision and recall
+    TP: { tex: "TP", name: "True positives", meaning: "Acceptable prompts that the moderator let through.", shape: "a count", example: "956 (illustrative)" },
+    FP: { tex: "FP", name: "False positives", meaning: "Prompts let through as acceptable that were not.", shape: "a count", example: "6 (illustrative)" },
+    FN: { tex: "FN", name: "False negatives", meaning: "Acceptable prompts wrongly flagged as harmful.", shape: "a count", example: "44 (illustrative)" },
+  },
+
+  blocks: {},
+
+  onReady() {
+    swaWidget();
+    bufferWidget();
+    chunkWidget();
+    benchBars();
+  },
+};
+
+const WORDS = ["It", "was", "the", "best", "of", "times", "it", "was", "the", "worst", "of", "times"];
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text !== undefined) e.textContent = text; return e; };
+const cell = (svg, x, y, s, on, strong) => svg.appendChild(el("rect", { x: x + 0.8, y: y + 0.8, width: s - 1.6, height: s - 1.6, rx: 2,
+  style: on ? `fill:${strong ? "var(--attn-stroke)" : "var(--attn)"};stroke:var(--attn-stroke)` : "fill:var(--card);stroke:var(--border)" }));
+
+/* ---- Figure 1: one layer's mask, and the reach of token 11 through k layers ---- */
+function swaWidget() {
+  const n = WORDS.length, wS = document.getElementById("swa-w"), kS = document.getElementById("swa-k");
+  const mask = document.getElementById("swa-mask"), stack = document.getElementById("swa-stack"), out = document.getElementById("swa-readout");
+  // A window of W positions including the token itself, as in the paper's figures and the lesson.
+  const allowed = (i, j, w) => j <= i && i - j < w;
+  function draw() {
+    const w = +wS.value, k = +kS.value;
+    document.getElementById("swa-w-v").textContent = w;
+    document.getElementById("swa-k-v").textContent = k;
+    mask.textContent = "";
+    const s = 20, x0 = 50, y0 = 50;
+    WORDS.forEach((t, j) => {
+      mask.appendChild(el("text", { x: x0 + j * s + s / 2, y: y0 - 6, "text-anchor": "middle" }, String(j)));
+      mask.appendChild(el("text", { x: x0 - 6, y: y0 + j * s + 14, "text-anchor": "end" }, `${j} ${t}`));
+    });
+    mask.appendChild(el("text", { x: x0 + (n * s) / 2, y: 16, "text-anchor": "middle" }, "key: the token being looked at"));
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) cell(mask, x0 + j * s, y0 + i * s, s, allowed(i, j, w), i === n - 1);
+    // Reach: which positions in each layer can still influence token 11 at the top.
+    stack.setAttribute("viewBox", `0 0 300 ${30 + (k + 1) * 22}`);
+    stack.textContent = "";
+    let live = new Set([n - 1]);
+    const rows = [live];
+    for (let l = 0; l < k; l++) {
+      const next = new Set();
+      live.forEach((i) => { for (let j = 0; j < n; j++) if (allowed(i, j, w)) next.add(j); });
+      live = next;
+      rows.push(live);
+    }
+    const s2 = 20, sx = 50;
+    rows.forEach((set, r) => {
+      const y = 8 + r * 22, layer = k - r;
+      stack.appendChild(el("text", { x: sx - 6, y: y + 14, "text-anchor": "end" }, layer === 0 ? "input" : `layer ${layer}`));
+      for (let j = 0; j < n; j++) cell(stack, sx + j * s2, y, s2, set.has(j), r === 0);
+    });
+    WORDS.forEach((t, j) => stack.appendChild(el("text", { x: sx + j * s2 + s2 / 2, y: 8 + (k + 1) * 22 + 12, "text-anchor": "middle" }, String(j))));
+    const first = Math.min(...rows[rows.length - 1]);
+    out.innerHTML = `W = ${w}: each token reads itself and ${w - 1} before it (row 11 of the mask). After ${k} layer${k > 1 ? "s" : ""}, token 11 hears from tokens <strong>${first} to 11</strong>, a reach of ${k} × ${w - 1} = <strong>${k * (w - 1)}</strong> positions${first === 0 ? " (the whole sentence)" : `; tokens 0 to ${first - 1} are out of reach`}.`;
+  }
+  wS.addEventListener("input", draw);
+  kS.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- Figure 2: the rolling buffer, W = 4 ---- */
+function bufferWidget() {
+  const W = 4, svg = document.getElementById("buf-svg"), out = document.getElementById("buf-readout");
+  // Start part-way through, so the first picture already shows a slot being reused.
+  let t = 5;
+  function draw() {
+    svg.textContent = "";
+    const slots = new Array(W).fill(null);
+    for (let i = 0; i <= t; i++) slots[i % W] = i;
+    for (let s = 0; s < W; s++) {
+      const x = 16 + s * 70, i = slots[s], newest = i === t && t >= 0;
+      svg.appendChild(el("rect", { x, y: 10, width: 60, height: 46, rx: 6, style: newest ? "fill:var(--attn-stroke);stroke:var(--attn-stroke)" : i === null ? "fill:var(--card);stroke:var(--border)" : "fill:var(--attn);stroke:var(--attn-stroke)" }));
+      svg.appendChild(el("text", { x: x + 30, y: 30, "text-anchor": "middle", style: newest ? "fill:var(--card);font-weight:600" : "" }, i === null ? "empty" : WORDS[i]));
+      svg.appendChild(el("text", { x: x + 30, y: 47, "text-anchor": "middle", style: newest ? "fill:var(--card)" : "" }, i === null ? "" : `token ${i}`));
+      svg.appendChild(el("text", { x: x + 30, y: 72, "text-anchor": "middle" }, `slot ${s}`));
+    }
+    // The text so far, with the cached tokens underlined.
+    let x = 8;
+    for (let i = 0; i <= Math.max(t, 0) && t >= 0; i++) {
+      const row = i < 6 ? 0 : 1, word = WORDS[i];
+      if (i === 6) x = 8;
+      const w = word.length * 7 + 10, y = 100 + row * 24;
+      svg.appendChild(el("text", { x: x + w / 2, y, "text-anchor": "middle", style: `font-size:12px;${t - i < W ? "font-weight:600;text-decoration:underline" : "opacity:.55"}` }, word));
+      x += w;
+    }
+    if (t < 0) out.innerHTML = "The cache is empty. Press <strong>Next token</strong>.";
+    else if (t < W) out.innerHTML = `Token ${t} (“${WORDS[t]}”) goes into slot ${t} mod ${W} = <strong>${t % W}</strong>, an empty slot. ${t + 1} of ${W} slots used.`;
+    else out.innerHTML = `Token ${t} (“${WORDS[t]}”) goes into slot ${t} mod ${W} = <strong>${t % W}</strong>, overwriting token ${t - W} (“${WORDS[t - W]}”), which has just left the window. Still ${W} slots.`;
+    document.getElementById("buf-step").disabled = t >= WORDS.length - 1;
+  }
+  document.getElementById("buf-step").addEventListener("click", () => { t = Math.min(t + 1, WORDS.length - 1); draw(); });
+  document.getElementById("buf-reset").addEventListener("click", () => { t = -1; draw(); });
+  draw();
+}
+
+/* ---- Figure 3: the mask for one chunk of the prompt, chunks of 4, window of 4 ---- */
+function chunkWidget() {
+  const C = 4, W = 4, svg = document.getElementById("chunk-svg"), out = document.getElementById("chunk-readout");
+  function draw(c) {
+    svg.textContent = "";
+    const s = 19, x0 = 58, y0 = 34, n = WORDS.length;
+    WORDS.forEach((t, j) => svg.appendChild(el("text", { x: x0 + j * s + s / 2, y: y0 - 6, "text-anchor": "middle" }, String(j))));
+    const bounds = [[0, (c - 1) * C, "past"], [(c - 1) * C, c * C, "cache"], [c * C, (c + 1) * C, "current"]];
+    bounds.forEach(([a, b, name]) => {
+      if (b <= a || b <= 0) return;
+      const lo = Math.max(a, 0);
+      svg.appendChild(el("text", { x: x0 + ((lo + b) / 2) * s, y: 12, "text-anchor": "middle" }, name));
+    });
+    let filled = 0;
+    for (let r = 0; r < C; r++) {
+      const i = c * C + r;
+      svg.appendChild(el("text", { x: x0 - 6, y: y0 + r * s + 13, "text-anchor": "end" }, `${i} ${WORDS[i]}`));
+      for (let j = 0; j < n; j++) {
+        const on = j <= i && i - j < W;
+        if (on) filled++;
+        cell(svg, x0 + j * s, y0 + r * s, s, on, false);
+        if (on) svg.appendChild(el("text", { x: x0 + j * s + s / 2, y: y0 + r * s + 13, "text-anchor": "middle" }, "1"));
+      }
+    }
+    [c * C - C, c * C].forEach((b) => { if (b > 0) svg.appendChild(el("path", { d: `M${x0 + b * s},${y0 - 4} V${y0 + C * s + 4}`, class: "wire", style: "stroke-dasharray:3 3" })); });
+    const words = WORDS.slice(c * C, (c + 1) * C).join(" ");
+    const msg = [
+      `Chunk 1, “${words}”: nothing is cached yet, so it attends only to itself, with a causal mask. ${filled} scores.`,
+      `Chunk 2, “${words}”: it attends to itself (causal) and to chunk 1 in the cache, through the window. ${filled} scores, 4 per row. Nothing is in the past yet.`,
+      `Chunk 3, “${words}”: itself (causal), chunk 2 in the cache (the window's upper triangle), and nothing from chunk 1, now in the past. ${filled} scores, 4 per row.`,
+    ];
+    out.textContent = msg[c];
+    document.querySelectorAll("[data-chunk]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.chunk === c)));
+  }
+  document.querySelectorAll("[data-chunk]").forEach((b) => b.addEventListener("click", () => draw(+b.dataset.chunk)));
+  draw(2);
+}
+
+/* ---- Table 2, one benchmark at a time ---- */
+function benchBars() {
+  const cols = ["MMLU", "HellaSwag", "WinoG", "PIQA", "Arc-e", "Arc-c", "NQ", "TriviaQA", "HumanEval", "MBPP", "MATH", "GSM8K"];
+  const rows = [
+    ["Mistral 7B", [60.1, 81.3, 75.3, 83.0, 80.0, 55.5, 28.8, 69.9, 30.5, 47.5, 13.1, 52.2]],
+    ["Llama 2 13B", [55.6, 80.7, 72.9, 80.8, 75.2, 48.8, 29.0, 69.6, 18.9, 35.4, 6.0, 34.3]],
+    ["Llama 2 7B", [44.4, 77.1, 69.5, 77.9, 68.7, 43.2, 24.7, 63.8, 11.6, 26.1, 3.9, 16.0]],
+    ["Code Llama 7B", [36.9, 62.9, 62.3, 72.8, 59.4, 34.5, 11.0, 34.9, 31.1, 52.5, 5.2, 20.8]],
+  ];
+  const pick = document.getElementById("bench-pick"), bars = document.getElementById("bench-bars"), out = document.getElementById("bench-readout");
+  cols.forEach((c, i) => pick.appendChild(Object.assign(document.createElement("option"), { value: i, textContent: c })));
+  function draw() {
+    const i = +pick.value;
+    bars.innerHTML = rows.map(([name, v]) => {
+      const style = name === "Mistral 7B" ? "" : "background:var(--hatch) var(--wire)";
+      return `<div class="share-row" style="grid-template-columns:7.5rem minmax(0,1fr) 3rem"><span>${name}</span><div><div class="share-bar" style="width:${v[i].toFixed(1)}%;${style}"></div></div><span>${v[i].toFixed(1)}</span></div>`;
+    }).join("");
+    const best = rows.reduce((a, b) => (b[1][i] > a[1][i] ? b : a));
+    const m = rows[0][1][i], l13 = rows[1][1][i];
+    out.innerHTML = `${cols[i]}: highest is <strong>${best[0]}</strong> (${best[1][i].toFixed(1)}%). Mistral 7B against Llama 2 13B: ${m.toFixed(1)} vs ${l13.toFixed(1)}, ${m >= l13 ? "+" : "−"}${Math.abs(m - l13).toFixed(1)} points.`;
+  }
+  pick.addEventListener("change", draw);
+  draw();
+}
+</script>
+</body>
+</html>
