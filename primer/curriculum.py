@@ -347,8 +347,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.agents.coding_agents",
 
     # agents, running them
-    "primer.agents.evals",
-    "primer.agents.guardrails",
     "primer.agents.cost",
     "primer.agents.observability",
     "primer.agents.deployment",
