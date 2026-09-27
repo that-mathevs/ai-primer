@@ -239,6 +239,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/regularization.html",
   "term": "benchmark contamination"
  },
+ "bert": {
+  "def": "An encoder-only transformer trained to fill in hidden words using the text on both sides of them; the ancestor of many embedding and classification models.",
+  "lesson": "primer/ml/transformer.html",
+  "term": "BERT"
+ },
  "bertscore": {
   "def": "Compares generated and reference text by embedding similarity instead of exact words.",
   "lesson": "primer/ml/metrics.html",
@@ -448,6 +453,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "clustering"
+ },
+ "cnn": {
+  "def": "Convolutional neural network: a network built from convolutions, small learned filters slid across an image to find local patterns wherever they appear.",
+  "lesson": "primer/ml/cnn_rnn.html",
+  "term": "CNN"
  },
  "co-adaptation": {
   "def": "When neurons learn to depend on each other's exact behaviour, each correcting the others' quirks; it fits the training data but breaks on new data.",
@@ -1434,6 +1444,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/retrieval.html",
   "term": "IDF"
  },
+ "imagenet": {
+  "def": "A benchmark of about 1.3 million photos in 1,000 categories, the standard test of image classifiers; ImageNet-21k is its 14-million-photo, 21,000-category superset.",
+  "lesson": "primer/ml/cnn_rnn.html",
+  "term": "ImageNet"
+ },
  "implicit reward": {
   "def": "In DPO, β times the log of how much more likely training has made a response than the reference model did.",
   "lesson": "primer/ml/training_stages.html",
@@ -1453,6 +1468,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A pointer name like \"live\" that search uses, so switching indexes means repointing one name.",
   "lesson": "primer/ml/embeddings/operations.html",
   "term": "index alias"
+ },
+ "inductive bias": {
+  "def": "The assumptions built into a model before it sees any data, such as a convolution's belief that nearby pixels matter most. Good assumptions help with little data; with enough data a model can learn them instead.",
+  "lesson": "primer/ml/cnn_rnn.html",
+  "term": "inductive bias"
  },
  "inertia": {
   "def": "The total squared distance from each point to its cluster's center: the quantity k-means minimizes.",
@@ -1998,6 +2018,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Replacing one feed-forward network with many expert networks and a router that sends each token to a few of them.",
   "lesson": "primer/ml/transformer.html",
   "term": "Mixture of Experts"
+ },
+ "mlp": {
+  "def": "Multilayer perceptron: layers of neurons stacked so each layer's outputs feed the next, with a nonlinearity in between.",
+  "lesson": "primer/ml/neural_net.html",
+  "term": "MLP"
  },
  "modality": {
   "def": "One kind of input a model can take: text, images, audio or video.",
@@ -2729,6 +2754,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/multimodal.html",
   "term": "residual vector quantization"
  },
+ "resnet": {
+  "def": "A deep convolutional network built from residual blocks (x + f(x)), which made networks of a hundred layers and more trainable.",
+  "lesson": "primer/ml/deep_nets.html",
+  "term": "ResNet"
+ },
  "resolved rate": {
   "def": "The share of tasks whose patch passes every hidden fail-to-pass and pass-to-pass test.",
   "lesson": "primer/agents/coding_agents.html",
@@ -3354,10 +3384,20 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/evals.html",
   "term": "trajectory"
  },
+ "transfer learning": {
+  "def": "Training a model on a large general task first, then reusing it (usually by fine-tuning) on a smaller task it was never trained for.",
+  "lesson": "primer/ml/training_stages.html",
+  "term": "transfer learning"
+ },
  "transformer": {
   "def": "The neural network architecture behind modern language models: stacked blocks of attention followed by a small feed-forward network.",
   "lesson": "primer/ml/transformer.html",
   "term": "transformer"
+ },
+ "translation equivariance": {
+  "def": "Shift the input and the output shifts the same way: a convolution finds an edge wherever it sits, because the same filter slides over every position.",
+  "lesson": "primer/ml/cnn_rnn.html",
+  "term": "translation equivariance"
  },
  "transpose": {
   "def": "Flip a matrix so its rows become columns. Written with a superscript T.",

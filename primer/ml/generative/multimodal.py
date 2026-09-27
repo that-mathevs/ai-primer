@@ -1010,6 +1010,7 @@ split the video and summarise the parts.
   Image Recognition at Scale* (2020)**: https://arxiv.org/abs/2010.11929.
   Showed that a plain transformer over image patches matches convolutional
   networks when trained on enough data: the Vision Transformer.
+  [Annotated companion](../../../papers/vit.html)
 - **Radford et al., *Learning Transferable Visual Models From Natural
   Language Supervision* (CLIP, 2021)**: https://arxiv.org/abs/2103.00020.
   Trained an image encoder and a text encoder into one shared space; its

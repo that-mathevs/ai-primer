@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>An Image is Worth 16x16 Words, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Dosovitskiy et al. (2020), the paper that fed image patches to a plain transformer and introduced the Vision Transformer (ViT).">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .vit-canvas { max-width: 420px; margin: 0.4rem auto; image-rendering: auto; }
+  #dist-canvas { cursor: crosshair; touch-action: none; }
+  .vit-choices { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  /* Charts are drawn narrow so their labels stay legible on a phone; on a wide screen they stop growing. */
+  .plot svg[role="slider"] { max-width: 600px; margin: 0 auto; }
+</style>
+</head>
+<body data-paper="vit">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Method</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Vision Transformer</a></li>
+          <li><a href="#s3-2">3.2 Fine-tuning and higher resolution</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Setup</a></li>
+          <li><a href="#s4-2">4.2 Against the state of the art</a></li>
+          <li><a href="#s4-3">4.3 How much data?</a></li>
+          <li><a href="#s4-4">4.4 Scaling study</a></li>
+          <li><a href="#s4-5">4.5 Looking inside</a></li>
+          <li><a href="#s4-6">4.6 Self-supervision</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Conclusion</a></li>
+      <li><a href="#appendix">Appendices, briefly</a></li>
+      <li><a href="#today">What changed since 2020</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>An Image is Worth 16x16 Words, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Dosovitskiy, Beyer, Kolesnikov, Weissenborn, Zhai, Unterthiner, Dehghani, Minderer, Heigold, Gelly, Uszkoreit and Houlsby (2020), the paper that cut images into patches, read them with a plain transformer, and introduced the Vision Transformer.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2010.11929">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2010.11929">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2010.11929">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. Equations are reproduced with every symbol decoded; the paper's figures are redrawn from scratch, several of them plotted from the numbers in its own appendix tables; and only a few selected rows of its tables appear, each with attribution. Every section links to the original: read it alongside.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols, a sentence reading it aloud, the numbers of a tiny example, and the same example in a few lines of Python.</li>
+  <li>The pictures are live: hover or tap the parts of the architecture diagram, change the patch size, and move the query patch in the attention picture.</li>
+</ul>
+<p>The running example is the one the <a class="lesson" data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> builds in code: a 4×4 grayscale picture whose pixels are the numbers 0 to 15, cut into four 2×2 patches.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“We show that this reliance on CNNs is not necessary and a pure transformer applied directly to sequences of image patches can perform very well on image classification tasks.”<cite>Dosovitskiy et al. (2020), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2010.11929">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Cut a photo into a grid of small square tiles, as if it were a jigsaw, and lay the tiles out in a row like the words of a sentence. Now hand that row to the same <span class="t" data-t="transformer">transformer</span> that reads text. That is the whole idea of the <span class="t" data-t="vision transformer">Vision Transformer</span>. The title's joke is the arithmetic: each tile is 16×16 pixels, and each tile becomes one “word”.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A transformer with almost no image-specific design can classify images as well as the best <span class="t" data-t="cnn">convolutional networks</span>.</li>
+  <li>The catch: it needs a lot of pre-training data. On about a million images it trails similar-sized <span class="t" data-t="resnet">ResNets</span>; on tens to hundreds of millions it overtakes them.</li>
+  <li>Once there is enough data it is also cheaper: the best ViT reached 88.55% on <span class="t" data-t="imagenet">ImageNet</span> using several times less pre-training compute than the convolutional networks it beat.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The image half of most vision-language models is a ViT, often the one trained inside <a href="clip.html">CLIP</a>; diffusion transformers generate images as grids of patches; video models cut patches through time. The <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> builds the ViT front end from scratch.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S1">original</a></span></h2>
+<blockquote class="quote">“We find that large scale training trumps inductive bias.”<cite>Dosovitskiy et al. (2020), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A <span class="t" data-t="convolution">convolution</span> is a flashlight that sweeps a photo looking for one small pattern, and it comes with two beliefs built in before it has seen a single image: nearby pixels matter most, and a pattern means the same thing wherever it appears. Those beliefs are its <span class="t" data-t="inductive bias">inductive bias</span>. A transformer has almost none: every patch may look at every other patch from the first layer on, and it must <em>learn</em> which neighbours matter. A student who is told the rules learns faster from a few examples; a student who has to discover them needs many more examples, but is not stuck with rules that are only mostly right.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The paper tests that trade with three pre-training sets of very different size: ImageNet with 1.3 million images, ImageNet-21k with 14 million, and an internal set, JFT-300M, with 303 million. From the smallest to the largest is a factor of about 230.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># pre-training set sizes, in millions of images
+imagenet, imagenet_21k, jft = 1.3, 14, 303
+round(jft / imagenet)  # → 233</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>“Given enough data, fewer built-in assumptions win” became one of the decade's recurring lessons. It is why a single architecture now reads text, images, audio and video, and why data, rather than clever structure, is where so much of the effort goes.</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S2">original</a></span></h2>
+<blockquote class="quote">“Naive application of self-attention to images would require that each pixel attends to every other pixel.”<cite>Dosovitskiy et al. (2020), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p><span class="t" data-t="self-attention">Self-attention</span> compares every token with every other, so its cost grows with the <em>square</em> of the number of tokens. Treat every pixel as a token and a photo becomes a sentence tens of thousands of words long. Earlier work shrank the problem with special attention patterns (only nearby pixels, only along rows and columns), which worked but needed custom code to run fast. The paper's shortcut is blunt: make the tokens bigger.</p>
+<h3 class="rung">Tiny example</h3>
+<p>A 224×224 image has 50,176 pixels. Attention over pixels would score 50,176<sup>2</sup> ≈ 2.5 billion pairs in every layer. Cut into 16×16 patches it is 196 tokens, 197 with the extra classification token below, and 197<sup>2</sup> = 38,809 pairs: about 65,000 times fewer.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>pixels = 224 * 224
+pixels  # → 50176
+# every pixel scored against every pixel
+print(f"{pixels ** 2:,}")  # → 2,517,630,976
+# 196 patches plus the classification token
+tokens = (224 // 16) ** 2 + 1
+tokens ** 2  # → 38809
+round(pixels ** 2 / tokens ** 2)  # → 64872</code></pre>
+<h3 class="rung">What sits nearby</h3>
+<ul>
+  <li>Cordonnier et al. (2020) used 2×2 patches and full self-attention: the same model in spirit, but only for small images, and without the large-scale pre-training that makes ViT competitive.</li>
+  <li>Image GPT (Chen et al., 2020) ran a transformer over pixels of shrunken images as a generative model, reaching 72% on ImageNet.</li>
+  <li>Many hybrids added attention to CNNs, or ran attention on a CNN's output, rather than replacing the CNN.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The patch is the unit every later vision and multimodal transformer inherited, and the quadratic cost is why patch size is still a cost dial: see the <a data-lesson="primer/ml/attention.html">attention lesson</a> for where the n<sup>2</sup> comes from.</p>
+</section>
+
+<section id="s3">
+<h2>3 Method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S3">original</a></span></h2>
+<blockquote class="quote">“In model design we follow the original Transformer (Vaswani et al. 2017) as closely as possible.”<cite>Dosovitskiy et al. (2020), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Read the picture below from the bottom up, the way data flows. The only new parts are at the bottom (cutting and flattening the image, one learned projection) and at the top (reading off a class). Everything in between is the transformer encoder of 2017, unchanged.</p>
+<figure class="ix wide" id="fig-arch">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 670" role="img" aria-label="The Vision Transformer: an image cut into patches, projected, given positions and a class token, read by a transformer encoder, and classified by an MLP head">
+    <defs><marker id="arrv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <!-- the flow, bottom up -->
+    <path class="wire" d="M180,586 V568" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,540 V524" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,492 V474" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,406 V356" marker-end="url(#arrv)"/>
+    <text x="188" y="398" class="lbl">all N + 1 tokens</text>
+    <path class="wire" d="M180,328 V308" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,278 V267" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,247 V230" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,202 V184" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,154 V145" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,364 H86 V256 H169" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,240 H86 V134 H169" marker-end="url(#arrv)"/>
+    <path class="wire" d="M180,125 V92" marker-end="url(#arrv)"/>
+    <text x="188" y="105" class="lbl">slot 0 only</text>
+    <path class="wire" d="M180,62 V38" marker-end="url(#arrv)"/>
+    <!-- the encoder -->
+    <g class="blk frame" data-block="enc"><rect x="64" y="112" width="232" height="272" rx="12"/></g>
+    <text x="70" y="379" class="lbl">Encoder</text>
+    <g class="blk" data-block="lx"><rect x="304" y="232" width="40" height="26" rx="6" fill="var(--card)" stroke="var(--wire)"/><text x="324" y="249" text-anchor="middle">L×</text></g>
+    <g class="blk norm" data-block="ln"><rect x="130" y="328" width="100" height="26" rx="6"/><text x="180" y="345" text-anchor="middle">Norm</text></g>
+    <g class="blk attn" data-block="msa"><rect x="106" y="278" width="148" height="28" rx="6"/><text x="180" y="296" text-anchor="middle">Multi-Head Attention</text></g>
+    <g class="blk pe" data-block="res"><circle cx="180" cy="256" r="9"/><text x="180" y="260" text-anchor="middle">+</text></g>
+    <g class="blk norm" data-block="ln"><rect x="130" y="202" width="100" height="26" rx="6"/><text x="180" y="219" text-anchor="middle">Norm</text></g>
+    <g class="blk ff" data-block="mlp"><rect x="130" y="154" width="100" height="28" rx="6"/><text x="180" y="172" text-anchor="middle">MLP</text></g>
+    <g class="blk pe" data-block="res"><circle cx="180" cy="134" r="9"/><text x="180" y="138" text-anchor="middle">+</text></g>
+    <!-- head and output -->
+    <g class="blk lin" data-block="head"><rect x="130" y="62" width="100" height="28" rx="6"/><text x="180" y="80" text-anchor="middle">MLP Head</text></g>
+    <g class="blk plain" data-block="out"><rect x="100" y="8" width="160" height="28" rx="6"/><text x="180" y="27" text-anchor="middle">class: bird, ball, car…</text></g>
+    <!-- the input sequence -->
+    <g class="blk soft" data-block="cls"><rect x="20" y="406" width="40" height="46" rx="6"/><text x="40" y="433" text-anchor="middle">0 *</text></g>
+    <g class="blk lin" data-block="tokens">
+      <rect x="66" y="406" width="26" height="46" rx="5"/><text x="79" y="433" text-anchor="middle">1</text>
+      <rect x="96" y="406" width="26" height="46" rx="5"/><text x="109" y="433" text-anchor="middle">2</text>
+      <rect x="126" y="406" width="26" height="46" rx="5"/><text x="139" y="433" text-anchor="middle">3</text>
+      <rect x="156" y="406" width="26" height="46" rx="5"/><text x="169" y="433" text-anchor="middle">4</text>
+      <rect x="186" y="406" width="26" height="46" rx="5"/><text x="199" y="433" text-anchor="middle">5</text>
+      <rect x="216" y="406" width="26" height="46" rx="5"/><text x="229" y="433" text-anchor="middle">6</text>
+      <rect x="246" y="406" width="26" height="46" rx="5"/><text x="259" y="433" text-anchor="middle">7</text>
+      <rect x="276" y="406" width="26" height="46" rx="5"/><text x="289" y="433" text-anchor="middle">8</text>
+      <rect x="306" y="406" width="26" height="46" rx="5"/><text x="319" y="433" text-anchor="middle">9</text>
+    </g>
+    <g class="blk emb" data-block="pos"><rect x="20" y="456" width="312" height="18" rx="5"/><text x="176" y="469" text-anchor="middle" class="lbl">+ position embedding for slots 0 … 9</text></g>
+    <g class="blk ff" data-block="proj"><rect x="64" y="492" width="232" height="30" rx="6"/><text x="180" y="511" text-anchor="middle">Linear projection E</text></g>
+    <g class="blk plain" data-block="flat">
+      <rect x="70" y="540" width="20" height="26" rx="3"/><rect x="94" y="540" width="20" height="26" rx="3"/><rect x="118" y="540" width="20" height="26" rx="3"/>
+      <rect x="142" y="540" width="20" height="26" rx="3"/><rect x="166" y="540" width="20" height="26" rx="3"/><rect x="190" y="540" width="20" height="26" rx="3"/>
+      <rect x="214" y="540" width="20" height="26" rx="3"/><rect x="238" y="540" width="20" height="26" rx="3"/><rect x="262" y="540" width="20" height="26" rx="3"/>
+      <text x="290" y="557" class="lbl">flattened</text>
+    </g>
+    <g class="blk plain" data-block="img">
+      <rect x="138" y="586" width="84" height="78" rx="4"/>
+      <path class="wire" d="M166,586 V664 M194,586 V664 M138,612 H222 M138,638 H222"/>
+      <text x="232" y="630" class="lbl">image in patches</text>
+    </g>
+  </svg>
+  <div class="panel" id="fig-arch-panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with <strong>the image</strong> at the bottom and work upwards.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn: the Vision Transformer, with one encoder layer opened up. Based on Dosovitskiy et al. (2020), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> start at the bottom. The image is cut into a grid of patches (nine here), each patch is flattened into one long row of pixel values, and one shared linear projection E turns every row into a vector of the model's width. An extra learned token, marked 0*, is put in front; then a learned position vector is added to each of the ten slots. The encoder (the dashed box, repeated L times) is the transformer's: Norm, multi-head attention, add the input back; Norm, MLP, add back. The two wires that bypass a block and rejoin at the + are the <span class="t" data-t="residual connection">residual connections</span>. At the top, only the class token's final state (slot 0) goes on to the head; the patch tokens' outputs are not used for classification at all.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Following the original transformer “as closely as possible” was a bet on engineering as much as science: every efficient transformer implementation already written for text could be reused unchanged.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Vision Transformer (ViT) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S3.SS1">original</a></span></h3>
+<h4>Cutting: how many tokens?</h4>
+<p><strong>Everyday picture:</strong> lay graph paper over the photo and cut along every sixteenth line. The number of tiles is the number of rows of tiles times the number of columns.</p>
+<div class="eq" data-tex="\htmlData{sym=Npatch}{N} = \frac{\htmlData{sym=H}{H}\,\htmlData{sym=W}{W}}{\htmlData{sym=P}{P}^2}" data-fallback="N = H W / P²"></div>
+<div class="symtable" data-syms="Npatch,H,W,P"></div>
+<p class="inwords"><strong>In words:</strong> “the number of patches is the image's area divided by one patch's area.” It is also the length of the sequence the transformer reads.</p>
+<p class="inwords"><strong>With the numbers:</strong> the worked 4×4 picture in 2×2 patches: 16 / 4 = <strong>4</strong>. A 224×224 photo in 16×16 patches: 50,176 / 256 = <strong>196</strong>. The same photo in 14×14 patches (ViT-H/14): <strong>256</strong>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the worked 4×4 picture in 2×2 patches
+H, W, P = 4, 4, 2
+H * W // P ** 2  # → 4
+H, W, P = 224, 224, 16
+H * W // P ** 2  # → 196
+P = 14
+H * W // P ** 2  # → 256</code></pre>
+<h4>Try it: patch size is a cost dial</h4>
+<div class="plot" id="fig-patches">
+  <div class="controls"><span class="vit-choices" role="group" aria-label="Patch size in pixels"><span>Patch size P:</span><button type="button" data-p="8" aria-pressed="false">8</button><button type="button" data-p="14" aria-pressed="false">14</button><button type="button" data-p="16" aria-pressed="true">16</button><button type="button" data-p="32" aria-pressed="false">32</button></span></div>
+  <canvas id="patch-canvas" class="vit-canvas" width="448" height="448" aria-label="A 224 by 224 pixel picture with the patch grid drawn over it"></canvas>
+  <p class="readout" id="patch-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the picture is a 224×224 image (drawn here, not a photo from the paper) with the patch grid laid over it. Each square becomes one token. Pick a patch size and read the numbers: halving the patch side quadruples the tokens, and the attention work, which grows with the square of the sequence length, goes up about sixteen-fold. That is why the paper notes that models with smaller patches are more expensive, and why ViT-B/32 is the cheapest model in its study and ViT-H/14 the dearest. Each token also starts life wider when the patch is bigger (P × P × 3 numbers).</p>
+
+<h4>Embedding: patches, a class token, and positions</h4>
+<p><strong>Everyday picture:</strong> every tile fills in the same questionnaire (the projection E) and the answers become its card. A blank card that belongs to no tile goes on top of the pile (the <span class="t" data-tip-title="Class token" data-tip="An extra learned vector put in front of the patch tokens. It belongs to no patch; through attention it gathers information from all of them, and its final state is what the classifier reads. Borrowed from BERT's [CLS] token.">class token</span>): it will collect a summary of the whole picture. Then every card gets a sticker saying which slot it sits in (the <span class="t" data-t="positional encoding">position embedding</span>), so shuffling the pile loses nothing.</p>
+<p><strong>Tiny example:</strong> the lesson's picture. The four patches, flattened, are (0, 1, 4, 5), (2, 3, 6, 7), (8, 9, 12, 13) and (10, 11, 14, 15). With a 4 × 2 projection E whose first column adds a patch's top row and whose second adds its bottom row, and positions (row, column), the tokens are (1, 9), (5, 14), (18, 25) and (22, 30). For the class token take, for illustration, x<sub>class</sub> = (1, 1) with position (0, 0). All of these are learned in a real model; the numbers here are chosen so you can check them by hand.</p>
+<div class="eq" data-tex="\htmlData{sym=z0}{\mathbf{z}_0} = \htmlData{sym=cat}{[}\,\htmlData{sym=xclass}{\mathbf{x}_{\text{class}}};\; \htmlData{sym=xpi}{\mathbf{x}^1_p}\htmlData{sym=Emat}{\mathbf{E}};\; \htmlData{sym=xpi}{\mathbf{x}^2_p}\htmlData{sym=Emat}{\mathbf{E}};\; \cdots;\; \htmlData{sym=xpi}{\mathbf{x}^N_p}\htmlData{sym=Emat}{\mathbf{E}}\,\htmlData{sym=cat}{]} + \htmlData{sym=Epos}{\mathbf{E}_{pos}}" data-fallback="z_0 = [x_class; x_p^1 E; x_p^2 E; …; x_p^N E] + E_pos"></div>
+<div class="symtable" data-syms="z0,cat,xclass,xpi,Emat,Epos"></div>
+<p class="inwords"><strong>In words:</strong> “project every flattened patch with the same matrix E, stack the results under one extra learned class vector, and add a learned position vector to every row.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the top-right patch (2, 3, 6, 7) times E is (2 + 3, 6 + 7) = (5, 13); plus its position (0, 1) gives (5, 14). The whole of <strong>z</strong><sub>0</sub> is five rows: (1, 1), (1, 9), (5, 14), (18, 25), (22, 30).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>patches = [[0, 1, 4, 5], [2, 3, 6, 7], [8, 9, 12, 13], [10, 11, 14, 15]]
+# E: column 1 adds a patch's top row, column 2 its bottom row
+E = [[1, 0], [1, 0], [0, 1], [0, 1]]
+x_class = [1, 1]
+# E_pos: one row per slot, the class slot first
+E_pos = [[0, 0], [0, 0], [0, 1], [1, 0], [1, 1]]
+# x_p^i E: each output number is a dot product with one column of E
+projected = [[sum(x * E[r][c] for r, x in enumerate(p)) for c in range(2)] for p in patches]
+projected  # → [[1, 9], [5, 13], [17, 25], [21, 29]]
+# [x_class; x_p^1 E; ...] + E_pos
+z0 = [[a + b for a, b in zip(row, pos)] for row, pos in zip([x_class] + projected, E_pos)]
+z0  # → [[1, 1], [1, 9], [5, 14], [18, 25], [22, 30]]</code></pre>
+<p>The size of E is what the paper's shorthand encodes: for ViT-B/16, each 16 × 16 × 3 patch has 768 numbers and the model width is also 768, so E is a 768 × 768 matrix, 589,824 learned numbers shared by every patch.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>P, C, D = 16, 3, 768
+# E is (P²·C) × D
+print(f"{P * P * C} x {D} = {P * P * C * D:,}")  # → 768 x 768 = 589,824</code></pre>
+<p><strong>In code:</strong> the lesson's <a data-lesson="primer/ml/generative/multimodal.html#worked_example_patches"><code>worked_example_patches</code></a> runs these steps on this picture, and <a data-lesson="primer/ml/generative/multimodal.html#VisionEncoder.embed"><code>VisionEncoder.embed</code></a> is the formula for a real image (without the class token, since a vision-language model uses every patch's output rather than one summary).</p>
+
+<h4>The encoder: two sub-layers, each wrapped the same way</h4>
+<p><strong>Everyday picture:</strong> each layer is a meeting followed by desk work. In the meeting (<span class="t" data-t="multi-head attention">multi-head attention</span>) every token hears from every other; at the desk (the <span class="t" data-t="mlp">MLP</span>, two layers with a <span class="t" data-t="gelu">GELU</span> between) each token thinks alone. Before each, the token's numbers are tidied to a standard scale (<span class="t" data-t="layer normalization">layer norm</span>); after each, the result is <em>added</em> to what the token already had, as a correction rather than a replacement.</p>
+<p><strong>Tiny example:</strong> follow the token (5, 14). Layer norm maps it to (−1, 1): its mean is 9.5 and its spread 4.5. Say attention, reading the normalized tokens, proposes the change (0.4, −0.2) for this one (an illustrative number); adding it back gives (5.4, 13.8). Normalize again, and say the MLP proposes (0.1, 0.3): the token leaves the layer as (5.5, 14.1).</p>
+<div class="eq" data-tex="\htmlData{sym=zp}{\mathbf{z}'_\ell} = \htmlData{sym=MSA}{\mathrm{MSA}}\big(\htmlData{sym=LN}{\mathrm{LN}}(\htmlData{sym=zl1}{\mathbf{z}_{\ell-1}})\big) + \htmlData{sym=zl1}{\mathbf{z}_{\ell-1}}, \qquad \htmlData{sym=zl}{\mathbf{z}_\ell} = \htmlData{sym=MLP}{\mathrm{MLP}}\big(\htmlData{sym=LN}{\mathrm{LN}}(\htmlData{sym=zp}{\mathbf{z}'_\ell})\big) + \htmlData{sym=zp}{\mathbf{z}'_\ell}, \qquad \htmlData{sym=ell}{\ell = 1 \ldots L}" data-fallback="z'_ℓ = MSA(LN(z_(ℓ−1))) + z_(ℓ−1),  z_ℓ = MLP(LN(z'_ℓ)) + z'_ℓ,  ℓ = 1 … L"></div>
+<div class="symtable" data-syms="zl1,LN,MSA,zp,MLP,zl,ell"></div>
+<p class="inwords"><strong>In words:</strong> “in each of the L layers, normalize the tokens, let them attend to each other, and add the result back; then normalize again, pass each token through the MLP, and add that back too.”</p>
+<p class="inwords"><strong>With the numbers:</strong> LN(5, 14) = (−1, 1); (5, 14) + (0.4, −0.2) = (5.4, 13.8); LN(5.4, 13.8) = (−1, 1) again; (5.4, 13.8) + (0.1, 0.3) = (5.5, 14.1).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# LN: shift to mean 0, scale to spread 1 (the learned gain and bias left at 1 and 0)
+def LN(v):
+    mean = sum(v) / len(v)
+    sd = math.sqrt(sum((a - mean) ** 2 for a in v) / len(v))
+    return [round((a - mean) / sd, 6) for a in v]
+z = [5, 14]
+LN(z)  # → [-1.0, 1.0]
+# MSA(LN(z)) for this token: an illustrative proposal
+msa = [0.4, -0.2]
+z_prime = [a + b for a, b in zip(msa, z)]
+z_prime  # → [5.4, 13.8]
+LN(z_prime)  # → [-1.0, 1.0]
+# MLP(LN(z')): another illustrative proposal
+mlp = [0.1, 0.3]
+[round(a + b, 6) for a, b in zip(mlp, z_prime)]  # → [5.5, 14.1]</code></pre>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/transformer.html#TransformerBlock"><code>TransformerBlock</code></a> in the transformer lesson is exactly these two lines (pre-norm, GELU inside <a data-lesson="primer/ml/transformer.html#FeedForward"><code>FeedForward</code></a>), and <a data-lesson="primer/ml/generative/multimodal.html#VisionEncoder"><code>VisionEncoder</code></a> stacks it with the causal mask switched off, because a picture has no “future”.</p>
+
+<h4>The output: read the class token</h4>
+<p><strong>Everyday picture:</strong> after the last layer, the blank card on top of the pile has been filled in by listening to every tile, L times over. Normalize it and hand it to a small classifier.</p>
+<p><strong>Tiny example:</strong> say the class token leaves the last layer as (3, 1). Normalized it is (1, −1). A two-class head with weights [[1, −1], [−1, 1]] scores it (2, −2): class 1 wins.</p>
+<div class="eq" data-tex="\htmlData{sym=yrep}{\mathbf{y}} = \htmlData{sym=LN}{\mathrm{LN}}(\htmlData{sym=zL0}{\mathbf{z}^0_L})" data-fallback="y = LN(z_L^0)"></div>
+<div class="symtable" data-syms="yrep,LN,zL0"></div>
+<p class="inwords"><strong>In words:</strong> “the image's representation is the class token's state after the last layer, normalized.” A head turns it into one score per class: an MLP with one hidden layer during pre-training, a single linear layer when fine-tuning.</p>
+<p class="inwords"><strong>With the numbers:</strong> LN(3, 1) = (1, −1); scores (1 × 1 + (−1) × (−1), 1 × (−1) + (−1) × 1) = (2, −2).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def LN(v):
+    mean = sum(v) / len(v)
+    sd = math.sqrt(sum((a - mean) ** 2 for a in v) / len(v))
+    return [(a - mean) / sd for a in v]
+# z_L^0: the class token after the last layer
+y = LN([3, 1])
+y  # → [1.0, -1.0]
+# a linear head, one column per class
+head = [[1, -1], [-1, 1]]
+[sum(y[r] * head[r][c] for r in range(2)) for c in range(2)]  # → [2.0, -2.0]</code></pre>
+
+<h4>Inductive bias <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S3.SS1.SSS0.Px1">original</a></span></h4>
+<blockquote class="quote">“In ViT, only MLP layers are local and translationally equivariant, while the self-attention layers are global.”<cite>Dosovitskiy et al. (2020), §3.1</cite></blockquote>
+<p>Count where ViT is told anything about images being two-dimensional: once when the image is cut into patches, and once when position embeddings are resized for fine-tuning (§3.2). Everything else is learned. Its position embeddings start random, carrying no idea of which patch is next to which; a CNN, by contrast, has locality and <span class="t" data-t="translation equivariance">translation equivariance</span> in every layer.</p>
+<h4>Hybrid architecture <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S3.SS1.SSS0.Px2">original</a></span></h4>
+<p>Instead of raw pixels, the patches can be cut from a CNN's <span class="t" data-tip-title="Feature map" data-tip="The grid of outputs a convolutional layer produces: at each position, one number per learned filter, saying how strongly that pattern appears there.">feature map</span>, even 1×1 “patches” (each position of the map becomes a token). The paper calls this the <span class="t" data-tip-title="Hybrid (in this paper)" data-tip="A ResNet stem followed by a Vision Transformer: the ResNet's feature map, not the raw image, is cut into tokens. In the model names, R50+ViT-B/16 means a ResNet-50 stem and a total downsampling of 16.">hybrid</span>, and tests it alongside pure ViTs in §4.4.</p>
+<h4>Why it matters today</h4>
+<p>This is the whole architecture. Today's vision encoders are still this recipe, often with the class token dropped in favour of averaging the patch outputs or passing all of them on, which is what a vision-language model's projector does in the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a>.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Fine-tuning and higher resolution <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Pre-train once on a big general dataset, then adapt to a small specific one: <span class="t" data-t="transfer learning">transfer learning</span>. Two practical details make it work. The old classifier is thrown away and a new one is started at zero, so it begins with no opinion. And the adapted model is shown sharper images than it was trained on, which helps; but the position stickers were made for the old grid, so they are stretched to fit the new one.</p>
+<h4>Tiny example</h4>
+<p>Pre-training at 224×224 with 16-pixel patches gives a 14 × 14 grid: 196 learned positions. Fine-tuning at 384×384 with the same patches gives a 24 × 24 grid: 576 slots. The 196 learned vectors are laid out on their 14 × 14 grid and smoothly interpolated in two dimensions to fill 24 × 24. In one dimension: stretching the values (0, 1) over three slots gives (0, 0.5, 1). The new head, D × K and all zeros, scores every class 0 at first.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>P = 16
+[(side // P) ** 2 for side in (224, 384)]  # → [196, 576]
+# stretching two learned values over three slots: straight-line interpolation
+old = [0.0, 1.0]
+new = [old[0] + (old[1] - old[0]) * i / 2 for i in range(3)]
+new  # → [0.0, 0.5, 1.0]
+# a zero-initialized head scores every class 0, whatever the image
+y, head = [1.0, -1.0], [[0, 0, 0], [0, 0, 0]]
+[sum(y[r] * head[r][c] for r in range(2)) for c in range(3)]  # → [0.0, 0.0, 0.0]</code></pre>
+<h4>Why it matters today</h4>
+<p>Pre-train big, fine-tune small is now the default in vision as it is in language (see <span class="t" data-t="fine-tuning">fine-tuning</span> in the <a data-lesson="primer/ml/training_stages.html">training stages lesson</a>). Resizing position embeddings is also why many vision encoders can accept images at more than one resolution, at the cost the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a> counts: more tokens.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Three kinds of model are put through the same course: ResNets (the reigning CNNs), ViTs, and hybrids. Each is pre-trained on datasets of different sizes and then tested on many smaller tasks. The questions are simple: who wins, how much data does each need, and what does each cost to train?</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S4.SS1">original</a></span></h3>
+<h4>Datasets</h4>
+<p>Pre-training uses ImageNet (1.3 million images, 1,000 classes), ImageNet-21k (14 million, 21,000 classes) and JFT (303 million, 18,000 classes), with any images that also appear in the test sets removed. The models are then tested on ImageNet (with the original labels and the cleaned-up <span class="t" data-tip-title="ReaL labels" data-tip="A re-labelled version of the ImageNet validation set, fixing mistakes and allowing more than one correct label per image (Beyer et al., 2020).">ReaL</span> labels), CIFAR-10 and CIFAR-100, Oxford-IIIT Pets, Oxford Flowers-102, and <span class="t" data-tip-title="VTAB" data-tip="The Visual Task Adaptation Benchmark: 19 tasks with only 1,000 training examples each, in three groups: natural photos, specialized images (medical, satellite), and structured tasks that need geometry, such as counting or estimating distance.">VTAB</span>.</p>
+<h4>Model variants</h4>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1, reproduced with attribution (Dosovitskiy et al., 2020)</caption>
+  <thead><tr><th>Model</th><th class="num">Layers L</th><th class="num">Width D</th><th class="num">MLP size</th><th class="num">Heads</th><th class="num">Parameters</th></tr></thead>
+  <tbody>
+    <tr><td>ViT-Base</td><td class="num">12</td><td class="num">768</td><td class="num">3072</td><td class="num">12</td><td class="num">86M</td></tr>
+    <tr><td>ViT-Huge</td><td class="num">32</td><td class="num">1280</td><td class="num">5120</td><td class="num">16</td><td class="num">632M</td></tr>
+  </tbody>
+</table></div>
+<p>ViT-Large sits between them (24 layers, width 1024). Base and Large copy BERT's shapes; Huge is new. A name like ViT-L/16 means the Large model with 16 × 16 patches. You can check the parameter count yourself from the architecture of §3.1: count every matrix and bias, then add the patch projection, the class token and the position table.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def vit_params(L, D, D_mlp, P, image=224, C=3):
+    # query, key, value and output matrices, with their biases
+    attention = 4 * D * D + 4 * D
+    # the MLP's two layers, with their biases
+    mlp = D * D_mlp + D_mlp + D_mlp * D + D
+    # two layer norms per layer, each a gain and a bias
+    norms = 2 * 2 * D
+    N = (image // P) ** 2
+    # the projection E with its bias, the class token, the position table, the final norm
+    embed = P * P * C * D + D
+    return L * (attention + mlp + norms) + embed + D + (N + 1) * D + 2 * D
+# ViT-B/16, without the classification head
+print(f"{vit_params(12, 768, 3072, 16):,}")  # → 85,798,656
+# ViT-H/14
+print(f"{vit_params(32, 1280, 5120, 14):,}")  # → 630,764,800</code></pre>
+<p>That is 85.8 million for Base (the paper's 86M) and 630.8 million for Huge (the paper's 632M; this count leaves out the classification head). The baselines are ResNets with two changes the paper credits with better transfer: <span class="t" data-t="batch normalization">batch normalization</span> swapped for <span class="t" data-tip-title="Group normalization" data-tip="Normalizing each example's channels in small groups, instead of using statistics across the batch. It does not depend on batch size, which helps transfer.">group normalization</span>, and standardized convolutions. The paper calls them ResNet (BiT).</p>
+<h4>Training and evaluation</h4>
+<p>Every model, ResNets included, is pre-trained with <span class="t" data-t="adam">Adam</span> (β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.999), batch size 4,096 and a high <span class="t" data-t="weight decay">weight decay</span> of 0.1, with linear <span class="t" data-t="warmup">warmup</span> and decay. Fine-tuning uses SGD with momentum at batch size 512. Results are reported as fine-tuning accuracy, or as <span class="t" data-tip-title="Few-shot linear accuracy" data-tip="Freeze the pre-trained model, take a few labelled examples per class, and fit a regularized least-squares mapping from their representations to the labels. It is solved exactly in one step, so it is a fast check of how good the representation is.">few-shot linear accuracy</span>, a quick check that fits a simple linear map on frozen features (a close relative of a <span class="t" data-t="linear probe">linear probe</span>).</p>
+<h4>Why it matters today</h4>
+<p>The same backbone with the same optimizer and recipe for every model makes the comparison about architecture and data, not about who tuned harder. The Adam-for-ResNets choice was unusual enough that the paper checks it separately (Appendix D.1).</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Comparison to state of the art <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“The smaller ViT-L/16 model pre-trained on JFT-300M outperforms BiT-L (which is pre-trained on the same dataset) on all tasks, while requiring substantially less computational resources to train.”<cite>Dosovitskiy et al. (2020), §4.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Two champions to beat: BiT-L, a very large ResNet trained on the same JFT images, and Noisy Student, a large EfficientNet trained with extra unlabelled images. Cost is counted in <span class="t" data-tip-title="TPUv3-core-days" data-tip="How many TPU v3 processor cores (two per chip) were used, times how many days they ran. A hardware-level measure of pre-training compute.">TPUv3-core-days</span>.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2, reproduced with attribution (Dosovitskiy et al., 2020). Accuracy in %, averaged over three fine-tuning runs</caption>
+  <thead><tr><th></th><th class="num">ViT-H/14 (JFT)</th><th class="num">ViT-L/16 (JFT)</th><th class="num">ViT-L/16 (I21k)</th><th class="num">BiT-L</th><th class="num">Noisy Student</th></tr></thead>
+  <tbody>
+    <tr><td>ImageNet</td><td class="num"><strong>88.55</strong></td><td class="num">87.76</td><td class="num">85.30</td><td class="num">87.54</td><td class="num">88.4 / 88.5</td></tr>
+    <tr><td>CIFAR-100</td><td class="num"><strong>94.55</strong></td><td class="num">93.90</td><td class="num">93.25</td><td class="num">93.51</td><td class="num">n/a</td></tr>
+    <tr><td>VTAB (19 tasks)</td><td class="num"><strong>77.63</strong></td><td class="num">76.28</td><td class="num">72.72</td><td class="num">76.29</td><td class="num">n/a</td></tr>
+    <tr class="hl"><td>TPUv3-core-days</td><td class="num">2.5k</td><td class="num">0.68k</td><td class="num">0.23k</td><td class="num">9.9k</td><td class="num">12.3k</td></tr>
+  </tbody>
+</table></div>
+<div class="plot" id="fig-cost"><div id="cost-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each bar is one model's pre-training compute in TPUv3-core-days, on the same scale, with its ImageNet accuracy beside it. The two convolutional champions are the long bars. ViT-H/14 is more accurate than both while using about a quarter of BiT-L's compute (2.5k against 9.9k), and ViT-L/16 on JFT edges out BiT-L on ImageNet (87.76% against 87.54%) at about a fourteenth of its compute (0.68k). The shortest bar, ViT-L/16 on the public ImageNet-21k, could be trained on one 8-core cloud TPU in about 30 days.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># TPUv3-core-days, in thousands
+bit_l, vit_h, vit_l = 9.9, 2.5, 0.68
+round(bit_l / vit_h, 1)  # → 4.0
+round(bit_l / vit_l, 1)  # → 14.6</code></pre>
+<h4>Why it matters today</h4>
+<p>The paper is careful to add that compute also depends on schedule, optimizer and weight decay, and runs a controlled study (§4.4) to separate them. Even so, “better <em>and</em> cheaper” is what made the field switch.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Pre-training data requirements <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If ViT has to learn what a CNN is told, it should need more examples. The paper tests this directly: pre-train on ever larger datasets and watch which models improve most.</p>
+<div class="plot" id="fig-data">
+  <div id="data-chart"></div>
+  <p class="readout" id="data-readout">Hover or tap the chart, or focus it and use the arrow keys, to read each model's accuracy at each dataset size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the size of the pre-training set in millions of images, on a log scale: ImageNet (1.3M), ImageNet-21k (14M) and JFT-300M (303M). The y-axis is ImageNet accuracy after fine-tuning. Each line is one ViT. Look at the left end: pre-trained on ImageNet alone, the Large models are <em>worse</em> than the Base ones (76.5% against 77.9% for the /16 pair), even with regularization; there is not enough data to fill a bigger model. In the middle they are level-ish; at the right, on JFT, ViT-L/16 leads ViT-B/16 by three points. Plotted from Table 5 of the paper, which is its Figure 3 in numbers; the figure also shades the range of BiT ResNets, which beat ViT at the left and are overtaken at the right. ViT-H/14 was not trained on ImageNet alone; it reaches 85.1% (21k) and 88.0% (JFT).</p>
+<h4>A second test: slices of the same dataset</h4>
+<p>Different datasets differ in more than size, so the paper also trains on random subsets of JFT of 9, 30 and 90 million images and the full 300 million, with no extra regularization. ViT-B/32 (slightly faster than a ResNet-50) is much worse on 9 million images but better from 90 million up. The paper's reading: convolution's built-in assumptions help on small data, and on large data learning the patterns directly is enough, even better.</p>
+<h4>Why it matters today</h4>
+<p>This result is why ViTs are almost always pre-trained on very large collections, and why a line of later work set out to train them well on ImageNet alone with stronger augmentation and <span class="t" data-t="regularization">regularization</span>.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Scaling study <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S4.SS4">original</a></span></h3>
+<blockquote class="quote">“First, Vision Transformers dominate ResNets on the performance/compute trade-off.”<cite>Dosovitskiy et al. (2020), §4.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>With data no longer the bottleneck (everything pre-trained on JFT), the fair question is value for money: for a given amount of pre-training compute, which family gives the best accuracy?</p>
+<div class="plot" id="fig-compute">
+  <div id="compute-chart"></div>
+  <p class="readout" id="compute-readout">Hover or tap the chart, or focus it and use the arrow keys, to compare the three families at similar compute.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is total pre-training compute in <span class="t" data-tip-title="exaFLOPs" data-tip="10^18 floating-point operations: a count of the additions and multiplications done during pre-training.">exaFLOPs</span> (log scale); the y-axis is ImageNet accuracy after fine-tuning. Each bend in a line is one model: seven ResNets, six ViTs, five hybrids. At any compute, the ViT line sits above the ResNet line: at around 200 exaFLOPs, ViT-L/32 and ViT-B/16 reach about 84% where ResNet-50x2 reaches 82%. The hybrids (a ResNet stem feeding a ViT) lead at small budgets, but by the largest models the gap to pure ViTs is gone (both 87.12% at the top of their runs). Plotted from the ImageNet column of Table 6; the paper's Figure 5 averages five datasets and finds ViT needs about 2 to 4 times less compute for the same accuracy.</p>
+<h4>Why it matters today</h4>
+<p>The third observation pointed the way forward: the ViT curve had not flattened by the largest model tried, so bigger vision transformers were the obvious next step. It is the same story the <a href="scaling-laws.html">scaling laws companion</a> tells for language.</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Inspecting the Vision Transformer <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S4.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If nobody tells the model that images are two-dimensional, does it work it out? The paper looks in three places. The projection E learns filters that look like sensible building blocks for small patches (shown with <span class="t" data-t="pca">PCA</span>). The position embeddings learn the grid: comparing them with <span class="t" data-t="cosine similarity">cosine similarity</span>, nearby patches have similar vectors, and patches in the same row or column do too. And attention learns how far to look.</p>
+<h4>Tiny example: attention distance</h4>
+<p>How far does a head look? For one query patch, take the distance in pixels to every patch, weight each distance by how much attention goes there, and add up. Say a query gives half its attention to itself (0 pixels away), 0.3 to a neighbour 16 pixels away and 0.2 to a patch 64 pixels away: 0 + 4.8 + 12.8 = <strong>17.6</strong> pixels. The paper averages this over many images and query patches, for every head at every layer. The formula below is written from that description (Appendix D.7).</p>
+<div class="eq" data-tex="\htmlData{sym=dbar}{\bar{d}_q} = \htmlData{sym=sumj}{\sum_j} \htmlData{sym=Aqj}{A_{qj}}\,\htmlData{sym=dist}{\lVert \mathbf{p}_q - \mathbf{p}_j \rVert}" data-fallback="d̄_q = Σ_j A_qj ‖p_q − p_j‖"></div>
+<div class="symtable" data-syms="dbar,sumj,Aqj,dist"></div>
+<p class="inwords"><strong>In words:</strong> “a query's attention distance is the average distance to the patches it attends to, weighted by how much it attends to each.” It plays the part a <span class="t" data-t="receptive field">receptive field</span> plays in a CNN.</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.5 × 0 + 0.3 × 16 + 0.2 × 64 = 17.6 pixels.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># A_qj: where one query's attention goes
+A = [0.5, 0.3, 0.2]
+# ‖p_q − p_j‖ in pixels
+dist = [0, 16, 64]
+round(sum(a * d for a, d in zip(A, dist)), 1)  # → 17.6</code></pre>
+<div class="plot" id="fig-distance">
+  <div class="controls"><label for="dist-w">head's focus width = <strong id="dist-wv">2.0</strong> patches</label><input type="range" id="dist-w" min="0" max="1" step="0.01" value="0.44"></div>
+  <canvas id="dist-canvas" class="vit-canvas" width="448" height="448" aria-label="A 14 by 14 grid of patches shaded by how much attention one query patch pays to each. Click to choose the query patch."></canvas>
+  <p class="readout" id="dist-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the grid is the 14 × 14 patches of a 224-pixel image; the outlined square is the query patch, and each patch is shaded by the share of attention it receives. The attention pattern here is made up (a smooth bump around the query, whose width you set), so the picture is illustrative; the distance in the readout is computed with the formula above. Narrow the focus and the head behaves like a small convolution: an attention distance of about 6 pixels. Widen it and the head looks at the whole image: over 80 pixels for a query in the middle, and about 145 from a corner. The paper finds both kinds of head already in the first layer of a trained ViT, something a convolution cannot do, and finds that distances grow with depth. The very local heads are rarer in hybrids, whose ResNet stem already does the local work.</p>
+<h4>Why it matters today</h4>
+<p>Pictures like this are a first look inside a vision transformer. The paper's attention maps from the class token (computed with <span class="t" data-tip-title="Attention rollout" data-tip="A way to trace attention through all layers: average each layer's attention over heads, then multiply the layers' matrices together, so the result says how much each input patch contributes to each output token (Abnar and Zuidema, 2020).">attention rollout</span>) land on the objects that decide the class.</p>
+</section>
+
+<section id="s4-6">
+<h3>4.6 Self-supervision <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S4.SS6">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Language transformers learn from unlabelled text by filling in hidden words, as <span class="t" data-t="bert">BERT</span> does. The image version: hide some patches and ask the model to guess what was there. The paper tries this as a first experiment, <span class="t" data-tip-title="Masked patch prediction" data-tip="Corrupt some patch embeddings (replace most with a learned mask vector, some with another patch, leave some alone) and train the model to predict each corrupted patch's content, here its average colour.">masked patch prediction</span>.</p>
+<h4>Tiny example</h4>
+<p>Half of the patch embeddings are corrupted; of those, 80% become a learned [mask] vector, 10% another patch's embedding and 10% are left alone. The target is each corrupted patch's mean colour, rounded to 3 bits per channel: 8 levels for each of red, green and blue, so a choice among 8 × 8 × 8 = 512 colours.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># 3 bits per channel, three channels
+levels = 2 ** 3
+levels ** 3  # → 512
+# on a 196-patch image, half are corrupted
+196 // 2  # → 98</code></pre>
+<h4>The result</h4>
+<p>ViT-B/16 pre-trained this way reached 79.9% on ImageNet: 2 points better than training from scratch, but 4 behind supervised pre-training. The paper leaves contrastive pre-training for future work.</p>
+<h4>Why it matters today</h4>
+<p>Later work closed much of this gap, and self-supervised and image-text pre-training became common ways to train vision encoders. <a href="clip.html">CLIP</a>, for instance, trains a ViT against captions instead of class labels, and it is that ViT which sits inside many vision-language models.</p>
+</section>
+
+<section id="s5">
+<h2>5 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#S5">original</a></span></h2>
+<blockquote class="quote">“This simple, yet scalable, strategy works surprisingly well when coupled with pre-training on large datasets.”<cite>Dosovitskiy et al. (2020), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Treat an image as a sentence of patches, use the text model as it is, and feed it enough data. No special vision machinery beyond the first cut.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The open problems the authors listed (detection and segmentation, self-supervised pre-training, more scaling) each became an active line of research. The bigger consequence is one they only hint at: once images are tokens, a single transformer can read images and text together, which is the premise of the <a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a>.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendices, briefly <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#A1">original</a></span></h2>
+<h3 class="rung">What they contain</h3>
+<ul>
+  <li><strong>A, multi-head self-attention</strong>: the standard definition, decoded below. For the attention formula itself, see the <a href="attention-is-all-you-need.html">Attention Is All You Need companion</a>.</li>
+  <li><strong>B, training details</strong>: batch 4,096 and 10,000 warmup steps for every pre-training run; <span class="t" data-t="dropout">dropout</span> 0.1 and weight decay 0.03 to 0.3 on the smaller datasets; fine-tuning at 384×384 with SGD and momentum 0.9.</li>
+  <li><strong>C, the tables behind Figures 4 and 5</strong>, which the charts above are plotted from.</li>
+  <li><strong>D, ablations</strong>: a few are summarised below.</li>
+</ul>
+
+<section id="appendix-a">
+<h3>Appendix A: multi-head self-attention <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#A1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Instead of one reader attending over the whole sequence, k smaller readers each attend with their own narrower view, and their notes are stapled together and mixed. Making each reader D/k wide keeps the total cost the same however many there are.</p>
+<h4>Tiny example</h4>
+<p>ViT-Base: width D = 768 and k = 12 heads, so each head works in D<sub>h</sub> = 64 dimensions. Twelve heads of 64 stapled together are 768 again.</p>
+<div class="eq" data-tex="\htmlData{sym=MSA}{\mathrm{MSA}}(\mathbf{z}) = \htmlData{sym=cat}{[}\htmlData{sym=SAi}{\mathrm{SA}_1(\mathbf{z})};\, \htmlData{sym=SAi}{\mathrm{SA}_2(\mathbf{z})};\, \cdots;\, \htmlData{sym=SAi}{\mathrm{SA}_k(\mathbf{z})}\htmlData{sym=cat}{]}\,\htmlData{sym=Umsa}{\mathbf{U}_{msa}}, \qquad \htmlData{sym=Dh}{D_h} = D / \htmlData{sym=kheads}{k}" data-fallback="MSA(z) = [SA_1(z); SA_2(z); …; SA_k(z)] U_msa,  D_h = D / k"></div>
+<div class="symtable" data-syms="MSA,SAi,cat,Umsa,Dh,kheads"></div>
+<p class="inwords"><strong>In words:</strong> “run k self-attentions side by side, each on a D/k-wide projection of the tokens; glue their outputs back to full width and mix them with one more matrix.”</p>
+<p class="inwords"><strong>With the numbers:</strong> D<sub>h</sub> = 768 / 12 = 64. Each head's query, key and value matrices together are 768 × 192; <strong>U</strong><sub>msa</sub> is 768 × 768. Without biases the layer holds 4 × 768<sup>2</sup> = 2,359,296 numbers, whatever k is.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>D, k = 768, 12
+D_h = D // k
+D_h  # → 64
+# U_qkv for one head is D × 3·D_h; U_msa is k·D_h × D
+per_head_qkv = D * 3 * D_h
+u_msa = k * D_h * D
+print(f"{k * per_head_qkv + u_msa:,}")  # → 2,359,296
+# the same total with 16 heads of 48
+k = 16
+print(f"{k * D * 3 * (D // k) + k * (D // k) * D:,}")  # → 2,359,296</code></pre>
+<h4>Why it matters today</h4>
+<p>This is exactly the attention of the <a data-lesson="primer/ml/attention.html">attention lesson</a> and of <a data-lesson="primer/ml/transformer.html#TransformerBlock"><code>TransformerBlock</code></a>, with no mask: nothing in it is specific to images.</p>
+</section>
+
+<section id="appendix-d">
+<h3>Appendix D: selected ablations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2010.11929#A4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>An ablation removes or swaps one design choice and measures what changes. Three of the paper's are worth knowing.</p>
+<ul>
+  <li><strong>Which dimension to scale (D.2).</strong> Depth helped most, width least, and smaller patches (a longer sequence) gave steady gains without adding parameters, suggesting compute predicts performance better than parameter count.</li>
+  <li><strong>Class token or average (D.3).</strong> Averaging the patch outputs (<span class="t" data-tip-title="Global average pooling" data-tip="Averaging a set of vectors (here, all the patch tokens' outputs) into one, as a ResNet does with its final feature map before classifying.">global average pooling</span>) works as well as the class token, but only with a different learning rate; an early attempt that looked much worse was fixed by that alone.</li>
+  <li><strong>Position embeddings (D.4).</strong> Some position information matters a lot; which kind matters very little.</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 8, reproduced with attribution (Dosovitskiy et al., 2020). ViT-B/16, ImageNet 5-shot linear accuracy, position embeddings added once at the input</caption>
+  <thead><tr><th>Position embedding</th><th class="num">Accuracy</th></tr></thead>
+  <tbody>
+    <tr><td>None (a bag of patches)</td><td class="num">0.61382</td></tr>
+    <tr class="hl"><td>1-D, learned (the default)</td><td class="num">0.64206</td></tr>
+    <tr><td>2-D, learned (row and column halves)</td><td class="num">0.64001</td></tr>
+    <tr><td>Relative</td><td class="num">0.64032</td></tr>
+  </tbody>
+</table></div>
+<p>Dropping positions costs about 2.8 points; the three ways of adding them are within 0.2 of each other. The paper's explanation: with only 14 × 14 patches, rather than 224 × 224 pixels, any scheme can learn the layout, and the learned 1-D embeddings end up encoding the 2-D grid anyway (§4.5).</p>
+<h4>Why it matters today</h4>
+<p>Simple learned positions stayed common in vision encoders for this reason. The <a data-lesson="primer/ml/positional.html">positional encoding lesson</a> shows why attention needs positions at all: without them it is <span class="t" data-t="permutation equivariance">permutation equivariant</span>, blind to where each patch came from.</p>
+</section>
+</section>
+
+<section id="today">
+<h2>What changed since 2020</h2>
+<p>The core, patches as tokens read by a plain transformer, is everywhere. Around it:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>Supervised pre-training on labelled images</td><td>Image-text (contrastive) or self-supervised pre-training</td><td>Captions and unlabelled images are far more plentiful than class labels</td><td><a data-lesson="primer/ml/embeddings/contrastive.html">contrastive</a></td></tr>
+    <tr><td>A class token read by a classifier</td><td>Every patch's output passed on, through a projector, to a language model</td><td>Vision-language models need the whole picture, not one label</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal</a></td></tr>
+    <tr><td>Patches of pixels, for recognition</td><td>Patches of an autoencoder's latent, for generation (diffusion transformers)</td><td>The same scaling behaviour, now for making images</td><td><a data-lesson="primer/ml/generative/diffusion.html">diffusion</a></td></tr>
+    <tr><td>Square patches of one image</td><td>Tubelets that span several video frames; merging neighbouring patches</td><td>Video and high resolution multiply the token count</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit and Neil Houlsby, <em>An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale</em>, ICLR 2021. <a href="https://arxiv.org/abs/2010.11929">arXiv:2010.11929</a>. Quotations are brief and attributed, and only selected rows of the paper's tables are reproduced, with attribution. Figures are redrawn from scratch, some plotted from the paper's appendix tables; all explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // cutting
+    Npatch: { tex: "N", name: "Number of patches", meaning: "How many square tiles the image is cut into: the length of the sequence the transformer reads (plus one for the class token).", shape: "a whole number", example: "4 in the worked picture; 196 for 224×224 in 16-pixel patches" },
+    H: { tex: "H", name: "Image height", meaning: "In pixels. Images are resized first so the patch size divides it.", shape: "a whole number", example: "4, or 224" },
+    W: { tex: "W", name: "Image width", meaning: "In pixels.", shape: "a whole number", example: "4, or 224" },
+    P: { tex: "P", name: "Patch side", meaning: "The side of one square patch, in pixels: the “16” in ViT-B/16 and in the title.", shape: "a whole number", example: "2 in the worked picture; 16 or 14 in the paper" },
+    // equation 1
+    z0: { tex: "\\mathbf{z}_0", name: "The input sequence", meaning: "What the first encoder layer reads: one row per slot, the class token first, then one per patch.", shape: "(N + 1) × D (5 × 2 in the example; 197 × 768 for ViT-B/16)", example: "(1, 1), (1, 9), (5, 14), (18, 25), (22, 30)" },
+    cat: { tex: "[\\,\\cdot\\,;\\,\\cdot\\,]", name: "Stack", meaning: "Square brackets with semicolons mean “put these rows one under another” (concatenate along the sequence).", shape: "k pieces → one taller matrix", example: "the class row on top of four patch rows" },
+    xclass: { tex: "\\mathbf{x}_{\\text{class}}", name: "Class token", meaning: "A learned vector that belongs to no patch. Attention lets it gather from all of them; its final state represents the whole image.", shape: "1 × D", example: "(1, 1), illustrative" },
+    xpi: { tex: "\\mathbf{x}^i_p", name: "Patch i, flattened", meaning: "The pixels of the i-th patch (reading order), laid out as one row: P·P·C numbers.", shape: "1 × P²C (1 × 4; 1 × 768 for 16×16×3)", example: "x_p² = (2, 3, 6, 7)" },
+    Emat: { tex: "\\mathbf{E}", name: "Patch projection", meaning: "One learned matrix shared by every patch: a matrix multiply turns each flattened patch into a D-wide token.", shape: "P²C × D (4 × 2; 768 × 768)", example: "rows (1, 0), (1, 0), (0, 1), (0, 1)" },
+    Epos: { tex: "\\mathbf{E}_{pos}", name: "Position embeddings", meaning: "A learned vector per slot, added so the model knows where each patch came from. They start random; the grid is learned.", shape: "(N + 1) × D", example: "(0, 0) for the class slot, (0, 1) for the top-right patch" },
+    // equations 2 and 3
+    zl1: { tex: "\\mathbf{z}_{\\ell-1}", name: "Tokens entering layer ℓ", meaning: "The whole sequence as the previous layer left it (z₀ for the first layer).", shape: "(N + 1) × D", example: "the row (5, 14)" },
+    LN: { tex: "\\mathrm{LN}", name: "Layer norm", meaning: "Rescale each token to mean 0 and spread 1 (then a learned gain and shift). Applied before each sub-layer here: pre-norm.", shape: "keeps the shape", example: "(5, 14) → (−1, 1)" },
+    MSA: { tex: "\\mathrm{MSA}", name: "Multi-head self-attention", meaning: "Every token looks at every token (no mask) and returns a blend of what it found. The only place tokens exchange information.", shape: "(N + 1) × D in and out", example: "proposes (0.4, −0.2) for our token, illustrative" },
+    zp: { tex: "\\mathbf{z}'_\\ell", name: "After the attention half", meaning: "The tokens with attention's proposal added back (the residual).", shape: "(N + 1) × D", example: "(5.4, 13.8)" },
+    MLP: { tex: "\\mathrm{MLP}", name: "The MLP", meaning: "Two linear layers with a GELU between, applied to each token on its own: widen 768 → 3072, then narrow back, in ViT-Base.", shape: "(N + 1) × D in and out", example: "proposes (0.1, 0.3), illustrative" },
+    zl: { tex: "\\mathbf{z}_\\ell", name: "Tokens leaving layer ℓ", meaning: "After both halves. Same shape as the input, which is why layers stack.", shape: "(N + 1) × D", example: "(5.5, 14.1)" },
+    ell: { tex: "\\ell = 1 \\ldots L", name: "Layer number", meaning: "The same two lines run in every layer, each with its own weights. L is the depth.", shape: "1 to L", example: "L = 12 for ViT-Base, 32 for ViT-Huge" },
+    // equation 4
+    yrep: { tex: "\\mathbf{y}", name: "Image representation", meaning: "What the classifier head reads: one vector for the whole image.", shape: "1 × D", example: "(1, −1)" },
+    zL0: { tex: "\\mathbf{z}^0_L", name: "Class token, after the last layer", meaning: "Row 0 (the class slot) of the final layer's output. The superscript is the slot, the subscript the layer.", shape: "1 × D", example: "(3, 1), illustrative" },
+    // attention distance
+    dbar: { tex: "\\bar{d}_q", name: "Attention distance", meaning: "How far, on average, query patch q looks when it attends: the attention-weighted mean distance. Like a receptive field size for one head.", shape: "pixels", example: "17.6" },
+    sumj: { tex: "\\sum_j", name: "Sum over patches", meaning: "Add up over every patch j in the image (including q itself).", shape: "one number out", example: "three terms in the tiny example" },
+    Aqj: { tex: "A_{qj}", name: "Attention weight", meaning: "The share of query q's attention that goes to patch j: one entry of a softmax row, so they are positive and sum to 1.", shape: "between 0 and 1", example: "0.5, 0.3, 0.2" },
+    dist: { tex: "\\lVert \\mathbf{p}_q - \\mathbf{p}_j \\rVert", name: "Distance between patches", meaning: "How far apart the two patches' centres are in the image, in pixels (the length of the difference of their positions).", shape: "pixels", example: "0, 16, 64" },
+    // appendix A
+    SAi: { tex: "\\mathrm{SA}_i", name: "Head i", meaning: "One self-attention, working on its own D_h-wide projections of the tokens.", shape: "(N + 1) × D_h", example: "197 × 64 in ViT-Base" },
+    Umsa: { tex: "\\mathbf{U}_{msa}", name: "Output mixing matrix", meaning: "A learned matrix that mixes what the heads found back into the model's width.", shape: "k·D_h × D (768 × 768)", example: "589,824 numbers" },
+    Dh: { tex: "D_h", name: "Head width", meaning: "How many numbers each head works with, set to D/k so the total cost does not depend on k.", shape: "a whole number", example: "768 / 12 = 64" },
+    kheads: { tex: "k", name: "Number of heads", meaning: "How many attentions run side by side.", shape: "a whole number", example: "12 in ViT-Base, 16 in Large and Huge" },
+  },
+
+  blocks: {
+    img: { title: "The image, cut into patches", body: "<p>An H × W image with C colour channels, resized so the patch side P divides it, cut into N = HW/P² squares. Nine are drawn; a 224-pixel image in 16-pixel patches has 196.</p>", shape: "H × W × C → N patches", lesson: "primer/ml/generative/multimodal.html#image_to_patches" },
+    flat: { title: "Flattened patches", body: "<p>Each patch's pixels are read out row by row into one long list: P·P·C numbers, 768 for a 16 × 16 colour patch. Nothing is learned yet.</p>", shape: "N × P²C", lesson: "primer/ml/cnn_rnn.html#patchify" },
+    proj: { title: "Linear projection E", body: "<p>One learned matrix, shared by every patch, turns each flattened patch into a D-wide token (the “patch embedding”). It is the only place the model sees raw pixels.</p>", shape: "N × P²C → N × D", lesson: "primer/ml/generative/multimodal.html#VisionEncoder.embed" },
+    tokens: { title: "Patch tokens 1 to N", body: "<p>One vector per patch, in reading order: to the transformer, a sentence of N words.</p>", shape: "N × D" },
+    cls: { title: "The class token, 0*", body: "<p>An extra learned vector put in front of the patches, borrowed from BERT. It belongs to no patch; through attention it collects a summary of all of them, and only its final state is classified.</p>", shape: "1 × D" },
+    pos: { title: "Position embedding (added)", body: "<p>A learned vector per slot, 0 to N, added to each token. Attention alone cannot tell where a patch came from; these vectors start random and learn the 2-D grid during training.</p>", shape: "(N + 1) × D", lesson: "primer/ml/positional.html" },
+    enc: { title: "Transformer encoder (× L)", body: "<p>Everything in the dashed box is one layer: the two sub-layers of equations 2 and 3. It is repeated L times (12 for ViT-Base), each with its own weights, and no causal mask: every patch may attend to every other.</p>", shape: "(N + 1) × D throughout", lesson: "primer/ml/transformer.html#TransformerBlock" },
+    lx: { title: "L×", body: "<p>“Repeat this block L times.” 12, 24 and 32 layers for Base, Large and Huge.</p>", shape: "L = 12, 24 or 32" },
+    ln: { title: "Norm (layer norm)", body: "<p>Applied <em>before</em> each sub-layer (pre-norm), unlike the original transformer, which normalized after. It rescales each token to mean 0 and spread 1.</p>", shape: "(N + 1) × D", lesson: "primer/ml/deep_nets.html" },
+    msa: { title: "Multi-head attention", body: "<p>Every token looks at every token. From the first layer, a head can look across the whole image, which a convolution cannot. Appendix A spells it out.</p>", shape: "(N + 1) × D in and out", lesson: "primer/ml/attention.html" },
+    res: { title: "+ (residual connection)", body: "<p>The sub-layer's output is added to its input, which reaches it by the wire around the side. Each layer writes a correction rather than replacing the tokens.</p>", shape: "(N + 1) × D" },
+    mlp: { title: "MLP", body: "<p>Two linear layers with a GELU between, applied to each token separately: 768 → 3072 → 768 in ViT-Base. The paper notes these are the only local, translation-equivariant layers in the model.</p>", shape: "(N + 1) × D", lesson: "primer/ml/transformer.html#FeedForward" },
+    head: { title: "MLP head", body: "<p>Reads the class token's final state, normalized (equation 4). One hidden layer during pre-training; replaced by a single zero-initialized linear layer for fine-tuning.</p>", shape: "1 × D → 1 × K classes" },
+    out: { title: "The class", body: "<p>One score per class; the highest wins. ImageNet has 1,000 classes, ImageNet-21k about 21,000, JFT about 18,000.</p>", shape: "K scores" },
+  },
+
+  onReady(P) {
+    patchFigure(P);
+    costBars();
+    dataChart(P);
+    computeChart(P);
+    distanceFigure(P);
+  },
+};
+
+const VIT = { css: (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() };
+
+/* ---- §3.1: cut a 224-pixel picture at different patch sizes ---- */
+function patchFigure(P) {
+  const canvas = document.getElementById("patch-canvas");
+  const ctx = canvas.getContext("2d");
+  const S = canvas.width / 224; // canvas pixels per image pixel
+  const readout = document.getElementById("patch-readout");
+  let p = 16;
+  function picture() {
+    // A drawn scene: a sky, a sun and a striped field, so patches have something to cut.
+    const sky = ctx.createLinearGradient(0, 0, 0, 140 * S);
+    sky.addColorStop(0, "#7fb3e6"); sky.addColorStop(1, "#cfe4f7");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, 224 * S, 140 * S);
+    ctx.fillStyle = "#f4c542"; ctx.beginPath(); ctx.arc(160 * S, 50 * S, 24 * S, 0, 2 * Math.PI); ctx.fill();
+    for (let i = 0; i < 12; i++) { ctx.fillStyle = i % 2 ? "#5b8c3a" : "#79a84f"; ctx.fillRect(0, (140 + i * 7) * S, 224 * S, 7 * S); }
+    ctx.fillStyle = "#8a5a2b"; ctx.fillRect(40 * S, 110 * S, 8 * S, 40 * S);
+    ctx.fillStyle = "#3f7a2e"; ctx.beginPath(); ctx.arc(44 * S, 100 * S, 22 * S, 0, 2 * Math.PI); ctx.fill();
+  }
+  function draw() {
+    picture();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.5;
+    for (let x = 0; x <= 224; x += p) {
+      ctx.beginPath(); ctx.moveTo(x * S, 0); ctx.lineTo(x * S, 224 * S); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, x * S); ctx.lineTo(224 * S, x * S); ctx.stroke();
+    }
+    const n = (224 / p) ** 2, seq = n + 1;
+    readout.innerHTML = `P = ${p}: a ${224 / p} × ${224 / p} grid, <strong>${n}</strong> patches, a sequence of ${seq} with the class token, <strong>${(seq * seq).toLocaleString()}</strong> attention pairs per head per layer, and ${(p * p * 3).toLocaleString()} numbers per flattened patch.`;
+  }
+  document.querySelectorAll("#fig-patches [data-p]").forEach((b) => b.addEventListener("click", () => {
+    p = +b.dataset.p;
+    document.querySelectorAll("#fig-patches [data-p]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    draw();
+  }));
+  draw();
+}
+
+/* ---- §4.2: pre-training compute, Table 2 ---- */
+function costBars() {
+  const rows = [["ViT-H/14 (JFT)", 2.5, "88.55%"], ["ViT-L/16 (JFT)", 0.68, "87.76%"], ["ViT-L/16 (I21k)", 0.23, "85.30%"], ["BiT-L", 9.9, "87.54%"], ["Noisy Student", 12.3, "88.4%"]];
+  document.getElementById("cost-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">TPUv3-core-days (thousands, axis 0 to 12.3) · ImageNet accuracy · plain bars are ViTs, striped bars are CNNs</div>` +
+    rows.map(([m, c, a]) => {
+      const cnn = !m.startsWith("ViT");
+      return `<div class="share-row" style="grid-template-columns:7.5rem minmax(0,1fr) 6.2rem"><span>${m}</span><div><div class="share-bar" style="width:${Math.max(1, (c / 12.3) * 100).toFixed(1)}%;${cnn ? "background:var(--hatch) var(--wire)" : ""}"></div></div><span>${c}k · ${a}</span></div>`;
+    }).join("");
+}
+
+/* ---- §4.3: ImageNet accuracy against pre-training set size, Table 5 ---- */
+function dataChart(P) {
+  const sizes = [1.3, 14, 303];
+  const acc = { "ViT-B/32": [73.38, 81.28, 80.73], "ViT-B/16": [77.91, 83.97, 84.15], "ViT-L/32": [71.16, 80.99, 84.37], "ViT-L/16": [76.53, 85.15, 87.12] };
+  P.lineChart(document.getElementById("data-chart"), {
+    width: 420, height: 280,
+    series: Object.entries(acc).map(([name, ys]) => ({ name, points: sizes.map((s, i) => [s, ys[i]]) })),
+    logX: true, yMin: 70, yMax: 90, xLabel: "pre-training images (millions)", yLabel: "ImageNet top-1 %",
+    xFmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))), yFmt: (v) => v.toFixed(1),
+    readout: document.getElementById("data-readout"), ariaLabel: "ImageNet accuracy of four ViTs against pre-training set size",
+  });
+}
+
+/* ---- §4.4: accuracy against pre-training compute, Table 6 ---- */
+function computeChart(P) {
+  const vit = [[55, 80.73], [196, 84.37], [224, 84.15], [783, 86.30], [1567, 87.12], [4262, 88.08]];
+  const resnet = [[50, 77.54], [96, 80.67], [141, 81.88], [199, 82.12], [563, 84.97], [1126, 85.56], [3306, 87.22]];
+  const hybrid = [[106, 84.90], [246, 85.68], [274, 85.58], [859, 86.60], [1668, 87.12]];
+  P.lineChart(document.getElementById("compute-chart"), {
+    width: 420, height: 280,
+    series: [{ name: "Vision Transformers", points: vit }, { name: "ResNets", points: resnet }, { name: "hybrids", points: hybrid }],
+    logX: true, yMin: 76, yMax: 90, xLabel: "pre-training compute (exaFLOPs)", yLabel: "ImageNet top-1 %",
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("compute-readout"), ariaLabel: "ImageNet accuracy against pre-training compute for ViTs, ResNets and hybrids",
+  });
+}
+
+/* ---- §4.5: attention distance for an illustrative attention pattern ---- */
+function distanceFigure(P) {
+  const canvas = document.getElementById("dist-canvas");
+  const ctx = canvas.getContext("2d");
+  const G = 14, CELL = canvas.width / G, PX = 16; // 14 × 14 patches of 16 image pixels
+  const slider = document.getElementById("dist-w");
+  const label = document.getElementById("dist-wv");
+  const readout = document.getElementById("dist-readout");
+  let q = [7, 6];
+  function weights(w) {
+    const a = [];
+    for (let r = 0; r < G; r++) for (let c = 0; c < G; c++) a.push(Math.exp(-((r - q[0]) ** 2 + (c - q[1]) ** 2) / (2 * w * w)));
+    const s = a.reduce((x, y) => x + y, 0);
+    return a.map((v) => v / s);
+  }
+  function draw() {
+    // The slider runs on a log scale, from half a patch to 12 patches.
+    const w = 0.5 * Math.pow(24, +slider.value);
+    const A = weights(w);
+    const max = Math.max(...A);
+    const accent = VIT.css("--attn-stroke"), bg = VIT.css("--card") || "#fff", fg = VIT.css("--fg");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    let d = 0;
+    for (let r = 0; r < G; r++) for (let c = 0; c < G; c++) {
+      const a = A[r * G + c];
+      d += a * PX * Math.hypot(r - q[0], c - q[1]);
+      ctx.globalAlpha = 0.08 + 0.92 * (a / max);
+      ctx.fillStyle = accent; ctx.fillRect(c * CELL + 1, r * CELL + 1, CELL - 2, CELL - 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = fg; ctx.lineWidth = 4; ctx.strokeRect(q[1] * CELL + 2, q[0] * CELL + 2, CELL - 4, CELL - 4);
+    label.textContent = w.toFixed(1);
+    readout.innerHTML = `Query patch at row ${q[0] + 1}, column ${q[1] + 1}. It keeps <strong>${Math.round(A[q[0] * G + q[1]] * 100)}%</strong> of its attention on itself; its attention distance is <strong>${d.toFixed(1)} pixels</strong>.`;
+  }
+  canvas.addEventListener("pointerdown", (ev) => {
+    const r = canvas.getBoundingClientRect();
+    q = [Math.min(G - 1, Math.floor(((ev.clientY - r.top) / r.height) * G)), Math.min(G - 1, Math.floor(((ev.clientX - r.left) / r.width) * G))];
+    draw();
+  });
+  P.keyPoint(canvas, {
+    what: "the query patch", step: 1 / G,
+    get: () => [(q[1] + 0.5) / G, (q[0] + 0.5) / G],
+    set: (fx, fy) => { q = [Math.min(G - 1, Math.floor(fy * G)), Math.min(G - 1, Math.floor(fx * G))]; draw(); },
+    announce: false,
+  });
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+</script>
+</body>
+</html>
