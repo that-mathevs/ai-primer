@@ -823,6 +823,7 @@ actions.
   real issues in open-source Python repositories, graded by the tests of the
   pull request that fixed each one: fail-to-pass and pass-to-pass tests and
   the resolved rate.
+  [Annotated companion](../../papers/swe-bench.html)
 - **Yang et al., *SWE-agent: Agent-Computer Interfaces Enable Automated
   Software Engineering* (2024)**: https://arxiv.org/abs/2405.15793. Showed
   that the design of the tools a coding agent gets (compact search results,

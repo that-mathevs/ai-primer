@@ -1318,7 +1318,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.agents.coding_agents"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "swe-agent",

@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SWE-bench, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Jimenez et al. (2023), SWE-bench: 2,294 real GitHub issues from 12 Python repositories, graded by the tests of the pull requests that fixed them.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  .heat td.num { font-variant-numeric: tabular-nums; }
+  .heat th, .heat td { padding: 0.3rem 0.3rem; }
+  .grid3 td, .grid3 th { text-align: center; }
+  .grid3 td.on { outline: 3px solid var(--active); outline-offset: -3px; font-weight: 700; }
+  pre.diff { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.45; }
+</style>
+</head>
+<body data-paper="swe-bench">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 SWE-bench</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Building the benchmark</a></li>
+          <li><a href="#s2-2">2.2 The task and its grade</a></li>
+          <li><a href="#s2-3">2.3 What makes it hard</a></li>
+          <li><a href="#s2-4">2.4 SWE-bench Lite</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 SWE-Llama</a></li>
+      <li><a href="#s4">4 Experimental setup</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Choosing files: BM25 and the oracle</a></li>
+          <li><a href="#s4-2">4.2 The prompt</a></li>
+          <li><a href="#s4-3">4.3 The models</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Results</a>
+        <ol>
+          <li><a href="#s5-1">5.1 One task, up close</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Related work and 7 Discussion</a></li>
+      <li><a href="#appa">Appendix A: how a task is built and graded</a></li>
+      <li><a href="#appc">Appendix C: what an applied patch did</a></li>
+      <li><a href="#today">What happened next</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>SWE-bench: Can Language Models Resolve Real-World GitHub Issues?, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Jimenez, Yang, Wettig, Yao, Pei, Press and Narasimhan (2023): a benchmark made from 2,294 real bug reports and feature requests in 12 popular Python projects, where a model must edit the whole repository and the project's own tests decide whether it succeeded.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2310.06770">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2310.06770">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2310.06770">Paper as HTML (ar5iv)</a>
+    <a class="btn" href="https://www.swebench.com/">SWE-bench site</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is published on arXiv under a Creative Commons Attribution 4.0 licence (CC BY 4.0), which allows reproducing its tables with credit: the numbers restated here from its tables are attributed where they appear, and its figures are redrawn from scratch rather than copied. It follows the latest arXiv version (v3, 2024), which adds results for later models and the 300-task Lite subset. Equations are this page's own way of writing the paper's grading rules, with every symbol decoded. Numbers the paper does not give are labelled illustrative, and places where the paper disagrees with itself are pointed out where they occur.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#fig-budget">context budget</a> lets you choose how many tokens of retrieved code a model may read, and watch recall and clutter rise together.</li>
+  <li>The <a href="#fig-grader">grader</a> runs six patches for one small bug through the benchmark's real grading rule and places each in the paper's grid of outcomes.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. The <a class="lesson" data-lesson="primer/agents/coding_agents.html">coding agents lesson</a> builds a three-task SWE-bench of its own, graded the same way, in plain Python.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Given a codebase along with a description of an issue to be resolved, a language model is tasked with editing the codebase to address the issue.”<cite>Jimenez et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2310.06770">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A school exam asks for a short essay on a fresh page. A job asks you to fix a problem in a thousand-page report that twenty other people wrote, without breaking anything they rely on. Earlier code <span class="t" data-t="benchmark">benchmarks</span> were the exam. SWE-bench is the job.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>A benchmark of 2,294 tasks</strong>, each a real <span class="t" data-tip-title="GitHub issue" data-tip="A ticket on a project's GitHub page reporting a bug or asking for a feature, written by a user or maintainer in ordinary language.">GitHub issue</span> from one of 12 popular Python repositories, paired with the <span class="t" data-t="pull request">pull request</span> that resolved it.</li>
+  <li><strong>The task</strong>: given the issue text and the whole repository, produce an edit that makes the project's own tests pass.</li>
+  <li><strong>The finding</strong>: at the time, even the best model, Claude 2, resolved only 1.96% of the tasks, when the files to read were picked by a simple search engine.</li>
+  <li>A training set of about 19,000 further issues from 37 other repositories, and two <span class="t" data-t="fine-tuning">fine-tuned</span> models, SWE-Llama 7b and 13b.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>SWE-bench turned “can it write a function?” into “can it do a software engineer's task?”, and graded it by running tests rather than by comparing text. It became a standard measure for coding <span class="t" data-t="agent">agents</span>, starting with SWE-agent (<a href="https://arxiv.org/abs/2405.15793">Yang et al., 2024</a>), which lifted the resolved rate to 12.5% by letting a model work inside the repository.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S1">original</a></span></h2>
+<blockquote class="quote">“Coding tasks are appealing as they pose challenging problems to LMs yet generated solutions can be easily verified by running unit tests.”<cite>Jimenez et al. (2023), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A good exam has two properties that pull against each other: it must be hard enough that the best students still miss questions, and each answer must be quick to mark. Code gives both. The <a href="humaneval-pass-at-k.html">HumanEval companion</a> shows the first generation: short, self-contained functions checked by <span class="t" data-t="unit test">unit tests</span>. By 2023 models were scoring well on those. Real software work is different: find the right lines among thousands of files, understand how they interact, change several places at once.</p>
+<h3 class="rung">Tiny example: an exercise against a task</h3>
+<div class="tablewrap"><table>
+  <caption>A HumanEval problem against the average SWE-bench task. HumanEval figures from Chen et al. (2021); SWE-bench figures from Table 1 of Jimenez et al. (2023).</caption>
+  <thead><tr><th></th><th>HumanEval problem</th><th>SWE-bench task (average)</th></tr></thead>
+  <tbody>
+    <tr><td>What the model is given</td><td>a function signature and docstring</td><td>an issue of 195 words and a repository of 3,010 files (438,000 lines, tests not counted)</td></tr>
+    <tr><td>What it must produce</td><td>one function body</td><td>an edit touching 1.7 files, 3 functions and 32.8 lines</td></tr>
+    <tr><td>How it is graded</td><td>7.7 hidden unit tests</td><td>the repository's own tests: 9.1 that must start passing, 120.8 run in all</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the grading idea is the same in both columns: run the code, trust the tests. What changes is everything around it. The input grows from a few lines to hundreds of thousands, the output from one function to changes in several places, and the tests from a handful written for the benchmark to the project's real test suite.</p>
+<h3 class="rung">The whole paper in one picture</h3>
+<figure class="ix wide" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 330" role="img" aria-label="An issue and a snapshot of the repository go to the language model, which writes a patch; the patch and the pull request's hidden tests are applied to a fresh copy of the repository, the tests run, and the task is resolved only if the fail-to-pass and pass-to-pass tests all pass">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk norm" data-block="issue"><rect x="10" y="10" width="170" height="54" rx="7"/><text x="95" y="31" text-anchor="middle">Issue text</text><text x="95" y="49" text-anchor="middle">195 words on average</text></g>
+    <g class="blk emb" data-block="codebase"><rect x="200" y="10" width="170" height="54" rx="7"/><text x="285" y="31" text-anchor="middle">Codebase snapshot</text><text x="285" y="49" text-anchor="middle">3,010 files on average</text></g>
+    <path class="wire" d="M95,64 V84 H175 V98" marker-end="url(#arr)"/>
+    <path class="wire" d="M285,64 V84 H205 V98" marker-end="url(#arr)"/>
+    <g class="blk lin" data-block="lm"><rect x="110" y="100" width="160" height="40" rx="7"/><text x="190" y="125" text-anchor="middle">Language model</text></g>
+    <path class="wire" d="M190,140 V158" marker-end="url(#arr)"/>
+    <g class="blk ff" data-block="patch"><rect x="110" y="160" width="160" height="36" rx="7"/><text x="190" y="183" text-anchor="middle">Generated patch</text></g>
+    <path class="wire" d="M190,196 V214" marker-end="url(#arr)"/>
+    <g class="blk frame" data-block="harness"><rect x="6" y="216" width="368" height="108" rx="10"/></g>
+    <text x="16" y="233" class="lbl">Evaluation in a fresh copy</text>
+    <g class="blk attn" data-block="tests"><rect x="14" y="242" width="170" height="74" rx="7"/><text x="99" y="264" text-anchor="middle">Apply patch and</text><text x="99" y="281" text-anchor="middle">the PR's hidden tests,</text><text x="99" y="298" text-anchor="middle">then run them</text></g>
+    <path class="wire" d="M184,279 H204" marker-end="url(#arr)"/>
+    <g class="blk soft" data-block="verdict"><rect x="206" y="242" width="160" height="74" rx="7" stroke-width="3"/><text x="286" y="259" text-anchor="middle">Resolved only if</text><text x="286" y="275" text-anchor="middle">every fail-to-pass</text><text x="286" y="291" text-anchor="middle">and pass-to-pass</text><text x="286" y="307" text-anchor="middle">test passes</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. The model's work ends at the patch; everything inside the dashed frame is the benchmark's.</p></div>
+  </div>
+  <figcaption>Figure 1 of the paper, redrawn and expanded with the grading rule of §2.2 and Appendix A.4. Based on Jimenez et al. (2023), Figure 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> start at the top. An issue and a frozen copy of the repository, as it stood just before the fix was written, go to the model. The model writes a <span class="t" data-t="diff">patch</span>: a list of lines to remove and add. Only the patch crosses into the dashed frame, where a fresh copy of the repository receives it along with the tests that the real pull request added. The green box with the thick border is the whole verdict: the tests that the real fix made pass must now pass, and every test that already passed must still pass.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Three things make this a durable design. The tasks are real, so a score means something about real work. Grading is by execution, so there is no human in the loop and no argument about style. And collection is automatic, so new tasks can be gathered from issues filed after a model was trained, which the authors offer as a defence against <span class="t" data-t="contamination">contamination</span>.</p>
+</section>
+
+<section id="s2">
+<h2>2 SWE-bench <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S2">original</a></span></h2>
+<p>Four parts: how 93,139 pull requests were filtered down to 2,294 tasks, what exactly the model must do and how it is graded, what makes the tasks hard, and a smaller subset for cheaper experiments.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1 Building the benchmark <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S2.SS1">original</a></span></h3>
+<blockquote class="quote">“We filter out task instances without at least one test where its status changes from a fail to pass (henceforth referred to as fail-to-pass test).”<cite>Jimenez et al. (2023), §2.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A teacher building an exam from last year's homework keeps only the questions that had a marked answer key, and only those where the key actually distinguishes right from wrong. A pull request is a homework answer; its new tests are the answer key. SWE-bench keeps a pull request only if its tests fail on the old code and pass on the new.</p>
+<h4>Tiny example: one pull request through the three stages</h4>
+<p>Take a hypothetical pull request to a date library titled “Fix leap years for century years, fixes #412”. <strong>Stage I</strong>: it comes from a popular repository, so it is collected. <strong>Stage II</strong>: it is merged, it names an issue it resolves (“fixes #412”), and it edits a file whose path contains <code>test</code>, so it becomes a candidate. <strong>Stage III</strong>: in a clean environment, the new tests run on the old code, <code class="example">is_leap(1900)</code> fails; with the fix applied, it passes. At least one test went from fail to pass, the install worked, so it becomes a task. A pull request that only fixed a typo in the docs would have left at Stage II; one whose tests passed both before and after would have left at Stage III.</p>
+<figure class="ix wide" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 300" role="img" aria-label="Three filtering stages: 93,139 pull requests scraped from 12 repositories; 11,407 candidates that are merged, resolve an issue and change test files; 2,294 tasks whose tests install, run and include at least one fail-to-pass test">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk emb" data-block="stage1"><rect x="10" y="10" width="360" height="64" rx="8"/><text x="190" y="33" text-anchor="middle">Stage I: scrape pull requests</text><text x="190" y="52" text-anchor="middle">12 popular repositories: 93,139 PRs</text></g>
+    <path class="wire" d="M190,74 V100" marker-end="url(#arr2)"/>
+    <g class="blk norm" data-block="stage2"><rect x="40" y="102" width="300" height="74" rx="8"/><text x="190" y="124" text-anchor="middle">Stage II: attributes</text><text x="190" y="143" text-anchor="middle">merged, resolves an issue, edits tests</text><text x="190" y="162" text-anchor="middle">11,407 candidates</text></g>
+    <path class="wire" d="M190,176 V202" marker-end="url(#arr2)"/>
+    <g class="blk soft" data-block="stage3"><rect x="70" y="204" width="240" height="86" rx="8" stroke-width="3"/><text x="190" y="226" text-anchor="middle">Stage III: execution</text><text x="190" y="245" text-anchor="middle">installs, runs, and at least</text><text x="190" y="262" text-anchor="middle">one fail-to-pass test</text><text x="190" y="281" text-anchor="middle">2,294 tasks</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a stage to see what it checks and what it removes.</p></div>
+  </div>
+  <figcaption>Figure 2 of the paper, redrawn as a funnel, with the counts of its Table 10. Based on Jimenez et al. (2023), Figure 2 and Table 10.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each box is narrower because fewer pull requests survive it. The first two stages read only metadata (is it merged, does it mention an issue, did it touch a test file), so they are cheap. The third actually installs the repository at that moment in its history and runs the tests twice, once before and once after the fix, which is expensive but is the only way to know the tests really check the fix. The paper's text rounds the first count to about 90,000; its Table 10 gives 93,139.</p>
+<h4>The math: how much survives</h4>
+<div class="eq" data-tex="\htmlData{sym=Y}{Y} = \frac{\htmlData{sym=Nfinal}{N_{\text{task}}}}{\htmlData{sym=Ncrawl}{N_{\text{PR}}}} = \frac{\htmlData{sym=Nconv}{N_{\text{cand}}}}{\htmlData{sym=Ncrawl}{N_{\text{PR}}}} \cdot \frac{\htmlData{sym=Nfinal}{N_{\text{task}}}}{\htmlData{sym=Nconv}{N_{\text{cand}}}}" data-fallback="Y = N_task / N_PR = (N_cand / N_PR) · (N_task / N_cand)"></div>
+<div class="symtable" data-syms="Ncrawl,Nconv,Nfinal,Y"></div>
+<p class="inwords"><strong>In words:</strong> “the share of pull requests that become tasks is the share that pass the attribute filter times the share of those that pass the execution filter.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 11,407 / 93,139 = 0.122 pass Stage II; 2,294 / 11,407 = 0.201 of those pass Stage III; together 0.0246, about one pull request in 41. By the paper's account, install and run failures alone remove about half of the candidates in Stage III; the fail-to-pass check and the log checks of Appendix A.3 remove most of the rest. Flask is the extreme: 2,434 pull requests, 107 candidates, 11 tasks.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>N_PR, N_cand, N_task = 93139, 11407, 2294
+# Stage II keeps this share
+round(N_cand / N_PR, 3)  # → 0.122
+# Stage III keeps this share of the candidates
+round(N_task / N_cand, 3)  # → 0.201
+# Y, the whole funnel, and "one in how many"
+Y = N_task / N_PR
+round(Y, 4), round(1 / Y)  # → (0.0246, 41)
+# flask, the smallest repository
+round(11 / 2434, 4)  # → 0.0045</code></pre>
+<h4>Where the tasks come from</h4>
+<div class="plot" id="fig3">
+  <div class="controls ui"><label for="repo-pick">Show the funnel for</label> <select id="repo-pick"></select></div>
+  <div id="repo-bars"></div>
+  <p class="readout" id="repo-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is one repository's number of final tasks, the paper's Figure 3 redrawn from its Table 10. Django alone supplies 850 of 2,294 (37%) and sympy 386, while flask gives 11 and seaborn 22. Pick a repository to read its whole funnel. The imbalance matters when reading scores: an overall resolved rate is mostly a Django and sympy rate, and a model that is good at one of them moves the total far more than one good at flask.</p>
+<h4>Why it matters</h4>
+<p>The fail-to-pass requirement is what makes every task checkable: each has at least one test that the old code fails, so doing nothing cannot score. The same filter has a cost the paper names in Appendix A.3: tasks whose tests call a function the fix newly created are removed, because nothing in the issue says what that function should be called, and no one could be expected to guess it.</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 The task and its grade <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S2.SS2">original</a></span></h3>
+<blockquote class="quote">“If the patch applies successfully and all of these tests pass we consider the proposed solution to have successfully resolved the issue.”<cite>Jimenez et al. (2023), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>An editor sending corrections to a printer doesn't resend the whole book. They send a list: “page 12, line 4, delete this sentence, put this one instead”. A <span class="t" data-t="diff">patch file</span> is that list for code. The printer applies it mechanically, and if a line it was told to change is not where the list says, the correction bounces.</p>
+<h4>Tiny example: reading a patch</h4>
+<p>Here is a patch that fixes the leap-year bug from the <a data-lesson="primer/agents/coding_agents.html">coding agents lesson</a>'s toy repository. The header names the file, the <code>@@</code> line says where the change sits, lines starting with <code>-</code> are removed, lines starting with <code>+</code> are added, and lines starting with a space are unchanged context that must match exactly for the patch to apply.</p>
+<pre class="diff"><code class="example">--- a/dates.py
++++ b/dates.py
+@@ -1,2 +1,2 @@
+ def is_leap(year):
+-    return year % 4 == 0
++    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)</code></pre>
+<p>The model's answer to a task is exactly such a file. The grader applies it with the Unix <code class="example">patch</code> program, adds the hidden tests, and runs them. Suppose the task has two fail-to-pass tests (<code class="example">is_leap(1900)</code> and <code class="example">is_leap(2100)</code> must be False) and four pass-to-pass tests (2000 and 2024 are leap years, 2023 is not, February 2024 has 29 days). The patch above passes all six: resolved. A patch that forgot the 400 rule would pass both fail-to-pass tests and break 2000: not resolved.</p>
+<h4>The math: the resolved rate</h4>
+<div class="eq" data-tex="\begin{aligned} \htmlData{sym=ri}{r_i} &amp;= \htmlData{sym=ind}{\mathbb{1}}[\htmlData{sym=applies}{\text{applies}_i}] \\ &amp;\quad \cdot \htmlData{sym=prodF}{\prod_{t \in F_i}} \htmlData{sym=ind}{\mathbb{1}}[\htmlData{sym=pass}{\text{pass}_i(t)}] \\ &amp;\quad \cdot \htmlData{sym=prodP}{\prod_{t \in P_i}} \htmlData{sym=ind}{\mathbb{1}}[\htmlData{sym=pass}{\text{pass}_i(t)}] \\ \htmlData{sym=R}{R} &amp;= \htmlData{sym=invN}{\frac{1}{N}} \htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=ri}{r_i} \end{aligned}" data-fallback="r_i = 1[applies_i] · Π over t in F_i of 1[pass_i(t)] · Π over t in P_i of 1[pass_i(t)];  R = (1/N) Σ_{i=1}^{N} r_i"></div>
+<div class="symtable" data-syms="i,applies,ind,Fi,Pi,pass,prodF,prodP,ri,N,invN,sumi,R"></div>
+<p class="inwords"><strong>In words:</strong> “a task scores 1 only if the patch applies and every one of its fail-to-pass tests and every one of its pass-to-pass tests passes; a single failure anywhere multiplies the whole score to 0. The resolved rate is the share of tasks that score 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the patch that forgets the 400 rule: applies = 1, both fail-to-pass tests pass (1 · 1), but the pass-to-pass product is 0 · 1 · 1 · 1 = 0, so r = 0. Across the benchmark, Claude 2 given the files the real fix edited (the “oracle” setting of <a href="#s4-1">§4.1</a>) resolves 110 tasks: R = 110 / 2,294 = 4.80%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def is_leap(year):
+    # the patch that forgets the 400 rule
+    return year % 4 == 0 and year % 100 != 0
+applies = 1
+# 1[pass(t)] for each fail-to-pass test, then each pass-to-pass test
+F = [is_leap(1900) == False, is_leap(2100) == False]
+P = [is_leap(2000) == True, is_leap(2024) == True, is_leap(2023) == False, (29 if is_leap(2024) else 28) == 29]
+F, P  # → ([True, True], [False, True, True, True])
+# r_i: one failure anywhere zeroes the product
+r = applies * math.prod(F) * math.prod(P)
+r  # → 0
+# R = (1/N) Σ r_i: Claude 2, oracle files, 110 of 2,294 tasks
+round(100 * 110 / 2294, 2)  # → 4.8</code></pre>
+<p>There is no partial credit, and there is no reading of the patch. A patch that is ugly, or that solves the problem differently from the real fix, counts as long as the tests pass; a patch that is almost right counts for nothing. <a data-lesson="primer/agents/coding_agents.html#grade"><code>grade</code></a> in the coding agents lesson is this rule, returning a <a data-lesson="primer/agents/coding_agents.html#Grade"><code>Grade</code></a> with both test reports, and <a data-lesson="primer/agents/coding_agents.html#resolved_rate"><code>resolved_rate</code></a> is R.</p>
+<h4>Why it matters</h4>
+<p>The pass-to-pass tests are what stop a fix from being a trade. A patch that makes the issue go away by breaking something else is common (<a href="#appc">Appendix C</a> counts them), and without those tests it would score. The two-list design, fail-to-pass for “the issue is fixed” and pass-to-pass for “nothing else broke”, has become a common way to grade code changes.</p>
+</section>
+
+<section id="s2-3">
+<h3>2.3 What makes it hard <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S2.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Finding the one wrong word in a book is easy when someone tells you the page. SWE-bench tells you the symptom, in the words of a user who hit it, and hands you the library.</p>
+<h4>Tiny example: the needle and the haystack</h4>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1 of Jimenez et al. (2023): average and largest values per task, over all 2,294 tasks.</caption>
+  <thead><tr><th>What is measured</th><th class="num">Mean</th><th class="num">Max</th></tr></thead>
+  <tbody>
+    <tr><td>Issue length (words)</td><td class="num">195.1</td><td class="num">4,477</td></tr>
+    <tr><td>Codebase files (not tests)</td><td class="num">3,010</td><td class="num">5,890</td></tr>
+    <tr><td>Codebase lines (not tests)</td><td class="num">438K</td><td class="num">886K</td></tr>
+    <tr class="hl"><td>Lines edited by the real fix</td><td class="num">32.8</td><td class="num">5,888</td></tr>
+    <tr><td>Files edited by the real fix</td><td class="num">1.7</td><td class="num">31</td></tr>
+    <tr><td>Functions edited by the real fix</td><td class="num">3</td><td class="num">36</td></tr>
+    <tr><td>Fail-to-pass tests</td><td class="num">9.1</td><td class="num">1,633</td></tr>
+    <tr><td>Tests run in all</td><td class="num">120.8</td><td class="num">9,459</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the highlighted row against the one two above it is the difficulty in one comparison. The medians in the paper's Appendix A.5 tell the same story for a typical task: an issue of 140 words, a codebase of just under 1,900 files and 400,000 lines, a fix of about 15 lines in a single function, one fail-to-pass test and 51 pass-to-pass tests. The means are pulled up by a few huge tasks, which is why the maximums matter too.</p>
+<h4>The math: what fraction of the code changes</h4>
+<div class="eq" data-tex="\htmlData{sym=rho}{\rho} = \frac{\htmlData{sym=Ledit}{L_{\text{edit}}}}{\htmlData{sym=Lcode}{L_{\text{code}}}}" data-fallback="ρ = L_edit / L_code"></div>
+<div class="symtable" data-syms="Ledit,Lcode,rho"></div>
+<p class="inwords"><strong>In words:</strong> “the share of the codebase that the fix touches is the lines it edits divided by the lines there are.”</p>
+<p class="inwords"><strong>With the numbers:</strong> on average 32.8 / 438,000 = 0.000075, one line in about 13,000. For the median task, 15 / 400,000 = 0.0000375, one line in about 27,000.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>L_edit, L_code = 32.8, 438_000
+rho = L_edit / L_code
+f"{rho:.1e}", round(1 / rho, -3)  # → ('7.5e-05', 13000.0)
+# the median task from Appendix A.5
+round(400_000 / 15, -3)  # → 27000.0</code></pre>
+<h4>Five more properties the paper lists</h4>
+<ul>
+  <li><strong>Real tasks</strong>: issues written by users, fixed by maintainers.</li>
+  <li><strong>Continually updatable</strong>: the pipeline runs on any Python repository with minimal human work, so new tasks can come from issues created after a model's training data was collected.</li>
+  <li><strong>Robust evaluation</strong>: every task has at least one fail-to-pass test, and 40% have at least two.</li>
+  <li><strong>Edits across the codebase</strong>: no hint which function or file to change, unlike benchmarks that ask for one function or one blank to fill.</li>
+  <li><strong>Many possible solutions</strong>: the reference fix is one answer; any patch that passes the tests counts.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>A context of 438,000 lines does not fit in any model's <span class="t" data-t="context window">context window</span>, so the first problem is not writing code but choosing what to read, which is the job of <span class="t" data-t="fault localization">fault localization</span>. The <a data-lesson="primer/agents/coding_agents.html#context_tokens">coding agents lesson</a> measures the same trade-off in miniature: dumping a repository costs every file's tokens, while searching first costs a few hundred.</p>
+</section>
+
+<section id="s2-4">
+<h3>2.4 SWE-bench Lite <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S2.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A full marathon tells you the most about a runner, but it is expensive to run every week. A 5 km time trial on the same course is a cheaper check.</p>
+<h4>Tiny example</h4>
+<p>SWE-bench Lite is 300 of the 2,294 tasks, 13% of them, chosen to be more self-contained and to focus on functional bug fixes. It covers 11 of the 12 repositories, in similar proportions. Counted in tasks, it is about an eighth of a full run.</p>
+<h4>Why it matters</h4>
+<p>SWE-agent, for one, reports its ablations on Lite and its headline results on the full set. One caution: the paper's own Appendix A.7, which should describe exactly how the 300 were selected, breaks off mid-sentence in every arXiv version (it reads “SWE-bench is” and stops), and the sentence in §2.4 pointing to the criteria is also cut short. The paper does not give the selection rule, so this page does not either.</p>
+</section>
+
+<section id="s3">
+<h2>3 SWE-Llama: fine-tuning CodeLlama for SWE-bench <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>An apprentice who has read a lot of code, but never been handed a bug report and asked for a fix, tends to answer with something unrelated. A few thousand worked examples of “here is the report, here is the fix” teach the format.</p>
+<h3 class="rung">Tiny example: the training data</h3>
+<p>The authors ran the same collection pipeline on 37 other Python repositories, disjoint from the 12 in the benchmark so no test task can leak into training, and dropped the requirement that a pull request add tests. That gave about 19,000 issue and pull request pairs. Excluding sequences longer than 30,000 tokens left about 10,000. Each training example is instructions, the issue, and the files the real fix edited; the target is the real patch (the paper calls it the “gold patch”).</p>
+<figure class="ix" id="fig-llama">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 250" role="img" aria-label="CodeLlama-Python is fine-tuned with LoRA on about 10,000 issue and patch pairs from 37 other repositories to make SWE-Llama">
+    <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk lin" data-block="codellama"><rect x="10" y="10" width="130" height="50" rx="7"/><text x="75" y="31" text-anchor="middle">CodeLlama-</text><text x="75" y="48" text-anchor="middle">Python 7b, 13b</text></g>
+    <g class="blk plain" data-block="train"><rect x="160" y="10" width="130" height="50" rx="7"/><text x="225" y="31" text-anchor="middle">SWE-bench-train</text><text x="225" y="48" text-anchor="middle">37 other repos</text></g>
+    <path class="wire" d="M75,60 V90 H140 V104" marker-end="url(#arr3)"/>
+    <path class="wire" d="M225,60 V90 H160 V104" marker-end="url(#arr3)"/>
+    <g class="blk ff" data-block="lora"><rect x="60" y="106" width="180" height="50" rx="7"/><text x="150" y="127" text-anchor="middle">LoRA on the attention</text><text x="150" y="144" text-anchor="middle">projections, r = 16</text></g>
+    <path class="wire" d="M150,156 V184" marker-end="url(#arr3)"/>
+    <g class="blk soft" data-block="swellama"><rect x="60" y="186" width="180" height="50" rx="7" stroke-width="3"/><text x="150" y="207" text-anchor="middle">SWE-Llama</text><text x="150" y="224" text-anchor="middle">writes patches</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box.</p></div>
+  </div>
+  <figcaption>SWE-Llama's recipe, drawn from §3 and Appendix B.1 of Jimenez et al. (2023).</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> two inputs meet in the middle: a code model that can read long inputs, and pairs of issues and real fixes. The middle box trains only small added matrices inside the attention layers (<span class="t" data-t="lora">LoRA</span>, the <a href="lora.html">LoRA companion</a> takes it apart), chosen, the paper says, for memory efficiency. The 7b model trained in 20 hours on 4 A100 GPUs and the 13b in 47 hours on 8. The result writes patches directly.</p>
+<h3 class="rung">Why it matters</h3>
+<p>At the time only CodeLlama among open models could read the long inputs needed, and off the shelf it produced placeholder or unrelated code. Fine-tuning made it competitive with Claude 2 in some settings, but it also taught it a habit that backfired, covered in <a href="#s5">§5</a>: trained always to edit the files it was shown, it struggled when most files shown were irrelevant.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experimental setup <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S4">original</a></span></h2>
+<p>A model cannot read 438,000 lines at once, so every baseline in the paper first chooses a few files, pastes them into one prompt, and asks for a patch in a single reply. No model runs code or looks around. This non-interactive setup is the baseline that later agents were measured against.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Choosing files: BM25 and the oracle <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“We observe that in approximately 40% of instances, BM25 retrieves a superset of the oracle files for the 27,000-token context limit.”<cite>Jimenez et al. (2023), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You can photocopy only 30 pages of the library for someone working on a problem. You pick pages by matching the words in their question against the index. If their question uses the same words as the page that holds the answer, you win; if not, you copy 30 pages of the wrong thing. A bigger photocopy budget helps you catch the right page, but it also buries it among more wrong ones.</p>
+<h4>Tiny example: two ways to choose files</h4>
+<p><strong>BM25</strong> (<span class="t" data-t="bm25">BM25</span>, a classic keyword score from <span class="t" data-t="sparse retrieval">sparse retrieval</span>) ranks every file by how well its words match the issue text, with the file's path prepended so a filename mentioned in the issue counts. The paper fills the prompt with top-ranked files up to a budget of 13,000, 27,000 or 50,000 tokens. The authors chose BM25 over <span class="t" data-t="dense retrieval">dense retrieval</span> because the queries and documents are very long and because matching natural-language issues to code is unusual territory for embedding models. <strong>Oracle</strong> retrieval simply hands the model the files the real fix edited. It is not realistic (an engineer doesn't know in advance which files need changing) and is used only for analysis.</p>
+<p><strong>Try it:</strong> eight files ranked by BM25 for one made-up issue, two of which the real fix edited. Raise the budget and watch which files make it into the prompt, how much of the oracle is found, and how much of the prompt is files the fix never touched.</p>
+<div class="plot" id="fig-budget">
+  <div class="controls ui"><label for="bud">Context budget for retrieved files = <strong id="bud-v">27</strong>k tokens</label><input type="range" id="bud" min="5" max="60" step="1" value="27"></div>
+  <div id="bud-list"></div>
+  <p class="readout" id="bud-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the files are listed in BM25's order, best match first, with their size in thousands of tokens (illustrative). Files are taken in order until the next one no longer fits. The two striped files are the ones the real fix edited. At 13k the prompt holds only a documentation page and a test file: recall 0. At 27k the first edited file arrives. At 50k both are in, but more than two thirds of the prompt is files the fix never touched. That is the trade the paper measures in Tables 2 and 3 below.</p>
+<h4>The math: three kinds of recall</h4>
+<div class="eq" data-tex="\begin{aligned} \text{Avg} &amp;= \htmlData{sym=invN}{\frac{1}{N}}\htmlData{sym=sumi}{\sum_{i=1}^{N}} \frac{\htmlData{sym=card}{|\htmlData{sym=Ri}{R_i} \cap \htmlData{sym=Oi}{O_i}|}}{\htmlData{sym=card}{|\htmlData{sym=Oi}{O_i}|}} \\ \text{All} &amp;= \htmlData{sym=invN}{\frac{1}{N}}\htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=ind}{\mathbb{1}}[\htmlData{sym=Oi}{O_i} \htmlData{sym=subset}{\subseteq} \htmlData{sym=Ri}{R_i}] \\ \text{Any} &amp;= \htmlData{sym=invN}{\frac{1}{N}}\htmlData{sym=sumi}{\sum_{i=1}^{N}} \htmlData{sym=ind}{\mathbb{1}}[\htmlData{sym=Ri}{R_i} \htmlData{sym=cap}{\cap} \htmlData{sym=Oi}{O_i} \neq \varnothing] \end{aligned}" data-fallback="Avg = (1/N) Σ |R_i ∩ O_i| / |O_i|;  All = (1/N) Σ 1[O_i ⊆ R_i];  Any = (1/N) Σ 1[R_i ∩ O_i ≠ ∅]"></div>
+<div class="symtable" data-syms="Oi,Ri,cap,card,subset,ind,N,invN,sumi"></div>
+<p class="inwords"><strong>In words:</strong> “Avg is the share of the edited files that were retrieved, averaged over tasks; All is the share of tasks where every edited file was retrieved; Any is the share where at least one was.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> three tasks. Task 1 edits <code class="example">a.py</code> and retrieval found it: 1, 1, 1. Task 2 edits two files and retrieval found one: 0.5, 0, 1. Task 3 edits one file and retrieval missed it: 0, 0, 0. So Avg = 0.5, All = 0.33, Any = 0.67. On the real benchmark at 27k tokens, the paper's Table 3 gives Avg 44.41%, All 39.83% and Any 51.27%: for almost half the tasks (48.7%) the prompt holds none of the right files.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># (O_i, R_i) for three illustrative tasks: files the fix edited, files retrieved
+tasks = [({"a.py"}, {"a.py", "b.py", "c.py"}), ({"x.py", "y.py"}, {"x.py", "z.py"}), ({"m.py"}, {"n.py", "p.py"})]
+N = len(tasks)
+avg = sum(len(R &amp; O) / len(O) for O, R in tasks) / N
+all_ = sum(O &lt;= R for O, R in tasks) / N
+any_ = sum(bool(R &amp; O) for O, R in tasks) / N
+round(avg, 2), round(all_, 2), round(any_, 2)  # → (0.5, 0.33, 0.67)
+# SWE-bench at 27k tokens: tasks where BM25 found none of the edited files
+round(100 - 51.27, 2)  # → 48.73</code></pre>
+<div class="plot" id="fig-recall">
+  <div id="recall-chart"></div>
+  <p class="readout" id="recall-readout">Hover the chart, or tab to it and use the arrow keys, to read BM25's recall at each budget.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the budget for retrieved files, in thousands of tokens; the y-axis is recall in percent, from Table 3 of the paper. All three lines climb with the budget, as they must: more files, more chances to include the right ones. Even at 50k tokens, more than half the tasks (54.1%) are missing at least one file the fix edited.</p>
+<div class="plot" id="fig-ctx">
+  <div id="ctx-chart"></div>
+  <p class="readout" id="ctx-readout">Hover the chart, or tab to it and use the arrow keys, to read each model's resolved rate at each budget.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the same x-axis; the y-axis is the percentage of tasks resolved, from Table 2 of the paper. Every line falls as the budget grows, the opposite of the recall chart above. More of the right files are in the prompt, and yet fewer tasks are resolved, because the right files arrive buried among more wrong ones. Both SWE-Llama models drop to 0 at 50k. (The paper's text refers to these resolved rates as Table 3; they are its Table 2.)</p>
+<h4>Why it matters</h4>
+<p>This pair of charts is one of the paper's most quoted lessons: a model's performance is limited not only by whether the answer is in its context but by how much else is there. The <a href="lost-in-the-middle.html">Lost in the Middle companion</a> studies the same effect directly. For coding systems the conclusion was to stop choosing files once, up front, and let the model search and read as it goes, which is what agents do.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 The prompt <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A request to a contractor who will visit only once: here is the complaint, here are the drawings of the rooms involved, here is an example of how to write up a change order, now write the change order.</p>
+<h4>Tiny example: the prompt's five parts</h4>
+<figure class="ix" id="fig-prompt">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 290" role="img" aria-label="The prompt, top to bottom: instructions, the issue between issue tags, the retrieved files between code tags each marked with start and end lines, an example patch, and the request for a single patch">
+    <g class="blk plain" data-block="p_instr"><rect x="10" y="10" width="280" height="36" rx="6"/><text x="150" y="33" text-anchor="middle">Instructions</text></g>
+    <g class="blk norm" data-block="p_issue"><rect x="10" y="54" width="280" height="40" rx="6"/><text x="150" y="79" text-anchor="middle">&lt;issue&gt; issue text &lt;/issue&gt;</text></g>
+    <g class="blk emb" data-block="p_code"><rect x="10" y="102" width="280" height="80" rx="6"/><text x="150" y="124" text-anchor="middle">&lt;code&gt;</text><text x="150" y="144" text-anchor="middle">README.md, retrieved files,</text><text x="150" y="162" text-anchor="middle">each between start and end markers</text></g>
+    <g class="blk ff" data-block="p_example"><rect x="10" y="190" width="280" height="40" rx="6"/><text x="150" y="215" text-anchor="middle">&lt;patch&gt; an example patch &lt;/patch&gt;</text></g>
+    <g class="blk soft" data-block="p_ask"><rect x="10" y="238" width="280" height="40" rx="6" stroke-width="3"/><text x="150" y="263" text-anchor="middle">“Respond with a single patch file”</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap each part of the prompt.</p></div>
+  </div>
+  <figcaption>The prompt template of the paper's Appendix D.3, drawn as its parts. Based on Jimenez et al. (2023), Appendix D.3.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read top to bottom, in the order the model reads. The pink part is nearly all of the length: the retrieved files. The example patch is there to show the format: the paper notes that models likely see few patch files in training, and many of their patches fail to apply. The request at the bottom asks for exactly one patch that can be applied with <code class="example">git apply</code>. The model gets one reply, generated with <span class="t" data-t="greedy decoding">greedy decoding</span>, and no second chance.</p>
+<h4>Why it matters</h4>
+<p>The template shows what the baseline cannot do: ask a question, open another file, or run anything. Every piece of context must be chosen before the model starts. The authors' own list of future directions names the alternative, “agent-based approaches”, and a follow-up paper by several of the same authors (SWE-agent, <a href="https://arxiv.org/abs/2405.15793">arXiv:2405.15793</a>) built it.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 The models <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If the drawings for a job don't fit through the door, the contractor never sees them. A model whose context window is too short for the relevant files starts with part of the task already lost.</p>
+<h4>Tiny example</h4>
+<div class="tablewrap"><table>
+  <caption>Table 4 of Jimenez et al. (2023): each model's context window, and the share of tasks whose oracle files fit in it.</caption>
+  <thead><tr><th>Model</th><th class="num">Max tokens</th><th class="num">Tasks where the oracle fits</th></tr></thead>
+  <tbody>
+    <tr><td>ChatGPT-3.5</td><td class="num">16,385</td><td class="num">58.1%</td></tr>
+    <tr><td>GPT-4</td><td class="num">32,768</td><td class="num">84.1%</td></tr>
+    <tr><td>Claude 2</td><td class="num">100,000</td><td class="num">96.4%</td></tr>
+    <tr><td>SWE-Llama</td><td class="num">≥ 100,000</td><td class="num">≥ 94.8%</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the right column is a ceiling. ChatGPT-3.5 cannot even be shown the right files for 42% of tasks. Token counts are not directly comparable across models, the paper warns, because <span class="t" data-t="tokenizer">tokenizers</span> differ: the same text is about 42% longer in Llama's tokens than in GPT-4's.</p>
+<h4>Why it matters</h4>
+<p>Context length was the gate for entering this benchmark at all in 2023. It still shapes how coding systems are built: whatever the window, a repository is bigger, so something must decide what to read.</p>
+</section>
+
+<section id="s5">
+<h2>5 Results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S5">original</a></span></h2>
+<blockquote class="quote">“Across the board, models struggle significantly to resolve issues.”<cite>Jimenez et al. (2023), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A class sits a new, harder exam, and the best student scores 2%. That says more about the exam than about the students: it measures something the old exams did not.</p>
+<h3 class="rung">Tiny example: the headline table</h3>
+<div class="plot" id="fig-results">
+  <div id="res-bars"></div>
+  <p class="readout" id="res-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each model has two bars, from Table 5 of the paper (BM25 retrieval, full benchmark). The solid bar is the percentage of tasks resolved, on an axis from 0 to 5%; the striped bar is the percentage of patches that even applied cleanly, on an axis from 0 to 100%. Look at the gap: between a quarter and a half of all patches apply, but only 0.17% to 3.79% of tasks are resolved. SWE-Llama's patches apply most often (it was trained on the format) yet resolve few. Claude 3 Opus, added in the 2024 revision, leads at 3.79%.</p>
+<p>One small disagreement: the abstract and §5 give Claude 2 1.96%, while Table 5 gives 1.97%. Neither is off by much, but only one can be a count out of 2,294: 45 tasks is 1.96%, and 46 would be 2.01%.</p>
+<pre class="in-python"><code># which whole number of tasks out of 2,294 gives each figure?
+[round(100 * k / 2294, 2) for k in (44, 45, 46)]  # → [1.92, 1.96, 2.01]</code></pre>
+<h3 class="rung">Difficulty differs by repository</h3>
+<div class="plot" id="fig4">
+  <p class="readout" style="margin-top:0">Table 19 of Jimenez et al. (2023), shaded: % resolved per repository with oracle retrieval. GPT-3.5 is ChatGPT-3.5, SL is SWE-Llama, and GPT-4 ran on a random 25% of tasks.</p>
+  <div class="tablewrap"><table class="heat" id="heat" style="font-size:0.8rem"></table></div>
+  <p class="readout" id="heat-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the paper's Figure 4, redrawn from its Table 19 as a shaded table: one row per repository, one column per model, each cell the percentage resolved with oracle retrieval; darker means higher. The darkest row is <code>psf/requests</code> (up to 18.18%), whose codebase is among the smallest (119 files and 30,000 lines, from the paper's Table 11); seaborn is zero for everyone. The columns rise and fall together across rows, so difficulty is a property of the repository as much as of the model. GPT-4 ran on a random quarter of the tasks for budget reasons, so its column rests on few tasks per repository. The models also solve different tasks: Claude 2 solves 110 and SWE-Llama 13b 91, but only 42% of SWE-Llama's are among Claude 2's.</p>
+<p>Images play a part too. Issues can embed screenshots, which a text model cannot see: 32% of matplotlib issues and 10% of seaborn issues contain an image, against 2% overall.</p>
+<h3 class="rung">Difficulty rises with context; trimming it helps</h3>
+<p>Claude 2's resolved rate falls steadily as the total input gets longer (the paper's Figure 5), even with oracle files. To test whether the problem is the noise around the answer, the authors made an <strong>oracle-collapsed</strong> prompt: the oracle files, with everything more than 15 lines away from an edited line removed.</p>
+<div class="eq" data-tex="\htmlData{sym=Lkept}{L_{\text{kept}}} \approx \htmlData{sym=sumh}{\sum_{h}} \left(\htmlData{sym=eh}{e_h} + 2\htmlData{sym=b}{b}\right)" data-fallback="L_kept ≈ Σ_h (e_h + 2b)"></div>
+<div class="symtable" data-syms="eh,b,sumh,Lkept"></div>
+<p class="inwords"><strong>In words:</strong> “each edited region keeps its own lines plus a buffer of b lines above and b below; add that up over the regions.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a 1,000-line file with two edited regions of 4 and 6 lines keeps (4 + 30) + (6 + 30) = 70 lines, 7% of the file (ignoring regions that overlap or touch the file's ends). In the paper, collapsing raised GPT-4 from 1.3% to 3.4% and Claude 2 from 4.8% to 5.9% (Table 6), with Claude 3 Opus at 9.39%.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>b = 15
+# e_h: lines edited in each region of one file (illustrative)
+e = [4, 6]
+L_kept = sum(e_h + 2 * b for e_h in e)
+L_kept, L_kept / 1000  # → (70, 0.07)</code></pre>
+<p>Collapsing uses knowledge of the answer, so it is an analysis, not a method. What it shows is that the same model, given the same relevant code with less around it, does better: <span class="t" data-t="fault localization">localization</span>, not writing the fix, was a large part of the difficulty.</p>
+<h3 class="rung">Four more findings</h3>
+<ul>
+  <li><strong>No sign of memorised fixes.</strong> Splitting tasks into those created before and after 2023 (Table 7), most models score about the same on both halves; only GPT-4 drops (1.96% to 0.0%), and it ran on a small subset. The authors read this as evidence that models are not simply recalling a later version of the code.</li>
+  <li><strong>Fine-tuned models are brittle to what they are shown.</strong> SWE-Llama was trained with oracle files, which it learned always to edit. Given BM25 files, most of which should not be touched, it does poorly.</li>
+  <li><strong>Patches beat whole files.</strong> Asked to rewrite each edited file in full instead of writing a patch, Claude 2 fell from 4.8% to 2.2% with oracle retrieval.</li>
+  <li><strong>Model patches are small.</strong> Applied model patches change about half as many lines as the real fixes for the same tasks, and almost never more than one file (Table 8).</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 8 of Jimenez et al. (2023): average size of applied patches with oracle retrieval, next to the real fixes for the same tasks.</caption>
+  <thead><tr><th>Patches</th><th class="num">Total lines</th><th class="num">Added</th><th class="num">Removed</th><th class="num">Files</th></tr></thead>
+  <tbody>
+    <tr><td>Claude 2</td><td class="num">19.6</td><td class="num">4.2</td><td class="num">1.9</td><td class="num">1.0</td></tr>
+    <tr><td>Real fixes for the same tasks</td><td class="num">44.1</td><td class="num">12.0</td><td class="num">5.8</td><td class="num">1.2</td></tr>
+    <tr><td>SWE-Llama 13b</td><td class="num">17.6</td><td class="num">1.6</td><td class="num">1.2</td><td class="num">1.1</td></tr>
+    <tr><td>Real fixes for the same tasks</td><td class="num">37.8</td><td class="num">10.0</td><td class="num">4.4</td><td class="num">1.1</td></tr>
+    <tr class="hl"><td>All 2,294 real fixes</td><td class="num">74.5</td><td class="num">22.3</td><td class="num">10.5</td><td class="num">1.7</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> compare each model row with the row beneath it, which describes the real fixes for exactly the tasks where that model's patch applied. Claude 2's patches are 19.6 lines against 44.1, less than half. The last row, all real fixes, is bigger still: the tasks where a model's patch applied at all tend to have smaller real fixes. (“Total lines” is larger than added plus removed in every row; the paper does not say what else it counts.) The paper's own text compares 74.5 with 30.1, ChatGPT-3.5's figure, as if it were the models' average; the like-for-like comparison is the one in each pair of rows.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Every number here is a baseline that a model reading a pasted prompt could reach. Two findings pointed straight at what came next: context is the bottleneck, and models given a chance to check their work would do better. The authors say so in Appendix C.5, noting the value of letting a model run its fix against the tests before deciding to submit.</p>
+</section>
+
+<section id="s5-1">
+<h3>5.1 One task, up close <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S5.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A new employee told “the report prints the wrong heading when the setting is on” finds the function that prints the heading and makes it always print the right one for that setting. A senior engineer notices the function next door already reads the setting properly, and copies that pattern.</p>
+<h4>Tiny example: <code class="example">sphinx-doc__sphinx-8713</code></h4>
+<p>The issue: Sphinx's napoleon extension formats a docstring section called “Other Parameters” wrongly when the setting <code class="example">napoleon_use_param</code> is True. With oracle retrieval, SWE-Llama 13b's input was 1,558 lines, or 20,882 tokens. It found the right function, <code class="example">_parse_other_parameters_section</code> at line 684 of <code class="example">sphinx/ext/napoleon/docstring.py</code>, and changed it to behave as if the setting were <em>always</em> True. The real fix checks the setting first, copying what the neighbouring <code class="example">_parse_parameters_section</code> does. One of the pass-to-pass tests builds documentation with the setting False, and fails at once.</p>
+<h4>Why it matters</h4>
+<p>Across the 11 generations the authors studied (Appendix F has more), models wrote simple Python that ignored the codebase's existing helpers and style, and took a “greedy” path to the exact symptom in the issue. Real fixes often made structural changes that also prevented future bugs. The pass-to-pass tests caught this case; the paper's Discussion adds that passing tests alone doesn't guarantee a patch is as readable or efficient as a human's.</p>
+</section>
+
+<section id="s6">
+<h2>6 Related work and 7 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A driving test on an empty car park checks each skill alone; a test in city traffic checks whether they come together.</p>
+<h3 class="rung">What came before</h3>
+<p>Evaluation suites had either collected many small, separate tasks from different domains, or turned to interactive web tasks. Code benchmarks followed HumanEval: more languages, more tests, different edit sizes, library-specific problems. Software engineering research had studied program repair, bug localization and testing, but with far less code context. SWE-bench's claim is to combine these into one task, with minimal processing of real data, and to be easy to extend to other languages.</p>
+<h3 class="rung">Limitations and what the authors hoped for</h3>
+<ul>
+  <li>All tasks are Python.</li>
+  <li>The experiments are deliberately the simplest baselines; the authors encourage “agent-based approaches, tool augmented LMs”.</li>
+  <li>Passing tests is necessary but not sufficient: model code can be less comprehensive, efficient or readable than a human's. Appendix C.7 tries software engineering measures such as <span class="t" data-tip-title="Cyclomatic complexity" data-tip="The number of independent paths through a piece of code, counted from its branches. Each if or loop adds one; a function with no branches scores 1.">cyclomatic complexity</span>: on one requests task, Claude 2's 6-line patch solved the problem but raised the complexity of a widely used class from 3 to 5, while the real 11-line fix touched a simpler function and added a new, specific error type.</li>
+</ul>
+<p>The ethics statement notes that all 12 repositories have licences permitting this use (BSD, MIT, Apache, GPL 2.0 and custom ones, listed in Table 12), and that no human subjects or crowd workers were involved. Appendix E hopes the benchmark can also serve as a testbed for making AI-written code safe and faithful to what people intended.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The limitations list reads like a plan for the field's next two years: agents, more languages, and grading that looks beyond test results.</p>
+</section>
+
+<section id="appa">
+<h2>Appendix A: how a task is built and graded <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#A1">original</a></span></h2>
+<blockquote class="quote">“…a task is considered solved if all tests across FAIL_TO_PASS and PASS_TO_PASS pass.”<cite>Jimenez et al. (2023), Appendix A.4</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Before using an old exam question, a teacher checks the answer key really marks the model answer right and a blank page wrong. SWE-bench does the same check by machine, once per task, and records which tests are the ones that tell the difference.</p>
+<h3 class="rung">Tiny example: the parts of a task, and the two test logs</h3>
+<p>Each task stores the <strong>problem statement</strong> P (the issue titles and bodies, plus only those comments written before the pull request's first commit, so no discussion of the solution leaks in), a pointer to the <strong>codebase</strong> C (the repository and the commit the pull request started from, kept in a mirror so history rewrites upstream can't break it), the <strong>gold patch</strong> δ (the non-test part of the pull request), and the <strong>test patch</strong> T (the part that touches files with “test” in their path). Comments on the pull request made before its first commit are saved as hints but not used in the paper's experiments.</p>
+<p>To validate a task, the harness installs C in an environment built for that release of the repository, applies T, runs the tests (log<sub>pre</sub>), applies δ, runs them again (log<sub>post</sub>), and sorts every test by how its status changed. For the leap-year pull request:</p>
+<div class="tablewrap"><table>
+  <caption>The two validation runs for the illustrative leap-year task, and the list each test lands in.</caption>
+  <thead><tr><th>Test</th><th>log<sub>pre</sub> (old code)</th><th>log<sub>post</sub> (with δ)</th><th>List</th></tr></thead>
+  <tbody>
+    <tr><td><code class="example">is_leap(1900) is False</code></td><td>fail</td><td>pass</td><td>FAIL_TO_PASS</td></tr>
+    <tr><td><code class="example">is_leap(2100) is False</code></td><td>fail</td><td>pass</td><td>FAIL_TO_PASS</td></tr>
+    <tr><td><code class="example">is_leap(2000) is True</code></td><td>pass</td><td>pass</td><td>PASS_TO_PASS</td></tr>
+    <tr><td><code class="example">is_leap(2024) is True</code></td><td>pass</td><td>pass</td><td>PASS_TO_PASS</td></tr>
+    <tr><td><code class="example">is_leap(2023) is False</code></td><td>pass</td><td>pass</td><td>PASS_TO_PASS</td></tr>
+    <tr><td><code class="example">days_in_february(2024) == 29</code></td><td>pass</td><td>pass</td><td>PASS_TO_PASS</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> the list a test lands in is just its two statuses read left to right. The harness also records FAIL_TO_FAIL and PASS_TO_FAIL, but grading ignores them: a test that fails even with the real fix can't be required of a model. A task is discarded if the install or either run fails, if no test moves from fail to pass, or if log<sub>pre</sub> contains an <code>ImportError</code> or <code>AttributeError</code>, which the authors take as a sign that the tests depend on names only the fix introduces.</p>
+<pre class="in-python"><code>tests = ["1900", "2100", "2000", "2024", "2023", "feb2024"]
+# log_pre and log_post: True means the test passed
+pre = dict(zip(tests, [False, False, True, True, True, True]))
+post = dict(zip(tests, [True, True, True, True, True, True]))
+FAIL_TO_PASS = [t for t in tests if not pre[t] and post[t]]
+PASS_TO_PASS = [t for t in tests if pre[t] and post[t]]
+FAIL_TO_PASS, len(PASS_TO_PASS)  # → (['1900', '2100'], 4)</code></pre>
+<h3 class="rung">Diagram: grading one prediction</h3>
+<figure class="ix wide" id="fig8">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 330" role="img" aria-label="Grading pipeline: check out the base commit, activate the environment, install, apply the test patch, apply the predicted patch with one automatic repair attempt, run the tests, and compare against the fail-to-pass and pass-to-pass lists">
+    <defs><marker id="arr8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk emb" data-block="g_setup"><rect x="10" y="10" width="200" height="66" rx="7"/><text x="110" y="31" text-anchor="middle">1–3: check out C, pick</text><text x="110" y="48" text-anchor="middle">the release's environment,</text><text x="110" y="65" text-anchor="middle">install</text></g>
+    <path class="wire" d="M110,76 V94" marker-end="url(#arr8)"/>
+    <g class="blk norm" data-block="g_tests"><rect x="10" y="96" width="200" height="36" rx="7"/><text x="110" y="119" text-anchor="middle">4: apply test patch T</text></g>
+    <path class="wire" d="M110,132 V150" marker-end="url(#arr8)"/>
+    <g class="blk ff" data-block="g_apply"><rect x="10" y="152" width="200" height="50" rx="7"/><text x="110" y="173" text-anchor="middle">5–6: apply predicted patch;</text><text x="110" y="190" text-anchor="middle">if it fails, repair once</text></g>
+    <path class="wire" d="M210,177 H248" marker-end="url(#arr8)"/>
+    <g class="blk attn" data-block="g_zero"><rect x="250" y="152" width="120" height="50" rx="7"/><text x="310" y="173" text-anchor="middle">still fails:</text><text x="310" y="190" text-anchor="middle">score 0</text></g>
+    <path class="wire" d="M110,202 V220" marker-end="url(#arr8)"/>
+    <g class="blk plain" data-block="g_run"><rect x="10" y="222" width="200" height="36" rx="7"/><text x="110" y="245" text-anchor="middle">7: run the tests</text></g>
+    <path class="wire" d="M110,258 V276" marker-end="url(#arr8)"/>
+    <g class="blk soft" data-block="g_check"><rect x="10" y="278" width="360" height="44" rx="7" stroke-width="3"/><text x="190" y="297" text-anchor="middle">every FAIL_TO_PASS and PASS_TO_PASS test</text><text x="190" y="314" text-anchor="middle">found and passing: resolved</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step.</p></div>
+  </div>
+  <figcaption>The evaluation procedure of Appendix A.4, redrawn from the paper's Figure 8 and its seven numbered steps. Based on Jimenez et al. (2023), Figure 8.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> follow the left column down. The first four steps never fail, because validation already proved them for this task. Step 5 is where a model's output can fail on format alone: if the patch's context lines don't match the file, the harness tries once to repair it (dropping unneeded context lines and recomputing the line counts in each <code>@@</code> header) and gives 0 if it still won't apply. The box on the right is that exit. The final box is the resolved rule of <a href="#s2-2">§2.2</a>: a test that is missing from the log counts as failed.</p>
+<h3 class="rung">How often the repair was needed</h3>
+<p>The repair step mattered: Table 14 shows that for the closed models, 25% to 69% of the patches that applied needed it. ChatGPT-3.5 with BM25 produced 2,270 patches; 604 applied, and 363 of those only after repair (60.1%). SWE-Llama, trained on the format, needed it for 20% to 30%.</p>
+<pre class="in-python"><code># Table 14: ChatGPT-3.5, BM25 13k: patches that applied, and how many needed repair
+applies, fixed = 604, 363
+round(100 * fixed / applies, 1)  # → 60.1</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The whole pipeline makes grading a deterministic function of the patch: same patch, same verdict. That is what lets thousands of submissions be compared on a leaderboard. The <a data-lesson="primer/agents/coding_agents.html#BenchTask"><code>BenchTask</code></a> in the coding agents lesson stores the same two lists, and <a data-lesson="primer/agents/coding_agents.html#grade"><code>grade</code></a> applies a patch to a fresh copy of the repository before running them, so nothing the agent did to its own workspace counts.</p>
+</section>
+
+<section id="appc">
+<h2>Appendix C: what an applied patch did <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2310.06770#A3.SS5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>“Failed” hides a lot. A student who got half the answers right and one who handed in a blank page both fail, but they need different help. The paper's Appendix C.5 splits every unresolved patch that applied into what it actually did.</p>
+<h3 class="rung">Tiny example: six patches for one bug</h3>
+<p><strong>Try it:</strong> pick a patch for the leap-year task. The grader runs the two fail-to-pass and four pass-to-pass tests and places the result in the paper's grid (its Table 22). The patches are deliberately wrong in different ways; find one for each of the six cells.</p>
+<div class="plot" id="fig-grader">
+  <div class="controls ui"><label for="patch-pick">Patch</label> <select id="patch-pick"></select></div>
+  <pre class="diff" id="patch-code"></pre>
+  <div id="patch-tests"></div>
+  <div class="tablewrap"><table class="grid3" id="grid3"></table></div>
+  <p class="readout" id="grader-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the list shows each test's verdict for the chosen patch. The grid's columns count how many fail-to-pass tests pass (all, some, none) and its rows how many pass-to-pass tests pass; the outlined cell is where the patch lands. Only the top-left cell is resolved. Down the left column the issue is fixed but something else broke (“breaking resolved”), which is why the forgotten 400 rule loses. A patch that changes nothing lands in “no-op”; “always True” lands in “regression”: it fixes nothing and breaks 2023. The middle and bottom rows share names because the paper does not tell “some” from “none” of the pass-to-pass tests.</p>
+<pre class="in-python"><code>def outcome(f_pass, f_total, p_pass, p_total):
+    # the grid of Table 22: columns by fail-to-pass, rows by pass-to-pass
+    f = "all" if f_pass == f_total else ("none" if f_pass == 0 else "some")
+    if p_pass == p_total:
+        return {"all": "Resolved", "some": "Partially Resolved", "none": "No-Op"}[f]
+    return {"all": "Breaking Resolved", "some": "Work in Progress", "none": "Regression"}[f]
+# the patch that forgets the 400 rule: 2 of 2 fail-to-pass, 3 of 4 pass-to-pass
+outcome(2, 2, 3, 4)  # → 'Breaking Resolved'
+# a patch that changes nothing
+outcome(0, 2, 4, 4)  # → 'No-Op'</code></pre>
+<h3 class="rung">What the models' patches did</h3>
+<div class="plot" id="fig-outcomes">
+  <div class="controls ui"><label for="out-pick">Model</label> <select id="out-pick"></select></div>
+  <div id="out-bars"></div>
+  <p class="readout" id="out-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> for the chosen model, each bar is the share of its applied patches (oracle retrieval) in one outcome, from Table 23 of the paper; the axis runs from 0 to 100%. Two bars dominate for every model: no-op and regression, patches that make not one fail-to-pass test pass. For Claude 2 they are 471 and 436 of 1,078 applied patches, 84% together. The three partial outcomes are small. The authors read this as models often understanding the issue but lacking a view of how the changed code is used elsewhere.</p>
+<p>Two places where this appendix disagrees with the rest of the paper. The “applied” counts here (1,078 for Claude 2, 1,196 for SWE-Llama 13b) are smaller than the counts in Table 14 for the same setting (1,441 and 1,532), which match the apply rates of Table 18; the paper does not explain the difference. And the text says no-ops are “60% to 70%” of the patches that pass no fail-to-pass test; that holds for ChatGPT-3.5 and both SWE-Llama models, but for Claude 2 it is 471 of 907 (52%) and for GPT-4 30 of 59 (51%).</p>
+<pre class="in-python"><code># Table 23, Claude 2: resolved, breaking resolved, partially, work in progress, no-op, regression
+counts = [110, 26, 15, 20, 471, 436]
+sum(counts)  # → 1078
+# no-op share among patches that pass no fail-to-pass test
+round(471 / (471 + 436), 2)  # → 0.52</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The grid is a sharper instrument than one pass rate. A system stuck in “no-op” is not finding the bug; one stuck in “breaking resolved” finds it but doesn't know the code around it. Those failures call for different fixes: better search in the first case, running the existing tests in the second. The authors end the appendix by pointing at exactly that: an environment where a model can run its fix against the tests before submitting.</p>
+</section>
+
+<section id="today">
+<h2>What happened next</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>What came later</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>One prompt, one reply, files chosen by BM25</td><td>Agents that search, open files, edit and run tests in the repository: SWE-agent (Yang et al., 2024, <a href="https://arxiv.org/abs/2405.15793">arXiv:2405.15793</a>) resolved 12.47% of the full benchmark, against 3.79% for the best retrieval baseline</td><td><a data-lesson="primer/agents/coding_agents.html#fix_until_green">an edit-run-test loop</a></td></tr>
+    <tr><td>300-task Lite subset</td><td>Used for cheaper comparisons, such as SWE-agent's ablations</td><td><a data-lesson="primer/agents/coding_agents.html#MINI_BENCH">a mini benchmark</a></td></tr>
+    <tr><td>Fail-to-pass and pass-to-pass tests, resolved rate</td><td>A common way to grade agent-written code changes</td><td><a data-lesson="primer/agents/coding_agents.html#benchmark">a three-task version</a></td></tr>
+    <tr><td>Collection that keeps running on new issues</td><td>A defence against contamination, as the original tasks become public</td><td><a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a></td></tr>
+    <tr><td>Localization as the bottleneck</td><td>Search tools built for models, and reading code in small windows</td><td><a data-lesson="primer/agents/coding_agents.html#Workspace.search"><code>Workspace.search</code></a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press and Karthik Narasimhan, <em>SWE-bench: Can Language Models Resolve Real-World GitHub Issues?</em> (2023, revised 2024). <a href="https://arxiv.org/abs/2310.06770">arXiv:2310.06770</a>, licensed CC BY 4.0. Quoted sentences and numbers restated from its tables are attributed where they appear; every figure is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    Ncrawl: { tex: "N_{\\text{PR}}", name: "Pull requests scraped", meaning: "Every pull request collected from the 12 repositories in Stage I.", shape: "a count", example: "93,139" },
+    Nconv: { tex: "N_{\\text{cand}}", name: "Candidates", meaning: "Pull requests that are merged, resolve an issue and edit test files (Stage II).", shape: "a count", example: "11,407" },
+    Nfinal: { tex: "N_{\\text{task}}", name: "Tasks", meaning: "Candidates whose tests install and run and include at least one fail-to-pass test (Stage III).", shape: "a count", example: "2,294" },
+    Y: { tex: "Y", name: "Yield", meaning: "The share of scraped pull requests that become tasks: the product of the two stages' pass rates.", shape: "0 to 1", example: "0.0246, about 1 in 41" },
+    i: { tex: "i", name: "Task number", meaning: "Which task, counted from 1 to N.", shape: "1 to N", example: "one of 2,294" },
+    applies: { tex: "\\text{applies}_i", name: "Patch applies", meaning: "Whether the model's patch applies cleanly to task i's codebase (after at most one automatic repair).", shape: "true or false", example: "true for the leap-year patch" },
+    ind: { tex: "\\mathbb{1}[\\cdot]", name: "Indicator", meaning: "1 if the statement in the brackets is true, 0 if it is false. It turns a yes or no into a number you can multiply or add.", shape: "0 or 1", example: "1[2000 is judged a leap year] = 0 for the broken patch" },
+    Fi: { tex: "F_i", name: "Fail-to-pass tests", meaning: "Task i's tests that failed on the old code and passed with the real fix: they check the issue is fixed.", shape: "a set of tests", example: "is_leap(1900), is_leap(2100)" },
+    Pi: { tex: "P_i", name: "Pass-to-pass tests", meaning: "Task i's tests that passed both before and after the real fix: they check nothing else broke.", shape: "a set of tests", example: "the four tests on 2000, 2024, 2023 and February" },
+    pass: { tex: "\\text{pass}_i(t)", name: "Test passes", meaning: "Whether test t passes after the model's patch is applied to task i. A test missing from the log counts as a fail.", shape: "true or false", example: "is_leap(2000) is True: false for the broken patch" },
+    prodF: { tex: "\\prod_{t \\in F_i}", name: "Product over fail-to-pass tests", meaning: "Multiply the indicator for every test t in F_i. The product is 1 only if every one is 1.", shape: "0 or 1", example: "1 · 1 = 1" },
+    prodP: { tex: "\\prod_{t \\in P_i}", name: "Product over pass-to-pass tests", meaning: "Multiply the indicator for every test t in P_i. One broken test makes it 0.", shape: "0 or 1", example: "0 · 1 · 1 · 1 = 0" },
+    ri: { tex: "r_i", name: "Task resolved", meaning: "1 if task i is resolved, else 0: no partial credit.", shape: "0 or 1", example: "0 for the patch that forgets the 400 rule" },
+    N: { tex: "N", name: "Number of tasks", meaning: "How many tasks are averaged over.", shape: "a count", example: "2,294 (3 in the recall example)" },
+    invN: { tex: "\\frac{1}{N}", name: "Divide by the count", meaning: "Turns a total over tasks into an average, a share between 0 and 1.", shape: "", example: "1 / 2,294" },
+    sumi: { tex: "\\sum_{i=1}^{N}", name: "Sum over tasks", meaning: "Add up the term for every task from 1 to N.", shape: "", example: "110 resolved tasks" },
+    R: { tex: "R", name: "Resolved rate", meaning: "The share of tasks resolved: the benchmark's one headline number, usually written as a percentage.", shape: "0 to 1", example: "110 / 2,294 = 4.80%" },
+    Ledit: { tex: "L_{\\text{edit}}", name: "Lines edited", meaning: "Lines added plus lines removed by the real fix.", shape: "a count", example: "32.8 on average" },
+    Lcode: { tex: "L_{\\text{code}}", name: "Lines of code", meaning: "Lines in the repository's non-test files.", shape: "a count", example: "438,000 on average" },
+    rho: { tex: "\\rho", name: "Share changed", meaning: "The fraction of the codebase the fix touches (ρ is the Greek letter rho).", shape: "0 to 1", example: "0.000075, one line in 13,000" },
+    Oi: { tex: "O_i", name: "Oracle files", meaning: "The files the real fix for task i edited, test files excluded.", shape: "a set of files", example: "{x.py, y.py}" },
+    Ri: { tex: "R_i", name: "Retrieved files", meaning: "The files BM25 put in task i's prompt within the budget.", shape: "a set of files", example: "{x.py, z.py}" },
+    cap: { tex: "\\cap", name: "Intersection", meaning: "The files in both sets: edited by the fix and also retrieved.", shape: "a set", example: "{x.py}" },
+    card: { tex: "|\\cdot|", name: "Size of a set", meaning: "How many files the set holds.", shape: "a count", example: "|{x.py}| = 1" },
+    subset: { tex: "\\subseteq", name: "Contained in", meaning: "Every file on the left is also on the right.", shape: "", example: "{a.py} ⊆ {a.py, b.py, c.py}" },
+    eh: { tex: "e_h", name: "Lines in region h", meaning: "The number of lines the real fix edits in one contiguous region (a hunk) of a file.", shape: "a count", example: "4 and 6" },
+    b: { tex: "b", name: "Buffer", meaning: "Lines kept above and below each edited region; the paper uses 15.", shape: "a count", example: "15" },
+    sumh: { tex: "\\sum_{h}", name: "Sum over regions", meaning: "Add up over every edited region of the file.", shape: "", example: "two regions" },
+    Lkept: { tex: "L_{\\text{kept}}", name: "Lines kept", meaning: "How much of the file an oracle-collapsed prompt still shows; approximate because nearby regions can overlap.", shape: "a count", example: "70 of 1,000" },
+  },
+  blocks: {
+    issue: { title: "The issue", body: "<p>The text of one or more GitHub issues the pull request resolved: titles, bodies, and any comments made before work on the fix began. On average 195 words; the median is 140.</p>" },
+    codebase: { title: "The codebase", body: "<p>The repository checked out at the commit the pull request started from, so the model sees the code as it was when the bug existed. On average 3,010 non-test files and 438,000 lines.</p>" },
+    lm: { title: "The model", body: "<p>In this paper, a model that reads one prompt holding the issue and some retrieved files and writes one reply. The agents that came later work in several steps instead.</p>", lesson: "primer/agents/coding_agents.html" },
+    patch: { title: "The patch", body: "<p>A diff file: which lines of which files to remove and which to add. It is the only thing the benchmark keeps from the model's work.</p>" },
+    harness: { title: "The evaluation harness", body: "<p>Everything in the dashed frame belongs to the benchmark and is identical for every model.</p>" },
+    tests: { title: "Apply and run", body: "<p>A fresh copy of the repository gets the model's patch and the test patch from the real pull request, which the model never saw. Then the repository's test runner (pytest or tox, for example) runs those test files.</p>", lesson: "primer/agents/coding_agents.html#grade" },
+    verdict: { title: "The verdict", body: "<p>Resolved means every fail-to-pass test now passes and every pass-to-pass test still passes. Anything less scores 0.</p>", lesson: "primer/agents/coding_agents.html#resolved_rate" },
+    stage1: { title: "Stage I: scrape", body: "<p>All pull requests from 12 popular Python repositories, chosen from the most-downloaded packages on PyPI for their maintenance, documentation and test coverage: 93,139 in all.</p>" },
+    stage2: { title: "Stage II: attributes", body: "<p>Keep a pull request only if it was merged, links an issue it resolves (words such as “fixes #24” in its title, body or commits), and edits a file whose path contains a testing keyword. 11,407 remain.</p>" },
+    stage3: { title: "Stage III: execution", body: "<p>Install the repository at the base commit, apply the test changes, run the tests; apply the fix, run them again. Keep the task only if everything installs and runs and at least one test goes from fail to pass. 2,294 remain.</p>" },
+    codellama: { title: "CodeLlama-Python", body: "<p>Open code models of 7 and 13 billion parameters, the only open models at the time that could read inputs this long.</p>" },
+    train: { title: "SWE-bench-train", body: "<p>About 19,000 issue and pull request pairs from 37 repositories that do not appear in the benchmark, collected without the test requirement. Sequences over 30,000 tokens were dropped, leaving about 10,000.</p>" },
+    lora: { title: "LoRA fine-tuning", body: "<p>Only small low-rank matrices added to the query, key, value and output projections of every attention layer are trained: rank r = 16, α = 16, dropout 0.05, learning rate 6 × 10⁻⁴, batch 32, up to 4 epochs, best checkpoint by validation loss on 100 held-out examples.</p>", lesson: "primer/ml/training_stages.html" },
+    swellama: { title: "SWE-Llama", body: "<p>Given the issue and the oracle files, it generates the real patch. It can run on consumer hardware. With oracle files it resolves 3.01% (7b) and 3.97% (13b).</p>" },
+    p_instr: { title: "Instructions", body: "<p>One sentence: you will get a partial code base and an issue to resolve.</p>" },
+    p_issue: { title: "The issue", body: "<p>The problem statement, wrapped in issue tags so the model can tell where it starts and ends.</p>" },
+    p_code: { title: "The retrieved code", body: "<p>README.md, then each retrieved file between “[start of file]” and “[end of file]” markers. This is almost all of the prompt's length: up to 13,000, 27,000 or 50,000 tokens with BM25.</p>" },
+    p_example: { title: "An example patch", body: "<p>A patch to an unrelated file (rewriting two small algorithms), there only to show the format: file headers, @@ line ranges, and lines marked with - and +.</p>" },
+    p_ask: { title: "The request", body: "<p>Asks for a single patch file that can be applied directly with git apply. The authors found that small changes to these instructions made little difference.</p>" },
+    g_setup: { title: "Steps 1 to 3: a clean start", body: "<p>Discard any earlier changes, check out the task's base commit, activate the environment built for that release of the repository, and install it.</p>" },
+    g_tests: { title: "Step 4: the hidden tests", body: "<p>Apply the test patch from the real pull request. The model never saw it.</p>" },
+    g_apply: { title: "Steps 5 and 6: the model's patch", body: "<p>Apply the predicted patch. If that fails, try once to repair it by removing unnecessary context lines and recalculating the line counts in its headers, then apply again.</p>" },
+    g_zero: { title: "Score 0", body: "<p>A patch that still won't apply, or a test run that fails to execute, is unresolved.</p>" },
+    g_run: { title: "Step 7: run", body: "<p>Run the test command for the files in the test patch and parse the log into a status for each test, with a parser written for each repository.</p>" },
+    g_check: { title: "The check", body: "<p>Every test in FAIL_TO_PASS and PASS_TO_PASS must appear in the log with a pass status. Missing counts as failed.</p>", lesson: "primer/agents/coding_agents.html#grade" },
+  },
+  onReady(P) { repoBars(); budgetPlay(); recallCharts(P); resultBars(); heatTable(); grader(); outcomeBars(); },
+};
+
+/* ---- §2.1: Table 10, per repository: [crawled, candidates, tasks] ---- */
+const REPOS = [["django", 16914, 2880, 850], ["sympy", 11928, 1897, 386], ["scikit-learn", 15159, 1169, 229], ["sphinx", 4931, 645, 187], ["matplotlib", 16545, 1057, 184], ["pytest", 5147, 750, 119], ["xarray", 3416, 812, 110], ["astropy", 9469, 1016, 95], ["pylint", 3848, 787, 57], ["requests", 2344, 84, 44], ["seaborn", 1004, 203, 22], ["flask", 2434, 107, 11]];
+const fmt = (n) => n.toLocaleString("en-US");
+
+function repoBars() {
+  const sel = document.getElementById("repo-pick"), el = document.getElementById("repo-bars"), out = document.getElementById("repo-readout");
+  sel.innerHTML = `<option value="-1">all 12 repositories</option>` + REPOS.map((r, i) => `<option value="${i}">${r[0]}</option>`).join("");
+  const cols = "minmax(6rem, 34%) minmax(0,1fr) 3.2rem";
+  const draw = () => {
+    const pick = +sel.value;
+    el.innerHTML = `<div class="legend" style="margin:0 0 .4rem"><span>tasks per repository, axis 0 to 850</span></div>` +
+      REPOS.map((r, i) => `<div class="share-row" style="grid-template-columns:${cols}"><span>${pick === i ? "<strong>" + r[0] + "</strong>" : r[0]}</span><div><div class="share-bar" style="width:${(100 * r[3]) / 850}%;${pick === i ? "background:var(--hatch) var(--active)" : ""}"></div></div><span>${r[3]}</span></div>`).join("");
+    if (pick < 0) {
+      out.textContent = `All 12: ${fmt(93139)} pull requests scraped, ${fmt(11407)} candidates, ${fmt(2294)} tasks. Django supplies ${Math.round((100 * 850) / 2294)}% of the tasks.`;
+    } else {
+      const [n, a, b, c] = REPOS[pick];
+      out.textContent = `${n}: ${fmt(a)} pull requests scraped, ${fmt(b)} candidates (${((100 * b) / a).toFixed(1)}%), ${fmt(c)} tasks (${((100 * c) / b).toFixed(1)}% of candidates, ${((100 * c) / a).toFixed(2)}% of all scraped).`;
+    }
+  };
+  sel.addEventListener("change", draw);
+  draw();
+}
+
+/* ---- §4.1: fill a context budget from a BM25 ranking (illustrative files and sizes) ---- */
+const RANKED = [["docs/usage.rst", 4, false], ["tests/test_io.py", 6, false], ["src/io/readers.py", 9, true], ["src/io/__init__.py", 1, false], ["src/core/frame.py", 14, false], ["src/io/writers.py", 7, false], ["README.md", 3, false], ["src/utils/strings.py", 5, true]];
+function fill(budget) {
+  // take files in rank order until the next one does not fit
+  const kept = [];
+  let used = 0;
+  for (const f of RANKED) { if (used + f[1] > budget) break; kept.push(f); used += f[1]; }
+  return { kept, used };
+}
+function budgetPlay() {
+  const s = document.getElementById("bud"), list = document.getElementById("bud-list"), out = document.getElementById("bud-readout");
+  const draw = () => {
+    const B = +s.value;
+    document.getElementById("bud-v").textContent = String(B);
+    const { kept, used } = fill(B);
+    const cols = "minmax(8rem, 46%) minmax(0,1fr) 4.2rem";
+    list.innerHTML = `<div class="legend" style="margin:0 0 .4rem"><span><i class="hatch" style="background:var(--hatch) var(--soft-stroke)"></i>edited by the real fix (striped)</span><span><i style="background:var(--accent)"></i>other file</span><span>faded: did not fit</span></div>` +
+      RANKED.map((f, i) => {
+        const inside = i < kept.length;
+        const bg = f[2] ? "var(--hatch) var(--soft-stroke)" : "var(--accent)";
+        return `<div class="share-row" style="grid-template-columns:${cols};opacity:${inside ? 1 : 0.35}"><span>${i + 1}. ${f[0]}</span><div><div class="share-bar" style="width:${(100 * f[1]) / 14}%;background:${bg}"></div></div><span>${f[1]}k ${inside ? "in" : "out"}</span></div>`;
+      }).join("");
+    const oracle = RANKED.filter((f) => f[2]);
+    const found = kept.filter((f) => f[2]);
+    const junk = kept.filter((f) => !f[2]).reduce((a, f) => a + f[1], 0);
+    out.textContent = `Budget ${B}k: ${kept.length} files, ${used}k tokens. Oracle files found: ${found.length} of ${oracle.length} (recall ${(found.length / oracle.length).toFixed(2)}; all found: ${found.length === oracle.length ? "yes" : "no"}; any found: ${found.length ? "yes" : "no"}). ` +
+      (used ? `Tokens from files the fix never touched: ${junk}k, ${Math.round((100 * junk) / used)}% of the retrieved code.` : "No files fit.");
+  };
+  s.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- Tables 2 and 3: BM25 budget against recall and resolved rate ---- */
+function recallCharts(P) {
+  const x = [13, 27, 50];
+  const width = (id) => Math.max(320, Math.min(640, document.getElementById(id).clientWidth));
+  P.lineChart(document.getElementById("recall-chart"), {
+    series: [
+      { name: "Any: at least one edited file", points: x.map((v, i) => [v, [34.77, 51.27, 58.38][i]]) },
+      { name: "Avg: share of edited files", points: x.map((v, i) => [v, [29.58, 44.41, 51.06][i]]) },
+      { name: "All: every edited file", points: x.map((v, i) => [v, [26.09, 39.83, 45.90][i]]) },
+    ],
+    yMin: 0, yMax: 70, width: width("recall-chart"), height: 260,
+    xLabel: "BM25 context budget (thousands of tokens)", yLabel: "recall (%)", xFmt: (v) => `${Math.round(v)}k`, yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("recall-readout"),
+    ariaLabel: "BM25 recall of the files the real fix edited, at context budgets of 13, 27 and 50 thousand tokens",
+  });
+  P.lineChart(document.getElementById("ctx-chart"), {
+    series: [
+      { name: "Claude 2", points: x.map((v, i) => [v, [1.96, 1.87, 1.22][i]]) },
+      { name: "SWE-Llama 13b", points: x.map((v, i) => [v, [0.70, 0.48, 0.00][i]]) },
+      { name: "SWE-Llama 7b", points: x.map((v, i) => [v, [0.70, 0.31, 0.00][i]]) },
+    ],
+    yMin: 0, yMax: 2.5, width: width("ctx-chart"), height: 260,
+    xLabel: "BM25 context budget (thousands of tokens)", yLabel: "resolved (%)", xFmt: (v) => `${Math.round(v)}k`, yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("ctx-readout"),
+    ariaLabel: "Resolved rate of Claude 2 and the two SWE-Llama models at BM25 context budgets of 13, 27 and 50 thousand tokens",
+  });
+}
+
+/* ---- Table 5: resolved and applied, full SWE-bench, BM25 ---- */
+function resultBars() {
+  const T5 = [["Claude 3 Opus", 3.79, 46.56], ["Claude 2", 1.97, 43.07], ["GPT-4-turbo", 1.31, 26.90], ["SWE-Llama 13b", 0.70, 53.62], ["SWE-Llama 7b", 0.70, 51.74], ["ChatGPT-3.5", 0.17, 26.33]];
+  const cols = "minmax(6.5rem, 34%) minmax(0,1fr) 3.6rem";
+  const row = (label, w, text, bg) => `<div class="share-row" style="grid-template-columns:${cols}"><span>${label}</span><div><div class="share-bar" style="width:${w}%;background:${bg}"></div></div><span>${text}</span></div>`;
+  document.getElementById("res-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--accent)"></i>% resolved, axis 0 to 5%</span><span><i class="hatch" style="background:var(--hatch) var(--soft-stroke)"></i>% of patches that applied (striped), axis 0 to 100%</span></div>` +
+    T5.map(([m, r, a]) => row(m, (100 * r) / 5, r.toFixed(2) + "%", "var(--accent)") + row("", a, a.toFixed(1) + "%", "var(--hatch) var(--soft-stroke)")).join("");
+  document.getElementById("res-readout").textContent =
+    "Best: Claude 3 Opus resolves 3.79% while 46.6% of its patches apply. SWE-Llama 13b's patches apply most often (53.6%) but it resolves 0.70%.";
+}
+
+/* ---- Figure 4 / Table 19: % resolved per repository, oracle retrieval ---- */
+function heatTable() {
+  const models = ["Claude 2", "GPT-3.5", "GPT-4", "SL 13b", "SL 7b"];
+  const T19 = [["astropy", 3.23, 0, 0, 1.06, 3.16], ["django", 6.15, 1.32, 2.5, 5.19, 4.0], ["matplotlib", 3.05, 3.33, 0, 3.12, 1.11], ["seaborn", 0, 0, 0, 0, 0], ["flask", 0, 0, 0, 9.09, 0], ["requests", 15.91, 2.33, 8.33, 13.64, 18.18], ["xarray", 6.9, 0, 0, 5.81, 3.0], ["pylint", 1.75, 0, 0, 1.75, 1.75], ["pytest", 5.93, 0, 0, 5.04, 4.2], ["scikit-learn", 5.41, 0, 0, 3.12, 0.88], ["sphinx", 5.65, 1.83, 0, 2.25, 2.69], ["sympy", 1.94, 0, 0, 3.01, 1.59]];
+  const max = 18.18;
+  const tbl = document.getElementById("heat");
+  tbl.innerHTML = `<thead><tr><th>Repository</th>${models.map((m) => `<th class="num">${m}</th>`).join("")}</tr></thead><tbody>` +
+    T19.map((r) => `<tr><td>${r[0]}</td>${r.slice(1).map((v) => `<td class="num" style="background:rgba(var(--heat-hi), ${(0.08 + (0.6 * v) / max).toFixed(2)})">${v.toFixed(2)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+  const best = T19.map((r) => [r[0], Math.max(...r.slice(1))]).sort((a, b) => b[1] - a[1]);
+  document.getElementById("heat-readout").textContent =
+    `Easiest repository: ${best[0][0]} (best model ${best[0][1].toFixed(2)}%). Unsolved by every model: ${T19.filter((r) => Math.max(...r.slice(1)) === 0).map((r) => r[0]).join(", ")}.`;
+}
+
+/* ---- Appendix C.5: grade six leap-year patches and place them in Table 22's grid ---- */
+const PATCHES = [
+  ["The real fix", "year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)", (y) => y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)],
+  ["Forgets the 400 rule", "year % 4 == 0 and year % 100 != 0", (y) => y % 4 === 0 && y % 100 !== 0],
+  ["Special-cases 1900", "year % 4 == 0 and year != 1900", (y) => y % 4 === 0 && y !== 1900],
+  ["Changes nothing", "year % 4 == 0", (y) => y % 4 === 0],
+  ["Always True", "True", () => true],
+  ["Guesses at 300 and 500", "year % 4 == 0 and year % 300 != 0 and year % 500 != 0", (y) => y % 4 === 0 && y % 300 !== 0 && y % 500 !== 0],
+];
+const TESTS = [
+  ["F", "is_leap(1900) is False", (f) => f(1900) === false],
+  ["F", "is_leap(2100) is False", (f) => f(2100) === false],
+  ["P", "is_leap(2000) is True", (f) => f(2000) === true],
+  ["P", "is_leap(2024) is True", (f) => f(2024) === true],
+  ["P", "is_leap(2023) is False", (f) => f(2023) === false],
+  ["P", "days_in_february(2024) == 29", (f) => (f(2024) ? 29 : 28) === 29],
+];
+function classify(fp, ft, pp, pt) {
+  const f = fp === ft ? 0 : fp === 0 ? 2 : 1;
+  const p = pp === pt ? 0 : pp === 0 ? 2 : 1;
+  return { f, p, name: [["Resolved", "Partially Resolved", "No-Op"], ["Breaking Resolved", "Work in Progress", "Regression"], ["Breaking Resolved", "Work in Progress", "Regression"]][p][f] };
+}
+function grader() {
+  const sel = document.getElementById("patch-pick"), code = document.getElementById("patch-code");
+  const list = document.getElementById("patch-tests"), grid = document.getElementById("grid3"), out = document.getElementById("grader-readout");
+  sel.innerHTML = PATCHES.map((p, i) => `<option value="${i}">${p[0]}</option>`).join("");
+  const names = [["Resolved", "Partially Resolved", "No-Op"], ["Breaking Resolved", "Work in Progress", "Regression"], ["Breaking Resolved", "Work in Progress", "Regression"]];
+  const draw = () => {
+    const [label, body, f] = PATCHES[+sel.value];
+    code.textContent = body === "year % 4 == 0" ? "def is_leap(year):\n    return year % 4 == 0      # unchanged" : `def is_leap(year):\n-    return year % 4 == 0\n+    return ${body}`;
+    const res = TESTS.map(([k, name, t]) => [k, name, t(f)]);
+    list.innerHTML = `<div class="legend" style="margin:.3rem 0">${res.map(([k, name, ok]) => `<span>${ok ? "✓ pass" : "✗ fail"}: <code>${name}</code> (${k === "F" ? "fail-to-pass" : "pass-to-pass"})</span>`).join("")}</div>`;
+    const fp = res.filter((r) => r[0] === "F" && r[2]).length, pp = res.filter((r) => r[0] === "P" && r[2]).length;
+    const c = classify(fp, 2, pp, 4);
+    const head = ["all", "some", "none"];
+    grid.innerHTML = `<caption>The six outcomes of an applied patch, Table 22 of Jimenez et al. (2023). Columns: fail-to-pass tests passing; rows: pass-to-pass tests passing.</caption>` +
+      `<thead><tr><th><span class="sr-only">pass-to-pass tests passing, by fail-to-pass tests passing</span></th>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>` +
+      names.map((row, r) => `<tr><th>${head[r]}</th>${row.map((n, col) => `<td class="${r === c.p && col === c.f ? "on" : ""}"${r === c.p && col === c.f ? ' aria-current="true"' : ""}>${n}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    out.textContent = `${label}: ${fp} of 2 fail-to-pass and ${pp} of 4 pass-to-pass tests pass, so the outcome is ${c.name}${c.name === "Resolved" ? " and the task counts." : "; the task scores 0."}`;
+  };
+  sel.addEventListener("change", draw);
+  draw();
+}
+
+/* ---- Table 23: outcomes of applied patches, oracle retrieval ---- */
+function outcomeBars() {
+  const cats = ["Resolved", "Breaking Resolved", "Partially Resolved", "Work in Progress", "No-Op", "Regression"];
+  const T23 = [["Claude 2", 110, 26, 15, 20, 471, 436], ["ChatGPT-3.5", 12, 2, 4, 2, 174, 90], ["GPT-4 (25% subset)", 10, 3, 3, 1, 30, 29], ["SWE-Llama 7b", 69, 17, 17, 17, 716, 421], ["SWE-Llama 13b", 91, 10, 10, 16, 672, 397]];
+  const sel = document.getElementById("out-pick"), el = document.getElementById("out-bars"), out = document.getElementById("out-readout");
+  sel.innerHTML = T23.map((r, i) => `<option value="${i}">${r[0]}</option>`).join("");
+  const cols = "minmax(7rem, 38%) minmax(0,1fr) 4.4rem";
+  const draw = () => {
+    const r = T23[+sel.value], n = r.slice(1).reduce((a, b) => a + b, 0);
+    el.innerHTML = `<div class="legend" style="margin:0 0 .4rem"><span>${r[0]}: ${fmt(n)} applied patches; share in each outcome, axis 0 to 100%</span></div>` +
+      cats.map((c, i) => `<div class="share-row" style="grid-template-columns:${cols}"><span>${c}</span><div><div class="share-bar" style="width:${(100 * r[i + 1]) / n}%"></div></div><span>${r[i + 1]} (${Math.round((100 * r[i + 1]) / n)}%)</span></div>`).join("");
+    out.textContent = `${r[0]}: of ${fmt(n)} applied patches, ${r[5] + r[6]} (${Math.round((100 * (r[5] + r[6])) / n)}%) make no fail-to-pass test pass (no-op or regression); ${r[1]} (${((100 * r[1]) / n).toFixed(1)}%) resolve the task.`;
+  };
+  sel.addEventListener("change", draw);
+  draw();
+}
+</script>
+</body>
+</html>

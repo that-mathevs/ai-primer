@@ -74,6 +74,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/agent_loop.html",
   "term": "agent loop"
  },
+ "agent-computer interface": {
+  "def": "The commands an agent can call and the exact form of what comes back to it, designed for a language model the way a code editor is designed for a person.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "agent-computer interface"
+ },
  "agentic rag": {
   "def": "RAG where the model decides whether, what and how often to search.",
   "lesson": "primer/agents/rag.html",
@@ -579,6 +584,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/structured_output.html",
   "term": "constrained decoding"
  },
+ "container": {
+  "def": "An isolated copy of an operating system's user space for one program: its own files, processes and network settings, started from an image and thrown away afterwards.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "container"
+ },
  "contamination": {
   "def": "Test questions and answers leaking into a model's training data.",
   "lesson": "primer/ml/benchmarks.html",
@@ -813,6 +823,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The slope of a function at a point: how much the output changes per tiny nudge of the input.",
   "lesson": "primer/notation.html",
   "term": "derivative"
+ },
+ "diff": {
+  "def": "A text listing, file by file, which lines to remove (marked −) and which to add (marked +), with a few unchanged lines around each change so a tool can find the spot. Saved to a file, it is a patch that can be applied to another copy of the code.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "diff"
  },
  "diffusion model": {
   "def": "A generator that learns to turn random noise into data by removing a little noise at a time.",
@@ -1108,6 +1123,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The number of inputs a neuron adds up.",
   "lesson": "primer/ml/deep_nets.html",
   "term": "fan-in"
+ },
+ "fault localization": {
+  "def": "Finding which files, functions and lines cause a bug, before trying to fix it.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "fault localization"
  },
  "feature": {
   "def": "A property a model tracks, stored as a direction across many neurons.",
@@ -1874,6 +1894,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/efficient_architectures.html",
   "term": "linear time invariance"
  },
+ "linter": {
+  "def": "A program that reads code without running it and reports likely mistakes, such as a syntax error, bad indentation or a name that is never defined.",
+  "lesson": null,
+  "term": "linter"
+ },
  "lipschitz": {
   "def": "A function is K-Lipschitz if its output never changes more than K times as fast as its input: a speed limit on its slope everywhere.",
   "lesson": "primer/ml/generative/gans.html",
@@ -2529,6 +2554,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/inference.html",
   "term": "per-channel quantization"
  },
+ "percentage point": {
+  "def": "The plain difference between two percentages: going from 11% to 18% is a rise of 7 percentage points, which is a 64% relative rise.",
+  "lesson": null,
+  "term": "percentage point"
+ },
  "permission-aware retrieval": {
   "def": "Filtering out documents a user may not read before anything is ranked or shown to the model.",
   "lesson": "primer/agents/rag.html",
@@ -2758,6 +2788,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Hostile instructions hidden in content the model reads, such as an email or web page, trying to hijack it.",
   "lesson": "primer/agents/guardrails.html",
   "term": "prompt injection"
+ },
+ "pull request": {
+  "def": "A proposed set of changes to a code repository, submitted for review; once merged, the changes become part of the project.",
+  "lesson": "primer/agents/coding_agents.html",
+  "term": "pull request"
  },
  "pushdown automaton": {
   "def": "A finite-state machine plus a stack: enough to check nested formats like JSON or SQL.",
