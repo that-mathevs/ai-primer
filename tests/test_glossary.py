@@ -152,3 +152,9 @@ class TestTermsShowTheirUsualCase:
 
         # No lesson says "Markov chain" mid-sentence; the DDPM and VAE companions do.
         assert display_term("markov chain") == "Markov chain" and display_term("langevin dynamics") == "Langevin dynamics"
+
+    def test_given_a_term_that_states_its_display_form_it_shows_that_form(self):
+        from primer.glossary import display_term
+
+        # Counting can't settle "CLIP" (the model) against "clip" (PPO's clip range), nor a name only written as "1-Lipschitz".
+        assert display_term("clip") == "CLIP" and display_term("lipschitz") == "Lipschitz"

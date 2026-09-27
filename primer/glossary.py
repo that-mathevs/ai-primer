@@ -25,6 +25,8 @@ class Entry:
     # given hover definitions on pages under these path prefixes, so a "travel
     # policy" never pops up a definition from preference tuning.
     scope: tuple[str, ...] = ()
+    # How readers see the term when counting the lessons' usage can't decide it (see display_term).
+    display: str | None = None
 
 
 _E = Entry
@@ -198,7 +200,7 @@ GLOSSARY: dict[str, Entry] = {
     "bi-encoder": _E("Embeds the query and each document separately, so document vectors can be computed once and searched fast.", RET),
     "cross-encoder": _E("Reads the query and one document together and outputs a relevance score. Accurate but slow, so it is used to rerank a shortlist.", RET),
     "reranker": _E("A second, more accurate model that reorders the top results of a fast first-stage search.", RET),
-    "clip": _E("A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.", CON, scope=("primer/ml/embeddings/contrastive", "primer/ml/generative", "primer/ml/losses")),
+    "clip": _E("A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.", CON, scope=("primer/ml/embeddings/contrastive", "primer/ml/generative", "primer/ml/losses"), display="CLIP"),
     "matryoshka embedding": _E("An embedding trained so its first few dimensions work as a smaller embedding on their own.", CMP),
     "approximate nearest neighbor": _E("Finding vectors close to a query quickly by searching only part of the collection, accepting a small chance of missing the true closest.", ANN),
     "ann": _E("Approximate nearest neighbor search: trade a little recall for a lot of speed.", ANN),
@@ -711,7 +713,7 @@ GLOSSARY: dict[str, Entry] = {
     'linear time invariance': _E('A sequence model whose update rule is the same at every step, whatever the input; such a model can be computed as one convolution.', 'primer.ml.efficient_architectures'),
     'linear representation hypothesis': _E('The idea that features are directions, readable with a dot product.', 'primer.ml.interpretability'),
     'log-derivative trick': _E('Rewriting ∇π as π·∇log π, so a sampled action gives an estimate of the gradient.', 'primer.ml.reinforcement'),
-    'lipschitz': _E('A function is K-Lipschitz if its output never changes more than K times as fast as its input: a speed limit on its slope everywhere.', 'primer.ml.generative.gans'),
+    'lipschitz': _E('A function is K-Lipschitz if its output never changes more than K times as fast as its input: a speed limit on its slope everywhere.', 'primer.ml.generative.gans', display="Lipschitz"),
     'log-likelihood': _E('The log of how probable the observed data is under a model.', 'primer.ml.benchmarks'),
     'log-mel spectrogram': _E('A spectrogram pooled into mel bands with loudness on a log scale: what speech models read.', 'primer.ml.generative.multimodal'),
     'logit difference': _E("The correct answer's score minus a wrong answer's score.", 'primer.ml.interpretability'),
@@ -938,8 +940,11 @@ def display_term(term: str) -> str:
     """How the primer usually writes a term: "acl" -> "ACL", "adamw" -> "AdamW", "attention" -> "attention".
 
     Counted over every lesson's and companion's text, mid-sentence only, where capitals mean something
-    about the word. A term the lessons never use mid-sentence keeps its key.
+    about the word. A term the lessons never use mid-sentence keeps its key, and an
+    entry's own `display` overrides the count.
     """
+    if term in GLOSSARY and GLOSSARY[term].display:
+        return GLOSSARY[term].display
     terms = tuple(sorted(GLOSSARY)) if term in GLOSSARY else (term,)
     forms = _usage(terms).get(term.lower())
     return forms.most_common(1)[0][0] if forms else term

@@ -527,7 +527,7 @@ window.PRIMER_GLOSSARY = {
  "clip": {
   "def": "A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.",
   "lesson": "primer/ml/embeddings/contrastive.html",
-  "term": "clip"
+  "term": "CLIP"
  },
  "clustering": {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
@@ -2002,7 +2002,7 @@ window.PRIMER_GLOSSARY = {
  "lipschitz": {
   "def": "A function is K-Lipschitz if its output never changes more than K times as fast as its input: a speed limit on its slope everywhere.",
   "lesson": "primer/ml/generative/gans.html",
-  "term": "lipschitz"
+  "term": "Lipschitz"
  },
  "llm": {
   "def": "Large language model: a transformer trained to predict the next token, then tuned to follow instructions.",
