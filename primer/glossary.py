@@ -555,6 +555,7 @@ GLOSSARY: dict[str, Entry] = {
     # Added with the lessons on training at scale, reasoning, generation, and more.
     'activation checkpointing': _E("Keeping only each layer's input and recomputing the rest during the backward pass.", 'primer.ml.pretraining'),
     'activation patching': _E('Copying one activation from a clean run into a corrupted run to measure how much of the right answer returns; also called causal tracing.', 'primer.ml.interpretability'),
+    'adaptive layer norm': _E('Layer normalization whose scale and shift are computed from a conditioning signal, such as the noise step and class label, instead of being fixed learned weights. Diffusion transformers use it to tell every block what to make (adaLN).', 'primer.ml.deep_nets'),
     'advantage': _E('How much better an action did than typical: reward minus baseline.', 'primer.ml.reinforcement', scope=('primer/ml/reinforcement',)),
     'alignment': _E("Making a model's behaviour match what we want (helpful, honest, harmless), not just the measurements we optimize.", 'primer.ml.alignment', scope=('primer/ml/alignment',)),
     'all-reduce': _E('Summing a value across GPUs so every GPU ends up holding the total.', 'primer.ml.hardware'),
@@ -613,6 +614,7 @@ GLOSSARY: dict[str, Entry] = {
     'expectation': _E('The average of a quantity over many random draws, written E.', 'primer.ml.generative.gans', scope=('primer/ml/generative/gans',)),
     'exploration': _E('Trying actions you are unsure of instead of repeating the best one so far.', 'primer.ml.reinforcement', scope=('primer/ml/reinforcement',)),
     'exponent': _E('The bits of a float that pick the power of two, which sets its range.', 'primer.ml.hardware', scope=('primer/ml/hardware',)),
+    'exponential moving average': _E('A running average that keeps most of its old value and mixes in a small share of each new one, so recent values count most. Adam keeps its moments this way, and diffusion models sample with such an average of their weights.', 'primer.ml.optimizers'),
     'fail-to-pass test': _E('A hidden test that fails before a fix and must pass after it.', 'primer.agents.coding_agents'),
     'feature': _E('A property a model tracks, stored as a direction across many neurons.', 'primer.ml.interpretability', scope=('primer/ml/interpretability',)),
     'feature engineering': _E('Hand-transforming inputs (logarithms, one-hot columns) so a model can use them.', 'primer.ml.classical'),
@@ -758,6 +760,7 @@ GLOSSARY: dict[str, Entry] = {
     'rolling buffer cache': _E('A KV cache with w slots where each new token overwrites the oldest.', 'primer.ml.efficient_architectures'),
     'sample rate': _E('How many measurements of a signal are taken per second, such as 16,000 for speech.', 'primer.ml.generative.multimodal'),
     'sandbox': _E('An isolated place to run untrusted code, where the worst it can do is fail: no network, no secrets, time and memory limits.', 'primer.agents.coding_agents', scope=('primer/agents/coding_agents',)),
+    'scaling law': _E("A smooth, predictable rule for how a model's loss falls as its size, data or compute grows: a straight line on log-log axes. It lets small runs forecast a big model's quality.", 'primer.ml.transformer'),
     'score': _E('The direction in which data gets more crowded fastest; the noise guess, flipped and rescaled.', 'primer.ml.generative.diffusion', scope=('primer/ml/generative/diffusion',)),
     'screenshot': _E('The image of the screen a computer-use agent receives after each action.', 'primer.agents.coding_agents', scope=('primer/agents/coding_agents',)),
     'selective state-space model': _E('A state-space model whose step size (how much to keep and write) is computed from each token, as in Mamba.', 'primer.ml.efficient_architectures'),

@@ -54,6 +54,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/training_stages.html",
   "term": "adapter"
  },
+ "adaptive layer norm": {
+  "def": "Layer normalization whose scale and shift are computed from a conditioning signal, such as the noise step and class label, instead of being fixed learned weights. Diffusion transformers use it to tell every block what to make (adaLN).",
+  "lesson": "primer/ml/deep_nets.html",
+  "term": "adaptive layer norm"
+ },
  "advantage": {
   "def": "How much better an action did than typical: reward minus baseline.",
   "lesson": "primer/ml/reinforcement.html",
@@ -1038,6 +1043,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Waiting longer after each failed attempt, doubling up to a cap.",
   "lesson": "primer/agents/failures.html",
   "term": "exponential backoff"
+ },
+ "exponential moving average": {
+  "def": "A running average that keeps most of its old value and mixes in a small share of each new one, so recent values count most. Adam keeps its moments this way, and diffusion models sample with such an average of their weights.",
+  "lesson": "primer/ml/optimizers.html",
+  "term": "exponential moving average"
  },
  "external fragmentation": {
   "def": "Free memory split into gaps too small to use.",
@@ -3013,6 +3023,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Storing each number as one of 256 levels (one byte) instead of a 4-byte float.",
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "scalar quantization"
+ },
+ "scaling law": {
+  "def": "A smooth, predictable rule for how a model's loss falls as its size, data or compute grows: a straight line on log-log axes. It lets small runs forecast a big model's quality.",
+  "lesson": "primer/ml/transformer.html",
+  "term": "scaling law"
  },
  "score": {
   "def": "The direction in which data gets more crowded fastest; the noise guess, flipped and rescaled.",

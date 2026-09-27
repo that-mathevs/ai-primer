@@ -959,6 +959,7 @@ gap.
 - **Peebles and Xie, *Scalable Diffusion Models with Transformers*
   (2022)**: https://arxiv.org/abs/2212.09748. Replaced the U-Net with a
   transformer over latent patches, and showed it improves with scale.
+  [Annotated companion](../../../papers/diffusion-transformers.html)
 - **Lipman et al., *Flow Matching for Generative Modeling* (2022)**:
   https://arxiv.org/abs/2210.02747. Trained continuous flows by regressing
   velocities along simple paths from noise to data.

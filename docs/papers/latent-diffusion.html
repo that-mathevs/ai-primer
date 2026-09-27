@@ -93,7 +93,7 @@
   <li>New state-of-the-art scores for <span class="t" data-t="inpainting">inpainting</span> and class-conditional ImageNet, and competitive text-to-image, unconditional generation and <span class="t" data-t="super-resolution">super-resolution</span>, at a fraction of the compute of pixel-space diffusion.</li>
 </ul>
 <h3 class="rung">Why it matters today</h3>
-<p>The released model family became Stable Diffusion. “Compress with an autoencoder, diffuse in the latent, decode once” is still the default shape of image and video generators, even where the denoiser has since become a transformer (see the DiT companion).</p>
+<p>The released model family became Stable Diffusion. “Compress with an autoencoder, diffuse in the latent, decode once” is still the default shape of image and video generators, even where the denoiser has since become a transformer (see the <a href="diffusion-transformers.html">DiT companion</a>).</p>
 </section>
 
 <section id="s1">
@@ -136,7 +136,7 @@ for f in (16, 8):
 # halving f: how much more attention work
 1048576 // 65536  # → 16</code></pre>
 <h3 class="rung">Why it matters</h3>
-<p>The paper's position: “LDMs scale more gently to higher dimensional latent spaces due to their convolutional backbone”, so they can choose the compression that best balances a faithful autoencoder against the work left to the generator. A jointly trained alternative (LSGM) exists, but needs a delicate weighting of reconstruction against generation; this paper keeps the two apart. The <a href="vit.html">ViT companion</a> covers the square-law cost of attention over image patches, which returns in the DiT companion.</p>
+<p>The paper's position: “LDMs scale more gently to higher dimensional latent spaces due to their convolutional backbone”, so they can choose the compression that best balances a faithful autoencoder against the work left to the generator. A jointly trained alternative (LSGM) exists, but needs a delicate weighting of reconstruction against generation; this paper keeps the two apart. The <a href="vit.html">ViT companion</a> covers the square-law cost of attention over image patches, which returns in the <a href="diffusion-transformers.html">DiT companion</a>.</p>
 </section>
 
 <section id="s3">
@@ -445,7 +445,7 @@ round(552 / 274, 1)  # → 2.0</code></pre>
 <h4>Everyday picture</h4>
 <p>Same painter, new briefs: a sentence, a page of boxes labelled “dog” and “sofa”, a class name. Only the brief reader τ<sub>θ</sub> changes.</p>
 <h4>4.3.1 Transformer encoders for text and layouts</h4>
-<p>For text, τ<sub>θ</sub> is a transformer trained jointly with the denoiser: a BERT tokenizer, 77 tokens, 32 layers of width 1,280 (Table 17). The model, LDM-KL-8, has 1.45 billion parameters and trains on LAION-400M image-and-caption pairs. For layouts, each bounding box is encoded as a (top-left, bottom-right, class) token. Samples use <span class="t" data-t="classifier-free guidance">classifier-free guidance</span>, which asks the network twice, with and without the prompt, and pushes past the prompted answer; the DiT companion decodes its formula.</p>
+<p>For text, τ<sub>θ</sub> is a transformer trained jointly with the denoiser: a BERT tokenizer, 77 tokens, 32 layers of width 1,280 (Table 17). The model, LDM-KL-8, has 1.45 billion parameters and trains on LAION-400M image-and-caption pairs. For layouts, each bounding box is encoded as a (top-left, bottom-right, class) token. Samples use <span class="t" data-t="classifier-free guidance">classifier-free guidance</span>, which asks the network twice, with and without the prompt, and pushes past the prompted answer; the <a href="diffusion-transformers.html">DiT companion</a> decodes its formula.</p>
 <h4>Tiny example</h4>
 <p>Text-to-image on MS-COCO: without guidance the model's FID is 23.31; with guidance scale s = 1.5, it drops to 12.63, alongside GLIDE (12.24, 6 billion parameters) and Make-A-Scene (11.84, 4 billion) with a quarter to a third of their parameters.</p>
 <p class="inwords"><strong>In Python:</strong></p>
@@ -465,7 +465,7 @@ round(23.31 / 12.63, 2)  # → 1.85</code></pre>
     <tr class="hl"><td>Class-conditional ImageNet 256²</td><td>LDM-4-G, s = 1.5</td><td class="num">3.60</td><td class="num">247.67</td><td class="num">400M</td></tr>
   </tbody>
 </table></div>
-<p>On class-conditional ImageNet, guided LDM-4 reached FID 3.60, better than the pixel-space ADM-G's 4.59 with two thirds of its parameters. That 3.60 is the number the DiT paper later set out to beat. The <span class="t" data-tip-title="Inception score" data-tip="A score for generated images based on how confidently, and how variously, a pretrained image classifier labels them. Higher is better. It never looks at real images, so it is usually reported next to FID.">Inception score</span> (IS) column rises with guidance too.</p>
+<p>On class-conditional ImageNet, guided LDM-4 reached FID 3.60, better than the pixel-space ADM-G's 4.59 with two thirds of its parameters. That 3.60 is the number the <a href="diffusion-transformers.html">DiT paper</a> later set out to beat. The <span class="t" data-tip-title="Inception score" data-tip="A score for generated images based on how confidently, and how variously, a pretrained image classifier labels them. Higher is better. It never looks at real images, so it is usually reported next to FID.">Inception score</span> (IS) column rises with guidance too.</p>
 <h4>Why it matters today</h4>
 <p>This section is the first public demonstration that a mid-sized latent diffusion model with a learned text encoder can compete with far larger text-to-image systems. Later systems commonly use a frozen, pretrained text encoder in τ<sub>θ</sub>'s place (the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>'s pipeline shows CLIP's text tower in that role); the cross-attention wiring is the same.</p>
 <p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#guided_noise"><code>guided_noise</code></a> is classifier-free guidance, and <a data-lesson="primer/ml/generative/diffusion.html#guidance_sweep"><code>guidance_sweep</code></a> measures what raising the scale does to accuracy and spread.</p>
@@ -645,7 +645,7 @@ round(eps_theta + sigma_t * slope, 2), round(eps_theta - sigma_t * slope, 2)  # 
 <div class="tablewrap"><table>
   <thead><tr><th>Choice in the paper</th><th>Common today</th><th>Why</th><th>Where to read</th></tr></thead>
   <tbody>
-    <tr><td>Convolutional U-Net denoiser with cross-attention</td><td>Often a transformer over latent patches</td><td>Scales predictably with compute</td><td>DiT companion</td></tr>
+    <tr><td>Convolutional U-Net denoiser with cross-attention</td><td>Often a transformer over latent patches</td><td>Scales predictably with compute</td><td><a href="diffusion-transformers.html">DiT companion</a></td></tr>
     <tr><td>Text encoder trained jointly with the denoiser</td><td>Frozen pretrained text encoders</td><td>Better language understanding for free</td><td><a href="clip.html">CLIP companion</a></td></tr>
     <tr><td>Noise prediction, 50 to 250 DDIM steps</td><td>Also flow matching, and distilled few-step samplers</td><td>Fewer network calls per image</td><td><a href="flow-matching.html">Flow matching companion</a></td></tr>
     <tr><td>Images</td><td>Video in a latent space with a time axis</td><td>The same compression argument, with far more pixels</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a></td></tr>
