@@ -955,6 +955,7 @@ gap.
   Models* (2021)**: https://arxiv.org/abs/2112.10752. Denoising in an
   autoencoder's latent space, with text via cross-attention: the basis of
   Stable Diffusion.
+  [Annotated companion](../../../papers/latent-diffusion.html)
 - **Peebles and Xie, *Scalable Diffusion Models with Transformers*
   (2022)**: https://arxiv.org/abs/2212.09748. Replaced the U-Net with a
   transformer over latent patches, and showed it improves with scale.

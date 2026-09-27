@@ -1549,6 +1549,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/deep_nets.html",
   "term": "initialization"
  },
+ "inpainting": {
+  "def": "Filling a masked or missing region of an image with new content that fits the rest of the picture.",
+  "lesson": null,
+  "term": "inpainting"
+ },
  "input gate": {
   "def": "The LSTM dial that decides what new information to write into the cell state.",
   "lesson": "primer/ml/cnn_rnn.html",
@@ -2444,6 +2449,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/inference.html",
   "term": "per-channel quantization"
  },
+ "perceptual loss": {
+  "def": "A loss that compares two images through the features of a pretrained network rather than pixel by pixel, so it punishes the differences a person would notice. LPIPS is a widely used one.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "perceptual loss"
+ },
  "permission-aware retrieval": {
   "def": "Filtering out documents a user may not read before anything is ranked or shown to the model.",
   "lesson": "primer/agents/rag.html",
@@ -3104,6 +3114,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/neural_net.html",
   "term": "sigmoid"
  },
+ "signal-to-noise ratio": {
+  "def": "How strong a signal is compared with the noise on top of it, as a ratio of their variances. In a diffusion model it starts very large at the first step and falls towards zero at the last.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "signal-to-noise ratio"
+ },
  "silhouette score": {
   "def": "How much closer each point is to its own cluster than to the nearest other one, from −1 to 1.",
   "lesson": "primer/ml/embeddings/clustering.html",
@@ -3308,6 +3323,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A piece of a word, from a single character to a whole frequent word; a fixed set of them can spell any word.",
   "lesson": "primer/ml/tokenization.html",
   "term": "subword unit"
+ },
+ "super-resolution": {
+  "def": "Turning a low-resolution image into a plausible higher-resolution one; most of the fine detail has to be invented, not recovered.",
+  "lesson": null,
+  "term": "super-resolution"
  },
  "superposition": {
   "def": "Storing more features than there are neurons, as nearly perpendicular directions.",
