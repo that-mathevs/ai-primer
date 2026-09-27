@@ -756,6 +756,7 @@ GLOSSARY: dict[str, Entry] = {
     'posterior': _E('What you believe about a hidden quantity after seeing the data: the prior, reweighted by how well each value explains what was observed.', 'primer.ml.generative.autoencoders'),
     'posterior collapse': _E("When a VAE's code carries no information because the KL penalty outweighs what the code saves in rebuild error, so every output is the same average.", 'primer.ml.generative.autoencoders'),
     'power iteration': _E('Repeatedly multiplying a vector by a matrix (and its transpose) until it points along the most-stretched direction.', 'primer.ml.generative.gans'),
+    'power law': _E('A relationship where one quantity is a fixed power of another, y = a·x^k; on log-log axes it is a straight line.', 'primer.ml.transformer'),
     'preference model': _E('Another name for a reward model: it scores a response so that the gap between two scores predicts which one people (or a model) prefer.', 'primer.ml.training_stages'),
     'prior': _E('What you believe about a hidden quantity before seeing any data. A VAE\'s prior over codes is the standard normal distribution.', 'primer.ml.generative.autoencoders', scope=('primer/ml/generative',)),
     'probability flow ode': _E('The deterministic equation whose solutions carry noise to data with the same in-between distributions as a diffusion process; DDIM sampling is one way of stepping along it.', 'primer.ml.generative.diffusion'),

@@ -965,7 +965,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.interpretability"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "cart",

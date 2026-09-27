@@ -971,6 +971,7 @@ model's activity unexplained.
   https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html.
   Scaled sparse autoencoders to a production model and steered its
   behaviour through the features they found.
+  [Annotated companion](../../papers/scaling-monosemanticity.html)
 
 ## Further reading
 

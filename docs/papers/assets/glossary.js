@@ -2227,7 +2227,7 @@ window.PRIMER_GLOSSARY = {
  "mixture of experts": {
   "def": "Replacing one feed-forward network with many expert networks and a router that sends each token to a few of them.",
   "lesson": "primer/ml/transformer.html",
-  "term": "Mixture of Experts"
+  "term": "mixture of experts"
  },
  "mlp": {
   "def": "Multi-layer perceptron: the plainest neural network, layers of weighted sums each followed by a nonlinearity, with every unit connected to every unit in the next layer.",
@@ -2587,7 +2587,7 @@ window.PRIMER_GLOSSARY = {
  "pearson correlation": {
   "def": "How closely two lists of numbers rise and fall together along a straight line, from −1 to 1; 0 means no straight-line relationship.",
   "lesson": null,
-  "term": "pearson correlation"
+  "term": "Pearson correlation"
  },
  "per-channel quantization": {
   "def": "One scale per weight row, so a single outlier doesn't coarsen all the others.",
@@ -2698,6 +2698,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Repeatedly multiplying a vector by a matrix (and its transpose) until it points along the most-stretched direction.",
   "lesson": "primer/ml/generative/gans.html",
   "term": "power iteration"
+ },
+ "power law": {
+  "def": "A relationship where one quantity is a fixed power of another, y = a·x^k; on log-log axes it is a straight line.",
+  "lesson": "primer/ml/transformer.html",
+  "term": "power law"
  },
  "ppo": {
   "def": "Proximal Policy Optimization: a reinforcement learning algorithm that improves a policy in small, clipped steps; widely used for RLHF.",
