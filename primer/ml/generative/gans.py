@@ -3,7 +3,133 @@ r"""
 
 Run: `python -m primer.ml.generative.gans`
 
-## The everyday picture
+This lesson builds on the small networks and gradients of
+`primer.ml.neural_net`, the binary cross-entropy of `primer.ml.losses` and
+the Adam optimizer of `primer.ml.optimizers`; `primer.notation` explains
+every symbol from zero.
+
+## Level 1: The practitioner's guide
+
+**In one sentence.** A generative adversarial network (GAN) trains a
+generator to turn random noise into samples by pitting it against a
+discriminator that learns to tell its samples from real ones, which yields
+sharp output in a single pass at the price of a training game that is hard
+to keep stable.
+
+**When you need it.** Two tells. You need a generator that runs in one
+pass, because it sits in a real-time loop (a speech vocoder, an interactive
+tool, a game) and a many-step diffusion sampler is too slow. Or you have a
+decoder that rebuilds images or audio and its output is blurry: a
+reconstruction loss rewards averages, and an adversarial loss is the
+standard cure. You don't need to train a GAN from scratch to generate new
+images or video today: since 2021 diffusion and flow models are the default
+there, because they train stably and cover the data, which is exactly what
+this lesson shows GANs struggling to do. The number that shows the naive
+approach failing: on this lesson's toy data (eight small clouds on a ring),
+a GAN trained with the same learning rate for both players covers 3 of the 8
+clouds after 2,500 rounds, and only 16% of its samples land on any cloud.
+Change nothing but the discriminator's learning rate to three times the
+generator's and it covers all 8 with 81% on target.
+
+**Your options.** From the least commitment to the most:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| A diffusion or flow model instead | Generates by removing noise over many passes | Stable training, full coverage; matches BigGAN-deep's image quality with 25 passes and better coverage | Tens of network passes per sample | A hosted API or a diffusion library |
+| A pretrained GAN generator | One pass from noise to sample, with an editable latent space | Real-time generation in its domain (faces, one class of object) | You are limited to domains someone trained; less variety than diffusion | Released checkpoints (StyleGAN family) |
+| Train a GAN with the standard stabilisers | Non-saturating loss, a faster discriminator, an R1 penalty or spectral normalization | A one-pass generator for your own narrow domain | Two networks, coverage monitoring, learning-rate tuning; a run can still collapse | Your training loop |
+| Wasserstein critic (WGAN-GP) | Replaces the verdict with a distance that still points home when real and fake don't overlap | A gradient wherever the generator is, and a loss that tracks quality | Several critic steps per generator step, plus a gradient penalty | Your training loop |
+| Adversarial loss inside a decoder | A discriminator judges reconstructions against originals | Sharp detail where a reconstruction loss alone gives blur | One more network to train and keep stable | The training of VAEs, tokenizers and vocoders |
+| Adversarial distillation of a diffusion model | A student learns to match a diffusion teacher in 1 to 4 steps, with a discriminator keeping it sharp | Real-time sampling from a foundation model | A teacher, a distillation run, some loss of variety | The fast sampling path of a diffusion system |
+
+**How to choose.** Start from the latency you need and the variety you
+can't lose.
+
+- A new image, audio or video generator with no hard latency limit: use
+  diffusion or flow matching, and put adversarial losses only in the decoder
+  and in a distilled fast path.
+- One-pass generation is non-negotiable and the domain is narrow: a GAN
+  generator, trained with every stabiliser in the table, or a distilled
+  diffusion model if a teacher exists for your domain.
+- A blurry decoder: add a discriminator that compares reconstructions with
+  originals, and expect the same instabilities as any GAN.
+- A latent space to edit (age a face, change a pose): a style-based
+  generator, whose latent space was designed for disentangled control.
+- Whatever you pick, measure coverage, not just per-sample quality. Mode
+  collapse produces beautiful samples that all look the same, and a metric
+  that scores one sample at a time cannot see it.
+
+**What it costs.** Sampling is the GAN's strength: one generator pass per
+sample. HiFi-GAN generates 22.05 kHz speech 167.9 times faster than real
+time on one V100 GPU, and its small version runs 13.4 times faster than
+real time on a CPU; a diffusion model of the 2021 generation needed 25
+network passes per image to match BigGAN-deep. Training is where the cost
+lies: two networks, one loss surface that moves every time the other
+player steps, and a set of dials whose settings decide the outcome. On the
+ring, 2,500 rounds with the discriminator learning at 0.003 against the
+generator's 0.001 covers all eight clouds; at 0.001 it covers three and at
+0.01 it covers six. Each stabiliser has a price. An R1 gradient penalty
+needs the gradient of the discriminator's own gradient, an extra backward
+pass on every discriminator step; spectral normalization costs a couple of
+matrix-vector products per layer per step; a Wasserstein critic is trained
+for several steps per generator step. Quality and variety trade against
+each other on every dial: the ten-times-faster discriminator gives 86%
+on-target samples against the balanced run's 81%, and leaves two clouds
+empty for good. BigGAN exposed the same trade as a knob, its truncation
+trick, which trades sample variety for fidelity.
+
+**What breaks.**
+
+- **Mode collapse.** The generator covers a few kinds of data and hops
+  between them as the discriminator catches up: on the ring, 3 clouds of 8,
+  alternating between odd and even ones every 250 steps. Track coverage
+  (FID or a per-class count) and rebalance the learning rates.
+- **A silent gradient.** With the original generator loss, a confident
+  discriminator hands the generator almost nothing: after an 800-step head
+  start its verdict on fakes is 0.003 and the gradient 0.09, against 15 with
+  the non-saturating loss. Use the non-saturating loss; every modern GAN
+  does.
+- **Oscillation.** Plain gradient steps rotate around the equilibrium
+  rather than descending into it: in the two-number Dirac GAN, simultaneous
+  steps drift from 1 away to 2.6 away in 300 steps. Losses that swing
+  without trending are the symptom; an R1 penalty (0.08 away after 50
+  steps) is the fix.
+- **A discriminator that wins too fast.** Every region the generator has
+  not reached becomes a wall of confident "fake", and the generator
+  polishes what it has: six clouds from step 500 to the end, at ten times
+  the generator's rate. A faster discriminator helps up to a point, then
+  hurts.
+- **No overlap, no direction.** When real and generated data don't overlap,
+  the original objective is flat (Jensen-Shannon stuck at 0.693 whether the
+  generator is 1 or 10 away). The Wasserstein critic's distance still
+  slopes towards the data.
+- **A seed that lies.** The same settings can find all eight clouds with one
+  seed and three with another. Judge a recipe over several seeds.
+
+**In the wild.** StyleGAN (Karras, Laine and Aila) is the reference
+one-pass image generator: a style-based generator that disentangles
+high-level attributes from stochastic detail, trained on the FFHQ face
+dataset the paper introduced, and trained with the R1 penalty.
+BigGAN scaled class-conditional GANs to ImageNet with spectral
+normalization, reaching an Inception Score of 166.5 and an FID of 7.4 at
+128 × 128. FID itself, the standard score for generated images, came from
+the two time-scale paper (Heusel et al.), along with the proof that
+separate learning rates converge. Dhariwal and Nichol's *Diffusion Models
+Beat GANs* marked the handover on image quality. Adversarial losses now
+live inside other systems: the autoencoders of latent diffusion and
+VQGAN's tokenizer are trained with a discriminator, HiFi-GAN and the neural
+audio codecs use adversaries to keep waveforms clean, and Adversarial
+Diffusion Distillation turns a diffusion model into a one-to-four-step
+sampler by pairing score distillation with an adversarial loss. Every paper
+is linked at the end of the lesson.
+
+**Go deeper.** Level 2 builds both players in NumPy, derives the best
+possible discriminator and the game's equilibrium, shows why the original
+generator loss goes silent, then reproduces each failure on the ring (the
+Dirac GAN's spiral, mode collapse, the over-strong discriminator) and runs
+each fix. If you only needed to choose, you are done.
+
+## Level 2: How it works, from scratch
 
 A forger wants to print banknotes that pass as real. A detective wants to
 catch every fake. At first the forger is hopeless: smudged ink, the wrong
