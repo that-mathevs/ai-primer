@@ -59,6 +59,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/training_stages.html",
   "term": "adapter"
  },
+ "adaptive layer norm": {
+  "def": "Layer normalization whose scale and shift are computed from a conditioning signal, such as the noise step and class label, instead of being fixed learned weights. Diffusion transformers use it to tell every block what to make (adaLN).",
+  "lesson": "primer/ml/deep_nets.html",
+  "term": "adaptive layer norm"
+ },
  "advantage": {
   "def": "How much better an action did than typical: reward minus baseline.",
   "lesson": "primer/ml/reinforcement.html",
@@ -1074,6 +1079,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/failures.html",
   "term": "exponential backoff"
  },
+ "exponential moving average": {
+  "def": "A running average that keeps most of its old value and mixes in a small share of each new one, so recent values count most. Adam keeps its moments this way, and diffusion models sample with such an average of their weights.",
+  "lesson": "primer/ml/optimizers.html",
+  "term": "exponential moving average"
+ },
  "external fragmentation": {
   "def": "Free memory split into gaps too small to use.",
   "lesson": "primer/ml/inference.html",
@@ -1618,6 +1628,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Choosing the size of a network's random starting weights so signals neither shrink nor grow layer by layer.",
   "lesson": "primer/ml/deep_nets.html",
   "term": "initialization"
+ },
+ "inpainting": {
+  "def": "Filling a masked or missing region of an image with new content that fits the rest of the picture.",
+  "lesson": null,
+  "term": "inpainting"
  },
  "input gate": {
   "def": "The LSTM dial that decides what new information to write into the cell state.",
@@ -2529,6 +2544,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/inference.html",
   "term": "per-channel quantization"
  },
+ "perceptual loss": {
+  "def": "A loss that compares two images through the features of a pretrained network rather than pixel by pixel, so it punishes the differences a person would notice. LPIPS is a widely used one.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "perceptual loss"
+ },
  "permission-aware retrieval": {
   "def": "Filtering out documents a user may not read before anything is ranked or shown to the model.",
   "lesson": "primer/agents/rag.html",
@@ -3094,6 +3114,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "scalar quantization"
  },
+ "scaling law": {
+  "def": "A smooth, predictable rule for how a model's loss falls as its size, data or compute grows: a straight line on log-log axes. It lets small runs forecast a big model's quality.",
+  "lesson": "primer/ml/transformer.html",
+  "term": "scaling law"
+ },
  "score": {
   "def": "The direction in which data gets more crowded fastest; the noise guess, flipped and rescaled.",
   "lesson": "primer/ml/generative/diffusion.html",
@@ -3413,6 +3438,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A piece of a word, from a single character to a whole frequent word; a fixed set of them can spell any word.",
   "lesson": "primer/ml/tokenization.html",
   "term": "subword unit"
+ },
+ "super-resolution": {
+  "def": "Turning a low-resolution image into a plausible higher-resolution one; most of the fine detail has to be invented, not recovered.",
+  "lesson": null,
+  "term": "super-resolution"
  },
  "superposition": {
   "def": "Storing more features than there are neurons, as nearly perpendicular directions.",

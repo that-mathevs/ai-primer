@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>High-Resolution Image Synthesis with Latent Diffusion Models, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Rombach et al. (2021), the paper that moved diffusion from pixels into an autoencoder's small latent space and added cross-attention for text: the recipe behind Stable Diffusion.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="latent-diffusion">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Related work</a></li>
+      <li><a href="#s3">3 Method</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Perceptual image compression</a></li>
+          <li><a href="#s3-2">3.2 Latent diffusion models</a></li>
+          <li><a href="#s3-3">3.3 Conditioning mechanisms</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Experiments</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Perceptual compression trade-offs</a></li>
+          <li><a href="#s4-2">4.2 Image generation</a></li>
+          <li><a href="#s4-3">4.3 Conditional latent diffusion</a></li>
+          <li><a href="#s4-3-2">4.3.2 Beyond 256², and latent scale</a></li>
+          <li><a href="#s4-4">4.4 Super-resolution</a></li>
+          <li><a href="#s4-5">4.5 Inpainting</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Limitations and societal impact</a></li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#appb">Appendix B: the objective, through signal-to-noise</a></li>
+      <li><a href="#appc">Appendix C: guiding with an image</a></li>
+      <li><a href="#today">What changed since 2021</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>High-Resolution Image Synthesis with Latent Diffusion Models, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Rombach, Blattmann, Lorenz, Esser and Ommer (2021), the paper that ran diffusion inside an autoencoder's small latent space instead of on pixels, and fed text in through cross-attention: the design behind Stable Diffusion.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2112.10752">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2112.10752">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2112.10752">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper (version 2, April 2022) section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The equations are reproduced because mathematics is not copyrightable. The paper is distributed under arXiv's standard licence, so its tables are not reproduced: a few selected rows appear in this page's own tables and charts, each attributed, and its figures are redrawn from scratch. Worked numbers come from small examples built on this page, not from the paper, unless a sentence says otherwise; made-up numbers are labelled illustrative. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing on this page assumes you already know the jargon. Three things help:</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and each equation is followed by a table of its symbols.</li>
+  <li>The diagrams are live: hover or tap any part to see what it does. The charts read out their values as you hover or use the arrow keys.</li>
+</ul>
+<p>Each idea is explained in the same order: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you could check by hand, a <strong>diagram</strong>, then <strong>the math</strong>, and finally <strong>why it still matters</strong>. This paper builds on two others with companions of their own: the <a href="ddpm.html">DDPM companion</a> (how a diffusion model is trained to guess noise) and the <a href="auto-encoding-variational-bayes.html">VAE companion</a> (how an autoencoder learns a small, well-behaved code). Most of the arithmetic below uses one running example:</p>
+<div class="play">
+  <p style="margin:0"><strong>The running example.</strong> A colour photo of <strong>256 × 256</strong> pixels is 256 × 256 × 3 = <strong>196,608</strong> numbers. The paper's text-to-image autoencoder shrinks each side by <strong>f = 8</strong> and keeps <strong>c = 4</strong> numbers per position: a latent of 32 × 32 × 4 = <strong>4,096</strong> numbers, 48 times fewer. The diffusion model then does all of its work on that small grid. The <a class="lesson" data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> builds the diffusion half from scratch in NumPy, and the <a class="lesson" data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a> builds the autoencoder half.</p>
+</div>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“To enable DM training on limited computational resources while retaining their quality and flexibility, we apply them in the latent space of powerful pretrained autoencoders.”<cite>Rombach et al. (2021), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2112.10752">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>An architect does not design a skyscraper by placing every brick. They draw a floor plan, small enough to think about, and a builder turns the plan into a building. A <span class="t" data-t="latent diffusion">latent diffusion model</span> splits image making the same way: an <span class="t" data-t="autoencoder">autoencoder</span> learns once how to turn pictures into small “plans” and back, and a <span class="t" data-t="diffusion model">diffusion model</span> learns to invent new plans. The expensive creative loop runs on the plan, never on the pixels.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Diffusion in a mildly compressed latent space reaches “a near-optimal point between complexity reduction and detail preservation”: far cheaper to train and sample, with almost no loss of quality.</li>
+  <li><span class="t" data-t="cross-attention">Cross-attention</span> layers turn the denoiser into a general conditional generator: text, bounding boxes, class labels.</li>
+  <li>New state-of-the-art scores for <span class="t" data-t="inpainting">inpainting</span> and class-conditional ImageNet, and competitive text-to-image, unconditional generation and <span class="t" data-t="super-resolution">super-resolution</span>, at a fraction of the compute of pixel-space diffusion.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The released model family became Stable Diffusion. “Compress with an autoencoder, diffuse in the latent, decode once” is still the default shape of image and video generators, even where the denoiser has since become a transformer (see the <a href="diffusion-transformers.html">DiT companion</a>).</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S1">original</a></span></h2>
+<blockquote class="quote">“Most bits of a digital image correspond to imperceptible details.”<cite>Rombach et al. (2021), Figure 2 caption</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Imagine describing a photo over the phone. The first few sentences carry almost everything that matters: “a woman in a blue hat, smiling, outdoors”. After that you are reading out the exact texture of each thread in the hat, which takes far longer and which the listener would never miss. A diffusion model trained on pixels spends most of its effort on the thread-by-thread part, because every pixel is in its input and output, even though its loss already cares little about those details.</p>
+<h3 class="rung">Tiny example: what pixel-space diffusion costs</h3>
+<p>The paper quotes the price of the strongest pixel-space models of the time: 150 to 1,000 <span class="t" data-tip-title="V100 day" data-tip="One day of work by one NVIDIA V100 graphics card, a common unit for how much compute a training run took.">V100 days</span> to train, and about 5 days on one A100 card to draw 50,000 samples. That is about 8.6 seconds per image, and each image runs the same large network 25 to 1,000 times in a row.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># 50,000 samples in about 5 days on one GPU
+seconds = 5 * 24 * 60 * 60
+round(seconds / 50_000, 1)  # → 8.6</code></pre>
+<h3 class="rung">Two stages of learning, drawn</h3>
+<p>The paper's argument starts from a trained pixel-space diffusion model (the <a href="ddpm.html">DDPM</a> one) read as a compressor. As its reverse process runs, you can count how many bits it has “sent” (the rate) and how far its current best guess of the final picture is from the truth (the distortion).</p>
+<div class="plot" id="rd-plot">
+  <div id="rd-chart"></div>
+  <p class="readout" id="rd-readout">Hover or use the arrow keys to read a point.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the rate, in <span class="t" data-t="bits per dimension">bits per dimension</span> received so far; the y-axis is the distortion, the root-mean-squared error of the current guess on a 0 to 255 pixel scale. Start at the top left: the first 0.12 bits per dimension (reverse steps 100 to 900) bring the error down from 67.6 to 12.0 grey levels. That steep drop is what the paper calls <em>semantic compression</em>: layout, shapes, what the picture is of. Then the curve lies almost flat: the last 1.66 bits per dimension, more than nine tenths of the total, only take the error from 12.0 to 0.95. That long tail is <em>perceptual compression</em>: detail the eye barely registers. The paper's point is that a separate, cheaper model (an autoencoder) can handle the tail, so the diffusion model need only learn the steep part. Its Figure 2 draws the same curve from the same model; the ten points here are the values the <a href="ddpm.html">DDPM paper</a> publishes in its Table 4.</p>
+<h3 class="rung">The paper's plan and contributions</h3>
+<p>Train in two separate phases. First, an autoencoder that is “perceptually equivalent” to the image: its reconstructions look the same, but it holds far fewer numbers. Second, a diffusion model in that latent space. The authors list six contributions: milder compression than earlier two-stage methods, so reconstructions stay faithful; competitive results on many tasks at lower cost; no delicate balancing of reconstruction against generation, because the two are trained separately; convolutional sampling of images around 1024² pixels; a general cross-attention conditioning mechanism; and released models.</p>
+<h3 class="rung">Why it matters</h3>
+<p>This separation is what put high-resolution diffusion on a single GPU. The autoencoder is trained once and reused for every diffusion model trained on top of it, which is also why later models could swap the denoiser while keeping the same latent space (the DiT paper reuses this paper's f = 8 autoencoder, with only its decoder fine-tuned).</p>
+</section>
+
+<section id="s2">
+<h2>2 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Before this paper, every family of image generator had one weak spot. <span class="t" data-t="gan">GANs</span> draw sharp pictures in one shot but are hard to train and can drop whole kinds of image (<span class="t" data-t="mode collapse">mode collapse</span>). <span class="t" data-t="variational autoencoder">VAEs</span> and flows train steadily but look blurrier. <span class="t" data-t="autoregressive generation">Autoregressive</span> transformers are strong but read an image one token at a time, which limits them to small images. Diffusion models are strong and stable but slow and costly on pixels.</p>
+<h3 class="rung">Two-stage models, and why they compressed so hard</h3>
+<p>Earlier two-stage systems (<span class="t" data-t="vq-vae">VQ-VAEs</span>, VQGAN, DALL-E) also compressed images first, into a grid of <span class="t" data-t="codebook">codebook</span> entries, then modelled that grid with an autoregressive transformer. A transformer's <span class="t" data-t="self-attention">self-attention</span> compares every token with every other, so its cost grows with the square of the number of tokens, and those systems had to squeeze hard (f = 16 or more) to keep the sequence short. Harsh squeezing throws away detail the decoder cannot recover.</p>
+<p><strong>Tiny example:</strong> a 256 × 256 image at f = 16 is a 16 × 16 grid, 256 tokens and 65,536 attention pairs per layer. At f = 8 it is 1,024 tokens and 1,048,576 pairs: 16 times the attention work for halving f. The convolutional U-Net this paper uses does work proportional to the number of positions, not its square, so it can afford the milder f.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>side = 256
+for f in (16, 8):
+    # tokens in an f-times-smaller grid, and attention pairs (every token with every token)
+    tokens = (side // f) ** 2
+    print(f, tokens, tokens ** 2)  # → 16 256 65536 8 1024 1048576
+# halving f: how much more attention work
+1048576 // 65536  # → 16</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The paper's position: “LDMs scale more gently to higher dimensional latent spaces due to their convolutional backbone”, so they can choose the compression that best balances a faithful autoencoder against the work left to the generator. A jointly trained alternative (LSGM) exists, but needs a delicate weighting of reconstruction against generation; this paper keeps the two apart. The <a href="vit.html">ViT companion</a> covers the square-law cost of attention over image patches, which returns in the <a href="diffusion-transformers.html">DiT companion</a>.</p>
+</section>
+
+<section id="s3">
+<h2>3 Method <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S3">original</a></span></h2>
+<blockquote class="quote">“We propose to circumvent this drawback by introducing an explicit separation of the compressive from the generative learning phase.”<cite>Rombach et al. (2021), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A diffusion model can already ignore invisible detail through its loss, but it still has to <em>look at</em> every pixel on every step, both while training and while sampling. That is like a sculptor who has learned not to care about the grain of the marble, yet still has to walk around every square millimetre of it before each chip. Hand them a small clay maquette instead, and let a craftsman scale it up at the end.</p>
+<h3 class="rung">Three advantages the paper lists</h3>
+<ul>
+  <li><strong>Cheaper diffusion:</strong> sampling happens on the small latent, so each of the many network calls is cheaper.</li>
+  <li><strong>The right assumptions:</strong> the latent is still a 2-D grid, so the denoiser can be a convolutional <span class="t" data-t="u-net">U-Net</span> with its built-in <span class="t" data-t="inductive bias">inductive bias</span> for images, which is why mild compression suffices.</li>
+  <li><strong>A reusable space:</strong> the same autoencoder serves many generative models and other uses.</li>
+</ul>
+<figure class="ix wide" id="fig3">
+  <div class="ixgrid">
+  <svg viewBox="0 0 380 510" role="img" aria-label="The latent diffusion model: pixel space, latent space with the denoising U-Net, and the conditioning branch">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker>
+    </defs>
+    <!-- frames -->
+    <g class="blk frame" data-block="pixel"><rect x="6" y="6" width="236" height="56" rx="10"/></g>
+    <text x="232" y="20" class="lbl" text-anchor="end">Pixel space</text>
+    <g class="blk frame" data-block="latent"><rect x="6" y="80" width="368" height="262" rx="12"/></g>
+    <text x="286" y="96" class="lbl" text-anchor="end">Latent space</text>
+    <g class="blk frame" data-block="pixel"><rect x="6" y="430" width="236" height="72" rx="10"/></g>
+    <text x="232" y="496" class="lbl" text-anchor="end">Pixel space</text>
+    <g class="blk frame" data-block="condframe"><rect x="252" y="356" width="122" height="146" rx="10"/></g>
+    <text x="260" y="371" class="lbl">Conditioning</text>
+
+    <!-- wires -->
+    <path class="wire" d="M60,42 H92" marker-end="url(#arr)"/>
+    <path class="wire" d="M150,56 V70 H41 V102" marker-end="url(#arr)"/>
+    <path class="wire" d="M64,122 H292" marker-end="url(#arr)"/>
+    <text x="178" y="116" class="lbl" text-anchor="middle">diffusion process (fixed)</text>
+    <path class="wire" d="M326,136 V212 H310" marker-end="url(#arr)"/>
+    <path class="wire" d="M80,230 H66" marker-end="url(#arr)"/>
+    <path class="wire" d="M41,244 V296" marker-end="url(#arr)"/>
+    <path class="wire" d="M76,312 H96 V264" marker-end="url(#arr)"/>
+    <text x="102" y="300" class="lbl">×(T − 1)</text>
+    <path class="wire" d="M41,326 V400 H200 V454 H178" marker-end="url(#arr)"/>
+    <text x="120" y="394" class="lbl" text-anchor="middle">when the loop ends</text>
+    <path class="wire" d="M94,454 H64" marker-end="url(#arr)"/>
+    <path class="wire" d="M286,424 H258 V300 H276 V220" marker-end="url(#arr)"/>
+    <path class="wire" d="M258,300 H228 V252" marker-end="url(#arr)"/>
+    <text x="264" y="322" class="lbl">K, V</text>
+    <path class="wire" d="M310,400 V408" marker-end="url(#arr)"/>
+    <path class="wire" d="M270,400 V456" marker-end="url(#arr)"/>
+    <path class="wire" d="M366,470 H368 V176 H330" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+    <!-- pixel space in -->
+    <g class="blk plain" data-block="x"><rect x="18" y="28" width="42" height="26" rx="6"/><text x="39" y="46" text-anchor="middle">x</text></g>
+    <g class="blk emb" data-block="enc"><rect x="94" y="28" width="112" height="28" rx="6"/><text x="150" y="47" text-anchor="middle">ℰ encoder</text></g>
+    <!-- latent -->
+    <g class="blk emb" data-block="z"><rect x="18" y="104" width="46" height="28" rx="6"/><text x="41" y="123" text-anchor="middle">z</text></g>
+    <g class="blk plain" data-block="zT"><rect x="294" y="108" width="64" height="28" rx="6"/><text x="326" y="127" text-anchor="middle">z_T</text></g>
+    <g class="blk frame" data-block="unet"><rect x="80" y="150" width="230" height="112" rx="10"/></g>
+    <text x="194" y="166" class="lbl" text-anchor="middle">denoising U-Net ε_θ</text>
+    <g class="blk attn" data-block="qkv"><rect x="90" y="176" width="44" height="40" rx="6"/><text x="112" y="193" text-anchor="middle">Q</text><text x="112" y="209" text-anchor="middle">K V</text></g>
+    <g class="blk attn" data-block="qkv"><rect x="148" y="210" width="44" height="40" rx="6"/><text x="170" y="227" text-anchor="middle">Q</text><text x="170" y="243" text-anchor="middle">K V</text></g>
+    <g class="blk attn" data-block="qkv"><rect x="206" y="210" width="44" height="40" rx="6"/><text x="228" y="227" text-anchor="middle">Q</text><text x="228" y="243" text-anchor="middle">K V</text></g>
+    <g class="blk attn" data-block="qkv"><rect x="254" y="176" width="44" height="40" rx="6"/><text x="276" y="193" text-anchor="middle">Q</text><text x="276" y="209" text-anchor="middle">K V</text></g>
+    <path class="wire" d="M134,184 H254" stroke-dasharray="3 3"/>
+    <g class="blk lin" data-block="step"><rect x="18" y="216" width="46" height="28" rx="6"/><text x="41" y="235" text-anchor="middle">step</text></g>
+    <g class="blk plain" data-block="ztm1"><rect x="14" y="298" width="62" height="28" rx="6"/><text x="45" y="317" text-anchor="middle">z_(T−1)</text></g>
+    <!-- pixel out -->
+    <g class="blk emb" data-block="dec"><rect x="96" y="440" width="80" height="28" rx="6"/><text x="136" y="459" text-anchor="middle">𝒟 decoder</text></g>
+    <g class="blk plain" data-block="xtilde"><rect x="18" y="440" width="44" height="28" rx="6"/><text x="40" y="459" text-anchor="middle">x̃</text></g>
+    <!-- conditioning -->
+    <g class="blk plain" data-block="ysrc"><rect x="262" y="378" width="96" height="22" rx="5"/><text x="310" y="393" text-anchor="middle">text, map, image</text></g>
+    <g class="blk ff" data-block="tau"><rect x="286" y="410" width="52" height="28" rx="6"/><text x="312" y="429" text-anchor="middle">τ_θ</text></g>
+    <g class="blk norm" data-block="switch"><rect x="262" y="458" width="104" height="24" rx="5"/><text x="314" y="474" text-anchor="middle">switch: concat</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap any part. Start at <strong>x</strong>, the photo, at the top left, and follow the arrows.</p></div>
+  </div>
+  <figcaption>Figure 3 of the paper, redrawn (turned upright to fit a phone): conditioning a latent diffusion model by concatenation or by cross-attention. Based on Rombach et al. (2021), Figure 3.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> start at the top left. A photo x enters the encoder ℰ and becomes the small latent z, the first box in the big <em>Latent space</em> frame. During training, the fixed diffusion process (the long arrow) noises z towards pure noise z<sub>T</sub>. Generation runs the other way: z<sub>T</sub> enters the denoising U-Net from the right, the U-Net removes a little noise, and its output z<sub>T−1</sub> loops back in, T − 1 times in all. The four purple blocks inside the U-Net are its attention layers: their queries Q come from the image features, while their keys and values K, V arrive from below, from the conditioning encoder τ<sub>θ</sub>, which has turned a prompt (text, a layout, a class) into vectors. The dashed wire is the other way to condition: for inputs lined up with the image (a low-resolution photo, a semantic map), the switch simply stacks them onto z<sub>T</sub> as extra channels. When the loop ends, the clean latent leaves the frame at the bottom left and the decoder 𝒟 turns it into the picture x̃, once. Only the part inside the latent frame runs many times.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Perceptual image compression <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S3.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A good travel sketch keeps what matters about a street and drops the brickwork. The autoencoder is trained to make sketches that a skilled painter (the decoder) can turn back into something that looks like the photo, even if not every brick is where it was. “Looks like” is judged the way people judge: by a <span class="t" data-t="perceptual loss">perceptual loss</span> and by a small <span class="t" data-t="discriminator">discriminator</span> that inspects patches for realism, not by raw pixel-by-pixel error, which rewards blur.</p>
+<h4>Tiny example</h4>
+<p>The running example: x is 256 × 256 × 3. The encoder downsamples each side by f = 8, so h = w = 32, and keeps c = 4 channels. The latent z holds 4,096 numbers against the image's 196,608, a factor of 48. Shrink harder, f = 16 with c = 8, and it is 2,048 numbers; milder, f = 4 with c = 3, and it is 12,288.</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=zlat}{z} = \htmlData{sym=Enc}{\mathcal{E}}(\htmlData{sym=ximg}{x}), \\ \htmlData{sym=xrec}{\tilde{x}} = \htmlData{sym=Dec}{\mathcal{D}}(\htmlData{sym=zlat}{z}) = \htmlData{sym=Dec}{\mathcal{D}}(\htmlData{sym=Enc}{\mathcal{E}}(\htmlData{sym=ximg}{x})), \\ \htmlData{sym=ximg}{x} \in \htmlData{sym=RHW3}{\mathbb{R}^{H\times W\times 3}}, \quad \htmlData{sym=zlat}{z} \in \htmlData{sym=Rhwc}{\mathbb{R}^{h\times w\times c}}, \\ \htmlData{sym=fdown}{f} = \frac{H}{h} = \frac{W}{w} = 2^{\htmlData{sym=mexp}{m}}\end{gathered}" data-fallback="z = E(x),  x̃ = D(z) = D(E(x)),  x ∈ R^(H×W×3),  z ∈ R^(h×w×c),  f = H/h = W/w = 2^m"></div>
+<div class="symtable" data-syms="ximg,Enc,zlat,Dec,xrec,RHW3,Rhwc,fdown,mexp"></div>
+<p class="inwords"><strong>In words:</strong> “the encoder turns an H × W colour image into an h × w grid with c numbers per cell, f times smaller on each side, where f is a power of two; the decoder turns such a grid back into an image.”</p>
+<p class="inwords"><strong>With the numbers:</strong> H = W = 256 and f = 2<sup>3</sup> = 8 give h = w = 32; with c = 4, z is 32 × 32 × 4 = 4,096 numbers, and 196,608 / 4,096 = 48.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>H, W, m, c = 256, 256, 3, 4
+# f = 2^m, and h = H / f, w = W / f
+f = 2 ** m
+h, w = H // f, W // f
+h, w  # → (32, 32)
+# numbers in the image and in the latent
+H * W * 3, h * w * c  # → (196608, 4096)
+(H * W * 3) / (h * w * c)  # → 48.0</code></pre>
+<p><strong>Two ways to keep the latent tame.</strong> Left alone, an autoencoder may spread its latent over huge values, which a diffusion model then handles badly. The paper tries two gentle regularizers. <em>KL-reg.</em> adds a tiny <span class="t" data-t="kl divergence">KL</span> penalty pulling the latent towards the standard normal, as in a <a href="auto-encoding-variational-bayes.html">VAE</a>, but weighted by only about 10<sup>−6</sup>. <em>VQ-reg.</em> puts a <span class="t" data-t="vector quantization">vector quantization</span> layer inside the decoder, with a large codebook. Because the diffusion model sees the latent as a 2-D grid rather than a 1-D sequence, both can stay mild.</p>
+<p>The full autoencoder objective is in the paper's Appendix G. The encoder and decoder minimize it; the patch discriminator D<sub>ψ</sub> maximizes it:</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=LAE}{L_{\text{Autoencoder}}} = \htmlData{sym=minmax}{\min_{\mathcal{E},\mathcal{D}}\max_{\psi}}\\ \Big(\htmlData{sym=Lrec}{L_{rec}}(x,\mathcal{D}(\mathcal{E}(x))) - \htmlData{sym=Ladv}{L_{adv}}(\mathcal{D}(\mathcal{E}(x))) \\ + \htmlData{sym=logDpsi}{\log D_{\psi}(x)} + \htmlData{sym=Lreg}{L_{reg}}(x;\mathcal{E},\mathcal{D})\Big)\end{gathered}" data-fallback="L_Autoencoder = min over E, D, max over ψ of ( L_rec(x, D(E(x))) − L_adv(D(E(x))) + log D_ψ(x) + L_reg(x; E, D) )"></div>
+<div class="symtable" data-syms="LAE,minmax,Lrec,Ladv,logDpsi,Lreg"></div>
+<p class="inwords"><strong>In words:</strong> “the autoencoder wants its rebuild to match the photo, to look real to the patch critic, and to keep its latent near a tame shape; the critic wants to call real photos real and rebuilds fake.”</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative): a rebuild error of 0.05, an adversarial term of 0.9, a critic that gives the real photo probability 0.8 (log 0.8 = −0.223), and a KL of 40 weighted by 10<sup>−6</sup>: 0.05 − 0.9 − 0.223 + 0.00004 = −1.073. The regularizer's share is 0.00004: it only stops the latent drifting to extreme scales, and barely competes with making good rebuilds.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# illustrative values for one image
+L_rec, L_adv, D_real = 0.05, 0.9, 0.8
+# L_reg: a KL of 40, weighted by 1e-6
+L_reg = 1e-6 * 40
+round(L_rec - L_adv + math.log(D_real) + L_reg, 3)  # → -1.073
+round(L_reg, 6)  # → 4e-05</code></pre>
+<div class="plot" id="ae-plot">
+  <div class="controls"><label for="ae-f">downsampling factor f = <strong id="ae-fv">8</strong></label><input type="range" id="ae-f" min="0" max="5" step="1" value="3"></div>
+  <svg id="ae-grid" viewBox="0 0 300 150" role="img" aria-label="The latent grid for the chosen downsampling factor, drawn over a 256 by 256 image"></svg>
+  <p class="readout" id="ae-readout"></p>
+  <div id="ae-chart"></div>
+  <p class="readout" id="ae-chart-readout">Hover or use the arrow keys to read a point.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the slider picks how much the autoencoder shrinks each side. The square on the left is a 256 × 256 image; the grid on the right is the latent the denoiser will see, one cell per latent position (drawn as a shaded square when the cells are too small to draw). The readout counts the numbers per image and the shrink factor, with the reconstruction quality of the paper's KL-regularized autoencoder at that setting. The chart below plots that quality: <span class="t" data-tip-title="PSNR" data-tip="Peak signal-to-noise ratio: how closely a rebuilt image matches the original, in decibels, computed from the mean squared pixel error. Higher is better, but it rewards a safe blur over sharp detail that is slightly misplaced.">PSNR</span> (higher means a closer pixel match) and reconstruction <span class="t" data-t="fid">FID</span> (lower means the rebuilds look as natural as real images). Each step up in f roughly halves the numbers and costs about 2 to 5 dB of PSNR; reconstruction FID stays below 1 up to f = 8, reaches 2.63 at f = 16 and 7.3 at f = 32. At f = 1 there is no autoencoder: diffusion on pixels, perfect “reconstruction” and no saving. Values are selected rows of the paper's Table 8 (KL-regularized models, evaluated on ImageNet), reproduced with attribution.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 8 (and Figure 1) of Rombach et al. (2021): three autoencoders, reconstruction quality on ImageNet validation images</caption>
+  <thead><tr><th>Autoencoder</th><th class="num">f</th><th class="num">R-FID ↓</th><th class="num">PSNR ↑</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>this paper, VQ-reg., |𝒵| = 8192, c = 3</td><td class="num">4</td><td class="num">0.58</td><td class="num">27.43</td></tr>
+    <tr><td>DALL-E's autoencoder</td><td class="num">8</td><td class="num">32.01</td><td class="num">22.8</td></tr>
+    <tr><td>VQGAN, |𝒵| = 16384</td><td class="num">16</td><td class="num">4.98</td><td class="num">19.9</td></tr>
+  </tbody>
+</table></div>
+<h4>Why it matters today</h4>
+<p>The autoencoder is where most of an image generator's fine detail comes from, and its latent shape (f = 8, c = 4 in this paper's text model) became a de facto standard that later models reused or widened. Everything the diffusion model draws must pass through this decoder, so its limits are the whole system's limits (§5). The <a data-lesson="primer/ml/generative/autoencoders.html">autoencoders lesson</a> builds a VAE and its KL term from scratch.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#latent_shrink"><code>latent_shrink</code></a> counts pixels against latent numbers; <a data-lesson="primer/ml/generative/autoencoders.html#VAE"><code>VAE</code></a> is a small KL-regularized autoencoder, and <a data-lesson="primer/ml/generative/autoencoders.html#kl_to_standard_normal"><code>kl_to_standard_normal</code></a> is its KL term.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Latent diffusion models <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Nothing about the diffusion recipe changes. The photo restorer still practises by sprinkling known dust on clean pictures and guessing where it went. The only difference is that the “pictures” are now the autoencoder's small sketches, so every practice round is 48 times cheaper.</p>
+<h4>Tiny example</h4>
+<p>Take one latent number whose clean value is z = 2.0, at a noise level where the signal share is √ᾱ<sub>t</sub> = 0.8 and the noise share √(1 − ᾱ<sub>t</sub>) = 0.6. With noise ε = 0.5, the noisy latent is z<sub>t</sub> = 0.8 × 2.0 + 0.6 × 0.5 = 1.9. The network sees 1.9 and the step t and guesses the noise. For two latent numbers with true noise (0.5, −1.0) and a guess of (0.4, −0.8), the squared miss is 0.01 + 0.04 = 0.05.</p>
+<p>The paper first states the pixel-space objective of <a href="ddpm.html">DDPM</a>, then the same objective in the latent:</p>
+<div class="eq" data-tex="\htmlData{sym=LDM}{L_{DM}} = \htmlData{sym=Expx}{\mathbb{E}_{x,\epsilon\sim\mathcal{N}(0,1),t}}\Big[\big\|\htmlData{sym=eps}{\epsilon} - \htmlData{sym=epstheta}{\epsilon_{\theta}}(\htmlData{sym=xt}{x_{t}},\htmlData{sym=tstep}{t})\big\|_{2}^{2}\Big]" data-fallback="L_DM = E over x, ε ~ N(0, 1), t of ‖ε − ε_θ(x_t, t)‖²"></div>
+<div class="eq" data-tex="\htmlData{sym=LLDM}{L_{LDM}} \coloneqq \htmlData{sym=Expz}{\mathbb{E}_{\mathcal{E}(x),\epsilon\sim\mathcal{N}(0,1),t}}\Big[\big\|\htmlData{sym=eps}{\epsilon} - \htmlData{sym=epstheta}{\epsilon_{\theta}}(\htmlData{sym=zt}{z_{t}},\htmlData{sym=tstep}{t})\big\|_{2}^{2}\Big]" data-fallback="L_LDM := E over E(x), ε ~ N(0, 1), t of ‖ε − ε_θ(z_t, t)‖²"></div>
+<div class="symtable" data-syms="LDM,Expx,LLDM,Expz,eps,epstheta,xt,zt,tstep"></div>
+<p class="inwords"><strong>In words:</strong> “encode a real photo, noise its latent to a random step in one jump, ask the network what noise was added, and score the squared miss; average over photos, noise and steps. The first line is the same thing on pixels.”</p>
+<p class="inwords"><strong>With the numbers:</strong> z<sub>t</sub> = 0.8 × 2.0 + 0.6 × 0.5 = 1.9; a one-number guess of 0.4 against the true 0.5 scores 0.01; the two-number example scores ‖(0.5, −1.0) − (0.4, −0.8)‖² = 0.05. A network that always guesses zero scores 1 per latent number on average, 4,096 for a whole 32 × 32 × 4 latent: the score to beat.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+z, alpha_bar, eps = 2.0, 0.64, 0.5
+# z_t = √ᾱ z + √(1 − ᾱ) ε: the latent, noised to step t in one jump
+z_t = math.sqrt(alpha_bar) * z + math.sqrt(1 - alpha_bar) * eps
+round(z_t, 2)  # → 1.9
+# ‖ε − ε_θ‖² for one number, then for two
+round((0.5 - 0.4) ** 2, 2)  # → 0.01
+round(sum((e - g) ** 2 for e, g in zip([0.5, -1.0], [0.4, -0.8])), 2)  # → 0.05
+# always guessing 0: E[ε²] = 1 per number, over a 32 × 32 × 4 latent
+32 * 32 * 4 * 1  # → 4096</code></pre>
+<h4>What the paper specifies</h4>
+<ul>
+  <li>The denoiser ε<sub>θ</sub>(∘, t) is a time-conditional U-Net, “primarily from 2D convolutional layers”, with attention layers at some resolutions.</li>
+  <li>Because ℰ is frozen and the forward process fixed, z<sub>t</sub> comes straight from ℰ(x) during training, and a finished latent needs one pass through 𝒟 to become a picture.</li>
+  <li>Every model in the appendix tables uses 1,000 diffusion steps and a linear noise schedule; sampling uses <span class="t" data-t="ddim">DDIM</span> with 50 to 500 steps depending on the experiment.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Equation 2 is the whole training loop of Stable Diffusion's first versions. The <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a> trains exactly this loss on dots in a plane, and its Step 6 counts the saving of moving to a latent.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#add_noise"><code>add_noise</code></a> is the one-jump noising and <a data-lesson="primer/ml/generative/diffusion.html#train_noise_predictor"><code>train_noise_predictor</code></a> trains on this loss; in a latent diffusion model the points they see would be ℰ(x) rather than raw data.</p>
+</section>
+
+<section id="s3-3">
+<h3>3.3 Conditioning mechanisms <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S3.SS3">original</a></span></h3>
+<blockquote class="quote">“We turn DMs into more flexible conditional image generators by augmenting their underlying UNet backbone with the cross-attention mechanism.”<cite>Rombach et al. (2021), §3.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A painter working from a brief keeps glancing at it. Each part of the canvas asks its own question of the brief: the sky asks “what colour?”, the foreground asks “what animal?”, and each gets the words that answer it. <span class="t" data-t="cross-attention">Cross-attention</span> is that glance: every position in the U-Net's feature map sends a <span class="t" data-t="query">query</span>, and the prompt's tokens answer as <span class="t" data-t="key">keys</span> and <span class="t" data-t="value">values</span>.</p>
+<h4>Tiny example</h4>
+<p>Two image positions, three prompt tokens (“a”, “red”, “fox”), width d = 2. The image positions' queries are q<sub>1</sub> = (1, 0) and q<sub>2</sub> = (0, 1). The encoder τ<sub>θ</sub> gives token vectors a = (0, 0), red = (1, 0), fox = (0, 1); a key projection that doubles them gives keys (0, 0), (2, 0), (0, 2); the value projection leaves them as they are. Position 1 scores the tokens (0, 2, 0)/√2 = (0, 1.414, 0); <span class="t" data-t="softmax">softmax</span> turns that into shares (0.164, 0.673, 0.164), so position 1 reads mostly “red”: its output is (0.673, 0.164). Position 2 reads mostly “fox”.</p>
+<figure class="ix" id="fig-xattn">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 330" role="img" aria-label="Cross-attention: queries from the image features, keys and values from the prompt">
+    <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M66,290 V264" marker-end="url(#arr2)"/>
+    <path class="wire" d="M184,290 V264" marker-end="url(#arr2)"/>
+    <path class="wire" d="M270,290 V264" marker-end="url(#arr2)"/>
+    <path class="wire" d="M66,232 V200 H82" marker-end="url(#arr2)"/>
+    <path class="wire" d="M184,232 V224 H160 V216" marker-end="url(#arr2)"/>
+    <path class="wire" d="M134,184 V158" marker-end="url(#arr2)"/>
+    <path class="wire" d="M134,126 V101 H186" marker-end="url(#arr2)"/>
+    <path class="wire" d="M270,232 V118" marker-end="url(#arr2)"/>
+    <path class="wire" d="M238,86 V58" marker-end="url(#arr2)"/>
+    <g class="blk plain" data-block="phi"><rect x="10" y="290" width="112" height="30" rx="6"/><text x="66" y="309" text-anchor="middle">φ_i(z_t): image</text></g>
+    <g class="blk plain" data-block="tauy"><rect x="150" y="290" width="160" height="30" rx="6"/><text x="230" y="309" text-anchor="middle">τ_θ(y): prompt</text></g>
+    <g class="blk lin" data-block="wq"><rect x="30" y="232" width="72" height="30" rx="6"/><text x="66" y="251" text-anchor="middle">W_Q → Q</text></g>
+    <g class="blk lin" data-block="wk"><rect x="148" y="232" width="72" height="30" rx="6"/><text x="184" y="251" text-anchor="middle">W_K → K</text></g>
+    <g class="blk lin" data-block="wv"><rect x="234" y="232" width="72" height="30" rx="6"/><text x="270" y="251" text-anchor="middle">W_V → V</text></g>
+    <g class="blk norm" data-block="scores"><rect x="84" y="184" width="100" height="30" rx="6"/><text x="134" y="203" text-anchor="middle">Q Kᵀ / √d</text></g>
+    <g class="blk soft" data-block="smax"><rect x="84" y="126" width="100" height="30" rx="6"/><text x="134" y="145" text-anchor="middle">softmax</text></g>
+    <g class="blk lin" data-block="mix"><rect x="188" y="86" width="100" height="30" rx="6"/><text x="238" y="105" text-anchor="middle">shares · V</text></g>
+    <g class="blk attn" data-block="xout"><rect x="170" y="16" width="136" height="40" rx="6"/><text x="238" y="33" text-anchor="middle">one output row</text><text x="238" y="48" text-anchor="middle">per image position</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step. Start with the two inputs at the bottom: the image on the left, the prompt on the right.</p></div>
+  </div>
+  <figcaption>One cross-attention layer inside the U-Net, as described in §3.3 and drawn in the paper's Figure 3 as the Q / KV blocks.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the bottom up. The only difference from ordinary <span class="t" data-t="self-attention">self-attention</span> is where the two inputs come from: the left column starts from the U-Net's own feature map (N image positions), the right from the prompt encoder's output (M tokens). The queries are made from the image; the keys and values from the prompt. The score grid is therefore N × M: every image position against every prompt token. Softmax turns each row into shares, and the shares blend the prompt's values, so each image position receives a mix of prompt information chosen by its own question. The output has one row per image position, the same count as went in, so the layer slots into the U-Net without changing its shape.</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=Attn}{\text{Attention}}(\htmlData{sym=Q}{Q},\htmlData{sym=K}{K},\htmlData{sym=V}{V}) \\ = \htmlData{sym=softmax}{\text{softmax}}\!\left(\frac{\htmlData{sym=Q}{Q}\htmlData{sym=KT}{K^{T}}}{\htmlData{sym=sqrtd}{\sqrt{d}}}\right)\cdot \htmlData{sym=V}{V}, \\ \htmlData{sym=Q}{Q} = \htmlData{sym=WQ}{W^{(i)}_{Q}}\cdot\htmlData{sym=phi}{\varphi_{i}(z_{t})}, \\ \htmlData{sym=K}{K} = \htmlData{sym=WK}{W^{(i)}_{K}}\cdot\htmlData{sym=tau}{\tau_{\theta}(y)}, \\ \htmlData{sym=V}{V} = \htmlData{sym=WV}{W^{(i)}_{V}}\cdot\htmlData{sym=tau}{\tau_{\theta}(y)}\end{gathered}" data-fallback="Attention(Q, K, V) = softmax(Q Kᵀ / √d) · V,  Q = W_Q^(i) · φ_i(z_t),  K = W_K^(i) · τ_θ(y),  V = W_V^(i) · τ_θ(y)"></div>
+<div class="symtable" data-syms="phi,tau,WQ,WK,WV,Q,K,V,KT,sqrtd,softmax,Attn"></div>
+<p class="inwords"><strong>In words:</strong> “project the image features to queries and the prompt's vectors to keys and values; score every query against every key, shrink the scores by √d, turn each row into shares, and blend the values with them.”</p>
+<p class="inwords"><strong>With the numbers:</strong> position 1's scores are (0, 2, 0)/√2 = (0, 1.414, 0); softmax gives (0.164, 0.673, 0.164); blending the values (0, 0), (1, 0), (0, 1) gives (0.673, 0.164). Position 2 gives (0.164, 0.673). A note on the paper's shapes: it lists W<sub>V</sub> as d × d<sub>ε</sub><sup>i</sup> and W<sub>Q</sub> as d × d<sub>τ</sub>, the reverse of what the formulas need; the query projection must match the image features' width d<sub>ε</sub><sup>i</sup>, and the value projection the prompt's width d<sub>τ</sub>. The Symbols table gives the shapes that fit.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# two image positions' queries (W_Q already applied), width d = 2
+Q = [[1, 0], [0, 1]]
+# τ_θ(y) for "a", "red", "fox"; W_K doubles each vector, W_V keeps it
+tau = [[0, 0], [1, 0], [0, 1]]
+K = [[2 * v for v in row] for row in tau]
+V = tau
+K  # → [[0, 0], [2, 0], [0, 2]]
+d = 2
+for q in Q:
+    # Q Kᵀ / √d: this position's score for each token
+    scores = [sum(a * b for a, b in zip(q, k)) / math.sqrt(d) for k in K]
+    # softmax, then the shares blend the values
+    exps = [math.exp(s) for s in scores]
+    shares = [e / sum(exps) for e in exps]
+    out = [sum(s * v[j] for s, v in zip(shares, V)) for j in range(2)]
+    print([round(s, 3) for s in shares], [round(o, 3) for o in out])  # → [0.164, 0.673, 0.164] [0.673, 0.164] [0.164, 0.164, 0.673] [0.164, 0.673]</code></pre>
+<p>With the conditioning in place, the prompt encoder τ<sub>θ</sub> and the denoiser ε<sub>θ</sub> are trained together on image-and-condition pairs:</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=LLDM}{L_{LDM}} \coloneqq \\ \htmlData{sym=Expzy}{\mathbb{E}_{\mathcal{E}(x),y,\epsilon\sim\mathcal{N}(0,1),t}}\Big[\big\|\htmlData{sym=eps}{\epsilon} - \htmlData{sym=epstheta}{\epsilon_{\theta}}(\htmlData{sym=zt}{z_{t}},\htmlData{sym=tstep}{t},\htmlData{sym=tau}{\tau_{\theta}(y)})\big\|_{2}^{2}\Big]\end{gathered}" data-fallback="L_LDM := E over E(x), y, ε ~ N(0, 1), t of ‖ε − ε_θ(z_t, t, τ_θ(y))‖²"></div>
+<div class="symtable" data-syms="LLDM,Expzy,eps,epstheta,zt,tstep,tau"></div>
+<p class="inwords"><strong>In words:</strong> “the same noise-guessing loss, except the network also reads the encoded prompt; its error trains both the denoiser and the prompt encoder.”</p>
+<p class="inwords"><strong>With the numbers</strong> (illustrative): for the latent above with the prompt “a red fox”, suppose reading the prompt improves the guess from (0.4, −0.8) to (0.45, −0.95). The squared miss drops from 0.05 to 0.005, and the gradient of that miss flows back through the cross-attention into τ<sub>θ</sub>, teaching it which prompt features help.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>eps = [0.5, -1.0]
+# ‖ε − ε_θ(z_t, t)‖² without the prompt, then with it (illustrative guesses)
+without = [0.4, -0.8]
+with_prompt = [0.45, -0.95]
+round(sum((e - g) ** 2 for e, g in zip(eps, without)), 3)  # → 0.05
+round(sum((e - g) ** 2 for e, g in zip(eps, with_prompt)), 3)  # → 0.005</code></pre>
+<h4>Why it matters today</h4>
+<p>This is the mechanism by which a prompt reaches the pixels in Stable Diffusion and many systems after it. Because τ<sub>θ</sub> can be any encoder of any <span class="t" data-t="modality">modality</span> that outputs a sequence of vectors, the same U-Net can be conditioned on text, layouts or class labels without redesign. The paper conditions its class model the same way, with τ<sub>θ</sub> a single embedding table producing one 512-number vector.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/attention.html#scaled_dot_product_attention"><code>scaled_dot_product_attention</code></a> computes softmax(QKᵀ/√d)V for any queries, keys and values, so passing image features as queries and prompt vectors as keys and values makes it cross-attention; <a data-lesson="primer/ml/generative/diffusion.html#network_inputs"><code>network_inputs</code></a> is the lesson's simpler conditioning, a label appended to the input.</p>
+</section>
+
+<section id="s4">
+<h2>4 Experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The experiments ask two kinds of question. First, the dial: how hard should the autoencoder squeeze? Second, the range: does one recipe serve unconditional pictures, text prompts, class labels, layouts, upscaling and filling holes?</p>
+<h3 class="rung">A finding up front</h3>
+<p>LDMs trained on the VQ-regularized latents sometimes gave better samples than those on KL-regularized latents, even though the VQ autoencoders reconstruct slightly worse (Table 8). Reconstruction quality is not the only property of a latent space that matters to the model trained on it; how easy the latent is to model matters too.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Every model in this section trains on one NVIDIA A100 card (the inpainting model on eight V100s), which is the practical meaning of the paper's claim to democratize high-resolution synthesis.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 On perceptual compression trade-offs <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Squeeze too little and the diffusion model still does the autoencoder's job, slowly. Squeeze too much and the autoencoder throws away detail no generator can put back. Somewhere in between is a sweet spot.</p>
+<h4>Tiny example</h4>
+<p>The paper names models LDM-f: LDM-1 is plain pixel-space diffusion. For a 256 × 256 image, LDM-1's U-Net works on 65,536 positions per channel map; LDM-4 on 4,096; LDM-8 on 1,024; LDM-32 on 64. Convolution work scales with the number of positions, so LDM-8's feature maps are 64 times smaller than LDM-1's at the same channel count.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>side = 256
+positions = {f: (side // f) ** 2 for f in (1, 2, 4, 8, 16, 32)}
+positions  # → {1: 65536, 2: 16384, 4: 4096, 8: 1024, 16: 256, 32: 64}
+positions[1] // positions[8]  # → 64</code></pre>
+<h4>What the paper found</h4>
+<ul>
+  <li>With compute fixed (one A100, the same number of steps and parameters), class-conditional ImageNet models with f = 1 or 2 train slowly, and f = 32 stalls early at poor quality. After 2 million steps, LDM-8's FID is 38 points better than LDM-1's (Figure 6 of the paper).</li>
+  <li>Plotting quality against sampling speed for 10 to 200 <span class="t" data-t="ddim">DDIM</span> steps (Figure 7), LDM-4 and LDM-8 give the best trade-off; pixel-based LDM-1 is both slower and worse.</li>
+  <li>Complex data (ImageNet) prefers milder compression than faces (CelebA-HQ).</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>“f = 4 to 16, and 8 is a safe default” is the paper's practical legacy. The same trade-off reappears whenever a new latent space is designed for images or video: every extra factor of compression saves compute and costs fidelity.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Image generation with latent diffusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>First the plain test: no prompt, just “make a face” or “make a bedroom”, on standard 256 × 256 datasets. Quality is scored by <span class="t" data-t="fid">FID</span>, and coverage by a precision and recall for generators: <span class="t" data-tip-title="Precision (for generators)" data-tip="The share of generated images that land among real ones in a pretrained network's feature space: how realistic the samples are.">precision</span> asks how many samples look real, <span class="t" data-tip-title="Recall (for generators)" data-tip="The share of real images that some generated image lands near in a pretrained network's feature space: how much of the data's variety the generator covers.">recall</span> how much of the real variety the samples cover.</p>
+<h4>Tiny example</h4>
+<p>LSUN-Bedrooms: the pixel-space ADM model trained for 232 V100 days with 552 million parameters reaches FID 1.90. LDM-4 uses 274 million parameters and 60 V100 days (by the paper's conversion of one A100 day to 2.2 V100 days) for FID 2.95. That is about half the parameters and about a quarter of the training compute.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># ADM against LDM-4 on LSUN-Bedrooms (Table 18)
+round(232 / 60, 1)  # → 3.9
+round(552 / 274, 1)  # → 2.0</code></pre>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 1 of Rombach et al. (2021), unconditional 256 × 256 generation, reproduced with attribution. “N-s” is N DDIM sampling steps; ∗ trained on a KL-regularized latent</caption>
+  <thead><tr><th>Dataset</th><th>Model</th><th class="num">FID ↓</th><th class="num">Prec. ↑</th><th class="num">Recall ↑</th></tr></thead>
+  <tbody>
+    <tr><td>CelebA-HQ</td><td>LSGM</td><td class="num">7.22</td><td class="num"></td><td class="num"></td></tr>
+    <tr class="hl"><td>CelebA-HQ</td><td>LDM-4 (500-s)</td><td class="num">5.11</td><td class="num">0.72</td><td class="num">0.49</td></tr>
+    <tr><td>FFHQ</td><td>StyleGAN</td><td class="num">4.16</td><td class="num">0.71</td><td class="num">0.46</td></tr>
+    <tr class="hl"><td>FFHQ</td><td>LDM-4 (200-s)</td><td class="num">4.98</td><td class="num">0.73</td><td class="num">0.50</td></tr>
+    <tr><td>LSUN-Churches</td><td>DDPM</td><td class="num">7.89</td><td class="num"></td><td class="num"></td></tr>
+    <tr class="hl"><td>LSUN-Churches</td><td>LDM-8∗ (200-s)</td><td class="num">4.02</td><td class="num">0.64</td><td class="num">0.52</td></tr>
+    <tr><td>LSUN-Bedrooms</td><td>ADM</td><td class="num">1.90</td><td class="num">0.66</td><td class="num">0.51</td></tr>
+    <tr class="hl"><td>LSUN-Bedrooms</td><td>LDM-4 (200-s)</td><td class="num">2.95</td><td class="num">0.66</td><td class="num">0.48</td></tr>
+  </tbody>
+</table></div>
+<h4>What the rows say</h4>
+<p>On CelebA-HQ, 5.11 was a new state of the art, ahead of LSGM (which trains a latent diffusion model jointly with its autoencoder). LDMs beat earlier diffusion models everywhere except LSUN-Bedrooms, where they come close to ADM at a fraction of the cost, and the paper notes they consistently improve on GAN-based methods in precision and recall, the coverage a likelihood-based objective is expected to give.</p>
+<h4>Why it matters today</h4>
+<p>Matching pixel-space quality at a quarter of the compute is what made the next steps affordable: a 1.45-billion-parameter text model trained by an academic group.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Conditional latent diffusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S4.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Same painter, new briefs: a sentence, a page of boxes labelled “dog” and “sofa”, a class name. Only the brief reader τ<sub>θ</sub> changes.</p>
+<h4>4.3.1 Transformer encoders for text and layouts</h4>
+<p>For text, τ<sub>θ</sub> is a transformer trained jointly with the denoiser: a BERT tokenizer, 77 tokens, 32 layers of width 1,280 (Table 17). The model, LDM-KL-8, has 1.45 billion parameters and trains on LAION-400M image-and-caption pairs. For layouts, each bounding box is encoded as a (top-left, bottom-right, class) token. Samples use <span class="t" data-t="classifier-free guidance">classifier-free guidance</span>, which asks the network twice, with and without the prompt, and pushes past the prompted answer; the <a href="diffusion-transformers.html">DiT companion</a> decodes its formula.</p>
+<h4>Tiny example</h4>
+<p>Text-to-image on MS-COCO: without guidance the model's FID is 23.31; with guidance scale s = 1.5, it drops to 12.63, alongside GLIDE (12.24, 6 billion parameters) and Make-A-Scene (11.84, 4 billion) with a quarter to a third of their parameters.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># parameters, in billions: LDM-KL-8-G against GLIDE and Make-A-Scene
+ldm, glide, mas = 1.45, 6, 4
+round(ldm / glide, 2), round(ldm / mas, 2)  # → (0.24, 0.36)
+# what guidance did to FID
+round(23.31 / 12.63, 2)  # → 1.85</code></pre>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Tables 2 and 3 of Rombach et al. (2021), reproduced with attribution</caption>
+  <thead><tr><th>Task</th><th>Model</th><th class="num">FID ↓</th><th class="num">IS ↑</th><th class="num">Params</th></tr></thead>
+  <tbody>
+    <tr><td>Text-to-image, MS-COCO 256²</td><td>GLIDE</td><td class="num">12.24</td><td class="num"></td><td class="num">6B</td></tr>
+    <tr><td>Text-to-image, MS-COCO 256²</td><td>LDM-KL-8, no guidance</td><td class="num">23.31</td><td class="num">20.03</td><td class="num">1.45B</td></tr>
+    <tr class="hl"><td>Text-to-image, MS-COCO 256²</td><td>LDM-KL-8-G, s = 1.5</td><td class="num">12.63</td><td class="num">30.29</td><td class="num">1.45B</td></tr>
+    <tr><td>Class-conditional ImageNet 256²</td><td>ADM-G</td><td class="num">4.59</td><td class="num">186.7</td><td class="num">608M</td></tr>
+    <tr class="hl"><td>Class-conditional ImageNet 256²</td><td>LDM-4-G, s = 1.5</td><td class="num">3.60</td><td class="num">247.67</td><td class="num">400M</td></tr>
+  </tbody>
+</table></div>
+<p>On class-conditional ImageNet, guided LDM-4 reached FID 3.60, better than the pixel-space ADM-G's 4.59 with two thirds of its parameters. That 3.60 is the number the <a href="diffusion-transformers.html">DiT paper</a> later set out to beat. The <span class="t" data-tip-title="Inception score" data-tip="A score for generated images based on how confidently, and how variously, a pretrained image classifier labels them. Higher is better. It never looks at real images, so it is usually reported next to FID.">Inception score</span> (IS) column rises with guidance too.</p>
+<h4>Why it matters today</h4>
+<p>This section is the first public demonstration that a mid-sized latent diffusion model with a learned text encoder can compete with far larger text-to-image systems. Later systems commonly use a frozen, pretrained text encoder in τ<sub>θ</sub>'s place (the <a data-lesson="primer/ml/generative/diffusion.html">diffusion lesson</a>'s pipeline shows CLIP's text tower in that role); the cross-attention wiring is the same.</p>
+<p><strong>In code:</strong> <a data-lesson="primer/ml/generative/diffusion.html#guided_noise"><code>guided_noise</code></a> is classifier-free guidance, and <a data-lesson="primer/ml/generative/diffusion.html#guidance_sweep"><code>guidance_sweep</code></a> measures what raising the scale does to accuracy and spread.</p>
+</section>
+
+<section id="s4-3-2">
+<h3>4.3.2 Convolutional sampling beyond 256², and the scale of the latent <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S4.SS3.SSS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A convolution is a small stencil slid over a grid; it does not care how big the grid is. So a U-Net trained on 256 × 256 pictures can be run on a wider canvas, and when the prompt is itself a picture lined up with the output (a semantic map of “sky here, lake there”), the model keeps things coherent across the larger canvas. The paper generates landscapes up to 1024 × 384 this way.</p>
+<p>How the latent is <em>scaled</em> turns out to matter. Noise is added at a fixed size. If the latent's own numbers are large, the same noise hides them less: the <span class="t" data-t="signal-to-noise ratio">signal-to-noise ratio</span> stays high for longer, and the model settles the picture's content early in the reverse process. The KL-regularized latents have a large spread, so the paper rescales them to unit spread before diffusion (Appendices D.1 and G); the VQ latents already have a spread close to 1.</p>
+<h4>Tiny example</h4>
+<p>Four latent numbers from a first batch, z = (3, −1, 5, 1). Their mean is 2; their squared distances from it are 1, 9, 9 and 1, averaging 5, so the spread is σ̂ = √5 = 2.236. Dividing by it gives (1.342, −0.447, 2.236, 0.447), which has spread 1.</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=sighat}{\hat{\sigma}^{2}} = \htmlData{sym=avgbchw}{\frac{1}{bchw}\sum_{b,c,h,w}}\big(\htmlData{sym=zbchw}{z^{b,c,h,w}} - \htmlData{sym=muhat}{\hat{\mu}}\big)^{2}, \\ \htmlData{sym=muhat}{\hat{\mu}} = \htmlData{sym=avgbchw}{\frac{1}{bchw}\sum_{b,c,h,w}}\htmlData{sym=zbchw}{z^{b,c,h,w}}, \\ \htmlData{sym=zlat}{z} \leftarrow \frac{\htmlData{sym=zlat}{z}}{\htmlData{sym=sighat}{\hat{\sigma}}}\end{gathered}" data-fallback="σ̂² = (1/bchw) Σ over b, c, h, w of (z^(b,c,h,w) − μ̂)²,  μ̂ = (1/bchw) Σ z^(b,c,h,w),  z ← z / σ̂"></div>
+<div class="symtable" data-syms="zbchw,avgbchw,muhat,sighat,zlat"></div>
+<p class="inwords"><strong>In words:</strong> “over every number in the first batch of latents, find the average and the average squared distance from it; then divide every latent by the square root of that, so the latents have spread 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> μ̂ = (3 − 1 + 5 + 1)/4 = 2, σ̂² = (1 + 9 + 9 + 1)/4 = 5, σ̂ = 2.236, and the rescaled latents are (1.342, −0.447, 2.236, 0.447).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# a first "batch": four latent numbers
+z = [3, -1, 5, 1]
+mu_hat = sum(z) / len(z)
+sigma2_hat = sum((v - mu_hat) ** 2 for v in z) / len(z)
+mu_hat, sigma2_hat  # → (2.0, 5.0)
+sigma_hat = math.sqrt(sigma2_hat)
+# z ← z / σ̂
+[round(v / sigma_hat, 3) for v in z]  # → [1.342, -0.447, 2.236, 0.447]</code></pre>
+<div class="plot" id="snr-plot">
+  <div class="controls"><label for="snr-s">spread of the latent = <strong id="snr-sv">1.0</strong></label><input type="range" id="snr-s" min="0.25" max="6" step="0.25" value="1"></div>
+  <div id="snr-chart"></div>
+  <p class="readout" id="snr-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the diffusion step, from 1 (almost clean) to 1,000 (pure noise); the y-axis is the signal-to-noise ratio, Var(z)·ᾱ<sub>t</sub>/(1 − ᾱ<sub>t</sub>), on a base-10 logarithmic scale, so each gridline is a factor of ten. The dashed line is a ratio of 1: signal and noise equally strong. With a unit-spread latent (the slider at 1), the curve crosses 1 near step 260. Drag the spread up to 5, as for an unscaled latent, and the ratio at every step rises 25-fold: the crossing moves to step 567, so over most of the reverse process the content is already legible to the model. That is the paper's “allocates a lot of semantic detail early on” in one curve. The schedule is the linear one from 10<sup>−4</sup> to 0.02 over 1,000 steps that the DDPM and DiT papers state; this paper's tables say only “linear”. Computed live from the formula.</p>
+<h4>Why it matters today</h4>
+<p>Rescaling the latent by a measured constant is a standard step in latent diffusion pipelines. Whenever a new autoencoder is paired with a diffusion model, this spread must be measured and fixed, or the noise schedule silently means something different.</p>
+</section>
+
+<section id="s4-4">
+<h3>4.4 Super-resolution with latent diffusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S4.SS4">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Handed a thumbnail, a restorer can paint a plausible full-size picture: not the true original, which is lost, but one consistent with the thumbnail. <span class="t" data-t="super-resolution">Super-resolution</span> with a diffusion model does exactly that, by feeding the low-resolution image in as a condition (concatenated onto the latent, so τ<sub>θ</sub> is just the identity).</p>
+<h4>Tiny example</h4>
+<p>The benchmark upscales ImageNet from 64 × 64 to 256 × 256: 4 times per side, 16 times the pixels. Fifteen of every sixteen output pixels are invented.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>low, high = 64, 256
+# pixels gained, and the share of the output that is new
+(high * high) // (low * low)  # → 16
+round(1 - (low * low) / (high * high), 4)  # → 0.9375</code></pre>
+<h4>What the paper found</h4>
+<ul>
+  <li>LDM-SR (f = 4, 169 million parameters, 100 steps) scores FID 2.8 against SR3's 5.2 (625 million parameters); SR3 has the better Inception score (180.1 against 166.3) and PSNR (26.4 against 24.4).</li>
+  <li>A plain regression model gets the best PSNR and <span class="t" data-tip-title="SSIM" data-tip="Structural similarity: a score from 0 to 1 for how closely two images match in local brightness, contrast and structure. Like PSNR, it rewards a safe blur over sharp detail that is slightly misplaced.">SSIM</span> of all, which the paper takes as evidence those metrics favour blur over sharp detail that is slightly misplaced.</li>
+  <li>In a user study, people preferred LDM-4's upscales to a pixel-space diffusion baseline's 70.6% of the time.</li>
+  <li>A second model, LDM-BSR, is trained on a mix of realistic degradations (compression, camera noise, blur) and generalizes to real photos, which the bicubic-only model does not.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>Diffusion upscalers conditioned by concatenation are still how many generators reach high resolutions: generate small, then upscale with a second latent diffusion model.</p>
+</section>
+
+<section id="s4-5">
+<h3>4.5 Inpainting with latent diffusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S4.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p><span class="t" data-t="inpainting">Inpainting</span> is filling a hole: a tourist removed from a landmark photo, a scratch mended. A generative model can give several different, equally plausible fillings, where a regression model gives one averaged, often blurry answer.</p>
+<h4>Tiny example: the speed-up</h4>
+<p>The paper compares pixel-space LDM-1 with LDM-4 at a fixed parameter count. Training throughput goes from 0.11 to 0.32 samples per second, sampling at 512² from 0.07 to 0.34, and hours per epoch from 20.66 to 7.66; FID after six epochs improves from 24.74 to 15.21. The smallest of those ratios is 2.7, hence the paper's “at least 2.7×” speed-up and “at least 1.6×” better FID.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># LDM-1 against LDM-4 (KL, with attention), Table 6
+speedups = [0.32 / 0.11, 0.97 / 0.26, 0.34 / 0.07, 20.66 / 7.66]
+[round(s, 2) for s in speedups]  # → [2.91, 3.73, 4.86, 2.7]
+round(min(speedups), 1)  # → 2.7
+round(24.74 / 15.21, 1)  # → 1.6</code></pre>
+<div class="plot" id="inp-plot"><div id="inp-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one measurement from the paper's Table 6, drawn to its own scale so the two models can be compared: the plain bar is pixel-space LDM-1, the striped bar is LDM-4 with a KL-regularized first stage. For the three throughputs longer is better; for hours per epoch and FID shorter is better. On every row the latent model wins by a factor between 1.6 and 4.9. Selected rows, reproduced with attribution.</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 7 of Rombach et al. (2021): inpainting on 512 × 512 crops of Places, reproduced with attribution</caption>
+  <thead><tr><th>Model</th><th class="num">FID, 40 to 50% masked ↓</th><th class="num">FID, all ↓</th></tr></thead>
+  <tbody>
+    <tr><td>LaMa (recomputed on the paper's test set)</td><td class="num">12.31</td><td class="num">2.23</td></tr>
+    <tr><td>CoModGAN</td><td class="num">10.4</td><td class="num">1.82</td></tr>
+    <tr class="hl"><td>LDM-4, big, fine-tuned at 512²</td><td class="num">9.39</td><td class="num">1.50</td></tr>
+  </tbody>
+</table></div>
+<h4>Why it matters today</h4>
+<p>The big fine-tuned model set a new state of the art on the benchmark, and people preferred its fillings to LaMa's in a user study (68.1% in a head-to-head choice). The fine-tuning detail is worth keeping: its samples at 512² were worse than at 256², which the authors attribute to its added attention layers, and half an epoch of training at 512² let it adjust.</p>
+</section>
+
+<section id="s5">
+<h2>5 Limitations and societal impact <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S5">original</a></span></h2>
+<h3 class="rung">Limitations</h3>
+<p>Sampling is still a loop of many network calls, slower than a GAN's single pass. And the autoencoder is a bottleneck for pixel-exact work: whatever it cannot reconstruct, the system cannot produce. Even the mild f = 4 autoencoders lose a little, which the authors suspect already limits their super-resolution.</p>
+<h3 class="rung">Tiny example</h3>
+<p>With PSNR's usual definition on a 0 to 255 scale, the f = 4 VQ autoencoder's 27.43 dB is a root-mean-squared error of about 11 grey levels: invisible in a photo, visible in a task that needs exact pixels, such as recovering small text.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># PSNR = 20 log10(255 / RMSE), so RMSE = 255 / 10^(PSNR / 20)
+psnr = 27.43
+round(255 / 10 ** (psnr / 20), 1)  # → 10.8</code></pre>
+<h3 class="rung">Societal impact</h3>
+<p>The paper names both sides: cheaper generation broadens creative use and access, and also makes manipulated images, misinformation and non-consensual “deep fakes” easier to produce, with women disproportionately harmed. Generative models can reveal training data, and they can reproduce or amplify dataset biases; how much the two-stage design misrepresents the data is left as an open question.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Releasing the models (contribution vi) is what made both sides of that paragraph real within a year.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#S6">original</a></span></h2>
+<h3 class="rung">What the paper concludes</h3>
+<p>Latent diffusion models improve both training and sampling efficiency of denoising diffusion models without degrading quality, and with cross-attention conditioning they compete with the best task-specific methods across a range of conditional image tasks, with no task-specific architecture.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The two ideas separate cleanly, which is why both survived: the latent space is now standard for image and video diffusion, and cross-attention (or its successors) is how prompts reach the denoiser.</p>
+</section>
+
+<section id="appb">
+<h2>Appendix B: the objective, through signal-to-noise <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#A2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Different papers describe the same noise schedule with different letters. The appendix uses one number per step that everyone can agree on: the <span class="t" data-t="signal-to-noise ratio">signal-to-noise ratio</span>, how loud the picture is compared with the static on top of it. The ratio starts huge and falls towards zero, and each step of the training bound turns out to be weighted by how much the ratio falls at that step.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Use the two-step toy chain from the <a href="ddpm.html">DDPM companion</a>: the signal left after one step is ᾱ<sub>1</sub> = 0.9 and after two ᾱ<sub>2</sub> = 0.72. A warning about letters: this appendix writes α<sub>t</sub> for the <em>signal scale</em>, which is √ᾱ<sub>t</sub> in DDPM's notation, and σ<sub>t</sub> for the noise scale √(1 − ᾱ<sub>t</sub>). So SNR(1) = 0.9/0.1 = 9 and SNR(2) = 0.72/0.28 = 2.571.</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=SNR}{\text{SNR}(t)} = \frac{\htmlData{sym=alphaB}{\alpha_{t}}^{2}}{\htmlData{sym=sigmaB}{\sigma_{t}}^{2}}, \\ \htmlData{sym=qB}{q(x_{t}|x_{0})} = \htmlData{sym=Ngauss}{\mathcal{N}}(x_{t}\,|\,\htmlData{sym=alphaB}{\alpha_{t}}x_{0},\,\htmlData{sym=sigmaB}{\sigma_{t}}^{2}\htmlData{sym=Id}{\mathbb{I}})\end{gathered}" data-fallback="SNR(t) = α_t² / σ_t²,  q(x_t | x_0) = N(x_t | α_t x_0, σ_t² I)"></div>
+<div class="symtable" data-syms="SNR,alphaB,sigmaB,qB,Ngauss,Id"></div>
+<p class="inwords"><strong>In words:</strong> “at step t the noisy picture is the clean one scaled by α<sub>t</sub> plus noise of spread σ<sub>t</sub>; the signal-to-noise ratio is the square of the one over the square of the other.”</p>
+<p class="inwords"><strong>With the numbers:</strong> α<sub>1</sub> = √0.9, σ<sub>1</sub> = √0.1, so SNR(1) = 9; α<sub>2</sub> = √0.72, σ<sub>2</sub> = √0.28, so SNR(2) = 2.571.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha_bar = {1: 0.9, 2: 0.72}
+def snr(t):
+    # α_t = √ᾱ_t and σ_t = √(1 − ᾱ_t) in this appendix's letters
+    alpha_t, sigma_t = math.sqrt(alpha_bar[t]), math.sqrt(1 - alpha_bar[t])
+    return alpha_t ** 2 / sigma_t ** 2
+round(snr(1), 3), round(snr(2), 3)  # → (9.0, 2.571)</code></pre>
+<p>If the model's reverse step is built from the true backward step with the clean picture x<sub>0</sub> replaced by a guess x<sub>θ</sub>, the bound's middle terms become weighted squared errors, and the noise-guessing form follows by one substitution:</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=sumtB}{\sum_{t=1}^{T}}\htmlData{sym=EqB}{\mathbb{E}_{q(x_{t}|x_{0})}} \\ \htmlData{sym=KLB}{\mathbb{KL}}\big(q(x_{t-1}|x_{t},x_{0})\,|\,p(x_{t-1}|x_{t})\big) \\ = \htmlData{sym=sumtB}{\sum_{t=1}^{T}}\htmlData{sym=EepsB}{\mathbb{E}_{\mathcal{N}(\epsilon|0,\mathbb{I})}}\\ \htmlData{sym=wSNR}{\tfrac{1}{2}\big(\text{SNR}(t-1)-\text{SNR}(t)\big)} \\ \big\|x_{0}-\htmlData{sym=xtheta}{x_{\theta}}(\alpha_{t}x_{0}+\sigma_{t}\epsilon,t)\big\|^{2}\end{gathered}" data-fallback="Σ_t E_q(x_t|x_0) KL(q(x_t−1 | x_t, x_0) | p(x_t−1 | x_t)) = Σ_t E_ε ½(SNR(t−1) − SNR(t)) ‖x_0 − x_θ(α_t x_0 + σ_t ε, t)‖²"></div>
+<div class="eq" data-tex="\begin{gathered}\big\|x_{0}-\htmlData{sym=xtheta}{x_{\theta}}(\alpha_{t}x_{0}+\sigma_{t}\epsilon,t)\big\|^{2} \\ = \htmlData{sym=invSNR}{\frac{\sigma_{t}^{2}}{\alpha_{t}^{2}}}\big\|\htmlData{sym=eps}{\epsilon}-\htmlData{sym=epstheta}{\epsilon_{\theta}}(\alpha_{t}x_{0}+\sigma_{t}\epsilon,t)\big\|^{2}, \\ \htmlData{sym=epstheta}{\epsilon_{\theta}}(x_{t},t) = \big(x_{t}-\alpha_{t}\htmlData{sym=xtheta}{x_{\theta}}(x_{t},t)\big)/\sigma_{t}\end{gathered}" data-fallback="‖x_0 − x_θ(α_t x_0 + σ_t ε, t)‖² = (σ_t² / α_t²) ‖ε − ε_θ(α_t x_0 + σ_t ε, t)‖²,  ε_θ(x_t, t) = (x_t − α_t x_θ(x_t, t)) / σ_t"></div>
+<div class="symtable" data-syms="sumtB,EqB,KLB,EepsB,wSNR,xtheta,invSNR,eps,epstheta"></div>
+<p class="inwords"><strong>In words:</strong> “each step's share of the bound is half the drop in signal-to-noise ratio at that step, times the squared error of the guessed clean picture; and an error in the guessed clean picture is 1/SNR times the same error measured in noise units. Dropping all those weights, and counting every step equally, gives equation 1.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at t = 2, the weight on the clean-picture error is ½(9 − 2.571) = 3.214, and the conversion to noise units is σ²/α² = 0.28/0.72 = 0.389, so the weight on the noise error is 3.214 × 0.389 = 1.25. As a check, this matches the <a href="ddpm.html">DDPM paper</a>'s own weight β<sub>t</sub>²/(2σ<sub>t</sub>²α<sub>t</sub>(1 − ᾱ<sub>t</sub>)) with its variance choice β̃<sub>t</sub>: 0.2 / (2 × 0.8 × 0.1) = 1.25. Two small slips in the appendix's printed equation 13: the KL's second argument is written p(x<sub>t−1</sub>) (it should be p(x<sub>t−1</sub>|x<sub>t</sub>)), and a closing bracket is missing; both are fixed above.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>alpha_bar = {1: 0.9, 2: 0.72}
+snr = {t: a / (1 - a) for t, a in alpha_bar.items()}
+# ½(SNR(t − 1) − SNR(t)) at t = 2
+w_x0 = 0.5 * (snr[1] - snr[2])
+round(w_x0, 3)  # → 3.214
+# σ_t² / α_t²: from clean-picture error to noise error
+to_eps = (1 - alpha_bar[2]) / alpha_bar[2]
+round(to_eps, 3)  # → 0.389
+round(w_x0 * to_eps, 4)  # → 1.25
+# DDPM's weight β / (2 α (1 − ᾱ_(t−1))) with σ_t² = β̃_t: the same number
+beta, alpha = 0.2, 0.8
+round(beta / (2 * alpha * (1 - alpha_bar[1])), 4)  # → 1.25</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>Writing schedules through the signal-to-noise ratio is how later work compares and designs them: two schedules with the same SNR curve define the same diffusion. It also explains §4.3.2 in one line: scaling the latent by s multiplies every SNR by s².</p>
+</section>
+
+<section id="appc">
+<h2>Appendix C: guiding with an image <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2112.10752#A3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>An unconditional model can still be steered while it samples. At each step, look at the picture the model is heading for, measure how far it is from what you want (for example, “when shrunk, it should look like this thumbnail”), and nudge the noise guess to reduce that distance. The paper uses this to upscale unconditional samples and to push up super-resolution PSNR.</p>
+<h3 class="rung">Tiny example</h3>
+<p>One latent number: the network's noise guess is ε<sub>θ</sub> = 0.5 at a step where σ<sub>t</sub> = √(1 − α<sub>t</sub>²) = 0.6. The decoded, shrunk guess of the final picture has one pixel at 0.6, and the target thumbnail says 1.0. The guider's log-probability is −½(1.0 − 0.6)² = −0.08, and its slope with respect to that pixel is 1.0 − 0.6 = 0.4. Suppose (illustratively) backpropagation carries a slope of 0.4 back to z<sub>t</sub>.</p>
+<div class="eq" data-tex="\begin{gathered}\htmlData{sym=epshat}{\hat{\epsilon}} \leftarrow \htmlData{sym=epstheta}{\epsilon_{\theta}}(z_{t},t) + \htmlData{sym=sigC}{\sqrt{1-\alpha_{t}^{2}}}\;\htmlData{sym=gradlog}{\nabla_{z_{t}}\log p_{\Phi}(y|z_{t})}, \\ \htmlData{sym=logpPhi}{\log p_{\Phi}(y|z_{t})} = -\tfrac{1}{2}\big\|\htmlData{sym=ytarget}{y} - \htmlData{sym=Tmap}{T}(\mathcal{D}(\htmlData{sym=z0zt}{z_{0}(z_{t})}))\big\|^{2}_{2}\end{gathered}" data-fallback="ε̂ ← ε_θ(z_t, t) + √(1 − α_t²) ∇ log p_Φ(y | z_t),  log p_Φ(y | z_t) = −½ ‖y − T(D(z_0(z_t)))‖²"></div>
+<div class="symtable" data-syms="epshat,epstheta,sigC,gradlog,logpPhi,ytarget,Tmap,z0zt"></div>
+<p class="inwords"><strong>In words:</strong> “predict the finished latent, decode it, transform it the way the target was made, and measure the squared distance to the target; then correct the noise guess by the slope of that measurement, scaled by the current noise level.”</p>
+<p class="inwords"><strong>With the numbers:</strong> log p<sub>Φ</sub> = −½ × 0.4² = −0.08. As printed, ε̂ = 0.5 + 0.6 × 0.4 = 0.74. A caution on the sign: since the <span class="t" data-t="score">score</span> is the noise guess flipped and divided by σ<sub>t</sub>, adding ∇log p<sub>Φ</sub> to the score means <em>subtracting</em> σ<sub>t</sub>∇log p<sub>Φ</sub> from the noise guess, giving 0.5 − 0.24 = 0.26. The paper prints a plus sign; the derivation gives a minus, so read equation 16 as ε̂ ← ε<sub>θ</sub> − σ<sub>t</sub>∇log p<sub>Φ</sub>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>eps_theta, sigma_t = 0.5, 0.6
+y, decoded = 1.0, 0.6
+# log p_Φ(y | z_t) = −½ ‖y − T(D(z_0(z_t)))‖², and its slope for the decoded pixel
+log_p = -0.5 * (y - decoded) ** 2
+round(log_p, 2)  # → -0.08
+slope = y - decoded
+# the correction as printed, and with the sign the score relation gives
+round(eps_theta + sigma_t * slope, 2), round(eps_theta - sigma_t * slope, 2)  # → (0.74, 0.26)</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>“Guide sampling with the gradient of any differentiable measurement of the predicted image” became a general tool: guiding by a classifier, by a CLIP score, by a thumbnail, by a mask. Classifier-free guidance (§4.3.1) replaced it for prompts, because it needs no extra network and no backpropagation at every step.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2021</h2>
+<p>The two-stage design is the part that stayed. Around it:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Choice in the paper</th><th>Common today</th><th>Why</th><th>Where to read</th></tr></thead>
+  <tbody>
+    <tr><td>Convolutional U-Net denoiser with cross-attention</td><td>Often a transformer over latent patches</td><td>Scales predictably with compute</td><td><a href="diffusion-transformers.html">DiT companion</a></td></tr>
+    <tr><td>Text encoder trained jointly with the denoiser</td><td>Frozen pretrained text encoders</td><td>Better language understanding for free</td><td><a href="clip.html">CLIP companion</a></td></tr>
+    <tr><td>Noise prediction, 50 to 250 DDIM steps</td><td>Also flow matching, and distilled few-step samplers</td><td>Fewer network calls per image</td><td><a href="flow-matching.html">Flow matching companion</a></td></tr>
+    <tr><td>Images</td><td>Video in a latent space with a time axis</td><td>The same compression argument, with far more pixels</td><td><a data-lesson="primer/ml/generative/multimodal.html">multimodal lesson</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser and Björn Ommer, <em>High-Resolution Image Synthesis with Latent Diffusion Models</em>, CVPR 2022. <a href="https://arxiv.org/abs/2112.10752">arXiv:2112.10752</a>. Quotations are brief and attributed; selected table rows are reproduced and charted with attribution, and the figures are redrawn. All explanations, diagrams, worked numbers and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // 3.1
+    ximg: { tex: "x", name: "The image", meaning: "A colour photo: H rows, W columns and 3 colour numbers (red, green, blue) per pixel.", shape: "H × W × 3", example: "256 × 256 × 3 = 196,608 numbers" },
+    Enc: { tex: "\\mathcal{E}", name: "The encoder", meaning: "The first half of the autoencoder: turns an image into the small latent grid. Trained once, then frozen while the diffusion model trains.", shape: "image → latent", example: "256 × 256 × 3 → 32 × 32 × 4" },
+    zlat: { tex: "z", name: "The latent", meaning: "The encoder's output, the small grid the diffusion model works on. In §4.3.2 it is also divided by its measured spread.", shape: "h × w × c", example: "32 × 32 × 4 = 4,096 numbers" },
+    Dec: { tex: "\\mathcal{D}", name: "The decoder", meaning: "The second half of the autoencoder: turns a latent back into an image. Runs once at the end of sampling.", shape: "latent → image", example: "32 × 32 × 4 → 256 × 256 × 3" },
+    xrec: { tex: "\\tilde{x}", name: "The reconstruction", meaning: "“x tilde”: the image rebuilt from the latent. Training makes it look like x.", shape: "H × W × 3", example: "PSNR 24.19 dB for the f = 8 KL model" },
+    RHW3: { tex: "\\mathbb{R}^{H\\times W\\times 3}", name: "Space of images", meaning: "All grids of real numbers with H rows, W columns and 3 channels. ℝ means real numbers; the superscript gives the shape.", shape: "a set", example: "ℝ^(256 × 256 × 3)" },
+    Rhwc: { tex: "\\mathbb{R}^{h\\times w\\times c}", name: "Space of latents", meaning: "All grids of h rows, w columns and c channels: much smaller than an image.", shape: "a set", example: "ℝ^(32 × 32 × 4)" },
+    fdown: { tex: "f", name: "Downsampling factor", meaning: "How many times smaller each side of the latent is than the image. LDM-f names a model by it; f = 1 means no autoencoder at all.", shape: "1, 2, 4, 8, 16 or 32", example: "8" },
+    mexp: { tex: "m", name: "Power of two", meaning: "f is always 2 to a whole-number power, because each encoder stage halves the image.", shape: "0, 1, 2, …", example: "3, so f = 8" },
+    // App G loss
+    LAE: { tex: "L_{\\text{Autoencoder}}", name: "Autoencoder objective", meaning: "The number the autoencoder is trained on (Appendix G, equation 25).", shape: "one number", example: "−1.073, illustrative" },
+    minmax: { tex: "\\min_{\\mathcal{E},\\mathcal{D}}\\max_{\\psi}", name: "A two-player game", meaning: "The encoder and decoder push the objective down; the discriminator's weights ψ push it up, as in a GAN.", shape: "", example: "" },
+    Lrec: { tex: "L_{rec}", name: "Reconstruction loss", meaning: "How far the rebuild is from the photo: a pixel error plus a perceptual loss that compares features of a pretrained network.", shape: "one number", example: "0.05, illustrative" },
+    Ladv: { tex: "L_{adv}", name: "Adversarial term", meaning: "Grows as the patch discriminator finds the rebuild realistic. It enters with a minus sign, so the autoencoder gains by fooling the discriminator.", shape: "one number", example: "0.9, illustrative" },
+    logDpsi: { tex: "\\log D_{\\psi}(x)", name: "Critic on real photos", meaning: "The log of the discriminator's probability that a real photo is real. Only the discriminator can change it.", shape: "≤ 0", example: "log 0.8 = −0.223" },
+    Lreg: { tex: "L_{reg}", name: "Latent regularizer", meaning: "Keeps the latent tame: a KL pull towards the standard normal weighted by about 10⁻⁶ (KL-reg.), or a vector quantization codebook (VQ-reg.).", shape: "one number", example: "10⁻⁶ × 40 = 0.00004" },
+    // 3.2
+    LDM: { tex: "L_{DM}", name: "Pixel-space diffusion loss", meaning: "DDPM's simplified loss: the squared error of the noise guess on noised images.", shape: "one number", example: "0.05 for the two-number example" },
+    Expx: { tex: "\\mathbb{E}_{x,\\epsilon,t}", name: "Average over images, noise and steps", meaning: "Pick a real image, standard-normal noise and a step t uniformly from 1 to T, and average what follows. In code, a batch average.", shape: "one number", example: "" },
+    LLDM: { tex: "L_{LDM}", name: "Latent diffusion loss", meaning: "The same loss on encoded latents instead of images; in equation 3 the network also reads the prompt.", shape: "one number", example: "0.05; 0.005 with the prompt (illustrative)" },
+    Expz: { tex: "\\mathbb{E}_{\\mathcal{E}(x),\\epsilon,t}", name: "Average over latents, noise and steps", meaning: "Encode a real image, draw noise and a step, and average: the images only enter through their latents.", shape: "one number", example: "" },
+    Expzy: { tex: "\\mathbb{E}_{\\mathcal{E}(x),y,\\epsilon,t}", name: "Average over pairs, noise and steps", meaning: "As above, but over image-and-condition pairs (a photo and its caption, say).", shape: "one number", example: "" },
+    eps: { tex: "\\epsilon", name: "The real noise", meaning: "“Epsilon”: standard-normal noise drawn to make the training input, and the answer the network is graded against.", shape: "same size as the latent", example: "(0.5, −1.0)" },
+    epstheta: { tex: "\\epsilon_{\\theta}", name: "The network's noise guess", meaning: "The denoiser (a U-Net here) with weights θ: it sees the noisy input, the step and, if given, the prompt, and guesses the noise.", shape: "same size as the latent", example: "(0.4, −0.8)" },
+    xt: { tex: "x_t", name: "Noisy image", meaning: "An image noised to step t: √ᾱ_t x + √(1 − ᾱ_t) ε.", shape: "H × W × 3", example: "" },
+    zt: { tex: "z_t", name: "Noisy latent", meaning: "The latent noised to step t in one jump: √ᾱ_t z + √(1 − ᾱ_t) ε.", shape: "h × w × c", example: "0.8 × 2.0 + 0.6 × 0.5 = 1.9" },
+    tstep: { tex: "t", name: "Step", meaning: "Which noise level, drawn uniformly from 1 to T = 1,000 in training.", shape: "1 … 1000", example: "a step with ᾱ_t = 0.64" },
+    // 3.3
+    phi: { tex: "\\varphi_i(z_t)", name: "Image features", meaning: "“Phi”: the U-Net's feature map at layer i, flattened into one row per spatial position.", shape: "N × dᵢ_ε", example: "2 positions × 2 numbers" },
+    tau: { tex: "\\tau_\\theta(y)", name: "The encoded prompt", meaning: "“Tau”: a domain-specific encoder (a transformer for text) turns the prompt y into M vectors of width d_τ. Trained jointly with the denoiser.", shape: "M × d_τ", example: "a = (0, 0), red = (1, 0), fox = (0, 1)" },
+    WQ: { tex: "W_Q^{(i)}", name: "Query projection", meaning: "Learned matrix of layer i that turns image features into queries. It must match the image features' width dᵢ_ε (the paper's text lists this shape under W_V by mistake).", shape: "d × dᵢ_ε", example: "the identity here" },
+    WK: { tex: "W_K^{(i)}", name: "Key projection", meaning: "Learned matrix that turns the prompt's vectors into keys.", shape: "d × d_τ", example: "doubles each vector" },
+    WV: { tex: "W_V^{(i)}", name: "Value projection", meaning: "Learned matrix that turns the prompt's vectors into values. It must match the prompt's width d_τ (the paper's text lists this shape under W_Q by mistake).", shape: "d × d_τ", example: "the identity here" },
+    Q: { tex: "Q", name: "Queries", meaning: "One row per image position: what that position is looking for in the prompt.", shape: "N × d", example: "(1, 0) and (0, 1)" },
+    K: { tex: "K", name: "Keys", meaning: "One row per prompt token: what each token offers to be matched against.", shape: "M × d", example: "(0, 0), (2, 0), (0, 2)" },
+    V: { tex: "V", name: "Values", meaning: "One row per prompt token: what each token hands over when attended to.", shape: "M × d", example: "(0, 0), (1, 0), (0, 1)" },
+    KT: { tex: "K^T", name: "Keys, transposed", meaning: "The key matrix flipped so Q Kᵀ is the grid of every query dotted with every key.", shape: "d × M", example: "" },
+    sqrtd: { tex: "\\sqrt{d}", name: "Scale", meaning: "Divide by the square root of the width, which keeps the scores from growing with d and the softmax from saturating.", shape: "one number", example: "√2 = 1.414" },
+    softmax: { tex: "\\text{softmax}", name: "Softmax", meaning: "Turns each row of scores into positive shares that add up to 1.", shape: "row by row", example: "(0, 1.414, 0) → (0.164, 0.673, 0.164)" },
+    Attn: { tex: "\\text{Attention}", name: "The attention output", meaning: "For each image position, a blend of the prompt's values, weighted by how well its query matched each key.", shape: "N × d", example: "(0.673, 0.164) for position 1" },
+    // 4.3.2 rescale
+    zbchw: { tex: "z^{b,c,h,w}", name: "One latent number", meaning: "The number at image b of the batch, channel c, row h, column w.", shape: "one number", example: "3, −1, 5, 1" },
+    avgbchw: { tex: "\\frac{1}{bchw}\\sum_{b,c,h,w}", name: "Average over the whole batch", meaning: "Add up over every image, channel, row and column, then divide by how many numbers that was. Here b, c, h, w also stand for the counts.", shape: "one number", example: "divide by 4" },
+    muhat: { tex: "\\hat{\\mu}", name: "Estimated mean", meaning: "“Mu hat”: the average latent value in the first batch.", shape: "one number", example: "2" },
+    sighat: { tex: "\\hat{\\sigma}", name: "Estimated spread", meaning: "“Sigma hat”: the standard deviation of the latent values in the first batch; σ̂² is the variance.", shape: "one number", example: "√5 = 2.236" },
+    // App B
+    SNR: { tex: "\\text{SNR}(t)", name: "Signal-to-noise ratio", meaning: "How strong the signal is against the noise at step t: very large at the start, near 0 at the end.", shape: "0 … ∞", example: "9 at t = 1, 2.571 at t = 2" },
+    alphaB: { tex: "\\alpha_t", name: "Signal scale (this appendix)", meaning: "How much the clean picture is scaled by at step t. Careful: this equals √ᾱ_t in DDPM's letters, not DDPM's α_t.", shape: "1 down to 0", example: "√0.72 = 0.849" },
+    sigmaB: { tex: "\\sigma_t", name: "Noise scale", meaning: "The spread of the noise at step t, √(1 − ᾱ_t) in DDPM's letters.", shape: "0 up to 1", example: "√0.28 = 0.529" },
+    qB: { tex: "q(x_t|x_0)", name: "The one-jump noising", meaning: "Where the forward process puts a clean picture after t steps.", shape: "a bell curve", example: "N(√0.72 x₀, 0.28)" },
+    Ngauss: { tex: "\\mathcal{N}", name: "Normal (Gaussian) density", meaning: "The bell curve, given its centre and its variance.", shape: "a density", example: "" },
+    Id: { tex: "\\mathbb{I}", name: "Identity matrix", meaning: "Every number gets its own independent noise.", shape: "", example: "" },
+    sumtB: { tex: "\\sum_{t=1}^{T}", name: "Sum over steps", meaning: "Add one term per step, from 1 to T.", shape: "one number", example: "" },
+    EqB: { tex: "\\mathbb{E}_{q(x_t|x_0)}", name: "Average over noisy versions", meaning: "Average over the noisy pictures the forward process could make at step t.", shape: "one number", example: "" },
+    KLB: { tex: "\\mathbb{KL}", name: "KL divergence", meaning: "How far the model's backward step is from the true one; 0 only when they match.", shape: "≥ 0", example: "" },
+    EepsB: { tex: "\\mathbb{E}_{\\mathcal{N}(\\epsilon|0,\\mathbb{I})}", name: "Average over noise", meaning: "Average over standard-normal noise draws.", shape: "one number", example: "" },
+    wSNR: { tex: "\\tfrac{1}{2}(\\text{SNR}(t-1)-\\text{SNR}(t))", name: "Step weight", meaning: "Half the drop in signal-to-noise ratio at this step: the exact bound's weight on the clean-picture error.", shape: "a positive number", example: "½(9 − 2.571) = 3.214" },
+    xtheta: { tex: "x_\\theta", name: "Guessed clean picture", meaning: "The network's estimate of x₀ from the noisy x_t; the noise guess and this guess are two ways to say the same thing.", shape: "same size as x₀", example: "" },
+    invSNR: { tex: "\\frac{\\sigma_t^2}{\\alpha_t^2}", name: "Unit conversion", meaning: "1 / SNR(t): an error in the clean picture equals this times the same error measured in noise.", shape: "a positive number", example: "0.28 / 0.72 = 0.389" },
+    // App C
+    epshat: { tex: "\\hat{\\epsilon}", name: "Guided noise guess", meaning: "The corrected noise guess the sampler uses instead of ε_θ.", shape: "same size as the latent", example: "0.74 as printed; 0.26 with the derived sign" },
+    sigC: { tex: "\\sqrt{1-\\alpha_t^2}", name: "Noise scale", meaning: "σ_t in this appendix's letters: the correction is scaled by how noisy the current latent is.", shape: "0 … 1", example: "0.6" },
+    gradlog: { tex: "\\nabla_{z_t}\\log p_\\Phi(y|z_t)", name: "Guider's slope", meaning: "Which way to move the noisy latent to make the target y more likely under the guider, found by backpropagating through the decoder.", shape: "same size as the latent", example: "0.4, illustrative" },
+    logpPhi: { tex: "\\log p_\\Phi(y|z_t)", name: "Guider's score", meaning: "How well the predicted final image matches the target y, here as minus half a squared distance (a Gaussian guider with variance 1).", shape: "≤ 0", example: "−0.08" },
+    ytarget: { tex: "y", name: "Target", meaning: "What the finished image should match after the transformation T, such as a low-resolution thumbnail.", shape: "depends on T", example: "1.0" },
+    Tmap: { tex: "T", name: "Transformation", meaning: "Any differentiable operation that turns an image into the target's form: the identity, or a 2× downsampling.", shape: "image → target", example: "" },
+    z0zt: { tex: "z_0(z_t)", name: "Predicted clean latent", meaning: "The finished latent predicted from the current noisy one by undoing the noise guess.", shape: "same size as the latent", example: "decodes to 0.6" },
+  },
+
+  blocks: {
+    // Figure 3
+    pixel: { title: "Pixel space", body: "<p>Where images live: 256 × 256 × 3 numbers each. Only the encoder (once per training image) and the decoder (once per sample) work here.</p>" },
+    latent: { title: "Latent space", body: "<p>Everything inside this frame runs on the small latent, 32 × 32 × 4 for f = 8. This is where all the repeated work of diffusion happens, so this is where the saving is.</p>" },
+    condframe: { title: "Conditioning", body: "<p>Whatever the picture should follow: a text prompt, a semantic map, a layout, another image. It reaches the denoiser by cross-attention or by concatenation.</p>" },
+    x: { title: "x: a photo", body: "<p>A training image, H × W × 3.</p>", shape: "256 × 256 × 3" },
+    enc: { title: "ℰ: the encoder", body: "<p>Shrinks each side by f and keeps c channels. Trained beforehand with perceptual and adversarial losses; frozen while the diffusion model trains.</p>", shape: "→ 32 × 32 × 4", lesson: "primer/ml/generative/autoencoders.html#VAE" },
+    z: { title: "z: the latent", body: "<p>The encoded image. At generation time the final z is what the loop produces.</p>", shape: "32 × 32 × 4", lesson: "primer/ml/generative/diffusion.html#latent_shrink" },
+    zT: { title: "z<sub>T</sub>: pure noise", body: "<p>The end of the fixed forward process, and the start of sampling: a latent of standard-normal noise.</p>" },
+    unet: { title: "The denoising U-Net ε<sub>θ</sub>", body: "<p>A convolutional network that shrinks and regrows the latent, with skip connections (the dotted line) across. It guesses the noise in its input at step t. Attention layers at some of its resolutions (32, 16 and 8 in most of the paper's models) read the conditioning.</p>", lesson: "primer/ml/generative/diffusion.html#train_noise_predictor" },
+    qkv: { title: "Cross-attention layers", body: "<p>Q from the U-Net's own features, K and V from τ<sub>θ</sub>(y): each latent position gathers the prompt information it needs. See the next figure.</p>", lesson: "primer/ml/attention.html#scaled_dot_product_attention" },
+    step: { title: "One denoising step", body: "<p>The noise guess is turned into a slightly cleaner latent (a DDPM or DDIM step).</p>", lesson: "primer/ml/generative/diffusion.html#ddim_step" },
+    ztm1: { title: "z<sub>T−1</sub>, and the loop", body: "<p>The slightly cleaner latent goes back into the U-Net, T − 1 more times (in practice 50 to 250 DDIM steps).</p>", lesson: "primer/ml/generative/diffusion.html#ddim_sample" },
+    dec: { title: "𝒟: the decoder", body: "<p>Runs once, turning the finished latent into pixels.</p>", shape: "32 × 32 × 4 → 256 × 256 × 3" },
+    xtilde: { title: "x̃: the output image", body: "<p>A new picture, or during autoencoder training the rebuild of x.</p>" },
+    ysrc: { title: "The condition y", body: "<p>A text prompt, a semantic map, a set of labelled boxes, a class label, or an image.</p>" },
+    tau: { title: "τ<sub>θ</sub>: the condition encoder", body: "<p>A domain-specific encoder that turns y into a sequence of vectors: a 32-layer transformer for text, a single embedding table for class labels. Trained jointly with the U-Net.</p>", shape: "M × d_τ (77 × 1280 for text)" },
+    switch: { title: "The switch: concatenation", body: "<p>For conditions lined up with the image (a low-resolution photo, a semantic map, an inpainting mask), skip τ<sub>θ</sub>'s attention route and stack the condition onto the noisy latent as extra channels (the dashed wire).</p>" },
+    // cross-attention figure
+    phi: { title: "φ<sub>i</sub>(z<sub>t</sub>): image features", body: "<p>The U-Net's feature map at one layer, flattened to one row per position: N rows.</p>", shape: "N × dᵢ_ε" },
+    tauy: { title: "τ<sub>θ</sub>(y): the prompt", body: "<p>The encoded prompt, one row per token: M rows.</p>", shape: "M × d_τ (77 × 1280 for text)" },
+    wq: { title: "W<sub>Q</sub>: queries", body: "<p>A learned projection of the image features. Each position's query says what it is looking for.</p>", shape: "N × d" },
+    wk: { title: "W<sub>K</sub>: keys", body: "<p>A learned projection of the prompt vectors: what each token offers to be matched on.</p>", shape: "M × d" },
+    wv: { title: "W<sub>V</sub>: values", body: "<p>A learned projection of the prompt vectors: what each token hands over.</p>", shape: "M × d" },
+    scores: { title: "Scores", body: "<p>Every image position's query dotted with every token's key, divided by √d: an N × M grid.</p>", shape: "N × M" },
+    smax: { title: "Softmax", body: "<p>Each row of scores becomes shares that add up to 1: how much each token matters to this position.</p>", shape: "N × M", lesson: "primer/ml/attention.html#softmax" },
+    mix: { title: "Blend the values", body: "<p>Each position's shares weight the tokens' values, giving one vector per position.</p>", shape: "N × d" },
+    xout: { title: "Output", body: "<p>One row per image position, projected back to the U-Net's width and added to its features. The picture now carries prompt information where it asked for it.</p>", shape: "N × dᵢ_ε", lesson: "primer/ml/attention.html#scaled_dot_product_attention" },
+  },
+
+  onReady(P) {
+    rdChart(P);
+    compressionDial(P);
+    snrChart(P);
+    inpaintBars();
+  },
+};
+
+/* ---- Figure 2: rate against distortion, from DDPM's Table 4 (the data the paper's Figure 2 draws) ---- */
+function rdChart(P) {
+  // [reverse-process step, rate (bits/dim), distortion (RMSE on 0 to 255)]
+  const table4 = [
+    [100, 0.0, 67.60125], [200, 0.00013, 60.9717], [300, 0.00081, 54.18826], [400, 0.00282, 46.12765],
+    [500, 0.00716, 38.03236], [600, 0.01507, 30.80948], [700, 0.02866, 24.43656], [800, 0.05415, 18.47482],
+    [900, 0.11994, 12.02277], [1000, 1.77581, 0.95136],
+  ];
+  P.lineChart(document.getElementById("rd-chart"), {
+    series: [{ name: "distortion (RMSE)", points: table4.map((r) => [r[1], r[2]]) }],
+    xLabel: "rate (bits per dimension)", yLabel: "distortion (RMSE, 0 to 255)", width: 440, height: 240,
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(1),
+    readout: document.getElementById("rd-readout"),
+    ariaLabel: "Distortion against rate for a pixel-space diffusion model",
+  });
+}
+
+/* ---- the compression dial: Table 8's KL-regularized autoencoders, selected rows ---- */
+const AE_ROWS = [
+  // f, c, R-FID, PSNR (f = 1 is no autoencoder)
+  { f: 1, c: 3, rfid: 0, psnr: null },
+  { f: 2, c: 2, rfid: 0.086, psnr: 32.47 },
+  { f: 4, c: 3, rfid: 0.27, psnr: 27.53 },
+  { f: 8, c: 4, rfid: 0.9, psnr: 24.19 },
+  { f: 16, c: 8, rfid: 2.63, psnr: 21.94 },
+  { f: 32, c: 16, rfid: 7.3, psnr: 20.38 },
+];
+function compressionDial(P) {
+  const input = document.getElementById("ae-f"), out = document.getElementById("ae-readout");
+  const svg = document.getElementById("ae-grid");
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  function draw() {
+    const r = AE_ROWS[+input.value];
+    document.getElementById("ae-fv").textContent = r.f;
+    const side = 256 / r.f, n = side * side * r.c;
+    svg.textContent = "";
+    svg.appendChild(el("rect", { x: 10, y: 10, width: 120, height: 120, rx: 4, style: "fill:var(--emb);stroke:var(--emb-stroke)" }));
+    const t1 = el("text", { x: 70, y: 146, "text-anchor": "middle", class: "lbl" }); t1.textContent = "image 256 × 256 × 3"; svg.appendChild(t1);
+    const s = 120 * Math.sqrt(side / 256) + 20; // the latent's box shrinks with its side, kept visible
+    const x0 = 170 + (120 - s) / 2, y0 = 10 + (120 - s) / 2;
+    svg.appendChild(el("rect", { x: x0, y: y0, width: s, height: s, rx: 3, style: "fill:var(--attn);stroke:var(--attn-stroke)" }));
+    if (side <= 32) {
+      for (let i = 1; i < side; i++) {
+        const p = (i / side) * s;
+        svg.appendChild(el("line", { x1: x0 + p, x2: x0 + p, y1: y0, y2: y0 + s, style: "stroke:var(--attn-stroke);stroke-width:0.5" }));
+        svg.appendChild(el("line", { y1: y0 + p, y2: y0 + p, x1: x0, x2: x0 + s, style: "stroke:var(--attn-stroke);stroke-width:0.5" }));
+      }
+    }
+    const t2 = el("text", { x: 230, y: 146, "text-anchor": "middle", class: "lbl" });
+    t2.textContent = r.f === 1 ? "no autoencoder" : `latent ${side} × ${side} × ${r.c}`; svg.appendChild(t2);
+    const quality = r.f === 1 ? "no autoencoder: the diffusion model works on pixels" : `reconstruction FID <strong>${r.rfid}</strong>, PSNR <strong>${r.psnr}</strong> dB`;
+    out.innerHTML = `f = ${r.f}: latent ${side} × ${side} × ${r.c} = <strong>${n.toLocaleString("en-US")}</strong> numbers, ${(196608 / n).toFixed(0)} times fewer than the image; ${quality}.`;
+  }
+  input.addEventListener("input", draw);
+  draw();
+  const rows = AE_ROWS.slice(1);
+  P.lineChart(document.getElementById("ae-chart"), {
+    series: [
+      { name: "PSNR (dB), higher is better", points: rows.map((r) => [r.f, r.psnr]) },
+      { name: "reconstruction FID, lower is better", points: rows.map((r) => [r.f, r.rfid]) },
+    ],
+    xLabel: "downsampling factor f (log scale)", yLabel: "dB or FID", logX: true, width: 440, height: 250,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(1), yMin: 0, yMax: 35,
+    readout: document.getElementById("ae-chart-readout"),
+    ariaLabel: "Reconstruction quality of the KL-regularized autoencoders against the downsampling factor",
+  });
+}
+
+/* ---- §4.3.2 and D.1: signal-to-noise ratio against step, for a latent of a given spread ---- */
+function snrChart(P) {
+  const input = document.getElementById("snr-s"), out = document.getElementById("snr-readout");
+  const T = 1000, ab = [];
+  let a = 1;
+  for (let i = 0; i < T; i++) { a *= 1 - (1e-4 + ((0.02 - 1e-4) * i) / (T - 1)); ab.push(a); }
+  const series = (s) => [
+    { name: "log10 SNR for this latent", points: ab.map((v, i) => [i + 1, Math.log10((s * s * v) / (1 - v))]) },
+    { name: "SNR = 1", points: [[1, 0], [T, 0]] },
+  ];
+  const chart = P.lineChart(document.getElementById("snr-chart"), {
+    series: series(1), xLabel: "step t", yLabel: "log10 SNR", width: 440, height: 250,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(1), yMin: -6, yMax: 6,
+    ariaLabel: "Signal-to-noise ratio against the diffusion step, for the chosen latent spread",
+  });
+  function draw() {
+    const s = +input.value;
+    document.getElementById("snr-sv").textContent = s.toFixed(2);
+    chart.update(series(s));
+    const cross = ab.findIndex((v) => (s * s * v) / (1 - v) < 1);
+    out.innerHTML = `Spread ${s.toFixed(2)}: every step's SNR is multiplied by ${(s * s).toFixed(2)}; signal and noise are equally strong at step <strong>${cross < 0 ? "never" : cross + 1}</strong>, and at step 500 the SNR is <strong>${((s * s * ab[499]) / (1 - ab[499])).toFixed(3)}</strong>.`;
+  }
+  input.addEventListener("input", draw);
+  draw();
+}
+
+/* ---- Table 6: LDM-1 against LDM-4 on inpainting efficiency ---- */
+function inpaintBars() {
+  const rows = [
+    ["training, samples/s", 0.11, 0.32, "higher"], ["sampling at 256², samples/s", 0.26, 0.97, "higher"],
+    ["sampling at 512², samples/s", 0.07, 0.34, "higher"], ["hours per epoch", 20.66, 7.66, "lower"], ["FID after 6 epochs", 24.74, 15.21, "lower"],
+  ];
+  document.getElementById("inp-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Plain bar: LDM-1 (pixels). Striped bar: LDM-4 (latent). Each row has its own scale.</div>` +
+    rows.map(([name, a, b, better]) => {
+      const max = Math.max(a, b);
+      const bar = (v, ours) => `<div class="share-row" style="grid-template-columns:4.5rem minmax(0,1fr) 3rem"><span>${ours ? "LDM-4" : "LDM-1"}</span><div><div class="share-bar" style="width:${((v / max) * 100).toFixed(1)}%;${ours ? "background:var(--hatch) var(--accent)" : "background:var(--wire)"}"></div></div><span>${v}</span></div>`;
+      return `<p style="margin:.6rem 0 .2rem"><strong>${name}</strong> (${better} is better)</p>${bar(a, false)}${bar(b, true)}`;
+    }).join("");
+}
+</script>
+</body>
+</html>
