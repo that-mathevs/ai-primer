@@ -1165,6 +1165,7 @@ either way.
   https://arxiv.org/abs/2212.04089. Defined task vectors as fine-tuned
   minus pretrained weights and showed that adding them combines skills,
   and negating them removes a behaviour.
+  [Annotated companion](../../papers/task-arithmetic.html)
 - **Wortsman et al., *Model soups: averaging weights of multiple fine-tuned
   models improves accuracy without increasing inference time* (2022)**:
   https://arxiv.org/abs/2203.05482. Showed that averaging the weights of

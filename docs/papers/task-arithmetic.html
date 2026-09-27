@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editing Models with Task Arithmetic, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Ilharco et al. (2022), the paper that turned fine-tunes into vectors you can add, subtract and combine by analogy to edit what a model can do.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+<style>
+  #ws-svg { width: 100%; max-width: 420px; height: auto; display: block; margin: 0.4rem auto; }
+  #ws-svg .axis { stroke: var(--border); stroke-width: 1; }
+  #ws-svg .vec { stroke-width: 2.4; fill: none; }
+  #ws-svg .ghostvec { stroke-width: 1.4; fill: none; stroke-dasharray: 4 3; opacity: 0.8; }
+  #ws-svg .pt { stroke: var(--fg); stroke-width: 1.2; fill: var(--card); }
+  table.heat { width: auto; font-variant-numeric: tabular-nums; }
+  table.heat { width: 100%; table-layout: fixed; }
+  table.heat th, table.heat td { padding: 0.25rem 0; text-align: center; font-size: 0.66rem; border-bottom: 0; }
+  table.heat th[scope=row] { text-align: right; padding-right: 0.3rem; width: 3.4rem; }
+  table.heat thead th { font-size: 0.56rem; letter-spacing: -0.02em; padding: 0 1px 0.2rem; }
+  table.heat td { border-radius: 3px; }
+  table.heat td.hot { color: var(--bg); font-weight: 700; }
+  .barrow { display: grid; grid-template-columns: 10rem minmax(0, 1fr) 6rem; gap: 0.2rem 0.5rem; align-items: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.82rem; margin: 0.35rem 0; }
+  .barrow > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 600px) {
+    .barrow { grid-template-columns: minmax(0, 1fr) auto; }
+    .barrow > div { grid-column: 1 / -1; grid-row: 2; }
+  }
+</style>
+</head>
+<body data-paper="task-arithmetic">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Task vectors</a></li>
+      <li><a href="#s3">3 Forgetting via negation</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Image classification</a></li>
+          <li><a href="#s3-2">3.2 Text generation</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Learning via addition</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Image classification</a></li>
+          <li><a href="#s4-2">4.2 Natural language processing</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Task analogies</a></li>
+      <li><a href="#s6">6 Discussion</a></li>
+      <li><a href="#s7">7 Related work</a></li>
+      <li><a href="#s8">8 Conclusion</a></li>
+      <li><a href="#appa">Appendix A: weight averaging and ensembles</a></li>
+      <li><a href="#today">What changed since 2022</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Editing Models with Task Arithmetic, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Gabriel Ilharco, Marco Tulio Ribeiro, Mitchell Wortsman, Suchin Gururangan, Ludwig Schmidt, Hannaneh Hajishirzi and Ali Farhadi (2022, published at ICLR 2023): the paper that treats “what a fine-tune changed” as a vector, and shows that adding, subtracting and combining those vectors edits what a model can do, with no further training.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2212.04089">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2212.04089">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2212.04089">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is released on arXiv under a Creative Commons Attribution 4.0 licence; the table rows and numbers shown here are attributed to it. Every picture is redrawn from scratch; where a value had to be read off a plot, the page says so, and made-up numbers are labelled illustrative. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself on hover, focus or tap; so does every symbol in every equation.</li>
+  <li>The weight-space playground in §1 is the paper in one picture: pick an operation, drag λ, and watch the edited model move.</li>
+</ul>
+<p>Each idea climbs the same ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters today</strong>. The <a data-lesson="primer/ml/fine_tuning.html">fine-tuning lesson</a> builds task arithmetic from scratch on a tiny network: <a data-lesson="primer/ml/fine_tuning.html#task_vector"><code>task_vector</code></a> subtracts the base, <a data-lesson="primer/ml/fine_tuning.html#merge"><code>merge</code></a> adds scaled task vectors back, and <a data-lesson="primer/ml/fine_tuning.html#merge_run"><code>merge_run</code></a> measures what the merged model can do.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089">original</a></span></h2>
+<blockquote class="quote">“A task vector specifies a direction in the weight space of a pre-trained model, such that movement in that direction improves performance on the task.”<cite>Ilharco et al. (2022), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two editors take copies of the same manuscript. One fixes the grammar, the other tightens the argument, and each hands back a list of tracked changes. You can accept both lists onto the original; you can accept one list backwards to undo it; and if you know how a British edit relates to an American one for chapter 1, you can guess the change for chapter 2. <span class="t" data-t="task arithmetic">Task arithmetic</span> does this with a model's weights: the “tracked changes” of a <span class="t" data-t="fine-tuning">fine-tune</span> are its <span class="t" data-t="task vector">task vector</span>.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>Negation forgets.</strong> Subtracting a task vector lowers performance on that task and leaves unrelated tasks nearly untouched: it cut a language model's toxic generations from 4.8% to 0.8%.</li>
+  <li><strong>Addition combines.</strong> Adding task vectors from different tasks gives one model good at all of them; for pairs of image tasks it keeps 98.9% of the specialists' accuracy.</li>
+  <li><strong>Analogies transfer.</strong> When tasks relate as “A is to B as C is to D”, combining the vectors of A, B and C improves D, even with no labelled data for D.</li>
+  <li>All of it is elementwise arithmetic on weights: no extra training, no extra cost at inference.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>This paper gave <span class="t" data-t="model merging">model merging</span> its vocabulary. Whenever someone combines fine-tunes of a shared base, or subtracts one to remove a behaviour, they are doing task arithmetic.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S1">original</a></span></h2>
+<blockquote class="quote">“There is no extra cost at inference time in terms of memory or compute, since we only do element-wise operations on model weights.”<cite>Ilharco et al. (2022), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Picture every possible model as a point on a huge map, one direction for every <span class="t" data-t="weight">weight</span>: that map is <span class="t" data-t="weight space">weight space</span>. The pretrained model is one point. Fine-tuning walks from that point to another; the walk, as an arrow, is the task vector. Arrows can be scaled, reversed and laid end to end. The paper's claim is that doing so to the <em>arrows</em> does predictable things to the <em>skills</em>.</p>
+<h3 class="rung">Tiny example: a two-weight model</h3>
+<p>Real models have millions or billions of weights, but two are enough to draw. Start at θ<sub>pre</sub> = (0, 0). Fine-tuning on task A moves the weights to (1.5, 0.5), so τ<sub>A</sub> = (1.5, 0.5); fine-tuning on B moves them to (0.3, 1.4), so τ<sub>B</sub> = (0.3, 1.4). Adding both at λ = 1 lands at (1.8, 1.9); negating A lands at (−1.5, −0.5). These numbers are illustrative.</p>
+<h3 class="rung">Try it: Figure 1 as a playground</h3>
+<div class="play" id="ws">
+  <div class="ui" style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;font-size:.85rem" role="group" aria-label="Operation">
+    <span>Operation:</span>
+    <button type="button" data-op="vec" aria-pressed="true">(a) task vector</button>
+    <button type="button" data-op="neg" aria-pressed="false">(b) negate</button>
+    <button type="button" data-op="add" aria-pressed="false">(c) add</button>
+    <button type="button" data-op="ana" aria-pressed="false">(d) analogy</button>
+  </div>
+  <div class="sliders ui" style="margin-top:.6rem"><label for="ws-lam">scaling λ</label><input type="range" id="ws-lam" min="0" max="1.5" step="0.05" value="1"><output id="ws-lam-v">1.00</output></div>
+  <svg id="ws-svg" viewBox="0 0 320 250" role="img" aria-label="A two-dimensional weight space with the pretrained model at the centre and task vectors drawn as arrows"></svg>
+  <p class="readout" id="ws-readout"></p>
+  <p class="readout"><em>Two weights and these vectors are illustrative; the operations are the paper's.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the two axes are two of the model's weights, and the ringed dot at the centre is the pretrained model. Arrows are task vectors; the solid purple arrow is the edit actually applied, and the filled dot at its tip is the edited model. <strong>(a)</strong> At λ = 1 the tip is exactly the fine-tuned model, and at λ = 0 it is the pretrained one: task vectors can only reproduce, interpolate or extrapolate a fine-tune, never invent a new one. <strong>(b)</strong> Negation points the arrow the other way: the model moves <em>away</em> from what the fine-tune learned. <strong>(c)</strong> Addition lays the two arrows end to end (the dashed parallelogram); the tip is one model meant to do both tasks. <strong>(d)</strong> The analogy starts from C and adds the step from A to B. Drag λ in each mode: it shrinks or stretches the whole edit, and the paper picks it on held-out data every time.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Once a fine-tune is an arrow, a library of fine-tunes becomes a set of parts. Publicly shared fine-tunes of the same base model can be combined by anyone, without the data they were trained on.</p>
+</section>
+
+<section id="s2">
+<h2>2 Task vectors <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S2">original</a></span></h2>
+<blockquote class="quote">“Note that adding a single task vector to a pre-trained model with λ = 1 results in the model fine-tuned on that task.”<cite>Ilharco et al. (2022), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A task vector is a diff: take the fine-tuned weights, subtract the weights you started from, and what is left is exactly what training changed. The paper defines a <em>task</em> as a dataset plus a loss function to fine-tune on.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The fine-tuning lesson's three-weight model: θ<sub>pre</sub> = (1, 0, 2), and after fine-tuning on A, θ<sub>ft</sub> = (1.5, 0, 2). The task vector is (0.5, 0, 0): only the first weight moved. Applying it at λ = 1 gives back (1.5, 0, 2); at λ = 0.5, (1.25, 0, 2); negated, (0.5, 0, 2).</p>
+<div class="eq" data-tex="\htmlData{sym=taut}{\tau_t} = \htmlData{sym=thetaft}{\theta_{\text{ft}}^{t}} - \htmlData{sym=thetapre}{\theta_{\text{pre}}}" data-fallback="τ_t = θ_ft^t − θ_pre"></div>
+<div class="symtable" data-syms="taut,thetaft,thetapre"></div>
+<p class="inwords"><strong>In words:</strong> “the task vector for task t is the fine-tuned weights minus the pretrained weights, one weight at a time.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1.5, 0, 2) − (1, 0, 2) = (0.5, 0, 0).</p>
+<div class="eq" data-tex="\htmlData{sym=thetanew}{\theta_{\text{new}}} = \htmlData{sym=theta}{\theta} + \htmlData{sym=lam}{\lambda}\,\htmlData{sym=tau}{\tau}" data-fallback="θ_new = θ + λ τ"></div>
+<div class="symtable" data-syms="thetanew,theta,lam,tau"></div>
+<p class="inwords"><strong>In words:</strong> “to edit a model, add λ times a task vector to its weights.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1, 0, 2) + 1 × (0.5, 0, 0) = (1.5, 0, 2), the fine-tuned model; λ = 0.5 gives (1.25, 0, 2), halfway between.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>theta_pre = [1.0, 0.0, 2.0]
+theta_ft = [1.5, 0.0, 2.0]
+# τ = θ_ft − θ_pre, weight by weight
+tau = [f - p for f, p in zip(theta_ft, theta_pre)]
+tau  # → [0.5, 0.0, 0.0]
+# θ_new = θ + λτ
+def apply(theta, tau, lam):
+    return [w + lam * t for w, t in zip(theta, tau)]
+apply(theta_pre, tau, 1.0), apply(theta_pre, tau, 0.5), apply(theta_pre, tau, -1.0)  # → ([1.5, 0.0, 2.0], [1.25, 0.0, 2.0], [0.5, 0.0, 2.0])</code></pre>
+<h3 class="rung">The three operations</h3>
+<p>Every edit in the paper builds a new vector τ<sub>new</sub> and applies it with θ<sub>new</sub> = θ + λτ<sub>new</sub>, with λ chosen on a held-out <span class="t" data-t="validation set">validation set</span>.</p>
+<div class="eq" data-tex="\underbrace{\htmlData{sym=taunew}{\tau_{\text{new}}} = -\htmlData{sym=tau}{\tau}}_{\text{negation}}\qquad \underbrace{\htmlData{sym=taunew}{\tau_{\text{new}}} = \htmlData{sym=sumi}{\sum_i} \htmlData{sym=taui}{\tau_i}}_{\text{addition}}\qquad \underbrace{\htmlData{sym=taunew}{\tau_{\text{new}}} = \htmlData{sym=tauC}{\tau_C} + (\htmlData{sym=tauB}{\tau_B} - \htmlData{sym=tauA}{\tau_A})}_{\text{analogy}}" data-fallback="negation: τ_new = −τ    addition: τ_new = Σ_i τ_i    analogy: τ_new = τ_C + (τ_B − τ_A)"></div>
+<div class="symtable" data-syms="taunew,sumi,taui,tauA,tauB,tauC"></div>
+<p class="inwords"><strong>In words:</strong> “to forget a task, subtract its vector; to combine tasks, add their vectors; to reach task D from an analogy, start at C's vector and add the step that takes A to B.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in the playground's two weights, τ<sub>A</sub> = (1.5, 0.5) and τ<sub>B</sub> = (0.3, 1.4): negation gives (−1.5, −0.5), addition gives (1.8, 1.9), and with τ<sub>C</sub> = (−0.6, −1.1), the analogy gives (−0.6, −1.1) + (−1.2, 0.9) = (−1.8, −0.2).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>tau_A, tau_B, tau_C = [1.5, 0.5], [0.3, 1.4], [-0.6, -1.1]
+# negation: τ_new = −τ_A
+[-t for t in tau_A]  # → [-1.5, -0.5]
+# addition: τ_new = Σ_i τ_i
+[round(a + b, 2) for a, b in zip(tau_A, tau_B)]  # → [1.8, 1.9]
+# analogy: τ_new = τ_C + (τ_B − τ_A)
+[round(c + (b - a), 2) for a, b, c in zip(tau_A, tau_B, tau_C)]  # → [-1.8, -0.2]</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>The whole method needs one condition: every model involved shares an architecture and starts from the <em>same</em> pretrained weights, so the diffs line up weight by weight. The paper also restricts itself to fine-tunes that add no new parameters (such as a new classification head); open-vocabulary image classifiers like <a href="clip.html">CLIP</a> and text-to-text models like T5 qualify. In the fine-tuning lesson, <a data-lesson="primer/ml/fine_tuning.html#task_vector"><code>task_vector</code></a> and <a data-lesson="primer/ml/fine_tuning.html#merge"><code>merge</code></a> are these two equations in NumPy.</p>
+</section>
+
+<section id="s3">
+<h2>3 Forgetting via negation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S3">original</a></span></h2>
+<blockquote class="quote">“Negating a task vector decreases performance on the target task, with little change in model behavior on control tasks.”<cite>Ilharco et al. (2022), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>If practising scales made you better at piano, walking the same distance in the opposite direction should make you worse at scales, and only at scales. Negation is that walk. The hard part is checking “only”: every experiment measures a <span class="t" data-tip-title="Control task" data-tip="In this paper, a task the edit is not supposed to touch, measured to make sure it stays intact: ImageNet for the image experiments, WikiText-103 perplexity for the text ones.">control task</span> the edit should leave alone.</p>
+<h3 class="rung">Tiny example: choosing λ</h3>
+<p>For images, the paper tries λ = 0, 0.05, 0.1, …, 1 and keeps the <em>largest</em> λ whose model still scores at least 95% of the pretrained model's control accuracy. Illustrative control accuracies at λ = 0, 0.25, 0.5, 0.75, 1: 75.5, 74.9, 73.8, 72.1, 70.2. The bar is 0.95 × 75.5 = 71.725, so λ = 0.75 is kept: the strongest forgetting the control can afford.</p>
+<div class="eq" data-tex="\htmlData{sym=lamstar}{\lambda^{\star}} = \max\big\{\htmlData{sym=lam}{\lambda} : \htmlData{sym=Actrl}{A_{\text{ctrl}}}(\htmlData{sym=lam}{\lambda}) \ge 0.95\,\htmlData{sym=Actrl}{A_{\text{ctrl}}}(0)\big\}" data-fallback="λ* = max { λ : A_ctrl(λ) ≥ 0.95 · A_ctrl(0) }"></div>
+<div class="symtable" data-syms="lamstar,Actrl"></div>
+<p class="inwords"><strong>In words:</strong> “push the negated vector as hard as you can, as long as the control task keeps at least 95% of its original accuracy.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 72.1 ≥ 71.725 at λ = 0.75, but 70.2 &lt; 71.725 at λ = 1, so λ* = 0.75.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>lams = [0, 0.25, 0.5, 0.75, 1.0]
+# illustrative control accuracy of θ_pre − λτ at each λ
+A_ctrl = [75.5, 74.9, 73.8, 72.1, 70.2]
+# the bar: 95% of the pretrained model's control accuracy
+bar = 0.95 * A_ctrl[0]
+round(bar, 3)  # → 71.725
+# λ* = the largest λ that clears the bar
+max(lam for lam, acc in zip(lams, A_ctrl) if acc &gt;= bar)  # → 0.75</code></pre>
+<h3 class="rung">The two baselines, decoded</h3>
+<p>Negation is compared with two other ways to make a model worse at a task. <strong>Gradient ascent</strong> fine-tunes to <em>raise</em> the loss instead of lowering it (<span class="t" data-t="gradient ascent">gradient ascent</span>). <strong>A random vector</strong> with the same size as the task vector, layer by layer, checks whether “moving the weights this far in any direction” would do the same damage.</p>
+<p>Tiny example for gradient ascent: two training examples where the model gives the right label probability 0.8 and 0.5. The ordinary <span class="t" data-t="cross-entropy">cross-entropy</span> loss is (−log 0.8 − log 0.5) / 2 = 0.458; gradient ascent minimises its negative, −0.458, which it can push towards minus infinity by driving those probabilities to zero.</p>
+<div class="eq" data-tex="\htmlData{sym=ell}{\ell} = \htmlData{sym=E}{\mathbb{E}}_{\htmlData{sym=xy}{x,y}\in\htmlData{sym=D}{\mathcal{D}}}\big[-\log \htmlData{sym=fxy}{f(x)_y}\big], \qquad \htmlData{sym=ellneg}{\ell_{\text{neg}}} = -\htmlData{sym=ell}{\ell}" data-fallback="ℓ = E_(x,y ∈ D) [ −log f(x)_y ],   ℓ_neg = −ℓ"></div>
+<div class="symtable" data-syms="ell,E,xy,D,fxy,ellneg"></div>
+<p class="inwords"><strong>In words:</strong> “the usual loss is the average surprise at the right label; gradient ascent minimises minus that, so it rewards the model for being as wrong as possible.”</p>
+<p class="inwords"><strong>With the numbers:</strong> ℓ = (0.223 + 0.693) / 2 = 0.458 and ℓ<sub>neg</sub> = −0.458. Nothing stops ℓ<sub>neg</sub> falling forever, which is why gradient ascent wrecks everything else too.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# f(x)_y: probability of the right label on two examples
+f_xy = [0.8, 0.5]
+# ℓ = average of −log f(x)_y
+ell = sum(-math.log(p) for p in f_xy) / len(f_xy)
+round(ell, 3), round(-ell, 3)  # → (0.458, -0.458)
+# as the right-label probability falls, −log grows without limit
+[round(-math.log(p), 1) for p in (0.1, 0.001, 1e-9)]  # → [2.3, 6.9, 20.7]</code></pre>
+<p>Tiny example for the random vector: if one layer's task vector is (3, 4), its length is 5. Draw a random vector, say (1, −2), with length 2.236, and stretch it by 5 / 2.236: (2.236, −4.472), whose length is 5 too. Same size, random direction.</p>
+<div class="eq" data-tex="\htmlData{sym=tauscaled}{\tau^{(L)}_{\text{scaled}}} = \htmlData{sym=taurand}{\tau^{(L)}_{\text{rand}}}\,\frac{\htmlData{sym=normtau}{\lVert\tau^{(L)}\rVert}}{\htmlData{sym=normrand}{\lVert\tau^{(L)}_{\text{rand}}\rVert}}" data-fallback="τ_scaled^(L) = τ_rand^(L) · ‖τ^(L)‖ / ‖τ_rand^(L)‖"></div>
+<div class="symtable" data-syms="tauscaled,taurand,normtau,normrand"></div>
+<p class="inwords"><strong>In words:</strong> “for each layer, draw a random direction and rescale it to exactly the length of the real task vector's piece for that layer.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1, −2) × 5 / 2.236 = (2.236, −4.472), length 5.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def norm(v):
+    return math.sqrt(sum(x * x for x in v))
+tau_L = [3.0, 4.0]
+tau_rand = [1.0, -2.0]
+# ‖τ^(L)‖ and ‖τ_rand^(L)‖
+norm(tau_L), round(norm(tau_rand), 3)  # → (5.0, 2.236)
+# τ_scaled = τ_rand · ‖τ‖ / ‖τ_rand‖
+tau_scaled = [x * norm(tau_L) / norm(tau_rand) for x in tau_rand]
+[round(x, 3) for x in tau_scaled], round(norm(tau_scaled), 3)  # → ([2.236, -4.472], 5.0)</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>The two baselines turn a curiosity into evidence. If any large change hurt the task, the random vector would too; it doesn't. If “make the task worse” were the whole job, gradient ascent would win; it destroys the control. Only the task vector's direction carries the task.</p>
+</section>
+
+<section id="s3-1">
+<h3>3.1 Image classification <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S3.SS1">original</a></span></h3>
+<h4>The setup</h4>
+<p>Three <a href="clip.html">CLIP</a> models (<a href="vit.html">vision transformers</a> ViT-B/32, ViT-B/16 and ViT-L/14) are fine-tuned on eight image tasks, from satellite images (EuroSAT, RESISC45) to traffic signs (GTSRB), digits (MNIST, SVHN), textures (DTD), cars and scenes (SUN397). The control is <span class="t" data-t="imagenet">ImageNet</span>. Each fine-tune runs 2,000 steps with <span class="t" data-t="adamw">AdamW</span> at learning rate 10<sup>−5</sup>, with CLIP's text-derived classification layer frozen so no new parameters appear.</p>
+<div class="plot">
+  <div class="legend" style="margin:0 0 .4rem"><span><i class="sq" style="background:var(--ff-stroke);width:12px;height:12px;border-radius:2px"></i>target tasks (lower is better forgetting)</span><span><i class="hatch" style="background:var(--hatch) var(--soft-stroke)"></i>control, ImageNet (striped; higher is better)</span> · axis 0 to 100%</div>
+  <div id="neg-bars" aria-label="Average target and control accuracy for five editing methods on CLIP ViT-L/14"></div>
+</div>
+<p class="reading"><strong>Reading it:</strong> Table 1 of the paper for the largest model, ViT-L/14, as bars. For each method, the solid bar is the average accuracy on the eight tasks we want forgotten, and the striped bar is ImageNet accuracy, which we want kept. Good forgetting is a short solid bar next to a long striped one. The fine-tuned model is the opposite of what we want (94.0 target). Gradient ascent empties both bars (3.93 and 16.3). The random vector barely changes anything (60.9 and 72.9). The negative task vector drops the target to 19.0, down 45.8 points from the pretrained 64.8, while ImageNet falls only from 75.5 to 72.9.</p>
+<h4>What the appendix adds</h4>
+<p>Forgetting works best when the fine-tune had helped the most: across tasks, the gain from fine-tuning and the drop from negation are positively correlated. It is weakest on Cars and SUN397, whose images resemble ImageNet's, though removing overlapping ImageNet classes barely changed that. It also works on reading text in images (<span class="t" data-t="ocr">OCR</span>), and less well on recognising celebrities, where fine-tuning itself gained little.</p>
+<h4>Why it matters today</h4>
+<p>Negation is a cheap first tool for removing a capability that a fine-tune can isolate. It is also a warning: the edit is only as clean as the control you measured, so a negation must be checked on everything you care about, not just the task you removed.</p>
+</section>
+
+<section id="s3-2">
+<h3>3.2 Text generation <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S3.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Teach a model to be rude on purpose, then point that lesson backwards. The paper fine-tunes GPT-2 Large on the most toxic comments from Civil Comments (toxicity score above 0.8), negates the task vector, and asks whether the result is <em>less</em> toxic than the model it started from.</p>
+<h4>Tiny example: reading the table</h4>
+<p>Toxicity is measured on 1,000 generations prompted with “I don't care if this is controversial”; fluency is <span class="t" data-t="perplexity">perplexity</span> on WikiText-103 (lower is better). λ is the largest value keeping perplexity within 0.5 of the pretrained model's. 4.8% toxic before, 0.8% after: a sixfold drop, with perplexity moving from 16.4 to 16.9.</p>
+<div class="tablewrap"><table>
+  <caption>Table 2 of the paper: GPT-2 Large (Ilharco et al. 2022, CC BY 4.0)</caption>
+  <thead><tr><th>Method</th><th class="num">% toxic generations ↓</th><th class="num">Avg. toxicity score ↓</th><th class="num">WikiText-103 perplexity ↓</th></tr></thead>
+  <tbody>
+    <tr><td>Pretrained</td><td class="num">4.8</td><td class="num">0.06</td><td class="num">16.4</td></tr>
+    <tr><td>Fine-tuned (on toxic text)</td><td class="num">57</td><td class="num">0.56</td><td class="num">16.6</td></tr>
+    <tr><td>Gradient ascent</td><td class="num">0.0</td><td class="num">0.45</td><td class="num">&gt; 10<sup>10</sup></td></tr>
+    <tr><td>Fine-tuned on non-toxic text</td><td class="num">1.8</td><td class="num">0.03</td><td class="num">17.2</td></tr>
+    <tr><td>Random vector</td><td class="num">4.8</td><td class="num">0.06</td><td class="num">16.4</td></tr>
+    <tr class="hl"><td>Negative task vector</td><td class="num">0.8</td><td class="num">0.01</td><td class="num">16.9</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> read the table in pairs of columns: toxicity (left two) and fluency (right). Gradient ascent “wins” on toxic generations with 0.0%, but its perplexity above ten billion means it no longer produces language at all. The obvious alternative, fine-tuning on polite comments, is worse than negation on both counts (1.8% toxic, perplexity 17.2). The highlighted row is the only one low on both.</p>
+<h4>Why it matters today</h4>
+<p>This is the result people remember: learn a behaviour you do <em>not</em> want, then subtract it. The same idea, finding the direction of an unwanted behaviour and removing it, reappears in later work on steering models. The paper notes it works better for larger models, and that for prompts designed to provoke toxicity there is still much room to improve.</p>
+</section>
+
+<section id="s4">
+<h2>4 Learning via addition <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Two specialists each learned one trade in their own workshop. Instead of hiring both, you merge their notebooks into one person's head. It works if their notes are about different things; if both scribbled over the same page, the merge is a mess.</p>
+<h3 class="rung">Tiny example: normalized accuracy</h3>
+<p>Tasks differ in difficulty, so the paper divides each task's accuracy by what that task's own fine-tuned model scores. Illustrative: a merged model scores 91% on task 1, whose specialist scores 95%, and 88% on task 2, whose specialist scores 89%. Normalized, that is 0.958 and 0.989, averaging 0.973: the one merged model keeps 97.3% of what two specialists would give.</p>
+<div class="eq" data-tex="\htmlData{sym=anorm}{a_{\text{norm}}} = \frac{\htmlData{sym=aedit}{a_{\text{edited}}}}{\htmlData{sym=aft}{a_{\text{ft}}}}" data-fallback="a_norm = a_edited / a_ft"></div>
+<div class="symtable" data-syms="anorm,aedit,aft"></div>
+<p class="inwords"><strong>In words:</strong> “score the edited model on a task as a fraction of what that task's own specialist scores, so 1 means as good as the specialist.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 91 / 95 = 0.958 and 88 / 89 = 0.989; the average is 0.973.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># illustrative (a_edited, a_ft) for two tasks
+scores = [(91, 95), (88, 89)]
+# a_norm = a_edited / a_ft
+a_norm = [a_edited / a_ft for a_edited, a_ft in scores]
+[round(a, 3) for a in a_norm]  # → [0.958, 0.989]
+round(sum(a_norm) / len(a_norm), 3)  # → 0.973</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>Normalizing makes “1.0” mean “as good as keeping every specialist”, so every addition result below is a direct answer to: how much do you lose by collapsing several models into one?</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Image classification <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S4.SS1">original</a></span></h3>
+<h4>What happens</h4>
+<p>Adding every <em>pair</em> of the eight task vectors gives single models that average 98.9% normalized accuracy on their two tasks, far above the pretrained model. Then the paper adds every <em>subset</em> of the eight, 2<sup>8</sup> = 256 of them, one scaling coefficient λ per experiment, and scores each on all eight tasks.</p>
+<div class="plot">
+  <div id="sub-chart"></div>
+  <p class="readout" id="sub-readout">Hover or tap to read the average normalized accuracy for each number of task vectors.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> Figure 3 of the paper, redrawn as its average line. The x-axis is how many task vectors are added; the y-axis is normalized accuracy averaged over all eight tasks, where 1.0 would match keeping eight specialists. With none (the pretrained model) the average is about 0.69; each extra vector lifts it, to about 0.90 with all eight. The paper's plot also shows a dot for every subset, spread around this line; the best of all, 91.2%, is a subset rather than all eight together, and an appendix notes that the best multi-task model often does not use every task vector. The line's values are read off the paper's plot (it prints only 91.2%), so they are approximate.</p>
+<h4>What the appendix adds</h4>
+<ul>
+  <li><strong>λ matters and varies.</strong> The best coefficient for a sum ranges widely between experiments; values from 0.3 to 0.5 are near-optimal in many cases. Changing λ needs no retraining, only evaluation.</li>
+  <li><strong>Training jointly is still better.</strong> One model fine-tuned on all eight tasks at once reaches 0.994 normalized, against 0.912 for the best task-vector sum. The trade is flexibility: adding a task to a joint model means training again.</li>
+  <li><strong>Random seeds barely matter</strong> for these image tasks, and adding an ImageNet task vector to any of the eight gives a model good at both.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>This is the result behind “merge instead of retrain”. The fine-tuning lesson reproduces both halves in miniature: two fine-tunes whose task vectors are nearly perpendicular merge into a model scoring 0.97 on both tasks at λ = 1, while two that contradict each other cannot be merged at any λ (see <a data-lesson="primer/ml/fine_tuning.html#merge_run"><code>merge_run</code></a>).</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Natural language processing <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Here addition is used not to build a generalist but to improve a specialist: borrow a neighbour's notebook and see whether it helps with your own task.</p>
+<h4>Tiny example</h4>
+<p>T5-base models are fine-tuned on four GLUE text-classification tasks. The authors then searched the Hugging Face Hub for other T5-base fine-tunes, found 427 compatible checkpoints, tried adding each one's task vector to their fine-tuned model, and kept the best checkpoint and λ on held-out data.</p>
+<div class="tablewrap"><table>
+  <caption>Table 3 of the paper (Ilharco et al. 2022, CC BY 4.0)</caption>
+  <thead><tr><th>Method</th><th class="num">MRPC</th><th class="num">RTE</th><th class="num">CoLA</th><th class="num">SST-2</th><th class="num">Average</th></tr></thead>
+  <tbody>
+    <tr><td>Zero-shot</td><td class="num">74.8</td><td class="num">52.7</td><td class="num">8.29</td><td class="num">92.7</td><td class="num">57.1</td></tr>
+    <tr><td>Fine-tuned</td><td class="num">88.5</td><td class="num">77.3</td><td class="num">52.3</td><td class="num">94.5</td><td class="num">78.1</td></tr>
+    <tr class="hl"><td>Fine-tuned + task vectors</td><td class="num">89.3</td><td class="num">77.5</td><td class="num">53.0</td><td class="num">94.7</td><td class="num">78.6</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> each column is one task (CoLA is scored by a correlation, the others by accuracy or an accuracy-like score). The highlighted row beats plain fine-tuning on all four, by 0.2 to 0.8 points, 0.5 on average: small but free, since it costs a search and no training. An appendix adds that pairs of six popular public T5 fine-tunes (sentiment, question answering, summarisation and more) merge into single models keeping 96.7% of the specialists' normalized performance on average.</p>
+<h4>Why it matters today</h4>
+<p>This is the first hint of a practice now common with open models: download fine-tunes other people made from the same base, and combine them, without ever seeing their training data.</p>
+</section>
+
+<section id="s5">
+<h2>5 Task analogies <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S5">original</a></span></h2>
+<blockquote class="quote">“When tasks are linked by an analogy relationship of the form ‘A is to B as C is to D’, combining task vectors from three of the tasks can improve performance on the fourth, even when no data from the fourth task is used for training.”<cite>Ilharco et al. (2022), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>You know how a British speaker's sentence changes when an American says it, and you know the British way to ask for directions. Then you can guess the American way to ask for directions without ever hearing it. <a href="word2vec.html">Word vectors</a> famously did this with words (king − man + woman ≈ queen); this paper does it with whole tasks.</p>
+<h3 class="rung">Tiny example: kings from queens</h3>
+<p>Illustrative three-weight task vectors, one weight each for “royal”, “female” and “male”: τ<sub>queen</sub> = (1, 1, 0), τ<sub>woman</sub> = (0, 1, 0), τ<sub>man</sub> = (0, 0, 1). The analogy τ<sub>king</sub> ≈ τ<sub>queen</sub> + (τ<sub>man</sub> − τ<sub>woman</sub>) = (1, 0, 1): royal and male. The paper ran this for real: CLIP models learned a new class named “something” from 50 web images each of queens, kings, men and women, and for every category the other three built its vector. With ViT-L/14, accuracy on each target went from 0 to 100% for queens, kings and women and 96% for men, with ImageNet slipping from 75.5 to about 74.6.</p>
+<div class="eq" data-tex="\htmlData{sym=tauhatD}{\hat{\tau}_D} = \htmlData{sym=tauC}{\tau_C} + (\htmlData{sym=tauB}{\tau_B} - \htmlData{sym=tauA}{\tau_A})" data-fallback="τ̂_D = τ_C + (τ_B − τ_A)"></div>
+<div class="symtable" data-syms="tauhatD,tauA,tauB,tauC"></div>
+<p class="inwords"><strong>In words:</strong> “estimate D's task vector by starting from C's and adding the step that turns A into B.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1, 1, 0) + ((0, 0, 1) − (0, 1, 0)) = (1, 0, 1).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># illustrative weights: (royal, female, male)
+tau_queen, tau_woman, tau_man = [1, 1, 0], [0, 1, 0], [0, 0, 1]
+# τ̂_king = τ_queen + (τ_man − τ_woman): A = woman, B = man, C = queen
+[c + (b - a) for a, b, c in zip(tau_woman, tau_man, tau_queen)]  # → [1, 0, 1]</code></pre>
+<h3 class="rung">Two real uses</h3>
+<p><strong>Domain generalization.</strong> To classify the sentiment of Yelp reviews with no labelled Yelp data, take a sentiment task vector learned on labelled Amazon reviews, and add the difference between plain language-model fine-tunes on Yelp text and on Amazon text: τ̂<sub>yelp; sent</sub> = τ<sub>amazon; sent</sub> + (τ<sub>yelp; lm</sub> − τ<sub>amazon; lm</sub>). Unlabelled text is cheap; labels are not. For T5-small, the analogy lifts Yelp accuracy from 88.6 (fine-tuned on Amazon alone) to 89.9, against 91.1 for a model fine-tuned on labelled Yelp data: it closes (89.9 − 88.6) / (91.1 − 88.6) = 0.52, about half the gap, with no Yelp labels.</p>
+<p><strong>Rare subpopulations.</strong> Photos and sketches of 125 classes shared by ImageNet and a sketch dataset, split into four groups (think “real dog”, “real lion”, “sketch dog”, “sketch lion”). Averaged over the four targets and three CLIP models, the analogy adds 3.4 percentage points over the pretrained model with no target data, about what collecting and labelling roughly a hundred target examples would buy.</p>
+<h3 class="rung">One λ or three?</h3>
+<p>The paper normally scales the whole combined vector by one λ. An appendix tries a separate coefficient for each vector, which helped by 0.7 points on average, with best values around λ<sub>B</sub> = λ<sub>C</sub> = 0.32 and λ<sub>A</sub> = 0.28, but multiplied the search.</p>
+<div class="eq" data-tex="\htmlData{sym=thetanew}{\theta_{\text{new}}} = \htmlData{sym=theta}{\theta} + \htmlData{sym=lamC}{\lambda_C}\htmlData{sym=tauC}{\tau_C} + \htmlData{sym=lamB}{\lambda_B}\htmlData{sym=tauB}{\tau_B} - \htmlData{sym=lamA}{\lambda_A}\htmlData{sym=tauA}{\tau_A}" data-fallback="θ_new = θ + λ_C τ_C + λ_B τ_B − λ_A τ_A"></div>
+<div class="symtable" data-syms="lamA,lamB,lamC"></div>
+<p class="inwords"><strong>In words:</strong> “give each of the three task vectors its own strength, instead of one strength for the whole analogy.”</p>
+<p class="inwords"><strong>With the numbers:</strong> each λ takes 11 values (0, 0.1, …, 1), so one shared λ means 11 evaluations and three separate ones mean 11<sup>3</sup> = 1,331. The paper rounds these to 10 and 10<sup>3</sup>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>grid = [round(0.1 * k, 1) for k in range(11)]
+len(grid)  # → 11
+# every combination of λ_A, λ_B, λ_C
+len([(a, b, c) for a in grid for b in grid for c in grid])  # → 1331</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>Analogies are the most surprising result in the paper, and the least used in practice. What survived is the idea behind them: the difference between two fine-tunes can isolate one factor (a domain, a style, a subgroup), and that difference can be moved to a model that never saw the data.</p>
+</section>
+
+<section id="s6">
+<h2>6 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S6">original</a></span></h2>
+<blockquote class="quote">“We observe that vectors from different tasks are typically close to orthogonal, and speculate that this enables the combination of task vectors via addition with minimal interference.”<cite>Ilharco et al. (2022), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two people pushing a heavy crate at right angles do not cancel each other: each gets their push in. Two people pushing along the same line either help or fight. Task vectors that are <span class="t" data-t="orthogonal">orthogonal</span> (at right angles) are the first case, which is why adding them mostly works.</p>
+<h3 class="rung">Tiny example: the cosine</h3>
+<p>The <span class="t" data-t="cosine similarity">cosine similarity</span> measures the angle between two vectors: 1 for the same direction, 0 for right angles, −1 for opposite. For (3, 4, 0) and (0, 4, 3): the <span class="t" data-t="dot product">dot product</span> is 0 + 16 + 0 = 16, both lengths are 5, so the cosine is 16 / 25 = 0.64. In very high dimensions, unrelated directions are almost always nearly perpendicular: two random 10,000-number vectors have a cosine within a few hundredths of zero (about 1/√10,000 = 0.01 is typical).</p>
+<div class="eq" data-tex="\htmlData{sym=cos}{\cos}(\htmlData{sym=tau1}{\tau_1}, \htmlData{sym=tau2}{\tau_2}) = \frac{\htmlData{sym=dot}{\tau_1 \cdot \tau_2}}{\htmlData{sym=norms}{\lVert\tau_1\rVert\,\lVert\tau_2\rVert}}" data-fallback="cos(τ_1, τ_2) = (τ_1 · τ_2) / (‖τ_1‖ ‖τ_2‖)"></div>
+<div class="symtable" data-syms="cos,tau1,tau2,dot,norms"></div>
+<p class="inwords"><strong>In words:</strong> “multiply the two task vectors weight by weight and add, then divide by both lengths, so only their directions count.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 16 / (5 × 5) = 0.64 for the small pair; about −0.0007 for one random pair of 10,000-weight vectors.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+import random
+def cos(u, v):
+    dot = sum(a * b for a, b in zip(u, v))
+    return dot / (math.sqrt(sum(a * a for a in u)) * math.sqrt(sum(b * b for b in v)))
+cos([3, 4, 0], [0, 4, 3])  # → 0.64
+# two random directions in 10,000 dimensions
+random.seed(0)
+d = 10_000
+u = [random.gauss(0, 1) for _ in range(d)]
+v = [random.gauss(0, 1) for _ in range(d)]
+round(cos(u, v), 4)  # → -0.0007</code></pre>
+<div class="tablewrap">
+<table class="heat" id="cos-table">
+  <caption>Figure 5 of the paper: cosine similarity between CLIP task vectors (Ilharco et al. 2022, CC BY 4.0)</caption>
+</table>
+</div>
+<p class="reading"><strong>Reading it:</strong> Figure 5 of the paper, as a table: each cell is the cosine between two tasks' vectors, and the shading deepens with the value. (Labels are shortened: Euro is EuroSAT, RES45 is RESISC45, SUN is SUN397.) The diagonal is 1.00 (each vector with itself). Almost every other cell is 0.01 or 0.02: nearly perpendicular. The exceptions are the tasks you would expect to share skills: MNIST and SVHN (both digit recognition) at 0.18, GTSRB (traffic signs, which contain digits) at 0.06 with each of them, and the two satellite-image tasks, EuroSAT and RESISC45, at 0.05. The figure includes a ninth task, KITTI, that is not among the eight used elsewhere in the paper.</p>
+<h3 class="rung">Learning rate and training time</h3>
+<ul>
+  <li><strong>Learning rate.</strong> Adding the MNIST and EuroSAT vectors from ViT-L/14 works best when each fine-tune used a low <span class="t" data-t="learning rate">learning rate</span>. As the rate rises, the added model's accuracy falls earlier and faster than the fine-tuned models' own accuracy. The paper recommends extra caution with large learning rates when you plan to combine task vectors.</li>
+  <li><strong>Training time.</strong> Intermediate task vectors quickly point in nearly the same direction as the final one, and adding intermediate MNIST and EuroSAT vectors reaches high accuracy after only a few hundred of the 2,000 steps, so task vectors can be built cheaply.</li>
+</ul>
+<h3 class="rung">Limitations</h3>
+<p>Task vectors need the same architecture and, in all the paper's experiments, the same pretrained starting point. The authors note that popular bases make this common: at the time of writing, over 3,000 Hub models were fine-tuned from the same BERT-base weights and over 800 from the same T5-small.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>Measure before you merge. The fine-tuning lesson turns this section into a rule of thumb: compute the cosine between task vectors with <a data-lesson="primer/ml/fine_tuning.html#cosine"><code>cosine</code></a>; near zero, add them; clearly negative, expect interference, as its contradicting tasks show at a cosine of −0.25.</p>
+</section>
+
+<section id="s7">
+<h2>7 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S7">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Before this paper, people had noticed that the straight road between a pretrained model and its fine-tune is smooth: every model along it is good. Task arithmetic drives off the end of that road (extrapolation, negation) and joins several roads together (addition, analogies).</p>
+<h3 class="rung">The threads it ties together</h3>
+<ul>
+  <li><strong>Interpolating weights.</strong> Averaging models fine-tuned from the same start keeps, and can raise, accuracy; averaging several fine-tunes of one task, <span class="t" data-tip-title="Model soups" data-tip="Averaging the weights of several models fine-tuned from the same pretrained model, often with different hyperparameters, into one model that is frequently better than any single one.">model soups</span>, often beats the best single one. Task arithmetic generalises averaging to adding, subtracting and scaling.</li>
+  <li><strong>Editing models.</strong> Patching, editing, aligning and debugging all change a model after pretraining. Here the changes are modular: capabilities are added or removed by reusing fine-tuned models.</li>
+  <li><strong>Steering hidden states.</strong> Earlier work added vectors to a model's hidden activations; task vectors live in the weights instead, and leave the fine-tuning procedure unchanged.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Knowing which thread an idea came from tells you what it assumes. Every method in this family leans on the same fact: models fine-tuned from one start stay in one connected, well-behaved region of weight space.</p>
+</section>
+
+<section id="s8">
+<h2>8 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#S8">original</a></span></h2>
+<p>Adding task vectors builds multi-task models or improves single tasks; negating them removes behaviours such as toxic generation while keeping performance elsewhere; analogies carry knowledge to domains or groups with little data. Every operation is addition or subtraction of weights, cheap enough to try many edits, and the result is a single model of the original size, so inference costs nothing extra.</p>
+</section>
+
+<section id="appa">
+<h2>Appendix A: weight averaging and ensembles <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2212.04089#A1">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Two ways to combine two advisers: ask both and average their <em>advice</em> (an <span class="t" data-t="ensemble">ensemble</span>), or merge them into one person who thinks the average <em>thoughts</em> (averaging weights). If the advisers think in a straight-line way, the two give the same answer. The appendix argues fine-tuned models are close enough to straight-line that the merge behaves like the ensemble, at half the cost.</p>
+<h3 class="rung">Tiny example: adding two task vectors at λ = ½ is averaging</h3>
+<p>With the fine-tuning lesson's three-weight models, θ<sub>pre</sub> = (1, 0, 2), θ<sub>1</sub> = (1.5, 0, 2), θ<sub>2</sub> = (1, −1, 2): θ<sub>pre</sub> + ½(τ<sub>1</sub> + τ<sub>2</sub>) = (1.25, −0.5, 2), exactly the plain average of the two fine-tunes.</p>
+<div class="eq" data-tex="\htmlData{sym=thetapre}{\theta_{\text{pre}}} + \tfrac12\big(\htmlData{sym=tau1}{\tau_1} + \htmlData{sym=tau2}{\tau_2}\big) = \tfrac12\big(\htmlData{sym=theta1}{\theta_1} + \htmlData{sym=theta2}{\theta_2}\big)" data-fallback="θ_pre + ½(τ_1 + τ_2) = ½(θ_1 + θ_2)"></div>
+<div class="symtable" data-syms="theta1,theta2"></div>
+<p class="inwords"><strong>In words:</strong> “half of each change, applied to the start, lands exactly on the midpoint of the two fine-tuned models.”</p>
+<p class="inwords"><strong>With the numbers:</strong> (1, 0, 2) + ½((0.5, 0, 0) + (0, −1, 0)) = (1.25, −0.5, 2) = ½((1.5, 0, 2) + (1, −1, 2)).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>theta_pre = [1.0, 0.0, 2.0]
+theta_1, theta_2 = [1.5, 0.0, 2.0], [1.0, -1.0, 2.0]
+tau_1 = [a - p for a, p in zip(theta_1, theta_pre)]
+tau_2 = [b - p for b, p in zip(theta_2, theta_pre)]
+# left side: θ_pre + ½(τ_1 + τ_2)
+[p + 0.5 * (a + b) for p, a, b in zip(theta_pre, tau_1, tau_2)]  # → [1.25, -0.5, 2.0]
+# right side: ½(θ_1 + θ_2)
+[0.5 * (a + b) for a, b in zip(theta_1, theta_2)]  # → [1.25, -0.5, 2.0]</code></pre>
+<h3 class="rung">Ensemble or average?</h3>
+<p>An ensemble runs both models and mixes their outputs: (1 − α)f<sub>θ<sub>1</sub></sub>(x) + α f<sub>θ<sub>2</sub></sub>(x). Averaging weights runs one model at the mixed weights. For a model f<sub>θ</sub>(x) = tanh(θx) with x = 1 (illustrative), weights 0.2 and 0.4 give an ensemble output of 0.2887 and an averaged-weights output of tanh(0.3) = 0.2913: nearly equal. Weights 1 and 3 give 0.8783 against tanh(2) = 0.9640: clearly different. The closer together the weights, the more the model behaves like a straight line between them, and the better the average imitates the ensemble.</p>
+<div class="eq" data-tex="\text{ensemble} = (1-\htmlData{sym=alpha}{\alpha})\,\htmlData{sym=f1}{f_{\theta_1}(x)} + \htmlData{sym=alpha}{\alpha}\,\htmlData{sym=f2}{f_{\theta_2}(x)} \qquad \text{average} = \htmlData{sym=favg}{f_{(1-\alpha)\theta_1 + \alpha\theta_2}(x)}" data-fallback="ensemble = (1 − α) f_θ1(x) + α f_θ2(x);  average = f_((1−α)θ1 + αθ2)(x)"></div>
+<div class="symtable" data-syms="alpha,f1,f2,favg"></div>
+<p class="inwords"><strong>In words:</strong> “an ensemble mixes the two models' outputs; averaging mixes their weights and runs once. They agree whenever the model is close to linear between the two weight settings.”</p>
+<p class="inwords"><strong>With the numbers:</strong> α = ½: (tanh 0.2 + tanh 0.4) / 2 = 0.2887 against tanh 0.3 = 0.2913; (tanh 1 + tanh 3) / 2 = 0.8783 against tanh 2 = 0.9640.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+alpha, x = 0.5, 1.0
+def f(theta):
+    return math.tanh(theta * x)
+for theta_1, theta_2 in [(0.2, 0.4), (1.0, 3.0)]:
+    ensemble = (1 - alpha) * f(theta_1) + alpha * f(theta_2)
+    average = f((1 - alpha) * theta_1 + alpha * theta_2)
+    print(round(ensemble, 4), round(average, 4))  # → 0.2887 0.2913 0.8783 0.964</code></pre>
+<div class="plot">
+  <div id="ens-chart"></div>
+  <p class="readout" id="ens-readout">Hover or tap to compare the two outputs at each spread.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> computed live for the illustrative model f<sub>θ</sub>(x) = tanh(θx) at x = 1, with the two weights placed symmetrically around 1: θ<sub>1</sub> = 1 − spread and θ<sub>2</sub> = 1 + spread. The x-axis is the spread; the y-axis is the output. The merge (averaging weights) always runs the model at weight 1, so its line is flat at tanh(1) = 0.762. At spread 0 the two models are identical and the lines meet. As the weights move apart, the ensemble (averaging outputs) falls away from the merge, because tanh curves: by spread 2 it is down to 0.117. Fine-tunes of one pretrained model sit close together, the left end of this chart, which is why the paper's measurements find adding two task vectors tracks the corresponding ensemble closely (a Pearson correlation of 0.99 across pairs, with the ensemble slightly ahead on average).</p>
+<h3 class="rung">Why it matters today</h3>
+<p>An ensemble of two models costs two forward passes; a merged model costs one. When the merge nearly matches the ensemble, as it does here, merging is the cheaper way to get almost all of the benefit. The <a href="distillation.html">distillation companion</a> shows the other classic way to squeeze an ensemble into one model: train a student to copy it.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2022</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where to learn more</th></tr></thead>
+  <tbody>
+    <tr><td>Add full task vectors, one λ for the sum</td><td>Conflict-aware merges such as TIES-merging trim small changes and pick one sign per weight before adding</td><td>Task vectors that overlap or disagree interfere; resolving conflicts first reduces the damage</td><td><a data-lesson="primer/ml/fine_tuning.html">fine-tuning lesson, §5b</a></td></tr>
+    <tr><td>Task vectors from full fine-tunes</td><td>Adapters: a LoRA update BA is itself a small, low-rank task vector added to the base weights</td><td>Adapters are cheap to train, store and swap, and merging them is the same arithmetic</td><td><a href="lora.html">LoRA companion</a></td></tr>
+    <tr><td>CLIP and T5 models</td><td>Merging fine-tunes of open language models that share a base, with dedicated open-source tools</td><td>Many fine-tunes of the same popular base are published, as the paper anticipated</td><td><a data-lesson="primer/ml/fine_tuning.html#merge"><code>merge</code></a></td></tr>
+    <tr><td>Negating a toxic task vector</td><td>Removing a behaviour by finding its direction, in weights or in activations</td><td>Cheaper than retraining, and testable against a control</td><td><a href="instructgpt.html">InstructGPT companion</a> for the training-based alternative</td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Gabriel Ilharco, Marco Tulio Ribeiro, Mitchell Wortsman, Suchin Gururangan, Ludwig Schmidt, Hannaneh Hajishirzi and Ali Farhadi, <em>Editing Models with Task Arithmetic</em>, ICLR 2023. <a href="https://arxiv.org/abs/2212.04089">arXiv:2212.04089</a>, released under CC BY 4.0. Quotations are brief and attributed; table rows and numbers are reproduced with attribution, and values read off plots are marked as approximate. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    taut: { tex: "\\tau_t", name: "Task vector for task t", meaning: "Everything fine-tuning on task t changed: one number per weight of the model.", shape: "d numbers, one per weight", example: "(0.5, 0, 0)" },
+    thetaft: { tex: "\\theta_{\\text{ft}}^{t}", name: "Fine-tuned weights", meaning: "All the model's weights after fine-tuning on task t.", shape: "d numbers", example: "(1.5, 0, 2)" },
+    thetapre: { tex: "\\theta_{\\text{pre}}", name: "Pretrained weights", meaning: "The weights every fine-tune started from. They must be shared for task vectors to line up.", shape: "d numbers", example: "(1, 0, 2)" },
+    thetanew: { tex: "\\theta_{\\text{new}}", name: "Edited weights", meaning: "The weights of the model after the edit. Same size as the original, so it runs at the same cost.", shape: "d numbers", example: "(1.5, 0, 2) at λ = 1" },
+    theta: { tex: "\\theta", name: "Weights being edited", meaning: "The model the task vector is applied to; usually the pretrained model.", shape: "d numbers", example: "(1, 0, 2)" },
+    lam: { tex: "\\lambda", name: "Scaling coefficient", meaning: "How strongly to apply the vector. 1 applies it in full, 0 not at all; the paper picks it on held-out data.", shape: "a number, usually 0 to 1", example: "1, or 0.5" },
+    tau: { tex: "\\tau", name: "A task vector", meaning: "A task vector when the task is clear from context.", shape: "d numbers", example: "(0.5, 0, 0)" },
+    taunew: { tex: "\\tau_{\\text{new}}", name: "The combined vector", meaning: "The vector an edit actually applies: a negated, summed or analogy-built combination of task vectors.", shape: "d numbers", example: "(1.8, 1.9) for addition" },
+    sumi: { tex: "\\sum_i", name: "Sum over tasks", meaning: "Add up the task vectors of every task being combined, weight by weight.", shape: "an operation", example: "(1.5, 0.5) + (0.3, 1.4)" },
+    taui: { tex: "\\tau_i", name: "Task vector i", meaning: "One of the task vectors being added.", shape: "d numbers", example: "(1.5, 0.5)" },
+    tauA: { tex: "\\tau_A", name: "Task vector A", meaning: "In an analogy “A is to B as C is to D”, the vector of task A, the starting point of the known step.", shape: "d numbers", example: "τ_woman = (0, 1, 0)" },
+    tauB: { tex: "\\tau_B", name: "Task vector B", meaning: "The vector of task B, the end of the known step A → B.", shape: "d numbers", example: "τ_man = (0, 0, 1)" },
+    tauC: { tex: "\\tau_C", name: "Task vector C", meaning: "The vector of task C, the one the step is applied to.", shape: "d numbers", example: "τ_queen = (1, 1, 0)" },
+    tauhatD: { tex: "\\hat{\\tau}_D", name: "Estimated task vector for D", meaning: "The vector built for the target task D without training on it. The hat marks an estimate.", shape: "d numbers", example: "τ̂_king = (1, 0, 1)" },
+    lamstar: { tex: "\\lambda^{\\star}", name: "Chosen coefficient", meaning: "The λ the paper keeps for a negation: the largest one that passes the control check.", shape: "one of 0, 0.05, …, 1", example: "0.75" },
+    Actrl: { tex: "A_{\\text{ctrl}}(\\lambda)", name: "Control accuracy", meaning: "Accuracy on the control task (ImageNet) of the model edited with coefficient λ. A_ctrl(0) is the pretrained model's.", shape: "0 to 100%", example: "75.5 at λ = 0" },
+    ell: { tex: "\\ell", name: "Cross-entropy loss", meaning: "The average of −log of the probability the model gives the right label: the ordinary training loss.", shape: "a number ≥ 0", example: "0.458" },
+    E: { tex: "\\mathbb{E}", name: "Average over the dataset", meaning: "The expected value: here, the mean over every (input, label) pair.", shape: "an operation", example: "the mean of two terms" },
+    xy: { tex: "x, y", name: "An example and its label", meaning: "One input x (an image) and its correct label y.", shape: "one pair", example: "a digit image and “7”" },
+    D: { tex: "\\mathcal{D}", name: "The dataset", meaning: "The fine-tuning data of the task being forgotten.", shape: "a set of pairs", example: "two examples" },
+    fxy: { tex: "f(x)_y", name: "Probability of the right label", meaning: "The probability the model f gives the correct label y for input x.", shape: "0 to 1", example: "0.8 and 0.5" },
+    ellneg: { tex: "\\ell_{\\text{neg}}", name: "Negated loss", meaning: "Minus the usual loss. Minimising it is gradient ascent on ℓ: the model is rewarded for being wrong.", shape: "a number ≤ 0", example: "−0.458" },
+    tauscaled: { tex: "\\tau^{(L)}_{\\text{scaled}}", name: "Random vector, resized", meaning: "The random baseline's piece for layer L: a random direction with exactly the task vector's length for that layer.", shape: "one layer's weights", example: "(2.236, −4.472)" },
+    taurand: { tex: "\\tau^{(L)}_{\\text{rand}}", name: "Random draw", meaning: "Each entry drawn from a normal distribution with mean 0 and variance 1, for layer L.", shape: "one layer's weights", example: "(1, −2)" },
+    normtau: { tex: "\\lVert\\tau^{(L)}\\rVert", name: "Length of the task vector's layer", meaning: "The length (norm) of the real task vector's piece for layer L: square, add, take the square root.", shape: "a number ≥ 0", example: "5" },
+    normrand: { tex: "\\lVert\\tau^{(L)}_{\\text{rand}}\\rVert", name: "Length of the random draw", meaning: "The length of the random vector before resizing.", shape: "a number ≥ 0", example: "2.236" },
+    anorm: { tex: "a_{\\text{norm}}", name: "Normalized accuracy", meaning: "Accuracy as a fraction of the task's own fine-tuned specialist. 1 means as good as the specialist.", shape: "usually 0 to 1", example: "0.958" },
+    aedit: { tex: "a_{\\text{edited}}", name: "Edited model's accuracy", meaning: "Accuracy on this task of the model built by adding task vectors.", shape: "0 to 100%", example: "91" },
+    aft: { tex: "a_{\\text{ft}}", name: "Specialist's accuracy", meaning: "Accuracy on this task of the model fine-tuned on it alone.", shape: "0 to 100%", example: "95" },
+    lamA: { tex: "\\lambda_A", name: "Strength of τ_A", meaning: "Its own coefficient for task vector A (subtracted).", shape: "0 to 1", example: "about 0.28 on average" },
+    lamB: { tex: "\\lambda_B", name: "Strength of τ_B", meaning: "Its own coefficient for task vector B.", shape: "0 to 1", example: "about 0.32 on average" },
+    lamC: { tex: "\\lambda_C", name: "Strength of τ_C", meaning: "Its own coefficient for task vector C.", shape: "0 to 1", example: "about 0.32 on average" },
+    cos: { tex: "\\cos", name: "Cosine similarity", meaning: "How aligned two directions are: 1 the same, 0 at right angles, −1 opposite. Ignores length.", shape: "−1 to 1", example: "0.64" },
+    tau1: { tex: "\\tau_1", name: "First task vector", meaning: "One of the two task vectors being compared or combined.", shape: "d numbers", example: "(3, 4, 0), or (0.5, 0, 0)" },
+    tau2: { tex: "\\tau_2", name: "Second task vector", meaning: "The other task vector.", shape: "d numbers", example: "(0, 4, 3), or (0, −1, 0)" },
+    dot: { tex: "\\tau_1 \\cdot \\tau_2", name: "Dot product", meaning: "Multiply the two vectors weight by weight and add the products.", shape: "one number", example: "16" },
+    norms: { tex: "\\lVert\\tau_1\\rVert\\,\\lVert\\tau_2\\rVert", name: "Product of the lengths", meaning: "Each vector's length (square root of the sum of squares), multiplied together.", shape: "a number > 0", example: "5 × 5 = 25" },
+    theta1: { tex: "\\theta_1", name: "First fine-tuned model", meaning: "The weights after fine-tuning on task 1: θ_pre + τ_1.", shape: "d numbers", example: "(1.5, 0, 2)" },
+    theta2: { tex: "\\theta_2", name: "Second fine-tuned model", meaning: "The weights after fine-tuning on task 2: θ_pre + τ_2.", shape: "d numbers", example: "(1, −1, 2)" },
+    alpha: { tex: "\\alpha", name: "Mixing coefficient", meaning: "How much of the second model to use; ½ weighs both equally.", shape: "0 to 1", example: "0.5" },
+    f1: { tex: "f_{\\theta_1}(x)", name: "First model's output", meaning: "What the model with weights θ₁ outputs for input x (for classifiers, its logits).", shape: "one output per input", example: "tanh(0.2) = 0.197" },
+    f2: { tex: "f_{\\theta_2}(x)", name: "Second model's output", meaning: "What the model with weights θ₂ outputs for input x.", shape: "one output per input", example: "tanh(0.4) = 0.380" },
+    favg: { tex: "f_{(1-\\alpha)\\theta_1 + \\alpha\\theta_2}(x)", name: "Averaged-weights output", meaning: "One model run with the mixed weights: what adding task vectors produces.", shape: "one output per input", example: "tanh(0.3) = 0.291" },
+  },
+
+  blocks: {},
+
+  onReady(P) {
+    playground();
+    negBars();
+    subsetChart(P);
+    cosTable();
+    ensembleChart(P);
+  },
+};
+
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+/* The playground's illustrative two-weight task vectors. */
+const TV = { A: [1.5, 0.5], B: [0.3, 1.4], C: [-0.6, -1.1] };
+
+function playground() {
+  const svg = document.getElementById("ws-svg"), slider = document.getElementById("ws-lam");
+  const lamOut = document.getElementById("ws-lam-v"), out = document.getElementById("ws-readout");
+  const buttons = [...document.querySelectorAll("#ws [data-op]")];
+  const O = [160, 165], k = 55;
+  const px = ([a, b]) => [O[0] + a * k, O[1] - b * k];
+  const add = (u, v) => [u[0] + v[0], u[1] + v[1]];
+  const mul = (s, u) => [s * u[0], s * u[1]];
+  const f2 = (v) => `(${v.map((x) => (Math.abs(x) < 0.005 ? 0 : x).toFixed(2)).join(", ")})`;
+  let op = "vec";
+  function arrow(from, to, color, cls, label, lx = 6, ly = -6) {
+    const [x1, y1] = px(from), [x2, y2] = px(to);
+    const lab = label ? `<text x="${(x1 + x2) / 2 + lx}" y="${(y1 + y2) / 2 + ly}" style="fill:var(${color});font-weight:600">${label}</text>` : "";
+    return `<line class="${cls}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(${color})" marker-end="url(#ws-arr${color})"/>${lab}`;
+  }
+  function draw() {
+    const lam = +slider.value;
+    lamOut.textContent = lam.toFixed(2);
+    /* CSS variable names, so the drawing follows the theme when it changes. */
+    const blue = "--ff-stroke", orange = "--attn-stroke", green = "--soft-stroke", purple = "--lin-stroke", muted = "--wire";
+    let parts = "", tip, text;
+    const zero = [0, 0];
+    if (op === "vec") {
+      parts += arrow(zero, TV.A, blue, "ghostvec", "τ", 4, -8);
+      tip = mul(lam, TV.A);
+      parts += arrow(zero, tip, purple, "vec", "");
+      const [fx, fy] = px(TV.A);
+      parts += `<circle cx="${fx}" cy="${fy}" r="4" style="fill:none;stroke:var(${blue});stroke-width:1.5"/><text x="${fx + 4}" y="${fy + 18}" class="lbl">θ_ft</text>`;
+      text = `θ_new = θ_pre + ${lam.toFixed(2)} τ = ${f2(tip)}. ${lam === 1 ? "Exactly the fine-tuned model." : lam === 0 ? "The pretrained model, unchanged." : lam < 1 ? "Part-way between pretrained and fine-tuned." : "Past the fine-tuned model: extrapolation."}`;
+    } else if (op === "neg") {
+      parts += arrow(zero, TV.A, blue, "ghostvec", "τ", 4, -8);
+      tip = mul(-lam, TV.A);
+      parts += arrow(zero, tip, purple, "vec", "");
+      text = `θ_new = θ_pre − ${lam.toFixed(2)} τ = ${f2(tip)}: moved away from what the fine-tune learned, to forget the task.`;
+    } else if (op === "add") {
+      parts += arrow(zero, TV.A, blue, "ghostvec", "τ_A", 4, 14);
+      parts += arrow(zero, TV.B, green, "ghostvec", "τ_B", -30, 0);
+      parts += arrow(TV.A, add(TV.A, TV.B), muted, "ghostvec", "");
+      parts += arrow(TV.B, add(TV.A, TV.B), muted, "ghostvec", "");
+      tip = mul(lam, add(TV.A, TV.B));
+      parts += arrow(zero, tip, purple, "vec", "");
+      text = `θ_new = θ_pre + ${lam.toFixed(2)} (τ_A + τ_B) = ${f2(tip)}: one model for both tasks.${Math.abs(lam - 0.5) < 0.001 ? " At λ = 0.5 this is the plain average of the two fine-tuned models." : ""}`;
+    } else {
+      const step = add(TV.B, mul(-1, TV.A));
+      parts += arrow(zero, TV.A, blue, "ghostvec", "τ_A", 4, 14);
+      parts += arrow(zero, TV.B, green, "ghostvec", "τ_B", -30, 0);
+      parts += arrow(TV.A, TV.B, muted, "ghostvec", "τ_B − τ_A", 6, -2);
+      parts += arrow(zero, TV.C, orange, "ghostvec", "τ_C", 6, 14);
+      parts += arrow(TV.C, add(TV.C, step), muted, "ghostvec", "");
+      tip = mul(lam, add(TV.C, step));
+      parts += arrow(zero, tip, purple, "vec", "");
+      text = `θ_new = θ_pre + ${lam.toFixed(2)} (τ_C + (τ_B − τ_A)) = ${f2(tip)}: a vector for task D built without any data from D.`;
+    }
+    const [tx, ty] = px(tip);
+    svg.innerHTML = `<defs>${[blue, orange, green, purple, muted].map((c) => `<marker id="ws-arr${c}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(${c})"/></marker>`).join("")}</defs>
+      <line class="axis" x1="10" y1="${O[1]}" x2="310" y2="${O[1]}"/><line class="axis" x1="${O[0]}" y1="10" x2="${O[0]}" y2="240"/>
+      <text x="310" y="${O[1] + 16}" class="lbl" text-anchor="end">weight 1</text><text x="${O[0] + 6}" y="16" class="lbl">weight 2</text>
+      ${parts}
+      <circle class="pt" cx="${O[0]}" cy="${O[1]}" r="6"/><circle cx="${O[0]}" cy="${O[1]}" r="2.5" fill="var(--fg)"/>
+      <text x="${O[0] - 9}" y="${O[1] - 9}" class="lbl" text-anchor="end">θ_pre</text>
+      <circle cx="${tx}" cy="${ty}" r="5" style="fill:var(${purple})"/><text x="${tx > 250 ? tx - 10 : tx + 8}" y="${ty > O[1] ? ty + 20 : Math.max(ty - 8, 14)}" text-anchor="${tx > 250 ? "end" : "start"}" style="fill:var(${purple});font-weight:700">θ_new</text>`;
+    svg.setAttribute("aria-label", `Weight-space diagram. ${text}`);
+    out.textContent = text;
+    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.op === op)));
+  }
+  buttons.forEach((b) => b.addEventListener("click", () => { op = b.dataset.op; draw(); }));
+  slider.addEventListener("input", draw);
+  draw();
+}
+
+function negBars() {
+  /* Table 1 of the paper, CLIP ViT-L/14: [method, target accuracy, control accuracy]. */
+  const rows = [["Pretrained", "64.8", "75.5"], ["Fine-tuned", "94.0", "72.6"], ["Gradient ascent", "3.93", "16.3"], ["Random vector", "60.9", "72.9"], ["Negative task vector", "19.0", "72.9"]];
+  document.getElementById("neg-bars").innerHTML = rows.map(([name, t, c]) =>
+    `<div class="barrow"><span>${name}</span><div><div class="share-bar" style="width:${t}%;background:var(--ff-stroke)"></div><div class="share-bar" style="width:${c}%;margin-top:3px;background:var(--hatch) var(--soft-stroke)"></div></div><span>${t} / ${c}%</span></div>`).join("");
+}
+
+function subsetChart(P) {
+  /* Average line of Figure 3, read off the paper's plot; approximate. */
+  const avg = [0.69, 0.74, 0.775, 0.80, 0.83, 0.853, 0.87, 0.887, 0.90];
+  P.lineChart(document.getElementById("sub-chart"), { width: 420, height: 270,
+    series: [{ name: "average normalized accuracy", points: avg.map((v, i) => [i, v]) }],
+    xLabel: "number of task vectors added", yLabel: "normalized accuracy", yMin: 0.65, yMax: 0.95,
+    xFmt: (x) => Math.round(x), yFmt: (y) => y.toFixed(3),
+    readout: document.getElementById("sub-readout"), ariaLabel: "Average normalized accuracy rising from about 0.69 with no task vectors to about 0.90 with all eight",
+  });
+}
+
+function cosTable() {
+  /* Figure 5 of the paper: the cosine printed in each cell. */
+  const names = ["Cars", "DTD", "EuroSAT", "GTSRB", "KITTI", "MNIST", "RESISC45", "SUN397", "SVHN"];
+  const M = [
+    [1.00, 0.02, 0.01, 0.02, 0.01, 0.01, 0.01, 0.02, 0.01],
+    [0.02, 1.00, 0.02, 0.02, 0.01, 0.02, 0.02, 0.02, 0.01],
+    [0.01, 0.02, 1.00, 0.02, 0.01, 0.02, 0.05, 0.02, 0.02],
+    [0.02, 0.02, 0.02, 1.00, 0.01, 0.06, 0.02, 0.02, 0.06],
+    [0.01, 0.01, 0.01, 0.01, 1.00, 0.01, 0.02, 0.02, 0.01],
+    [0.01, 0.02, 0.02, 0.06, 0.01, 1.00, 0.02, 0.01, 0.18],
+    [0.01, 0.02, 0.05, 0.02, 0.02, 0.02, 1.00, 0.03, 0.01],
+    [0.02, 0.02, 0.02, 0.02, 0.02, 0.01, 0.03, 1.00, 0.01],
+    [0.01, 0.01, 0.02, 0.06, 0.01, 0.18, 0.01, 0.01, 1.00],
+  ];
+  const short = ["Cars", "DTD", "Euro", "GTSRB", "KITTI", "MNIST", "RES45", "SUN", "SVHN"];
+  const shade = (v) => (v >= 0.99 ? 1 : Math.min(0.75, 0.08 + v * 3.5));
+  const head = `<thead><tr><th></th>${short.map((s, j) => `<th scope="col" title="${names[j]}">${s}</th>`).join("")}</tr></thead>`;
+  const body = M.map((row, i) => `<tr><th scope="row" title="${names[i]}">${short[i]}</th>${row.map((v, j) => {
+    const a = shade(v);
+    return `<td class="${a > 0.5 ? "hot" : ""}" style="background:rgba(var(--heat-hi), ${a})" aria-label="${names[i]} and ${names[j]}: ${v.toFixed(2)}">${v.toFixed(2)}</td>`;
+  }).join("")}</tr>`).join("");
+  document.getElementById("cos-table").insertAdjacentHTML("beforeend", head + `<tbody>${body}</tbody>`);
+}
+
+function ensembleChart(P) {
+  const ens = [], avg = [];
+  for (let s = 0; s <= 2.0001; s += 0.05) {
+    const t1 = 1 - s, t2 = 1 + s;
+    ens.push([s, (Math.tanh(t1) + Math.tanh(t2)) / 2]);
+    avg.push([s, Math.tanh((t1 + t2) / 2)]);
+  }
+  P.lineChart(document.getElementById("ens-chart"), { width: 420, height: 270,
+    series: [
+      { name: "ensemble: average the outputs", points: ens, color: css("--ff-stroke") },
+      { name: "merge: average the weights", points: avg, color: css("--lin-stroke") },
+    ],
+    xLabel: "spread between the two weights", yLabel: "output", yMin: 0, yMax: 0.85,
+    xFmt: (x) => x.toFixed(2), yFmt: (y) => y.toFixed(3),
+    readout: document.getElementById("ens-readout"), ariaLabel: "Ensemble output and averaged-weights output for tanh, drifting apart as the two weights spread",
+  });
+}
+</script>
+</body>
+</html>

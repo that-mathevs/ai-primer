@@ -1053,7 +1053,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.fine_tuning"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "model-soups",
@@ -1108,7 +1108,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.fine_tuning"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "deduplicating-training-data",
