@@ -873,6 +873,7 @@ time against it without the reward drifting away from correctness.
   connectionist reinforcement learning* (Machine Learning, 1992)**:
   https://link.springer.com/article/10.1007/BF00992696. Introduced
   REINFORCE, the log-probability policy gradient with a baseline.
+  [Annotated companion](../../papers/reinforce.html)
 - **Schulman et al., *Proximal Policy Optimization Algorithms* (2017)**:
   https://arxiv.org/abs/1707.06347. Introduced the clipped probability-ratio
   objective that lets each batch be reused for several safe steps.
@@ -891,6 +892,7 @@ time against it without the reward drifting away from correctness.
   via Reinforcement Learning* (2025)**: https://arxiv.org/abs/2501.12948.
   Showed GRPO with rule-based, verifiable rewards alone can teach a model to
   produce long, self-checking chains of thought.
+  [Annotated companion](../../papers/deepseek-r1.html)
 - **Gao, Schulman & Hilton, *Scaling Laws for Reward Model
   Overoptimization* (2022)**: https://arxiv.org/abs/2210.10760. Measured how
   true quality rises and then falls as a policy is optimised further against

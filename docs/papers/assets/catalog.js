@@ -500,7 +500,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.reinforcement"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "ppo",
@@ -535,7 +535,7 @@ window.PRIMER_PAPERS = [
    "primer.ml.reinforcement",
    "primer.ml.reasoning"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "vit",

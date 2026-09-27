@@ -108,7 +108,7 @@ class TestScopedTerms:
         assert annotate_html(html, self.TERMS, "primer/agents/rag.html") == html
 
     def test_given_the_glossary_everyday_words_with_a_technical_meaning_are_scoped(self):
-        for word in ("key", "value", "query", "rank", "recall", "policy", "patch", "filter", "kernel", "padding", "checkpoint", "span", "trace"):
+        for word in ("key", "value", "query", "rank", "recall", "policy", "patch", "filter", "kernel", "padding", "checkpoint", "span", "trace", "clip"):
             assert GLOSSARY[word].scope, f"'{word}' has an everyday meaning; scope it to the lessons that use the technical one"
 
 

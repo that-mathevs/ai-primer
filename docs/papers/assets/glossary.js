@@ -1704,6 +1704,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/fine_tuning.html",
   "term": "Jaccard similarity"
  },
+ "jailbreak": {
+  "def": "A prompt crafted to talk a model out of its safety training, such as a role-play or a disguised request, so it produces what it would normally refuse.",
+  "lesson": "primer/agents/guardrails.html",
+  "term": "jailbreak"
+ },
  "jensen-shannon divergence": {
   "def": "A measure of how different two distributions are; stuck at log 2 whenever they don't overlap.",
   "lesson": "primer/ml/generative/gans.html",
@@ -2924,6 +2929,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/reinforcement.html",
   "term": "reinforcement learning"
  },
+ "rejection sampling": {
+  "def": "Generating many candidate outputs and keeping only those that pass a check, such as a correct final answer, often to use as training data.",
+  "lesson": null,
+  "term": "rejection sampling"
+ },
  "release gate": {
   "def": "Limits set before measuring; a release goes ahead only if every evaluation is within its limit.",
   "lesson": "primer/ml/alignment.html",
@@ -3713,6 +3723,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A projection to 2-D that keeps each point's neighbours close but distorts other distances.",
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "UMAP"
+ },
+ "unbiased estimate": {
+  "def": "An estimate that is right on average: any single one may be off, but the errors cancel over many tries.",
+  "lesson": "primer/ml/reinforcement.html",
+  "term": "unbiased estimate"
  },
  "unbiased estimator": {
   "def": "A way of estimating a number from random data whose average, over every dataset you might have drawn, equals the true value: it is not systematically high or low.",

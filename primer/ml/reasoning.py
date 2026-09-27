@@ -874,6 +874,7 @@ record of the computation.
   via Reinforcement Learning* (2025)**: https://arxiv.org/abs/2501.12948.
   Showed that reinforcement learning with verifiable rewards alone makes
   long, self-checking chains of thought emerge.
+  [Annotated companion](../../papers/deepseek-r1.html)
 
 ## Further reading
 
