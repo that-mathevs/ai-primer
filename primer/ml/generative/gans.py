@@ -1033,6 +1033,7 @@ variety, show up wherever two models are trained against each other.
   https://arxiv.org/abs/1701.07875. Replaced the Jensen-Shannon objective
   with the earth mover's distance, which still gives a direction when real
   and generated data don't overlap.
+  [Annotated companion](../../../papers/wasserstein-gan.html)
 - **Gulrajani et al., *Improved Training of Wasserstein GANs* (2017)**:
   https://arxiv.org/abs/1704.00028. Enforced the Wasserstein critic's
   slope limit with a gradient penalty instead of weight clipping.

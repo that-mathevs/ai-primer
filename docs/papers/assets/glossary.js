@@ -684,6 +684,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "DBSCAN"
  },
+ "dcgan": {
+  "def": "Deep convolutional GAN: a GAN whose generator and discriminator are convolutional networks, the usual baseline design for image GANs.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "dcgan"
+ },
  "ddim": {
   "def": "A deterministic diffusion sampler that predicts the clean result and jumps to a much less noisy step, so it needs far fewer steps.",
   "lesson": "primer/ml/generative/diffusion.html",
@@ -853,6 +858,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Stopping training when the score on held-out data stops improving.",
   "lesson": "primer/ml/regularization.html",
   "term": "early stopping"
+ },
+ "earth mover's distance": {
+  "def": "The least total work to reshape one pile of probability into another, each bit of mass times the distance it travels; the same as the Wasserstein distance.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "earth mover's distance"
  },
  "edit-run-test loop": {
   "def": "An agent loop that changes code, runs the tests, and repeats until they pass or a budget runs out.",
@@ -1713,6 +1723,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The idea that features are directions, readable with a dot product.",
   "lesson": "primer/ml/interpretability.html",
   "term": "linear representation hypothesis"
+ },
+ "lipschitz": {
+  "def": "A function is K-Lipschitz if its output never changes more than K times as fast as its input: a speed limit on its slope everywhere.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "lipschitz"
  },
  "llm": {
   "def": "Large language model: a transformer trained to predict the next token, then tuned to follow instructions.",
@@ -3533,6 +3548,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Merging fine-tunes of the same base by averaging their weights (task arithmetic with λ = 1/T).",
   "lesson": "primer/ml/fine_tuning.html",
   "term": "weight averaging"
+ },
+ "weight clipping": {
+  "def": "Forcing every weight of a network back into a small range, such as −0.01 to 0.01, after each update; the original Wasserstein GAN's crude way to cap its critic's slope.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "weight clipping"
  },
  "weight decay": {
   "def": "Shrinking every weight slightly at each step, which penalizes large weights and keeps the model smoother.",
