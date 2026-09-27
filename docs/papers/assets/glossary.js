@@ -44,6 +44,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/reinforcement.html",
   "term": "actor-critic"
  },
+ "adaboost": {
+  "def": "A boosting method (Freund and Schapire, 1996) that trains each new classifier on reweighted data, raising the weight of the examples the previous ones got wrong, and lets the classifiers vote with weights set by their accuracy.",
+  "lesson": null,
+  "term": "Adaboost"
+ },
  "adagrad": {
   "def": "An optimizer that divides each weight's step by the square root of the sum of all its past squared gradients, so steps only ever shrink.",
   "lesson": "primer/ml/optimizers.html",
@@ -1903,6 +1908,11 @@ window.PRIMER_GLOSSARY = {
   "def": "The space of codes a model works in, where position means something and nearby codes decode to similar data.",
   "lesson": "primer/ml/generative/autoencoders.html",
   "term": "latent space"
+ },
+ "law of large numbers": {
+  "def": "The rule that the average of many independent random draws settles ever closer to the true average as more draws are added.",
+  "lesson": null,
+  "term": "law of large numbers"
  },
  "layer normalization": {
   "def": "Rescaling each token's numbers to a steady average and spread, which keeps training stable.",

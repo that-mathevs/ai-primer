@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Random Forests (Breiman 2001), Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Breiman (2001), the paper that introduced random forests: many randomized trees voting, judged by their strength and the correlation between them.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="random-forests">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Random forests</a></li>
+      <li><a href="#s2">2 Characterizing the accuracy</a>
+        <ol>
+          <li><a href="#s2-1">2.1 Random forests converge</a></li>
+          <li><a href="#s2-2">2.2 Strength and correlation</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Using random features</a>
+        <ol>
+          <li><a href="#s3-1">3.1 Out-of-bag estimates</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Random input selection</a></li>
+      <li><a href="#s5">5 Linear combinations of inputs</a></li>
+      <li><a href="#s6">6 Strength and correlation, measured</a></li>
+      <li><a href="#s7">7 Conjecture: Adaboost is a random forest</a></li>
+      <li><a href="#s8">8 The effects of output noise</a></li>
+      <li><a href="#s9">9 Data with many weak inputs</a></li>
+      <li><a href="#s10">10 Variable importance</a></li>
+      <li><a href="#s11">11 Random forests for regression</a></li>
+      <li><a href="#s12">12 Empirical results in regression</a></li>
+      <li><a href="#s13">13 Remarks and conclusions</a></li>
+      <li><a href="#appendix">Appendix II: strength from out-of-bag votes</a></li>
+      <li><a href="#today">What changed since 2001</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Random Forests, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Leo Breiman (2001), <em>Random Forests</em>, the paper that grew many randomized trees, let them vote, and explained why the vote works.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://link.springer.com/article/10.1023/A:1010933404324">Paper at Springer</a>
+    <a class="btn" href="https://doi.org/10.1023/A:1010933404324">DOI</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. The paper appeared in the journal <em>Machine Learning</em>, volume 45 (2001), and is not published under an open licence, so this page quotes at most a sentence or two per section (clearly marked), reproduces only a few selected rows of its tables with attribution, and explains everything in its own words. The equations are reproduced with every symbol decoded. Every chart is redrawn: where a value is read off one of the paper's plots by eye, the chart says so. The section numbers follow the paper. The journal offers no links to individual sections, so each section's “original” link opens the article page.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The diagrams are live: hover or tap a part to read what it does. Several charts respond to you: one lets you watch a vote settle as trees are added, another shows how the paper's error bound moves with strength and correlation.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong> you can check by hand, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it matters</strong> today. One small example runs through the page: a forest of ten trees voting on whether four emails are spam. The <a class="lesson" data-lesson="primer/ml/classical.html">trees and boosting lesson</a> builds a decision tree and a random forest from scratch in NumPy.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“The generalization error of a forest of tree classifiers depends on the strength of the individual trees in the forest and the correlation between them.”<cite>Breiman (2001), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Ask one doctor for a diagnosis and you get one opinion, with that doctor's blind spots. Ask a hundred doctors who each trained at a different hospital and each looked at a different handful of test results, and take the majority: the blind spots rarely line up, so the majority is right more often than almost any single doctor. Two things decide how good the majority is: how good each doctor is (the paper calls it <em>strength</em>) and how often they make the <em>same</em> mistake (<em>correlation</em>). This paper builds that committee out of <span class="t" data-t="decision tree">decision trees</span>.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>A <span class="t" data-t="random forest">random forest</span> is any collection of trees, each grown with its own independent dose of randomness, that vote. Adding trees never makes it overfit: its error settles to a limit (Theorem 1.2).</li>
+  <li>The forest's error is bounded by the trees' average correlation divided by the square of their strength (Theorem 2.3), so good randomness lowers correlation without costing much strength.</li>
+  <li>Choosing a random handful of inputs at every split (and growing each tree on a <span class="t" data-t="bootstrap sample">bootstrap sample</span>) gives accuracy that compares favourably with <span class="t" data-t="adaboost">Adaboost</span>, is more robust to wrong labels, and is faster.</li>
+  <li>The rows each tree never saw give free, built-in estimates of the error, the strength, the correlation and the importance of each input.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>Random forests are still the standard first model on a new table of data: they need almost no tuning, cannot be ruined by adding trees, and report their own validation score. The idea of shuffling one column and measuring the damage, introduced in §10, became <span class="t" data-t="permutation importance">permutation importance</span>, one of the most used tools for asking what any model relies on.</p>
+</section>
+
+<section id="s1">
+<h2>1 Random forests <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“After a large number of trees is generated, they vote for the most popular class. We call these procedures random forests.”<cite>Breiman (2001), §1.1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Before this paper, several people had found ways to grow many different trees from one dataset and let them vote. <span class="t" data-t="bagging">Bagging</span> gives each tree its own resample of the rows. Random split selection picks each split at random from the best few. The random subspace method gives each tree a random subset of the inputs. Breiman notices they share one skeleton: tree number <em>k</em> is grown from the training data plus a fresh random “recipe card” Θ<sub>k</sub>, drawn independently of all the other cards and from the same deck. Any procedure of that shape is a random forest.</p>
+<h3 class="rung">Tiny example</h3>
+<p>In bagging, the recipe card is a list of counts: throw N darts at N boxes, one box per training row, and count how many darts land in each box. With N = 5 emails, one card might read (2, 0, 1, 1, 1): email 1 is used twice, email 2 not at all. Tree 1 is grown on that resample. Tree 2 gets a new card, say (0, 2, 1, 0, 2), and so on. Each tree then votes, and the forest answers with the class that gets the most votes.</p>
+
+<figure class="ix" id="fig-forest">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 392" role="img" aria-label="A random forest: the training set is resampled into bootstrap samples, each grows a tree that tries random inputs at every node, the trees vote, and the out-of-bag vote gives internal estimates">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M170,38 V52 H55 V68" marker-end="url(#arr)"/>
+    <path class="wire" d="M170,38 V68" marker-end="url(#arr)"/>
+    <path class="wire" d="M170,52 H285 V68" marker-end="url(#arr)"/>
+    <path class="wire" d="M55,106 V128" marker-end="url(#arr)"/>
+    <path class="wire" d="M170,106 V128" marker-end="url(#arr)"/>
+    <path class="wire" d="M285,106 V128" marker-end="url(#arr)"/>
+    <path class="wire" d="M55,204 V218 H170"/>
+    <path class="wire" d="M285,204 V218 H170"/>
+    <path class="wire" d="M170,204 V232" marker-end="url(#arr)"/>
+    <path class="wire" d="M170,266 V282" marker-end="url(#arr)"/>
+    <path class="wire" d="M245,250 H300 V330" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <g class="blk plain" data-block="train"><rect x="95" y="8" width="150" height="30" rx="6"/><text x="170" y="28" text-anchor="middle">training set (N rows)</text></g>
+    <g class="blk emb" data-block="boot">
+      <rect x="10" y="70" width="90" height="36" rx="6"/><text x="55" y="92" text-anchor="middle">sample 1</text>
+      <rect x="125" y="70" width="90" height="36" rx="6"/><text x="170" y="92" text-anchor="middle">sample 2</text>
+      <rect x="240" y="70" width="90" height="36" rx="6"/><text x="285" y="92" text-anchor="middle">sample K</text>
+    </g>
+    <text x="227" y="92" text-anchor="middle">…</text>
+    <g class="blk ff" data-block="tree">
+      <rect x="10" y="130" width="90" height="74" rx="8"/>
+      <rect x="125" y="130" width="90" height="74" rx="8"/>
+      <rect x="240" y="130" width="90" height="74" rx="8"/>
+      <path class="wire" d="M55,148 L35,170 M55,148 L75,170 M170,148 L150,170 M170,148 L190,170 M285,148 L265,170 M285,148 L305,170 M35,176 L27,188 M35,176 L43,188 M190,176 L182,188 M190,176 L198,188 M305,176 L297,188 M305,176 L313,188"/>
+      <circle cx="35" cy="173" r="5"/><circle cx="75" cy="173" r="5"/>
+      <circle cx="170" cy="145" r="5"/><circle cx="150" cy="173" r="5"/><circle cx="190" cy="173" r="5"/>
+      <circle cx="285" cy="145" r="5"/><circle cx="265" cy="173" r="5"/><circle cx="305" cy="173" r="5"/>
+      <text x="170" y="200" text-anchor="middle" class="lbl">tree 2</text>
+      <text x="285" y="200" text-anchor="middle" class="lbl">tree K</text>
+    </g>
+    <g class="blk attn" data-block="node"><circle cx="55" cy="145" r="7"/><text x="55" y="200" text-anchor="middle" class="lbl">tree 1</text></g>
+    <g class="blk soft" data-block="vote"><rect x="95" y="234" width="150" height="32" rx="6"/><text x="170" y="255" text-anchor="middle">vote: most popular class</text></g>
+    <g class="blk plain" data-block="pred"><rect x="95" y="284" width="150" height="30" rx="6"/><text x="170" y="304" text-anchor="middle">the forest's answer</text></g>
+    <g class="blk norm" data-block="oob"><rect x="120" y="332" width="214" height="46" rx="6"/><text x="227" y="351" text-anchor="middle">out-of-bag vote: error,</text><text x="227" y="368" text-anchor="middle">strength, correlation, importance</text></g>
+    <text x="304" y="290" class="lbl" text-anchor="start">rows</text>
+    <text x="304" y="302" class="lbl" text-anchor="start">left out</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a part. Start with the <strong>training set</strong> at the top.</p></div>
+  </div>
+  <figcaption>The procedure the paper studies in §3 to §10, drawn for this page (the paper has no diagram of it). Based on Breiman (2001), §3.1 and §4.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read from the top down. The training set is resampled K times with replacement (the pink boxes), and each resample grows one full-depth, unpruned tree (the blue boxes). Inside every tree, each node (the highlighted circle in tree 1) may only choose its question from F inputs picked at random for that node. Nothing passes between trees, so they can be grown in any order or on different machines. The trees' answers meet at the vote. The dashed wire is the paper's second idea: for each training row, a vote taken only among the trees whose resample left that row out gives an honest score of the forest without a separate test set.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Naming the common skeleton is what made the theory possible. Because the recipe cards are independent and identically distributed, the <span class="t" data-t="law of large numbers">law of large numbers</span> applies to the vote, which is the next section's first result. The <a class="lesson" data-lesson="primer/ml/classical.html">trees and boosting lesson</a> implements the skeleton as <a data-lesson="primer/ml/classical.html#RandomForest"><code>RandomForest</code></a>, which hands each tree its own <a data-lesson="primer/ml/classical.html#bootstrap_sample"><code>bootstrap_sample</code></a> and its own seed for choosing features.</p>
+</section>
+
+<section id="s2">
+<h2>2 Characterizing the accuracy of random forests <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>For a single email, think of a referendum. What matters is not only whether the right side won, but by how much: winning 90 to 10 is safe, winning 51 to 49 is one bad day from losing. The paper measures every prediction by that winning lead, the <em>margin</em>, and builds all of its theory on it.</p>
+
+<section id="s2-1">
+<h3>2.1 Random forests converge <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h3>
+<blockquote class="quote">“This result explains why random forests do not overfit as more trees are added, but produce a limiting value of the generalization error.”<cite>Breiman (2001), §2.1</cite></blockquote>
+<h4>Tiny example</h4>
+<p>Ten trees vote on email A, which really is spam. Seven vote spam and three vote not spam. The average vote for the right class is 0.7, the biggest average vote for any wrong class is 0.3, and the margin is 0.7 − 0.3 = <strong>0.4</strong>: positive, so the forest gets email A right. Emails B, C and D get margins 0.8, −0.2 and 0.6. Only C has a negative margin, so this forest misclassifies one email in four.</p>
+<div class="eq" data-tex="\htmlData{sym=mg}{mg}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y}) = \htmlData{sym=avk}{\operatorname{av}_k}\, \htmlData{sym=Ind}{I}(\htmlData{sym=hk}{h_k}(\htmlData{sym=X}{X}) = \htmlData{sym=Y}{Y}) - \htmlData{sym=maxj}{\max_{j \ne Y}}\, \htmlData{sym=avk}{\operatorname{av}_k}\, \htmlData{sym=Ind}{I}(\htmlData{sym=hk}{h_k}(\htmlData{sym=X}{X}) = \htmlData{sym=j}{j})" data-fallback="mg(X,Y) = av_k I(h_k(X) = Y) − max_{j≠Y} av_k I(h_k(X) = j)"></div>
+<div class="symtable" data-syms="mg,X,Y,hk,Ind,avk,maxj,j"></div>
+<p class="inwords"><strong>In words:</strong> “the margin at an example is the share of trees that vote for its true class, minus the share that vote for the most popular wrong class.”</p>
+<p class="inwords"><strong>With the numbers:</strong> email A: av<sub>k</sub> I(h<sub>k</sub> = spam) = 7/10 = 0.7; the only wrong class, not spam, gets 3/10 = 0.3; mg = 0.7 − 0.3 = 0.4.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the ten trees' votes on email A, whose true class Y is spam
+votes = ["spam"] * 7 + ["not"] * 3
+Y = "spam"
+# av_k I(h_k(X) = j): the share of trees voting for class j
+def av(j):
+    return sum(1 for h_k in votes if h_k == j) / len(votes)
+av(Y)  # → 0.7
+# max over the wrong classes j ≠ Y
+wrong = max(av(j) for j in ["not"])
+wrong  # → 0.3
+round(av(Y) - wrong, 2)  # → 0.4</code></pre>
+<p>The forest's <span class="t" data-tip-title="Generalization error" data-tip="The error rate a model would make on fresh examples drawn from the same source as its training data, as opposed to its error on the training data itself.">generalization error</span> is the chance that a fresh example lands with a negative margin:</p>
+<div class="eq" data-tex="\htmlData{sym=PEstar}{PE^*} = \htmlData{sym=PXY}{P_{X,Y}}\big(\htmlData{sym=mg}{mg}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y}) &lt; 0\big)" data-fallback="PE* = P_{X,Y}(mg(X,Y) &lt; 0)"></div>
+<div class="symtable" data-syms="PEstar,PXY"></div>
+<p class="inwords"><strong>In words:</strong> “the error is the probability, over all the examples the world could send, that the right class loses the vote.”</p>
+<p class="inwords"><strong>With the numbers:</strong> margins 0.4, 0.8, −0.2 and 0.6: one of four is below zero, so the estimate of PE* is 1/4 = 0.25.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># margins for emails A, B, C, D
+mg = [0.4, 0.8, -0.2, 0.6]
+# P(mg &lt; 0), estimated by the share of negative margins
+sum(1 for m in mg if m &lt; 0) / len(mg)  # → 0.25</code></pre>
+<h4>Theorem 1.2: the vote settles</h4>
+<p>Each tree is a random draw, because its recipe card Θ is random. As trees are added, the share of trees voting for each class at a given email is an average of independent draws, so by the <span class="t" data-t="law of large numbers">law of large numbers</span> it settles on a fixed number: the probability P<sub>Θ</sub> that a randomly grown tree votes for that class. The error therefore settles too. More trees move the forest <em>towards</em> its limit; they cannot push it past it into overfitting.</p>
+<div class="plot" id="conv-plot">
+  <div class="controls"><label for="conv-p">chance a random tree votes for the right class, P<sub>Θ</sub> = <strong id="conv-p-v">0.55</strong></label><input type="range" id="conv-p" min="0.3" max="0.9" step="0.05" value="0.55"></div>
+  <div id="conv-chart"></div>
+  <p class="readout" id="conv-readout">Hover or tap the chart to read the margin after any number of trees.</p>
+  <p class="readout"><em>Simulated for this page with a fixed random seed: each tree's vote is an independent coin flip with the chosen chance. No data from the paper.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the horizontal axis is the number of trees that have voted on one email (log scale), and the solid line is the margin after that many votes. The dashed line is the limit the theorem promises, 2P<sub>Θ</sub> − 1 for two classes. The first few trees swing the margin wildly (one tree gives +1 or −1), but by a few hundred trees the line hugs its limit. Drag the slider below 0.5: the limit drops below zero and the forest settles on the wrong answer for this email, however many trees you add. More trees remove the luck of the draw; they cannot fix trees that are wrong more often than right.</p>
+<h4>Why it matters</h4>
+<p>This is why the number of trees is the one setting of a forest that needs no tuning: pick “enough”, and past that point only time is spent. The lesson measures the same plateau with <a data-lesson="primer/ml/classical.html#forest_curve"><code>forest_curve</code></a>. Contrast gradient boosting, where adding rounds does overfit (see the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a>).</p>
+</section>
+
+<section id="s2-2">
+<h3>2.2 Strength and correlation <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h3>
+<blockquote class="quote">“Although the bound is likely to be loose, it fulfills the same suggestive function for random forests as VC-type bounds do for other types of classifiers.”<cite>Breiman (2001), §2.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A committee is good when its members are individually good (strong) and do not all share the same blind spot (uncorrelated). The paper turns that sentence into an inequality.</p>
+<h4>Tiny example</h4>
+<p>In the limit of many trees, the margin at an example uses probabilities instead of vote shares; call it mr. The forest's <strong>strength</strong> s is the average margin over all examples. For the four emails, the margins 0.4, 0.8, −0.2 and 0.6 average to s = <strong>0.4</strong>. Their <span class="t" data-t="variance">variance</span> (how much they spread around 0.4) is (0 + 0.16 + 0.36 + 0.04) / 4 = <strong>0.14</strong>.</p>
+<div class="eq" data-tex="\htmlData{sym=mr}{mr}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y}) = \htmlData{sym=PTheta}{P_\Theta}(h(\htmlData{sym=X}{X},\htmlData{sym=Theta}{\Theta}) = \htmlData{sym=Y}{Y}) - \htmlData{sym=maxj}{\max_{j \ne Y}} \htmlData{sym=PTheta}{P_\Theta}(h(\htmlData{sym=X}{X},\htmlData{sym=Theta}{\Theta}) = \htmlData{sym=j}{j}), \qquad \htmlData{sym=s}{s} = \htmlData{sym=EXY}{E_{X,Y}}\, \htmlData{sym=mr}{mr}(\htmlData{sym=X}{X},\htmlData{sym=Y}{Y})" data-fallback="mr(X,Y) = P_Θ(h(X,Θ) = Y) − max_{j≠Y} P_Θ(h(X,Θ) = j),   s = E_{X,Y} mr(X,Y)"></div>
+<div class="symtable" data-syms="mr,PTheta,Theta,s,EXY"></div>
+<p class="inwords"><strong>In words:</strong> “the margin of the whole forest at an example is the probability that a random tree votes for the right class, minus the probability of the most popular wrong class; the strength is that margin averaged over every example.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for two classes the wrong class gets whatever the right one does not, so mr = P − (1 − P) = 2P − 1. With P = 0.7 for email A, mr = 0.4. Averaging the four margins, s = (0.4 + 0.8 − 0.2 + 0.6) / 4 = 0.4.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># two classes: mr = P_Θ(right) − P_Θ(wrong) = 2P − 1
+P = 0.7
+round(P - (1 - P), 2)  # → 0.4
+# s = E_{X,Y} mr: the average margin over the four emails
+mr = [0.4, 0.8, -0.2, 0.6]
+s = sum(mr) / len(mr)
+round(s, 2)  # → 0.4</code></pre>
+<p>If the average margin is comfortably positive and the margins do not spread much, few of them can fall below zero. <span class="t" data-tip-title="Chebyshev's inequality" data-tip="A guarantee that holds for any distribution: the chance of landing at least a distance d from the average is at most the variance divided by d². It needs no assumption about the shape of the distribution, which is also why it is usually loose.">Chebyshev's inequality</span> makes that exact:</p>
+<div class="eq" data-tex="\htmlData{sym=PEstar}{PE^*} \le \frac{\htmlData{sym=varmr}{\operatorname{var}(mr)}}{\htmlData{sym=s}{s}^2}" data-fallback="PE* ≤ var(mr) / s²"></div>
+<div class="symtable" data-syms="PEstar,varmr,s"></div>
+<p class="inwords"><strong>In words:</strong> “the error is at most the spread of the margins divided by the square of their average.”</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.14 / 0.4<sup>2</sup> = 0.14 / 0.16 = 0.875. The true share of negative margins is 0.25, well under the bound, as it must be.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>mr = [0.4, 0.8, -0.2, 0.6]
+s = sum(mr) / len(mr)
+# var(mr): the average squared distance from s
+var_mr = sum((m - s) ** 2 for m in mr) / len(mr)
+round(var_mr, 2)  # → 0.14
+# the Chebyshev bound var(mr) / s²
+round(var_mr / s ** 2, 3)  # → 0.875</code></pre>
+<h4>Theorem 2.3: the bound in strength and correlation</h4>
+<p>The paper then splits the spread of the margins into two pieces. Each single tree has a “raw margin” at every example: +1 if it votes for the right class, −1 if it votes for the forest's most popular wrong class, 0 otherwise. The spread of the forest's margin is the <span class="t" data-t="pearson correlation">correlation</span> between two trees' raw margins, times their spreads, averaged over pairs of trees (equations 5 to 7). A little more algebra (equation 8) bounds the spread of one tree's raw margin by 1 − s<sup>2</sup>. Put together:</p>
+<div class="eq" data-tex="\htmlData{sym=PEstar}{PE^*} \le \frac{\htmlData{sym=rhobar}{\bar\rho}\,(1 - \htmlData{sym=s}{s}^2)}{\htmlData{sym=s}{s}^2}" data-fallback="PE* ≤ ρ̄ (1 − s²) / s²"></div>
+<div class="symtable" data-syms="PEstar,rhobar,s"></div>
+<p class="inwords"><strong>In words:</strong> “the forest's error is at most the trees' average correlation, times one minus the strength squared, divided by the strength squared: lower correlation or higher strength both push the ceiling down.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the paper measures real values in §9. With F = 25 random inputs per node it reports s = 0.28 and ρ̄ = 0.065, so the bound is 0.065 × (1 − 0.0784) / 0.0784 = <strong>0.764</strong>. The measured test error is 2.8%: the bound is true but very loose. The ratio ρ̄ / s<sup>2</sup> (the paper's c/s<sup>2</sup>) is 0.83, which is what the paper suggests watching instead.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># §9, F = 25: strength and mean correlation
+s, rho_bar = 0.28, 0.065
+# PE* ≤ ρ̄ (1 − s²) / s²
+round(rho_bar * (1 - s ** 2) / s ** 2, 3)  # → 0.764
+# the c/s² ratio: ρ̄ / s²
+round(rho_bar / s ** 2, 2)  # → 0.83</code></pre>
+<div class="plot" id="bound-plot">
+  <div class="controls"><label for="bound-rho">mean correlation between trees, ρ̄ = <strong id="bound-rho-v">0.10</strong></label><input type="range" id="bound-rho" min="0.01" max="0.6" step="0.01" value="0.1"></div>
+  <div id="bound-chart"></div>
+  <p class="readout" id="bound-readout">Hover or tap the curve to read the bound at any strength.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the horizontal axis is the strength s, the average margin; the vertical axis is the bound on the error, cut off at 1 because an error cannot exceed 100%. Where the curve sits above 1 the bound says nothing at all. Read it from right to left: a strong forest has a low ceiling, and as strength falls the ceiling climbs steeply, because s appears squared in the denominator. Drag ρ̄ down and the whole curve drops in proportion. That is the design rule of the rest of the paper: inject whatever randomness lowers the correlation between trees, as long as it does not cost too much strength.</p>
+<h4>Why it matters</h4>
+<p>The bound itself is rarely tight enough to use, but the trade-off it names became the way everyone thinks about ensembles. The <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a> shows the same trade-off in its simplest form, the variance of an average of B correlated predictions, ρσ<sup>2</sup> + (1 − ρ)σ<sup>2</sup>/B, computed by <a data-lesson="primer/ml/classical.html#averaged_variance"><code>averaged_variance</code></a>: more trees shrink only the second term, and only lower correlation lowers the floor.</p>
+</section>
+</section>
+
+<section id="s3">
+<h2>3 Using random features <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“To improve accuracy, the randomness injected has to minimize the correlation ρ̄ while maintaining strength.”<cite>Breiman (2001), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>If every doctor on the committee may look at every test result, they all fixate on the same striking one, and they all make the same mistake when it misleads. Hide most results from each doctor at each step of their reasoning, a different random handful each time, and they are forced to reason along different paths. Each doctor gets slightly worse; the committee gets better.</p>
+<h3 class="rung">What the paper proposes</h3>
+<p>Earlier forests (bagging, random split selection, random outputs) did not match <span class="t" data-t="adaboost">Adaboost</span>, the leading method of the time. The forests in this paper choose, at every node, a random small set of inputs (or random combinations of inputs) and split on the best of those only. The paper lists what it gains: accuracy as good as Adaboost and sometimes better, robustness to outliers and noise, speed, internal estimates of error, strength, correlation and importance, and easy parallel training.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Random feature selection at each node is the ingredient that turned bagged trees into random forests. In the lesson's code it is the <code>max_features</code> setting of <a data-lesson="primer/ml/classical.html#DecisionTree"><code>DecisionTree</code></a>, which <a data-lesson="primer/ml/classical.html#RandomForest"><code>RandomForest</code></a> sets to the square root of the number of features by default.</p>
+
+<section id="s3-1">
+<h3>3.1 Using out-of-bag estimates to monitor error, strength, and correlation <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h3>
+<blockquote class="quote">“Therefore, using the out-of-bag error estimate removes the need for a set aside test set.”<cite>Breiman (2001), §3.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A teacher sets each student a practice exam drawn at random, with repeats, from a bank of questions. Every student misses some questions entirely. To judge how the class would do on unseen questions, ask each question only of the students who never practised it. No questions have to be held back from practice at all.</p>
+<h4>Tiny example</h4>
+<p>Five emails, four trees. Each tree's resample is five draws with replacement:</p>
+<figure class="ix" id="fig-oob">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 250" role="img" aria-label="Five emails by four trees: how many times each email was drawn into each tree's resample, with out-of-bag cells marked">
+    <text x="160" y="16" text-anchor="middle" class="lbl">trees (each drew 5 rows with replacement)</text>
+    <g id="oobgrid"></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a cell: row = an email, column = a tree. The number is how many times that tree drew that email.</p></div>
+  </div>
+  <figcaption>An out-of-bag table for a tiny forest, made up for this page. The counts are illustrative, chosen so the cases are easy to see.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each column is one tree's resample, and each column's counts add up to 5 because every tree drew five times. A number is how often that tree saw that email; a dashed grey cell marked “out” is an email the tree never saw. Email 2 is out of bag for trees 1 and 3, so its out-of-bag vote is the vote of those two trees only. Email 5 was drawn by every tree, so it has no out-of-bag vote at all in this tiny forest: with only four trees that happens, and it is one reason the paper grows 100 trees before trusting the estimates.</p>
+<h4>The math</h4>
+<p>How many rows does a resample leave out? A given row is missed by one draw with chance 1 − 1/N, and by all N draws with chance (1 − 1/N)<sup>N</sup>. The paper just says “about one-third”; this is where the third comes from.</p>
+<div class="eq" data-tex="\htmlData{sym=oobfrac}{P(\text{out of bag})} = \Big(1 - \frac{1}{\htmlData{sym=N}{N}}\Big)^{\htmlData{sym=N}{N}} \approx \frac{1}{\htmlData{sym=eul}{e}}" data-fallback="P(out of bag) = (1 − 1/N)^N ≈ 1/e"></div>
+<div class="symtable" data-syms="oobfrac,N,eul"></div>
+<p class="inwords"><strong>In words:</strong> “the chance a row never makes it into a resample is the chance of missing it once, multiplied by itself once per draw, which settles near 37% for large datasets.”</p>
+<p class="inwords"><strong>With the numbers:</strong> N = 5 gives 0.8<sup>5</sup> = 0.328; N = 1,000 gives 0.3677, already close to 1/e = 0.3679.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+N = 5
+# (1 − 1/N)^N: missed by every one of the N draws
+round((1 - 1 / N) ** N, 3)  # → 0.328
+round((1 - 1 / 1000) ** 1000, 4)  # → 0.3677
+round(1 / math.e, 4)  # → 0.3679</code></pre>
+<p>The paper points out a subtlety. Each row's out-of-bag vote uses only about a third of the trees, and fewer trees make a slightly worse forest, so the out-of-bag error tends to <em>overestimate</em> the current forest's error. Run past the point where the error has settled and the estimate becomes unbiased, which, the paper stresses, is more than cross-validation can promise. It cites earlier empirical work (Breiman, 1996) showing the out-of-bag estimate is as accurate as a test set the same size as the training set.</p>
+<h4>Why it matters</h4>
+<p>A free validation score is one reason forests are so easy to use: you can compare settings without holding back data. The same out-of-bag rows power the strength and correlation estimates (Appendix II, <a href="#appendix">below</a>) and the variable importance of §10. The lesson computes the out-of-bag fraction with <a data-lesson="primer/ml/classical.html#out_of_bag_fraction"><code>out_of_bag_fraction</code></a>.</p>
+</section>
+</section>
+
+<section id="s4">
+<h2>4 Random forests using random input selection <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“It was surprising that using a single randomly chosen input variable to split on at each node could produce good accuracy.”<cite>Breiman (2001), §4</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The simplest random forest, which the paper calls <strong>Forest-RI</strong> (random inputs): at each node, draw F of the M inputs at random, find the best split among just those (with the usual <span class="t" data-tip-title="CART" data-tip="Classification and Regression Trees (Breiman, Friedman, Olshen and Stone, 1984): binary trees whose splits are chosen greedily by Gini impurity for labels or squared error for numbers. The recipe this paper's trees follow, grown to full size and not pruned.">CART</span> search), grow the tree to full size, and do not prune.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The paper tries two group sizes on every dataset: F = 1, a single random input per node, and F = int(log<sub>2</sub> M + 1). The sonar data has M = 60 inputs, so the second choice is 6.</p>
+<div class="eq" data-tex="\htmlData{sym=F}{F} = \htmlData{sym=intf}{\operatorname{int}}\big(\htmlData{sym=log2}{\log_2} \htmlData{sym=M}{M} + 1\big)" data-fallback="F = int(log2 M + 1)"></div>
+<div class="symtable" data-syms="F,M,log2,intf"></div>
+<p class="inwords"><strong>In words:</strong> “try about as many inputs per node as it takes binary digits to count the inputs.”</p>
+<p class="inwords"><strong>With the numbers:</strong> sonar, M = 60: log<sub>2</sub> 60 = 5.9, plus 1 is 6.9, so F = 6. Zip-code digits, M = 256: F = 9. The §9 data with M = 1,000 inputs: F = 10, as the paper states.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# F = int(log2 M + 1) for sonar, zip-code and the §9 data
+[int(math.log2(M) + 1) for M in (60, 256, 1000)]  # → [6, 9, 10]</code></pre>
+<p>For each of 13 smaller datasets, the paper sets aside a random 10%, grows 100 trees with each F, keeps the F with the lower out-of-bag error, and scores it on the held-out 10%; it repeats this 100 times and averages. Adaboost gets 50 trees on the same splits.</p>
+<div class="plot" id="t2-plot"><div id="t2-bars"></div></div>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Table 2, reproduced with attribution (Breiman, 2001). Test set error, %. “Forest-RI” is the F chosen by out-of-bag error; “one tree” is the out-of-bag error of the forest's individual trees.</caption>
+  <thead><tr><th>Data set</th><th class="num">Adaboost</th><th class="num">Forest-RI</th><th class="num">F = 1 only</th><th class="num">One tree</th></tr></thead>
+  <tbody>
+    <tr><td>breast cancer</td><td class="num">3.2</td><td class="num">2.9</td><td class="num">2.7</td><td class="num">6.3</td></tr>
+    <tr><td>diabetes</td><td class="num">26.6</td><td class="num">24.2</td><td class="num">24.3</td><td class="num">33.1</td></tr>
+    <tr><td>sonar</td><td class="num">15.6</td><td class="num">15.9</td><td class="num">18.0</td><td class="num">31.7</td></tr>
+    <tr><td>vowel</td><td class="num">4.1</td><td class="num">3.4</td><td class="num">3.3</td><td class="num">30.4</td></tr>
+    <tr><td>German credit</td><td class="num">23.5</td><td class="num">24.4</td><td class="num">26.2</td><td class="num">33.3</td></tr>
+    <tr><td>letters</td><td class="num">3.4</td><td class="num">3.5</td><td class="num">4.7</td><td class="num">19.8</td></tr>
+    <tr><td>zip-code</td><td class="num">6.2</td><td class="num">6.3</td><td class="num">7.8</td><td class="num">20.6</td></tr>
+    <tr><td>ringnorm</td><td class="num">6.9</td><td class="num">4.9</td><td class="num">4.9</td><td class="num">25.7</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> in the bars, grey is Adaboost, blue is Forest-RI and the striped bars are a single tree from the same forest; shorter is better. On most rows the forest and Adaboost are within a point of each other, the forest winning some (vowel, ringnorm) and losing some (German credit). The striking column is the last: each tree alone is far worse (30.4% on vowel against 3.4% for the forest). The forest is not a collection of good trees; it is a good committee of mediocre ones. The paper notes that the average gap between F = 1 and the larger F is under one point: the method is not sensitive to F.</p>
+<h3 class="rung">It is also fast</h3>
+<p>Searching F inputs instead of all M makes each node cheaper. The paper gives the ratio of compute time against growing unpruned trees on all inputs:</p>
+<div class="eq" data-tex="\text{time ratio} = \frac{\htmlData{sym=F}{F}\,\htmlData{sym=log2}{\log_2} \htmlData{sym=N}{N}}{\htmlData{sym=M}{M}}" data-fallback="time ratio = F log2 N / M"></div>
+<div class="symtable" data-syms="F,N,M,log2"></div>
+<p class="inwords"><strong>In words:</strong> “a random-input tree costs roughly F times the log of the number of rows, compared with M for a tree that searches every input.”</p>
+<p class="inwords"><strong>With the numbers:</strong> zip-code with F = 1: N = 7,291 training rows and M = 256 inputs give log<sub>2</sub> 7291 / 256 = 12.8 / 256 = <strong>0.050</strong>, a 20-fold saving. The paper prints the ratio as .025 and “40 times faster”, twice what its own formula gives for these numbers, so one of the two has slipped. Its measured run is in the same range: 4.0 minutes for 100 Forest-RI trees on a 250 MHz Macintosh, against almost three hours for Adaboost (which combined 100 trees on zip-code).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+F, N, M = 1, 7291, 256
+# F log2 N / M
+ratio = F * math.log2(N) / M
+round(ratio, 3)  # → 0.05
+# how many times faster
+round(1 / ratio, 1)  # → 20.0</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>“One random input per node already works” is the result that showed how much of a forest's power comes from decorrelation rather than from clever splits. Modern defaults sit between the paper's two choices; the lesson's <a data-lesson="primer/ml/classical.html#RandomForest"><code>RandomForest</code></a> uses the square root of the number of features.</p>
+</section>
+
+<section id="s5">
+<h2>5 Random forests using linear combinations of inputs <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>With only a handful of inputs, drawing F of them at random does not decorrelate much: the trees keep drawing the same few. <strong>Forest-RC</strong> (random combinations) invents new inputs instead. At each node it mixes L randomly chosen inputs with random weights, makes F such mixtures, and splits on the best one. There are so many possible mixtures that trees rarely repeat each other.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Take L = 3 inputs, already rescaled to comparable units: age 0.5, income −1.2 and number of links 2.0. Draw three weights uniformly between −1 and 1, say 0.3, −0.8 and 0.5. The new feature for this row is 0.3 × 0.5 + (−0.8) × (−1.2) + 0.5 × 2.0 = 0.15 + 0.96 + 1.0 = <strong>2.11</strong>. The node then searches for the best threshold on that feature, exactly as it would on a real column.</p>
+<div class="eq" data-tex="\htmlData{sym=v}{v} = \htmlData{sym=suml}{\sum_{l=1}^{L}} \htmlData{sym=al}{a_l}\, \htmlData{sym=xml}{x_{m_l}}, \qquad \htmlData{sym=al}{a_l} \sim \htmlData{sym=unif}{U[-1, 1]}" data-fallback="v = Σ_{l=1}^{L} a_l x_{m_l},   a_l ~ U[−1, 1]"></div>
+<div class="symtable" data-syms="v,suml,al,xml,unif"></div>
+<p class="inwords"><strong>In words:</strong> “a random feature is a weighted sum of L randomly chosen inputs, with each weight drawn evenly from −1 to 1.” (The paper describes this in prose; the formula is ours.)</p>
+<p class="inwords"><strong>With the numbers:</strong> 0.3 × 0.5 + (−0.8) × (−1.2) + 0.5 × 2.0 = 2.11.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># a_l: the random weights; x_{m_l}: the chosen inputs (age, income, links)
+a = [0.3, -0.8, 0.5]
+x = [0.5, -1.2, 2.0]
+# v = Σ a_l x_{m_l}
+round(sum(a_l * x_ml for a_l, x_ml in zip(a, x)), 2)  # → 2.11</code></pre>
+<p>The paper uses L = 3 and picks F = 2 or F = 8 by out-of-bag error, rescaling inputs to mean 0 and spread 1 first when their units differ. The results (its Table 3) compare with Adaboost even more favourably than Forest-RI: 13.6% against 15.6% on sonar, 23.0% against 26.6% on diabetes, 3.8% against 4.9% on twonorm. A later experiment with F = 100 combinations reached 8.5% on the satellite images and 3.0% on the letters, and Forest-RI with F = 25 reached 5.8% on zip-code, which the paper calls the lowest test set errors so far achieved on these three datasets by tree ensembles.</p>
+<h3 class="rung">5.1 Categorical variables</h3>
+<p>A <span class="t" data-tip-title="Categorical variable" data-tip="An input whose values are labels rather than amounts, such as a region code or a colour. The values have no order, so “region 4” is not twice “region 2”.">categorical</span> input with I values (a region code with I = 6 regions, say) is handled by drawing a random subset of its categories each time it is chosen, and turning it into a yes/no feature: “is the region in this subset?”. Since such an input carries as much as I − 1 yes/no columns would, it is made I − 1 times as likely to be picked; the region code is 5 times as likely as a numeric input. With many categorical inputs, the paper finds F must rise to two or three times int(log<sub>2</sub> M + 1) to keep enough strength. This also sidesteps the costly search for the best subset of categories, which for more than two classes grows like 2<sup>I−1</sup>.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Random combinations produce splits that are not parallel to the axes, an idea that returns in later “oblique” forests. Most popular implementations kept Forest-RI's simpler axis-aligned splits, which are easier to explain and faster.</p>
+</section>
+
+<section id="s6">
+<h2>6 Empirical results on strength and correlation <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“Past about F=4 the strength remains constant; adding more inputs does not help. But the correlation continues to increase.”<cite>Breiman (2001), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Let each doctor see more test results and two things happen: each becomes a little better, and they start agreeing more, mistakes included. Past some point the first effect stops and only the second continues.</p>
+<h3 class="rung">The experiment</h3>
+<p>On the sonar data (60 inputs, 208 examples) the paper grows Forest-RI with every F from 1 to 50, 100 trees each, repeated 80 times on random 10% test splits: 400,000 trees in all. It records the out-of-bag strength and correlation for each F.</p>
+<div class="plot" id="fig1-plot">
+  <div id="fig1-chart"></div>
+  <p class="readout" id="fig1-readout">Hover or tap the chart to read strength and correlation at any F.</p>
+  <div id="fig1b-chart"></div>
+  <p class="readout" id="fig1b-readout">Hover or tap the chart to read the ratio c/s² at any F.</p>
+  <p class="readout"><em>Strength and correlation are read off the top panel of the paper's Figure 1 by eye, so each is approximate to about ±0.01. The ratio c/s<sup>2</sup> is computed on this page from those readings.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the horizontal axis is F, the number of random inputs each node may choose from. The solid line (strength) climbs quickly up to F of about 4 and then stays almost flat near 0.4. The dashed line (correlation) starts lower and keeps climbing all the way to about 0.5. The second chart is their ratio ρ̄/s<sup>2</sup>, the quantity Theorem 2.3 says to keep small (note its axis starts at 2.5): it falls to its lowest around F = 5 or 6, then climbs steadily as extra correlation buys no extra strength. The paper's error curves (the bottom panel of its Figure 1) behave the same way: a small drop out to F of about 4 to 8, then a slow rise.</p>
+<h3 class="rung">Other datasets</h3>
+<p>On the breast cancer data with random combinations (Figure 2), strength is flat from the start and correlation creeps up, so the best F is 1. On the larger satellite data (Figure 3), both keep rising slowly and the error falls slightly as F grows; the paper conjectures that on larger, more complex data the strength keeps improving for longer before it plateaus.</p>
+<h3 class="rung">Why it matters</h3>
+<p>This is the evidence behind the rule “use few random inputs per node”. It also explains why forests are so forgiving to tune: the ratio is shallow over a wide range of F, so almost any sensible choice lands near the best.</p>
+</section>
+
+<section id="s7">
+<h2>7 Conjecture: Adaboost is a random forest <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“… my belief is that in its later stages Adaboost is emulating a random forest.”<cite>Breiman (2001), §1.2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A pseudo-random number generator is completely deterministic, yet its output looks random. <span class="t" data-t="adaboost">Adaboost</span> is also deterministic: it reweights the training examples after each tree, raising the weight of the ones just misclassified. Breiman's hunch is that, after a while, this sequence of weightings wanders like a random draw from some fixed distribution, which would make Adaboost a random forest in disguise.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Adaboost gives each tree a vote weight that grows with its accuracy on the weighted data. A tree with 10% weighted error gets log(0.9/0.1) = 2.197; one with 40% error gets log(0.6/0.4) = 0.405; one no better than a coin flip (50%) gets 0.</p>
+<div class="eq" data-tex="\htmlData{sym=Qw}{Q(w_k)} = \log\!\left[\frac{1 - \htmlData{sym=errk}{\text{error}(k)}}{\htmlData{sym=errk}{\text{error}(k)}}\right]" data-fallback="Q(w_k) = log[(1 − error(k)) / error(k)]"></div>
+<div class="symtable" data-syms="Qw,errk"></div>
+<p class="inwords"><strong>In words:</strong> “a tree's say in the vote is the logarithm of its odds of being right on the weighted training set.”</p>
+<p class="inwords"><strong>With the numbers:</strong> taking log as the natural logarithm, error 0.1: log 9 = 2.197; error 0.25: log 3 = 1.099; error 0.4: log 1.5 = 0.405; error 0.5: log 1 = 0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# Q(w_k) = log[(1 − error(k)) / error(k)], natural log
+[round(math.log((1 - err) / err), 3) for err in (0.1, 0.25, 0.4, 0.5)]  # → [2.197, 1.099, 0.405, 0.0]</code></pre>
+<h3 class="rung">The experiment</h3>
+<p>The paper runs Adaboost 75 times, discards the first 25 weightings, and treats the remaining 50 as a deck of cards, each drawn with probability proportional to its Q. A random forest that grows each tree on a randomly drawn card from this deck matched Adaboost closely: on the Wisconsin breast cancer data, 2.91% error for Adaboost against 2.94% for the forest. If the conjecture holds (the paper states it precisely as an <span class="t" data-tip-title="Ergodic" data-tip="A property of a process that keeps moving through its states: over a long run, the time it spends in each region matches a fixed distribution. Averages over time then equal averages over that distribution.">ergodicity</span> condition on the reweighting map), it would also explain why Adaboost does not overfit as trees are added, which was a puzzle at the time.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The conjecture was never settled in this paper, and later work showed that boosting can overfit when run long enough on noisy data, which is why modern boosting uses <span class="t" data-t="early stopping">early stopping</span>. The lasting lesson is the contrast in how the two families work: boosting changes the training set as it goes, forests never do.</p>
+</section>
+
+<section id="s8">
+<h2>8 The effects of output noise <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“Then, Adaboost will concentrate increasing weight on these noisy instances and become warped.”<cite>Breiman (2001), §8</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A tutor who spends each lesson on the questions you got wrong last time is excellent, until the answer key has typos. Then the tutor keeps drilling the questions whose “correct” answers are wrong, and the whole course bends around them. A committee that never reweights anything just outvotes the typos.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The paper flips 5% of the training labels (about one in twenty) to a different class at random, and measures how much the test error rises. On the breast cancer data, Adaboost's error rises by 43.2%; Forest-RI's by 1.8%.</p>
+<div class="plot" id="t4-plot"><div id="t4-bars"></div></div>
+<p class="reading"><strong>Reading it:</strong> each pair of bars is one dataset from the paper's Table 4, selected rows reproduced with attribution (Breiman, 2001): the percent increase in test error when 5% of the training labels are wrong. Grey bars are Adaboost and the striped blue bars are Forest-RI; a negative value (sonar) means the noisy run happened to score slightly better. Adaboost's damage is large and uneven, from a few percent to almost 50%, while the forest's stays in single digits. The reason is in the quote above: mislabelled examples keep being misclassified, so boosting keeps raising their weight.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Real labels are noisy. Robustness to wrong labels is one of the practical reasons forests remain a safe default, and why boosting libraries added shrinkage, subsampling and early stopping (see the <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a>).</p>
+</section>
+
+<section id="s9">
+<h2>9 Data with many weak inputs <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“Forests seem to have the ability to work with very weak classifiers as long as their correlation is low.”<cite>Breiman (2001), §9</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Some problems have no single tell-tale clue: a diagnosis from hundreds of lab values, each only slightly informative. One tree, which asks about one input at a time, barely beats guessing. But a crowd of barely-better-than-guessing trees, if their mistakes are independent, can add up to an expert.</p>
+<h3 class="rung">Tiny example: the paper's run</h3>
+<p>The paper simulates 10 classes and 1,000 yes/no inputs, 1,000 training and 4,000 test examples. The best possible error (the <span class="t" data-tip-title="Bayes error rate" data-tip="The lowest error any classifier could achieve on a problem, even knowing exactly how the data was generated: some examples are genuinely ambiguous.">Bayes rate</span>) is 1.0%, and a <span class="t" data-tip-title="Naive Bayes" data-tip="A classifier that assumes every input is independent of the others given the class, and multiplies each input's evidence together. Here that assumption happens to be true, which flatters it.">naive Bayes</span> classifier gets 6.2%.</p>
+<div class="tablewrap"><table>
+  <caption>Forest-RI on the §9 data, as reported in Breiman (2001), §9. The last column is computed here from the rounded values.</caption>
+  <thead><tr><th class="num">F</th><th class="num">One tree's error</th><th class="num">Forest error</th><th class="num">Strength s</th><th class="num">Correlation ρ̄</th><th class="num">c/s² (paper)</th><th class="num">ρ̄/s² (recomputed)</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td class="num">80%</td><td class="num">10.7%</td><td class="num">0.069</td><td class="num">0.012</td><td class="num">2.5</td><td class="num">2.52</td></tr>
+    <tr><td class="num">10</td><td class="num">65%</td><td class="num">3.0%</td><td class="num">0.22</td><td class="num">0.045</td><td class="num">0.91</td><td class="num">0.93</td></tr>
+    <tr class="hl"><td class="num">25</td><td class="num">60%</td><td class="num">2.8%</td><td class="num">0.28</td><td class="num">0.065</td><td class="num">0.83</td><td class="num">0.83</td></tr>
+  </tbody>
+</table></div>
+<p>Each tree is wrong 60% to 80% of the time, yet the forest with F = 25 gets 2.8%, not far above the 1.0% floor and well below naive Bayes. With F = 1 the correlation is almost zero but the strength is too low, and the forest had still not converged after 2,500 trees. Raising F bought strength at a small price in correlation, and the ratio fell from 2.5 to 0.83, tracking the error. (The paper's 0.91 for F = 10 differs from the 0.93 recomputed here only because its strength is printed rounded to 0.22.) The paper could not get Adaboost to run on this data at all, because the individual trees are too weak.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># (s, ρ̄) for F = 1, 10, 25, as printed in §9
+runs = [(0.069, 0.012), (0.22, 0.045), (0.28, 0.065)]
+# c/s² = ρ̄ / s²
+[round(rho_bar / s ** 2, 2) for s, rho_bar in runs]  # → [2.52, 0.93, 0.83]</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The same principle, many weak but independent voters, is behind every ensemble method, including the averaging of many randomly thinned networks that <a href="dropout.html">dropout</a> approximates inside one neural network.</p>
+</section>
+
+<section id="s10">
+<h2>10 Exploring the random forest mechanism <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“A forest of trees is impenetrable as far as simple interpretations of its mechanism go.”<cite>Breiman (2001), §10</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>To learn which player a football team depends on, bench each one for a real match and see how much the score suffers. The paper does this to the inputs of a forest: scramble one input's values in the out-of-bag rows, so it no longer lines up with anything, and measure how much worse the out-of-bag vote gets.</p>
+<h3 class="rung">Tiny example</h3>
+<p>A forest has an out-of-bag error of 20%. Shuffle input m among the out-of-bag rows, run them down the trees again, and the out-of-bag error becomes 26%. The paper reports the percent increase: (26 − 20) / 20 = <strong>30%</strong>.</p>
+<div class="eq" data-tex="\htmlData{sym=Imp}{\text{increase}_m} = 100 \times \frac{\htmlData{sym=em}{e_m} - \htmlData{sym=eoob}{e}}{\htmlData{sym=eoob}{e}}" data-fallback="increase_m = 100 × (e_m − e) / e"></div>
+<div class="symtable" data-syms="Imp,em,eoob"></div>
+<p class="inwords"><strong>In words:</strong> “an input's importance is how much, in percent, the out-of-bag error grows when that input is scrambled.” (The paper describes this in prose; the formula is ours.)</p>
+<p class="inwords"><strong>With the numbers:</strong> 100 × (0.26 − 0.20) / 0.20 = 30.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># out-of-bag error intact, and with input m scrambled
+e, e_m = 0.20, 0.26
+round(100 * (e_m - e) / e, 1)  # → 30.0</code></pre>
+<div class="plot" id="fig4-plot"><div id="fig4-bars"></div>
+  <p class="readout"><em>Values read off the paper's Figure 4 by eye, approximate to about ±1.</em></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each bar is one of the eight inputs of the diabetes data, and its length is the percent rise in out-of-bag error when that input is scrambled (a forest of 1,000 trees, F = 1). Input 2 dominates at about 34%, followed by input 8 (about 14%) and input 6 (about 10%). The paper then checks by refitting on subsets: input 2 alone gives 29.7% test error against 23.1% with everything; adding input 6 brings it to 26.4%, but adding input 8 only to 29.4%. Input 8 looked important because it carries much of the same information as input 2: scrambling either one hurts, but once one is in, the other adds little.</p>
+<p>On the congressional voting data (435 members, 16 yes/no votes), one vote stands out: scrambling it triples the error, and a forest using that single vote scores 4.3%, about the same as one using all sixteen.</p>
+<h3 class="rung">Why it matters</h3>
+<p>This procedure grew into permutation importance, now standard for any model. The <a data-lesson="primer/ml/classical.html">trees and boosting lesson</a> implements it on held-out validation data as <a data-lesson="primer/ml/classical.html#permutation_importance"><code>permutation_importance</code></a>, and shows the cheaper impurity-based importance (<a data-lesson="primer/ml/classical.html#RandomForest.feature_importances"><code>RandomForest.feature_importances</code></a>) crediting a pure-noise column. The paper's diabetes finding is the caveat the lesson repeats: correlated inputs share the credit, and importance is not cause.</p>
+</section>
+
+<section id="s11">
+<h2>11 Random forests for regression <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“The randomization employed needs to aim at low correlation.”<cite>Breiman (2001), §11</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>For numbers instead of labels, the trees no longer vote; they average. Ask a hundred people to guess the weight of an ox and average the guesses: individual errors cancel, but only to the extent that people do not all err in the same direction.</p>
+<h3 class="rung">Tiny example</h3>
+<p>The paper's Table 7 reports, for the Boston housing data, that a single tree's mean squared error averages 26.3, and that two trees' <span class="t" data-t="residual">residuals</span> (true value minus prediction) have a weighted correlation of 0.45. Theorem 11.2 promises the forest's error is at most 0.45 × 26.3 = <strong>11.8</strong>. The forest's out-of-bag error is 11.6 and its test error 10.2.</p>
+<div class="eq" data-tex="\htmlData{sym=PEforest}{PE^*(\text{forest})} \le \htmlData{sym=rhobarr}{\bar\rho}\; \htmlData{sym=PEtree}{PE^*(\text{tree})}" data-fallback="PE*(forest) ≤ ρ̄ · PE*(tree)"></div>
+<div class="symtable" data-syms="PEforest,rhobarr,PEtree"></div>
+<p class="inwords"><strong>In words:</strong> “averaging the trees divides their typical squared error by at least the mean correlation of their residuals.”</p>
+<p class="inwords"><strong>With the numbers:</strong> Boston: 0.45 × 26.3 = 11.8 (out-of-bag 11.6); ozone: 0.55 × 32.5 = 17.9 (out-of-bag 17.6); abalone: 0.56 × 8.3 = 4.6 (out-of-bag 4.6).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># (ρ̄, PE*(tree)) from Table 7 for Boston, ozone and abalone
+rows = [(0.45, 26.3), (0.55, 32.5), (0.56, 8.3)]
+# the bound ρ̄ · PE*(tree)
+[round(rho_bar * pe_tree, 1) for rho_bar, pe_tree in rows]  # → [11.8, 17.9, 4.6]</code></pre>
+<p>The theorem assumes each tree is unbiased on average (its average prediction equals the average target). Its proof is the same move as §2.2: the forest's squared error is an average, over pairs of trees, of the covariance of their residuals, which is correlation times spreads. Theorem 11.1, the regression version of Theorem 1.2, says the average over trees converges as trees are added, so again more trees cannot overfit.</p>
+<h3 class="rung">Why it matters</h3>
+<p>With B → ∞ this is exactly the lesson's formula ρσ<sup>2</sup> + (1 − ρ)σ<sup>2</sup>/B with the second term gone: the floor is ρσ<sup>2</sup>. The lesson plots it with <a data-lesson="primer/ml/classical.html#averaged_variance"><code>averaged_variance</code></a> and <a data-lesson="primer/ml/classical.html#forest_curve"><code>forest_curve</code></a>.</p>
+</section>
+
+<section id="s12">
+<h2>12 Empirical results in regression <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<h3 class="rung">What the paper finds</h3>
+<p>Regression forests here use bagging plus 25 random features per node, each a random combination of two inputs, 100 trees, and no split of a node with fewer than 5 examples. Against plain bagging and Breiman's earlier adaptive bagging:</p>
+<div class="tablewrap"><table>
+  <caption>Selected rows of Tables 6 and 7, reproduced with attribution (Breiman, 2001). Mean squared test error, and the out-of-bag (OB) estimates for the forest.</caption>
+  <thead><tr><th>Data set</th><th class="num">Bagging</th><th class="num">Adaptive bagging</th><th class="num">Forest</th><th class="num">Forest OB error</th><th class="num">PE*(tree)</th><th class="num">Correlation</th></tr></thead>
+  <tbody>
+    <tr><td>Boston housing</td><td class="num">11.4</td><td class="num">9.7</td><td class="num">10.2</td><td class="num">11.6</td><td class="num">26.3</td><td class="num">0.45</td></tr>
+    <tr><td>Ozone</td><td class="num">17.8</td><td class="num">17.8</td><td class="num">16.3</td><td class="num">17.6</td><td class="num">32.5</td><td class="num">0.55</td></tr>
+    <tr><td>Abalone</td><td class="num">4.9</td><td class="num">4.9</td><td class="num">4.6</td><td class="num">4.6</td><td class="num">8.3</td><td class="num">0.56</td></tr>
+    <tr><td>Friedman #1</td><td class="num">6.3</td><td class="num">4.1</td><td class="num">5.7</td><td class="num">6.3</td><td class="num">15.3</td><td class="num">0.41</td></tr>
+  </tbody>
+</table></div>
+<p>The forest always beats bagging. Where adaptive bagging (which, like boosting, changes the training data as it goes) helps a lot, the forest helps less; where it helps nothing, the forest still helps. One difference from classification: correlation rises only slowly as more features are allowed per node, so regression forests need more features per node to drive down each tree's error.</p>
+<p>The paper also swaps bagging for random output noise (Gaussian noise with the same spread as the targets added to every training target) and gets its lowest errors yet on the first two datasets. Its Table 8 lists Boston at 10.2 with bagging and 9.1 with noise. One entry there does not match the earlier tables: Table 8 gives ozone's with-bagging error as 17.8, which is bagging's entry in Table 6, while the forest's is 16.3 in Tables 6 and 7, the same value Table 8 gives for the noise version.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The out-of-bag estimates track the test errors, usually a little high, as §3.1 predicted. And the result that different kinds of injected randomness work better on different problems is the paper's invitation to experiment, which later methods such as extremely randomized trees took up.</p>
+</section>
+
+<section id="s13">
+<h2>13 Remarks and conclusions <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<blockquote class="quote">“Because of the Law of Large Numbers they do not overfit.”<cite>Breiman (2001), §13</cite></blockquote>
+<h3 class="rung">What the paper leaves open</h3>
+<ul>
+  <li><strong>Why forests reduce bias.</strong> Boosting is known to reduce bias as well as variance by reweighting the data. Forests never change the data, yet match boosting's accuracy, so they must reduce bias too, and the paper admits the mechanism is not obvious.</li>
+  <li><strong>Other randomness.</strong> Bagging and random features are only two choices; a referee suggested random Boolean combinations of features.</li>
+  <li><strong>Random features plus boosting.</strong> Combining the two gave errors as low as 5.1% on zip-code, 2.2% on letters and 7.9% on the satellite data in some runs: better than either alone on the larger datasets.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The last open question was answered in practice: modern gradient-boosting libraries sample rows and columns at random for every tree, borrowing the forest's decorrelation trick to make boosting more robust.</p>
+</section>
+
+<section id="appendix">
+<h2>Appendix II: out-of-bag estimates for strength and correlation <span class="orig">· <a href="https://doi.org/10.1023/A:1010933404324">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Strength and correlation are defined through the probabilities that an imaginary random tree votes each way. The appendix replaces each imaginary probability with a real count: the share of out-of-bag trees that voted that way.</p>
+<h3 class="rung">Tiny example</h3>
+<p>In the out-of-bag table above, email 2 is spam and is out of bag for trees 1 and 3. If both vote spam, its out-of-bag vote share for spam is 2/2 = 1. Email 1 is out of bag only for tree 2; if tree 2 votes not spam, email 1's share for spam is 0/1 = 0.</p>
+<div class="eq" data-tex="\htmlData{sym=Qxj}{Q(x, j)} = \frac{\htmlData{sym=sumk}{\sum_k} \htmlData{sym=Ind}{I}\big(h(x, \htmlData{sym=Thetak}{\Theta_k}) = \htmlData{sym=j}{j};\ (y, x) \notin \htmlData{sym=Tk}{T_k}\big)}{\htmlData{sym=sumk}{\sum_k} \htmlData{sym=Ind}{I}\big((y, x) \notin \htmlData{sym=Tk}{T_k}\big)}" data-fallback="Q(x, j) = Σ_k I(h(x, Θ_k) = j; (y, x) ∉ T_k) / Σ_k I((y, x) ∉ T_k)"></div>
+<div class="symtable" data-syms="Qxj,sumk,Thetak,Tk,Ind,j"></div>
+<p class="inwords"><strong>In words:</strong> “among the trees that never saw this example, the share that voted for class j.”</p>
+<p class="inwords"><strong>With the numbers:</strong> email 2: trees 1 and 3 are out of bag and both vote spam, so Q(email 2, spam) = 2/2 = 1.0. Replace the probabilities in the margin by these shares, average over the training set, and you have the out-of-bag strength; the spread of those margins gives the correlation through equation (7).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># for email 2: which trees saw it, and how each tree votes on it
+in_bag = {1: False, 2: True, 3: False, 4: True}
+vote = {1: "spam", 2: "not", 3: "spam", 4: "spam"}
+oob_trees = [k for k in in_bag if not in_bag[k]]
+oob_trees  # → [1, 3]
+# Q(x, spam): the out-of-bag share of votes for spam
+sum(1 for k in oob_trees if vote[k] == "spam") / len(oob_trees)  # → 1.0</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>This is what makes the theory usable: strength and correlation are not just symbols in a bound, they are numbers the forest reports about itself on every run, as §6 and §9 show.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2001</h2>
+<p>The algorithm most people run today is the paper's Forest-RI with bagging, almost unchanged. What moved is around it:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Common today</th><th>Why</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>F = 1 or int(log<sub>2</sub> M + 1) inputs per node</td><td>About the square root of the number of inputs for classification</td><td>A middle ground between the paper's two settings that works on most tables</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
+    <tr><td>Importance by scrambling inputs in the out-of-bag rows</td><td>Permutation importance on a held-out set, for any model; impurity importance as a quick look</td><td>Impurity importance is biased towards inputs with many distinct values</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
+    <tr><td>Forests versus Adaboost</td><td>Forests versus gradient-boosted trees</td><td>Boosting with shrinkage and subsampling usually edges out forests when tuned; forests need less tuning</td><td><a data-lesson="primer/ml/classical.html">trees lesson</a></td></tr>
+    <tr><td>Averaging many randomized models</td><td>The same idea inside neural networks</td><td>Dropout trains an implicit ensemble of thinned networks</td><td><a href="dropout.html">dropout companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Leo Breiman, <em>Random Forests</em>, Machine Learning 45 (2001). <a href="https://doi.org/10.1023/A:1010933404324">doi:10.1023/A:1010933404324</a>. Quotations are brief and attributed; a few table rows are reproduced with attribution; every chart and diagram is redrawn. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §2.1
+    mg: { tex: "mg", name: "Margin function", meaning: "How far the vote for the true class leads the vote for the strongest wrong class, for a finite set of trees. Positive means the ensemble is right at this example; the bigger, the safer.", shape: "−1 … +1", example: "0.4 for email A" },
+    X: { tex: "X", name: "An input", meaning: "One example's inputs (an email's features), treated as drawn at random from the data the world produces.", shape: "a vector of M inputs", example: "email A" },
+    Y: { tex: "Y", name: "The true class", meaning: "The correct label of that example.", shape: "one of the classes", example: "spam" },
+    hk: { tex: "h_k", name: "Tree k", meaning: "The k-th tree, as a function from an input to a class.", shape: "input → class", example: "tree 3 says spam" },
+    Ind: { tex: "I", name: "Indicator", meaning: "1 if the statement in brackets is true, 0 if it is false. Averaging indicators counts the share of cases where something holds.", shape: "0 or 1", example: "I(spam = spam) = 1" },
+    avk: { tex: "\\operatorname{av}_k", name: "Average over trees", meaning: "The average over all the trees k in the ensemble. Applied to an indicator, it is the share of trees voting that way.", shape: "0 … 1", example: "7 of 10 trees: 0.7" },
+    maxj: { tex: "\\max_{j \\ne Y}", name: "Strongest wrong class", meaning: "The largest value over every class j except the true one: the most popular wrong answer.", shape: "one number", example: "not spam, with 0.3" },
+    j: { tex: "j", name: "A class", meaning: "A counter running over the possible classes.", shape: "one of the classes", example: "not spam" },
+    PEstar: { tex: "PE^*", name: "Generalization error", meaning: "The chance the forest misclassifies a fresh example from the same source as the training data.", shape: "0 … 1", example: "estimated 0.25 on four emails" },
+    PXY: { tex: "P_{X,Y}", name: "Probability over examples", meaning: "The chance of something, taken over the random draw of an example and its true class.", shape: "0 … 1", example: "one negative margin in four: 0.25" },
+    // §2.2
+    mr: { tex: "mr", name: "Margin of the forest", meaning: "The margin with infinitely many trees: vote shares replaced by the probabilities that a randomly grown tree votes each way. For two classes it is 2P − 1.", shape: "−1 … +1", example: "0.4 when P = 0.7" },
+    PTheta: { tex: "P_\\Theta", name: "Probability over trees", meaning: "The chance, over the random recipe Θ used to grow a tree, that the tree votes a given way at this example.", shape: "0 … 1", example: "0.7 for email A" },
+    Theta: { tex: "\\Theta", name: "The random recipe", meaning: "Everything random about how one tree is grown: which rows its bootstrap sample drew and which inputs each node was allowed to try. Independent from tree to tree, same distribution for all.", shape: "a random vector", example: "the counts (2, 0, 1, 1, 1)" },
+    s: { tex: "s", name: "Strength", meaning: "The average margin of the forest over all examples: how confidently right the trees are on average. Must be positive for the bounds to apply.", shape: "−1 … +1", example: "0.4 for the four emails; 0.28 in §9 with F = 25" },
+    EXY: { tex: "E_{X,Y}", name: "Average over examples", meaning: "The expected value over the random draw of an example and its class: the average you would get over very many examples.", shape: "one number", example: "(0.4 + 0.8 − 0.2 + 0.6) / 4" },
+    varmr: { tex: "\\operatorname{var}(mr)", name: "Variance of the margin", meaning: "How much the forest's margin spreads from example to example: the average squared distance from the strength s.", shape: "≥ 0", example: "0.14" },
+    rhobar: { tex: "\\bar\\rho", name: "Mean correlation", meaning: "How often two trees err together: the correlation between two trees' raw margins (+1 for right, −1 for the forest's top wrong class), averaged over pairs of trees and weighted by their spreads. 0 means independent mistakes.", shape: "−1 … 1", example: "0.065 in §9 with F = 25" },
+    // §3.1
+    oobfrac: { tex: "P(\\text{out of bag})", name: "Chance a row is left out", meaning: "The probability that a given training row is never drawn into one tree's bootstrap sample.", shape: "0 … 1", example: "0.328 for N = 5" },
+    N: { tex: "N", name: "Number of training rows", meaning: "How many examples the training set holds; each bootstrap sample makes N draws.", shape: "a whole number", example: "5 in the tiny example; 7,291 for zip-code" },
+    eul: { tex: "e", name: "Euler's number, about 2.718", meaning: "The constant that (1 − 1/N)^N approaches from below as N grows, via its reciprocal: 1/e ≈ 0.368.", shape: "a constant", example: "1/e = 0.3679" },
+    // §4
+    F: { tex: "F", name: "Inputs tried per node", meaning: "How many randomly chosen inputs (or random combinations) each node may search for its best split. The forest's one real tuning knob.", shape: "1 … M", example: "6 for sonar" },
+    M: { tex: "M", name: "Number of inputs", meaning: "How many input columns the data has.", shape: "a whole number", example: "60 for sonar, 256 for zip-code" },
+    log2: { tex: "\\log_2", name: "Logarithm base 2", meaning: "The power 2 must be raised to in order to give the number: roughly, how many times you can halve it before reaching 1.", shape: "one number", example: "log₂ 60 = 5.9" },
+    intf: { tex: "\\operatorname{int}", name: "Whole-number part", meaning: "Drop everything after the decimal point.", shape: "a whole number", example: "int(6.9) = 6" },
+    // §5
+    v: { tex: "v", name: "A random feature", meaning: "A new input made at one node by mixing a few real inputs with random weights. The node searches for the best threshold on it.", shape: "one number per row", example: "2.11" },
+    suml: { tex: "\\sum_{l=1}^{L}", name: "Sum over the chosen inputs", meaning: "Add up the L weighted inputs, for l = 1 to L.", shape: "one number", example: "L = 3: 0.15 + 0.96 + 1.0" },
+    al: { tex: "a_l", name: "Random weight", meaning: "The coefficient for the l-th chosen input, drawn fresh at each node.", shape: "−1 … 1", example: "0.3, −0.8, 0.5" },
+    xml: { tex: "x_{m_l}", name: "A chosen input", meaning: "The value of input number m_l, one of L inputs picked at random for this node.", shape: "one number", example: "income −1.2 (rescaled)" },
+    unif: { tex: "U[-1,1]", name: "Uniform between −1 and 1", meaning: "Every value between −1 and 1 is equally likely.", shape: "a distribution", example: "draws 0.3, −0.8, 0.5" },
+    // §7
+    Qw: { tex: "Q(w_k)", name: "Adaboost vote weight", meaning: "How much tree k's vote counts in Adaboost, set by its accuracy on the weighted training set w_k. The paper also uses it as the chance of drawing weighting k in its random forest imitation.", shape: "≥ 0 for a tree better than chance", example: "2.197 when the error is 0.1" },
+    errk: { tex: "\\text{error}(k)", name: "Weighted training error", meaning: "Tree k's error on the training set, each example counted by its current Adaboost weight.", shape: "0 … 1", example: "0.1" },
+    // §10
+    Imp: { tex: "\\text{increase}_m", name: "Importance of input m", meaning: "The percent rise in out-of-bag error when input m is scrambled among the out-of-bag rows.", shape: "a percentage (can be slightly negative)", example: "30" },
+    em: { tex: "e_m", name: "Error with input m scrambled", meaning: "The out-of-bag error after shuffling input m's values among the out-of-bag rows.", shape: "0 … 1", example: "0.26" },
+    eoob: { tex: "e", name: "Out-of-bag error", meaning: "The error of the out-of-bag vote with every input intact.", shape: "0 … 1", example: "0.20" },
+    // §11
+    PEforest: { tex: "PE^*(\\text{forest})", name: "Forest's squared error", meaning: "The mean squared error of the forest's averaged prediction on fresh examples, in the limit of many trees.", shape: "≥ 0", example: "Boston: test 10.2, out-of-bag 11.6" },
+    rhobarr: { tex: "\\bar\\rho", name: "Mean residual correlation", meaning: "How much two trees' errors (true value minus prediction) move together, averaged over pairs of trees and weighted by their sizes.", shape: "−1 … 1", example: "0.45 for Boston" },
+    PEtree: { tex: "PE^*(\\text{tree})", name: "A tree's squared error", meaning: "The mean squared error of a single randomly grown tree, averaged over trees.", shape: "≥ 0", example: "26.3 for Boston" },
+    // Appendix II
+    Qxj: { tex: "Q(x, j)", name: "Out-of-bag vote share", meaning: "Among the trees whose bootstrap sample left example x out, the share that vote for class j. It estimates the probability that a random tree votes j at x.", shape: "0 … 1", example: "1.0 for email 2 and spam" },
+    sumk: { tex: "\\sum_k", name: "Sum over trees", meaning: "Add up over every tree k in the forest.", shape: "one number", example: "over trees 1 to 4" },
+    Thetak: { tex: "\\Theta_k", name: "Tree k's recipe", meaning: "The random recipe used to grow tree k.", shape: "a random vector", example: "tree 3's resample" },
+    Tk: { tex: "T_k", name: "Tree k's bootstrap sample", meaning: "The resampled training set tree k was grown on. (y, x) ∉ T_k means the example was left out of it.", shape: "N rows, with repeats", example: "tree 1 drew emails 1, 1, 3, 4, 5" },
+  },
+
+  blocks: {
+    train: { title: "Training set", body: "<p>N labelled examples. Nothing is held back as a test set: the out-of-bag rows will play that role.</p>", shape: "N rows × M inputs" },
+    boot: { title: "Bootstrap samples", body: "<p>Each tree gets its own resample: N rows drawn at random <em>with replacement</em>, so some rows appear twice or more and about a third are left out. This is bagging, and it is one half of the randomness Θ.</p>", shape: "N rows each, with repeats", lesson: "primer/ml/classical.html" },
+    tree: { title: "Unpruned trees", body: "<p>Each resample grows one tree to full size with the CART recipe, and it is not pruned. On its own each tree overfits badly (see the “one tree” column of Table 2); the vote fixes that.</p>", shape: "K trees, grown independently", lesson: "primer/ml/classical.html" },
+    node: { title: "A node: F random inputs", body: "<p>At every node, F inputs are drawn at random and the best split is searched among those only (Forest-RI), or among F random combinations of inputs (Forest-RC). This is the other half of Θ, and the ingredient that lowers the correlation between trees.</p>", shape: "F of the M inputs, fresh at every node" },
+    vote: { title: "The vote", body: "<p>Every tree casts one unit vote for a class; the forest answers with the most popular class. For regression the trees' numbers are averaged instead.</p>", shape: "K votes → 1 class" },
+    pred: { title: "The forest's answer", body: "<p>By Theorem 1.2, as K grows this settles to a fixed classifier, the one with the limiting margin mr. More trees do not overfit.</p>", shape: "one class per input" },
+    oob: { title: "Out-of-bag estimates", body: "<p>For each training row, repeat the vote using only the trees whose resample left that row out. The error of that vote estimates the test error; the same votes estimate strength and correlation (Appendix II); scrambling one input before voting measures its importance (§10).</p>", shape: "one vote per training row, from about a third of the trees" },
+  },
+
+  onReady(P) {
+    convergence(P);
+    boundChart(P);
+    fig1Chart(P);
+    table2Bars();
+    table4Bars();
+    fig4Bars();
+  },
+};
+
+/* ---- out-of-bag table (built before papers.js wires the diagrams) ---- */
+(function oobGrid() {
+  // counts[email][tree]: how many times tree drew email; each column sums to 5.
+  const counts = [
+    [2, 0, 1, 1],
+    [0, 2, 0, 1],
+    [1, 1, 2, 0],
+    [1, 0, 1, 2],
+    [1, 2, 1, 1],
+  ];
+  const g = document.getElementById("oobgrid");
+  const NS = "http://www.w3.org/2000/svg";
+  const x0 = 90, y0 = 42, s = 50, h = 38;
+  for (let k = 0; k < 4; k++) {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", x0 + k * s + s / 2); t.setAttribute("y", y0 - 8); t.setAttribute("text-anchor", "middle"); t.textContent = `tree ${k + 1}`;
+    g.appendChild(t);
+  }
+  counts.forEach((row, i) => {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", x0 - 10); t.setAttribute("y", y0 + i * h + h / 2 + 4); t.setAttribute("text-anchor", "end"); t.textContent = `email ${i + 1}`;
+    g.appendChild(t);
+    const oobTrees = row.map((c, k) => (c === 0 ? k + 1 : null)).filter((k) => k !== null);
+    row.forEach((c, k) => {
+      const key = `oob_${i}_${k}`;
+      const cell = document.createElementNS(NS, "g");
+      cell.setAttribute("class", "blk " + (c ? "emb" : "plain"));
+      cell.setAttribute("data-block", key);
+      cell.setAttribute("aria-label", `email ${i + 1}, tree ${k + 1}: ${c ? `drawn ${c} time${c > 1 ? "s" : ""}` : "out of bag"}`);
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", x0 + k * s + 2); r.setAttribute("y", y0 + i * h + 2); r.setAttribute("width", s - 4); r.setAttribute("height", h - 4); r.setAttribute("rx", 5);
+      if (!c) r.setAttribute("stroke-dasharray", "4 3");
+      const t2 = document.createElementNS(NS, "text");
+      t2.setAttribute("x", x0 + k * s + s / 2); t2.setAttribute("y", y0 + i * h + h / 2 + 4); t2.setAttribute("text-anchor", "middle");
+      t2.textContent = c ? String(c) : "out";
+      cell.append(r, t2);
+      g.appendChild(cell);
+      const others = oobTrees.length
+        ? `Email ${i + 1}'s out-of-bag vote comes from tree${oobTrees.length > 1 ? "s" : ""} ${oobTrees.join(" and ")}.`
+        : `Email ${i + 1} was drawn by every tree, so it has no out-of-bag vote in this four-tree forest.`;
+      window.PAPER.blocks[key] = {
+        title: `Email ${i + 1}, tree ${k + 1}: ${c ? `drawn ${c}×` : "out of bag"}`,
+        body: c
+          ? `<p>Tree ${k + 1} drew email ${i + 1} ${c === 1 ? "once" : `${c} times`}, so it trained on it${c > 1 ? " with extra weight" : ""} and cannot give an honest opinion about it. ${others}</p>`
+          : `<p>Tree ${k + 1} never saw email ${i + 1}: its vote on this email is like a vote on a test example. ${others}</p>`,
+        shape: `row ${i + 1}, column ${k + 1}`,
+      };
+    });
+  });
+})();
+
+/* ---- Theorem 1.2: a vote settling as trees are added (seeded simulation) ---- */
+function convergence(P) {
+  const slider = document.getElementById("conv-p");
+  const label = document.getElementById("conv-p-v");
+  // Mulberry32: a tiny seeded generator, so the picture is the same on every load.
+  function rng(seed) {
+    return function () {
+      seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const draws = (() => { const r = rng(2001); return Array.from({ length: 1000 }, () => r()); })();
+  function series(p) {
+    let right = 0;
+    const pts = [];
+    draws.forEach((u, i) => {
+      if (u < p) right += 1;
+      const n = i + 1;
+      pts.push([n, (2 * right) / n - 1]);
+    });
+    const limit = 2 * p - 1;
+    return [
+      { name: "margin after n trees", points: pts },
+      { name: "limit 2P − 1", points: [[1, limit], [1000, limit]] },
+    ];
+  }
+  const chart = P.lineChart(document.getElementById("conv-chart"), {
+    series: series(0.55),
+    width: 420, height: 300,
+    xLabel: "number of trees", yLabel: "margin",
+    logX: true, yMin: -1, yMax: 1,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("conv-readout"),
+    ariaLabel: "Margin of one email against the number of trees voting",
+  });
+  slider.addEventListener("input", () => {
+    label.textContent = (+slider.value).toFixed(2);
+    chart.update(series(+slider.value));
+  });
+}
+
+/* ---- Theorem 2.3: the bound against strength ---- */
+function boundChart(P) {
+  const slider = document.getElementById("bound-rho");
+  const label = document.getElementById("bound-rho-v");
+  const pts = (rho) => {
+    const out = [];
+    for (let s = 0.05; s <= 1.0001; s += 0.01) out.push([+s.toFixed(2), Math.min(1, (rho * (1 - s * s)) / (s * s))]);
+    return [{ name: "bound on PE*", points: out }];
+  };
+  const chart = P.lineChart(document.getElementById("bound-chart"), {
+    series: pts(0.1),
+    width: 420, height: 300,
+    xLabel: "strength s", yLabel: "bound on the error",
+    yMin: 0, yMax: 1,
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => (v >= 1 ? "≥ 1" : v.toFixed(2)),
+    readout: document.getElementById("bound-readout"),
+    ariaLabel: "The bound rho-bar times one minus s squared over s squared, against the strength s",
+  });
+  slider.addEventListener("input", () => {
+    label.textContent = (+slider.value).toFixed(2);
+    chart.update(pts(+slider.value));
+  });
+}
+
+/* ---- Figure 1 (top), read off by eye ---- */
+function fig1Chart(P) {
+  // [F, strength, correlation], approximate readings of Breiman (2001), Figure 1, top panel.
+  const read = [
+    [1, 0.28, 0.24], [2, 0.32, 0.3], [3, 0.34, 0.33], [4, 0.35, 0.35], [5, 0.36, 0.355], [6, 0.37, 0.37],
+    [8, 0.375, 0.39], [10, 0.38, 0.405], [15, 0.385, 0.43], [20, 0.39, 0.45], [25, 0.39, 0.465],
+    [30, 0.395, 0.47], [35, 0.395, 0.48], [40, 0.397, 0.485], [45, 0.398, 0.49], [50, 0.4, 0.495],
+  ];
+  P.lineChart(document.getElementById("fig1-chart"), {
+    series: [
+      { name: "strength s", points: read.map(([f, s]) => [f, s]) },
+      { name: "correlation ρ̄", points: read.map(([f, , r]) => [f, r]) },
+    ],
+    width: 420, height: 300,
+    xLabel: "F, inputs tried per node", yLabel: "value",
+    yMin: 0, yMax: 0.6,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("fig1-readout"),
+    ariaLabel: "Strength and correlation against the number of inputs tried per node, sonar data",
+  });
+  P.lineChart(document.getElementById("fig1b-chart"), {
+    series: [{ name: "c/s² = ρ̄ / s²", points: read.map(([f, s, r]) => [f, r / (s * s)]) }],
+    width: 420, height: 240,
+    xLabel: "F, inputs tried per node", yLabel: "c/s²",
+    yMin: 2.5, yMax: 3.2,
+    xFmt: (v) => String(Math.round(v)), yFmt: (v) => v.toFixed(2),
+    readout: document.getElementById("fig1b-readout"),
+    ariaLabel: "The ratio of correlation to strength squared against the number of inputs tried per node",
+  });
+}
+
+/* ---- Table 2 bars ---- */
+function table2Bars() {
+  const rows = [
+    ["breast cancer", 3.2, 2.9, 6.3], ["diabetes", 26.6, 24.2, 33.1], ["sonar", 15.6, 15.9, 31.7], ["vowel", 4.1, 3.4, 30.4],
+    ["German credit", 23.5, 24.4, 33.3], ["letters", 3.4, 3.5, 19.8], ["zip-code", 6.2, 6.3, 20.6], ["ringnorm", 6.9, 4.9, 25.7],
+  ];
+  const w = (v) => `${((v / 40) * 100).toFixed(1)}%`;
+  const bar = (name, v, style) =>
+    `<div class="share-row" style="grid-template-columns:6.5rem minmax(0,1fr) 3rem"><span>${name}</span><div><div class="share-bar" style="width:${w(v)};${style}"></div></div><span>${v}%</span></div>`;
+  document.getElementById("t2-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>Adaboost</span><span><i style="background:var(--accent)"></i>Forest-RI</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>one tree (striped)</span><span>test error, axis 0 to 40% (Table 2)</span></div>` +
+    rows.map(([d, a, f, t]) => bar(d, a, "background:var(--wire)") + bar("", f, "") + bar("", t, "background:var(--hatch) var(--accent)") + `<div style="height:.4rem"></div>`).join("");
+}
+
+/* ---- Table 4 bars ---- */
+function table4Bars() {
+  const rows = [["glass", 1.6, 0.4], ["breast cancer", 43.2, 1.8], ["sonar", 15.1, -6.6], ["ionosphere", 27.7, 3.8], ["votes", 48.9, 6.3]];
+  const w = (v) => `${Math.max(1, (Math.abs(v) / 50) * 100).toFixed(1)}%`;
+  const bar = (name, v, style) =>
+    `<div class="share-row" style="grid-template-columns:6.5rem minmax(0,1fr) 3.4rem"><span>${name}</span><div><div class="share-bar" style="width:${w(v)};${style}"></div></div><span>${v > 0 ? "+" : ""}${v}%</span></div>`;
+  document.getElementById("t4-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem"><span><i style="background:var(--wire)"></i>Adaboost</span><span><i class="hatch" style="background:var(--hatch) var(--accent)"></i>Forest-RI (striped)</span><span>rise in test error with 5% wrong labels, axis 0 to 50% (Table 4); bar length shows the size, the number shows the sign</span></div>` +
+    rows.map(([d, a, f]) => bar(d, a, "background:var(--wire)") + bar("", f, "background:var(--hatch) var(--accent)") + `<div style="height:.4rem"></div>`).join("");
+}
+
+/* ---- Figure 4 bars, read off by eye ---- */
+function fig4Bars() {
+  const vals = [1, 34, 5, 0, 4, 10, 2, 14];
+  document.getElementById("fig4-bars").innerHTML =
+    `<div class="legend" style="margin:0 0 .4rem">Diabetes data: percent rise in out-of-bag error when each input is scrambled, axis 0 to 40 (Figure 4, approximate)</div>` +
+    vals.map((v, i) => `<div class="share-row" style="grid-template-columns:4.5rem minmax(0,1fr) 3rem"><span>input ${i + 1}</span><div><div class="share-bar" style="width:${Math.max(1, (v / 40) * 100).toFixed(1)}%"></div></div><span>≈ ${v}</span></div>`).join("");
+}
+</script>
+</body>
+</html>

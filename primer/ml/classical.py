@@ -977,6 +977,7 @@ or when the model must be trained end to end with other neural parts.
 - **Breiman, *Random Forests*, Machine Learning 45 (2001)**:
   https://doi.org/10.1023/A:1010933404324. Added random feature subsets at
   each split, out-of-bag error estimates, and permutation importance.
+  [Annotated companion](../../papers/random-forests.html)
 - **Friedman, *Greedy Function Approximation: A Gradient Boosting Machine*,
   Annals of Statistics 29 (2001)**: https://doi.org/10.1214/aos/1013203451.
   Framed boosting as gradient descent in function space, fitting each tree
