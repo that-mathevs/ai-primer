@@ -6,9 +6,120 @@ Run: `python -m primer.ml.embeddings.operations`
 New to vectors or Σ? `primer.notation` builds them from zero. This lesson
 builds on `primer.ml.embeddings.similarity` and `primer.ml.embeddings.contrastive`.
 
-## The everyday picture
+## Level 1: The practitioner's guide
 
-Two mapmakers each draw a map of the same city with their own grid. On one
+**In one sentence.** Operating embeddings means keeping every query on the
+same map as the documents it searches, changing that map without a bad day,
+checking that the map speaks your domain's language, and knowing which half
+of a retrieval-augmented system failed when an answer is wrong.
+
+**When you need it.** From the day an embedding index serves real traffic.
+Every embedding model is its own coordinate system: in this lesson, the word
+"vpn" embedded by two versions of the same toy model, both 64 dimensions,
+has a cosine similarity of about 0.05, as if they were unrelated words.
+Search documents embedded by one model with queries embedded by another and
+recall@3 on this lesson's golden set falls from 0.92 to 0.25, barely above
+the 0.15 that random ranking would score, and nothing crashes. You will
+change models: new releases, a fine-tune, a chunking change and a bug fix
+all require re-embedding everything. You will meet jargon the model doesn't
+know: this lesson's general model puts the right document first for one of
+four company-jargon questions. And you will get a confident wrong answer and
+need to know whether retrieval or generation caused it. The tell: "we
+upgraded the embedding model and search got weird", or weeks spent tuning
+prompts for answers whose right page was never retrieved.
+
+**Your options.** Two decisions recur: how to change the model, and what to
+do when it doesn't know your words.
+
+| Option | What it does | What it gives you | What it costs | Where it lives |
+|---|---|---|---|---|
+| Re-embed only new documents | Old documents keep their old vectors; new ones get the new model | Nothing: it is the classic incident. Queries and documents stop sharing a space and recall collapses silently | The cheapest to run and the most expensive to discover | A pipeline that forgot the backfill |
+| Re-embed in place | Stops writes, re-embeds every document into the same index, resumes | A correct index at the end | Downtime or a window of mixed results, and no rollback except re-embedding again | Your ingestion job |
+| Blue/green migration | Builds a second index alongside, dual-writes new documents to both, backfills, compares on a golden set, then repoints a live alias | No downtime, a gate that refuses a worse model, rollback by flipping one pointer | Double storage during the migration, a golden set, the backfill time | Your code plus index aliases (Elasticsearch, Qdrant) |
+| Keep the general model, add keyword search | Fuses BM25 with dense search so exact jargon matches by spelling | Identifiers and acronyms found without training | Two searches per query | Any search engine (`primer.ml.embeddings.retrieval`) |
+| Fine-tune on domain pairs | Trains the embedding model on your own (question, document) pairs | Four of four jargon questions right in this lesson, against one of four | Labeled pairs, a training run, then a full re-embed | `primer.ml.embeddings.contrastive`, followed by a migration |
+| Measure and triage | Keeps a golden set of questions with known answer passages and checks it on every change | Silent failures made visible, each split into retrieval or generation | A few hundred labeled questions, taken from resolved logs | Your evaluation harness; Ragas |
+
+**How to choose.**
+
+- Changing the model on a live index: blue/green, every time. Version the
+  index by model, dual-write from the first minute so nothing falls behind,
+  backfill in restartable batches, and cut over only when the new index is
+  at least as good on your golden set. Keep the old index for a soak period.
+- Estimating the migration: multiply documents by tokens per document.
+  Fifty million documents of 500 tokens is 25 billion tokens: about 7 hours
+  at a million tokens per second across your workers, and \$500 at \$0.02
+  per million tokens (replace all three inputs with your own). The money is
+  usually modest; the time, the rate limits and the double storage are what
+  need planning.
+- The model doesn't know your jargon: measure on your own questions first,
+  because public leaderboards measure public data. Add keyword search for
+  exact terms, then fine-tune on domain pairs if the gap remains.
+- A wrong answer: ask one question first. Was a relevant document in the
+  retrieved top k? If not, it is retrieval: chunking, hybrid search,
+  reranking, the model. If yes and the answer ignored it, it is generation:
+  the prompt, the context order, fewer distracting chunks.
+- Whatever you do, keep the golden set and rerun it on every change. It is
+  the only number that predicts your system's quality.
+
+**What it costs.** A golden set: a few hundred questions with their answer
+documents, taken from resolved support or search sessions, which cost
+nothing to collect. Re-embedding: linear in the corpus, so ten times the
+documents means ten times the hours and the dollars, plus double storage
+while both indexes exist. Blue/green adds one extra write per new document
+during the migration and one shadow evaluation. Fine-tuning adds labeled
+pairs and a training run, and then a migration, because a fine-tuned model
+is a new map. Triage costs a person reading a handful of failures; only the
+retrieval half can be measured without a model, which is why recall@k on
+the golden set is the first number to track.
+
+**What breaks.**
+
+- **Mixed spaces.** Documents from one model, queries from another, the same
+  number of dimensions: recall falls from 0.92 to 0.25 with no error. A
+  model with a different number of dimensions at least crashes. Tie every
+  index to a model version and refuse vectors from any other.
+- **A backfill that never finished.** Only new documents got re-embedded.
+  Dual-writing and backfilling are separate steps, and the migration is not
+  done until every old document has been re-embedded.
+- **Cutting over on faith.** The shadow comparison is the gate: this
+  lesson's migration refuses a candidate that scores 0.58 against the live
+  index's 0.92.
+- **No way back.** Retire the old index only after a soak period; until
+  then, rollback is repointing the alias.
+- **Trusting a leaderboard.** BEIR showed that retrieval models trained on
+  one domain often lose badly on others, and MTEB found no single model
+  wins everywhere. Your questions are the benchmark.
+- **Tuning the prompt for a retrieval failure.** The error-code question in
+  this lesson stays wrong at every k because its page ranks fourth; no
+  prompt fixes that. Retrieving more turns some retrieval failures into
+  generation failures, so raising k is not a fix either.
+
+**In the wild.** Index aliases are the switch: Elasticsearch's aliases API
+swaps an alias from one index to another in a single atomic operation with
+no downtime, and Qdrant's collection aliases let you build a second
+collection in the background and switch atomically with no concurrent
+request affected. Qdrant also fixes the vector size per collection, so a
+model with a new number of dimensions is a new collection by construction.
+Martin Fowler's description of blue/green deployment is where the pattern's
+name comes from. The MTEB leaderboard on Hugging Face ranks embedding models
+across tasks, and BEIR is the zero-shot retrieval benchmark that showed how
+much domain matters. Ragas separates retrieval metrics (context precision,
+context recall) from generation metrics (faithfulness, response relevancy),
+the same split as this lesson's triage. The papers behind this lesson are
+listed at the end.
+
+**Go deeper.** Level 2 measures the mixed-space failure on the golden set,
+walks a blue/green migration state by state with the code that refuses a
+worse model, works the re-embedding arithmetic, shows the jargon gap and a
+tuned model closing it, and runs every golden question through a triage
+that names the failing half. If you only needed the runbook, you are done.
+
+## Level 2: How it works, from scratch
+
+Level 2 makes each of those truths concrete, starting with two mapmakers.
+
+**The everyday picture.** Two mapmakers each draw a map of the same city with their own grid. On one
 map, square (3, 7) is the train station; on the other, (3, 7) is a park. Both
 maps are fine, but you can't read a position off one map and look it up on
 the other.

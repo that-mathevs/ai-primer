@@ -321,7 +321,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.ml.embeddings.compression",
 
     # embeddings, searching them
-    "primer.ml.embeddings.operations",
 
     # generative models
     "primer.ml.generative.autoencoders",
