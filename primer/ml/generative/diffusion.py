@@ -960,6 +960,7 @@ gap.
 - **Lipman et al., *Flow Matching for Generative Modeling* (2022)**:
   https://arxiv.org/abs/2210.02747. Trained continuous flows by regressing
   velocities along simple paths from noise to data.
+  [Annotated companion](../../../papers/flow-matching.html)
 - **Liu, Gong and Liu, *Flow Straight and Fast: Learning to Generate and
   Transfer Data with Rectified Flow* (2022)**:
   https://arxiv.org/abs/2209.03003. Straight-line paths, and retraining on

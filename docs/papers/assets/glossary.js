@@ -1059,6 +1059,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/context.html",
   "term": "few-shot prompt"
  },
+ "fid": {
+  "def": "Fréchet Inception Distance: compares the statistics of real and generated images, as an image classifier sees them. Lower means the generated images look more like the real ones.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "FID"
+ },
  "filter": {
   "def": "In a CNN, the small grid of learned weights a convolution slides over an image; also called a kernel.",
   "lesson": "primer/ml/cnn_rnn.html",
@@ -1158,6 +1163,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A generator and a discriminator trained against each other, so the generator learns to make samples the discriminator can't tell from real data.",
   "lesson": "primer/ml/generative/gans.html",
   "term": "GAN"
+ },
+ "gaussian": {
+  "def": "The bell-curve distribution, set by its mean (where the centre is) and its standard deviation (how wide it is).",
+  "lesson": "primer/ml/generative/autoencoders.html",
+  "term": "Gaussian"
  },
  "gelu": {
   "def": "A smooth version of ReLU used in most transformers.",
@@ -2179,6 +2189,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/generative/gans.html",
   "term": "optimal discriminator"
  },
+ "optimal transport": {
+  "def": "Moving one distribution onto another as cheaply as possible, where moving mass further costs more. For the bell curves of flow matching, every bit of mass then travels in a straight line at constant speed.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "optimal transport"
+ },
  "optimizer": {
   "def": "The rule that turns gradients into weight updates, such as SGD, momentum or Adam.",
   "lesson": "primer/ml/optimizers.html",
@@ -2188,6 +2203,11 @@ window.PRIMER_GLOSSARY = {
   "def": "One model decides the subtasks, workers handle them, and one model combines the results.",
   "lesson": "primer/agents/orchestration.html",
   "term": "orchestrator-workers"
+ },
+ "ordinary differential equation": {
+  "def": "A rule giving, at every moment, how fast something is changing. Solving it means following that rule forward in time, for example with small Euler steps.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "ordinary differential equation"
  },
  "otlp": {
   "def": "The OpenTelemetry Protocol: the wire format exporters use to ship telemetry.",
@@ -3378,6 +3398,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A cheap, wide first pass to shortlist candidates, then an expensive, precise pass over only those.",
   "lesson": "primer/ml/embeddings/compression.html",
   "term": "two-stage retrieval"
+ },
+ "u-net": {
+  "def": "A convolutional network shaped like a U: it shrinks an image step by step to see the big picture, then grows it back, with shortcuts carrying fine detail across. The classic diffusion denoiser before transformers.",
+  "lesson": "primer/ml/generative/diffusion.html",
+  "term": "U-Net"
  },
  "umap": {
   "def": "A projection to 2-D that keeps each point's neighbours close but distorts other distances.",
