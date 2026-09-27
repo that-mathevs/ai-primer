@@ -146,3 +146,9 @@ class TestTermsShowTheirUsualCase:
         import primer.glossary
 
         assert "| **AdamW** |" in primer.glossary.__doc__ and "| **adamw** |" not in primer.glossary.__doc__
+
+    def test_given_a_term_only_the_paper_companions_use_it_shows_their_case(self):
+        from primer.glossary import display_term
+
+        # No lesson says "Markov chain" mid-sentence; the DDPM and VAE companions do.
+        assert display_term("markov chain") == "Markov chain" and display_term("langevin dynamics") == "Langevin dynamics"

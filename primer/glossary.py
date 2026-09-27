@@ -303,8 +303,8 @@ GLOSSARY: dict[str, Entry] = {
     'input gate': _E('The LSTM dial that decides what new information to write into the cell state.', 'primer.ml.cnn_rnn'),
     'output gate': _E('The LSTM dial that decides how much of the cell state to show as output.', 'primer.ml.cnn_rnn'),
     'gru': _E('A simpler gated RNN with an update gate and a reset gate and no separate cell state.', 'primer.ml.cnn_rnn'),
-    'state-space model': _E('A recurrent-style model, such as Mamba, that trains in parallel and runs in time linear in sequence length.', 'primer.ml.cnn_rnn'),
-    'mamba': _E('A state-space model that trains in parallel and runs in time linear in sequence length.', 'primer.ml.cnn_rnn'),
+    'state-space model': _E('A recurrent-style model, such as Mamba, that trains in parallel and runs in time linear in sequence length.', 'primer.ml.efficient_architectures'),
+    'mamba': _E('A state-space model that trains in parallel and runs in time linear in sequence length.', 'primer.ml.efficient_architectures'),
     'tanh': _E('Squashes any number into the range −1 to 1.', 'primer.ml.cnn_rnn'),
     'tool call': _E('A structured request from the model to run one of your functions with specific arguments; your code decides whether to run it.', 'primer.agents.tools'),
     'tool_result': _E("The message block that returns a tool's output or error to the model, matched to its request by id.", 'primer.agents.agent_loop'),
@@ -821,7 +821,7 @@ GLOSSARY: dict[str, Entry] = {
 
 @functools.lru_cache(maxsize=1)
 def _usage_text() -> str:
-    """Every lesson's prose, as the case of each term is judged from it."""
+    """Every lesson's prose and every paper companion's, as the case of each term is judged from it."""
     import ast
     import re
     from pathlib import Path
@@ -829,6 +829,13 @@ def _usage_text() -> str:
     # Read the docstrings from the source, without importing the lessons.
     root = Path(__file__).resolve().parent
     text = "\n".join(ast.get_docstring(ast.parse(f.read_text(encoding="utf-8"))) or "" for f in sorted(root.rglob("*.py")))
+    # Companions use terms no lesson says mid-sentence ("a Markov chain"). Keep only their running prose:
+    # headings, table cells, captions, citations, italic paper titles, buttons and link text capitalise for other reasons.
+    skip = r"head|script|style|pre|code|svg|h[1-6]|th|td|caption|figcaption|cite|summary|button|label|a|dt|em|i"
+    for page in sorted((root.parent / "docs" / "papers").glob("*.html")):
+        html = re.sub(rf"<({skip})\b[^>]*>.*?</\1>", "\n", page.read_text(encoding="utf-8"), flags=re.S | re.I)
+        html = re.sub(r"</?(p|li|div|section|blockquote|br|tr|table|ul|ol|figure)\b[^>]*>", "\n", html, flags=re.I)
+        text += "\n" + re.sub(r"<[^>]+>", "", html)
     text = re.sub(r"```.*?```", " ", text, flags=re.S)  # fenced code and diagram labels
     # Inline code, italic titles (which may wrap onto a second line) and link text; then citation lines.
     text = re.sub(r"`[^`\n]*`|(?<!\*)\*(?!\s)[^*]+?(?<!\s)\*(?!\*)|\[[^\]\n]*\]\([^)]*\)", " ", text)
@@ -851,9 +858,9 @@ def _usage(terms: tuple[str, ...]) -> dict[str, Counter]:
 
 
 def display_term(term: str) -> str:
-    """How the lessons usually write a term: "acl" -> "ACL", "adamw" -> "AdamW", "attention" -> "attention".
+    """How the primer usually writes a term: "acl" -> "ACL", "adamw" -> "AdamW", "attention" -> "attention".
 
-    Counted over every lesson's text, mid-sentence only, where capitals mean something
+    Counted over every lesson's and companion's text, mid-sentence only, where capitals mean something
     about the word. A term the lessons never use mid-sentence keeps its key.
     """
     terms = tuple(sorted(GLOSSARY)) if term in GLOSSARY else (term,)

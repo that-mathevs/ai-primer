@@ -37,7 +37,7 @@ window.PRIMER_GLOSSARY = {
  "adagrad": {
   "def": "An optimizer that divides each weight's step by the square root of the sum of all its past squared gradients, so steps only ever shrink.",
   "lesson": "primer/ml/optimizers.html",
-  "term": "adagrad"
+  "term": "AdaGrad"
  },
  "adam": {
   "def": "An optimizer that adapts the step size for each weight using running averages of its gradients.",
@@ -247,7 +247,7 @@ window.PRIMER_GLOSSARY = {
  "bernoulli distribution": {
   "def": "The distribution of a single yes-or-no outcome, set by one number: the chance of yes. A VAE decoder for black-and-white pixels outputs one per pixel.",
   "lesson": "primer/ml/losses.html",
-  "term": "bernoulli distribution"
+  "term": "Bernoulli distribution"
  },
  "bert": {
   "def": "An encoder-only transformer trained to fill in hidden words using the text on both sides of them; the ancestor of many embedding and classification models.",
@@ -402,7 +402,7 @@ window.PRIMER_GLOSSARY = {
  "cbow": {
   "def": "Continuous bag of words: the word2vec model that averages the surrounding words' vectors to predict the middle word.",
   "lesson": "primer/ml/embeddings/word2vec.html",
-  "term": "cbow"
+  "term": "CBOW"
  },
  "cell state": {
   "def": "An LSTM's notebook, edited by adding rather than overwriting, so information survives many steps.",
@@ -467,7 +467,7 @@ window.PRIMER_GLOSSARY = {
  "clip": {
   "def": "A model that trains an image encoder and a text encoder together so pictures and their captions land near each other in one vector space.",
   "lesson": "primer/ml/embeddings/contrastive.html",
-  "term": "clip"
+  "term": "CLIP"
  },
  "clustering": {
   "def": "Grouping items so similar ones end up together, without being told the groups.",
@@ -717,7 +717,7 @@ window.PRIMER_GLOSSARY = {
  "dcgan": {
   "def": "Deep convolutional GAN: a GAN whose generator and discriminator are convolutional networks, the usual baseline design for image GANs.",
   "lesson": "primer/ml/generative/gans.html",
-  "term": "dcgan"
+  "term": "DCGAN"
  },
  "ddim": {
   "def": "A deterministic diffusion sampler that predicts the clean result and jumps to a much less noisy step, so it needs far fewer steps.",
@@ -907,7 +907,7 @@ window.PRIMER_GLOSSARY = {
  "efsearch": {
   "def": "HNSW's query-time beam width; raising it trades speed for recall.",
   "lesson": "primer/ml/embeddings/ann.html",
-  "term": "efsearch"
+  "term": "efSearch"
  },
  "elbow method": {
   "def": "Choosing the number of clusters where adding more stops reducing inertia much.",
@@ -1152,7 +1152,7 @@ window.PRIMER_GLOSSARY = {
  "flow matching": {
   "def": "Training a network to output the velocity along paths from noise to data, then following it to generate.",
   "lesson": "primer/ml/generative/diffusion.html",
-  "term": "flow matching"
+  "term": "Flow Matching"
  },
  "forget gate": {
   "def": "The LSTM dial that decides what to erase from the cell state.",
@@ -1192,7 +1192,7 @@ window.PRIMER_GLOSSARY = {
  "frobenius norm": {
   "def": "The size of a whole matrix: square every entry, add them up, take the square root.",
   "lesson": "primer/notation.html",
-  "term": "frobenius norm"
+  "term": "Frobenius norm"
  },
  "fsdp": {
   "def": "Fully sharded data parallel: all training state sharded across GPUs (ZeRO stage 3).",
@@ -1352,7 +1352,7 @@ window.PRIMER_GLOSSARY = {
  "gru": {
   "def": "A simpler gated RNN with an update gate and a reset gate and no separate cell state.",
   "lesson": "primer/ml/cnn_rnn.html",
-  "term": "gru"
+  "term": "GRU"
  },
  "guardrail": {
   "def": "A check around the model that screens inputs, validates outputs or limits actions.",
@@ -1447,7 +1447,7 @@ window.PRIMER_GLOSSARY = {
  "huffman tree": {
   "def": "A binary tree that gives frequent items short codes and rare items long ones.",
   "lesson": "primer/ml/embeddings/word2vec.html",
-  "term": "huffman tree"
+  "term": "Huffman tree"
  },
  "human approval gate": {
   "def": "A rule that parks irreversible or high-value actions until a person approves them.",
@@ -1712,7 +1712,7 @@ window.PRIMER_GLOSSARY = {
  "langevin dynamics": {
   "def": "Sampling by repeatedly taking a small step along the score, towards where data is denser, and adding a little fresh noise. A diffusion sampler has this shape.",
   "lesson": "primer/ml/generative/diffusion.html",
-  "term": "langevin dynamics"
+  "term": "Langevin dynamics"
  },
  "language identification": {
   "def": "Guessing which language a text is in, so a pipeline keeps only the ones it wants.",
@@ -1946,7 +1946,7 @@ window.PRIMER_GLOSSARY = {
  },
  "mamba": {
   "def": "A state-space model that trains in parallel and runs in time linear in sequence length.",
-  "lesson": "primer/ml/cnn_rnn.html",
+  "lesson": "primer/ml/efficient_architectures.html",
   "term": "Mamba"
  },
  "mantissa": {
@@ -1957,7 +1957,7 @@ window.PRIMER_GLOSSARY = {
  "map@10": {
   "def": "Mean average precision over the top 10 results: rewards putting correct matches in the top 10, and higher up within it.",
   "lesson": "primer/ml/metrics.html",
-  "term": "map@10"
+  "term": "mAP@10"
  },
  "margin of error": {
   "def": "The ± range around a measured score that the true score probably falls in; it shrinks with the square root of the sample size.",
@@ -1972,7 +1972,7 @@ window.PRIMER_GLOSSARY = {
  "markov chain": {
   "def": "A sequence of random steps where each step depends only on the one just before it, not on the whole history.",
   "lesson": "primer/ml/generative/diffusion.html",
-  "term": "markov chain"
+  "term": "Markov chain"
  },
  "master weights": {
   "def": "An fp32 copy of the weights that receives optimizer updates, so tiny updates aren't lost.",
@@ -1992,7 +1992,7 @@ window.PRIMER_GLOSSARY = {
  "matryoshka embedding": {
   "def": "An embedding trained so its first few dimensions work as a smaller embedding on their own.",
   "lesson": "primer/ml/embeddings/compression.html",
-  "term": "matryoshka embedding"
+  "term": "Matryoshka embedding"
  },
  "max pooling": {
   "def": "Keeping only the largest value in each small block of a feature map.",
@@ -2082,7 +2082,7 @@ window.PRIMER_GLOSSARY = {
  "mips": {
   "def": "Maximum inner product search: finding the stored vectors with the largest dot product against a query vector, usually approximately with an index.",
   "lesson": "primer/ml/embeddings/ann.html",
-  "term": "mips"
+  "term": "MIPS"
  },
  "mixed precision": {
   "def": "Doing the big multiplies in 16- or 8-bit while keeping master weights and sums in fp32.",
@@ -2372,7 +2372,7 @@ window.PRIMER_GLOSSARY = {
  "pagedattention": {
   "def": "Storing the KV cache in fixed-size pages, like virtual memory, to avoid wasted GPU memory.",
   "lesson": "primer/ml/inference.html",
-  "term": "pagedattention"
+  "term": "PagedAttention"
  },
  "paired bootstrap": {
   "def": "Resampling questions with both models' results kept together, to test whether a gap is real.",
@@ -2922,7 +2922,7 @@ window.PRIMER_GLOSSARY = {
  "rmsprop": {
   "def": "An optimizer that divides each step by the square root of a running average of recent squared gradients.",
   "lesson": "primer/ml/optimizers.html",
-  "term": "rmsprop"
+  "term": "RMSProp"
  },
  "rnn": {
   "def": "A recurrent neural network: it reads a sequence one step at a time, carrying a running summary called the hidden state.",
@@ -3182,7 +3182,7 @@ window.PRIMER_GLOSSARY = {
  "spearman correlation": {
   "def": "How well two rankings agree, from −1 (reversed) to 1 (identical).",
   "lesson": "primer/ml/metrics.html",
-  "term": "spearman correlation"
+  "term": "Spearman correlation"
  },
  "specification gaming": {
   "def": "Another name for reward hacking: satisfying the letter of an objective but not its intent.",
@@ -3236,7 +3236,7 @@ window.PRIMER_GLOSSARY = {
  },
  "state-space model": {
   "def": "A recurrent-style model, such as Mamba, that trains in parallel and runs in time linear in sequence length.",
-  "lesson": "primer/ml/cnn_rnn.html",
+  "lesson": "primer/ml/efficient_architectures.html",
   "term": "state-space model"
  },
  "static batching": {
@@ -3327,7 +3327,7 @@ window.PRIMER_GLOSSARY = {
  "swiglu": {
   "def": "A gated feed-forward layer: one projection, passed through the smooth SiLU activation, multiplies a second projection number by number before the output projection.",
   "lesson": "primer/ml/transformer.html",
-  "term": "swiglu"
+  "term": "SwiGLU"
  },
  "sycophancy": {
   "def": "A model changing its answer to agree with a view the user states.",
