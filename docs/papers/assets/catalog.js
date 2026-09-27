@@ -656,7 +656,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.reasoning"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "lets-verify-step-by-step",
@@ -667,7 +667,7 @@ window.PRIMER_PAPERS = [
   "lessons": [
    "primer.ml.reasoning"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "scaling-test-time-compute",

@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Verifiers to Solve Math Word Problems, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Cobbe et al. (2021), the paper that introduced GSM8K and showed that a trained verifier picking the best of many sampled solutions beats a model thirty times larger.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="training-verifiers">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 The GSM8K dataset</a></li>
+      <li><a href="#s3">3 Related work</a></li>
+      <li><a href="#s4">4 Methods</a>
+        <ol>
+          <li><a href="#s4-calc">Calculator annotations</a></li>
+          <li><a href="#s4-1">4.1 Finetuning</a></li>
+          <li><a href="#s4-2">4.2 Verification</a></li>
+          <li><a href="#s4-3">4.3 Verification ablations</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Additional experiments</a>
+        <ol>
+          <li><a href="#s5-1">5.1 Test-time compute</a></li>
+          <li><a href="#s5-try">Try it: why more samples can hurt</a></li>
+          <li><a href="#s5-2">5.2 Regularization</a></li>
+        </ol>
+      </li>
+      <li><a href="#s6">6 Conclusion</a></li>
+      <li><a href="#appf">Appendix F: watching a verifier read</a></li>
+      <li><a href="#today">What changed since 2021</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Training Verifiers to Solve Math Word Problems, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Cobbe, Kosaraju, Bavarian, Chen, Jun, Kaiser, Plappert, Tworek, Hilton, Nakano, Hesse and Schulman (2021), <em>Training Verifiers to Solve Math Word Problems</em>.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2110.14168">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2110.14168">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2110.14168">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard non-exclusive licence, which does not grant permission to republish its tables or figures, so none are copied. Its plotted results are redrawn here from scratch: the paper's charts are vector drawings, and the numbers behind every redrawn curve were recovered from the coordinates of the plotted points in its PDF, so they match the original to about a tenth of a percentage point but are not printed anywhere in the paper. The equations are written in this page's own notation for methods the paper describes in words. Numbers marked <em>illustrative</em> are made up for teaching. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s5-try">lure explorer</a> lets you change how often a model is right and how often it writes a wrong solution the verifier loves, and shows why sampling more can make things worse.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. This paper came a few months before <a href="chain-of-thought-prompting.html">chain-of-thought prompting</a> and <a href="self-consistency.html">self-consistency</a>, and its dataset is the one both of them report on. Its sequel, <a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a>, asks whether a verifier should judge every step instead of the final answer. The <a class="lesson" data-lesson="primer/ml/reasoning.html">reasoning models lesson</a> builds verifiers and best-of-n from scratch.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“At test time, we generate many candidate solutions and select the one ranked highest by the verifier.”<cite>Cobbe et al. (2021), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2110.14168">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A student who writes one answer and hands it in gets graded on that answer. A student who drafts a hundred answers and has a sharp-eyed friend pick the most convincing one does much better, as long as the friend can tell a sound solution from a plausible-looking wrong one. This paper trains the friend: a second model, the <span class="t" data-t="verifier">verifier</span>, whose only job is to read a candidate solution and say how likely it is to be right.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong>A dataset.</strong> <span class="t" data-t="gsm8k">GSM8K</span>: 8.5K grade-school maths word problems with worked solutions in plain English, hard for 2021's largest models though every problem needs only arithmetic.</li>
+  <li><strong>A method.</strong> Sample many solutions from a <span class="t" data-t="fine-tuning">fine-tuned</span> model, score each with a trained verifier, keep the top one (<span class="t" data-t="best-of-n">best-of-n</span>).</li>
+  <li><strong>A result.</strong> A 6-billion-parameter model with a verifier slightly beats a 175-billion-parameter model fine-tuned the ordinary way: about the gain of a 30× larger model. And verification keeps improving with more training data, faster than fine-tuning does.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>GSM8K became one of the most reported benchmarks in language modelling. The verifier became the <span class="t" data-t="outcome reward model">outcome reward model</span>, and “sample many, keep what a checker likes” became a standard way to spend <span class="t" data-t="test-time compute">test-time compute</span>.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S1">original</a></span></h2>
+<blockquote class="quote">“When generating a solution, autoregressive models have no mechanism to correct their own errors.”<cite>Cobbe et al. (2021), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Writing a solution in ink, one word at a time, with no eraser. One wrong number in line two and every line after it builds on the mistake. A language model writing a solution is in exactly that position: <span class="t" data-t="autoregressive generation">autoregressive generation</span> appends each token and never goes back.</p>
+<h3 class="rung">Tiny example: why one slip is fatal</h3>
+<p>If each of a solution's steps is right with chance 0.9, a 2-step problem is fully right with chance 0.9 × 0.9 = 0.81, and an 8-step problem with chance 0.9<sup>8</sup> = 0.43 (illustrative numbers). GSM8K problems take 2 to 8 steps, so a model that is “usually right per step” still fails the longer problems more often than not. The reasoning lesson's <a data-lesson="primer/ml/reasoning.html#steps_all_right"><code>steps_all_right</code></a> is this formula.</p>
+<h3 class="rung">The two bets the paper makes</h3>
+<ul>
+  <li><strong>Optionality.</strong> A generator that is right 30% of the time is usually right at least once in 100 tries. Something only has to find that one.</li>
+  <li><strong>Checking is easier than doing.</strong> Judging whether a finished solution holds together is, in general, a simpler task than producing one. So a verifier can add accuracy that the generator alone lacks.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The paper's motivating worry is cost: extrapolating 2021's trends, simply growing models would need an “exorbitant” number of parameters to do well on harder maths. It looks for a method with a better scaling law, and finds it in checking rather than generating. Shen et al. (2021) was concurrent work on the same idea.</p>
+</section>
+
+<section id="s2">
+<h2>2 The GSM8K dataset <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S2">original</a></span></h2>
+<blockquote class="quote">“A bright middle school student should be able to solve every problem.”<cite>Cobbe et al. (2021), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A good test for a reasoner uses easy ingredients in unfamiliar combinations. If every question were the same template with new numbers, a model could memorise the template. If questions needed university maths, failure would tell you nothing about reasoning. GSM8K sits in between: school arithmetic, written fresh by people for every problem.</p>
+<h3 class="rung">Tiny example: the solution format</h3>
+<p>Every problem comes with a worked solution in plain English, one line per step, and the final answer after it. An illustrative problem in the same style: <em>A baker makes 3 trays of 12 rolls and sells all but 5. How many rolls does she sell?</em></p>
+<pre><code>She makes 3 * 12 = &lt;&lt;3*12=36&gt;&gt;36 rolls.
+She sells 36 - 5 = &lt;&lt;36-5=31&gt;&gt;31 rolls.
+#### 31</code></pre>
+<p>The parts in double angle brackets are <span class="t" data-tip-title="Calculator annotation" data-tip="An expression and its result in double angle brackets, such as &lt;&lt;3*12=36&gt;&gt;, inserted after an equals sign. At test time a calculator fills in the result instead of the model; see the Calculator annotations section below.">calculator annotations</span>, added automatically after the fact (the <a href="#s4-calc">next section</a> explains them). The line starting with #### holds the final answer, the only thing a grader compares.</p>
+<h3 class="rung">The four design principles</h3>
+<ul>
+  <li><strong>High quality.</strong> Problems were written by people, not scraped. After every problem was re-solved by a different worker and disagreements fixed or dropped, a final check on a subset found 1.7% still disputed: the paper's estimate of problems with breaking errors (Appendix A).</li>
+  <li><strong>High diversity.</strong> Writers were told not to reuse settings or templates, and pairwise similarity scores between problems were used to catch it. That makes held-out accuracy meaningful.</li>
+  <li><strong>Moderate difficulty.</strong> No concept beyond early algebra, 2 to 8 steps, mostly solvable without naming a variable. Hard enough to challenge the largest models, easy enough to measure progress. (The harder MATH dataset was, in 2021, too hard to measure progress on.)</li>
+  <li><strong>Natural-language solutions.</strong> Written in each author's own words rather than as bare equations, because the paper expects them to shed light on a model's “internal monologue”.</li>
+</ul>
+<p>The split is 7.5K training problems and 1K test problems. (The paper rounds; the <span class="t" data-t="gsm8k">GSM8K</span> glossary entry gives the released test set's exact size.)</p>
+<h3 class="rung">A small check you can do yourself</h3>
+<p>The paper's Figure 1 shows three problems. In the third, 6 people at a party drink 3 × 3 = 9, 2 × 4 = 8 and 1 × 5 = 5 sodas out of 36. The printed solution totals them as 5 + 9 + 8 + 3 = 25, adding the 3 people a second time, and answers 11 sodas left; the arithmetic of its own lines gives 22 drunk and 14 left. Human-written labels are not perfect, which is exactly what the 1.7% estimate says, and it matters later: a verifier learns from labels like these.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>GSM8K became the standard first test of multi-step reasoning, used by the <a href="chain-of-thought-prompting.html">chain-of-thought</a> and <a href="self-consistency.html">self-consistency</a> papers within months. Its format (steps, then a final answer that can be checked exactly) is what makes automatic grading, and later <span class="t" data-t="verifiable reward">verifiable rewards</span>, possible. Modern models now score so high on it that it is close to saturated; the <a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a> covers how a benchmark wears out.</p>
+</section>
+
+<section id="s3">
+<h2>3 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Before this paper, maths word problem datasets were either small, templated, answer-only, or noisy, and most methods built special machinery (equation trees, custom encoders) for the task. The paper's approach is the opposite: plain language in, plain language out, a general model, and a second general model to check it.</p>
+<h3 class="rung">What it compares itself with</h3>
+<ul>
+  <li><strong>Datasets.</strong> Dolphin18K (answers or equations only), AQuA-RAT (100K problems but heavily templated), MathQA (a cleaned subset of AQuA-RAT that still has quality issues in about 30% of items), Ape210K (Chinese, no natural-language solutions), ASDiv (2.3K problems, closest in spirit, fewer steps), and MATH (harder).</li>
+  <li><strong>Methods.</strong> Recurrent and encoder-decoder solvers, extra pretraining on maths, and, closest to this paper, methods that train a model to <em>select</em> among many completions: sample-and-rank for storytelling (Nichols et al., 2020) and generate-and-rank for maths (Shen et al., 2021).</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>Against generate-and-rank, the paper claims three differences: natural-language solutions rather than expressions, evidence that verifiers scale better with data, and <em>separate</em> generator and verifier networks, so the generator can be kept from <span class="t" data-t="overfitting">overfitting</span> while the verifier trains.</p>
+</section>
+
+<section id="s4">
+<h2>4 Methods <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Two ways to get better answers from the same student. <strong>Finetuning</strong>: drill them on worked examples, then take their single most careful answer. <strong>Verification</strong>: drill them lightly, have them dash off a hundred answers, and let a trained marker pick one.</p>
+<h3 class="rung">Setup</h3>
+<p>Both methods start from GPT-3 models, mostly the 6B and 175B sizes (the 6B is “significantly more convenient for research”). Finetuning is the baseline: <span class="t" data-t="fine-tuning">fine-tune</span> on the training solutions with the ordinary next-token <span class="t" data-t="cross-entropy">cross-entropy</span> loss, then sample one solution at <span class="t" data-t="temperature">temperature</span> 0 (always the most likely token, <span class="t" data-t="greedy decoding">greedy decoding</span>) and check its final answer. Verification samples many solutions at a higher temperature and lets a verifier choose.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Because the two methods share the same starting models and data, any gap between them comes from the choosing, not from a better base model.</p>
+</section>
+
+<section id="s4-calc">
+<h3>Calculator annotations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#A3">original (Appendix C)</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A student who reasons well but adds badly is allowed a calculator. They still decide <em>what</em> to compute; the calculator only does the sum. The paper does this for its models, because even large models often got the arithmetic wrong.</p>
+<h4>Tiny example</h4>
+<p>The model writes <code>Her sister gave her 20 + 10 = &lt;&lt;20+10=</code>. The moment it writes “=” inside the brackets, sampling stops and a calculator evaluates <code>20+10</code>, writes <code>30&gt;&gt;</code> into the text, and hands control back. The model then continues from the correct number.</p>
+<figure class="ix" id="fig9">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 250" role="img" aria-label="Calculator sampling: the generator writes tokens until an equals sign inside double angle brackets, then a calculator writes the result and the generator resumes">
+    <defs><marker id="arr9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="8" y="14" class="lbl">text so far</text><text x="196" y="14" class="lbl">writer</text><text x="266" y="14" class="lbl">next</text>
+    <g class="blk plain" data-block="ctx1"><rect x="6" y="22" width="176" height="30" rx="6"/><text x="94" y="41" text-anchor="middle">… 20 + 10 = &lt;&lt;20+10</text></g>
+    <path class="wire" d="M182,37 H190" marker-end="url(#arr9)"/>
+    <g class="blk lin" data-block="gen"><rect x="192" y="22" width="60" height="30" rx="6"/><text x="222" y="41" text-anchor="middle">model</text></g>
+    <path class="wire" d="M252,37 H260" marker-end="url(#arr9)"/>
+    <g class="blk norm" data-block="eqtok"><rect x="262" y="22" width="62" height="30" rx="6"/><text x="293" y="41" text-anchor="middle">=</text></g>
+    <path class="wire" d="M293,52 V84" marker-end="url(#arr9)"/>
+    <text x="8" y="74" class="lbl">“=” inside the brackets: the calculator takes over</text>
+    <g class="blk plain" data-block="ctx2"><rect x="6" y="86" width="176" height="30" rx="6"/><text x="94" y="105" text-anchor="middle">… = &lt;&lt;20+10=</text></g>
+    <path class="wire" d="M182,101 H190" marker-end="url(#arr9)"/>
+    <g class="blk soft" data-block="calc"><rect x="192" y="86" width="60" height="30" rx="6"/><text x="222" y="105" text-anchor="middle">eval</text></g>
+    <path class="wire" d="M252,101 H260" marker-end="url(#arr9)"/>
+    <g class="blk soft" data-block="result"><rect x="262" y="86" width="62" height="30" rx="6"/><text x="293" y="105" text-anchor="middle">30&gt;&gt;</text></g>
+    <path class="wire" d="M293,116 V148" marker-end="url(#arr9)"/>
+    <text x="8" y="138" class="lbl">the result is written; the model resumes</text>
+    <g class="blk plain" data-block="ctx3"><rect x="6" y="150" width="176" height="30" rx="6"/><text x="94" y="169" text-anchor="middle">… &lt;&lt;20+10=30&gt;&gt;</text></g>
+    <path class="wire" d="M182,165 H190" marker-end="url(#arr9)"/>
+    <g class="blk lin" data-block="gen"><rect x="192" y="150" width="60" height="30" rx="6"/><text x="222" y="169" text-anchor="middle">model</text></g>
+    <path class="wire" d="M252,165 H260" marker-end="url(#arr9)"/>
+    <g class="blk norm" data-block="resume"><rect x="262" y="150" width="62" height="30" rx="6"/><text x="293" y="169" text-anchor="middle">books</text></g>
+    <text x="165" y="214" text-anchor="middle" class="lbl">During training the brackets are ordinary tokens;</text>
+    <text x="165" y="230" text-anchor="middle" class="lbl">only at test time does the calculator step in.</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. Read the rows top to bottom: the model writes, the calculator interrupts, the model resumes.</p></div>
+  </div>
+  <figcaption>The calculator sampling procedure (the paper's Figure 9), redrawn with its example sentence. Based on Cobbe et al. (2021), Appendix C.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each row is one moment of generation: on the left the text so far, in the middle who writes the next piece, on the right what gets written. In the first row the model is writing as usual and produces “=” inside the double brackets. That token is the trigger: in the second row the writer is no longer the model but a calculator (the green boxes), which evaluates the expression in the brackets and writes the result and the closing brackets. In the third row the model is back in charge and continues the sentence (“books”) from a correct result. The two “model” boxes light up together because they are the same network.</p>
+<h4>How it is built</h4>
+<ul>
+  <li>The annotations were generated automatically, by hard-coded rules plus a fine-tuned model. The paper judges them very unlikely to be wrong, though they often skip lines that could have been annotated.</li>
+  <li>The calculator is Python's <code class="example">eval</code> on the expression. If it errors or times out, the annotation is skipped and the model samples as usual.</li>
+  <li>The paper discloses that its calculator had minor bugs in every reported run, so results slightly understate what is possible: fixing it adds about 1% to verification on the full training set.</li>
+</ul>
+<h4>Why it matters today</h4>
+<p>This is an early, minimal form of <span class="t" data-t="tool calling">tool calling</span>: the model learns <em>when</em> to call a tool from the format of its training data, and the system intercepts that call. Modern models call calculators, code interpreters and search the same way, through structured tool calls; the <a data-lesson="primer/agents/tools.html">tools lesson</a> builds that loop.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Finetuning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S4.SS1">original</a></span></h3>
+<blockquote class="quote">“This is to be expected: as the model repeatedly encounters the same data, it becomes increasingly uncalibrated and overconfident in its predictions.”<cite>Cobbe et al. (2021), §4.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>More drilling makes a student's best single answer a little better, but also makes every answer look the same. Ask them a hundred times and you hear the same attempt a hundred times. For verification, variety is the raw material, so the paper has to measure both.</p>
+<h4>Tiny example: test@1 and test@3</h4>
+<p>The paper writes <span class="t" data-tip-title="test@N" data-tip="The percentage of test problems solved at least once when the model may make N separate guesses per problem. test@1 uses one greedy guess; test@100 uses 100 samples at temperature 0.7. Other papers call this pass@N or pass@k.">test@N</span> for the share of test problems solved at least once in N guesses. Four problems, three guesses each (1 = right, illustrative): problem A ✗✓✗, B ✗✗✗, C ✓✓✗, D ✗✗✓. With only the first guess, one problem (C) is solved: test@1 = 25%. With all three, A, C and D are each solved at least once: test@3 = 75%.</p>
+<h4>The math: test@N</h4>
+<div class="eq" data-tex="\htmlData{sym=testN}{\text{test@}N} = \htmlData{sym=hundredP}{\tfrac{100}{P}} \htmlData{sym=sumj}{\sum_{j=1}^{P}} \htmlData{sym=maxi}{\max_{i \le N}} \htmlData{sym=cji}{c_{j,i}}" data-fallback="test@N = (100/P) Σ_{j=1}^{P} max_{i ≤ N} c_{j,i}"></div>
+<div class="symtable" data-syms="P,cji,maxi,sumj,hundredP,testN"></div>
+<p class="inwords"><strong>In words:</strong> “for each problem, ask whether any of its first N guesses was right; test@N is the percentage of problems where the answer is yes.”</p>
+<p class="inwords"><strong>With the numbers:</strong> P = 4. With N = 1 the maxima are 0, 0, 1, 0, which sum to 1, and 100/4 × 1 = 25. With N = 3 they are 1, 0, 1, 1, summing to 3: 75. If each guess is right with the same chance p, independently, test@N is expected to be 1 − (1 − p)<sup>N</sup>, the <span class="t" data-t="pass@n">pass@n</span> formula.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># c[j][i]: was guess i on problem j right? (illustrative)
+c = [[0, 1, 0], [0, 0, 0], [1, 1, 0], [0, 0, 1]]
+P = len(c)
+# test@1: only the first guess counts
+100 * sum(max(row[:1]) for row in c) / P  # → 25.0
+# test@3: any of the three guesses
+100 * sum(max(row[:3]) for row in c) / P  # → 75.0</code></pre>
+<h4>Figure 2: bigger models, more data</h4>
+<p>The paper fine-tunes four GPT-3 sizes on training sets from 500 problems to the full 7.5K, for 20 <span class="t" data-t="epoch">epochs</span> each, and measures test@1.</p>
+<div class="plot" id="fig2">
+  <div id="fig2-chart"></div>
+  <p class="readout" id="fig2-readout">Hover the chart, or tab to it and use the arrow keys, to read each model's solve rate.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of training problems on a doubling (log) scale, ending at the full training set; the y-axis is the percentage of test problems solved with one greedy sample. Each line is one model size, and the lines never cross: bigger is better at every data size. Follow the right-hand edge: with all the data, 3B solves 17.3%, 6B 20.6%, 12B 24.9% and 175B 34.3%. Even the largest model, trained on everything, fails two problems in three. Redrawn from the paper's Figure 2 (left panel); values recovered from the plotted points.</p>
+<h4>The math: how big would a model need to be?</h4>
+<p>The paper assumes a <em>log-linear</em> trend: each tenfold increase in parameters adds the same number of points. Fit a straight line through the four right-hand points against the logarithm of the model size, and ask where it reaches 80%.</p>
+<div class="eq" data-tex="\htmlData{sym=rate}{r} = \htmlData{sym=a}{a} + \htmlData{sym=b}{b} \, \htmlData{sym=log10}{\log_{10}} \htmlData{sym=M}{M}" data-fallback="r = a + b · log10(M)"></div>
+<div class="symtable" data-syms="rate,M,log10,b,a"></div>
+<p class="inwords"><strong>In words:</strong> “the solve rate is a starting value plus a fixed number of points for every tenfold increase in model size.”</p>
+<p class="inwords"><strong>With the numbers:</strong> a least-squares fit through (3B, 17.3), (6B, 20.6), (12B, 24.9) and (175B, 34.3) gives b ≈ 9.5 points per tenfold and a ≈ −72.0. Setting r = 80 gives log<sub>10</sub> M = (80 + 72.0) / 9.5 ≈ 16.0: a model of about 10<sup>16</sup> parameters, which is exactly the paper's naive extrapolation. That is about 57,000 times GPT-3.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# right-hand points of Figure 2: model size, % solved with all the data
+M = [3e9, 6e9, 12e9, 175e9]
+r = [17.33, 20.59, 24.94, 34.34]
+x = [math.log10(m) for m in M]
+x_bar, r_bar = sum(x) / len(x), sum(r) / len(r)
+# least squares: b = Σ (x − x̄)(r − r̄) / Σ (x − x̄)²
+b = sum((xi - x_bar) * (ri - r_bar) for xi, ri in zip(x, r)) / sum((xi - x_bar) ** 2 for xi in x)
+round(b, 2)  # → 9.49
+a = r_bar - b * x_bar
+round(a, 1)  # → -72.0
+# solve 80 = a + b · log10(M) for log10(M)
+round((80 - a) / b, 1)  # → 16.0
+# how many GPT-3s is that?
+round(10 ** ((80 - a) / b) / 175e9, -3)  # → 59000.0</code></pre>
+<p>(The ratio lands at about 59,000 unrounded; 10<sup>16</sup> / 175 billion is 57,000. Either way, not a model anyone could train.) Along the data axis the curve is not log-linear, so the paper only guesses that the 175B model would need at least a hundred times more training data to reach 80%.</p>
+<h4>Figure 3: better single answers, less variety</h4>
+<div class="plot" id="fig3">
+  <div class="controls ui" role="group" aria-label="Which measure to show">
+    <span>Show:</span>
+    <button type="button" data-f3="t1" aria-pressed="true">test@1 (one greedy guess)</button>
+    <button type="button" data-f3="t100" aria-pressed="false">test@100 (100 samples)</button>
+  </div>
+  <div id="fig3-chart"></div>
+  <p class="readout" id="fig3-readout">Hover the chart, or tab to it and use the arrow keys, to read the solve rate after each epoch.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is how many passes (epochs) over the full training set the 6B model has made; the y-axis is the solve rate, and each button switches the measure. test@1 jumps in the first two epochs and then creeps upward, from about 18.5% to about 21.7% at epoch 50. test@100 does the opposite after a brief rise: it peaks at 83.9% at epoch 3 and slides to about 70.6% by epoch 50. Training longer makes the best single guess slightly better and the spread of guesses much worse, because the model grows overconfident and keeps sampling the same few solutions. Redrawn from the paper's Figure 3; values recovered from the plotted points. (The text describes the curves as covering 100 epochs; the plotted axis stops at 50.)</p>
+<h4>Two practical findings</h4>
+<ul>
+  <li><strong>Pick the generator for coverage, not for its best guess.</strong> Because test@100 peaks early, the generator that feeds the verifier is trained for only 2 epochs.</li>
+  <li><strong>Let it show its work.</strong> A 6B model fine-tuned to output the final answer directly, with no steps, drops from 20.6% to 5.2%. The written steps are doing work, the same finding as <a href="chain-of-thought-prompting.html">chain-of-thought prompting</a> a few months later.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>“Accuracy of one answer” and “chance that some answer is right” are different targets, and optimising the first can wreck the second. Anything that samples many times (best-of-n, <span class="t" data-t="self-consistency">self-consistency</span>, reinforcement learning from a group of attempts) needs the second. <span class="t" data-t="calibration">Calibration</span> is the thread: an overconfident model puts nearly all its probability on one path.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Verification <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S4.SS2">original</a></span></h3>
+<blockquote class="quote">“Training solutions are labeled as correct or incorrect based solely on whether they reach the correct final answer.”<cite>Cobbe et al. (2021), §4.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>To train a marker, you don't need a teacher to annotate every mistake. Collect a pile of real student answers, check each final number against the answer key, and let the marker learn from thousands of “this one was right, this one wasn't”. The marker has to work out on its own what right solutions look like.</p>
+<h4>Tiny example: best of four</h4>
+<p>Four sampled solutions to one problem, with the verifier's scores (illustrative): 0.12, 0.81, 0.47 and 0.66. Best-of-4 returns the second, the one the verifier thinks most likely correct, and only then is its final answer checked against the key.</p>
+<figure class="ix wide" id="fig4">
+  <div class="ixgrid">
+  <svg viewBox="0 0 360 420" role="img" aria-label="Verification pipeline: fine-tune a generator for 2 epochs, sample and label 100 solutions per training problem, train the verifier for one epoch, then at test time sample 100 solutions and return the one the verifier scores highest">
+    <defs><marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="10" y="16" class="lbl">1 · Train the generator</text>
+    <g class="blk emb" data-block="qs"><rect x="10" y="24" width="150" height="30" rx="6"/><text x="85" y="43" text-anchor="middle">question + solution</text></g>
+    <path class="wire" d="M160,39 H192" marker-end="url(#arr4)"/>
+    <g class="blk lin" data-block="g4"><rect x="194" y="24" width="156" height="30" rx="6"/><text x="272" y="43" text-anchor="middle">generator, 2 epochs</text></g>
+    <text x="10" y="84" class="lbl">2 · Generate and label 100 solutions per problem</text>
+    <g class="blk emb" data-block="q"><rect x="10" y="92" width="70" height="96" rx="6"/><text x="45" y="144" text-anchor="middle">question</text></g>
+    <path class="wire" d="M80,140 H92" marker-end="url(#arr4)"/>
+    <g class="blk lin" data-block="g4"><rect x="94" y="92" width="70" height="96" rx="6"/><text x="129" y="144" text-anchor="middle">generator</text></g>
+    <path class="wire" d="M164,106 H178" marker-end="url(#arr4)"/>
+    <path class="wire" d="M164,140 H178" marker-end="url(#arr4)"/>
+    <path class="wire" d="M164,174 H178" marker-end="url(#arr4)"/>
+    <g class="blk ff" data-block="sols"><rect x="180" y="92" width="100" height="28" rx="6"/><text x="230" y="110" text-anchor="middle">solution 1</text></g>
+    <g class="blk ff" data-block="sols"><rect x="180" y="126" width="100" height="28" rx="6"/><text x="230" y="144" text-anchor="middle">solution 2</text></g>
+    <g class="blk ff" data-block="sols"><rect x="180" y="160" width="100" height="28" rx="6"/><text x="230" y="178" text-anchor="middle">… solution 100</text></g>
+    <path class="wire" d="M280,106 H292" marker-end="url(#arr4)"/>
+    <path class="wire" d="M280,140 H292" marker-end="url(#arr4)"/>
+    <path class="wire" d="M280,174 H292" marker-end="url(#arr4)"/>
+    <g class="blk soft" data-block="labels"><rect x="294" y="92" width="56" height="28" rx="6"/><text x="322" y="110" text-anchor="middle">✓</text></g>
+    <g class="blk soft" data-block="labels"><rect x="294" y="126" width="56" height="28" rx="6"/><text x="322" y="144" text-anchor="middle">✗</text></g>
+    <g class="blk soft" data-block="labels"><rect x="294" y="160" width="56" height="28" rx="6"/><text x="322" y="178" text-anchor="middle">✓</text></g>
+    <text x="10" y="220" class="lbl">3 · Train the verifier, 1 epoch</text>
+    <g class="blk emb" data-block="triple"><rect x="10" y="228" width="200" height="30" rx="6"/><text x="110" y="247" text-anchor="middle">question + solution + label</text></g>
+    <path class="wire" d="M210,243 H232" marker-end="url(#arr4)"/>
+    <g class="blk norm" data-block="ver"><rect x="234" y="228" width="116" height="30" rx="6"/><text x="292" y="247" text-anchor="middle">verifier</text></g>
+    <text x="10" y="290" class="lbl">4 · Test time</text>
+    <g class="blk emb" data-block="tq"><rect x="10" y="298" width="96" height="30" rx="6"/><text x="58" y="317" text-anchor="middle">new question</text></g>
+    <path class="wire" d="M106,313 H114" marker-end="url(#arr4)"/>
+    <g class="blk lin" data-block="g4"><rect x="116" y="298" width="72" height="30" rx="6"/><text x="152" y="317" text-anchor="middle">generator</text></g>
+    <path class="wire" d="M188,313 H196" marker-end="url(#arr4)"/>
+    <g class="blk ff" data-block="tsols"><rect x="198" y="298" width="152" height="30" rx="6"/><text x="274" y="317" text-anchor="middle">100 samples, T = 0.7</text></g>
+    <path class="wire" d="M274,328 V346" marker-end="url(#arr4)"/>
+    <g class="blk norm" data-block="ver"><rect x="198" y="348" width="152" height="30" rx="6"/><text x="274" y="367" text-anchor="middle">verifier scores each</text></g>
+    <path class="wire" d="M198,363 H152" marker-end="url(#arr4)"/>
+    <g class="blk soft" data-block="pick"><rect x="10" y="348" width="140" height="30" rx="6"/><text x="80" y="367" text-anchor="middle">return the top one</text></g>
+    <text x="180" y="406" text-anchor="middle" class="lbl">The generator never learns from the verifier.</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box. Follow the numbered rows: steps 1 to 3 build the verifier, step 4 uses it.</p></div>
+  </div>
+  <figcaption>The verification training pipeline (the paper's Figure 4) redrawn, with the test-time step added as row 4. Based on Cobbe et al. (2021), §4.2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read the four rows top to bottom. Row 1 fine-tunes the generator briefly, so it keeps the variety Figure 3 showed it loses with longer training. Row 2 uses that generator to write 100 solutions for every training problem, and labels each one ✓ or ✗ by comparing its final answer with the key: no person reads the reasoning. Row 3 trains the verifier on the resulting pile of (question, solution, label) triples. Row 4 is the payoff: for a new question, sample 100 solutions and return the one the verifier scores highest. The three purple “generator” boxes are one model and light up together; so do the two “verifier” boxes.</p>
+<h4>The math: choosing the best of N</h4>
+<div class="eq" data-tex="\htmlData{sym=shat}{\hat{s}} = \htmlData{sym=argmaxi}{\arg\max_{i \in \{1, \ldots, N\}}} \htmlData{sym=V}{V}(\htmlData{sym=q}{q}, \htmlData{sym=si}{s_i})" data-fallback="ŝ = argmax_{i ∈ {1,…,N}} V(q, s_i)"></div>
+<div class="symtable" data-syms="q,si,N,V,argmaxi,shat"></div>
+<p class="inwords"><strong>In words:</strong> “score every sampled solution with the verifier, given the question, and return the solution with the highest score.”</p>
+<p class="inwords"><strong>With the numbers:</strong> N = 4, scores 0.12, 0.81, 0.47, 0.66. The largest is 0.81, belonging to solution 2, so ŝ = s<sub>2</sub>.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># V(q, s_i) for N = 4 sampled solutions (illustrative)
+V = [0.12, 0.81, 0.47, 0.66]
+# argmax over i; Python counts from 0, the page from 1
+i_hat = max(range(len(V)), key=lambda i: V[i])
+i_hat + 1  # → 2
+V[i_hat]  # → 0.81</code></pre>
+<h4>The math: what the verifier is trained to predict</h4>
+<p>A verifier is itself a language model. After every token of a solution it outputs a number v<sub>t</sub>, and training pulls each of those numbers towards the solution's label y: 1 if the final answer was right, 0 if not. The paper uses <span class="t" data-t="mean squared error">mean squared error</span> for this (Appendix B; cross-entropy worked about as well). It also keeps training the verifier on the ordinary language-modelling loss, and simply adds the two.</p>
+<div class="eq" data-tex="\htmlData{sym=L}{\mathcal{L}} = \htmlData{sym=LLM}{\mathcal{L}_{\text{LM}}} + \htmlData{sym=invT}{\tfrac{1}{T}} \htmlData{sym=sumt}{\sum_{t=1}^{T}} \big(\htmlData{sym=vt}{v_t} - \htmlData{sym=y}{y}\big)^2" data-fallback="L = L_LM + (1/T) Σ_{t=1}^{T} (v_t − y)²"></div>
+<div class="symtable" data-syms="vt,y,T,sumt,invT,LLM,L"></div>
+<p class="inwords"><strong>In words:</strong> “the verifier's loss is its usual next-token loss plus, averaged over the solution's tokens, the squared distance between its running guess and the solution's true label.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a 4-token solution that reached the right answer (y = 1), with verifier outputs 0.3, 0.5, 0.6, 0.8. The squared errors are 0.49, 0.25, 0.16, 0.04; their mean is 0.235. Had the answer been wrong (y = 0), the same outputs would cost 0.335. A <em>solution-level</em> verifier would be graded only on its last output: (0.8 − 1)<sup>2</sup> = 0.04. With an illustrative language-modelling loss of 1.2, the total is 1.2 + 0.235 = 1.435.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># v_t after each of T = 4 solution tokens (illustrative)
+v = [0.3, 0.5, 0.6, 0.8]
+T = len(v)
+# y = 1: this solution's final answer matched the key
+y = 1
+[round((v_t - y) ** 2, 2) for v_t in v]  # → [0.49, 0.25, 0.16, 0.04]
+round(sum((v_t - y) ** 2 for v_t in v) / T, 3)  # → 0.235
+# the same outputs if the answer had been wrong
+round(sum((v_t - 0) ** 2 for v_t in v) / T, 3)  # → 0.335
+# a solution-level verifier is graded on the last token only
+round((v[-1] - y) ** 2, 2)  # → 0.04
+# add the language-modelling loss, unweighted (illustrative 1.2)
+L_LM = 1.2
+round(L_LM + sum((v_t - y) ** 2 for v_t in v) / T, 3)  # → 1.435</code></pre>
+<p>Only the solution's tokens count; the question's are masked out of both losses (Appendix E), the same move as an <a data-lesson="primer/ml/training_stages.html#response_mask"><code>response_mask</code></a> in supervised fine-tuning. Because the verifier data has 100 solutions per problem, mixing it half and half with the original training solutions means the paper effectively shows each original solution 100 times.</p>
+<h4>Figure 5: the main result</h4>
+<div class="plot" id="fig5">
+  <div class="controls ui" role="group" aria-label="Model size">
+    <span>Model size:</span>
+    <button type="button" data-f5="6B" aria-pressed="true">6B</button>
+    <button type="button" data-f5="175B" aria-pressed="false">175B</button>
+  </div>
+  <div id="fig5-chart"></div>
+  <p class="readout" id="fig5-readout">Hover the chart, or tab to it and use the arrow keys, to compare the two methods at each data size.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of training problems (doubling scale), the y-axis the percentage of test problems solved; one line is ordinary finetuning (one greedy answer), the other verification (best of 100 samples). On the left of each chart verification <em>loses</em>: with 500 problems, the 6B verifier solves 1.9% against finetuning's 7.5%. For 6B the lines cross between 2,000 and 4,000 problems, and from there verification pulls away: on the full set, 38.8% against 20.6% for 6B, and 55.9% against 34.3% for 175B. Switch to 175B and notice that its verifier crosses over earlier, between 1,000 and 2,000 problems: the paper's observation that larger verifiers “take off” sooner. Redrawn from the paper's Figure 5; values recovered from the plotted points. (The 175B verification line is one run; the others average three.)</p>
+<h4>Why small datasets hurt verifiers</h4>
+<p>With few problems, a verifier can score well by memorising which final answers are right for the training questions, rather than learning what sound reasoning looks like; the paper calls this “pressure to overfit to the correct answer”. The labels are also imperfect: a solution that reaches the right number through wrong reasoning is labelled ✓, a <span class="t" data-t="false positive">false positive</span>. With enough varied problems, the general pattern wins.</p>
+<h4>Why it matters</h4>
+<p>This is the recipe of an <span class="t" data-t="outcome reward model">outcome reward model</span>: labels from final answers alone, used to rank samples. The reasoning lesson's <a data-lesson="primer/ml/reasoning.html#verifier_experiment"><code>verifier_experiment</code></a> compares best-of-n against a single sample and a vote, and <a data-lesson="primer/ml/reasoning.html#outcome_reward"><code>outcome_reward</code></a> is the labelling rule in one line.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Verification ablations <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S4.SS3">original</a></span></h3>
+<blockquote class="quote">“This suggests that the verifier may often be relying on relatively coarse heuristics to discriminate between solutions from a given generator, rather than attempting a more thorough form of verification.”<cite>Cobbe et al. (2021), §4.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A marker who only glances at the boxed answer learns “which answers are usually right”. A marker who has to say, after every line, how things are going learns to read the working. The paper tests which one generalises, and two other choices, by <span class="t" data-t="ablation">ablation</span>: change one thing, measure again.</p>
+<h4>Tiny example: token-level against solution-level</h4>
+<p>The same 4-token solution from the loss example: a <span class="t" data-tip-title="Token-level verifier" data-tip="A verifier trained to predict, after every token of a solution, whether the finished solution will be correct. The paper's default.">token-level verifier</span> is trained on all four outputs, a <span class="t" data-tip-title="Solution-level verifier" data-tip="A verifier trained to make one prediction, after the last token, about whether the solution is correct.">solution-level verifier</span> on the last one only. At test time both are read at the final token. The token-level one is, in effect, a <span class="t" data-t="value function">value function</span>: after each token, its guess at how the solution will end.</p>
+<h4>The math: the scalar head</h4>
+<p>How does a language model output a score? The paper reserves one special token in the vocabulary. Its <span class="t" data-t="logits">logit</span> is shifted and scaled by two learned numbers, and the result is the verifier's prediction; every other logit keeps doing next-token prediction (Appendix E).</p>
+<div class="eq" data-tex="\htmlData{sym=vt}{v_t} = \htmlData{sym=g}{g} \cdot \htmlData{sym=zt}{z_t} + \htmlData{sym=bb}{b}" data-fallback="v_t = g · z_t + b"></div>
+<div class="symtable" data-syms="zt,g,bb"></div>
+<p class="inwords"><strong>In words:</strong> “the prediction at token t is the special token's logit, multiplied by one learned gain and shifted by one learned bias.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a logit of 1.5 with gain 0.4 and bias 0.2 gives 0.4 × 1.5 + 0.2 = 0.8, the last output in the loss example.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># z_t: the special token's logit at token t; g, b: the two learned numbers (illustrative)
+z_t, g, b = 1.5, 0.4, 0.2
+round(g * z_t + b, 2)  # → 0.8</code></pre>
+<p>Two parameters on top of a full language model: nearly all of the verifier's judgement lives in the network it shares with language modelling. The paper also found it slightly better to start the verifier from the generator's weights than from the plain pretrained model.</p>
+<h4>Figure 6: three ablations</h4>
+<div class="plot" id="fig6">
+  <div class="controls ui" role="group" aria-label="Which ablation">
+    <span>Ablation:</span>
+    <button type="button" data-f6="a" aria-pressed="true">(a) token vs solution level</button>
+    <button type="button" data-f6="b" aria-pressed="false">(b) with or without language modelling</button>
+    <button type="button" data-f6="c" aria-pressed="false">(c) generator vs verifier size</button>
+  </div>
+  <div id="fig6-chart"></div>
+  <p class="readout" id="fig6-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> in (a) and (b) the x-axis is progress through the verifier's single training epoch and the y-axis the 6B verifier's test solve rate. In (a) the solution-level verifier starts faster, peaks near 35% halfway through, then declines to about 30%: overfitting. The token-level verifier starts slower, because predicting after every token is a harder and noisier task, but keeps climbing to about 39%. In (b), dropping the language-modelling loss costs about 3 points at the end (35.4% against 38.8%). In (c) the x-axis is training problems; a 175B generator with a 6B verifier reaches 52.2%, while a 6B generator with a 175B verifier reaches only 42.1%. A small verifier checking a strong generator beats a strong verifier checking a weak one. Redrawn from the paper's Figure 6; values recovered from the plotted points.</p>
+<h4>Why it matters</h4>
+<p>The paper's own reading of (c) is modest: the verifier may be leaning on coarse cues rather than truly checking. That caution is worth keeping. A learned verifier is a pattern-matcher trained on labels, and the next section shows what happens when you search hard against one. Judging each step, the idea behind (a), is what <a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a> scales up with human labels on every step.</p>
+</section>
+
+<section id="s5">
+<h2>5 Additional experiments <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Once you have a marker, two dials remain. How many drafts do you ask for? And how do you keep both the student and the marker from memorising the practice sheets?</p>
+<h3 class="rung">What follows</h3>
+<p>§5.1 turns the first dial (completions per problem, and voting among the top-ranked ones); §5.2 turns the second (<span class="t" data-t="dropout">dropout</span>).</p>
+<h3 class="rung">Why it matters</h3>
+<p>Both are still the questions anyone deploying best-of-n asks: how much sampling is worth paying for, and how to stop a learned checker from being brittle.</p>
+</section>
+
+<section id="s5-1">
+<h3>5.1 Test-time compute <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S5.SS1">original</a></span></h3>
+<blockquote class="quote">“This suggests that the benefits of search are eventually outweighed by the risk of finding adversarial solutions that fool the verifier.”<cite>Cobbe et al. (2021), §5.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A hundred drafts give the marker plenty of chances to find a right one. Three thousand drafts also include a few wrong ones that happen to look exactly like what the marker likes. Keep searching and eventually you find one of those.</p>
+<h4>Tiny example: voting among the top-ranked</h4>
+<p>Six sampled solutions to a problem whose answer is 18, ranked by verifier score (illustrative): 0.91 → 26, 0.88 → 18, 0.85 → 18, 0.62 → 26, 0.55 → 26, 0.30 → 11. The top one alone says 26, wrong. Let the top 3 vote and 18 wins, two votes to one. Let all 6 vote and 26 wins again, three votes to two. Too few voters trust one lucky high score; too many let low-ranked solutions back in.</p>
+<h4>The math: a vote among the top k</h4>
+<div class="eq" data-tex="\htmlData{sym=ahat}{\hat{a}} = \htmlData{sym=argmaxa}{\arg\max_{a}} \htmlData{sym=sumtop}{\sum_{i \in \text{top-}k}} \htmlData{sym=ind}{\mathbf{1}}(\htmlData{sym=ai}{a_i} = \htmlData{sym=aa}{a})" data-fallback="â = argmax_a Σ_{i ∈ top-k} 1(a_i = a)"></div>
+<div class="symtable" data-syms="k,ai,aa,ind,sumtop,argmaxa,ahat"></div>
+<p class="inwords"><strong>In words:</strong> “keep the k solutions the verifier ranks highest, count how many of them reach each final answer, and return the answer with the most.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with k = 1 the only count is 26: 1, so â = 26. With k = 3 the counts are 18: 2 and 26: 1, so â = 18. With k = 6 they are 11: 1, 18: 2, 26: 3, so â = 26.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># (verifier score, final answer), already sorted best first (illustrative)
+ranked = [(0.91, 26), (0.88, 18), (0.85, 18), (0.62, 26), (0.55, 26), (0.30, 11)]
+def vote(k):
+    top = [a_i for _, a_i in ranked[:k]]
+    # Σ over the top k of 1(a_i = a), for every answer a
+    counts = {a: sum(1 for a_i in top if a_i == a) for a in sorted(set(top))}
+    return counts, max(counts, key=counts.get)
+vote(1)  # → ({26: 1}, 26)
+vote(3)  # → ({18: 2, 26: 1}, 18)
+vote(6)  # → ({11: 1, 18: 2, 26: 3}, 26)</code></pre>
+<h4>Figure 7: how many samples, how many voters</h4>
+<div class="plot" id="fig7a">
+  <div id="fig7a-chart"></div>
+  <p class="readout" id="fig7a-readout">Hover the chart, or tab to it and use the arrow keys, to read the solve rate at each number of completions.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis doubles the number of completions the 6B verifier chooses from, from 25 to 3,200 (the verifier was trained on 100 per problem throughout); the y-axis is the test solve rate. The line rises from 34.6% at 25 completions to a peak of 39.6% at 400, then falls: 37.2% at 3,200. More candidates stopped helping and started hurting. The paper settles on 100 as the default, at 38.4%, since that captures most of the gain for a quarter of the cost of 400. Redrawn from the paper's Figure 7(a); values recovered from the plotted points.</p>
+<div class="plot" id="fig7b">
+  <div class="controls ui" role="group" aria-label="Completions per problem">
+    <span>Completions:</span>
+    <button type="button" data-f7="0" aria-pressed="true">100</button>
+    <button type="button" data-f7="1" aria-pressed="false">200</button>
+    <button type="button" data-f7="2" aria-pressed="false">400</button>
+    <button type="button" data-f7="3" aria-pressed="false">800</button>
+    <button type="button" data-f7="4" aria-pressed="false">1,600</button>
+    <button type="button" data-f7="5" aria-pressed="false">3,200</button>
+  </div>
+  <div id="fig7b-chart"></div>
+  <p class="readout" id="fig7b-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> now the verifier ranks a fixed pile of completions, and the x-axis (log scale) is how many of the top-ranked ones get a vote, from 1 (plain best-of-n) to 100. With 100 completions the best is to let the top 3 to 5 vote (39.1%, up from 38.3% for the top one alone); letting all 100 vote falls to 28.4%. Switch to 3,200 completions: the best number of voters grows to about 30 (43.8%), because a bigger pile has more good solutions near the top. Voting also rescues the large piles that hurt plain best-of-n: 3,200 completions with 30 voters beats every setting in the chart above. Redrawn from the paper's Figure 7(b); values recovered from the plotted points.</p>
+<h4>Why it matters</h4>
+<p>Voting among verifier favourites combines the two selection rules that <a href="self-consistency.html">self-consistency</a> and this paper each use alone: agreement protects against one lure, the verifier filters out the obvious junk. The follow-up paper, <a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a>, tries a close cousin: votes weighted by the reward model's score.</p>
+</section>
+
+<section id="s5-try">
+<h3>Try it: why more samples can hurt</h3>
+<h4>Everyday picture</h4>
+<p>Picture three kinds of solution in the pile. Right ones. Ordinary wrong ones, which the verifier sees through. And rare <em>lures</em>: wrong solutions the verifier scores higher than anything, the “adversarial solutions” of §5.1. Best-of-N returns a right answer only if the pile holds at least one right solution and not a single lure.</p>
+<h4>Tiny example</h4>
+<p>Say 30% of samples are right and 1 in 500 is a lure (illustrative). With 10 samples, the chance of at least one right solution and no lure is 0.998<sup>10</sup> − 0.698<sup>10</sup> = 0.953. With 400 samples it is only 0.449: a right solution is almost certain, but so is a lure.</p>
+<h4>The math: a toy model of search against a verifier</h4>
+<div class="eq" data-tex="\htmlData{sym=Pwin}{P_{\text{right}}(N)} = (1 - \htmlData{sym=ql}{q})^{\htmlData{sym=N}{N}} - (1 - \htmlData{sym=p}{p} - \htmlData{sym=ql}{q})^{\htmlData{sym=N}{N}}" data-fallback="P_right(N) = (1 − q)^N − (1 − p − q)^N"></div>
+<div class="symtable" data-syms="p,ql,Pwin"></div>
+<p class="inwords"><strong>In words:</strong> “the chance best-of-N is right is the chance that no sample is a lure, minus the chance that no sample is a lure and none is right either.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> p = 0.3, q = 0.002. N = 1 gives 0.998 − 0.698 = 0.3: with one sample the verifier has no choice. N = 10 gives 0.953, N = 100 gives 0.819, N = 400 gives 0.449. The peak, where adding a sample stops helping, is near N = 15. Without lures (q = 0) the formula becomes 1 − (1 − p)<sup>N</sup>, the <span class="t" data-t="pass@n">pass@n</span> ceiling, and never falls.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# p: share of samples that are right; q: share that are lures (illustrative)
+p, q = 0.3, 0.002
+def P_right(N):
+    # no lure at all, minus: no lure and no right solution
+    return (1 - q) ** N - (1 - p - q) ** N
+[round(P_right(N), 3) for N in (1, 10, 100, 400)]  # → [0.3, 0.953, 0.819, 0.449]
+# the peak: set the slope in N to zero and solve
+a, b = 1 - q, 1 - p - q
+round(math.log(math.log(b) / math.log(a)) / math.log(a / b), 1)  # → 14.5
+# the same p with no lures: the pass@N ceiling
+round(1 - (1 - p) ** 400, 3)  # → 1.0</code></pre>
+<p><strong>Try it:</strong> move the sliders. Watch where the solid line peaks and how far below the dashed ceiling it ends. Then make lures rarer (drag the second slider right) and watch the peak move right and the fall get gentler.</p>
+<div class="plot">
+  <div class="controls ui"><label for="lure-p">Share of samples that are right, p = <strong id="lure-p-v">0.30</strong></label><input type="range" id="lure-p" min="0.05" max="0.6" step="0.05" value="0.3"></div>
+  <div class="controls ui"><label for="lure-q">One lure in every <strong id="lure-q-v">500</strong> samples</label><input type="range" id="lure-q" min="100" max="5000" step="100" value="500"></div>
+  <div id="lure-chart"></div>
+  <p class="readout" id="lure-readout">Hover the chart, or tab to it and use the arrow keys, to read the chance at each N.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is the number of samples N on a log scale, from 1 to 3,200, like Figure 7(a); the y-axis is the chance that best-of-N returns a right solution. The dashed line is pass@N: the chance that any sample is right, which only rises. The solid line is best-of-N with lures in the pile. It follows the ceiling at first, then turns over once lures become likely, and the gap between the two lines is what the verifier's blind spots cost. The real verifier rises more slowly than this toy, because it also sometimes ranks ordinary wrong solutions first, but the turn-over has the same cause. Every number here is from the formula, with illustrative settings.</p>
+<h4>Why it matters today</h4>
+<p>This is <span class="t" data-t="goodhart's law">Goodhart's law</span> in miniature: a learned score used as a target gets exploited, here by nothing more than sampling. The same thing happens when a policy is trained against a learned reward (<span class="t" data-t="reward hacking">reward hacking</span>), which is why modern reasoning training prefers <span class="t" data-t="verifiable reward">verifiable rewards</span> (a program that checks the answer) wherever one exists. The <a data-lesson="primer/ml/alignment.html#goodhart_curve">alignment lesson's <code>goodhart_curve</code></a> draws the same rise and fall.</p>
+</section>
+
+<section id="s5-2">
+<h3>5.2 Regularization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S5.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A study group where, on any given day, a random fifth of the members stay home. Nobody can rely on one particular friend to know the answer, so everyone learns a bit of everything. That is <span class="t" data-t="dropout">dropout</span>, and it fights memorisation.</p>
+<h4>Tiny example</h4>
+<p>With 20% dropout, a layer's output of 10 numbers has on average 2 of them zeroed on each training step, a different 2 each time. The paper applies it along the <span class="t" data-t="residual connection">residual</span> paths of every layer (<span class="t" data-tip-title="Residual dropout" data-tip="Dropout applied to each sub-layer's output before it is added back onto the residual stream, as in the original transformer.">residual dropout</span>, from the original transformer). Because GPT-3 was pretrained without dropout, the paper first continues pretraining with dropout switched on, so finetuning does not also have to absorb that change.</p>
+<div class="tablewrap"><table>
+  <caption>What 20% dropout changed, 6B models, from the paper's Figure 8 (values recovered from its plotted points).</caption>
+  <thead><tr><th>Setting</th><th class="num">No dropout</th><th class="num">Dropout 0.2</th></tr></thead>
+  <tbody>
+    <tr><td>Finetuning, full training set (test@1)</td><td class="num">20.6%</td><td class="num">25.7%</td></tr>
+    <tr><td>Solution-level verifier, end of its epoch</td><td class="num">29.9%</td><td class="num">38.2%</td></tr>
+    <tr><td>Token-level verifier, mean of the last fifth of training</td><td class="num">40.6%</td><td class="num">41.4%</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> each row compares the same model with and without dropout. Finetuning gains 5 points. The solution-level verifier gains the most, because dropout cures the overfitting Figure 6(a) showed: with it, the solution-level verifier ends level with the token-level one. The token-level verifier, already resistant to overfitting, gains about a point. (That run used 4× larger batches and 300 completions per problem, so its level is not comparable with the rest of the page.)</p>
+<h4>Why it matters</h4>
+<p>Every run in the paper is one epoch or a few over a small dataset with a huge model: the setting where overfitting bites. The <a data-lesson="primer/ml/regularization.html#dropout">regularization lesson's <code>dropout</code></a> builds the mechanism; large pretraining runs today often skip it, since they rarely see a token twice.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#S6">original</a></span></h2>
+<blockquote class="quote">“On the full dataset, 6B verification slightly outperforms a finetuned 175B model, thereby offering a boost approximately equivalent to a 30x model size increase.”<cite>Cobbe et al. (2021), §6</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A small team with a good reviewer outperforms a much bigger team without one.</p>
+<h3 class="rung">The math: where “30×” comes from</h3>
+<div class="eq" data-tex="\htmlData{sym=ratio}{\text{size ratio}} = \htmlData{sym=Mbig}{M_{\text{big}}} \htmlData{sym=div}{/} \htmlData{sym=Msmall}{M_{\text{small}}}" data-fallback="size ratio = M_big / M_small"></div>
+<div class="symtable" data-syms="Mbig,Msmall,div,ratio"></div>
+<p class="inwords"><strong>In words:</strong> “the boost is quoted as the size of the larger model divided by the size of the smaller one that matches it once verification is added.”</p>
+<p class="inwords"><strong>With the numbers:</strong> on the full training set, 6B with verification solves 38.8% and 175B with finetuning 34.3% (Figure 5). 175 / 6 = 29.2, rounded to 30.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>M_big, M_small = 175, 6
+round(M_big / M_small, 1)  # → 29.2
+# the two solve rates being compared, from Figure 5 (% of test problems)
+verified_6B, finetuned_175B = 38.76, 34.33
+round(verified_6B - finetuned_175B, 1)  # → 4.4</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>The claim is about <em>scaling</em>: verification's line in Figure 5 is steeper, so the gap should widen with more data and harder problems. The paper expected verification to carry over to harder maths, and the next generation of work did exactly that, with finer-grained checking (<a href="lets-verify-step-by-step.html">Let's Verify Step by Step</a>) and with the check turned into a training signal (<a href="deepseekmath-grpo.html">DeepSeekMath and GRPO</a>).</p>
+</section>
+
+<section id="appf">
+<h2>Appendix F: watching a verifier read <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2110.14168#A6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A marker who says out loud, line by line, “fine… fine… hmm… no”. Because a token-level verifier makes a prediction after every token, you can colour each token by it and see where its confidence drops.</p>
+<h3 class="rung">Tiny example: the paper's fourth row</h3>
+<p>The problem: Howard spends 8 dollars at the arcade on Monday, twice as much on Tuesday, and 4 times Tuesday's amount on Wednesday. He started with 100 dollars; how much is left? The right answer: 8 + 16 + 64 = 88 dollars spent, 12 left.</p>
+<figure class="ix" id="figF">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 250" role="img" aria-label="A three-line solution coloured by verifier confidence: the first line green, the second amber, the third red where the solution forgets two days of spending">
+    <g class="blk soft" data-block="h1"><rect x="6" y="10" width="318" height="44" rx="6"/><text x="165" y="29" text-anchor="middle">He spent $8 on Monday and $8*2 = $16</text><text x="165" y="46" text-anchor="middle">on Tuesday.</text></g>
+    <g class="blk norm" data-block="h2"><rect x="6" y="62" width="318" height="44" rx="6"/><text x="165" y="81" text-anchor="middle">He spent $16 on Tuesday and $16*4 = $64</text><text x="165" y="98" text-anchor="middle">on Wednesday.</text></g>
+    <g class="blk emb" data-block="h3"><rect x="6" y="114" width="318" height="44" rx="6"/><text x="165" y="133" text-anchor="middle">He has $100 and spent $64, so he has</text><text x="165" y="150" text-anchor="middle">100 − 64 = 36 dollars left.  #### 36</text></g>
+    <g class="blk emb" data-block="pred"><rect x="6" y="176" width="154" height="30" rx="6"/><text x="83" y="195" text-anchor="middle">verifier: wrong</text></g>
+    <g class="blk emb" data-block="actual"><rect x="170" y="176" width="154" height="30" rx="6"/><text x="247" y="195" text-anchor="middle">actually: wrong</text></g>
+    <text x="165" y="232" text-anchor="middle" class="lbl">green: high score · amber: falling · pink: low</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap each line to hear the verifier's running verdict.</p></div>
+  </div>
+  <figcaption>One row of the paper's Figure 13, redrawn: a 175B solution scored token by token by a 175B token-level verifier. The colours follow the paper's description and shading, simplified to one colour per line. Based on Cobbe et al. (2021), Appendix F.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read down the solution. The first line is correct and the verifier is confident (green). The second is also correct arithmetic, but the paper describes the verifier growing gradually less confident as the solution goes on (amber). The third line says Howard spent $64 in total, forgetting Monday and Tuesday; the verifier's score collapses (pink) and it ends confident the solution is wrong, which it is. The bottom boxes compare the verifier's verdict with the truth: they agree.</p>
+<h3 class="rung">The other rows</h3>
+<ul>
+  <li><strong>True positive.</strong> On a correct solution the verifier starts unsure and grows more confident line by line; the paper attributes this to training on many wrong samples.</li>
+  <li><strong>Two false negatives.</strong> One correct solution is rejected, perhaps because the problem says both “4 times” and “4 potatoes”. Another reaches the right final answer through faulty reasoning, and the verifier rightly scores it low: its label says correct, its reasoning says otherwise.</li>
+  <li><strong>False positive.</strong> A solution subtracts $400 from the wrong jewel's price and the verifier misses it. The paper notes verifiers sometimes fail at this kind of “variable binding”: attaching each quantity to the right thing.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>A score at every step also tells you <em>where</em> a solution went wrong, not only whether it did. That is the seed of the <span class="t" data-t="process reward model">process reward model</span>, whose step labels come from people rather than from the final answer; the reasoning lesson's <a data-lesson="primer/ml/reasoning.html#first_bad_step"><code>first_bad_step</code></a> is the simplest version.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2021</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>GSM8K is hard for the largest models</td><td>Close to saturated; harder sets (MATH and beyond) took over as the frontier test</td><td><a data-lesson="primer/ml/benchmarks.html">benchmarks</a></td></tr>
+    <tr><td>A verifier trained on final-answer labels</td><td>The <span class="t" data-t="outcome reward model">outcome reward model</span>; step-level labels gave the <span class="t" data-t="process reward model">process reward model</span></td><td><a href="lets-verify-step-by-step.html">Let's Verify Step by Step companion</a></td></tr>
+    <tr><td>Best-of-100 at test time</td><td>One of several ways to spend <span class="t" data-t="test-time compute">test-time compute</span>, alongside votes, search and long chains</td><td><a data-lesson="primer/ml/reasoning.html#pass_at_n">pass@n</a></td></tr>
+    <tr><td>Lures fool the verifier past 400 samples</td><td>Known as reward model over-optimisation; programs that check answers are preferred where they exist</td><td><a data-lesson="primer/ml/reinforcement.html#verify"><code>verify</code></a></td></tr>
+    <tr><td>The generator never learns from the verifier</td><td>The check becomes the reward for reinforcement learning, which trains the generator itself</td><td><a href="deepseekmath-grpo.html">DeepSeekMath companion</a></td></tr>
+    <tr><td>Calculator annotations in the training text</td><td>Structured tool calls to calculators and code interpreters</td><td><a data-lesson="primer/agents/tools.html">tools</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Łukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse and John Schulman, <em>Training Verifiers to Solve Math Word Problems</em> (2021). <a href="https://arxiv.org/abs/2110.14168">arXiv:2110.14168</a>, distributed under arXiv's non-exclusive licence. Quotes are brief and attributed; figures are redrawn from values recovered from the paper's plotted points; no table or figure is copied. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    P: { tex: "P", name: "Number of test problems", meaning: "How many problems the percentage is taken over.", shape: "a whole number", example: "4 (illustrative); 1K in GSM8K's test set" },
+    cji: { tex: "c_{j,i}", name: "Was guess i on problem j right?", meaning: "1 if the i-th guess at problem j reached the right final answer, 0 if not.", shape: "0 or 1", example: "c for problem A, guess 2 = 1" },
+    maxi: { tex: "\\max_{i \\le N}", name: "Any of the first N", meaning: "The largest of the first N values. For 0s and 1s it is 1 exactly when at least one guess was right.", shape: "0 or 1", example: "max(0, 1, 0) = 1" },
+    sumj: { tex: "\\sum_{j=1}^{P}", name: "Sum over problems", meaning: "Add up over every test problem, first to last: this counts the problems solved.", shape: "", example: "1 + 0 + 1 + 1 = 3" },
+    hundredP: { tex: "\\tfrac{100}{P}", name: "Turn a count into a percentage", meaning: "Divide by the number of problems and multiply by 100.", shape: "", example: "100 / 4 = 25" },
+    testN: { tex: "\\text{test@}N", name: "test@N", meaning: "The percentage of problems solved at least once in N guesses. N is the number of guesses allowed per problem.", shape: "0 to 100", example: "test@3 = 75" },
+    rate: { tex: "r", name: "Solve rate", meaning: "The percentage of test problems a fine-tuned model solves with one greedy sample, using the full training set.", shape: "0 to 100", example: "34.3 for 175B" },
+    M: { tex: "M", name: "Model size", meaning: "The number of parameters.", shape: "a count", example: "175 × 10⁹ for the largest GPT-3" },
+    log10: { tex: "\\log_{10}", name: "Base-10 logarithm", meaning: "How many tenfold steps a number is from 1. Each tenfold increase in M adds 1 to it.", shape: "", example: "log₁₀(175 × 10⁹) = 11.24" },
+    b: { tex: "b", name: "Slope", meaning: "Points of solve rate gained per tenfold increase in model size, fitted by least squares.", shape: "points per decade", example: "9.49" },
+    a: { tex: "a", name: "Intercept", meaning: "Where the fitted line would be at a model of one parameter (log₁₀ M = 0). Meaningless on its own; it just positions the line.", shape: "points", example: "−72.0" },
+    q: { tex: "q", name: "The question", meaning: "The maths word problem, given to the verifier along with each solution.", shape: "text", example: "a GSM8K problem" },
+    si: { tex: "s_i", name: "The i-th sampled solution", meaning: "One complete solution written by the generator, reasoning and final answer together.", shape: "text", example: "solution 2" },
+    N: { tex: "N", name: "Number of samples", meaning: "How many solutions are drawn for one problem before choosing.", shape: "a whole number; 100 by default in the paper", example: "4 in the tiny example" },
+    V: { tex: "V", name: "The verifier", meaning: "A trained model that reads the question and a solution and outputs a score: its estimate that the solution is correct.", shape: "a number, roughly 0 to 1", example: "V(q, s₂) = 0.81" },
+    argmaxi: { tex: "\\arg\\max_i", name: "Which one scores highest", meaning: "Not the highest score itself but which solution has it.", shape: "an index from 1 to N", example: "2" },
+    shat: { tex: "\\hat{s}", name: "The chosen solution", meaning: "The hat marks the method's output: the solution returned to the user and graded.", shape: "text", example: "s₂" },
+    L: { tex: "\\mathcal{L}", name: "The verifier's training loss", meaning: "The single number training pushes down: language modelling plus verification.", shape: "a number ≥ 0", example: "1.435" },
+    LLM: { tex: "\\mathcal{L}_{\\text{LM}}", name: "Language-modelling loss", meaning: "The ordinary next-token cross-entropy on the solution's tokens, kept as an auxiliary objective.", shape: "a number ≥ 0", example: "1.2 (illustrative)" },
+    invT: { tex: "\\tfrac{1}{T}", name: "Average over tokens", meaning: "Divide by the number of solution tokens, so long and short solutions weigh the same.", shape: "", example: "1/4" },
+    sumt: { tex: "\\sum_{t=1}^{T}", name: "Sum over the solution's tokens", meaning: "Add up over every token of the solution; the question's tokens are masked out.", shape: "", example: "0.49 + 0.25 + 0.16 + 0.04" },
+    T: { tex: "T", name: "Solution length", meaning: "Number of tokens in the solution. (Not the sampling temperature T = 0.7 mentioned elsewhere.)", shape: "a whole number; at most 400 in the paper", example: "4" },
+    vt: { tex: "v_t", name: "Verifier output at token t", meaning: "The verifier's running estimate, after reading up to token t, that the solution will turn out correct.", shape: "a number, trained towards 0 or 1", example: "0.8 at the last token" },
+    y: { tex: "y", name: "The label", meaning: "1 if the solution's final answer matched the answer key, 0 if not. The same label is the target at every token.", shape: "0 or 1", example: "1" },
+    zt: { tex: "z_t", name: "The special token's logit", meaning: "The raw score the language model gives one reserved vocabulary token at position t. It is repurposed to carry the verifier's prediction.", shape: "any real number", example: "1.5 (illustrative)" },
+    g: { tex: "g", name: "Gain", meaning: "A learned number that scales the logit.", shape: "one number", example: "0.4 (illustrative)" },
+    bb: { tex: "b", name: "Bias", meaning: "A learned number that shifts the scaled logit. (A different b from the slope in the extrapolation.)", shape: "one number", example: "0.2 (illustrative)" },
+    k: { tex: "k", name: "Number of voters", meaning: "How many of the verifier's top-ranked solutions get to vote.", shape: "1 to N", example: "3" },
+    ai: { tex: "a_i", name: "Final answer of solution i", meaning: "The number after #### in solution i.", shape: "a number", example: "26 for the top-ranked solution" },
+    aa: { tex: "a", name: "A candidate answer", meaning: "Any final answer that appears among the voters; each is counted in turn.", shape: "a number", example: "18" },
+    ind: { tex: "\\mathbf{1}(\\cdot)", name: "Indicator", meaning: "1 if the statement in brackets is true, 0 if not. Summing indicators counts.", shape: "0 or 1", example: "1(26 = 18) = 0" },
+    sumtop: { tex: "\\sum_{i \\in \\text{top-}k}", name: "Sum over the top k", meaning: "Add up over only the k solutions the verifier scored highest.", shape: "", example: "three terms when k = 3" },
+    argmaxa: { tex: "\\arg\\max_a", name: "The answer with the most votes", meaning: "Not the vote count but the answer that has it.", shape: "a number", example: "18 when k = 3" },
+    ahat: { tex: "\\hat{a}", name: "The voted answer", meaning: "The method's output: the final answer returned.", shape: "a number", example: "18" },
+    p: { tex: "p", name: "Share of right samples", meaning: "The chance that one sampled solution is correct.", shape: "0 to 1", example: "0.3 (illustrative)" },
+    ql: { tex: "q", name: "Share of lures", meaning: "The chance that one sampled solution is wrong but scored above every right one by the verifier. (Here q is a probability, not the question.)", shape: "0 to 1, small", example: "0.002, one in 500 (illustrative)" },
+    Pwin: { tex: "P_{\\text{right}}(N)", name: "Chance best-of-N is right", meaning: "The chance that the top-scored of N samples is a correct solution, in the toy model.", shape: "0 to 1", example: "0.953 at N = 10" },
+    ratio: { tex: "\\text{size ratio}", name: "Size ratio", meaning: "How many times bigger the matched model is.", shape: "a positive number", example: "29.2" },
+    Mbig: { tex: "M_{\\text{big}}", name: "The larger model's size", meaning: "In billions of parameters: the fine-tuned model being matched.", shape: "billions", example: "175" },
+    Msmall: { tex: "M_{\\text{small}}", name: "The smaller model's size", meaning: "In billions of parameters: the model that matches it with a verifier.", shape: "billions", example: "6" },
+    div: { tex: "/", name: "Divide", meaning: "How many times the smaller fits into the larger.", shape: "", example: "175 / 6" },
+  },
+  blocks: {
+    ctx1: { title: "The text so far", body: "<p>The model has been writing a solution and has just opened a calculator annotation: <code>&lt;&lt;20+10</code>. Nothing special has happened yet; these are ordinary tokens.</p>" },
+    gen: { title: "The model", body: "<p>The fine-tuned language model, sampling one token at a time as usual. It learned to write annotations because its training solutions contain them.</p>", lesson: "primer/ml/inference.html" },
+    eqtok: { title: "The trigger: “=”", body: "<p>An equals sign inside the double angle brackets tells the system that a calculation is complete. Sampling pauses here.</p>" },
+    ctx2: { title: "The expression to evaluate", body: "<p>Everything between <code>&lt;&lt;</code> and the <code>=</code> is handed to the calculator: here <code>20+10</code>.</p>" },
+    calc: { title: "The calculator", body: "<p>Python's <code>eval</code> on the expression. If it errors or takes too long, the annotation is skipped and the model samples normally.</p>" },
+    result: { title: "Overwritten tokens", body: "<p>The calculator writes the result and the closing brackets, <code>30&gt;&gt;</code>, overriding whatever the model would have sampled.</p>" },
+    ctx3: { title: "Back to the model", body: "<p>The text now contains the correct result, and the model continues from it.</p>" },
+    resume: { title: "The model carries on", body: "<p>Sampling resumes after the closing brackets, so the sentence continues from a correct 30: in the paper's example, the next token is “books”.</p>" },
+    g4: { title: "The generator", body: "<p>A GPT-3 model fine-tuned for only 2 epochs on the training solutions, so its samples stay varied (Figure 3). The same network writes training data for the verifier and candidates at test time; it never learns from the verifier.</p>", lesson: "primer/ml/training_stages.html" },
+    qs: { title: "Training pairs", body: "<p>Each of the 7.5K training problems with its human-written solution. The generator is fine-tuned on these with the ordinary next-token loss.</p>", lesson: "primer/ml/training_stages.html" },
+    q: { title: "A training question", body: "<p>The same training problems are reused: the verifier learns on questions whose answers are known.</p>" },
+    sols: { title: "100 sampled solutions", body: "<p>Sampled at temperature 0.7, so they differ. Some are right, some wrong, some right for the wrong reasons.</p>" },
+    labels: { title: "Automatic labels", body: "<p>✓ if the final answer matches the key, ✗ if not. No one reads the reasoning, so a solution that reaches the right number by a wrong route is labelled ✓: a false positive.</p>", lesson: "primer/ml/reasoning.html" },
+    triple: { title: "The verifier's training data", body: "<p>Question, solution and label, 100 per problem. The verifier also keeps the language-modelling loss on the solutions.</p>" },
+    ver: { title: "The verifier", body: "<p>A language model (by default the same size as the generator, and initialised from it) with a scalar head, trained for one epoch to predict the label after every token.</p>" },
+    tq: { title: "A test question", body: "<p>A problem neither model has seen.</p>" },
+    tsols: { title: "100 candidate solutions", body: "<p>The default number of completions per test problem. §5.1 varies it from 25 to 3,200.</p>" },
+    pick: { title: "The answer returned", body: "<p>The single highest-scoring solution. Its final answer is then graded against the key; that grade is the reported solve rate.</p>", lesson: "primer/ml/reasoning.html" },
+    h1: { title: "Line 1: confident", body: "<p>Correct: $8 on Monday, $16 on Tuesday. The verifier's score is high.</p>" },
+    h2: { title: "Line 2: less sure", body: "<p>Still correct arithmetic ($64 on Wednesday), yet the paper describes the verifier becoming gradually less confident as the solution goes on.</p>" },
+    h3: { title: "Line 3: the mistake", body: "<p>Only Wednesday's $64 is subtracted; the total spent was 8 + 16 + 64 = $88, leaving $12. The verifier's score drops sharply and it ends confident the solution is wrong.</p>" },
+    pred: { title: "Verifier's verdict: wrong", body: "<p>Read at the final token: a low score.</p>" },
+    actual: { title: "Actual grade: wrong", body: "<p>The final answer 36 does not match 12. Verdict and truth agree: a true negative.</p>" },
+  },
+  onReady(P) { fig2(P); fig3(P); fig5(P); fig6(P); fig7(P); lure(P); },
+};
+
+// Values recovered from the vector plots in the arXiv PDF of Cobbe et al. (2021), rounded to 0.01 points.
+const SIZES = [500, 1000, 2000, 4000, 7500];
+const pts = (ys, xs = SIZES) => xs.map((x, i) => [x, ys[i]]);
+// Doubling axes: plot x as doublings above a base, so every doubling gets a labelled tick.
+const dbl = (ys, xs = SIZES, base = 500) => xs.map((x, i) => [Math.log2(x / base), ys[i]]);
+// Ticks land on half doublings too; label only whole doublings (and the data points, for the readout).
+const dblFmt = (base) => (v) => (Math.abs(Math.abs(v - Math.round(v)) - 0.5) < 1e-9 ? "" : kFmt(base * Math.pow(2, v)));
+const kFmt = (v) => (v >= 1000 ? `${+(v / 1000).toFixed(1)}K` : String(Math.round(v)));
+const pct = (v) => `${v.toFixed(1)}%`;
+const chartW = (box) => Math.max(320, Math.min(640, box.clientWidth));
+
+function pressGroup(attr, onPick) {
+  const btns = document.querySelectorAll(`[${attr}]`);
+  btns.forEach((b) => b.addEventListener("click", () => {
+    btns.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    onPick(b.getAttribute(attr));
+  }));
+}
+
+function fig2(P) {
+  const box = document.getElementById("fig2-chart");
+  P.lineChart(box, {
+    series: [
+      { name: "175B", points: dbl([18.44, 21.02, 24.1, 28.98, 34.34]) },
+      { name: "12B", points: dbl([8.43, 11.06, 14.78, 19.96, 24.94]) },
+      { name: "6B", points: dbl([7.5, 9.27, 11.72, 16.5, 20.59]) },
+      { name: "3B", points: dbl([5.45, 7.68, 9.62, 13.46, 17.33]) },
+    ],
+    yMin: 0, yMax: 40, width: chartW(box), height: 280,
+    xLabel: "training problems (doubling scale)", yLabel: "% solved (test@1)", xFmt: dblFmt(500), yFmt: pct,
+    readout: document.getElementById("fig2-readout"),
+    ariaLabel: "Test solve rate against training set size for four model sizes",
+  });
+}
+
+function fig3(P) {
+  const e = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50];
+  const t1 = [12.48, 18.45, 18.6, 19.0, 18.85, 19.15, 18.57, 18.5, 19.53, 18.6, 19.53, 19.71, 19.94, 20.04, 19.28, 19.33, 20.24, 20.32, 20.75, 20.44, 20.82, 19.99, 20.27, 20.77, 20.34, 20.14, 21.0, 20.82, 20.97, 21.68];
+  const t100 = [77.61, 83.39, 83.85, 83.32, 81.57, 79.93, 79.43, 78.9, 77.68, 76.54, 77.15, 75.26, 74.42, 74.6, 75.41, 73.13, 74.57, 74.07, 73.51, 73.03, 72.96, 71.97, 72.38, 70.15, 71.36, 71.57, 70.91, 70.83, 70.73, 70.61];
+  const box = document.getElementById("fig3-chart"), readout = document.getElementById("fig3-readout");
+  function draw(which) {
+    box.innerHTML = "";
+    const one = which === "t1";
+    P.lineChart(box, {
+      series: [{ name: one ? "test@1, 6B" : "test@100, 6B", points: pts(one ? t1 : t100, e) }],
+      yMin: one ? 10 : 68, yMax: one ? 24 : 86, width: chartW(box), height: 260,
+      xLabel: "epochs of finetuning", yLabel: one ? "% solved, 1 guess" : "% solved, 100 guesses",
+      xFmt: (v) => String(Math.round(v)), yFmt: pct, readout,
+      ariaLabel: one ? "test@1 against training epochs" : "test@100 against training epochs",
+    });
+    readout.textContent = one
+      ? "test@1: 18.5% after 2 epochs, 21.7% after 50. Slow, steady gains from more training."
+      : "test@100: peaks at 83.9% after 3 epochs, then falls to 70.6% by epoch 50. The generator for verification is taken at 2 epochs.";
+  }
+  pressGroup("data-f3", draw);
+  draw("t1");
+}
+
+function fig5(P) {
+  const D = {
+    "6B": [[7.5, 9.27, 11.72, 16.5, 20.59], [1.86, 3.07, 10.35, 24.91, 38.76]],
+    "175B": [[18.44, 21.01, 24.1, 28.98, 34.33], [9.01, 19.25, 35.02, 46.77, 55.86]],
+  };
+  const box = document.getElementById("fig5-chart"), readout = document.getElementById("fig5-readout");
+  function draw(m) {
+    box.innerHTML = "";
+    const [ft, vf] = D[m];
+    P.lineChart(box, {
+      series: [{ name: `${m} finetuning`, points: dbl(ft) }, { name: `${m} verification`, points: dbl(vf) }],
+      yMin: 0, yMax: 60, width: chartW(box), height: 280,
+      xLabel: "training problems (doubling scale)", yLabel: "% solved", xFmt: dblFmt(500), yFmt: pct, readout,
+      ariaLabel: `Finetuning against verification for the ${m} model`,
+    });
+    readout.textContent = `${m}, full training set: finetuning ${ft[4].toFixed(1)}%, verification ${vf[4].toFixed(1)}%. With 500 problems: ${ft[0].toFixed(1)}% against ${vf[0].toFixed(1)}%.`;
+  }
+  pressGroup("data-f5", draw);
+  draw("6B");
+}
+
+function fig6(P) {
+  const ep = Array.from({ length: 21 }, (_, i) => +(i * 0.05).toFixed(2));
+  const tok = [5.65, 9.46, 19.56, 25.43, 28.91, 30.64, 31.85, 33.48, 33.56, 35.4, 34.39, 35.97, 36.18, 36.56, 36.13, 37.43, 37.81, 38.09, 38.43, 39.07, 38.76];
+  const sol = [11.06, 23.77, 27.02, 30.89, 33.13, 33.73, 33.11, 33.86, 33.8, 33.82, 34.85, 34.35, 33.84, 32.37, 32.34, 32.32, 32.99, 31.19, 31.25, 29.72, 29.89];
+  const vonly = [7.5, 16.24, 23.85, 26.58, 27.88, 29.82, 30.58, 31.4, 31.36, 31.88, 33.21, 34.37, 34.28, 34.87, 35.14, 35.08, 35.03, 35.01, 35.05, 35.29, 35.42];
+  const box = document.getElementById("fig6-chart"), readout = document.getElementById("fig6-readout");
+  const V = {
+    a: { series: [{ name: "token-level", points: pts(tok, ep) }, { name: "solution-level", points: pts(sol, ep) }], x: "verifier training (fraction of the epoch)", log: false,
+         text: "(a) End of training: token-level 38.8%, solution-level 29.9% (it peaked at 34.9% halfway through)." },
+    b: { series: [{ name: "token-level, joint", points: pts(tok, ep) }, { name: "token-level, verification only", points: pts(vonly, ep) }], x: "verifier training (fraction of the epoch)", log: false,
+         text: "(b) End of training: with the language-modelling loss 38.8%, without it 35.4%." },
+    c: { series: [
+           { name: "175B gen, 175B verifier", points: dbl([9.01, 19.25, 35.02, 46.77, 55.86]) },
+           { name: "175B gen, 6B verifier", points: dbl([3.55, 10.91, 32.29, 42.98, 52.23]) },
+           { name: "6B gen, 175B verifier", points: dbl([2.34, 5.14, 21.29, 31.07, 42.14]) },
+           { name: "6B gen, 6B verifier", points: dbl([1.86, 3.07, 10.35, 24.91, 38.76]) }], x: "training problems (doubling scale)", log: true,
+         text: "(c) Full training set: a large generator with a small verifier (52.2%) beats a small generator with a large verifier (42.1%)." },
+  };
+  function draw(k) {
+    box.innerHTML = "";
+    const v = V[k];
+    P.lineChart(box, {
+      series: v.series, yMin: 0, yMax: k === "c" ? 60 : 42, width: chartW(box), height: 280,
+      xLabel: v.x, yLabel: "% solved", xFmt: v.log ? dblFmt(500) : (x) => x.toFixed(2), yFmt: pct, readout,
+      ariaLabel: `Figure 6 ${k}: verifier ablation`,
+    });
+    readout.textContent = v.text;
+  }
+  pressGroup("data-f6", draw);
+  draw("a");
+}
+
+function fig7(P) {
+  const boxA = document.getElementById("fig7a-chart");
+  P.lineChart(boxA, {
+    series: [{ name: "6B verifier, best of N", points: dbl([34.62, 36.94, 38.35, 39.08, 39.57, 39.16, 38.28, 37.22], [25, 50, 100, 200, 400, 800, 1600, 3200], 25) }],
+    yMin: 33, yMax: 41, width: chartW(boxA), height: 260,
+    xLabel: "completions per test problem (doubling scale)", yLabel: "% solved", xFmt: dblFmt(25), yFmt: pct,
+    readout: document.getElementById("fig7a-readout"),
+    ariaLabel: "Best-of-N solve rate against the number of completions, peaking at 400",
+  });
+  const ks = [1, 3, 5, 7, 9, 15, 20, 30, 50, 100];
+  const N = ["100", "200", "400", "800", "1,600", "3,200"];
+  const B = [
+    [38.34, 39.09, 39.07, 38.66, 38.34, 36.9, 35.94, 34.28, 31.65, 28.38],
+    [39.07, 40.27, 40.63, 40.68, 40.4, 39.37, 38.59, 37.45, 35.46, 31.72],
+    [39.57, 41.17, 41.86, 41.98, 42.05, 41.5, 41.05, 39.8, 38.24, 35.7],
+    [39.16, 41.26, 42.28, 42.87, 42.98, 42.55, 42.45, 42.02, 40.56, 38.64],
+    [38.28, 40.79, 42.53, 42.87, 43.25, 43.51, 43.44, 43.02, 42.34, 40.79],
+    [37.22, 39.72, 41.77, 42.98, 43.14, 43.21, 43.51, 43.82, 43.59, 42.38],
+  ];
+  const box = document.getElementById("fig7b-chart"), readout = document.getElementById("fig7b-readout");
+  function draw(i) {
+    i = +i;
+    box.innerHTML = "";
+    P.lineChart(box, {
+      series: [{ name: `${N[i]} completions`, points: pts(B[i], ks) }],
+      logX: true, yMin: 27, yMax: 45, width: chartW(box), height: 260,
+      xLabel: "top-ranked samples that vote", yLabel: "% solved", xFmt: (v) => String(Math.round(v)), yFmt: pct, readout,
+      ariaLabel: `Solve rate against the number of voters, ${N[i]} completions`,
+    });
+    const best = B[i].indexOf(Math.max(...B[i]));
+    readout.textContent = `${N[i]} completions: top 1 alone ${B[i][0].toFixed(1)}%; best with the top ${ks[best]} voting, ${B[i][best].toFixed(1)}%; all 100 voting ${B[i][9].toFixed(1)}%.`;
+  }
+  pressGroup("data-f7", draw);
+  draw(0);
+}
+
+/* ---- the lure explorer: P_right(N) = (1 − q)^N − (1 − p − q)^N, against pass@N = 1 − (1 − p)^N ---- */
+function lure(P) {
+  const ps = document.getElementById("lure-p"), qs = document.getElementById("lure-q");
+  const box = document.getElementById("lure-chart"), readout = document.getElementById("lure-readout");
+  const Ns = [];
+  for (let e = 0; e <= 3.505; e += 0.05) Ns.push(Math.round(Math.pow(10, e)));
+  const xs = [...new Set(Ns)].filter((n) => n <= 3200);
+  const get = () => ({ p: +ps.value, q: 1 / +qs.value });
+  const right = (N, p, q) => Math.pow(1 - q, N) - Math.pow(1 - p - q, N);
+  const series = () => {
+    const { p, q } = get();
+    return [
+      { name: "best-of-N with lures", points: xs.map((N) => [N, right(N, p, q)]) },
+      { name: "pass@N ceiling", points: xs.map((N) => [N, 1 - Math.pow(1 - p, N)]) },
+    ];
+  };
+  const chart = P.lineChart(box, {
+    series: series(), logX: true, yMin: 0, yMax: 1, width: chartW(box), height: 280,
+    xLabel: "samples N", yLabel: "chance best-of-N is right", xFmt: kFmt, yFmt: (v) => v.toFixed(2), readout,
+    ariaLabel: "Chance that best-of-N returns a right solution, with and without lures",
+  });
+  function redraw() {
+    const { p, q } = get();
+    document.getElementById("lure-p-v").textContent = p.toFixed(2);
+    document.getElementById("lure-q-v").textContent = Math.round(1 / q).toLocaleString("en");
+    chart.update(series());
+    const a = 1 - q, b = 1 - p - q;
+    const peak = Math.log(Math.log(b) / Math.log(a)) / Math.log(a / b);
+    const n = Math.max(1, Math.round(peak));
+    readout.textContent = `Peak near N = ${n}, at ${right(n, p, q).toFixed(3)}. At N = 100: ${right(100, p, q).toFixed(3)}; at N = 3,200: ${right(3200, p, q).toFixed(3)}.`;
+  }
+  ps.addEventListener("input", redraw);
+  qs.addEventListener("input", redraw);
+  redraw();
+}
+</script>
+</body>
+</html>

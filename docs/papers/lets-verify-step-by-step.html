@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Let's Verify Step by Step, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Lightman et al. (2023), the paper that trained a reward model on 800,000 human labels of individual reasoning steps and showed it picks correct maths solutions far more reliably than one trained on final answers.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="lets-verify-step-by-step">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Methods</a>
+        <ol>
+          <li><a href="#s2-1">2.1–2.3 Scope, models, generator</a></li>
+          <li><a href="#s2-4">2.4 Data collection</a></li>
+          <li><a href="#s2-5">2.5 Outcome-supervised reward models</a></li>
+          <li><a href="#s2-6">2.6 Process-supervised reward models</a></li>
+          <li><a href="#s2-try">Try it: score a solution</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Large-scale supervision</a></li>
+      <li><a href="#s4">4 Small-scale synthetic supervision</a>
+        <ol>
+          <li><a href="#s4-1">4.1 Process vs outcome</a></li>
+          <li><a href="#s4-2">4.2 Active learning</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Out-of-distribution generalization</a></li>
+      <li><a href="#s6">6 Discussion</a>
+        <ol>
+          <li><a href="#s6-1">6.1 Credit assignment</a></li>
+          <li><a href="#s6-2">6.2 Alignment impact</a></li>
+          <li><a href="#s6-3">6.3 Test set contamination</a></li>
+        </ol>
+      </li>
+      <li><a href="#s7">7 Related work</a></li>
+      <li><a href="#s8">8 Conclusion</a></li>
+      <li><a href="#appb">Appendix B: inside PRM800K</a></li>
+      <li><a href="#today">What changed since 2023</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Let's Verify Step by Step, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Lightman, Kosaraju, Burda, Edwards, Baker, Lee, Leike, Schulman, Sutskever and Cobbe (2023), <em>Let's Verify Step by Step</em>.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/2305.20050">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/2305.20050">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/2305.20050">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. The paper is distributed under arXiv's standard non-exclusive licence, which does not grant permission to republish its tables or figures, so only a few selected numbers appear in tables written for this page, each attributed. Its plotted figures are redrawn from scratch: they are vector drawings in the paper's PDF, and the numbers behind every redrawn curve were recovered from the coordinates of the plotted points, so they match the original to about a tenth of a percentage point. Its maths examples are paraphrased (mathematics is not copyrightable) and its screenshots are redrawn. The equations are written in this page's own notation for rules the paper states in words. Numbers marked <em>illustrative</em> are made up for teaching. Read the original alongside: every section links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it, and so does every symbol in every equation.</li>
+  <li>The <a href="#s2-try">step scorer</a> lets you set how sure a reward model is about each step of a solution and watch the two ways of turning step scores into one solution score disagree.</li>
+</ul>
+<p>Each idea climbs the ladder: <strong>everyday picture</strong>, <strong>tiny example</strong>, <strong>diagram</strong>, <strong>the math</strong>, <strong>why it matters</strong>. This paper is the sequel to <a href="training-verifiers.html">Training Verifiers to Solve Math Word Problems</a> (same last author, same idea of ranking sampled solutions); read that first if “verifier” or “best-of-N” is new. The <a class="lesson" data-lesson="primer/ml/reasoning.html">reasoning models lesson</a> builds both kinds of checker from scratch.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<blockquote class="quote">“Our process-supervised model solves 78% of problems from a representative subset of the MATH test set.”<cite>Lightman et al. (2023), Abstract. <a href="https://ar5iv.labs.arxiv.org/html/2305.20050">Read the original</a></cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two teachers train an assistant marker. One only ever tells the assistant “this paper's final answer is right” or “wrong”. The other goes through papers line by line and says “fine, fine, fine, <em>this</em> line is where it goes wrong”. Which assistant becomes the better judge of new work? This paper runs that experiment at scale, on hard competition maths.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li><strong><span class="t" data-t="process supervision">Process supervision</span> wins.</strong> A <span class="t" data-t="process reward model">process reward model</span> (PRM), trained on human labels for each step, picks a correct solution out of 1,860 samples 78.2% of the time on its MATH test problems; an <span class="t" data-t="outcome reward model">outcome reward model</span> (ORM) manages 72.4%, and a <span class="t" data-t="majority voting">majority vote</span> 69.6%.</li>
+  <li><strong>A large reward model can stand in for human labellers</strong> when training small ones, which makes careful comparisons affordable.</li>
+  <li><strong><span class="t" data-t="active learning">Active learning</span></strong> (showing labellers the solutions most likely to fool the current model) makes each label about 2.6 times as valuable.</li>
+  <li><strong>The data is public:</strong> <span class="t" data-tip-title="PRM800K" data-tip="The dataset released with this paper: about 800,000 human labels (positive, negative or neutral) on individual steps of 75,000 model-written solutions to 12,000 MATH problems.">PRM800K</span>, 800,000 step-level human labels.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>PRM800K became a standard resource for training step checkers, and “score every step” became one of the main ideas for making reasoning reliable. The paper also sharpened a question that still runs through reasoning research: is it enough to reward right answers, or must the reasoning itself be checked?</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S1">original</a></span></h2>
+<blockquote class="quote">“It provides more precise feedback, since it specifies the exact location of any errors that occur.”<cite>Lightman et al. (2023), §1, on process supervision</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A long calculation is a chain: one broken link and everything after it is wrong, however careful the rest. Models that write long <span class="t" data-t="chain of thought">chains of thought</span> sometimes invent a fact or make a slip in a moment of uncertainty (a <span class="t" data-t="hallucination">hallucination</span>), and in multi-step reasoning one slip is enough.</p>
+<h3 class="rung">Tiny example: two ways to give feedback</h3>
+<p>The lesson's toy chain for 3 + 5 + 8 + 2: <code>3+5=8</code>, <code>8+8=17</code>, <code>17+2=19</code>. <strong>Outcome supervision</strong> says one thing: the final answer 19 is wrong. <strong>Process supervision</strong> says: step 1 fine, step 2 wrong. Now take <code>3+5=9</code>, <code>9+8=16</code>, <code>16+2=18</code>: two slips cancel, so outcome supervision calls it right, and process supervision still flags step 1. Checking steps catches right answers reached by wrong reasoning, which models trained on outcomes are known to produce.</p>
+<h3 class="rung">Where reward models are used</h3>
+<p>A <span class="t" data-t="reward model">reward model</span> that tells good outputs from bad can be used two ways: as the reward in a reinforcement-learning pipeline, or to search by <span class="t" data-tip-title="Rejection sampling" data-tip="Draw many samples and throw away all but the ones a scorer accepts (here: keep the highest-scoring one). Best-of-N is a form of it.">rejection sampling</span>, keeping the best of many samples. Either way, the system is only as reliable as the reward model, so this paper studies how to train the most reliable one.</p>
+<h3 class="rung">Why this paper, when the question had been asked</h3>
+<p>Uesato et al. (2022) had already compared the two on grade-school maths (<span class="t" data-t="gsm8k">GSM8K</span>) and found similar final performance. This paper changes three things: a more capable base model (GPT-4), much more human feedback, and the harder <span class="t" data-tip-title="MATH" data-tip="A benchmark of 12,500 competition mathematics problems (7,500 for training, 5,000 for testing) whose final answers can be checked automatically. Hendrycks et al. (2021).">MATH</span> dataset. <a href="#s7">Section 7</a> explains why the answers differ.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The introduction also gives an alignment argument: process supervision rewards a chain of thought people can follow and endorse, rather than any route that happens to end at the right answer. <a href="#s6-2">§6.2</a> returns to it.</p>
+</section>
+
+<section id="s2">
+<h2>2 Methods <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S2">original</a></span></h2>
+<blockquote class="quote">“Outcome supervision can be provided without humans, since all problems in the MATH dataset have automatically checkable answers.”<cite>Lightman et al. (2023), §2</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Grading a final answer against a key is clerical work a program can do. Deciding whether line 7 of a proof is valid needs a person who knows the maths. That asymmetry shapes the whole paper: outcome labels are free, process labels are expensive.</p>
+<h3 class="rung">Two regimes</h3>
+<ul>
+  <li><strong>Large scale.</strong> Everything fine-tuned from GPT-4, with human process labels. Aim: the best ORM and PRM possible. Their training sets differ (§3 explains why), so this is not a controlled comparison.</li>
+  <li><strong>Small scale.</strong> Models trained with about 200 times less compute, where the large PRM plays the part of the human labeller. Aim: a controlled comparison and ablations that human labelling would make unaffordable (§4).</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>Separating “best possible result” from “fair comparison” is good experimental practice: the first shows what is achievable, the second shows why.</p>
+</section>
+
+<section id="s2-1">
+<h3>2.1–2.3 Scope, base models and the generator <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S2.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>To compare two markers fairly, give them the same stack of scripts, written by the same student, and judge each marker only by how often the script it rates highest is actually right.</p>
+<h4>Tiny example: how a reward model is scored</h4>
+<p>For every test problem, sample N solutions from one fixed <span class="t" data-tip-title="Generator" data-tip="The model that writes candidate solutions. Here it is fixed: the reward models only rank its solutions, and it never learns from them.">generator</span>, let the reward model pick its favourite, and check that one's final answer. With 3 problems where the favourite is right, right and wrong, the reward model scores 2/3 = 67%. This is <span class="t" data-t="best-of-n">best-of-N</span>, exactly as in <a href="training-verifiers.html">Cobbe et al. (2021)</a>.</p>
+<h4>The setup</h4>
+<ul>
+  <li><strong>Only the reward model is trained.</strong> The generator is never improved with reinforcement learning here; the paper calls that a natural next step and deliberately leaves it out.</li>
+  <li><strong>Base models.</strong> GPT-4 before any <span class="t" data-t="rlhf">RLHF</span>, and smaller models of similar design. All are first trained on <span class="t" data-tip-title="MathMix" data-tip="The paper's roughly 1.5B-token dataset of maths problems, solutions, maths discussion and synthetic data, used as an extra pretraining step before any reward-model training (Appendix A).">MathMix</span>, about 1.5B tokens of maths text, which improves mathematical reasoning.</li>
+  <li><strong>The generator writes one step per line.</strong> It is fine-tuned for one epoch on its own few-shot solutions that reached correct answers, only to teach the format: steps separated by newlines, so that a step is easy to point at.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>Because the reward model is judged only by what it selects, the comparison measures exactly the thing you need from a checker: telling right from wrong among solutions that look alike. The <a data-lesson="primer/ml/reasoning.html#verifier_experiment"><code>verifier_experiment</code></a> in the reasoning lesson uses the same protocol.</p>
+</section>
+
+<section id="s2-4">
+<h3>2.4 Data collection <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S2.SS4">original</a></span></h3>
+<blockquote class="quote">“We expect to gain more information from labeling convincing wrong-answer solutions, since we know the PRM is mistaken about at least one step in each such solution.”<cite>Lightman et al. (2023), §2.4</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A tutor's time is precious. Showing them a solution with an obvious blunder in line 1 teaches your marker nothing it doesn't already know. Showing them a solution your marker <em>loves</em> but whose final answer is wrong is gold: somewhere in it is a mistake the marker cannot yet see.</p>
+<h4>Tiny example: the labelling task</h4>
+<p>The paper's Figure 1 shows the interface on a short algebra problem: the denominator of a fraction is 7 less than 3 times the numerator, and the fraction equals 2/5; what is the numerator? (The answer is 14.) Each line of the model's solution gets a label.</p>
+<figure class="ix" id="fig1">
+  <div class="ixgrid">
+  <svg viewBox="0 0 330 300" role="img" aria-label="The step-labelling interface: six steps of a solution, the first five labelled positive and the last, x = 7, labelled negative">
+    <g class="blk plain" data-block="problem"><rect x="6" y="6" width="318" height="44" rx="6"/><text x="165" y="25" text-anchor="middle">Denominator = 3 × numerator − 7;</text><text x="165" y="42" text-anchor="middle">fraction = 2/5. Numerator? (answer: 14)</text></g>
+    <g class="blk soft" data-block="s1"><rect x="6" y="58" width="318" height="30" rx="6"/><text x="16" y="77">1. Let the numerator be x.</text><text x="312" y="77" text-anchor="end">+</text></g>
+    <g class="blk soft" data-block="s2"><rect x="6" y="94" width="318" height="30" rx="6"/><text x="16" y="113">2. So the denominator is 3x − 7.</text><text x="312" y="113" text-anchor="end">+</text></g>
+    <g class="blk soft" data-block="s3"><rect x="6" y="130" width="318" height="30" rx="6"/><text x="16" y="149">3. x / (3x − 7) = 2/5.</text><text x="312" y="149" text-anchor="end">+</text></g>
+    <g class="blk soft" data-block="s4"><rect x="6" y="166" width="318" height="30" rx="6"/><text x="16" y="185">4. So 5x = 2(3x − 7).</text><text x="312" y="185" text-anchor="end">+</text></g>
+    <g class="blk soft" data-block="s5"><rect x="6" y="202" width="318" height="30" rx="6"/><text x="16" y="221">5. 5x = 6x − 14.</text><text x="312" y="221" text-anchor="end">+</text></g>
+    <g class="blk emb" data-block="s6"><rect x="6" y="238" width="318" height="30" rx="6"/><text x="16" y="257">6. So x = 7.</text><text x="312" y="257" text-anchor="end">−</text></g>
+    <text x="165" y="290" text-anchor="middle" class="lbl">each step: positive (+), neutral, or negative (−)</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step to see why it gets its label.</p></div>
+  </div>
+  <figcaption>The step-labelling interface (the paper's Figure 1), redrawn with the problem paraphrased and the rating buttons replaced by the chosen label. Based on Lightman et al. (2023), §2.4.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the top box is the problem, with its known final answer, which labellers are shown. Below it, one row per step, in the order the model wrote them. The first five are correct and push towards the answer, so they are positive (green). Step 6 solves 5x = 6x − 14 wrongly: subtracting 5x from both sides gives x = 14, not 7. It is negative (pink). A labeller who finds that one bad step has told the reward model more than “wrong answer” ever could: where the solution broke.</p>
+<h4>Three labels, and what they mean</h4>
+<ul>
+  <li><strong>Positive:</strong> correct and reasonable. Appendix D sharpens it: a step that would be neutral <em>and</em> makes progress towards the solution.</li>
+  <li><strong>Negative:</strong> incorrect or unreasonable.</li>
+  <li><strong>Neutral:</strong> §2.4 describes it as ambiguity (a subtly misleading step, or a poor suggestion that is technically valid); Appendix D's instructions define it as a step that is appropriate, correct and easy to verify but makes no progress. Either way, the choice of treating it as good or bad is postponed to test time.</li>
+</ul>
+<h4>Choosing what to label: convincing wrong answers</h4>
+<p>The labellers see solutions from the large generator only. Rather than labelling a random sample, the team surfaces <em>convincing wrong-answer</em> solutions: ones the current best PRM rates highly (convincing) whose final answer is wrong. “Wrong-answer” rather than “wrong”, because correctness is judged only by the final answer, which occasionally misgrades. Between batches the PRM is retrained on the latest labels, so what counts as convincing keeps moving. This is <span class="t" data-t="active learning">active learning</span>; <a href="#s4-2">§4.2</a> measures how much it helps.</p>
+<h4>PRM800K</h4>
+<p>The result: about 800K step-level labels over 75K solutions to 12K problems. To have enough problems, 4.5K of the 5K MATH test problems went into training, leaving 500 test problems, chosen at random and checked to match the full test set's spread of subjects and difficulty (Appendix C). Every MATH result in the paper is on those 500.</p>
+<h4>Why it matters</h4>
+<p>Labelling cost is the bottleneck for any human-feedback method. Spending it where the model is confidently wrong is a pattern that recurs across machine learning, from spam filters to preference data.</p>
+</section>
+
+<section id="s2-5">
+<h3>2.5 Outcome-supervised reward models (ORMs) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S2.SS5">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The marker from <a href="training-verifiers.html">Cobbe et al. (2021)</a>, unchanged: trained on piles of solutions labelled right or wrong by their final answer, asked for one verdict at the end.</p>
+<h4>Tiny example</h4>
+<p>An ORM reads a 4-token solution and outputs, after each token, its running estimate that the solution is correct: 0.40, 0.55, 0.70, 0.62 (illustrative). Only the last one counts: the solution's score is 0.62.</p>
+<h4>The math: the ORM's score</h4>
+<div class="eq" data-tex="\htmlData{sym=sORM}{\text{score}_{\text{ORM}}} = \htmlData{sym=vT}{v_{T}}" data-fallback="score_ORM = v_T"></div>
+<div class="symtable" data-syms="vT,sORM"></div>
+<p class="inwords"><strong>In words:</strong> “an outcome reward model's score for a solution is its prediction at the solution's final token.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the predictions are 0.40, 0.55, 0.70, 0.62, so T = 4 and the score is v<sub>4</sub> = 0.62.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the ORM's prediction after each token (illustrative)
+v = [0.40, 0.55, 0.70, 0.62]
+T = len(v)
+# score_ORM = v_T: the last token's prediction; Python counts from 0
+v[T - 1]  # → 0.62</code></pre>
+<p>It is trained exactly as Cobbe et al.'s token-level verifier: the same target (right or wrong) at every token, one epoch, with no dropout and no language-modelling loss this time (Appendix E). Training samples are drawn uniformly from the generator at temperature 1.0.</p>
+<h4>Why it matters</h4>
+<p>Outcome labels are cheap and plentiful, but noisy in one specific way: a solution that reaches the right answer through wrong reasoning is labelled correct, a <span class="t" data-t="false positive">false positive</span>. The reasoning lesson's <a data-lesson="primer/ml/reasoning.html#outcome_reward"><code>outcome_reward</code></a> is the labelling rule.</p>
+</section>
+
+<section id="s2-6">
+<h3>2.6 Process-supervised reward models (PRMs) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S2.SS6">original</a></span></h3>
+<blockquote class="quote">“We define the PRM score for a solution to be the probability that every step is correct under the PRM.”<cite>Lightman et al. (2023), §2.6</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A bridge is only as safe as all of its joints together. If an inspector gives each joint a chance of being sound, the chance the whole bridge is sound is those chances multiplied: one doubtful joint drags the whole bridge down, however good the rest.</p>
+<h4>Tiny example</h4>
+<p>A PRM reads a 4-step solution and gives each step a chance of being correct: 0.98, 0.95, 0.97 and 0.10 (illustrative). The product is 0.98 × 0.95 × 0.97 × 0.10 ≈ 0.09. A 4-step solution with 0.96 on its last step instead scores 0.867. One bad step is enough to sink a solution.</p>
+<figure class="ix wide" id="fig2">
+  <div class="ixgrid">
+  <svg viewBox="0 0 340 392" role="img" aria-label="A wrong solution to a polynomial factoring problem, graded step by step by the PRM: early steps green, the step that misfactors x to the fourth plus 4 red, and the final answer red">
+    <g class="blk plain" data-block="pq"><rect x="6" y="6" width="328" height="44" rx="6"/><text x="170" y="25" text-anchor="middle">x⁸ + 3x⁴ − 4 = p₁(x) p₂(x) ⋯ pₖ(x), each pᵢ</text><text x="170" y="42" text-anchor="middle">monic and irreducible. Find p₁(1) + ⋯ + pₖ(1).</text></g>
+    <g class="blk soft" data-block="f1"><rect x="6" y="58" width="328" height="30" rx="6"/><text x="16" y="77">Only even powers: set y = x², get y⁴ + 3y² − 4</text></g>
+    <g class="blk soft" data-block="f2"><rect x="6" y="94" width="328" height="30" rx="6"/><text x="16" y="113">(y² + 4)(y² − 1), so (x⁴ + 4)(x⁴ − 1)</text></g>
+    <g class="blk soft" data-block="f3"><rect x="6" y="130" width="328" height="30" rx="6"/><text x="16" y="149">Factor each further by difference of squares</text></g>
+    <g class="blk emb" data-block="f4"><rect x="6" y="166" width="328" height="30" rx="6"/><text x="16" y="185">(x² + 2)(x² − 2)(x² + 1)(x² − 1)</text></g>
+    <g class="blk soft" data-block="f5"><rect x="6" y="202" width="328" height="30" rx="6"/><text x="16" y="221">… (x² + 2)(x² − 2)(x² + 1)(x + 1)(x − 1)</text></g>
+    <g class="blk soft" data-block="f6"><rect x="6" y="238" width="328" height="30" rx="6"/><text x="16" y="257">To find the sum, plug x = 1 into each factor</text></g>
+    <g class="blk emb" data-block="f7"><rect x="6" y="274" width="328" height="30" rx="6"/><text x="16" y="293">(1² + 2)(1² − 2)(1² + 1)(1 + 1)(1 − 1)</text></g>
+    <g class="blk emb" data-block="f8"><rect x="6" y="310" width="328" height="30" rx="6"/><text x="16" y="329">Multiplying: 0.  Answer: 0</text></g>
+    <text x="170" y="366" text-anchor="middle" class="lbl">green: high PRM score · pink: low · steps condensed</text>
+    <text x="170" y="382" text-anchor="middle" class="lbl">(the right answer is 10)</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step. Start with the pink one in the middle: it is where the solution breaks.</p></div>
+  </div>
+  <figcaption>The incorrect solution from the paper's Figure 2, redrawn: its 20 lines condensed to 8, maths paraphrased, colours following the PRM's shading. Based on Lightman et al. (2023), §2.6.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> read down the solution. The first three steps are sound: substituting y = x² and factoring gives (x⁴ + 4)(x⁴ − 1). The fourth step claims x⁴ + 4 = (x² + 2)(x² − 2), but that product is x⁴ − 4, and the PRM scores it low (pink). Everything after inherits the error, and the solution also <em>multiplies</em> the factors' values where the problem asks for their <em>sum</em>, which the PRM flags too. The final answer 0 is wrong; the right factorisation, (x² + 2x + 2)(x² − 2x + 2)(x² + 1)(x + 1)(x − 1), gives 5 + 1 + 2 + 2 + 0 = 10. The paper's point: the PRM found the exact line.</p>
+<h4>The math: from step scores to a solution score</h4>
+<div class="eq" data-tex="\htmlData{sym=sPRM}{\text{score}_{\text{PRM}}} = \htmlData{sym=prodk}{\prod_{k=1}^{K}} \htmlData{sym=pk}{p_k}" data-fallback="score_PRM = Π_{k=1}^{K} p_k"></div>
+<div class="symtable" data-syms="K,pk,prodk,sPRM"></div>
+<p class="inwords"><strong>In words:</strong> “a solution's score is the chance that every step is correct: multiply together the PRM's probability for each step.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> K = 4 and p = 0.98, 0.95, 0.97, 0.10: the product is 0.090. The alternative reduction, the minimum, gives 0.10: same verdict here. The two part ways on long solutions: 10 steps at 0.97 each multiply to 0.737 and 20 steps to 0.544, while the minimum stays 0.97. The product quietly favours shorter solutions, which the paper notes (Appendix F).</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# p_k: the PRM's chance that step k is correct (illustrative)
+p = [0.98, 0.95, 0.97, 0.10]
+# Π_k p_k
+round(math.prod(p), 3)  # → 0.09
+# the other reduction the paper tried
+min(p)  # → 0.1
+# a solution whose last step looks fine instead
+round(math.prod([0.98, 0.95, 0.97, 0.96]), 3)  # → 0.867
+# the product's length bias: 10 or 20 steps, each 0.97
+round(0.97 ** 10, 3), round(0.97 ** 20, 3)  # → (0.737, 0.544)</code></pre>
+<h4>The math: what counts as a “correct” step</h4>
+<p>The PRM predicts one of three labels for each step. To get p<sub>k</sub> the paper adds the chance of “neutral” to the chance of “positive” (neutral counts as correct), or leaves it out.</p>
+<div class="eq" data-tex="\htmlData{sym=pk}{p_k} = \htmlData{sym=Ppos}{P(+)} + \htmlData{sym=Pneu}{P(\text{neutral})}" data-fallback="p_k = P(+) + P(neutral)"></div>
+<div class="symtable" data-syms="Ppos,Pneu"></div>
+<p class="inwords"><strong>In words:</strong> “a step's score is the PRM's probability that the step is positive, plus its probability that the step is neutral.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> a step with P(+) = 0.70, P(neutral) = 0.20, P(−) = 0.10 scores 0.90 with neutral counted as positive, 0.70 without.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the PRM's three probabilities for one step (illustrative)
+P_pos, P_neu, P_neg = 0.70, 0.20, 0.10
+# neutral counts as correct (the paper's default)
+round(P_pos + P_neu, 2)  # → 0.9
+# neutral counts as wrong
+P_pos  # → 0.7</code></pre>
+<div class="tablewrap"><table>
+  <caption>The four scoring choices, best-of-1860 on the 500 MATH test problems (%). From Table 4 of Lightman et al. (2023).</caption>
+  <thead><tr><th>Neutral steps count as</th><th class="num">Product</th><th class="num">Minimum</th></tr></thead>
+  <tbody>
+    <tr class="hl"><td>positive</td><td class="num">78.2</td><td class="num">77.6</td></tr>
+    <tr><td>negative</td><td class="num">77.4</td><td class="num">77.8</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> each cell is one way of turning step predictions into a solution score. The spread is under a point: the product with neutral-as-positive is best (highlighted) and is used everywhere else in the paper, but how the step scores are combined matters much less than having them.</p>
+<h4>The math: supervising only up to the first mistake</h4>
+<p>When a solution is wrong, labellers stop at its first negative step. So a K-step solution whose first mistake is at step m yields labels for steps 1 to m only.</p>
+<div class="eq" data-tex="\htmlData{sym=yk}{y_k} = \begin{cases} 1 & \htmlData{sym=k}{k} < \htmlData{sym=m}{m} \\ 0 & \htmlData{sym=k}{k} = \htmlData{sym=m}{m} \\ \text{no label} & \htmlData{sym=k}{k} > \htmlData{sym=m}{m} \end{cases}" data-fallback="y_k = 1 if k < m; 0 if k = m; no label if k > m"></div>
+<div class="symtable" data-syms="k,m,yk"></div>
+<p class="inwords"><strong>In words:</strong> “every step before the first mistake is labelled correct, the first mistake is labelled wrong, and nothing after it is labelled.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in Figure 1's solution, K = 6 and the first mistake is m = 6, so the labels are 1, 1, 1, 1, 1, 0. Had the mistake been at step 3, the labels would be 1, 1, 0, and steps 4 to 6 would go unlabelled. A correct solution gets 1 on every step.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>def process_labels(K, m):
+    # m: the first wrong step, or None if every step is fine
+    if m is None:
+        return [1] * K
+    # y_k = 1 before m, 0 at m, and no label after m
+    return [1 if k &lt; m else 0 for k in range(1, m + 1)]
+process_labels(6, 6)  # → [1, 1, 1, 1, 1, 0]
+process_labels(6, 3)  # → [1, 1, 0]
+process_labels(6, None)  # → [1, 1, 1, 1, 1, 1]</code></pre>
+<p>Why stop there? It keeps the comparison fair: on a correct solution both kinds of supervision say the same thing (all fine), and on a wrong one both say “there is a mistake”; process supervision adds only <em>where</em>. It also keeps labelling cost comparable, since without an answer key, checking a solution means finding its first mistake anyway.</p>
+<h4>Why it matters</h4>
+<p>The PRM is trained as an ordinary language model: after the last token of each step it predicts one token, the label, and training maximises the likelihood of the right one. No special architecture, and one forward pass scores every step. The reasoning lesson's <a data-lesson="primer/ml/reasoning.html#first_bad_step"><code>first_bad_step</code></a> and <a data-lesson="primer/ml/reasoning.html#check_step"><code>check_step</code></a> are a PRM with a perfect step checker.</p>
+</section>
+
+<section id="s2-try">
+<h3>Try it: score a solution</h3>
+<h4>Everyday picture</h4>
+<p>You are the PRM. For each of Figure 1's six steps, set how sure you are that it is correct, and watch the solution's score.</p>
+<h4>Tiny example</h4>
+<p>The sliders start at illustrative values: five steps you trust (0.95 to 0.99) and step 6, the wrong one, at 0.08. The product is about 0.07; the minimum 0.08. Now drag step 6 up to 0.9 and both climb: a PRM that misses the bad step would promote this wrong solution.</p>
+<p><strong>Try it:</strong> move the sliders. Watch how one low step controls the product, and how shaving every step to 0.9 lowers the product (0.53) while the minimum stays at 0.9.</p>
+<div class="plot" id="scorer">
+  <div id="scorer-sliders"></div>
+  <p class="readout" id="scorer-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> each row is one step of the solution in Figure 1, with a slider for the PRM's probability that it is correct. The bar under the sliders shows the running product, step by step, as a share of 1: it can only shrink as it moves down the solution. The readout gives the two solution scores the paper compared (product and minimum) and the first step you rated below 0.5, which is where a labeller would stop. Every number is yours; nothing here comes from a trained model.</p>
+<h4>Why it matters</h4>
+<p>The product and the minimum agree when one step is clearly bad, and disagree when many steps are each a little doubtful. Table 4 says the choice barely matters for this PRM; for a checker whose step scores drift down on long solutions, the length bias of the product can.</p>
+</section>
+
+<section id="s3">
+<h2>3 Large-scale supervision <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S3">original</a></span></h2>
+<blockquote class="quote">“Not only does the PRM reach higher performance for all values of N, but the performance gap widens as N increases.”<cite>Lightman et al. (2023), §3</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Three ways to pick one solution from a pile: trust the answer most solutions agree on (a vote), trust the marker who only grades answers (ORM), or trust the marker who checks every line (PRM). The bigger the pile, the more the choosing rule matters.</p>
+<h3 class="rung">Tiny example: why the training sets differ</h3>
+<p>The PRM trains on PRM800K. The ORM could train on PRM800K's solutions too, but active learning made them mostly wrong-answer solutions (86% of them end in a wrong answer; <a href="#appb">Appendix B</a>), a poor diet for learning what right looks like. So the ORM gets 100 uniform samples per problem instead: about ten times more data and no overlap. Mixing uniform samples into PRM800K did not help the ORM.</p>
+<div class="plot" id="fig3">
+  <div id="fig3-chart"></div>
+  <p class="readout" id="fig3-readout">Hover the chart, or tab to it and use the arrow keys, to read each method at each N.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is N, the number of generator solutions per problem, on a log scale from 10 to 1,860; the y-axis is the share of the 500 test problems where the chosen solution is right. At N = 10 the three methods are close (PRM 67.8%, ORM 67.0%, vote 63.3%). As N grows the vote levels off at about 69.6% and the ORM at about 72.4%, while the PRM keeps climbing to 78.2%. A better checker can use a bigger pile; a weaker one can't. Redrawn from the paper's Figure 3; values recovered from the plotted points, and the end points match the paper's printed 78.2, 72.4 and 69.6. (The paper shades the spread over many subsamples of the 1,860 solutions; the redraw shows the mean.)</p>
+<div class="tablewrap"><table>
+  <caption>Best-of-1860 on the 500 MATH test problems (%). From Figure 3 of Lightman et al. (2023).</caption>
+  <thead><tr><th>Method</th><th class="num">% solved</th></tr></thead>
+  <tbody>
+    <tr><td>Majority voting</td><td class="num">69.6</td></tr>
+    <tr><td>Outcome-supervised reward model</td><td class="num">72.4</td></tr>
+    <tr class="hl"><td>Process-supervised reward model</td><td class="num">78.2</td></tr>
+  </tbody>
+</table></div>
+<h3 class="rung">Why it matters</h3>
+<p>Majority voting (<a href="self-consistency.html">self-consistency</a>) needs no training and is a strong baseline; here both reward models beat it, the PRM by 8.6 points. Voting weighted by reward-model scores, which combines the two, did not noticeably help. Compare <a href="training-verifiers.html">Cobbe et al.</a>, whose verifier stopped improving at 400 samples: here the ORM is flat from a few hundred on, while the PRM is still climbing at 1,860. Appendix G shows the gap at every difficulty level, and on the easiest fifth of problems the ORM even gets slightly <em>worse</em> as N grows (it finds solutions that fool it) while the PRM does not.</p>
+</section>
+
+<section id="s4">
+<h2>4 Small-scale synthetic supervision <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S4">original</a></span></h2>
+<blockquote class="quote">“This setup enables us to simulate a large amount of data collection at a modest cost.”<cite>Lightman et al. (2023), §4</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>You want to know whether line-by-line feedback teaches better than answer-only feedback, but hiring tutors for every variant is unaffordable. So you let your best trained marker play tutor for a class of junior markers, and give some juniors its line-by-line verdicts and others only its overall verdicts.</p>
+<h3 class="rung">Tiny example: turning the large PRM into a labeller</h3>
+<p>The large PRM (<span class="t" data-tip-title="PRM-large" data-tip="The large-scale process reward model from §3, trained on PRM800K. In §4 it stands in for human labellers.">PRM<sub>large</sub></span>) gives each step a probability of being negative, for example 0.03, 0.12, 0.35, 0.60 (illustrative). Any step above 0.2 counts as a mistake, because PRM<sub>large</sub> leans slightly towards calling steps positive (Appendix H). Step 3 is the first above 0.2.</p>
+<h3 class="rung">The math: synthetic labels</h3>
+<div class="eq" data-tex="\htmlData{sym=mstar}{m} = \min \{\, \htmlData{sym=k}{k} : \htmlData{sym=Pnegk}{P_k(-)} > \htmlData{sym=thr}{0.2} \,\}" data-fallback="m = min { k : P_k(−) > 0.2 }"></div>
+<div class="symtable" data-syms="Pnegk,thr,mstar"></div>
+<p class="inwords"><strong>In words:</strong> “the first mistake is the earliest step that the large PRM thinks is negative with more than 20% probability.”</p>
+<p class="inwords"><strong>With the numbers (illustrative):</strong> 0.03 and 0.12 are below 0.2, 0.35 is above, so m = 3. <em>Process</em> supervision gives the small model labels 1, 1, 0 (up to the first mistake, as with people). <em>Outcome</em> supervision says only: not every step is correct, so the solution is wrong (0). A third kind, outcome supervision from final-answer checking, is also trained for comparison.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># PRM_large's probability that each step is negative (illustrative)
+P_neg = [0.03, 0.12, 0.35, 0.60]
+threshold = 0.2
+# m: the first step above the threshold, counting from 1
+m = next(k for k, q in enumerate(P_neg, 1) if q &gt; threshold)
+m  # → 3
+# process supervision: labels up to and including the first mistake
+[1 if k &lt; m else 0 for k in range(1, m + 1)]  # → [1, 1, 0]
+# outcome supervision from PRM_large: correct only if no step is flagged
+int(all(q &lt;= threshold for q in P_neg))  # → 0</code></pre>
+<h3 class="rung">Why it matters</h3>
+<p>Using a strong model as a stand-in labeller (Gao et al., 2022 did the same for preference data) turns a question that would cost a fortune in human labour into a cheap, repeatable experiment, at the price of trusting the stand-in.</p>
+</section>
+
+<section id="s4-1">
+<h3>4.1 Process vs outcome supervision <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S4.SS1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Same scripts, same junior markers, only the kind of feedback differs. If the line-by-line group ends up better, the feedback is the reason.</p>
+<h4>Tiny example</h4>
+<p>The striking pair of numbers in Figure 4(a): a small PRM trained on <em>one</em> labelled solution per problem selects correctly 48.6% of the time; a small ORM trained on final-answer checks needs <em>200</em> solutions per problem to reach 48.5%.</p>
+<div class="plot" id="fig4">
+  <div class="controls ui" role="group" aria-label="Which panel">
+    <span>Panel:</span>
+    <button type="button" data-f4="a" aria-pressed="true">(a) more labelled data</button>
+    <button type="button" data-f4="b" aria-pressed="false">(b) bigger N at test time</button>
+  </div>
+  <div id="fig4-chart"></div>
+  <p class="readout" id="fig4-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> in panel (a) the x-axis (log scale) is how many solutions per problem were labelled to train each small reward model, and the y-axis is its best-of-500 score. The PRM line sits above both ORM lines at every data size, and the gap does not close: 58.6% against 52.4% and 48.5% at 200 labelled solutions per problem. The active-learning line sits higher still; it comes in §4.2. In panel (b) the x-axis is N at test time, for the best model of each kind: all three start near 22% at N = 1, then the PRM pulls away, reaching 60.9% at N = 1,000 against 52.8% and 48.5%. Redrawn from the paper's Figure 4; values recovered from the plotted points (means over three seeds).</p>
+<h4>Which ORM is the fair baseline?</h4>
+<p>Final-answer checking mislabels right-answer, wrong-reasoning solutions, and MATH has many of those, so it may exaggerate the ORM's handicap. Outcome labels from PRM<sub>large</sub> avoid that (it judges the reasoning, then reports only a verdict), and the ORM trained on them does better in panel (b). The paper considers that the fairer baseline, while inviting readers to draw their own conclusions. Either way the PRM wins.</p>
+<h4>Why it matters</h4>
+<p>This is the controlled experiment §3 could not be: identical solutions, only the form of supervision changed. The answer is that knowing where the mistake is makes a reward model better at every data size tested.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 Active learning <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If you can only afford to have ten scripts marked, pick the ten your marker is most wrongly confident about, plus a couple of its favourites so it still sees what good work looks like.</p>
+<h4>Tiny example: picking 5 from a pool of 8</h4>
+<p>A small selector PRM, trained on one sample per problem, scores the pool (illustrative): a 0.97 right answer, b 0.93 wrong, c 0.90 wrong, d 0.85 right, e 0.71 wrong, f 0.64 wrong, g 0.40 wrong, h 0.22 right. To label N = 5: 80% of them (4) are the most convincing wrong-answer solutions, b, c, e and f; the other 20% (1) is the most convincing of the rest, a.</p>
+<h4>The math: the 80/20 selection</h4>
+<div class="eq" data-tex="\htmlData{sym=nwrong}{n_{\text{wrong}}} = \htmlData{sym=eighty}{0.8} \htmlData{sym=Nsel}{N}, \qquad \htmlData{sym=nrest}{n_{\text{rest}}} = \htmlData{sym=Nsel}{N} - \htmlData{sym=nwrong}{n_{\text{wrong}}}" data-fallback="n_wrong = 0.8 N,  n_rest = N − n_wrong"></div>
+<div class="symtable" data-syms="Nsel,eighty,nwrong,nrest"></div>
+<p class="inwords"><strong>In words:</strong> “of the N solutions labelled per problem, four in five are the selector's highest-rated wrong-answer solutions, and the rest are its highest-rated remaining solutions, right or wrong.”</p>
+<p class="inwords"><strong>With the numbers:</strong> N = 5 gives n<sub>wrong</sub> = 4 and n<sub>rest</sub> = 1, selecting b, c, e, f and then a.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># (name, selector score, reached the right answer?), illustrative
+pool = [("a", 0.97, True), ("b", 0.93, False), ("c", 0.90, False), ("d", 0.85, True),
+        ("e", 0.71, False), ("f", 0.64, False), ("g", 0.40, False), ("h", 0.22, True)]
+N = 5
+n_wrong = round(0.8 * N)
+ranked = sorted(pool, key=lambda s: -s[1])
+wrong = [s for s in ranked if not s[2]][:n_wrong]
+rest = [s for s in ranked if s not in wrong][:N - n_wrong]
+n_wrong, [s[0] for s in wrong], [s[0] for s in rest]  # → (4, ['b', 'c', 'e', 'f'], ['a'])</code></pre>
+<p>The chosen solutions are then labelled by PRM<sub>large</sub>, and a new small PRM trains on them. The mix guarantees every selected solution is convincing, most contain a known mistake, and the set is not entirely wrong answers.</p>
+<h4>The math: how much is it worth?</h4>
+<p>Look at panel (a) of Figure 4 again. On its log x-axis, the uniform PRM and the active-learning PRM are nearly parallel straight lines. Parallel lines on a log axis are a fixed <em>ratio</em> apart: one reaches any given score with a constant multiple of the other's data.</p>
+<div class="eq" data-tex="\htmlData{sym=gain}{\text{efficiency}} = 10^{\,(\htmlData{sym=aAL}{a_{\text{AL}}} - \htmlData{sym=aU}{a_{\text{U}}}) / \htmlData{sym=bU}{b}}" data-fallback="efficiency = 10^((a_AL − a_U) / b)"></div>
+<div class="symtable" data-syms="aAL,aU,bU,gain"></div>
+<p class="inwords"><strong>In words:</strong> “fit each line as a score = a + b × log₁₀(data); the horizontal gap between them, in decades, is the difference in intercepts divided by the slope, and ten to that power is how many times more data the uniform method needs.”</p>
+<p class="inwords"><strong>With the numbers:</strong> fitting the plotted points (without the active-learning point at 200, which the paper says falls below trend) gives a<sub>U</sub> = 48.67 and b = 4.39 for uniform labelling, a<sub>AL</sub> = 50.60 for active learning. The gap is 1.93 / 4.39 = 0.44 decades, and 10<sup>0.44</sup> ≈ 2.7: close to the paper's 2.6, which comes from its own fit to its exact data.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def fit(xs, ys):
+    # least squares for y = a + b · log10(x)
+    x = [math.log10(v) for v in xs]
+    x_bar, y_bar = sum(x) / len(x), sum(ys) / len(ys)
+    b = sum((xi - x_bar) * (yi - y_bar) for xi, yi in zip(x, ys)) / sum((xi - x_bar) ** 2 for xi in x)
+    return round(y_bar - b * x_bar, 2), round(b, 2)
+# Figure 4(a), values recovered from the plot: solutions labelled per problem, % solved
+a_U, b = fit([1, 2, 5, 10, 20, 50, 100, 200], [48.56, 49.9, 51.87, 53.02, 54.71, 56.14, 57.48, 58.59])
+a_U, b  # → (48.67, 4.39)
+a_AL, b_AL = fit([2, 3, 6, 11, 21, 51, 101], [51.23, 53.46, 53.94, 55.14, 56.36, 58.17, 59.17])
+a_AL, b_AL  # → (50.6, 4.36)
+# the horizontal gap on the log axis, as a data multiple
+round(10 ** ((a_AL - a_U) / b), 1)  # → 2.8</code></pre>
+<p>(Rounded fits give 2.8; unrounded, 2.74. Either way, close to the paper's 2.6.)</p>
+<h4>Two honest caveats from the paper</h4>
+<ul>
+  <li>The largest active-learning set (200 per problem, out of a pool of 1,000) falls a little below the trend, probably because 200 of 1,000 leaves little room to be selective.</li>
+  <li>Retraining the selector during collection, as the real PRM800K collection did, was unstable in these small-scale tests and gave no gain. The team expects some form of it to help but has no evidence yet.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>A 2.6× saving on the most expensive part of the pipeline is a lot. The idea, spend labels where the current model is confidently wrong, is how the human labels in PRM800K were chosen.</p>
+</section>
+
+<section id="s5">
+<h2>5 Out-of-distribution generalization <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S5">original</a></span></h2>
+<blockquote class="quote">“This shows us that the PRM can tolerate a modest amount of distribution shift and that its strong performance holds up on fresh test questions.”<cite>Lightman et al. (2023), §5</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A marker trained on one exam board's papers is handed a different board's newest papers, written after the marker's training ended. Does its judgement still hold?</p>
+<h3 class="rung">Tiny example: the test</h3>
+<p>Recent AP Calculus, AP Chemistry, AP Physics, AMC10 and AMC12 questions, released after the base model's pretraining data was collected, so it cannot have seen them: <span class="t" data-t="out-of-distribution">out-of-distribution</span> and uncontaminated. Each method picks from 100 samples per problem.</p>
+<div class="tablewrap"><table>
+  <caption>Best-of-100 on recent STEM exams (%), selected rows. From Table 1 of Lightman et al. (2023).</caption>
+  <thead><tr><th>Exam</th><th class="num">ORM</th><th class="num">PRM</th><th class="num">Majority vote</th><th class="num">Problems</th></tr></thead>
+  <tbody>
+    <tr><td>AMC10/12</td><td class="num">49.1</td><td class="num">53.2</td><td class="num">32.8</td><td class="num">84</td></tr>
+    <tr class="hl"><td>All exams</td><td class="num">63.8</td><td class="num">72.9</td><td class="num">61.3</td><td class="num">234</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> each row is an exam, each column a way of choosing among 100 samples. On every exam the PRM column is highest, as on MATH. The competition problems (AMC) are hardest, and there majority voting falls far behind both reward models: when most samples are wrong, the most common answer is often wrong too.</p>
+<h3 class="rung">The math: an aggregate is a weighted average</h3>
+<div class="eq" data-tex="\htmlData{sym=agg}{\text{aggregate}} = \frac{\htmlData{sym=sume}{\sum_e} \htmlData{sym=ne}{n_e} \, \htmlData{sym=acce}{\text{acc}_e}}{\htmlData{sym=sume}{\sum_e} \htmlData{sym=ne}{n_e}}" data-fallback="aggregate = Σ_e n_e · acc_e / Σ_e n_e"></div>
+<div class="symtable" data-syms="ne,acce,sume,agg"></div>
+<p class="inwords"><strong>In words:</strong> “the overall score is each exam's score weighted by how many problems it has, divided by the total number of problems.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the four rows of Table 1 have 45, 60, 45 and 84 problems: 234 in all. Rebuilding the aggregates from the rows gives 73.0 for the PRM and 61.4 for majority voting, within rounding of the printed 72.9 and 61.3. For the ORM it gives 63.5, not the printed 63.8, a gap too large for rounding.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># Table 1 rows: problems n_e, then % for ORM, PRM, majority vote
+rows = {"AP Calculus": (45, 68.9, 86.7, 80.0), "AP Chemistry": (60, 68.9, 80.0, 71.7),
+        "AP Physics": (45, 77.8, 86.7, 82.2), "AMC10/12": (84, 49.1, 53.2, 32.8)}
+total = sum(n for n, *_ in rows.values())
+total  # → 234
+def aggregate(col):
+    # Σ_e n_e · acc_e / Σ_e n_e
+    return round(sum(r[0] * r[col] for r in rows.values()) / total, 1)
+aggregate(1), aggregate(2), aggregate(3)  # → (63.5, 73.0, 61.4)</code></pre>
+<p>Two small inconsistencies, then: the text says the held-out set has 224 questions, while the table's rows add up to 234; and the ORM's aggregate does not quite follow from its rows. Neither changes the conclusion.</p>
+<h3 class="rung">Why it matters</h3>
+<p>A reward model that only works on its training distribution is of limited use. This is a small test (234 problems), but it points the same way as the main result on problems the model cannot have memorised.</p>
+</section>
+
+<section id="s6">
+<h2>6 Discussion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Three questions a sceptical reader would ask: <em>why</em> does step feedback help, is it good for anything besides accuracy, and could the model simply have seen the test?</p>
+<h3 class="rung">The three answers</h3>
+<p>Credit assignment (§6.1), alignment (§6.2), and contamination (§6.3), each below.</p>
+<h3 class="rung">Why it matters</h3>
+<p>The first gives a mechanism, the second a motive beyond benchmarks, the third a check that the numbers mean what they seem to.</p>
+</section>
+
+<section id="s6-1">
+<h3>6.1 Credit assignment <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S6.SS1">original</a></span></h3>
+<blockquote class="quote">“Process supervision makes credit assignment easier, and we believe that this explains its strong performance.”<cite>Lightman et al. (2023), §6.1</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A team loses a match. “You lost” is feedback, but it doesn't say who fumbled. On hard problems nearly every attempt is wrong somewhere, so “you lost” arrives almost every time and says almost nothing. That is the <span class="t" data-t="credit assignment">credit assignment</span> problem.</p>
+<h4>Tiny example: how much a process label adds</h4>
+<p>A wrong 6-step solution. Outcome supervision says “wrong”. Process supervision also says which of the 6 steps is the first mistake. Picking one of 6 equally likely positions is log<sub>2</sub> 6 ≈ 2.6 bits of extra information; for a 20-step solution, 4.3 bits. (This counting is this page's illustration of the paper's argument, not a calculation from the paper.)</p>
+<h4>The math: the extra information</h4>
+<div class="eq" data-tex="\htmlData{sym=bits}{\text{bits}} = \htmlData{sym=log2}{\log_2} \htmlData{sym=Kst}{K}" data-fallback="bits = log2 K"></div>
+<div class="symtable" data-syms="Kst,log2,bits"></div>
+<p class="inwords"><strong>In words:</strong> “telling someone which one of K equally likely places the first mistake is in gives them log base 2 of K bits.”</p>
+<p class="inwords"><strong>With the numbers:</strong> K = 6 gives 2.58 bits; K = 20 gives 4.32. Longer solutions, where outcome labels are least informative, gain the most.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# which of K steps holds the first mistake: log2 K bits
+round(math.log2(6), 2)  # → 2.58
+round(math.log2(20), 2)  # → 4.32</code></pre>
+<h4>Why it matters</h4>
+<p>An ORM has to work out on its own where wrong solutions went wrong, from nothing but final verdicts; the paper argues this is hardest exactly on hard problems. A PRM is told. The reasoning lesson's diagram of an outcome verifier against a process verifier (§4 of the lesson) is this contrast on a toy chain.</p>
+</section>
+
+<section id="s6-2">
+<h3>6.2 Alignment impact <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S6.SS2">original</a></span></h3>
+<blockquote class="quote">“Our results show that process supervision in fact incurs a negative alignment tax.”<cite>Lightman et al. (2023), §6.2</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>Usually, making a system safer costs some performance, like a speed limiter on a car. Occasionally the safer design is also the faster one. Then there is no argument left against it.</p>
+<h4>Tiny example</h4>
+<p>An <span class="t" data-t="alignment tax">alignment tax</span> is the accuracy you give up for a safer training method. Here the safer method (reward reasoning people can check) scores 78.2% against 72.4%: the tax is 72.4 − 78.2 = −5.8 points, negative, a bonus.</p>
+<h4>The argument</h4>
+<ul>
+  <li><strong>Interpretability.</strong> Process supervision rewards a chain of thought that follows a process people endorse, so the reasoning is more likely to be readable.</li>
+  <li><strong>Safety.</strong> It rewards the aligned reasoning directly, instead of using outcomes as a proxy. Outcome rewards can, in the worst case, teach a model to exploit the reward signal (<span class="t" data-t="reward hacking">reward hacking</span>).</li>
+  <li><strong>Adoption.</strong> Safer methods that cost performance are hard to adopt under pressure to deploy the most capable model; one that helps performance has no such obstacle. The paper notes the result is for maths, and other domains need testing.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>The argument concerns reward models used to train a policy, which this paper never does. It is a motivation, not a measured result: the measured part is the negative tax on best-of-N selection.</p>
+</section>
+
+<section id="s6-3">
+<h3>6.3 Test set contamination <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S6.SS3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>If a student has seen the exam paper, their score says little. MATH problems are discussed online, so some may be in the pretraining data.</p>
+<h4>Tiny example: the evidence the paper offers</h4>
+<ul>
+  <li>MathMix was filtered for MATH problems by string matching, but rephrased copies can slip through, so no strong guarantee is possible.</li>
+  <li>Inspecting solutions showed no clear signs of memorisation.</li>
+  <li>The PRM often finds correct solutions to problems the generator solves only a few percent of the time (Appendix I shows pass rates as low as 0.1%): a model that had memorised a problem would solve it often.</li>
+  <li>The out-of-distribution exams of §5, which are guaranteed unseen, show the same pattern.</li>
+</ul>
+<h4>Why it matters</h4>
+<p>Contamination would lift every method alike, so the <em>comparisons</em> should survive even if absolute numbers are slightly inflated. <span class="t" data-t="benchmark contamination">Benchmark contamination</span> is covered in the <a data-lesson="primer/ml/benchmarks.html">benchmarks lesson</a>.</p>
+</section>
+
+<section id="s7">
+<h2>7 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S7">original</a></span></h2>
+<blockquote class="quote">“The trend also shows that process supervision beats outcome supervision when scaled up, even when judged based solely on outcomes.”<cite>Lightman et al. (2023), §7.1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>Two studies seem to disagree: one found line-by-line and answer-only feedback about equally good, this one finds line-by-line clearly better. Both can be right if they measured at different amounts of feedback.</p>
+<h3 class="rung">Tiny example: reconciling Uesato et al.</h3>
+<p>In Figure 4(a), a PRM trained on 1 labelled solution per problem (48.6%) matches an ORM trained on 200 (48.5%). So a little process supervision and a lot of outcome supervision <em>can</em> tie, which is roughly the regime Uesato et al. (2022) measured. Scale the process supervision up and it pulls ahead. Their other findings fit too: process supervision reached the same performance with less data.</p>
+<h3 class="rung">The other threads</h3>
+<ul>
+  <li><strong>Synthetic supervision.</strong> Gao et al. (2022) used a large “gold” reward model in place of people to study over-optimisation in RLHF; §4 borrows the move.</li>
+  <li><strong>Reasoning in language.</strong> Training on technical text (Minerva), <a href="self-consistency.html">self-consistency</a>, <a href="chain-of-thought-prompting.html">chain of thought</a> and scratchpads, and zero-shot “let's think step by step”, which the paper's title echoes.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>A result that appears to contradict earlier work is most convincing when it explains the earlier result instead of dismissing it. Here one data-scaling curve does both.</p>
+</section>
+
+<section id="s8">
+<h2>8 Conclusion <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#S8">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Line-by-line marking produces better markers, and you can make it affordable by marking only the scripts your marker gets confidently wrong.</p>
+<h3 class="rung">The claims, in one place</h3>
+<ul>
+  <li>Process supervision trains much more reliable reward models than outcome supervision for mathematical reasoning (78.2% against 72.4% best-of-1860).</li>
+  <li>Active learning lowers the cost of human labels, by about 2.6× in the small-scale test.</li>
+  <li>PRM800K is released, with the hope that removing the cost of collecting such data speeds up research on aligning language models.</li>
+</ul>
+<h3 class="rung">Why it matters</h3>
+<p>The authors call process supervision “under-explored” and look forward to seeing how far it generalises beyond maths. The open questions they leave (does a PRM make a better <em>training</em> reward than an ORM? does it work where answers can't be checked?) are the ones the field took up next.</p>
+</section>
+
+<section id="appb">
+<h2>Appendix B: inside PRM800K <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/2305.20050#A2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>A dataset built by active learning is deliberately lopsided: it is mostly the hard cases, because those are the ones worth paying for.</p>
+<h3 class="rung">Tiny example: two phases</h3>
+<ul>
+  <li><strong>Phase 1</strong> (about 5% of the data, around 40K labels): labellers rated several alternative next steps at each point and could write their own; the solution continued from a positive one. Slow, and prone to long runs of neutral steps.</li>
+  <li><strong>Phase 2</strong> (the rest, in 10 generations): whole solutions were pre-generated, the current best PRM picked the most convincing wrong-answer ones, labelling stopped at the first negative step, and the PRM was retrained between generations.</li>
+</ul>
+<div class="tablewrap"><table>
+  <caption>The balance of PRM800K. From Table 3 of Lightman et al. (2023).</caption>
+  <thead><tr><th></th><th class="num">Phase 1</th><th class="num">Phase 2</th><th class="num">Combined</th></tr></thead>
+  <tbody>
+    <tr><td>% of solutions ending in a correct answer</td><td class="num">85.1</td><td class="num">13.2</td><td class="num">14.2</td></tr>
+    <tr><td>% of steps labelled correct</td><td class="num">58.6</td><td class="num">74.1</td><td class="num">73.1</td></tr>
+  </tbody>
+</table></div>
+<p class="reading"><strong>Reading it:</strong> read the columns left to right. Phase 1 solutions mostly end correctly (85.1%), because labellers steered them. Phase 2 was chosen to be wrong, and only 13.2% end correctly. Yet within those wrong solutions most steps are fine (74.1%): a wrong solution is usually right until its first mistake, and labelling stops there. So even a dataset of mostly wrong solutions teaches a lot about what correct steps look like.</p>
+<h3 class="rung">Quality control</h3>
+<p>Before phase 2, labellers had to agree with the researchers' gold labels on at least 75% of 30 screening questions; 10 to 20 more quality-control problems per generation were mixed into their work, and labellers whose quality slipped were removed. In all, 1,085,590 step labels were collected on 101,599 solutions; dropping quality-control and incomplete labels leaves the roughly 800K used for training. The full set is released at <a href="https://github.com/openai/prm800k">github.com/openai/prm800k</a>.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Human labels are never perfect: <a href="deepseekmath-grpo.html">the DeepSeekMath companion</a> notes that later work found a noticeable share of PRM800K's labels to be wrong. Screening, spot checks and agreement rates, as in the <a data-lesson="primer/ml/fine_tuning.html#label_agreement">fine-tuning lesson's <code>label_agreement</code></a>, are how any labelling project keeps that share down.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2023</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>In the paper</th><th>Today</th><th>Learn it</th></tr></thead>
+  <tbody>
+    <tr><td>PRM used only to rank samples (best-of-N)</td><td>Step-level scores also used to guide search and as training rewards, with mixed results as rewards: learned step judges can be gamed</td><td><a data-lesson="primer/ml/reasoning.html">reasoning</a></td></tr>
+    <tr><td>800K human step labels</td><td>Step labels generated automatically, for example by estimating how often continuations from each step reach the right answer</td><td><a href="training-verifiers.html">Training Verifiers companion</a></td></tr>
+    <tr><td>Outcome supervision labelled the weaker method</td><td>Outcome rewards from programs that check answers became the workhorse of reasoning training, since a rule cannot be fooled the way a learned model can</td><td><a href="deepseekmath-grpo.html">DeepSeekMath companion</a></td></tr>
+    <tr><td>Convincing wrong answers surfaced for labelling</td><td>A standard pattern for spending labelling budgets where the model is confidently wrong</td><td><a data-lesson="primer/ml/fine_tuning.html">fine-tuning</a></td></tr>
+    <tr><td>Majority voting as the baseline</td><td>Still the baseline every checker must beat</td><td><a href="self-consistency.html">self-consistency companion</a></td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever and Karl Cobbe, <em>Let's Verify Step by Step</em> (2023). <a href="https://arxiv.org/abs/2305.20050">arXiv:2305.20050</a>, distributed under arXiv's non-exclusive licence. Quotes are brief and attributed; selected numbers appear in tables written for this page; figures are redrawn from values recovered from the paper's plotted points; examples are paraphrased. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+window.PAPER = {
+  symbols: {
+    vT: { tex: "v_T", name: "Prediction at the final token", meaning: "The ORM's estimate, after reading the whole solution, that it is correct. T is the number of tokens in the solution.", shape: "0 to 1", example: "0.62" },
+    sORM: { tex: "\\text{score}_{\\text{ORM}}", name: "ORM solution score", meaning: "The single number used to rank this solution against the others in best-of-N.", shape: "0 to 1", example: "0.62" },
+    K: { tex: "K", name: "Number of steps", meaning: "How many steps (lines) the solution has. The generator writes one step per line.", shape: "a whole number", example: "4" },
+    pk: { tex: "p_k", name: "Step k's score", meaning: "The PRM's probability that step k is correct, read after the step's last token.", shape: "0 to 1", example: "0.10 for the bad step" },
+    prodk: { tex: "\\prod_{k=1}^{K}", name: "Product over steps", meaning: "Multiply together, from the first step to the last. Like Σ for sums, Π is for products.", shape: "", example: "0.98 × 0.95 × 0.97 × 0.10" },
+    sPRM: { tex: "\\text{score}_{\\text{PRM}}", name: "PRM solution score", meaning: "The probability, under the PRM, that every step is correct: what best-of-N ranks by.", shape: "0 to 1", example: "0.090" },
+    Ppos: { tex: "P(+)", name: "Probability of positive", meaning: "The PRM's probability that this step's label is positive: correct, reasonable and making progress.", shape: "0 to 1", example: "0.70" },
+    Pneu: { tex: "P(\\text{neutral})", name: "Probability of neutral", meaning: "The PRM's probability that the step is neutral: acceptable but ambiguous or making no progress. Counted as correct by default.", shape: "0 to 1", example: "0.20" },
+    k: { tex: "k", name: "Step number", meaning: "Which step, counting from 1 at the top of the solution.", shape: "1 to K", example: "3" },
+    m: { tex: "m", name: "First mistake", meaning: "The number of the first step labelled negative.", shape: "1 to K", example: "6 in Figure 1" },
+    yk: { tex: "y_k", name: "Step k's training label", meaning: "What the PRM is taught for step k: 1 (correct), 0 (the first mistake), or nothing (after the first mistake).", shape: "1, 0 or none", example: "1, 1, 1, 1, 1, 0" },
+    Pnegk: { tex: "P_k(-)", name: "Large PRM's negative probability", meaning: "PRM-large's probability that step k is negative.", shape: "0 to 1", example: "0.35 for step 3" },
+    thr: { tex: "0.2", name: "Threshold", meaning: "Above this, a step counts as a mistake. Set low because PRM-large leans towards calling steps positive.", shape: "a fixed number", example: "0.2" },
+    mstar: { tex: "m", name: "First synthetic mistake", meaning: "The earliest step PRM-large flags. The minimum over the set picks the smallest k.", shape: "1 to K, or none", example: "3" },
+    Nsel: { tex: "N", name: "Solutions labelled per problem", meaning: "How many of the pool's 1,000 samples per problem are chosen for labelling.", shape: "1 to 200 in the paper", example: "5" },
+    eighty: { tex: "0.8", name: "Share of convincing wrong answers", meaning: "Four in five selected solutions are the selector's top-rated wrong-answer solutions.", shape: "a fixed fraction", example: "0.8" },
+    nwrong: { tex: "n_{\\text{wrong}}", name: "Convincing wrong-answer solutions", meaning: "How many of the N are the most convincing wrong-answer samples.", shape: "a whole number", example: "4" },
+    nrest: { tex: "n_{\\text{rest}}", name: "The rest", meaning: "How many are the most convincing remaining samples, right or wrong, so the set isn't all wrong answers.", shape: "a whole number", example: "1" },
+    aAL: { tex: "a_{\\text{AL}}", name: "Active learning intercept", meaning: "Where the fitted line for the active-learning PRM crosses log₁₀(data) = 0, i.e. one labelled solution per problem.", shape: "% solved", example: "50.60" },
+    aU: { tex: "a_{\\text{U}}", name: "Uniform intercept", meaning: "The same for the PRM trained on uniformly chosen solutions.", shape: "% solved", example: "48.67" },
+    bU: { tex: "b", name: "Slope", meaning: "Points gained per tenfold increase in labelled data. The two lines have nearly the same slope, so they are a fixed ratio apart.", shape: "points per decade", example: "4.39" },
+    gain: { tex: "\\text{efficiency}", name: "Data efficiency", meaning: "How many times more labelled data the uniform method needs to match active learning.", shape: "a ratio", example: "about 2.7" },
+    ne: { tex: "n_e", name: "Problems in exam e", meaning: "How many questions that exam contributed.", shape: "a whole number", example: "84 for AMC10/12" },
+    acce: { tex: "\\text{acc}_e", name: "Score on exam e", meaning: "The percentage of that exam's problems solved.", shape: "0 to 100", example: "53.2 (PRM, AMC)" },
+    sume: { tex: "\\sum_e", name: "Sum over exams", meaning: "Add up over the four exam groups.", shape: "", example: "45 + 60 + 45 + 84 = 234" },
+    agg: { tex: "\\text{aggregate}", name: "Aggregate score", meaning: "The percentage of all 234 problems solved.", shape: "0 to 100", example: "73.0 rebuilt for the PRM" },
+    Kst: { tex: "K", name: "Steps in the solution", meaning: "How many places the first mistake could be.", shape: "a whole number", example: "6" },
+    log2: { tex: "\\log_2", name: "Base-2 logarithm", meaning: "How many halvings, or yes/no questions, it takes to single out one of K options: the number of bits.", shape: "", example: "log₂ 8 = 3" },
+    bits: { tex: "\\text{bits}", name: "Information", meaning: "How much a process label adds beyond “wrong”, in bits, if every position is equally likely.", shape: "≥ 0", example: "2.58" },
+  },
+  blocks: {
+    problem: { title: "The problem, and its answer", body: "<p>Labellers see the problem and its known final answer (14), but not a reference solution, so they aren't nudged towards one particular method (Appendix D).</p>" },
+    s1: { title: "Step 1: positive", body: "<p>Naming the unknown. Correct and a sensible start.</p>" },
+    s2: { title: "Step 2: positive", body: "<p>“7 less than 3 times the numerator” is 3x − 7. Correct.</p>" },
+    s3: { title: "Step 3: positive", body: "<p>Setting the fraction equal to 2/5. Correct.</p>" },
+    s4: { title: "Step 4: positive", body: "<p>Cross-multiplying: 5x = 2(3x − 7). Correct.</p>" },
+    s5: { title: "Step 5: positive", body: "<p>Expanding: 5x = 6x − 14. Correct.</p>" },
+    s6: { title: "Step 6: negative", body: "<p>From 5x = 6x − 14, subtracting 5x gives 0 = x − 14, so x = 14. The model wrote 7. This is the first (and only) mistake, and labelling would stop here.</p>" },
+    pq: { title: "The problem", body: "<p>Factor x⁸ + 3x⁴ − 4 into monic polynomials with integer coefficients that cannot be factored further, then add up their values at x = 1.</p>" },
+    f1: { title: "Substitute y = x²", body: "<p>Correct: x⁸ = y⁴ and 3x⁴ = 3y². High score.</p>" },
+    f2: { title: "Factor, then substitute back", body: "<p>y⁴ + 3y² − 4 = (y² + 4)(y² − 1) and so (x⁴ + 4)(x⁴ − 1). Correct.</p>" },
+    f3: { title: "The plan: difference of squares", body: "<p>Reasonable for x⁴ − 1. It does not apply to x⁴ + 4, a sum, but the plan itself is not yet an error.</p>" },
+    f4: { title: "The mistake", body: "<p>(x² + 2)(x² − 2) = x⁴ − 4, not x⁴ + 4. The PRM gives this step a low score: it has found the error. (x⁴ + 4 actually factors as (x² + 2x + 2)(x² − 2x + 2).)</p>" },
+    f5: { title: "Consistent with the mistake", body: "<p>Correctly factors x² − 1 further. Locally fine, which is why it stays green, but it builds on the wrong line.</p>" },
+    f6: { title: "The plan to evaluate", body: "<p>Plug in x = 1 and add the values. A fine plan.</p>" },
+    f7: { title: "Multiplies instead of adding", body: "<p>The problem asks for p₁(1) + ⋯ + pₖ(1), a sum, but the step writes a product. Low score.</p>" },
+    f8: { title: "Wrong final answer", body: "<p>0. With the right factors the values are 5, 1, 2, 2 and 0, summing to 10.</p>" },
+  },
+  onReady(P) { scorer(); fig3(P); fig4(P); },
+};
+
+const chartW = (box) => Math.max(320, Math.min(640, box.clientWidth));
+const pct = (v) => `${v.toFixed(1)}%`;
+const kFmt = (v) => (v >= 1000 ? `${+(v / 1000).toFixed(2)}K` : String(Math.round(v)));
+const pts = (ys, xs) => xs.map((x, i) => [x, ys[i]]);
+
+/* ---- the step scorer: product and minimum of step probabilities ---- */
+function scorer() {
+  const steps = ["1. Let the numerator be x.", "2. The denominator is 3x − 7.", "3. x / (3x − 7) = 2/5.", "4. 5x = 2(3x − 7).", "5. 5x = 6x − 14.", "6. So x = 7."];
+  const start = [0.99, 0.98, 0.97, 0.95, 0.96, 0.08];
+  const box = document.getElementById("scorer-sliders"), readout = document.getElementById("scorer-readout");
+  box.innerHTML = steps.map((s, i) =>
+    `<div class="controls ui"><label for="st-${i}">${s} p = <strong id="st-${i}-v">${start[i].toFixed(2)}</strong></label>` +
+    `<input type="range" id="st-${i}" min="0.01" max="1" step="0.01" value="${start[i]}"></div>`).join("") +
+    `<div id="st-bars"></div>`;
+  const bars = document.getElementById("st-bars");
+  function redraw() {
+    const p = steps.map((_, i) => +document.getElementById(`st-${i}`).value);
+    p.forEach((v, i) => { document.getElementById(`st-${i}-v`).textContent = v.toFixed(2); });
+    let run = 1;
+    bars.innerHTML = p.map((v, i) => {
+      run *= v;
+      return `<div class="share-row"><span>after ${i + 1}</span><div><div class="share-bar" style="width:${(run * 100).toFixed(1)}%;background:var(--accent)"></div></div><span>${run.toFixed(2)}</span></div>`;
+    }).join("");
+    const prod = p.reduce((a, b) => a * b, 1), min = Math.min(...p);
+    const first = p.findIndex((v) => v < 0.5);
+    readout.textContent = `Product ${prod.toFixed(3)}, minimum ${min.toFixed(2)}. ` +
+      (first >= 0 ? `First step rated below 0.5: step ${first + 1}.` : "No step rated below 0.5: this solution would look correct.");
+  }
+  box.querySelectorAll("input").forEach((el) => el.addEventListener("input", redraw));
+  redraw();
+}
+
+// Values recovered from the vector plots in the arXiv PDF of Lightman et al. (2023), rounded to 0.01 points.
+function fig3(P) {
+  const N = [10, 25, 50, 75, 100, 200, 300, 400, 500, 750, 1000, 1860];
+  const box = document.getElementById("fig3-chart");
+  P.lineChart(box, {
+    series: [
+      { name: "process-supervised RM", points: pts([67.76, 71.43, 73.33, 74.32, 74.91, 76.0, 76.57, 76.82, 77.07, 77.46, 77.67, 78.15], N) },
+      { name: "outcome-supervised RM", points: pts([66.97, 69.69, 70.79, 71.3, 71.53, 71.89, 72.11, 72.23, 72.28, 72.38, 72.49, 72.39], N) },
+      { name: "majority voting", points: pts([63.33, 67.1, 68.44, 68.99, 69.21, 69.56, 69.63, 69.61, 69.57, 69.53, 69.59, 69.66], N) },
+    ],
+    logX: true, yMin: 62, yMax: 80, width: chartW(box), height: 280,
+    xLabel: "N, solutions per problem", yLabel: "% solved (best-of-N)", xFmt: kFmt, yFmt: pct,
+    readout: document.getElementById("fig3-readout"),
+    ariaLabel: "Best-of-N solve rate on MATH for the process-supervised reward model, the outcome-supervised reward model and majority voting",
+  });
+}
+
+function fig4(P) {
+  const box = document.getElementById("fig4-chart"), readout = document.getElementById("fig4-readout");
+  const V = {
+    a: { x: "solutions labelled per problem", y: "% solved (best-of-500)", yMin: 24, yMax: 62, series: [
+      { name: "PRM + active learning", points: pts([51.23, 53.46, 53.94, 55.14, 56.36, 58.17, 59.17, 59.32], [2, 3, 6, 11, 21, 51, 101, 201]) },
+      { name: "PRM (PRM-large labels)", points: pts([48.56, 49.9, 51.87, 53.02, 54.71, 56.14, 57.48, 58.59], [1, 2, 5, 10, 20, 50, 100, 200]) },
+      { name: "ORM (PRM-large labels)", points: pts([26.37, 38.93, 44.5, 46.41, 48.07, 49.27, 52.41], [1, 5, 10, 20, 50, 100, 200]) },
+      { name: "ORM (final-answer labels)", points: pts([26.2, 37.92, 41.45, 43.16, 46.35, 46.65, 48.5], [1, 5, 10, 20, 50, 100, 200]) }],
+      text: "(a) At 200 labelled solutions per problem: PRM 58.6%, ORM with PRM-large labels 52.4%, ORM with final-answer labels 48.5%. A PRM with 1 per problem already scores 48.6%." },
+    b: { x: "N, solutions per problem at test time", y: "% solved (best-of-N)", yMin: 20, yMax: 62, series: [
+      { name: "PRM (PRM-large labels)", points: pts([22.89, 38.66, 43.81, 47.81, 51.84, 54.19, 56.12, 58.59, 60.85], [1, 5, 10, 20, 50, 100, 200, 500, 1000]) },
+      { name: "ORM (PRM-large labels)", points: pts([22.23, 36.89, 41.33, 44.85, 48.03, 49.72, 51.11, 52.2, 52.84], [1, 5, 10, 20, 50, 100, 200, 500, 1000]) },
+      { name: "ORM (final-answer labels)", points: pts([22.38, 38.36, 42.33, 45.03, 47.01, 47.76, 48.17, 48.45, 48.52], [1, 5, 10, 20, 50, 100, 200, 500, 1000]) }],
+      text: "(b) At N = 1,000: PRM 60.9%, ORM with PRM-large labels 52.8%, ORM with final-answer labels 48.5%. All three start near 22% at N = 1." },
+  };
+  function draw(k) {
+    box.innerHTML = "";
+    const v = V[k];
+    P.lineChart(box, {
+      series: v.series, logX: true, yMin: v.yMin, yMax: v.yMax, width: chartW(box), height: 300,
+      xLabel: v.x, yLabel: v.y, xFmt: kFmt, yFmt: pct, readout,
+      ariaLabel: k === "a" ? "Figure 4a: small reward models against the amount of labelled data" : "Figure 4b: small reward models against the number of test-time samples",
+    });
+    readout.textContent = v.text;
+  }
+  const btns = document.querySelectorAll("[data-f4]");
+  btns.forEach((b) => b.addEventListener("click", () => {
+    btns.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    draw(b.dataset.f4);
+  }));
+  draw("a");
+}
+</script>
+</body>
+</html>
