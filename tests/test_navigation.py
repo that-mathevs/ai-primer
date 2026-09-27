@@ -1203,3 +1203,11 @@ class TestAPageCanBeSeenAsAPhoneShowsIt:
         from tools.screenshot import frame_page
 
         assert '"papers/hyde.html#fig1"' in frame_page("papers/hyde.html#fig1", theme="light")
+
+    def test_given_an_anchor_the_frame_scrolls_to_it_after_the_page_has_drawn_itself(self):
+        from tools.screenshot import frame_page
+
+        # Math and figures render after load and push the anchor down, so the jump on load lands in the wrong place;
+        # and companions scroll smoothly, which never moves in headless Chrome's virtual time, so the scroll is instant.
+        framed = frame_page("papers/hyde.html#fig1", theme="light")
+        assert "onload" in framed and 'scrollIntoView({ behavior: "instant" })' in framed

@@ -39,7 +39,11 @@ def frame_page(page: str, theme: str, width: int = WIDTH, height: int = HEIGHT) 
         f'<iframe id="f" style="width:{width}px;height:{height}px;border:0"></iframe><script>'
         # theme.js reads this key, and the frame shares this page's storage.
         f'try {{ localStorage.setItem("primer-theme", {json.dumps(theme)}); }} catch (_) {{}}\n'
-        f"document.getElementById(\"f\").src = {json.dumps(page)};"
+        'const f = document.getElementById("f");\n'
+        # The jump to #anchor on load lands too high once math and figures render, so scroll again after.
+        'f.onload = () => setTimeout(() => { const id = decodeURIComponent(f.contentWindow.location.hash.slice(1));'
+        ' const el = id && f.contentDocument.getElementById(id); if (el) el.scrollIntoView({ behavior: "instant" }); }, 1500);\n'
+        f"f.src = {json.dumps(page)};"
         "</script></body></html>"
     )
 
@@ -67,7 +71,7 @@ def main() -> int:
             url = f"http://127.0.0.1:{server.server_address[1]}/{FRAME}"
             subprocess.run(
                 [browser, "--headless=new", "--disable-gpu", "--hide-scrollbars", f"--window-size={WIDTH + 200},{HEIGHT}",
-                 "--virtual-time-budget=4000", f"--screenshot={out}", url],
+                 "--virtual-time-budget=10000", f"--screenshot={out}", url],
                 capture_output=True, timeout=120,
             )
             server.shutdown()
