@@ -333,7 +333,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.ml.generative.multimodal",
 
     # agents, building one
-    "primer.agents.agent_loop",
     "primer.agents.tools",
     "primer.agents.mcp",
 
