@@ -8,7 +8,132 @@ decoded where it appears, and `primer.notation` teaches them all from zero.
 This lesson trains small networks, so `primer.ml.neural_net` (how a network
 learns) is the one to read first.
 
-## The everyday picture: a sculptor who only ever improves things a little
+## Level 1: The practitioner's guide
+
+**In one sentence.** A diffusion model generates by learning one modest
+skill, "remove a little noise from this noisy example", and running it many
+times starting from pure noise; flow matching is the same idea along
+straight paths with fewer steps; together they are the engine inside
+today's image, video and audio generators, and the settings you meet
+(steps, guidance scale, resolution, seed) are the dials of that engine.
+
+**When you need it.** You need this lesson the moment you generate or edit
+images, video or audio: whether you call a hosted model or run an open one,
+the choices you make (which model family, how many steps, what guidance
+scale, what size, which sampler) are the ones below, and the bill and the
+artefacts follow from them. You don't need diffusion for text (language
+models generate one token at a time), for a one-pass generator in a
+real-time loop (a GAN or a distilled few-step model, see
+`primer.ml.generative.gans`), or for a tiny domain with a handful of
+factors (a VAE will do, see `primer.ml.generative.autoencoders`). The number
+that shows the naive approach failing: ask this lesson's trained model for
+a sample in a single step and every sample lands on the data's average, the
+empty middle between the four blobs (mean distance from the centre 0.08);
+give it 20 well-placed jumps and its samples sit as close to the data as a
+fresh draw of the data itself (0.056 against 0.055).
+
+**Your options.** From the least commitment to the most:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| A hosted image, video or audio model | Prompt in, sample out; you set steps, guidance, size and seed | No infrastructure; the vendor's sampler and safety checks | A price per sample, and only the dials the API exposes | The vendor's API |
+| An open latent-diffusion model in a pipeline | A pretrained denoiser, text encoder and autoencoder you run | Full control of sampler, steps, guidance, seed and adapters | A GPU with enough memory; defaults of 50 steps and guidance 7.5 in diffusers | Your server |
+| A faster sampler on the same model | DDIM or a higher-order solver takes big deterministic jumps | The same trained weights, 10 to 50 times faster than the original 1,000 steps | Quality falls off below about 10 calls | A setting in the pipeline |
+| A flow-matching or rectified-flow model | Trained to follow straight paths from noise to data | Fewer steps for the same quality (near the floor by 5 calls here, against 10 for diffusion) | A model trained that way, such as Stable Diffusion 3 | The model family you download |
+| A distilled few-step model | A student trained to match the full model in 1 to 4 steps, often with an adversarial loss | Real-time sampling | Some variety and detail; a teacher and a distillation run | The fast path beside the full model |
+| Your own diffusion model | This lesson's training loop on your own data | A generator for a narrow domain nobody has published | Data, a training run (half a second for the lesson's toy; hundreds of GPU-days for pixel-space image models), an autoencoder if the data is large | Your training loop |
+
+**How to choose.** Start from the latency you can afford, then set the
+dials in this order.
+
+- Steps first. The number of network calls is the price of a sample. Start
+  at the pipeline default (50 in diffusers), halve it while the output
+  holds, and reach for a flow model or a distilled one when you need fewer
+  than about 10.
+- Guidance scale next. 0 ignores the prompt (27% of samples on the asked-for
+  blob here), 1 follows it plainly (100% on target, with the data's own
+  spread), and above 1 exaggerates it: at 3 every sample is on target but
+  bunched into a knot at the far edge of the blob, spread 0.14 against the
+  real 0.27. Text-to-image models default to well above 1 (7.5 in
+  diffusers), because unguided samples follow prompts loosely; raise it for
+  obedience, lower it for variety.
+- Resolution: generate at the size the model was trained on (Stable
+  Diffusion 1.x was trained on 512 × 512 images), and upscale afterwards.
+  Every doubling of side length quadruples the latent and the attention
+  cost more than that.
+- Determinism: DDIM and flow samplers add no fresh noise, so one seed gives
+  one image, which is what makes a seed reproducible and an image editable
+  by re-running with a changed prompt.
+- Whatever you pick, judge the output on variety as well as quality. Every
+  dial that makes samples match the prompt better makes them more alike.
+
+**What it costs.** Latency is steps times the cost of one denoiser call,
+and guidance doubles the calls per step (the network runs once with the
+prompt and once without). Working in an autoencoder's latent cuts each call
+48-fold for a 512 × 512 image (786,432 numbers down to 16,384), which is
+what made high-resolution diffusion affordable on one GPU. Video multiplies
+it back: 16 frames of the same latent are 16 times the tokens and, because
+attention compares every token with every other, 256 times the attention
+work. The denoiser itself is now usually a transformer over latent patches,
+and the DiT paper found that more compute per sample (a deeper or wider
+model, or more tokens) gives lower FID, down to 2.27 on 256 × 256
+ImageNet. Training a real model is the expensive part: pixel-space diffusion
+"often consumes hundreds of GPU days" in the latent-diffusion paper's own
+words, which is why the pretrained autoencoder and the latent exist. The
+training loss itself is plain squared-error regression with no adversary,
+which is why the runs are stable and why diffusion displaced GANs.
+
+**What breaks.**
+
+- **Too few steps.** Below roughly 10 calls a diffusion sampler's output
+  drifts toward the average (the empty middle here; blur or mush in images).
+  Use a flow or distilled model instead of starving a diffusion one.
+- **Guidance too high.** Oversaturated, samey, exaggerated images, the
+  image version of the tight knot at weight 3; the diffusers documentation
+  puts it as prompt adherence "at the expense of lower image quality". Pull
+  it back toward the default.
+- **Guidance too low.** The prompt is followed loosely or not at all, as at
+  weight 0. A guidance scale of 1 or below switches guidance off.
+- **The wrong size.** A model asked for a resolution or aspect ratio far
+  from its training size composes badly (repeated subjects, stretched
+  scenes). Generate at the native size and upscale.
+- **A mismatched autoencoder or scale.** The latent must be decoded by the
+  autoencoder the denoiser was trained with, with the library's scaling
+  factor applied both ways, or the output is junk; see
+  `primer.ml.generative.autoencoders`.
+- **Averaging without the wobble.** DDPM adds a small fresh noise each step
+  so samples commit to one possibility; a sampler that only ever steps to
+  the network's average drifts to the safe, blurry middle. Deterministic
+  samplers avoid this by jumping along the predicted noise direction, not
+  to the mean.
+- **Cost that scales with frames.** A video request costs attention
+  quadratically in its token count; a short clip at a modest size is many
+  images' worth of compute, and the bill follows.
+
+**In the wild.** Stable Diffusion is the open reference: an 860-million
+parameter U-Net denoising a 64 × 64 × 4 latent, conditioned through
+cross-attention on a frozen CLIP ViT-L/14 text encoder, trained on
+512 × 512 images, and run through Hugging Face diffusers with 50 steps and
+guidance 7.5 by default. DDIM (Song, Meng and Ermon) gave the 10 to 50
+times faster deterministic sampler every pipeline offers; classifier-free
+guidance (Ho and Salimans) is the guidance-scale slider, trading variety
+for fidelity with no separate classifier; DiT (Peebles and Xie) replaced
+the U-Net with a transformer over latent patches and showed it scales;
+Stable Diffusion 3 (Esser et al.) trains a transformer as a rectified flow
+with 16-channel latents; Adversarial Diffusion Distillation turns a
+foundation model into a one-to-four-step sampler. Video generators run the
+same denoiser over patches that span space and time, and audio generators
+denoise a spectrogram or an audio autoencoder's latent. Every paper is
+linked at the end of the lesson.
+
+**Go deeper.** Level 2 builds the whole engine on four blobs of dots: the
+forward process and its one-jump shortcut, the noise-guessing loss and why
+it is secretly learning the direction toward the data, DDPM and DDIM
+sampling step by step, flow matching along straight lines, guidance with
+its knot, and the latent-and-patches arithmetic behind real systems. If
+you only needed to set the dials, you are done.
+
+## Level 2: How it works, from scratch
 
 Imagine a sculptor who cannot carve a statue in one go. Hand them a shapeless
 block and ask for a horse, and they freeze. But hand them a *slightly rough*
