@@ -6,7 +6,122 @@ Run: `python -m primer.ml.embeddings.similarity`
 New to the notation (vectors, Σ, ‖x‖)? Start with `primer.notation`, which
 builds every symbol used here from zero.
 
-## The everyday picture
+## Level 1: The practitioner's guide
+
+**In one sentence.** A similarity metric turns two embedding vectors into
+one number that says how alike their meanings are, and the three in common
+use (cosine, dot product, Euclidean distance) agree with each other only
+under conditions you have to arrange.
+
+**When you need it.** Every time you compare embeddings: semantic search,
+retrieval for RAG, near-duplicate detection, a semantic cache that answers a
+question from a stored one, clustering, recommendations. You choose a metric
+whether you mean to or not, because every vector database and every search
+library has a default, and the wrong one ranks silently wrong. The tells:
+you are about to write `ORDER BY` against a vector column and have not
+checked which operator the embedding model expects; or your team argues
+about whether "0.8 similar" is a lot. This lesson's demo shows why the
+second argument can't be settled by intuition: for one model, paraphrases
+score between 0.76 and 0.87 and unrelated pairs between 0.72 and 0.78, so
+"0.8" is either a near-duplicate or a stranger. You don't need any of this
+for exact-match lookups (an id, a hash) or for keyword search, which scores
+words, not vectors.
+
+**Your options.** The ways to score a pair, from the cheapest to the most
+deliberate:
+
+| Option | What it does | What it guarantees | What it costs | Where it lives |
+|---|---|---|---|---|
+| Dot product on normalized vectors | Normalize every vector to length 1 once, at write time, then multiply and add | The same ranking as cosine and as Euclidean distance, at the lowest price | One multiply-add per dimension per pair; a normalization step on insert | Your ingestion code, then the database's inner-product operator |
+| Cosine similarity | Dot product divided by both lengths | Direction only; lengths can't skew the order, whatever came in | Two extra norms per comparison, unless the store caches them | The database's cosine operator, or a library's default |
+| Raw dot product | Direction and length together | Keeps signal a model put in the length, such as popularity | Rankings that a mix of long and short vectors can dominate | Recommenders and models trained with it |
+| Euclidean distance | Straight-line gap between the tips | The natural metric for clustering and for many index structures | Disagrees with cosine unless vectors are normalized | k-means, some indexes |
+| Mean-centred scores | Subtract the collection's average vector before comparing | Unrelated pairs land near 0, similar ones stand clear | A pass over the collection, and a re-run when it changes | Your code, before scoring |
+| A calibrated threshold | Label a few hundred pairs, sweep the cut-off, keep the best F1 | A yes/no that matches your data and your model | A labelling session, repeated at every model change | A number stored with the model version |
+
+**How to choose.** Start from how the model was trained, not from which
+metric sounds best.
+
+- The model's documentation says cosine, or says its vectors are unit
+  length (most text embedding APIs): normalize on write and rank by dot
+  product. Same order as cosine, fewer operations.
+- The model was trained with a raw dot product and encodes something in the
+  length (recommenders, some retrieval models): keep raw vectors and use the
+  dot product. Normalizing "to be safe" throws the signal away.
+- You need an ordered list (search, RAG): rank, and never threshold. A shared
+  offset in every score leaves the order alone.
+- You need a yes/no (duplicates, a cache hit, "no good answer found"):
+  calibrate the threshold on labelled pairs from your own data, for this
+  model, and store it with the model version.
+- Whatever you pick, use one metric, one model and one normalization policy
+  for every vector in the index. A mixture ranks wrong without an error.
+
+**What it costs.** A comparison is arithmetic over the vector's dimensions:
+real models produce 384 to 3,072 numbers per text, so a dot product is a few
+thousand multiply-adds, and cosine adds two square roots and a division
+unless the lengths are precomputed. Exact search is one comparison per
+stored vector; the sentence-transformers documentation puts the practical
+limit of that brute-force loop at about a million entries, after which you
+move to an approximate index (`primer.ml.embeddings.ann`). Storage is 4 bytes
+per dimension as float32 (pgvector charges 4 × dimensions + 8 bytes per
+vector, half that as 16-bit floats), which `primer.ml.embeddings.compression`
+shrinks. Normalizing is one pass at write time, once. Calibration costs
+labelling: a few hundred pairs, scored and swept, and the demo shows the
+return on it: a guessed threshold of 0.80 reaches F1 0.868 on the demo's
+pairs, the calibrated 0.776 reaches 0.992.
+
+**What breaks.**
+
+- **Mixed normalization.** Some vectors normalized, some not, and the
+  ranking quietly changes: in the demo, raw dot product and cosine order 200
+  documents differently, and agree only after every vector is normalized.
+  Normalize in one place, on the write path.
+- **A threshold from folklore.** A cut-off copied from a blog post or from
+  the previous model is meaningless: F1 swings from 0.99 to 0.87 across four
+  hundredths of cosine. Measure it on labelled pairs, per model.
+- **Every score looks like 0.8.** Transformer embeddings crowd into a narrow
+  cone (Ethayarajh, 2019, found them "not isotropic in any layer"). Rank
+  instead of judging absolute scores, or mean-centre: after centring, the
+  demo's unrelated pairs sit at 0.00 and paraphrases at 0.30.
+- **A model upgrade with an old index.** A new model is a new space: old
+  vectors, old thresholds and old scores don't carry over. Re-embed the whole
+  collection and recalibrate (`primer.ml.embeddings.operations`).
+- **The operator is a distance, not a similarity.** Databases often expose
+  cosine *distance* (1 − cosine) and the *negative* inner product so that
+  ascending order is best-first, as pgvector does. Read the sign before you
+  sort.
+- **Queries and documents embedded differently.** Some providers train
+  separate treatments for the query and for the passage (Cohere's
+  `input_type` of search_query and search_document); embed both sides the way
+  the model expects or the scores are off.
+- **Nearest means little on unstructured data.** With 1,000 random points,
+  the nearest is 0.7% as far as the farthest in 2 dimensions and 90% as far
+  in 1,000: the curse of dimensionality. Real embeddings are structured, so
+  search works, but a score gap that small is a warning that the vectors
+  carry little.
+
+**In the wild.** pgvector exposes one operator per metric on a Postgres
+column: `<->` for Euclidean distance, `<#>` for the negative inner product,
+`<=>` for cosine distance, plus Hamming and Jaccard on bit vectors, up to
+16,000 dimensions. sentence-transformers' semantic search defaults to cosine
+and offers dot-product scoring for normalized vectors. OpenAI's embedding
+guide states that its embeddings are normalized to length 1, recommends
+cosine, and notes that it can then be computed as a plain dot product; Cohere
+asks for an `input_type` per side of the search. Faiss's flat indexes
+(IndexFlatIP, IndexFlatL2) are the exact inner-product and Euclidean
+searches every approximate index is measured against. Ethayarajh (2019)
+measured anisotropy in contextual models and Su et al. (2021) showed that
+centring and whitening spreads the vectors back out.
+
+**Go deeper.** Level 2 computes all three metrics by hand on three
+3-dimensional vectors, proves in one line why normalizing makes them agree
+(the squared distance is 2 − 2 × cosine), builds the popularity example where
+cosine and dot product disagree on purpose, measures the curse of
+dimensionality with random points, and manufactures anisotropic embeddings
+to show a calibrated threshold beating a guessed one. If you only needed to
+choose, you are done.
+
+## Level 2: How it works, from scratch
 
 An **embedding** gives every piece of text a set of coordinates on a map of
 meaning. Texts about similar things live on the same street; unrelated ones

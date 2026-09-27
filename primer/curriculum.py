@@ -315,7 +315,6 @@ LEVELS_PENDING: frozenset[str] = frozenset({
     "primer.ml.interpretability",
 
     # embeddings, making them
-    "primer.ml.embeddings.similarity",
     "primer.ml.embeddings.contrastive",
     "primer.ml.embeddings.compression",
 
