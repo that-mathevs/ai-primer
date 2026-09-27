@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wasserstein GAN, Annotated</title>
+<meta name="description" content="A plain-English, hover-to-explain companion to Arjovsky, Chintala and Bottou (2017), the paper that trained GANs on the earth mover's distance instead of the Jensen-Shannon divergence.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../assets/theme.css">
+<script src="../assets/theme.js"></script>
+<link rel="stylesheet" href="assets/papers.css">
+<script src="assets/glossary.js"></script>
+<script src="assets/catalog.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="assets/papers.js"></script>
+</head>
+<body data-paper="wasserstein-gan">
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <details id="tocd" open>
+    <summary>Contents</summary>
+    <ol>
+      <li><a href="#how">How to read this page</a></li>
+      <li><a href="#abstract">Abstract</a></li>
+      <li><a href="#s1">1 Introduction</a></li>
+      <li><a href="#s2">2 Different distances</a>
+        <ol>
+          <li><a href="#s2-defs">TV, KL and JS</a></li>
+          <li><a href="#s2-em">The earth mover distance</a></li>
+          <li><a href="#s2-ex1">Example 1: parallel lines</a></li>
+          <li><a href="#s2-thm">Theorems 1 and 2</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">3 Wasserstein GAN</a>
+        <ol>
+          <li><a href="#s3-dual">The duality (equation 2)</a></li>
+          <li><a href="#s3-critic">The critic (equation 3)</a></li>
+          <li><a href="#s3-grad">Theorem 3: the generator's gradient</a></li>
+          <li><a href="#s3-alg">Algorithm 1</a></li>
+          <li><a href="#s3-fig2">Figure 2: train the critic to the end</a></li>
+        </ol>
+      </li>
+      <li><a href="#s4">4 Empirical results</a>
+        <ol>
+          <li><a href="#s4-2">4.2 A loss that means something</a></li>
+          <li><a href="#s4-3">4.3 Improved stability</a></li>
+        </ol>
+      </li>
+      <li><a href="#s5">5 Related work</a></li>
+      <li><a href="#s6">6 Conclusion and appendices</a></li>
+      <li><a href="#today">What changed since 2017</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="kicker">An annotated companion · AI Primer</div>
+  <h1>Wasserstein GAN, annotated</h1>
+  <p class="byline">A plain-English, hover-to-explain guide to Martin Arjovsky, Soumith Chintala and Léon Bottou (2017), the paper that replaced the GAN's yardstick with one that still points the way when real and fake data do not overlap.</p>
+  <div class="toolbar ui">
+    <a class="btn" href="https://arxiv.org/abs/1701.07875">Paper on arXiv</a>
+    <a class="btn" href="https://arxiv.org/pdf/1701.07875">PDF</a>
+    <a class="btn" href="https://ar5iv.labs.arxiv.org/html/1701.07875">Paper as HTML (ar5iv)</a>
+    <button type="button" id="themeBtn" data-theme-toggle aria-label="Toggle light and dark theme">Theme: auto</button>
+  </div>
+  <div class="permission">
+    <strong>About this page.</strong> This is a companion, not a copy. It follows the paper section by section, quotes only a sentence or two per section (clearly marked), and explains everything in its own words. Equations are reproduced with every symbol decoded. The paper's figures are not reproduced: Figures 1 and 2 and Algorithm 1 are redrawn from scratch as interactive pictures, and the training curves and sample sheets of Figures 3 to 14 are described in words. Worked numbers are our own, and made-up ones are labelled illustrative. Read the original alongside: every section heading links to it.
+  </div>
+</header>
+
+<section id="how">
+<h2>How to read this page</h2>
+<p>Nothing here assumes you already know the jargon. This paper is heavier on mathematics than most, so the page leans on one tiny example throughout: <strong>two piles of two grains</strong>. The real pile has half its sand at position 0 and half at 3. The fake pile has half at 1 and half at 4. Every distance in the paper is computed on those four numbers.</p>
+<ul>
+  <li>Any <span class="t" data-tip-title="Hover guidance" data-tip="Like this. Hover, tab to, or tap any dotted word for a plain-English definition; most also link to the lesson that builds the idea in code.">dotted word</span> explains itself when you hover it, tab to it, or tap it.</li>
+  <li>Every symbol inside an equation does the same, and every equation is followed by a table of its symbols, a sentence reading it aloud, the worked numbers, and the same numbers in plain Python.</li>
+  <li>The pictures are live. Example 1 in §2 is the heart of the paper: slide the fake line and watch one distance move while the others refuse to.</li>
+</ul>
+<p>Each idea climbs the same ladder: an <strong>everyday picture</strong>, a <strong>tiny example</strong>, a <strong>diagram</strong>, <strong>the math</strong>, and <strong>why it matters today</strong>. It builds on the <a href="generative-adversarial-nets.html">GAN companion</a>, and the <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a> computes the Wasserstein and Jensen-Shannon distances from scratch.</p>
+</section>
+
+<section id="abstract">
+<h2>Abstract <span class="orig">· <a href="https://arxiv.org/abs/1701.07875">original</a></span></h2>
+<blockquote class="quote">“In this new model, we show that we can improve the stability of learning, get rid of problems like mode collapse, and provide meaningful learning curves useful for debugging and hyperparameter searches.”<cite>Arjovsky, Chintala and Bottou (2017), Abstract</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>A <span class="t" data-t="gan">GAN</span>'s detective answers one question: real or fake? Once real and fake notes look nothing alike, it answers “fake” with total confidence, and a confident “fake” says nothing about <em>how far off</em> the forger is. This paper swaps the detective for a <span class="t" data-t="critic">critic</span> that gives a score, and trains it so that the gap between its average scores on real and fake samples measures how much work it would take to turn one pile of samples into the other.</p>
+<h3 class="rung">What the paper claims</h3>
+<ul>
+  <li>Of the usual ways to compare two distributions, only the <span class="t" data-t="earth mover's distance">earth mover's distance</span> changes smoothly as the generator's weights change, even when real and generated data sit on thin, non-overlapping surfaces.</li>
+  <li>A GAN can minimise it: train a critic whose slope is capped (a <span class="t" data-t="lipschitz">Lipschitz</span> constraint), enforced crudely by clipping its weights.</li>
+  <li>In practice the critic's loss falls as the samples improve, training is far less sensitive to the architecture, and the authors saw no <span class="t" data-t="mode collapse">mode collapse</span>.</li>
+</ul>
+<h3 class="rung">Why it matters today</h3>
+<p>The clipping did not last, but the idea did: a critic whose slope is kept under control, a loss that measures distance rather than distinguishability, and a whole line of work (gradient penalties, spectral normalization) on how to keep that slope in check.</p>
+</section>
+
+<section id="s1">
+<h2>1 Introduction <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S1">original</a></span></h2>
+<blockquote class="quote">“In other words, the added noise term is clearly incorrect for the problem, but is needed to make the maximum likelihood approach work.”<cite>Arjovsky, Chintala and Bottou (2017), §1</cite></blockquote>
+<h3 class="rung">Everyday picture</h3>
+<p>The classic way to fit a model is <span class="t" data-tip-title="Maximum likelihood" data-tip="Fitting a model by choosing the parameters that make the observed data as probable as possible: maximise the average log-probability of the training examples.">maximum likelihood</span>: tune it until the real data looks as probable as possible. That only works if the model gives every real example some probability. Real images, though, are thought to lie on a thin sheet inside the enormous space of all pixel grids, a low-dimensional <span class="t" data-tip-title="Manifold" data-tip="A smooth, lower-dimensional surface inside a bigger space, like a sheet of paper curving through a room. A line in a plane is a 1-dimensional manifold in 2 dimensions.">manifold</span>. A model whose samples lie on its own thin sheet will almost never touch the data's sheet, so it gives the real images probability zero. The usual patch is to blur the model with noise until it covers everything, which makes samples blurry.</p>
+<h3 class="rung">Tiny example</h3>
+<p>Two real points, 0.5 and 1.5. The model is a bell curve of width 1 centred at θ. Its average <span class="t" data-t="log-likelihood">log-likelihood</span> is −1.544 at θ = 0, −1.044 at θ = 1 and −1.544 at θ = 2, so maximum likelihood picks θ = 1, the middle. Now the blur: the paper cites a model whose best noise was a spread of about 0.1 per pixel on pixels scaled 0 to 1. Noise with that spread lands within ±0.196 of the true value 95% of the time (1.96 spreads), turning a mid-grey pixel of 0.5 into anything from about 0.3 to 0.7, which is why, the paper notes, authors showed their samples without it.</p>
+<div class="eq" data-tex="\htmlData{sym=maxtheta}{\max_{\theta\in\mathbb{R}^{d}}}\;\htmlData{sym=oneoverm}{\frac{1}{m}}\htmlData{sym=summ}{\sum_{i=1}^{m}}\htmlData{sym=logsym}{\log}\,\htmlData{sym=Ptheta}{P_{\theta}(x^{(i)})}" data-fallback="max_{θ ∈ R^d} (1/m) Σ_{i=1..m} log P_θ(x^(i))"></div>
+<div class="symtable" data-syms="maxtheta,oneoverm,summ,logsym,Ptheta"></div>
+<p class="inwords"><strong>In words:</strong> “choose the model's parameters so that the average log-probability it gives the real examples is as large as possible.” The paper adds that, with enough data, this is the same as minimising the <span class="t" data-t="kl divergence">KL divergence</span> from the real distribution to the model.</p>
+<p class="inwords"><strong>With the numbers:</strong> at θ = 1 each point is 0.5 away from the centre, where the bell's height is 0.352, and log 0.352 = −1.044. At θ = 0 or 2 one point is 0.5 away and the other 1.5 away, averaging −1.544.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def P(x, theta):
+    # a bell curve of width 1 centred at theta
+    return math.exp(-0.5 * (x - theta) ** 2) / math.sqrt(2 * math.pi)
+x = [0.5, 1.5]
+# (1/m) Σ log P_θ(x^(i)) for three choices of θ
+[round(sum(math.log(P(x_i, theta)) for x_i in x) / len(x), 3) for theta in (0, 1, 2)]  # → [-1.544, -1.044, -1.544]
+# the blur the paper criticises: 95% of noise with spread 0.1 lands within 1.96 spreads
+round(1.96 * 0.1, 3)  # → 0.196</code></pre>
+<p>The alternative, which <span class="t" data-t="gan">GANs</span> and <span class="t" data-t="variational autoencoder">VAEs</span> share, is to skip the density altogether: draw noise z and push it through a network g<sub>θ</sub>, whose outputs follow some distribution ℙ<sub>θ</sub>. That can live on a thin sheet, and sampling is just a forward pass. What remains is to choose how to measure the distance ρ(ℙ<sub>θ</sub>, ℙ<sub>r</sub>) between the model's samples and the real ones.</p>
+<figure class="ix" id="fig-chain">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 330" role="img" aria-label="From the generator's weights to the loss: weights, generator, distribution of samples, distance to the real data, loss">
+    <defs><marker id="arr-ch" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <path class="wire" d="M150,50 V72" marker-end="url(#arr-ch)"/>
+    <path class="wire" d="M150,114 V136" marker-end="url(#arr-ch)"/>
+    <path class="wire" d="M150,178 V200" marker-end="url(#arr-ch)"/>
+    <path class="wire" d="M150,242 V264" marker-end="url(#arr-ch)"/>
+    <path class="wire" d="M276,221 H262" marker-end="url(#arr-ch)"/>
+    <g class="blk lin" data-block="theta"><rect x="70" y="10" width="160" height="40" rx="7"/><text x="150" y="35" text-anchor="middle">weights θ</text></g>
+    <g class="blk ff" data-block="gen"><rect x="70" y="74" width="160" height="40" rx="7"/><text x="150" y="99" text-anchor="middle">generator g<tspan baseline-shift="sub" font-size="9">θ</tspan>(z)</text></g>
+    <g class="blk emb" data-block="ptheta"><rect x="70" y="138" width="160" height="40" rx="7"/><text x="150" y="163" text-anchor="middle">samples follow ℙ<tspan baseline-shift="sub" font-size="9">θ</tspan></text></g>
+    <g class="blk attn" data-block="rho"><rect x="40" y="202" width="220" height="40" rx="7"/><text x="150" y="227" text-anchor="middle">distance ρ(ℙ<tspan baseline-shift="sub" font-size="9">θ</tspan>, ℙ<tspan baseline-shift="sub" font-size="9">r</tspan>)</text></g>
+    <g class="blk plain" data-block="preal"><rect x="262" y="202" width="34" height="40" rx="7"/><text x="279" y="227" text-anchor="middle">ℙ<tspan baseline-shift="sub" font-size="9">r</tspan></text></g>
+    <g class="blk soft" data-block="lossblk"><rect x="70" y="266" width="160" height="40" rx="7"/><text x="150" y="291" text-anchor="middle">loss for θ</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step, from the weights at the top down to the loss.</p></div>
+  </div>
+  <figcaption>The chain the introduction reasons about, drawn for this page. Based on Arjovsky, Chintala and Bottou (2017), §1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> follow the chain from the top. The weights θ define a generator; the generator's outputs pile up into a distribution ℙ<sub>θ</sub>; a distance ρ compares that pile with the real pile ℙ<sub>r</sub> (the box on the right); and that number is the loss. Gradient descent needs the loss to change smoothly when θ changes a little. The paper's point is that this depends entirely on the amber box: with some choices of ρ, a small change of θ can make the loss jump, and then there is no gradient to follow.</p>
+<h3 class="rung">Why it matters today</h3>
+<p>This framing, “which distance between distributions am I really minimising, and does it give a gradient?”, is a question worth asking of any generative training objective. The paper names the property it wants a <em>weaker</em> distance: one under which more sequences of distributions count as converging, so that more generators give a continuous loss.</p>
+</section>
+
+<section id="s2">
+<h2>2 Different distances <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S2">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Two piles of sand, and four ways to say how different they are. Three of them only look at how much the piles overlap. The fourth asks how far you would have to carry the sand. The section shows that only the fourth notices when a pile moves closer.</p>
+<h3 class="rung">Why it matters</h3>
+<p>A GAN is only as good as the distance its training secretly minimises. The <a href="generative-adversarial-nets.html#s4-1b">GAN companion's Theorem 1</a> showed that the original GAN minimises the Jensen-Shannon divergence; this section shows why that is a poor choice when the piles do not overlap.</p>
+</section>
+
+<section id="s2-defs">
+<h3>TV, KL and JS <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The <span class="t" data-tip-title="Total variation (TV) distance" data-tip="The largest difference in probability that the two distributions give to any one set of outcomes. It is 1 when they share no outcome at all, however far apart they are.">total variation</span> distance finds the region where the two piles disagree most and reports how much. The KL divergence measures the surprise of expecting one pile when the truth is the other. The <span class="t" data-t="jensen-shannon divergence">Jensen-Shannon</span> divergence compares each pile with their half-and-half mix.</p>
+<h4>Tiny example</h4>
+<p>On our two piles (real: ½ at 0 and ½ at 3; fake: ½ at 1 and ½ at 4) they share no position at all. Take A = {0, 3}: the real pile puts all its sand there and the fake pile none, so TV = 1, the most it can be. The real pile has sand at 0, where the fake pile has none, so KL is infinite. JS comes out as log 2 = 0.693, also its largest possible value. None of the three would change if the fake pile sat at 100 and 103 instead.</p>
+<div class="eq" data-tex="\htmlData{sym=delta}{\delta}(\htmlData{sym=Pr}{\mathbb{P}_r},\htmlData{sym=Pg}{\mathbb{P}_g}) = \htmlData{sym=supA}{\sup_{A\in\Sigma}}\,\big|\htmlData{sym=PrA}{\mathbb{P}_r(A)} - \htmlData{sym=PgA}{\mathbb{P}_g(A)}\big|" data-fallback="δ(P_r, P_g) = sup_{A ∈ Σ} |P_r(A) − P_g(A)|"></div>
+<div class="symtable" data-syms="delta,Pr,Pg,supA,PrA,PgA"></div>
+<p class="inwords"><strong>In words:</strong> “over every set of outcomes you could pick, find the biggest gap between the probability the real distribution gives that set and the probability the fake one gives it.”</p>
+<p class="inwords"><strong>With the numbers:</strong> the set {0, 3} gets 1 from the real pile and 0 from the fake one; no set does better, so δ = 1.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>from itertools import combinations
+P_r = {0: 0.5, 3: 0.5}
+P_g = {1: 0.5, 4: 0.5}
+positions = sorted(set(P_r) | set(P_g))
+# every set A of positions: Σ, here all 16 subsets of {0, 1, 3, 4}
+sets = [A for k in range(len(positions) + 1) for A in combinations(positions, k)]
+def gap(A):
+    return abs(sum(P_r.get(a, 0) for a in A) - sum(P_g.get(a, 0) for a in A))
+# δ = sup over A of |P_r(A) − P_g(A)|
+max(gap(A) for A in sets)  # → 1.0
+max(sets, key=gap)  # → (0, 3)</code></pre>
+<div class="eq" data-tex="\htmlData{sym=KL}{KL}(\htmlData{sym=Pr}{\mathbb{P}_r}\htmlData{sym=parallel}{\|}\htmlData{sym=Pg}{\mathbb{P}_g}) = \htmlData{sym=integral}{\int}\htmlData{sym=logsym}{\log}\!\left(\frac{\htmlData{sym=Prx}{P_r(x)}}{\htmlData{sym=Pgx}{P_g(x)}}\right)\htmlData{sym=Prx}{P_r(x)}\,\htmlData{sym=dmu}{d\mu(x)}" data-fallback="KL(P_r ‖ P_g) = ∫ log(P_r(x) / P_g(x)) P_r(x) dμ(x)"></div>
+<div class="symtable" data-syms="KL,parallel,integral,Prx,Pgx,dmu"></div>
+<p class="inwords"><strong>In words:</strong> “wherever the real distribution has mass, weigh the log of how many times more likely the real density makes that point than the fake density does, and add it all up.”</p>
+<p class="inwords"><strong>With the numbers:</strong> at x = 0 the real density is ½ and the fake density is 0, so the ratio ½ / 0 is infinite and so is KL. The paper notes KL is lopsided (swapping the two piles changes it) and infinite whenever the fake pile misses a spot the real one covers.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+P_r = {0: 0.5, 3: 0.5}
+P_g = {1: 0.5, 4: 0.5}
+def KL(P, Q):
+    # ∫ log(P(x) / Q(x)) P(x): infinite as soon as Q misses a spot P covers
+    if any(Q.get(x, 0) == 0 for x in P if P[x] > 0):
+        return math.inf
+    return sum(P[x] * math.log(P[x] / Q[x]) for x in P if P[x] > 0)
+KL(P_r, P_g)  # → inf
+# the same piles compared with themselves
+KL(P_r, P_r)  # → 0.0</code></pre>
+<div class="eq" data-tex="\htmlData{sym=JS}{JS}(\htmlData{sym=Pr}{\mathbb{P}_r},\htmlData{sym=Pg}{\mathbb{P}_g}) = \tfrac{1}{2}\,\htmlData{sym=KL}{KL}(\htmlData{sym=Pr}{\mathbb{P}_r}\htmlData{sym=parallel}{\|}\htmlData{sym=Pm}{\mathbb{P}_m}) + \tfrac{1}{2}\,\htmlData{sym=KL}{KL}(\htmlData{sym=Pg}{\mathbb{P}_g}\htmlData{sym=parallel}{\|}\htmlData{sym=Pm}{\mathbb{P}_m})" data-fallback="JS(P_r, P_g) = ½ KL(P_r ‖ P_m) + ½ KL(P_g ‖ P_m)"></div>
+<div class="symtable" data-syms="JS,Pm"></div>
+<p class="inwords"><strong>In words:</strong> “pour the two piles together half and half, and average how far each pile is from that mix.” Because the mix covers every spot either pile covers, JS is never infinite. (The line in §2 of the paper prints this without the two halves; its Example 1 value, log 2, and its proofs in Appendix C use the halved form shown here.)</p>
+<p class="inwords"><strong>With the numbers:</strong> the mix has ¼ at each of 0, 1, 3 and 4. Each pile has ½ where the mix has ¼, so each KL is ½ log 2 + ½ log 2 = log 2, and JS = ½ log 2 + ½ log 2 = 0.693.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+P_r = {0: 0.5, 3: 0.5}
+P_g = {1: 0.5, 4: 0.5}
+# P_m: the half-and-half mix
+P_m = {x: (P_r.get(x, 0) + P_g.get(x, 0)) / 2 for x in sorted(set(P_r) | set(P_g))}
+P_m  # → {0: 0.25, 1: 0.25, 3: 0.25, 4: 0.25}
+def KL(P, Q):
+    return sum(P[x] * math.log(P[x] / Q[x]) for x in P if P[x] > 0)
+JS = KL(P_r, P_m) / 2 + KL(P_g, P_m) / 2
+round(JS, 3)  # → 0.693
+round(math.log(2), 3)  # → 0.693</code></pre>
+<h4>Why it matters today</h4>
+<p>All three are blind to distance: they only see overlap. The <a data-lesson="primer/ml/generative/gans.html#js_divergence"><code>js_divergence</code></a> function in the lesson shows the same flatness on histograms, stuck at log 2 whenever the two share no bin.</p>
+</section>
+
+<section id="s2-em">
+<h3>The earth mover distance (equation 1) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S2.E1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>You have to reshape one pile of sand into the other with a wheelbarrow. Every load costs its weight times the distance you push it. A <span class="t" data-tip-title="Transport plan" data-tip="A complete instruction for moving one distribution into another: how much mass goes from each position x to each position y. The paper writes it γ(x, y), a joint distribution whose two margins are the two piles.">transport plan</span> says how much sand goes from each spot to each spot. The <span class="t" data-t="wasserstein distance">Wasserstein-1</span> or earth mover's distance is the cost of the cheapest plan.</p>
+<h4>Tiny example</h4>
+<p>Two plans move our real pile onto the fake pile. In order: 0 → 1 and 3 → 4, each half the sand moved 1 step, total 0.5 + 0.5 = <strong>1</strong>. Crossed: 0 → 4 and 3 → 1, total 0.5 × 4 + 0.5 × 2 = <strong>3</strong>. The cheapest is 1, so W = 1. Slide the fake pile to 100 and 103, and W grows to 100, while TV, KL and JS do not budge.</p>
+<div class="plot" id="fig-plan">
+  <div class="controls ui">
+    <span>Plan:</span>
+    <button type="button" data-plan="order" aria-pressed="true">in order</button>
+    <button type="button" data-plan="cross" aria-pressed="false">crossed</button>
+  </div>
+  <svg id="plan-svg" viewBox="0 0 440 170" style="max-width:620px;margin:0 auto" role="img" aria-label="Two grains of real sand at positions 0 and 3 carried to fake positions 1 and 4, along the chosen transport plan"></svg>
+  <p class="readout" id="plan-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the number line runs from 0 to 4. The two filled squares above it are the real pile, half the sand at 0 and half at 3; the two open circles below it are where the fake pile's sand sits, at 1 and 4. Each arrow is one load of the plan, labelled with its cost, half the sand times the distance travelled. Switch between the plans: both end with exactly the fake pile, but crossing the loads costs three times as much. The earth mover's distance takes the cheapest plan, and in one dimension that is always the one that keeps the grains in order.</p>
+<div class="eq" data-tex="\htmlData{sym=W}{W}(\htmlData{sym=Pr}{\mathbb{P}_r},\htmlData{sym=Pg}{\mathbb{P}_g}) = \htmlData{sym=infgamma}{\inf_{\gamma\in\Pi(\mathbb{P}_r,\mathbb{P}_g)}}\;\htmlData{sym=Egamma}{\mathbb{E}_{(x,y)\sim\gamma}}\big[\,\htmlData{sym=normxy}{\|x-y\|}\,\big]" data-fallback="W(P_r, P_g) = inf_{γ ∈ Π(P_r, P_g)} E_{(x, y) ~ γ}[ ‖x − y‖ ]"></div>
+<div class="symtable" data-syms="W,infgamma,Egamma,normxy"></div>
+<p class="inwords"><strong>In words:</strong> “among all ways of moving the real pile onto the fake pile, find the one whose average distance moved, weighted by the amount of sand, is smallest; that smallest cost is the distance.”</p>
+<p class="inwords"><strong>With the numbers:</strong> in order: ½ × |0 − 1| + ½ × |3 − 4| = 1. Crossed: ½ × |0 − 4| + ½ × |3 − 1| = 3. The infimum over these plans is 1.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># each plan γ: (from x, to y, how much sand)
+in_order = [(0, 1, 0.5), (3, 4, 0.5)]
+crossed = [(0, 4, 0.5), (3, 1, 0.5)]
+def cost(plan):
+    # E over (x, y) ~ γ of |x − y|
+    return sum(mass * abs(x - y) for x, y, mass in plan)
+cost(in_order), cost(crossed)  # → (1.0, 3.0)
+# W = inf over plans
+min(cost(in_order), cost(crossed))  # → 1.0
+# the fake pile slid to 100 and 103: W grows with the distance
+cost([(0, 100, 0.5), (3, 103, 0.5)])  # → 100.0</code></pre>
+<h4>Why it matters today</h4>
+<p>The earth mover's distance is the one yardstick in this section that shrinks as the fake pile approaches. In one dimension it is easy to compute: sort both samples and pair them up, which is exactly <a data-lesson="primer/ml/generative/gans.html#wasserstein_1d"><code>wasserstein_1d</code></a> in the lesson. In high dimensions the infimum over plans is hopeless, which is why §3 needs a trick.</p>
+</section>
+
+<section id="s2-ex1">
+<h3>Example 1: learning parallel lines <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S2.F1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The real data is a thin vertical line at x = 0, sand spread evenly up it. The generator draws the same line, shifted sideways to x = θ. The right answer is obviously θ = 0, and the right loss should get smaller as θ gets closer to it.</p>
+<h4>Tiny example</h4>
+<p>At θ = 0.5 the lines are half a unit apart. Every grain has to move 0.5 sideways, so W = 0.5. The lines do not overlap anywhere, so JS = log 2, TV = 1 and both KLs are infinite. At θ = 0.01 the lines are almost on top of each other, W = 0.01, and the other three have not changed at all.</p>
+<div class="plot" id="fig1">
+  <div class="sliders ui">
+    <label for="ex1-theta">fake line position θ</label><input type="range" id="ex1-theta" min="-1" max="1" step="0.05" value="0.5"><output id="ex1-theta-v">0.50</output>
+  </div>
+  <svg id="ex1-svg" viewBox="0 0 440 150" style="max-width:620px;margin:0 auto" role="img" aria-label="The real distribution, a vertical line at x = 0, and the generator's distribution, the same line shifted to x = theta"></svg>
+  <p class="readout" id="ex1-readout"></p>
+  <div id="ex1-chart"></div>
+  <p class="readout" id="ex1-chart-readout">Hover the chart, or focus it and use the arrow keys, to read both distances at any θ.</p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the picture at the top shows the square from x = −1 to 1: the dotted line is the real data at x = 0 and the solid line the generator at x = θ. Drag θ and watch the readout: W follows the gap exactly, while JS, TV and KL stay pinned at their largest values until the lines coincide. The chart below is the paper's Figure 1 redrawn. The solid V is W = |θ|: it slopes down towards 0 from both sides, so its gradient always points home. The dashed line is JS: flat at log 2 = 0.693 everywhere except the single point θ = 0, where it drops to 0. A flat line has zero slope, so gradient descent on JS goes nowhere.</p>
+<div class="eq" data-tex="\htmlData{sym=W}{W}(\htmlData{sym=P0}{\mathbb{P}_0},\htmlData{sym=Pth}{\mathbb{P}_\theta}) = \htmlData{sym=abstheta}{|\theta|} \qquad \htmlData{sym=JS}{JS}(\htmlData{sym=P0}{\mathbb{P}_0},\htmlData{sym=Pth}{\mathbb{P}_\theta}) = \begin{cases}\log 2 & \theta \neq 0\\ 0 & \theta = 0\end{cases}" data-fallback="W(P_0, P_θ) = |θ|;   JS(P_0, P_θ) = log 2 if θ ≠ 0, else 0"></div>
+<div class="symtable" data-syms="P0,Pth,abstheta"></div>
+<p class="inwords"><strong>In words:</strong> “the earth mover's distance between the two lines is just how far apart they are; the Jensen-Shannon divergence is log 2 unless they sit exactly on top of each other.” The paper adds that both KLs are +∞ and TV is 1 for every θ ≠ 0.</p>
+<p class="inwords"><strong>With the numbers:</strong> θ = 0.5 gives W = 0.5 and JS = 0.693; θ = 0.01 gives W = 0.01 and still JS = 0.693; only θ = 0 gives JS = 0.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+def W(theta):
+    # every grain moves |θ| sideways
+    return abs(theta)
+def JS(theta):
+    # the lines overlap only when θ = 0
+    return 0.0 if theta == 0 else math.log(2)
+[W(t) for t in (0.5, 0.01, 0)]  # → [0.5, 0.01, 0]
+[round(JS(t), 3) for t in (0.5, 0.01, 0)]  # → [0.693, 0.693, 0.0]</code></pre>
+<blockquote class="quote">“The EM plot is continuous and provides a usable gradient everywhere. The JS plot is not continuous and does not provide a usable gradient.”<cite>Arjovsky, Chintala and Bottou (2017), Figure 1 caption</cite></blockquote>
+<h4>Why it matters today</h4>
+<p>This two-line toy is the whole argument of the paper in one picture. The paper notes it is not a special case: two thin surfaces in a big space, placed at random, almost never overlap in more than a set of size zero, which is exactly the situation of a young generator and real images. The <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a> redraws the same comparison for a pile sliding along a line.</p>
+</section>
+
+<section id="s2-thm">
+<h3>Theorems 1 and 2: continuity, and which distance is weakest <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A thermostat that jumps straight from 15 to 25 degrees cannot be tuned; one that turns smoothly can. Theorem 1 says the earth mover's distance turns smoothly: if the generator changes smoothly with its weights, W changes smoothly too, and for networks it has a slope almost everywhere (the Corollary). JS and the KLs do not, and Example 1 is the counterexample. Theorem 2 ranks the distances by how <em>strict</em> they are about calling two piles close: KL is strictest, JS and TV next (they agree with each other), and W is the most lenient, agreeing with plain convergence of the samples.</p>
+<h4>Tiny example</h4>
+<p>Put all the fake sand at the single point 1/n, and all the real sand at 0. As n grows, the fake point creeps towards the real one: W = 1, 0.1, 0.01 for n = 1, 10, 100. TV stays at 1 and JS at log 2 for every n, because the points never quite coincide. Under W the sequence converges; under TV and JS it never does. That is what “weaker” means here.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+ns = [1, 10, 100]
+# W between a point at 0 and a point at 1/n: the gap
+[1 / n for n in ns]  # → [1.0, 0.1, 0.01]
+# TV between two points that don't coincide: always 1
+[1 for n in ns]  # → [1, 1, 1]
+# JS: always log 2
+[round(math.log(2), 3) for n in ns]  # → [0.693, 0.693, 0.693]</code></pre>
+<figure class="ix" id="fig-order">
+  <div class="ixgrid">
+  <svg viewBox="0 0 300 330" role="img" aria-label="Theorem 2: convergence in KL implies convergence in JS and TV, which are equivalent, which implies convergence in W, equivalent to convergence in distribution">
+    <defs><marker id="arr-ord" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <text x="8" y="20" class="lbl">strictest</text>
+    <text x="8" y="322" class="lbl">most lenient</text>
+    <path class="wire" d="M150,70 V104" marker-end="url(#arr-ord)"/>
+    <path class="wire" d="M150,176 V210" marker-end="url(#arr-ord)"/>
+    <g class="blk attn" data-block="ord_kl"><rect x="50" y="28" width="200" height="42" rx="8"/><text x="150" y="54" text-anchor="middle">KL(ℙ<tspan baseline-shift="sub" font-size="9">n</tspan> ‖ ℙ) → 0 (either way)</text></g>
+    <g class="blk norm" data-block="ord_js"><rect x="30" y="106" width="240" height="70" rx="8"/><text x="150" y="134" text-anchor="middle">JS(ℙ<tspan baseline-shift="sub" font-size="9">n</tspan>, ℙ) → 0</text><text x="150" y="152" text-anchor="middle">⇔ δ(ℙ<tspan baseline-shift="sub" font-size="9">n</tspan>, ℙ) → 0</text></g>
+    <g class="blk soft" data-block="ord_w"><rect x="30" y="212" width="240" height="70" rx="8"/><text x="150" y="240" text-anchor="middle">W(ℙ<tspan baseline-shift="sub" font-size="9">n</tspan>, ℙ) → 0</text><text x="150" y="258" text-anchor="middle">⇔ ℙ<tspan baseline-shift="sub" font-size="9">n</tspan> converges in distribution</text></g>
+    <text x="160" y="92" class="lbl">implies</text>
+    <text x="160" y="198" class="lbl">implies</text>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a box, from the strictest at the top to the most lenient at the bottom.</p></div>
+  </div>
+  <figcaption>Theorem 2 of the paper, drawn as a ladder of implications. Based on Arjovsky, Chintala and Bottou (2017), §2, Theorem 2.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> each box is a way for a sequence of distributions ℙ<sub>n</sub> to approach ℙ, and each arrow reads “if this happens, so does the one below”. Going down, the conditions get easier to meet. The creeping point from the tiny example lives only in the green box: it converges under W but never makes it into the yellow or amber boxes. A loss built on a lower box is continuous for more generators, which is exactly what training needs.</p>
+<h4>Why it matters today</h4>
+<p>The paper concludes that KL, JS and TV are “not sensible cost functions” for distributions on thin surfaces, and that W is. Every later Wasserstein-style GAN rests on this argument.</p>
+</section>
+
+<section id="s3">
+<h2>3 Wasserstein GAN <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S3">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Finding the cheapest way to move a pile of a million images onto another is hopeless. But there is a back door. Instead of planning the moves, hire a critic who assigns every position a price, with one rule: prices may not change faster than distance (move one step, the price changes by at most 1). The critic tries to make real sand as expensive and fake sand as cheap as possible. The biggest gap it can achieve equals the cost of the cheapest move.</p>
+<h3 class="rung">Why it matters</h3>
+<p>That back door turns a planning problem into a training problem: the critic is a neural network, and the gap is something you can estimate from minibatches and backpropagate through, exactly like a GAN.</p>
+</section>
+
+<section id="s3-dual">
+<h3>The duality (equation 2) <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S3.E2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A function is <span class="t" data-t="lipschitz">K-Lipschitz</span> if its value never changes more than K times as fast as its input: a speed limit on its slope. The <span class="t" data-tip-title="Kantorovich-Rubinstein duality" data-tip="A classical result of optimal transport: the cheapest cost of moving one distribution onto another equals the largest gap in average value that any slope-at-most-1 function can create between them.">Kantorovich-Rubinstein duality</span> says the earth mover's distance equals the largest gap any 1-Lipschitz price function can create between the average price of real and fake sand.</p>
+<h4>Tiny example</h4>
+<p>Try the price f(x) = −x, which has slope exactly 1. Real sand averages −(0 + 3)/2 = −1.5 and fake sand −(1 + 4)/2 = −2.5, a gap of <strong>1</strong>, which is W. A lazy critic, f(x) = 0, gets a gap of 0. A cheating critic, f(x) = −2x, gets 2, but it breaks the speed limit (its slope is 2), and with slope K the gap is K times W.</p>
+<div class="eq" data-tex="\htmlData{sym=W}{W}(\htmlData{sym=Pr}{\mathbb{P}_r},\htmlData{sym=Pth}{\mathbb{P}_\theta}) = \htmlData{sym=supf}{\sup_{\|f\|_L\le 1}}\;\htmlData{sym=Er}{\mathbb{E}_{x\sim\mathbb{P}_r}}[\htmlData{sym=fx}{f(x)}] - \htmlData{sym=Eth}{\mathbb{E}_{x\sim\mathbb{P}_\theta}}[\htmlData{sym=fx}{f(x)}]" data-fallback="W(P_r, P_θ) = sup_{‖f‖_L ≤ 1} E_{x ~ P_r}[f(x)] − E_{x ~ P_θ}[f(x)]"></div>
+<div class="symtable" data-syms="supf,Er,Eth,fx"></div>
+<p class="inwords"><strong>In words:</strong> “the earth mover's distance is the biggest gap between the average score of real samples and the average score of generated samples that any function with slope at most 1 can produce.”</p>
+<p class="inwords"><strong>With the numbers:</strong> f(x) = −x gives −1.5 − (−2.5) = 1 = W. The speed limit is what makes the answer finite: f(x) = −2x gives 2, and f(x) = −100x would give 100.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>real = [0, 3]
+fake = [1, 4]
+def gap(f):
+    # E over real of f(x) − E over fake of f(x)
+    return sum(f(x) for x in real) / len(real) - sum(f(x) for x in fake) / len(fake)
+# a 1-Lipschitz critic that tilts the right way
+gap(lambda x: -x)  # → 1.0
+# a lazy critic
+gap(lambda x: 0)  # → 0.0
+# slope 2 breaks the speed limit and doubles the gap: K · W with K = 2
+gap(lambda x: -2 * x)  # → 2.0</code></pre>
+<div class="eq" data-tex="\htmlData{sym=lipdef}{|f(a) - f(b)| \le K\,|a - b|}\quad\text{for all } a, b \qquad\Longleftrightarrow\qquad \htmlData{sym=lipnorm}{\|f\|_L \le K}" data-fallback="|f(a) − f(b)| ≤ K |a − b| for all a, b  ⇔  ‖f‖_L ≤ K"></div>
+<div class="symtable" data-syms="lipdef,lipnorm"></div>
+<p class="inwords"><strong>In words:</strong> “f is K-Lipschitz when, for any two inputs, the outputs are never further apart than K times the inputs are.” (The paper uses the notation ‖f‖<sub>L</sub> ≤ K without writing out this definition; it is the standard one.)</p>
+<p class="inwords"><strong>With the numbers:</strong> for f(x) = −2x, the inputs 1 and 4 are 3 apart and the outputs −2 and −8 are 6 apart, so K must be at least 6 / 3 = 2. For f(x) = −x the ratio is 1.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>points = [0, 1, 3, 4]
+def worst_ratio(f):
+    # the largest |f(a) − f(b)| / |a − b| over every pair: the smallest K that works
+    return max(abs(f(a) - f(b)) / abs(a - b) for a in points for b in points if a != b)
+worst_ratio(lambda x: -x)  # → 1.0
+worst_ratio(lambda x: -2 * x)  # → 2.0</code></pre>
+<h4>Why it matters today</h4>
+<p>Every Wasserstein-style GAN is built on this line: the critic is the f, and all the engineering is about keeping its slope under control. The lesson's section on the Wasserstein distance puts it the same way: the estimate is only valid if the critic's slope is at most 1 everywhere.</p>
+</section>
+
+<section id="s3-critic">
+<h3>The critic (equation 3) and weight clipping <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S3.E3">original</a></span></h3>
+<blockquote class="quote">“Weight clipping is a clearly terrible way to enforce a Lipschitz constraint.”<cite>Arjovsky, Chintala and Bottou (2017), §3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>You cannot search over every 1-Lipschitz function, so search over a network f<sub>w</sub> instead, and keep its slope bounded somehow. The paper's crude but simple way: after every update, force every weight back into a small box, [−0.01, 0.01]. A network with small weights cannot be steep, so its slope is bounded by some K. The gap it finds is then K × W: the right distance, times a constant that does not matter for training.</p>
+<h4>Tiny example</h4>
+<p>Take the smallest possible critic, f<sub>w</sub>(x) = w · x, with <span class="t" data-t="weight clipping">weight clipping</span> at c = 0.01. Its gap on our piles is w × (1.5 − 2.5) = −w. The best clipped choice is w = −0.01, giving a gap of 0.01: exactly W = 1 scaled by K = 0.01.</p>
+<div class="eq" data-tex="\htmlData{sym=maxw}{\max_{w\in\mathcal{W}}}\;\htmlData{sym=Er}{\mathbb{E}_{x\sim\mathbb{P}_r}}[\htmlData{sym=fw}{f_w}(x)] - \htmlData{sym=Ez}{\mathbb{E}_{z\sim p(z)}}[\htmlData{sym=fw}{f_w}(\htmlData{sym=gth}{g_\theta(z)})]" data-fallback="max_{w ∈ W} E_{x ~ P_r}[f_w(x)] − E_{z ~ p(z)}[f_w(g_θ(z))]"></div>
+<div class="symtable" data-syms="maxw,fw,Ez,gth"></div>
+<p class="inwords"><strong>In words:</strong> “over all allowed critic weights, find the critic that makes real samples score as high as possible, on average, compared with generated ones.”</p>
+<p class="inwords"><strong>With the numbers:</strong> with f<sub>w</sub>(x) = w · x and w clipped to [−0.01, 0.01], the value is −w, largest at w = −0.01, where it is 0.01 = 0.01 × W.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>real = [0, 3]
+fake = [1, 4]
+c = 0.01
+def objective(w):
+    # E over real of f_w(x) − E over fakes of f_w(g_θ(z)), with f_w(x) = w · x
+    return sum(w * x for x in real) / len(real) - sum(w * x for x in fake) / len(fake)
+# try every allowed weight on a fine grid of the box [−c, c]
+grid = [c * k / 100 for k in range(-100, 101)]
+best_w = max(grid, key=objective)
+best_w  # → -0.01
+round(objective(best_w), 4)  # → 0.01</code></pre>
+<p>The paper is blunt about the cost. Clip too loosely and the weights take a long time to reach their limits, so the critic trains slowly. Clip too tightly and gradients vanish in deep networks or without <span class="t" data-t="batch normalization">batch normalization</span>. The authors tried alternatives, such as projecting the weights onto a sphere, found little difference, and explicitly invited better methods.</p>
+<h4>Why it matters today</h4>
+<p>The invitation was taken up almost immediately: Wasserstein GANs with a <span class="t" data-t="gradient penalty">gradient penalty</span> (WGAN-GP) replaced clipping by fining the critic when its slope strays from 1, and <span class="t" data-t="spectral normalization">spectral normalization</span> caps each layer's stretch. The lesson builds the second with <a data-lesson="primer/ml/generative/gans.html#largest_stretch"><code>largest_stretch</code></a> and <a data-lesson="primer/ml/generative/gans.html#spectrally_normalize"><code>spectrally_normalize</code></a>.</p>
+</section>
+
+<section id="s3-grad">
+<h3>Theorem 3: the generator's gradient <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S3">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>Once the critic has set its prices, the forger does not need to know anything else: it moves each of its samples in the direction that makes the critic's price go up. Theorem 3 says that this direction, averaged over samples, is exactly the gradient of the earth mover's distance, provided the critic is the best one.</p>
+<h4>Tiny example</h4>
+<p>Let the generator shift its pile: g<sub>θ</sub>(z) = z + θ, where z is 1 or 4. With the best critic, f(x) = −x, the price of a generated sample is −(z + θ), whose slope in θ is −1. So the gradient of W is −(−1) = +1: moving the fake pile right (θ up) makes W bigger by 1 per unit, and moving it left makes it smaller. Check: at θ = −0.5 the fake pile sits at 0.5 and 3.5, and W = 0.5, down from 1.</p>
+<div class="eq" data-tex="\htmlData{sym=gradth}{\nabla_\theta}\,\htmlData{sym=W}{W}(\htmlData{sym=Pr}{\mathbb{P}_r},\htmlData{sym=Pth}{\mathbb{P}_\theta}) = -\,\htmlData{sym=Ez}{\mathbb{E}_{z\sim p(z)}}\big[\htmlData{sym=gradth}{\nabla_\theta}\,\htmlData{sym=fx}{f}(\htmlData{sym=gth}{g_\theta(z)})\big]" data-fallback="∇_θ W(P_r, P_θ) = −E_{z ~ p(z)}[∇_θ f(g_θ(z))]"></div>
+<div class="symtable" data-syms="gradth,W,Ez,gth"></div>
+<p class="inwords"><strong>In words:</strong> “to find how the distance changes with the generator's weights, average, over noise draws, how the best critic's score on each generated sample changes with those weights, and flip the sign.”</p>
+<p class="inwords"><strong>With the numbers:</strong> ∇<sub>θ</sub> f(g<sub>θ</sub>(z)) = ∇<sub>θ</sub>[−(z + θ)] = −1 for both z, the average is −1, and the minus sign makes ∇<sub>θ</sub>W = +1.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>z_values = [1, 4]
+real = [0, 3]
+def f(x):
+    # the best 1-Lipschitz critic for these piles
+    return -x
+def g(z, theta):
+    return z + theta
+h = 1e-6
+# ∇_θ f(g_θ(z)) for each z, by nudging θ
+slopes = [(f(g(z, h)) - f(g(z, -h))) / (2 * h) for z in z_values]
+[round(s, 6) for s in slopes]  # → [-1.0, -1.0]
+# ∇_θ W = −E_z[∇_θ f(g_θ(z))]
+round(-sum(slopes) / len(slopes), 6)  # → 1.0
+# check directly: W with the fake pile moved to θ = −0.5
+sum(abs(a - b) for a, b in zip(real, [g(z, -0.5) for z in z_values])) / 2  # → 0.5</code></pre>
+<h4>Why it matters today</h4>
+<p>This is what licenses the practical recipe: estimate the critic, then backpropagate its score into the generator, just as a GAN backpropagates the discriminator's verdict. The difference is that the signal is the slope of a distance, not the slope of a classifier's confidence.</p>
+</section>
+
+<section id="s3-alg">
+<h3>Algorithm 1 <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#alg1">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>The same turn-taking as the original GAN, with three changes: the critic gets several turns (five) for each of the forger's, its weights are clipped after every turn, and both players use <span class="t" data-t="rmsprop">RMSProp</span> with a tiny step. The paper's defaults are α = 0.00005, c = 0.01, a batch of m = 64 and n<sub>critic</sub> = 5.</p>
+<h4>Tiny example</h4>
+<p>With the one-weight critic f<sub>w</sub>(x) = w · x on our piles, the critic's gradient is (average real) − (average fake) = 1.5 − 2.5 = −1. Starting from w = −0.00999, one step of size α = 0.00005 in that direction gives −0.01004, and clipping pulls it back to −0.01. Then the forger's gradient, for the shift g<sub>θ</sub>(z) = z + θ, is −w = 0.01, so its step moves θ down: the fake pile slides left, towards the real one.</p>
+<figure class="ix" id="fig-alg">
+  <div class="ixgrid">
+  <svg viewBox="0 0 320 360" role="img" aria-label="Algorithm 1 of the Wasserstein GAN: n critic steps, each followed by weight clipping, then one generator step">
+    <defs><marker id="arr-walg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker></defs>
+    <g class="blk frame" data-block="w_iter"><rect x="6" y="6" width="308" height="348" rx="12"/></g>
+    <text x="14" y="24" class="lbl">while θ has not converged</text>
+    <g class="blk frame" data-block="w_loop"><rect x="18" y="36" width="284" height="210" rx="10"/></g>
+    <text x="26" y="54" class="lbl">n<tspan baseline-shift="sub" font-size="9">critic</tspan> = 5 times</text>
+    <path class="wire" d="M95,106 V124" marker-end="url(#arr-walg)"/>
+    <path class="wire" d="M225,106 V124" marker-end="url(#arr-walg)"/>
+    <path class="wire" d="M160,168 V184" marker-end="url(#arr-walg)"/>
+    <path class="wire" d="M160,224 V262" marker-end="url(#arr-walg)"/>
+    <path class="wire" d="M160,296 V304" marker-end="url(#arr-walg)"/>
+    <path class="wire" d="M262,327 H298 V70 H288" marker-end="url(#arr-walg)"/>
+    <g class="blk plain" data-block="w_real"><rect x="34" y="64" width="122" height="42" rx="7"/><text x="95" y="82" text-anchor="middle">m real samples x</text><text x="95" y="97" text-anchor="middle">from ℙ<tspan baseline-shift="sub" font-size="9">r</tspan></text></g>
+    <g class="blk plain" data-block="w_noise"><rect x="164" y="64" width="122" height="42" rx="7"/><text x="225" y="82" text-anchor="middle">m noise draws z</text><text x="225" y="97" text-anchor="middle">through g<tspan baseline-shift="sub" font-size="9">θ</tspan></text></g>
+    <g class="blk ff" data-block="w_critic"><rect x="48" y="126" width="224" height="42" rx="7"/><text x="160" y="144" text-anchor="middle">critic step: raise mean f<tspan baseline-shift="sub" font-size="9">w</tspan>(real)</text><text x="160" y="159" text-anchor="middle">minus mean f<tspan baseline-shift="sub" font-size="9">w</tspan>(fake), RMSProp</text></g>
+    <g class="blk attn" data-block="w_clip"><rect x="76" y="186" width="168" height="38" rx="7"/><text x="160" y="209" text-anchor="middle">clip w to [−c, c]</text></g>
+    <g class="blk plain" data-block="w_noise2"><rect x="92" y="264" width="136" height="32" rx="7"/><text x="160" y="284" text-anchor="middle">m fresh noise draws</text></g>
+    <g class="blk soft" data-block="w_gen"><rect x="58" y="306" width="204" height="42" rx="7"/><text x="160" y="324" text-anchor="middle">generator step: raise</text><text x="160" y="339" text-anchor="middle">mean f<tspan baseline-shift="sub" font-size="9">w</tspan>(g<tspan baseline-shift="sub" font-size="9">θ</tspan>(z)), RMSProp</text></g>
+  </svg>
+  <div class="panel" aria-live="polite"><p class="hint">Hover or tap a step. The amber box is the one that is new compared with a GAN.</p></div>
+  </div>
+  <figcaption>Algorithm 1 of the paper, redrawn as a flow: WGAN training with the paper's default settings. Based on Arjovsky, Chintala and Bottou (2017), Algorithm 1.</figcaption>
+</figure>
+<p class="reading"><strong>Reading it:</strong> the outer box is one generator iteration and the inner box is the critic's turn, repeated five times. In each critic turn a batch of real samples and a batch of fakes feed one RMSProp step that widens the gap in average score (blue), and then the clip (amber) forces every critic weight back into [−0.01, 0.01]. Only then does the generator draw fresh noise and take one step that raises the critic's average score on its samples (green). The arrow on the right starts the next iteration. Compared with the <a href="generative-adversarial-nets.html#s3-alg">GAN's Algorithm 1</a>, there is no log and no sigmoid anywhere: the critic's raw score is the loss.</p>
+<h4>The math</h4>
+<p>Line 7, the critic's gradient, and line 9, the clip:</p>
+<div class="eq" data-tex="\htmlData{sym=gw}{g_w} \leftarrow \htmlData{sym=gradw}{\nabla_w}\Big[\htmlData{sym=oneoverm}{\frac{1}{m}}\htmlData{sym=summ}{\sum_{i=1}^{m}}\htmlData{sym=fw}{f_w}(x^{(i)}) - \htmlData{sym=oneoverm}{\frac{1}{m}}\htmlData{sym=summ}{\sum_{i=1}^{m}}\htmlData{sym=fw}{f_w}(\htmlData{sym=gth}{g_\theta(z^{(i)})})\Big] \qquad w \leftarrow \htmlData{sym=clip}{\text{clip}(w, -c, c)}" data-fallback="g_w ← ∇_w [ (1/m) Σ f_w(x^(i)) − (1/m) Σ f_w(g_θ(z^(i))) ];   w ← clip(w, −c, c)"></div>
+<div class="symtable" data-syms="gw,gradw,oneoverm,summ,clip"></div>
+<p class="inwords"><strong>In words:</strong> “find which way each critic weight should move to widen the gap between its average score on the real batch and on the fake batch; after the step, snap every weight back into the box from −c to c.”</p>
+<p class="inwords"><strong>With the numbers:</strong> for f<sub>w</sub>(x) = w · x, g<sub>w</sub> = 1.5 − 2.5 = −1. RMSProp scales the step to about α per weight here, so w = −0.00999 becomes −0.01004 and the clip returns it to −0.01.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>real, fake = [0, 3], [1, 4]
+alpha, c = 0.00005, 0.01
+# g_w for f_w(x) = w · x: mean of real x minus mean of fake x
+g_w = sum(real) / len(real) - sum(fake) / len(fake)
+g_w  # → -1.0
+# RMSProp divides by the root of a running mean of g_w²; with a steady gradient that is |g_w|
+w = -0.00999
+w = w + alpha * g_w / abs(g_w)
+round(w, 5)  # → -0.01004
+# clip(w, −c, c)
+w = max(-c, min(c, w))
+w  # → -0.01</code></pre>
+<p>Line 12, the generator's gradient:</p>
+<div class="eq" data-tex="\htmlData{sym=gtheta}{g_\theta} \leftarrow -\htmlData{sym=gradth}{\nabla_\theta}\,\htmlData{sym=oneoverm}{\frac{1}{m}}\htmlData{sym=summ}{\sum_{i=1}^{m}}\htmlData{sym=fw}{f_w}(\htmlData{sym=gth}{g_\theta(z^{(i)})})" data-fallback="g_θ ← −∇_θ (1/m) Σ f_w(g_θ(z^(i)))"></div>
+<div class="symtable" data-syms="gtheta,gradth"></div>
+<p class="inwords"><strong>In words:</strong> “the generator's gradient is minus the slope, with respect to its weights, of the critic's average score on its samples”; the step θ ← θ − α · RMSProp(θ, g<sub>θ</sub>) then raises that score.</p>
+<p class="inwords"><strong>With the numbers:</strong> f<sub>w</sub>(g<sub>θ</sub>(z)) = w(z + θ) has slope w = −0.01 in θ, so g<sub>θ</sub> = +0.01, and the step moves θ down by about α = 0.00005: the fake pile slides left, towards the real pile.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>w, alpha = -0.01, 0.00005
+z_values = [1, 4]
+h = 1e-6
+def mean_score(theta):
+    # (1/m) Σ f_w(g_θ(z^(i))) with f_w(x) = w · x and g_θ(z) = z + θ
+    return sum(w * (z + theta) for z in z_values) / len(z_values)
+g_theta = -(mean_score(h) - mean_score(-h)) / (2 * h)
+round(g_theta, 6)  # → 0.01
+# θ ← θ − α · RMSProp step, which is about α times the sign of g_θ
+theta = 0.0 - alpha * g_theta / abs(g_theta)
+theta  # → -5e-05</code></pre>
+<h4>Why it matters today</h4>
+<p>Several critic steps per generator step, and a critic whose raw score is the loss, are the two habits every Wasserstein-style GAN inherits from this algorithm. The optimizer choice was a response to trouble with <span class="t" data-t="adam">Adam</span> that §4 describes.</p>
+</section>
+
+<section id="s3-fig2">
+<h3>Figure 2: train the critic to the end <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S3.F2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>In an ordinary GAN, a detective trained too well becomes useless: it rejects every fake with certainty, and certainty is flat. A critic trained too well cannot become useless, because its speed limit forces it to keep sloping. So a WGAN wants the critic trained as well as possible before each generator step, the opposite of the GAN's balancing act.</p>
+<h4>Tiny example</h4>
+<p>Two bell curves of width 1, the real one centred at −2 and the fake at +2. The best GAN detective is D*(x) = 1 / (1 + e<sup>4x</sup>). At the fake pile's centre, x = 2, its verdict is 0.0003 and its slope is about −0.001: almost nothing for the forger to follow. The best critic here is the straight line f(x) = −x, with slope −1 everywhere, including at the fakes.</p>
+<div class="plot" id="fig2">
+  <div class="sliders ui">
+    <label for="f2-gap">distance between the piles</label><input type="range" id="f2-gap" min="0.5" max="6" step="0.25" value="4"><output id="f2-gap-v">4.00</output>
+  </div>
+  <div id="f2-chart"></div>
+  <p class="readout" id="f2-readout"></p>
+</div>
+<p class="reading"><strong>Reading it:</strong> the x-axis is position. The first two curves are the real and fake piles, bell curves drawn to a peak of 1. The third is the best GAN discriminator D*(x), the share of what lands at x that is real. The fourth is the best critic, the straight line f(x) = −x, drawn rescaled so that it fits the same 0 to 1 axis; its true slope is −1 everywhere. The readout gives both slopes at the fake pile's centre, the place the generator needs directions. Drag the piles apart: D* turns into a cliff between the piles, flat at 0 over the fakes, and its slope there collapses towards zero; the critic's slope does not change. Drag them close together and D* becomes gentle again. These are two 1-D bell curves computed in your browser, not the paper's experiment.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# real pile centred at −2, fake at +2: log p_r(x) − log p_g(x) = −4x, so D*(x) = σ(−4x)
+def D_star(x):
+    return 1 / (1 + math.exp(4 * x))
+round(D_star(2), 4)  # → 0.0003
+# D*'s slope at the fakes' centre, by nudging x
+h = 1e-6
+round((D_star(2 + h) - D_star(2 - h)) / (2 * h), 4)  # → -0.0013
+# the critic f(x) = −x has slope −1 there, as everywhere
+def f(x):
+    return -x
+round((f(2 + h) - f(2 - h)) / (2 * h), 4)  # → -1.0</code></pre>
+<blockquote class="quote">“Perhaps more importantly, the fact that we can train the critic till optimality makes it impossible to collapse modes when we do.”<cite>Arjovsky, Chintala and Bottou (2017), §3</cite></blockquote>
+<h4>Why it matters today</h4>
+<p>The paper's argument about mode collapse is that, against a fixed discriminator, the forger's best move is to put all its samples on the few points the discriminator likes most. A critic trained to the end does not hand the forger such a point to collapse onto. The <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a>'s mode-collapse experiment on the ring of eight clouds shows the collapse this is meant to prevent.</p>
+</section>
+
+<section id="s4">
+<h2>4 Empirical results <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S4">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>The paper claims two practical benefits: a loss curve you can actually read, and training that survives architectures that usually break a GAN. The testbed is <span class="t" data-tip-title="LSUN bedrooms" data-tip="A large collection of photos of bedrooms, a standard benchmark for image generators around 2016 and 2017.">LSUN bedrooms</span>, generated at 64 × 64 pixels, against a <span class="t" data-t="dcgan">DCGAN</span> baseline trained the standard way with the <span class="t" data-t="non-saturating loss">−log D trick</span>. Every experiment uses Algorithm 1's default settings.</p>
+<h3 class="rung">Why it matters</h3>
+<p>Before this paper a GAN's losses told you little about whether training was working; you had to look at samples. A loss that tracks quality changes how people debug and tune these models.</p>
+</section>
+
+<section id="s4-2">
+<h3>4.2 A loss that means something <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S4.SS2">original</a></span></h3>
+<h4>Everyday picture</h4>
+<p>A GAN detective's loss is like a referee's whistle count: it goes up and down with the game, not with how good the players are. A WGAN critic's gap is like a distance on a map: it shrinks as the forger gets closer.</p>
+<h4>Tiny example</h4>
+<p>The paper also tracks the GAN's own number for comparison. Its detective maximises L, the value of the GAN game, which is at most 2 JS − 2 log 2; the paper plots ½ L + log 2, an estimate of JS from below. A detective that can only guess (D = ½ everywhere) gives L = −1.386 and an estimate of 0. A detective that is always right gives L = 0 and an estimate of log 2 = 0.693, the ceiling, whatever the samples look like. The paper reports the GAN curves often sit near that ceiling.</p>
+<div class="eq" data-tex="\htmlData{sym=LD}{L(D, g_\theta)} = \htmlData{sym=Er}{\mathbb{E}_{x\sim\mathbb{P}_r}}[\htmlData{sym=logsym}{\log} D(x)] + \htmlData{sym=Eth}{\mathbb{E}_{x\sim\mathbb{P}_\theta}}[\htmlData{sym=logsym}{\log}(1 - D(x))] \;\le\; 2\,\htmlData{sym=JS}{JS}(\mathbb{P}_r,\mathbb{P}_\theta) - 2\log 2" data-fallback="L(D, g_θ) = E_{x ~ P_r}[log D(x)] + E_{x ~ P_θ}[log(1 − D(x))] ≤ 2 JS(P_r, P_θ) − 2 log 2"></div>
+<div class="symtable" data-syms="LD,Er,Eth,logsym,JS"></div>
+<p class="inwords"><strong>In words:</strong> “the value of the GAN game for a given detective is never more than twice the Jensen-Shannon divergence minus 2 log 2, so half of it plus log 2 is an estimate of JS from below.”</p>
+<p class="inwords"><strong>With the numbers:</strong> D = ½: L = 2 log ½ = −1.386 and ½ L + log 2 = 0. D always right: L = 0 and ½ L + log 2 = 0.693.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# a guessing detective: log(1/2) on real, log(1 − 1/2) on fake
+L = math.log(0.5) + math.log(1 - 0.5)
+round(L, 3)  # → -1.386
+round(L / 2 + math.log(2), 3)  # → 0.0
+# a detective that is always right: log 1 + log 1
+L = 0.0
+round(L / 2 + math.log(2), 3)  # → 0.693</code></pre>
+<h4>What the figures show</h4>
+<ul>
+  <li><strong>Figure 3 (WGAN):</strong> for an <span class="t" data-t="multilayer perceptron">MLP</span> generator and a DCGAN generator, the critic's estimate of the earth mover's distance falls steadily as the samples improve. A run with learning rates set so high that training failed shows a flat loss and unchanging samples.</li>
+  <li><strong>Figure 4 (standard GAN):</strong> the JS estimate stays flat or rises even while a DCGAN's samples improve, and swings up and down regardless of quality for an all-MLP GAN.</li>
+</ul>
+<p>The authors are careful: the critic's scale depends on its architecture, so the number cannot yet compare models with different critics, and a finite critic only approximates W. But they report using it to validate experiments “repeatedly and without failure”.</p>
+<h4>A negative result about momentum</h4>
+<p>Training became unstable at times with Adam (β<sub>1</sub> &gt; 0) on the critic, or with high learning rates. When the loss blew up, the <span class="t" data-t="cosine similarity">cosine</span> between Adam's step and the gradient usually turned negative: the <span class="t" data-t="momentum">momentum</span> was pushing against the current gradient, because the critic's loss keeps changing underneath it. Hence RMSProp. For example, with made-up two-weight numbers, a step of (1, 1) against a gradient of (−1, 0.2) has cosine −0.55: the step points more against the gradient than along it.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>import math
+# illustrative numbers, not from the paper
+step, grad = (1, 1), (-1, 0.2)
+dot = sum(s * g for s, g in zip(step, grad))
+round(dot / (math.hypot(*step) * math.hypot(*grad)), 2)  # → -0.55</code></pre>
+<h4>Why it matters today</h4>
+<p>A training curve that tracks sample quality is the practical reason many people reached for this paper. And the observation that momentum fights a moving target is why GAN code commonly lowers Adam's β<sub>1</sub>, as the lesson's <a data-lesson="primer/ml/generative/gans.html#train_gan"><code>train_gan</code></a> does with β<sub>1</sub> = 0.5.</p>
+</section>
+
+<section id="s4-3">
+<h3>4.3 Improved stability <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S4.SS3">original</a></span></h3>
+<blockquote class="quote">“In no experiment did we see evidence of mode collapse for the WGAN algorithm.”<cite>Arjovsky, Chintala and Bottou (2017), §4.3</cite></blockquote>
+<h4>Everyday picture</h4>
+<p>A standard GAN is like a seesaw that only balances with the right two children on it: change either player's build and it tips over. With a critic trained to the end, there is no balance to keep, so the generator can be almost anything that produces images.</p>
+<h4>Tiny example</h4>
+<p>The paper keeps a DCGAN critic (or discriminator) fixed and swaps in three generators. We summarise Figures 5 to 7 in words:</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Generator</th><th>WGAN</th><th>Standard GAN</th></tr></thead>
+  <tbody>
+    <tr><td>DCGAN</td><td>good samples</td><td>good samples</td></tr>
+    <tr><td>DCGAN without batch normalization, constant filter count (over ten times fewer parameters)</td><td>still produces samples</td><td>fails to learn</td></tr>
+    <tr><td>4-layer ReLU MLP, 512 units per layer</td><td>samples, lower quality than DCGAN</td><td>worse samples, significant mode collapse</td></tr>
+  </tbody>
+</table></div>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># the three generators in §4.3, and whether each method still produced samples
+results = {
+    "DCGAN": ("WGAN works", "GAN works"),
+    "no batch norm, constant filters": ("WGAN works", "GAN fails"),
+    "4-layer ReLU MLP": ("WGAN works", "GAN collapses"),
+}
+# how many of the three each method survives
+sum(w == "WGAN works" for w, g in results.values()), sum(g == "GAN works" for w, g in results.values())  # → (3, 1)</code></pre>
+<h4>Why it matters today</h4>
+<p>Robustness to architecture is what made Wasserstein-style training attractive. The lesson shows the flip side on a toy: with the ordinary GAN loss, changing only the detective's learning rate decides whether the forger finds all eight clouds.</p>
+</section>
+
+<section id="s5">
+<h2>5 Related work <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S5">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Equation 2 is one member of a family. Pick any club of allowed critics; the distance is the largest gap in average score any club member can create between the piles. The club decides everything. Slope-limited critics give the earth mover's distance. Critics that are merely bounded, however steep, can build a cliff between the piles and give the total variation distance, with all its flatness.</p>
+<h3 class="rung">Tiny example</h3>
+<p>On our piles, a bounded critic that scores +1 on the real spots and −1 on the fake ones scores a gap of 2 whether the fake pile is at 1 and 4 or at 100 and 103: it does not care how far away the fakes are. The slope-limited critic f(x) = −x scores 1 and 100 in those two cases.</p>
+<div class="eq" data-tex="\htmlData{sym=dF}{d_{\mathcal{F}}}(\htmlData{sym=Pr}{\mathbb{P}_r},\htmlData{sym=Pth}{\mathbb{P}_\theta}) = \htmlData{sym=supF}{\sup_{f\in\mathcal{F}}}\;\htmlData{sym=Er}{\mathbb{E}_{x\sim\mathbb{P}_r}}[\htmlData{sym=fx}{f(x)}] - \htmlData{sym=Eth}{\mathbb{E}_{x\sim\mathbb{P}_\theta}}[\htmlData{sym=fx}{f(x)}]" data-fallback="d_F(P_r, P_θ) = sup_{f ∈ F} E_{x ~ P_r}[f(x)] − E_{x ~ P_θ}[f(x)]"></div>
+<div class="symtable" data-syms="dF,supF"></div>
+<p class="inwords"><strong>In words:</strong> “for a chosen class of functions 𝓕, the distance is the biggest gap between average scores on real and generated samples that any function in the class can produce.” This is an <span class="t" data-tip-title="Integral probability metric (IPM)" data-tip="A distance between two distributions defined as the largest difference in average value that any function from a chosen class can produce. Different classes give very different distances.">integral probability metric</span>.</p>
+<p class="inwords"><strong>With the numbers:</strong> bounded class, the ±1 critic: 1 − (−1) = 2 for the near fakes and again 2 for the far ones. Slope-limited class, f(x) = −x: 1 and 100.</p>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code>real = [0, 3]
+near, far = [1, 4], [100, 103]
+def gap(f, fake):
+    return sum(f(x) for x in real) / len(real) - sum(f(x) for x in fake) / len(fake)
+def bounded(x):
+    # +1 on the real spots, −1 anywhere else: bounded, but as steep as it likes
+    return 1 if x in real else -1
+gap(bounded, near), gap(bounded, far)  # → (2.0, 2.0)
+gap(lambda x: -x, near), gap(lambda x: -x, far)  # → (1.0, 100.0)</code></pre>
+<h3 class="rung">The relatives the paper compares</h3>
+<ul>
+  <li><strong>Energy-based GANs</strong> end up minimising total variation (proved in the paper's Appendix D), so they inherit the flatness of JS.</li>
+  <li><strong><span class="t" data-tip-title="Maximum mean discrepancy (MMD)" data-tip="An integral probability metric whose critics come from a space defined by a kernel, such as a Gaussian bump. It can be computed in closed form from pairs of samples, with no critic network to train.">Maximum mean discrepancy</span></strong> needs no critic network, but its cost grows with the square of the batch size, and generators trained on it directly (generative moment matching networks) saw limited success. The paper's estimate for 64 × 64 images: batches of at least 4,096, and a cost per iteration of 4,096², over five orders of magnitude more than a GAN iteration with a batch of 64.</li>
+</ul>
+<p class="inwords"><strong>In Python:</strong></p>
+<pre class="in-python"><code># MMD's cost grows with the square of the batch; a GAN's with the batch
+mmd_cost, gan_cost = 4096 ** 2, 64
+mmd_cost // gan_cost  # → 262144
+# how many orders of magnitude that is
+len(str(mmd_cost // gan_cost)) - 1  # → 5</code></pre>
+<h3 class="rung">Why it matters today</h3>
+<p>The integral-probability-metric view is a useful way to read any critic-based loss: say which critics are allowed, and you have said which distance is minimised and how it behaves when the piles do not overlap.</p>
+</section>
+
+<section id="s6">
+<h2>6 Conclusion and appendices <span class="orig">· <a href="https://ar5iv.labs.arxiv.org/html/1701.07875#S6">original</a></span></h2>
+<h3 class="rung">Everyday picture</h3>
+<p>Change the yardstick and the game changes with it: a critic that measures distance cannot be won so completely that it stops teaching.</p>
+<h3 class="rung">What the paper concludes</h3>
+<p>WGAN improves the stability of learning, avoids mode collapse in the authors' experiments, gives learning curves useful for debugging and hyperparameter search, and rests on a sound optimisation problem. The appendices supply the mathematics: why W is a weak distance and TV a strong one (A), the regularity assumption on the generator (B), the proofs of Theorems 1 to 3 and the Corollary (C), the result that energy-based GANs minimise total variation (D), the standard GAN's generator cost during training (E), and full sheets of samples (F).</p>
+<h3 class="rung">Why it matters today</h3>
+<p>The strong-versus-weak framing explains, in one idea, why the original GAN's gradients vanish when real and generated data do not overlap, and what a fix has to preserve: a loss that still shrinks as the fake pile moves closer.</p>
+</section>
+
+<section id="today">
+<h2>What changed since 2017</h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Choice in the paper</th><th>Common later</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Weight clipping to [−0.01, 0.01]</td><td>A gradient penalty on the critic (WGAN-GP), or spectral normalization</td><td>Clipping trains slowly or makes gradients vanish, as the paper itself warned</td></tr>
+    <tr><td>The earth mover's distance as the training objective</td><td>One of several losses; the idea of a slope-limited critic spread to all of them</td><td>R1 penalties and spectral normalization steady the non-saturating loss too</td></tr>
+  </tbody>
+</table></div>
+<p>The <a data-lesson="primer/ml/generative/gans.html">GAN lesson</a>'s fixes section runs these descendants side by side: a gradient penalty that turns the two-number Dirac GAN's orbit into an inward spiral, spectral normalization by <span class="t" data-t="power iteration">power iteration</span>, and the Wasserstein distance itself. For where it all started, see the <a href="generative-adversarial-nets.html">GAN companion</a>.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Every term with hover guidance on this page, in one place.</p>
+<dl class="glossary" id="glossary-list"></dl>
+</section>
+
+<footer>
+  <p>Companion to Martin Arjovsky, Soumith Chintala and Léon Bottou, <em>Wasserstein GAN</em>, 2017. <a href="https://arxiv.org/abs/1701.07875">arXiv:1701.07875</a>. Quotations are brief and attributed; Figures 1 and 2, Algorithm 1 and Theorem 2 are redrawn, and the experimental figures are summarised in words. All explanations, diagrams and interactive elements are original to this primer.</p>
+  <p><a href="index.html">All annotated papers</a> · <a data-lesson="index.html">The primer</a></p>
+</footer>
+</main>
+</div>
+
+<script>
+/* Page data for this companion: equation symbols, diagram parts, and the interactive pieces.
+   Shared behaviour (tooltips, KaTeX, diagrams, plots, nav) lives in assets/papers.js. */
+window.PAPER = {
+  symbols: {
+    // §1
+    maxtheta: { tex: "\\max_{\\theta\\in\\mathbb{R}^{d}}", name: "Choose the best parameters", meaning: "Search over every setting of the model's d parameters θ for the one that makes what follows largest.", shape: "a choice of d numbers", example: "θ = 1 wins" },
+    oneoverm: { tex: "\\frac{1}{m}", name: "Divide by the number of examples", meaning: "Turns the sum over m examples into an average.", shape: "one number", example: "m = 2 real points in §1; the batch size m = 64 in Algorithm 1" },
+    summ: { tex: "\\sum_{i=1}^{m}", name: "Sum over the examples", meaning: "Add what follows for i = 1, …, m. The superscript (i) on x or z numbers the examples; it is not a power.", shape: "one number", example: "two terms" },
+    logsym: { tex: "\\log", name: "Natural logarithm", meaning: "log 1 = 0, and the log of a number near 0 is hugely negative; log 0 is minus infinity.", shape: "one number", example: "log 0.352 = −1.044" },
+    Ptheta: { tex: "P_{\\theta}(x^{(i)})", name: "The model's density at a real example", meaning: "How much probability density the model with parameters θ gives the i-th real example. It must exist, and be positive, for this objective to make sense.", shape: "a number ≥ 0", example: "0.352 for each point at θ = 1" },
+    // TV
+    delta: { tex: "\\delta", name: "Total variation distance", meaning: "The largest disagreement in probability between two distributions over any single set of outcomes.", shape: "between 0 and 1", example: "1 for our two piles" },
+    Pr: { tex: "\\mathbb{P}_r", name: "The real distribution", meaning: "The distribution the training data comes from (r for real).", shape: "a distribution", example: "½ at 0, ½ at 3" },
+    Pg: { tex: "\\mathbb{P}_g", name: "The generated distribution", meaning: "The distribution of the generator's samples (g for generated). Later written ℙ_θ, to show it depends on the weights θ.", shape: "a distribution", example: "½ at 1, ½ at 4" },
+    supA: { tex: "\\sup_{A\\in\\Sigma}", name: "Largest over every set of outcomes", meaning: "sup is the least upper bound (the maximum, when it is reached). Σ is the collection of all sets of outcomes you are allowed to measure.", shape: "one number", example: "A = {0, 3} wins" },
+    PrA: { tex: "\\mathbb{P}_r(A)", name: "Real probability of the set A", meaning: "How much of the real distribution falls inside A.", shape: "between 0 and 1", example: "1 for A = {0, 3}" },
+    PgA: { tex: "\\mathbb{P}_g(A)", name: "Generated probability of the set A", meaning: "How much of the generated distribution falls inside A.", shape: "between 0 and 1", example: "0 for A = {0, 3}" },
+    // KL
+    KL: { tex: "KL", name: "Kullback-Leibler divergence", meaning: "The extra surprise of expecting the second distribution when the truth is the first. Not symmetric, and infinite when the second misses somewhere the first has mass.", shape: "0 to +∞", example: "+∞ for our two piles" },
+    parallel: { tex: "\\|", name: "“Measured against”", meaning: "Separates the two distributions a divergence compares; for KL the order matters.", shape: "notation", example: "ℙ_r ‖ ℙ_g" },
+    integral: { tex: "\\int", name: "Integral", meaning: "Add up over every possible x, each weighted by a tiny amount of measure dμ. For a few discrete spots it is a plain sum.", shape: "one number", example: "a sum over 0, 1, 3, 4" },
+    Prx: { tex: "P_r(x)", name: "Real density at x", meaning: "The density of the real distribution at x, measured against μ.", shape: "a number ≥ 0", example: "½ at 0 and 3" },
+    Pgx: { tex: "P_g(x)", name: "Generated density at x", meaning: "The density of the generated distribution at x.", shape: "a number ≥ 0", example: "0 at 0 and 3, ½ at 1 and 4" },
+    dmu: { tex: "d\\mu(x)", name: "The reference measure", meaning: "What “density” is measured against (for images, ordinary volume). Both distributions must have densities with respect to the same μ, which fails for thin, non-overlapping surfaces.", shape: "notation", example: "counting the four spots" },
+    // JS
+    JS: { tex: "JS", name: "Jensen-Shannon divergence", meaning: "The average KL of each distribution from their half-and-half mix. Symmetric, never infinite, and log 2 when the two share nothing.", shape: "0 to log 2 = 0.693", example: "0.693 for our piles" },
+    Pm: { tex: "\\mathbb{P}_m", name: "The mixture", meaning: "(ℙ_r + ℙ_g) / 2: both piles poured together at half strength each.", shape: "a distribution", example: "¼ at each of 0, 1, 3, 4" },
+    // W
+    W: { tex: "W", name: "Earth mover's (Wasserstein-1) distance", meaning: "The least total work, mass times distance moved, to reshape one distribution into the other.", shape: "a number ≥ 0, in units of distance", example: "1 for our piles" },
+    infgamma: { tex: "\\inf_{\\gamma\\in\\Pi(\\mathbb{P}_r,\\mathbb{P}_g)}", name: "Cheapest over every transport plan", meaning: "inf is the greatest lower bound (the minimum, when it is reached). γ is a transport plan: a joint distribution over pairs (x, y) saying how much mass goes from x to y. Π(ℙ_r, ℙ_g) is the set of all plans that start with exactly the real pile and end with exactly the generated one.", shape: "one number", example: "in order (cost 1) beats crossed (cost 3)" },
+    Egamma: { tex: "\\mathbb{E}_{(x,y)\\sim\\gamma}", name: "Average over the plan's moves", meaning: "Average over pairs (x, y) weighted by how much mass the plan γ moves from x to y.", shape: "one number", example: "½ · 1 + ½ · 1" },
+    normxy: { tex: "\\|x-y\\|", name: "Distance moved", meaning: "How far one bit of mass travels from x to y.", shape: "a number ≥ 0", example: "|0 − 1| = 1" },
+    // Example 1
+    P0: { tex: "\\mathbb{P}_0", name: "The real line", meaning: "Mass spread evenly up the vertical line x = 0, for heights between 0 and 1: the distribution of (0, Z) with Z uniform on [0, 1].", shape: "a distribution on a line in the plane", example: "the dotted line" },
+    Pth: { tex: "\\mathbb{P}_\\theta", name: "The generated distribution", meaning: "The distribution of the generator's samples g_θ(z) when its parameters are θ. In Example 1, the same line shifted to x = θ.", shape: "a distribution", example: "the solid line at θ = 0.5" },
+    abstheta: { tex: "|\\theta|", name: "How far the lines are apart", meaning: "The absolute value of θ: the gap between the two lines, ignoring which side.", shape: "a number ≥ 0", example: "0.5" },
+    // duality
+    supf: { tex: "\\sup_{\\|f\\|_L\\le 1}", name: "Best over every 1-Lipschitz function", meaning: "Search every function f whose slope never exceeds 1 (‖f‖_L ≤ 1) for the largest value of what follows.", shape: "one number", example: "f(x) = −x reaches 1" },
+    Er: { tex: "\\mathbb{E}_{x\\sim\\mathbb{P}_r}", name: "Average over real samples", meaning: "The average over x drawn from the real distribution.", shape: "one number", example: "(0 + 3) / 2 inputs" },
+    Eth: { tex: "\\mathbb{E}_{x\\sim\\mathbb{P}_\\theta}", name: "Average over generated samples", meaning: "The average over x drawn from the generator's distribution.", shape: "one number", example: "(1 + 4) / 2 inputs" },
+    fx: { tex: "f(x)", name: "The critic's score", meaning: "A price the critic assigns to position x: any real number, not a probability.", shape: "one number", example: "f(x) = −x: −3 at x = 3" },
+    lipdef: { tex: "|f(a)-f(b)|\\le K|a-b|", name: "The speed limit", meaning: "For any two inputs a and b, the outputs differ by at most K times the inputs do. Graphically, the function is never steeper than K.", shape: "a condition", example: "f(x) = −2x needs K ≥ 2" },
+    lipnorm: { tex: "\\|f\\|_L\\le K", name: "Lipschitz constant at most K", meaning: "‖f‖_L is the smallest K that satisfies the speed limit: the steepest slope f ever has.", shape: "a number ≥ 0", example: "1 for f(x) = −x" },
+    // critic
+    maxw: { tex: "\\max_{w\\in\\mathcal{W}}", name: "Best allowed critic weights", meaning: "Search the allowed box of weights 𝒲 (for example [−0.01, 0.01] for every weight) for the critic that makes what follows largest.", shape: "a choice of weights", example: "w = −0.01" },
+    fw: { tex: "f_w", name: "The critic network", meaning: "A neural network with weights w that outputs a score. Keeping w in a small box keeps its slope below some K.", shape: "a function", example: "f_w(x) = w · x" },
+    Ez: { tex: "\\mathbb{E}_{z\\sim p(z)}", name: "Average over noise draws", meaning: "The average over noise z drawn from the generator's input distribution p(z), such as a bell curve.", shape: "one number", example: "z ∈ {1, 4}" },
+    gth: { tex: "g_\\theta(z)", name: "A generated sample", meaning: "The generator with weights θ applied to noise z.", shape: "one sample", example: "g_θ(z) = z + θ" },
+    // Theorem 3
+    gradth: { tex: "\\nabla_\\theta", name: "Gradient with respect to the generator's weights", meaning: "For each weight in θ, how fast what follows changes when that weight is nudged.", shape: "one number per generator weight", example: "+1 for ∇_θ W in the tiny example" },
+    // Algorithm 1
+    gw: { tex: "g_w", name: "The critic's gradient", meaning: "One number per critic weight: which way, and how steeply, the gap in average scores rises as that weight changes. (Not the generator g_θ: the paper reuses the letter.)", shape: "one number per critic weight", example: "−1" },
+    gradw: { tex: "\\nabla_w", name: "Gradient with respect to the critic's weights", meaning: "For each critic weight, how fast the bracket changes when that weight is nudged.", shape: "one number per critic weight", example: "mean(real) − mean(fake)" },
+    clip: { tex: "\\text{clip}(w,-c,c)", name: "Weight clipping", meaning: "Replace each weight by −c if it is below −c and by c if it is above c; leave it alone otherwise.", shape: "same shape as w", example: "−0.01004 → −0.01" },
+    gtheta: { tex: "g_\\theta", name: "The generator's gradient", meaning: "Minus the slope of the critic's average score on generated samples, with respect to the generator's weights. Stepping against it raises that score.", shape: "one number per generator weight", example: "+0.01" },
+    // 4.2
+    LD: { tex: "L(D, g_\\theta)", name: "The GAN game's value", meaning: "The standard GAN value for detective D and generator g_θ: average log verdict on real samples plus average log of one minus the verdict on fakes.", shape: "a number ≤ 0", example: "−1.386 for a guessing detective" },
+    // IPM
+    dF: { tex: "d_{\\mathcal{F}}", name: "Integral probability metric", meaning: "A distance between distributions defined by a class of critics 𝓕: the largest gap in average score any member can create.", shape: "a number ≥ 0", example: "2 for bounded critics, 1 for slope-limited ones" },
+    supF: { tex: "\\sup_{f\\in\\mathcal{F}}", name: "Best critic in the class", meaning: "Search every function in the class 𝓕 for the one with the largest gap.", shape: "one number", example: "the ±1 critic, or f(x) = −x" },
+  },
+
+  blocks: {
+    // §1 chain
+    theta: { title: "Weights θ", body: "<p>The generator's parameters: the numbers gradient descent adjusts. The question is whether the loss changes continuously as they change.</p>", shape: "d numbers" },
+    gen: { title: "Generator g_θ(z)", body: "<p>A network that turns noise z into a sample. The paper assumes it is continuous in θ, which any ordinary network is.</p>", shape: "noise → sample", lesson: "primer/ml/generative/gans.html" },
+    ptheta: { title: "Distribution of samples ℙ_θ", body: "<p>Where the generator's outputs pile up. It may live on a thin surface and have no density at all, which is why the paper avoids maximum likelihood.</p>" },
+    rho: { title: "The distance ρ", body: "<p>The choice that decides everything. With JS, KL or TV, a small change of θ can leave the loss stuck or make it jump; with the earth mover's distance, it changes continuously (Theorem 1).</p>" },
+    preal: { title: "ℙ_r, the real data", body: "<p>The fixed distribution the generator should match.</p>" },
+    lossblk: { title: "The loss", body: "<p>The number training minimises. It is useful only if it is continuous in θ and has a gradient that points somewhere.</p>" },
+    // Theorem 2
+    ord_kl: { title: "KL converges to 0 (either direction)", body: "<p>The strictest notion. The paper shows it implies the box below.</p>" },
+    ord_js: { title: "JS converges to 0, equivalently TV converges to 0", body: "<p>These two always agree. Both require the distributions eventually to overlap almost completely, so two thin surfaces creeping towards each other never qualify.</p>" },
+    ord_w: { title: "W converges to 0, equivalently convergence in distribution", body: "<p>The most lenient: it only asks that samples end up in the same places. The creeping point at 1/n qualifies. The paper calls this the weakest topology of the four.</p>" },
+    // Algorithm 1
+    w_iter: { title: "One generator iteration", body: "<p>Repeated until θ converges: five critic turns, then one generator turn.</p>" },
+    w_loop: { title: "The critic's turn, n_critic = 5 times", body: "<p>The critic is trained more than the generator, because the theory wants it close to its best (the paper even suggests training it to optimality).</p>" },
+    w_real: { title: "A batch of real samples", body: "<p>m = 64 examples from the training data.</p>", shape: "64 real images" },
+    w_noise: { title: "A batch of fakes", body: "<p>m = 64 noise draws passed through the current generator.</p>", shape: "64 generated images" },
+    w_critic: { title: "Critic step", body: "<p>Compute g<sub>w</sub>, the gradient of the gap between mean score on real and mean score on fake, and take an RMSProp step of size α = 0.00005 up it. No sigmoid and no log: the scores are used raw.</p>", shape: "changes w only" },
+    w_clip: { title: "Clip the weights", body: "<p>Force every critic weight into [−c, c] with c = 0.01. This is what keeps the critic's slope bounded, crudely. It is the step later work replaced with a gradient penalty or spectral normalization.</p>", shape: "every weight in [−0.01, 0.01]" },
+    w_noise2: { title: "Fresh noise", body: "<p>A new batch of m noise draws for the generator's step.</p>" },
+    w_gen: { title: "Generator step", body: "<p>Compute g<sub>θ</sub> = −∇<sub>θ</sub> of the critic's mean score on generated samples and take an RMSProp step: the generator moves its samples to where the critic scores higher.</p>", shape: "changes θ only", lesson: "primer/ml/generative/gans.html" },
+  },
+
+  onReady(P) {
+    transportPlan();
+    exampleOne(P);
+    figureTwo(P);
+  },
+};
+
+/* ---- shared helpers ---- */
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function arrowMarker(svg, id) {
+  const defs = el("defs", {}, svg);
+  const mk = el("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }, defs);
+  el("path", { d: "M0,0 L10,5 L0,10 z", fill: css("--wire") }, mk);
+}
+const FS = "font-size:13px";
+
+/* ---- the two transport plans for the two piles ---- */
+function transportPlan() {
+  const svg = document.getElementById("plan-svg"), out = document.getElementById("plan-readout");
+  const PLANS = { order: [[0, 1], [3, 4]], cross: [[0, 4], [3, 1]] };
+  let plan = "order";
+  const X = (v) => 40 + v * 90, line = 95;
+  function draw() {
+    svg.textContent = "";
+    arrowMarker(svg, "plan-arr");
+    el("line", { x1: 20, x2: 420, y1: line, y2: line, stroke: css("--wire") }, svg);
+    for (let v = 0; v <= 4; v++) {
+      el("line", { x1: X(v), x2: X(v), y1: line - 4, y2: line + 4, stroke: css("--wire") }, svg);
+      const t = el("text", { x: X(v), y: line + 20, "text-anchor": "middle", class: "lbl", style: FS }, svg); t.textContent = String(v);
+    }
+    let total = 0;
+    PLANS[plan].forEach(([a, b], i) => {
+      const lift = plan === "cross" ? 38 + i * 22 : 40;
+      const c = 0.5 * Math.abs(a - b);
+      total += c;
+      const mid = (X(a) + X(b)) / 2;
+      el("path", { d: `M${X(a)},${line - 16} Q${mid},${line - 16 - lift * 1.6} ${X(b)},${line - 6}`, fill: "none", stroke: css("--active"), "stroke-width": 1.8, "marker-end": "url(#plan-arr)" }, svg);
+      const t = el("text", { x: mid, y: line - 14 - lift * 0.85, "text-anchor": "middle", style: FS }, svg); t.textContent = `½ × ${Math.abs(a - b)} = ${c}`;
+    });
+    [0, 3].forEach((v) => el("rect", { x: X(v) - 7, y: line - 22, width: 14, height: 14, rx: 2, fill: css("--fg") }, svg));
+    [1, 4].forEach((v) => el("circle", { cx: X(v), cy: line + 38, r: 7, fill: "none", stroke: css("--soft-stroke"), "stroke-width": 2.4 }, svg));
+    const lr = el("text", { x: 20, y: 18, class: "lbl", style: FS }, svg); lr.textContent = "■ real sand (½ at 0, ½ at 3)";
+    const lf = el("text", { x: 20, y: line + 64, class: "lbl", style: FS }, svg); lf.textContent = "○ fake pile (½ at 1, ½ at 4)";
+    out.innerHTML = `${plan === "order" ? "In order" : "Crossed"}: total cost <strong>${total}</strong>. The cheapest plan costs 1, so W = 1.`;
+  }
+  document.querySelectorAll("[data-plan]").forEach((b) =>
+    b.addEventListener("click", () => {
+      plan = b.dataset.plan;
+      document.querySelectorAll("[data-plan]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      draw();
+    })
+  );
+  document.addEventListener("papers:theme", draw);
+  draw();
+}
+
+/* ---- Example 1: parallel lines, and Figure 1 redrawn ---- */
+function exampleOne(P) {
+  const svg = document.getElementById("ex1-svg"), out = document.getElementById("ex1-readout");
+  const slider = document.getElementById("ex1-theta");
+  const X = (v) => 220 + v * 180, top = 18, bot = 128;
+  function draw() {
+    const th = +slider.value;
+    document.getElementById("ex1-theta-v").textContent = th.toFixed(2);
+    svg.textContent = "";
+    el("rect", { x: X(-1), y: top, width: X(1) - X(-1), height: bot - top, fill: "none", stroke: css("--border") }, svg);
+    for (const v of [-1, 0, 1]) { const t = el("text", { x: X(v), y: bot + 18, "text-anchor": "middle", class: "lbl", style: FS }, svg); t.textContent = String(v); }
+    el("line", { x1: X(0), x2: X(0), y1: top, y2: bot, stroke: css("--fg"), "stroke-width": 3, "stroke-dasharray": "2 4" }, svg);
+    el("line", { x1: X(th), x2: X(th), y1: top, y2: bot, stroke: css("--soft-stroke"), "stroke-width": 3 }, svg);
+    const a = el("text", { x: X(0) - 6, y: top + 14, "text-anchor": "end", style: FS }, svg); a.textContent = "real";
+    const b = el("text", { x: X(th) + 6, y: top + 30, style: FS }, svg); b.textContent = "fake";
+    const on = Math.abs(th) < 1e-9;
+    out.innerHTML = `θ = ${th.toFixed(2)}: W = <strong>${Math.abs(th).toFixed(2)}</strong> · JS = <strong>${on ? "0" : "0.693"}</strong> · TV = <strong>${on ? "0" : "1"}</strong> · KL = <strong>${on ? "0" : "+∞"}</strong>`;
+  }
+  slider.addEventListener("input", draw);
+  document.addEventListener("papers:theme", draw);
+  draw();
+  const ts = [];
+  for (let k = -100; k <= 100; k++) ts.push(k / 100);
+  P.lineChart(document.getElementById("ex1-chart"), {
+    series: [
+      { name: "earth mover's distance W", points: ts.map((t) => [t, Math.abs(t)]) },
+      { name: "Jensen-Shannon JS", points: ts.map((t) => [t, t === 0 ? 0 : Math.log(2)]) },
+    ],
+    yMin: 0, yMax: 1.05, xLabel: "θ", yLabel: "distance",
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(3),
+    readout: document.getElementById("ex1-chart-readout"), ariaLabel: "The earth mover's distance and the Jensen-Shannon divergence between the two lines, against theta",
+  });
+}
+
+/* ---- Figure 2 redrawn: best GAN discriminator versus best WGAN critic ---- */
+function figureTwo(P) {
+  const slider = document.getElementById("f2-gap"), out = document.getElementById("f2-readout");
+  const bell = (x, m) => Math.exp(-0.5 * (x - m) ** 2);
+  const xs = [];
+  for (let x = -6; x <= 6.0001; x += 0.05) xs.push(+x.toFixed(2));
+  function series(gap) {
+    const a = -gap / 2, b = gap / 2;
+    // D*(x) = p_r / (p_r + p_g) for equal-width bells: σ(−gap · x)
+    const D = (x) => 1 / (1 + Math.exp(gap * x));
+    return [
+      { name: "real pile", points: xs.map((x) => [x, bell(x, a)]) },
+      { name: "fake pile", points: xs.map((x) => [x, bell(x, b)]) },
+      { name: "GAN discriminator D*(x)", points: xs.map((x) => [x, D(x)]) },
+      { name: "WGAN critic f(x) = −x, rescaled", points: xs.map((x) => [x, (6 - x) / 12]) },
+    ];
+  }
+  const chart = P.lineChart(document.getElementById("f2-chart"), {
+    series: series(4), yMin: 0, yMax: 1.05, xLabel: "position x", yLabel: "value",
+    xFmt: (v) => v.toFixed(2), yFmt: (v) => v.toFixed(3),
+    ariaLabel: "Two piles, the best GAN discriminator and the best WGAN critic along one axis",
+  });
+  function update() {
+    const gap = +slider.value;
+    document.getElementById("f2-gap-v").textContent = gap.toFixed(2);
+    chart.update(series(gap));
+    const x = gap / 2, D = 1 / (1 + Math.exp(gap * x));
+    const slope = -gap * D * (1 - D);
+    out.innerHTML = `Piles ${gap.toFixed(2)} apart. At the fake pile's centre (x = ${x.toFixed(2)}): D* = ${D.toExponential(1)}, slope of D* = <strong>${slope.toExponential(1)}</strong>; slope of the critic = <strong>−1</strong>.`;
+  }
+  slider.addEventListener("input", update);
+  update();
+}
+</script>
+</body>
+</html>

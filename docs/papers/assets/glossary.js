@@ -694,6 +694,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/embeddings/clustering.html",
   "term": "DBSCAN"
  },
+ "dcgan": {
+  "def": "Deep convolutional GAN: a GAN whose generator and discriminator are convolutional networks, the usual baseline design for image GANs.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "dcgan"
+ },
  "ddim": {
   "def": "A deterministic diffusion sampler that predicts the clean result and jumps to a much less noisy step, so it needs far fewer steps.",
   "lesson": "primer/ml/generative/diffusion.html",
@@ -863,6 +868,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Stopping training when the score on held-out data stops improving.",
   "lesson": "primer/ml/regularization.html",
   "term": "early stopping"
+ },
+ "earth mover's distance": {
+  "def": "The least total work to reshape one pile of probability into another, each bit of mass times the distance it travels; the same as the Wasserstein distance.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "earth mover's distance"
  },
  "edit-run-test loop": {
   "def": "An agent loop that changes code, runs the tests, and repeats until they pass or a budget runs out.",
@@ -1198,6 +1208,11 @@ window.PRIMER_GLOSSARY = {
   "def": "A wrong answer produced even though a relevant document was retrieved.",
   "lesson": "primer/ml/embeddings/operations.html",
   "term": "generation failure"
+ },
+ "generative model": {
+  "def": "A model that learns to produce new samples resembling its training data, such as new faces, voices or sentences.",
+  "lesson": "primer/ml/generative/autoencoders.html",
+  "term": "generative model"
  },
  "generator": {
   "def": "The network in a GAN that turns random noise into a sample.",
@@ -1729,6 +1744,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/interpretability.html",
   "term": "linear representation hypothesis"
  },
+ "lipschitz": {
+  "def": "A function is K-Lipschitz if its output never changes more than K times as fast as its input: a speed limit on its slope everywhere.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "lipschitz"
+ },
  "llm": {
   "def": "Large language model: a transformer trained to predict the next token, then tuned to follow instructions.",
   "lesson": "primer/agents/llm.html",
@@ -2083,6 +2103,11 @@ window.PRIMER_GLOSSARY = {
   "def": "One system serving many separate customers whose data must never mix.",
   "lesson": "primer/agents/memory.html",
   "term": "multi-tenant"
+ },
+ "multilayer perceptron": {
+  "def": "A network of fully connected layers, each a matrix multiply followed by a nonlinearity; also called an MLP.",
+  "lesson": "primer/ml/neural_net.html",
+  "term": "multilayer perceptron"
  },
  "multimodal model": {
   "def": "A model that takes in more than one kind of input (text, images, audio, video) as one sequence of tokens.",
@@ -2488,6 +2513,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Splitting work so the part that reads untrusted content can't take dangerous actions.",
   "lesson": "primer/agents/guardrails.html",
   "term": "privilege separation"
+ },
+ "probability density": {
+  "def": "How thickly a continuous distribution's samples cover each spot: high where they crowd, zero where none ever land. It is the height of the bump, and its area adds up to 1.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "probability density"
  },
  "probability distribution": {
   "def": "A list of probabilities over all possible outcomes, each between 0 and 1, adding up to 1.",
@@ -3543,6 +3573,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Merging fine-tunes of the same base by averaging their weights (task arithmetic with λ = 1/T).",
   "lesson": "primer/ml/fine_tuning.html",
   "term": "weight averaging"
+ },
+ "weight clipping": {
+  "def": "Forcing every weight of a network back into a small range, such as −0.01 to 0.01, after each update; the original Wasserstein GAN's crude way to cap its critic's slope.",
+  "lesson": "primer/ml/generative/gans.html",
+  "term": "weight clipping"
  },
  "weight decay": {
   "def": "Shrinking every weight slightly at each step, which penalizes large weights and keeps the model smoother.",
