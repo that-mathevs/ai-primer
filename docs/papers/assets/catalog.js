@@ -523,7 +523,7 @@ window.PRIMER_PAPERS = [
    "primer.ml.reinforcement",
    "primer.ml.reasoning"
   ],
-  "exists": false
+  "exists": true
  },
  {
   "slug": "deepseek-r1",

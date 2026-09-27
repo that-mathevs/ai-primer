@@ -885,6 +885,7 @@ time against it without the reward drifting away from correctness.
   Reasoning in Open Language Models* (2024)**:
   https://arxiv.org/abs/2402.03300. Introduced GRPO, replacing PPO's value
   network with group-relative advantages.
+  [Annotated companion](../../papers/deepseekmath-grpo.html)
 - **DeepSeek-AI, *DeepSeek-R1: Incentivizing Reasoning Capability in LLMs
   via Reinforcement Learning* (2025)**: https://arxiv.org/abs/2501.12948.
   Showed GRPO with rule-based, verifiable rewards alone can teach a model to

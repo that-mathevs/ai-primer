@@ -484,6 +484,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/agents/observability.html",
   "term": "collector"
  },
+ "common crawl": {
+  "def": "A nonprofit's public archive of the web, released as regular snapshots of billions of pages; the raw material of most pretraining data.",
+  "lesson": "primer/ml/pretraining.html",
+  "term": "Common Crawl"
+ },
  "compounding error": {
   "def": "Small per-step failure rates multiplying over many steps: ten steps at 95% succeed only about 60% of the time.",
   "lesson": "primer/agents/planning.html",
@@ -1294,6 +1299,11 @@ window.PRIMER_GLOSSARY = {
   "lesson": "primer/ml/cnn_rnn.html",
   "term": "gru"
  },
+ "gsm8k": {
+  "def": "A benchmark of grade-school maths word problems (1,319 in its test set), scored by comparing the final number with the answer key.",
+  "lesson": "primer/ml/benchmarks.html",
+  "term": "GSM8K"
+ },
  "guardrail": {
   "def": "A check around the model that screens inputs, validates outputs or limits actions.",
   "lesson": "primer/agents/guardrails.html",
@@ -1858,6 +1868,11 @@ window.PRIMER_GLOSSARY = {
   "def": "Turning text in one language into another.",
   "lesson": "primer/ml/transformer.html",
   "term": "machine translation"
+ },
+ "maj@k": {
+  "def": "A score for sampling k answers per question and keeping the most common final answer: the share of questions where that majority answer is right.",
+  "lesson": "primer/ml/reasoning.html",
+  "term": "maj@k"
  },
  "majority voting": {
   "def": "Choosing the answer that the most samples agree on.",
