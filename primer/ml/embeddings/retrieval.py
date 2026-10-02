@@ -1420,7 +1420,7 @@ def figures() -> dict:
     a2.text(1.03, 1.55, "average length", color=MUTED, fontsize=8)
     a2.set_xlabel("document length ÷ average length, |d| / avgdl")
     a2.set_ylabel("credit for one mention")
-    a2.set_title("Length normalization: long documents are discounted")
+    a2.set_title("Length: long documents are discounted")
     a2.legend(frameon=False, fontsize=8)
     fig.tight_layout()
     figs["bm25_curves"] = fig

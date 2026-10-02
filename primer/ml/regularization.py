@@ -1077,7 +1077,7 @@ def figures() -> dict:
         ax.plot(grid, on_chart(_poly_eval(_poly_fit(x_tr, y_tr, degree), grid)), color=c, label=f"degree {degree}")
     ax.scatter(x_tr, y_tr, color="black", zorder=5, s=18, label="12 training points")
     ax.set(ylim=(-2, 2), xlabel="x", ylabel="y", title="Underfit, good fit, memorised")
-    ax.legend(fontsize=8, loc="lower right")
+    ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False)  # beside the plot: the wild fit crosses every corner
     ax.grid(alpha=0.3)
     fig.tight_layout()
     figs["fits"] = fig

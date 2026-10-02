@@ -1122,8 +1122,8 @@ def figures() -> dict:
         i = int(np.argmin(costs))
         ax.plot(thresholds[i], costs[i], "o", color=line.get_color())
     ax.set(xlabel="threshold (flag if score >= threshold)", ylabel="total cost", title="Where to cut depends on what errors cost")
-    ax.set_ylim(0, 500)
-    ax.legend()
+    ax.set_ylim(0, 720)  # the room above the curves (they stop at 500) holds the legend
+    ax.legend(loc="upper center", fontsize=8)
     figs["cost_vs_threshold"] = fig
 
     # DCG position discount.

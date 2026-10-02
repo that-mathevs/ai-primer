@@ -564,6 +564,8 @@ flowchart LR
   TF ---|it-003| SC((software center))
   TF ---|hr-003| LT((laptop))
   AC ---|it-003| SC
+  VPN ---|it-006| EM
+  AA ---|it-001| SSP((self-service portal))
 ```
 
 **Reading it:** each circle is an entity found in the knowledge base; each
@@ -591,7 +593,11 @@ answer didn't use it), or ok. With dense-only retrieval, "what does ERR-4012
 mean" is a retrieval miss and recall@3 is 0.92; switching to hybrid fixes it
 (recall@3 = 1.00). What's left are generation misses. One of them,
 "per-diem for meals when traveling", is answered from the superseded 2023
-policy: a *data* problem that a date filter fixes.
+policy: a *data* problem that a date filter fixes. The other, "enroll in
+MFA", is a limit of this lesson's stand-in model rather than of RAG: it
+matches words literally, so "enroll" misses the passage's "enrolling", and
+with only "MFA" in common it declines to answer. A real model would read
+it-006 and answer.
 
 ```mermaid
 flowchart TD

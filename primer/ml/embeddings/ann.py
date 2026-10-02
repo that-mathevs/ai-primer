@@ -1617,18 +1617,21 @@ def figures() -> dict:
     for pts, color, label, knob in [(h_pts, HNSW_C, "HNSW", "ef"), (i_pts, IVF_C, "IVF", "nprobe")]:
         xs, ys, ks = zip(*pts)
         ax.plot(xs, ys, "o-", color=color, label=f"{label} (labels: {knob})")
-        for x, y, kv in zip(xs, ys, ks):
-            # The two curves run close together; an opaque box keeps each knob value readable over the other line.
-            ax.annotate(str(kv), (x, y), textcoords="offset points", xytext=(4, -10), fontsize=7, color=color,
-                        zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=0.5))
+        for n_pt, (x, y, kv) in enumerate(zip(xs, ys, ks)):
+            # The curves run close together, so HNSW labels sit above its line and IVF labels below its own, and the
+            # last point's label steps left to stay clear of the flat-scan line. An opaque box covers any line left.
+            above = label == "HNSW"
+            dx = -14 if n_pt == len(xs) - 1 else (-9 if above else 4)
+            ax.annotate(str(kv), (x, y), textcoords="offset points", xytext=(dx, 6 if above else -11), fontsize=7,
+                        color=color, zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=0.5))
     ax.axvline(100, color=MUTED, ls="--")
     ax.text(95, 0.45, "flat scan:\nevery vector,\nrecall 1.0", ha="right", color=MUTED, fontsize=8)
     ax.set_xscale("log")
-    ax.set_ylim(0, 1.05)
+    ax.set_ylim(0, 1.12)
     ax.set_xlabel("% of the corpus compared per query (log scale)")
     ax.set_ylabel("recall@10 vs. exact search")
     ax.set_title(f"Turning the dial: recall vs. work ({n:,} vectors, {dim}-d)")
-    ax.legend(frameon=False, loc="lower right")
+    ax.legend(frameon=False, loc="upper left")  # the empty corner: the flat-scan line crosses the lower right
     figs["recall_vs_work"] = fig
 
     # --- 2. An HNSW search, layer by layer, on data we can draw -------------

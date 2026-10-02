@@ -181,16 +181,16 @@ class TestReplay:
 class TestOverfittingASmallDataset:
     def test_given_16_examples_and_many_epochs_training_loss_keeps_falling(self):
         run = overfitting_run()
-        assert run["train"][-1] < run["train"][run["best_epoch"]] / 10
+        assert run["train"][-1] < run["train"][run["best_epoch"] - 1] / 10
 
     def test_given_16_examples_validation_loss_bottoms_out_early_then_rises(self):
         run = overfitting_run()
-        assert run["best_epoch"] < 100 and run["val"][-1] > 2 * run["val"][run["best_epoch"]]
+        assert run["best_epoch"] < 100 and run["val"][-1] > 2 * run["val"][run["best_epoch"] - 1]
 
     def test_given_the_validation_curve_early_stopping_stops_soon_after_the_best_epoch(self):
         run = overfitting_run()
         best, stop = early_stopping(run["val"], patience=20)
-        assert best == run["best_epoch"] and stop == best + 20
+        assert best + 1 == run["best_epoch"] and stop == best + 20
 
 
 class TestTaskArithmetic:

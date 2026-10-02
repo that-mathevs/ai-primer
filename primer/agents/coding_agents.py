@@ -1910,8 +1910,8 @@ def figures() -> dict:
             ax.text(i, n + 0.08, f"{n}/{len(MEDIAN_CASES)}", ha="center")
         else:
             ax.bar(i, 0.15, color=GREY, width=0.6)
-    # Point at the bar's side, so the arrowhead doesn't land on its "2/4".
-    ax.annotate("off-by-one patch:\nsame count, new message\n(IndexError)", xy=(5.3, 1.6), xytext=(5.6, 3.1),
+    # Point at the bar's left edge from the empty space above the grey bars, so the arrow clears its "2/4".
+    ax.annotate("off-by-one patch:\nsame count, new message\n(IndexError)", xy=(4.68, 1.5), xytext=(2.3, 2.8),
                 fontsize=8, arrowprops={"arrowstyle": "->", "color": "#4b5563"})
     ax.set_xticks(range(1, len(run.actions) + 1), [f"{i}\n{a.replace('_', ' ')}" for i, a in enumerate(run.actions, 1)],
                   fontsize=8)

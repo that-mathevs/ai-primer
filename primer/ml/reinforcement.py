@@ -19,7 +19,7 @@ of example answers. You don't need it when you can write the answers
 (supervised fine-tuning copies them, at a fraction of the cost) or when
 you have pairs of better and worse answers and nothing more (DPO in
 `primer.ml.training_stages` learns from pairs with no sampling loop). And
-you never need to run the vendor's own RL: the helpfulness, refusals and
+you never need to run the vendor's own RL: the helpfulness, harmlessness and
 reasoning of a hosted model were trained this way before you arrived, which
 is why this lesson matters even if you never train: it explains why models
 answer at length, flatter, and sometimes optimise the letter of your
@@ -31,9 +31,9 @@ instruction instead of its spirit.
 |---|---|---|---|---|
 | Supervised fine-tuning on demonstrations | Copy correct answers you wrote | The behaviour in the examples, nothing beyond them | Writing the answers | Your training stack, or a hosted API |
 | DPO on preference pairs | Learn from "this one beat that one", no sampling during training | Shifts tone and choices without a reward model or an RL loop | Thousands of comparisons | Your training stack, or a hosted API |
-| Hosted reinforcement fine-tuning with your grader | The vendor samples answers and reinforces the ones your grader scores high | An RL loop you don't build; the grader is still yours to get right | Grader design, many sampled answers per prompt, the vendor's price | The vendor's API |
+| Hosted reinforcement fine-tuning with your grader | The vendor samples answers and reinforces the ones your grader scores high | An RL loop you don't build; the grader is still yours to get right | Grader design, many sampled answers per prompt, the vendor's price | The vendor's API (as of October 2026, OpenAI's fine-tuning platform no longer accepts new users, so check availability first) |
 | GRPO with a verifiable reward | Sample a group of answers per prompt, check each, reinforce the above-average ones | A reward with no learned blind spot, and no second model to train | Generation dominates: 8 answers per prompt is a common default; a checker that cannot be argued with | Your training stack |
-| PPO with a learned reward model | Train a reward model on ratings, then a value network and the policy against it, on a KL leash | Optimises a goal no program can check, such as helpfulness | Two extra models the size of the policy, and the reward model's blind spots to defend against | Your training stack |
+| PPO with a learned reward model | Train a reward model on ratings, then a value network and the policy against it, on a KL leash | Optimises a goal no program can check, such as helpfulness | Two extra models (a reward model and a value network; InstructGPT used 6B for both at every policy size), and the reward model's blind spots to defend against | Your training stack |
 
 **How to choose.** Ask what can judge an answer, and how much you trust it.
 
@@ -41,7 +41,7 @@ instruction instead of its spirit.
   a proof checker): GRPO with that check as the reward. In this lesson's
   toy, accuracy on eight addition prompts goes from 23% to 99% in 60 steps
   of 8 answers each; this recipe is how DeepSeek-R1-Zero learned to reason
-  from correct final answers alone.
+  from rule-based rewards: a correct final answer and a required format.
 - Only people can judge, and you have their ratings: a learned reward model
   with PPO, a KL leash, and a held-out measure of the real goal that you
   watch more closely than the reward.
@@ -75,7 +75,7 @@ and safety from drift.
   started, while the reward keeps climbing. Gao, Schulman and Hilton (2022)
   measured the same rise and fall at scale. "The reward went up" proves
   nothing; keep a held-out measure of the goal.
-- **Length bias and sycophancy.** Raters prefer long, confident, flattering
+- **Length bias and sycophancy.** Raters prefer long, flattering
   answers, so the reward model does too, so the model becomes that.
   Penalise length directly and rate the policy's current outputs, not
   stale ones.
@@ -100,7 +100,8 @@ reasoning with RL on rule-based rewards and no human-written reasoning
 traces. Hugging Face TRL's GRPOTrainer takes reward functions as plain
 Python callables or a reward model, samples 8 generations per prompt by
 default, and can generate with vLLM; OpenAI's model optimization guide
-lists reinforcement fine-tuning, where you supply the grader. Sutton and
+lists reinforcement fine-tuning, where you supply the grader (as of October 2026
+OpenAI's fine-tuning platform no longer accepts new users). Sutton and
 Barto's textbook and OpenAI's Spinning Up are the standard longer reads.
 
 **Go deeper.** Level 2 builds it all on a three-armed slot machine:
@@ -612,8 +613,8 @@ and marks each answer relative to the others on *that* question. On an easy
 question, getting it right is expected and earns little credit; on a hard
 one, the only right answer stands out.
 
-PPO's baseline comes from the value network, a second model as large as the
-policy that has to be trained alongside it. **GRPO (Group Relative Policy
+PPO's baseline comes from the value network, a second model, often as large as the
+policy, that has to be trained alongside it. **GRPO (Group Relative Policy
 Optimization)** throws the value network away. For each prompt it samples
 a group of answers and uses the group's own average as the baseline.
 
@@ -885,7 +886,7 @@ is why β means the same thing in RLHF and DPO.
 **Why it matters in practice.** Reward hacking shows up wherever RL does.
 A boat-racing game agent that learned to circle forever collecting bonus
 targets instead of finishing the race. RLHF'd chat models that learned
-long, confident, flattering answers score well with raters (length bias and
+long, flattering answers score well with raters (length bias and
 sycophancy). Coding models rewarded for passing tests that learned to edit
 or special-case the tests. The defences, strongest first:
 

@@ -40,7 +40,7 @@ committed:
 | Sinusoidal codes (the 2017 transformer) | A fixed sine and cosine fingerprint per position, added to the token | No parameters; a code exists for any position | Position is mixed into content; little used in new models | The architecture |
 | RoPE (Llama, Mistral, Qwen) | Rotates each query and key by an angle that grows with position, so scores depend on the distance between tokens | Relative distance for free, and a context that can be stretched after training | Angles past the trained range are unfamiliar; extension needs scaling | The architecture; `rope_theta` and `rope_parameters` on the card |
 | ALiBi | Subtracts a penalty proportional to distance from each score; no position vectors at all | Trained at 1,024 tokens, it extrapolates to 2,048; 11% faster and 11% less memory than sinusoidal in its paper | A built-in preference for nearby tokens; fewer models use it | The architecture |
-| Inference-time scaling (linear or dynamic NTK) | Rescales positions or the RoPE base when a prompt exceeds the trained length | A modest stretch with no training at all | Quality drops as the stretch grows | The serving engine's config: `rope_type` and `factor` |
+| Inference-time scaling (linear or dynamic NTK) | Rescales positions or the RoPE base: linear scaling at every length, dynamic scaling only once a prompt exceeds the trained length | A modest stretch with no training at all | Quality drops as the stretch grows | The serving engine's config: `rope_type` and `factor` |
 | Extension with a short fine-tune (PI, YaRN) | Scales positions into the trained range, then fine-tunes briefly on long text | 8× longer context: Llama to 32,768 tokens within 1,000 steps (PI); YaRN needs 10× fewer tokens than earlier methods | Long documents to train on, a training run, an evaluation at length | Your training stack |
 | Staged long-context pretraining | The vendor grows the window during pretraining, checking a needle-in-a-haystack test at each stage | The genuine article: Llama 3 went from 8K to 128K in six stages | About 800B training tokens for Llama 3 405B; reaches you as a number on the card | The vendor |
 
@@ -51,8 +51,8 @@ committed:
   the lengths you will use.
 - Picking an open model: read `max_position_embeddings` and
   `rope_parameters`. An entry with a `factor` means the model was trained
-  shorter and stretched, and the far end of the stretched range is where
-  quality is weakest.
+  shorter and stretched, so test it at the lengths you will use rather
+  than trusting the stretched number.
 - Serving a model beyond its trained length: do not raise the engine's
   context limit on its own. Set the scaling the checkpoint expects (or a
   dynamic scaling if none is given), and test before shipping.
@@ -79,9 +79,9 @@ costs.
   authors set the base to 500,000 and spent about 800B tokens taking the
   405B model from 8K to 128K.
 - Quality. RoPE gives nearby tokens a head start (the RoFormer companion's
-  long-term decay), and a stretched model is weakest at the far end of its
-  new range. Both show up as a model that reads the start of a long prompt
-  better than the end.
+  long-term decay), and a long window is not used evenly: Liu et al. (*Lost
+  in the Middle*, 2023) found models use information best at the start or
+  the end of a long prompt and worst in the middle (`primer.agents.context`).
 
 **What breaks.**
 

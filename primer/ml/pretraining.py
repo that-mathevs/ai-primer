@@ -54,8 +54,8 @@ will cost to serve.
 - Choosing between two models of the same size: prefer the one trained on
   more tokens of cleaner data. Past the compute-optimal 20 tokens per
   parameter, a smaller model trained longer is cheaper to run forever after,
-  which is why Llama 2 7B saw about 286 tokens per parameter and Llama 3 8B
-  more than 15 trillion tokens (section 1k).
+  which is why Llama 2 7B saw about 286 tokens per parameter and Llama 3 (the whole family) about 15 trillion tokens
+  (section 1k).
 - A field with its own vocabulary that prompting and a small fine-tune
   cannot cover (a language of contracts, a scientific literature): continued
   pretraining, once you hold billions of domain tokens. Gururangan et al.
@@ -550,7 +550,7 @@ probability that it continues "click" into the whole boilerplate line:
 | click → here | 1/2 | 100/101 |
 | here → to | 1/2 | 100/101 |
 | to → subscribe | 1/3 | 100/102 |
-| subscribe → for | 1 | 1 |
+| subscribe → for | 2/2 | 101/101 |
 | for → free | 1/3 | 100/102 |
 | free → updates | 1/2 | 100/101 |
 | **whole line** | **1/72 = 0.014** | **0.93** |
@@ -692,7 +692,7 @@ round(C / 400e12 / 3600)  # → 4083
 In practice, models that will serve billions of requests are trained far
 past this point, because a smaller model trained longer is cheaper to run
 forever after. Llama 2 7B saw 2 trillion tokens (about 286 per parameter);
-Llama 3 8B saw more than 15 trillion. That is why data, not compute, is now
+Llama 3 was trained on about 15 trillion tokens across the family (15.6 trillion for the 405B). That is why data, not compute, is now
 often the binding limit, and why the next topic exists.
 
 **In code:** `chinchilla_tokens` and `training_flops` are the two rules of thumb.

@@ -33,7 +33,7 @@ Most production systems end up as retrieval plus a well-built prompt.
 | Prompting and few-shot examples | Describe the behaviour, show one or two examples | Nothing; it raises the odds, and the vendor's SFT and preference tuning did the heavy lifting | Extra input tokens on every call | Your prompt |
 | Retrieval (RAG) | Fetch the facts at request time and put them in the prompt | Current, citable knowledge | An index to build and keep fresh, longer prompts | Your code |
 | Hosted supervised fine-tuning | Train the vendor's model on your prompt-and-reply pairs; only the reply is graded | Consistent format and style without the long prompt | Curated examples, a training job, sometimes a higher per-token price | The vendor's fine-tuning API |
-| LoRA or QLoRA adapter | Train a small low-rank correction beside frozen weights of an open model | Same effect as a fine-tune at under 1% of the trainable parameters; mergeable for no added latency | A GPU you rent or own, data, a model to serve | Your training and serving stack |
+| LoRA or QLoRA adapter | Train a small low-rank correction beside frozen weights of an open model | Same effect as a fine-tune while training a few percent of the parameters or less (0.39% of a layer at rank 8, 3.1% at rank 64); mergeable for no added latency | A GPU you rent or own, data, a model to serve | Your training and serving stack |
 | Preference tuning (DPO) on your own pairs | Show chosen-versus-rejected pairs; the model learns to prefer the chosen kind | Shifts tone, verbosity and refusals that no single "correct answer" captures | Thousands of comparisons, a frozen reference copy, one training loop | Your training stack, or a hosted API that offers it |
 | Full fine-tune | Update every weight on a large dataset | The largest possible shift: a new domain, a new language | Multi-GPU training, a copy of the whole model per variant, real risk of forgetting | Your training stack |
 | Distillation | Train a small student to imitate a big teacher's full probability spread on your traffic | A cheaper, faster model for one narrow task | Millions of teacher outputs, a training run, an eval suite | Your training stack |
@@ -744,8 +744,8 @@ loss on that task.
 - SFT is next-token loss with the prompt masked out.
 - RLHF trains a reward model on pairwise preferences, then optimises the LM
   against it; DPO gets the same effect directly from preference pairs.
-- LoRA trains a tiny low-rank correction B·A beside frozen weights: under 1%
-  of the parameters, mergeable for zero added latency.
+- LoRA trains a tiny low-rank correction B·A beside frozen weights: 0.39% of
+  a layer's parameters at rank 8, 3.1% at rank 64, mergeable for zero added latency.
 - Fine-tuning teaches behaviour; RAG supplies knowledge. Start with
   prompting and RAG.
 - Distillation trains a small student on a big teacher's soft targets; it's
@@ -1202,7 +1202,7 @@ def figures() -> dict:
     ax.set(xlabel="training step", ylabel="mean squared error (log scale)",
            title="The task needs a rank-2 change: rank 1 can't express it")
     ax.set_ylim(1e-8, 10)
-    ax.legend()
+    ax.legend(loc="center right")  # the empty middle-right, clear of every curve
     figs["lora_ranks"] = fig
 
     # Distillation temperature.

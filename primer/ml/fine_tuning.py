@@ -94,7 +94,7 @@ epochs, with the best checkpoint shipped rather than the last.
   earlier one from 0.98 to 0.025. A lower learning rate only slows the
   slide; 10 replayed examples in 210 bring it back to 0.945.
 - **Memorising a small dataset.** On 16 examples with 3 wrong labels,
-  validation loss bottoms out at epoch 70 (0.319) and has quadrupled
+  validation loss bottoms out at epoch 71 (0.319) and has quadrupled
   (1.277) by epoch 1,500. Checkpoint every epoch and ship the best.
 - **A merge that cancels.** Task vectors with a clearly negative cosine
   (−0.25 in the toy) leave at least one skill at a coin flip whatever the
@@ -919,7 +919,7 @@ fine-tune.
 3 of them deliberately mislabelled, for 1,500 epochs. (With full-batch
 training, one step is one pass over the data, one **epoch**.)
 
-| | At the best epoch (70) | At the end (1,500 epochs) |
+| | At the best epoch (71) | At the end (1,500 epochs) |
 |---|---|---|
 | training loss | 0.373 | 0.005 |
 | validation loss | **0.319** | 1.277 |
@@ -937,7 +937,7 @@ $$
 
 | Symbol | Meaning here | In the example |
 |---|---|---|
-| $t$ | the epoch | 70, then 1,500 |
+| $t$ | the epoch | 71, then 1,500 |
 | $\mathcal{L}_{\text{train}}(t)$ | average loss on the 16 training examples | 0.373, then 0.005 |
 | $\mathcal{L}_{\text{val}}(t)$ | average loss on 200 held-out examples | 0.319, then 1.277 |
 | $g(t)$ | the **generalisation gap**: how much worse the model does on data it hasn't seen | −0.054, then 1.272 |
@@ -945,7 +945,7 @@ $$
 **In words:** "the gap is held-out loss minus training loss; a gap that
 keeps growing means the model is memorising rather than learning."
 
-**With the numbers:** 0.319 − 0.373 = −0.054 at epoch 70; 1.277 − 0.005 =
+**With the numbers:** 0.319 − 0.373 = −0.054 at epoch 71; 1.277 − 0.005 =
 1.272 at the end.
 
 **In Python:**
@@ -957,14 +957,14 @@ L_val = {"best": 0.319, "end": 1.277}
 {t: round(L_val[t] - L_train[t], 3) for t in L_val}  # → {'best': -0.054, 'end': 1.272}
 ```
 
-![Training loss falls steadily to near zero while validation loss bottoms out at epoch 70 and then climbs to four times its best](figures/primer.ml.fine_tuning.overfitting.svg)
+![Training loss falls steadily to near zero while validation loss bottoms out at epoch 71 and then climbs to four times its best](figures/primer.ml.fine_tuning.overfitting.svg)
 
 **Reading it:** the x-axis is the epoch (log scale), the y-axis the loss.
-Both curves fall at first while the model learns the real rule. At epoch 70
+Both curves fall at first while the model learns the real rule. At epoch 71
 (the dashed line) validation loss bottoms out; after that the training
 curve keeps falling as the model memorises the three wrong labels, and the
 validation curve climbs. The dotted line is where early stopping with a
-patience of 20 epochs would end the run, keeping the weights from epoch 70.
+patience of 20 epochs would end the run, keeping the weights from epoch 71.
 
 ```mermaid
 flowchart LR
@@ -1246,10 +1246,10 @@ a lower rate only walks the same trade-off more slowly. Replay works: mixing
 even 5% of A's examples into B's data gives the model a reason to keep A,
 and those few examples carry most of the loss exactly when A is slipping.
 
-**Training loss keeps falling, but validation loss has risen since epoch 70. What is happening, and which checkpoint do you ship?**
+**Training loss keeps falling, but validation loss has risen since epoch 71. What is happening, and which checkpoint do you ship?**
 The model has stopped learning the general rule and is memorising the
 training set, including its mislabelled examples. Ship the checkpoint from
-epoch 70, the best on the held-out set; early stopping automates exactly
+epoch 71, the best on the held-out set; early stopping automates exactly
 this.
 
 **What is a task vector, and why is averaging two fine-tunes the same as task arithmetic with λ = 1/2?**
@@ -1664,7 +1664,7 @@ def overfitting_run(n: int = 16, n_wrong: int = 3, epochs: int = 1500, lr: float
     X_val, y_val = _eval_set("A")
     _, history = fine_tune(base_model(), X, y, steps=epochs, lr=lr, record=lambda net: (net.loss(X, y), net.loss(X_val, y_val)))
     train, val = (list(col) for col in zip(*history))
-    return {"train": train, "val": val, "best_epoch": int(np.argmin(val))}
+    return {"train": train, "val": val, "best_epoch": int(np.argmin(val)) + 1}  # counted from 1, like the 1,500 epochs
 
 
 # ---------------------------------------------------------------------------
@@ -1815,7 +1815,7 @@ def figures() -> dict:
     ax.plot(epochs, run["val"], color=RED, label="validation loss (200 held-out examples)")
     ax.axvline(best + 1, color=MUTED, ls="--")
     ax.axvline(stop + 1, color=MUTED, ls=":")
-    ax.text((best + 1) * 1.08, 1.9, f"best epoch {best}", color="#4b5563", zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
+    ax.text((best + 1) * 1.08, 1.9, f"best epoch {best + 1}", color="#4b5563", zorder=3, bbox=dict(facecolor="white", edgecolor="none", pad=1))
     ax.set_xscale("log")
     ax.set_xlabel("epoch (log scale)")
     ax.set_ylabel("loss")
@@ -1917,10 +1917,10 @@ def demo() -> None:
 
     banner("4. Overfitting a small dataset")
     over = overfitting_run()
-    best = over["best_epoch"]
+    best = over["best_epoch"]  # counted from 1; lists are indexed from 0
     table(
         ["", "training loss", "validation loss"],
-        [(f"best epoch ({best})", over["train"][best], over["val"][best]), ("last epoch", over["train"][-1], over["val"][-1])],
+        [(f"best epoch ({best})", over["train"][best - 1], over["val"][best - 1]), ("last epoch", over["train"][-1], over["val"][-1])],
         floatfmt=".3f",
     )
     takeaway("On 16 examples the model learns the rule, then memorises the 3 wrong labels. Ship the best checkpoint.")

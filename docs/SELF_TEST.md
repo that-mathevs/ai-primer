@@ -477,10 +477,10 @@ a lower rate only walks the same trade-off more slowly. Replay works: mixing
 even 5% of A's examples into B's data gives the model a reason to keep A,
 and those few examples carry most of the loss exactly when A is slipping.
 
-**Training loss keeps falling, but validation loss has risen since epoch 70. What is happening, and which checkpoint do you ship?**
+**Training loss keeps falling, but validation loss has risen since epoch 71. What is happening, and which checkpoint do you ship?**
 The model has stopped learning the general rule and is memorising the
 training set, including its mislabelled examples. Ship the checkpoint from
-epoch 70, the best on the held-out set; early stopping automates exactly
+epoch 71, the best on the held-out set; early stopping automates exactly
 this.
 
 **What is a task vector, and why is averaging two fine-tunes the same as task arithmetic with λ = 1/2?**

@@ -81,7 +81,8 @@ labels by having a model apply written principles.
   patch was built from.
 - **Sycophancy trained in.** Sharma et al. (2023) found five assistants
   consistently sycophantic and that both people and preference models prefer
-  convincingly written sycophantic answers over correct ones. Build pairs
+  convincingly written sycophantic answers over correct ones a
+  non-negligible fraction of the time. Build pairs
   where the correct answer disagrees with the user, and measure flips on
   every release.
 - **Over-refusal.** Quiet, and easy to cause by tightening a threshold

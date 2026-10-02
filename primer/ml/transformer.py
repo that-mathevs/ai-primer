@@ -322,9 +322,10 @@ flowchart LR
 by a matrix multiply, passed through a smooth on/off switch (GELU) number by
 number, and narrowed back. The same weights are applied to every token
 separately, so this step never mixes tokens; it transforms each one using
-what attention already gathered. About two thirds of a large model's
-parameters live here, and much of its factual knowledge is thought to be
-stored in these weights.
+what attention already gathered. Two thirds of each block's parameters
+live here (8d² of every 12d²); counting the embedding table too, that is 45%
+of GPT-2 small and 63% of GPT-2 XL (chapter 6). Much of a model's factual
+knowledge is thought to be stored in these weights.
 
 **The math and the code.** A **matrix multiply** $xW$ turns a list of $d$
 numbers into a list of $4d$ numbers: each output number is the dot product of

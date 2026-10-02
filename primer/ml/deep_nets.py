@@ -35,7 +35,7 @@ the ones that shape an architecture:
 
 | Option | What it does | What it guarantees | What it costs | Where it lives |
 |---|---|---|---|---|
-| An activation with slope 1 (ReLU, GELU, SiLU) | Passes the gradient through unshrunk for positive inputs, where sigmoid passes at most 0.25 | No 0.25-per-layer decay: ten sigmoid layers lose a factor of a million, ten ReLU layers lose nothing | ReLU units pushed negative pass nothing and can die; GELU and SiLU leak a little instead | `hidden_act` in a config |
+| An activation with slope near 1 (ReLU exactly; GELU and SiLU for large positive inputs) | Passes the gradient through unshrunk for positive inputs, where sigmoid passes at most 0.25 (GELU and SiLU pass 0.5 at zero, rising toward 1) | No 0.25-per-layer decay: ten sigmoid layers lose a factor of a million, ten ReLU layers lose nothing | ReLU units pushed negative pass nothing and can die; GELU and SiLU leak a little instead | `hidden_act` in a config |
 | Initialization matched to the activation (Xavier, He) | Sets the starting weights' size so each layer passes signal on at the same size, forward and backward | The healthy line in this lesson's figure: a factor of about 4 over 30 layers, against 10⁻³⁶ or 10²² | Nothing at runtime; a per-layer rule you must apply to custom layers | The framework's default init; `initializer_range` in a config |
 | Residual connections | Each block adds its correction to its input instead of replacing it | Some gradient always reaches the early layers: 1.28 after ten blocks against 10⁻¹⁶ without | The signal grows as corrections pile up (7 million times over 30 layers here) unless normalized; block input and output must share a shape | The architecture: every transformer block |
 | Normalization (BatchNorm, LayerNorm, RMSNorm) | Re-centres and rescales activations, across the batch or within each example | Activations in a steady range at every depth; with residuals, a stable stack of any depth | A mean and a variance per layer per step (RMSNorm drops the mean); BatchNorm ties each example to its batch-mates | The architecture: `layer_norm_eps`, `rms_norm_eps` |
@@ -45,19 +45,19 @@ the ones that shape an architecture:
 building one.
 
 - Fine-tuning a published model: read the config and change nothing. A
-  Llama config carries RMSNorm placed before each sub-layer (pre-norm),
-  residuals in every block, SiLU-based activations, an `initializer_range`
-  of 0.02 and an `rms_norm_eps` of 10⁻⁶; the trained weights assume every
-  one of them.
+  Llama model is built with RMSNorm placed before each sub-layer
+  (pre-norm), residuals in every block and SiLU-based activations, and its
+  released config records the numbers, such as Llama 2's `rms_norm_eps` of
+  10⁻⁵; the trained weights assume every one of them.
 - Building a network more than a few layers deep: ReLU or GELU, the
   framework's default initialization (PyTorch's `nn.Linear` scales its
   starting weights by the fan-in), a residual path around every block, and
   a normalization layer beside it.
 - Sequences, or inference one example at a time: LayerNorm or RMSNorm,
   never BatchNorm, because an example's output must not depend on who else
-  is in the batch. Convolutional networks with large batches: BatchNorm
-  remains common.
-- A run that spikes: clip at 1.0, the limit almost every large run uses.
+  is in the batch. Convolutional networks with large batches: BatchNorm,
+  which ResNet places after every convolution.
+- A run that spikes: clip at 1.0, the limit GPT-3 and Llama 2 trained with.
   If the clip fires on every step, the fault is initialization or
   normalization, and clipping is masking it.
 - A network that trains slowly for no visible reason: plot the gradient
@@ -67,8 +67,9 @@ building one.
   both directions. Check the forward signal and the backward gradient
   separately, because a healthy one does not prove a healthy other.
 
-**What it costs.** Initialization is free. Residual connections cost no
-compute but fix the shape of every block's output to its input. A
+**What it costs.** Initialization is free. Residual connections cost one
+addition per value, nothing beside the block's matrix multiplies, but fix
+the shape of every block's output to its input. A
 normalization layer costs a mean and a variance per row per layer, which
 is why RMSNorm, dropping the mean, is the cheaper choice modern language
 models make. Clipping costs one norm over all parameters per step. What they buy is depth itself: ResNet trained networks over 100
@@ -102,8 +103,9 @@ every token.
 
 **In the wild.** Llama 2's paper describes its blocks as pre-normalization
 with RMSNorm, the SwiGLU activation and rotary position embeddings, and
-Hugging Face's `LlamaConfig` exposes the settings (`rms_norm_eps` 1e-6,
-`initializer_range` 0.02, `num_hidden_layers` 32, `hidden_act` silu).
+Hugging Face's `LlamaConfig` exposes the settings (`initializer_range`
+0.02, `num_hidden_layers` 32, `hidden_act` silu, and an `rms_norm_eps` that
+defaults to 1e-6 while Meta's Llama 2 code and released config use 1e-5).
 PyTorch's `nn.LayerNorm` takes the shape to normalize over with
 `eps=1e-05` and a learned per-element scale and shift; its `nn.Linear`
 initializes from a uniform range set by the fan-in; and
@@ -557,7 +559,8 @@ sequences have different lengths, batches at inference are often size 1, and
 an example's output must not depend on its batch-mates. Modern LLMs
 (Llama and others) use RMSNorm because it's cheaper and works as well, and
 they place it *before* each sub-layer ("pre-norm"), which keeps the residual
-path clean and trains more stably. BatchNorm remains common in CNNs.
+path clean and trains more stably. CNNs are where BatchNorm lives on:
+ResNet puts it after every convolution.
 
 ## Gradient clipping: a circuit breaker
 

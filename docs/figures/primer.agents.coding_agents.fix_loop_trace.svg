@@ -316,18 +316,18 @@ L 424.840625 221.142281
     <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle" x="390.945584" y="44.119951" transform="rotate(-0 390.945584 44.119951)">4/4</text>
    </g>
    <g id="patch_12">
-    <path d="M 354.237116 91.778634 
-Q 327.533346 121.012981 301.583609 149.421839 
+    <path d="M 209.423718 104.661327 
+Q 237.032388 129.688014 263.812704 153.963815 
 " style="fill: none; stroke: #4b5563; stroke-linecap: round"/>
-    <path d="M 304.923124 148.138235 
-L 301.583609 149.421839 
-L 302.560435 145.980064 
+    <path d="M 262.516397 150.629211 
+L 263.812704 153.963815 
+L 260.367236 153.000098 
 " style="fill: none; stroke: #4b5563; stroke-linecap: round"/>
    </g>
    <g id="text_17">
-    <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(315.62327 68.72352)">off-by-one patch:</text>
-    <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(315.62327 77.68177)">same count, new message</text>
-    <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(315.62327 86.64002)">(IndexError)</text>
+    <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(138.077815 81.739868)">off-by-one patch:</text>
+    <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(138.077815 90.698118)">same count, new message</text>
+    <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(138.077815 99.656368)">(IndexError)</text>
    </g>
    <g id="text_18">
     <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle" x="229.540625" y="15.558281" transform="rotate(-0 229.540625 15.558281)">Edit, run, test: green at step 7</text>

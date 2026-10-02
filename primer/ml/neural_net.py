@@ -26,7 +26,7 @@ one from a leaderboard; the forward pass is the only part that runs at
 inference and a vendor has already tuned it. One number from this lesson
 says why depth is worth anything: on the two-moons data, a single linear
 layer scores 88% because it can only draw a straight line, and one hidden
-layer with a nonlinearity scores 100%.
+layer with a nonlinearity scores 99.75% (one point of 400 wrong).
 
 **Your options.** How much of the training loop you own, from the least to
 the most:
@@ -445,14 +445,14 @@ def phi(z): return max(0, z)
 [phi(x * W_1) * W_2 for x in [-1, 1]]  # → [0, 6]
 ```
 
-![Two-moons decision boundaries: logistic regression's straight line misclassifies the moon tips (88%), while one hidden tanh layer bends around the gap (100%)](figures/primer.ml.neural_net.decision_boundaries.svg)
+![Two-moons decision boundaries: logistic regression's straight line misclassifies the moon tips (88%), while one hidden tanh layer bends around the gap (99.75%)](figures/primer.ml.neural_net.decision_boundaries.svg)
 
 **Reading it:** both panels show the same two interleaving half-moons,
 coloured by class; the shaded background is what each model predicts at
 every point. On the left, a single linear layer can only split the plane with
 a straight line, so the tips of both moons land on the wrong side (about 88%
 accuracy). On the right, one hidden tanh layer bends the boundary to follow
-the gap between the moons (100%). Same data, same optimizer: the only
+the gap between the moons (99.75%, one point of 400 wrong). Same data, same optimizer: the only
 difference is a nonlinearity between two layers.
 
 **In code:** `make_moons` builds the two interleaving half-moons (and `make_xor` the four-point XOR puzzle); `train_logistic_regression` fits the straight-line baseline in the left panel.
@@ -1157,7 +1157,7 @@ def figures() -> dict:
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
     for ax, pred, title in (
         (axes[0], sigmoid(grid @ w + b), f"Linear (logistic regression): {train_logistic_regression(X, y):.0%}"),
-        (axes[1], mlp.forward(grid)[0], f"MLP, 16 tanh hidden units: {mlp.accuracy(X, y):.0%}"),
+        (axes[1], mlp.forward(grid)[0], f"MLP, 16 tanh hidden units: {mlp.accuracy(X, y):.2%}"),
     ):
         ax.contourf(xx, yy, pred.reshape(xx.shape), levels=[0, 0.5, 1], colors=["#cfe0f3", "#f6d5c8"])
         ax.scatter(X[y == 0, 0], X[y == 0, 1], s=8, color="C0", label="class 0")
@@ -1245,7 +1245,7 @@ def demo() -> None:
         f"""
         On the two-moons data, a single linear layer (logistic regression)
         gets {lin_acc:.0%}: it can only draw a straight line. A 16-unit tanh
-        hidden layer gets {model.accuracy(X, y):.0%}.
+        hidden layer gets {model.accuracy(X, y):.2%}.
         """
     )
     takeaway("A chain of linear functions is one linear function. Nonlinearity is what makes depth useful.")
