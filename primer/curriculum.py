@@ -17,12 +17,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Where the project lives. The README needs absolute links to the site (the
-# built HTML isn't committed). The site builder reads the repository's address
-# from git or GitHub Actions instead, so a fork's site links to the fork; this
-# constant is only its fallback.
+# Where the project lives. The lessons are published, illustrated, at rumblr.com
+# (built from this repository); the README links each lesson there. The local
+# HTML preview (`make docs`) reads the repository's address from git or GitHub
+# Actions, so a fork's preview links to the fork; REPO_URL is only its fallback.
 REPO_URL = "https://github.com/that-mathevs/ai-primer"
-SITE_URL = "https://that-mathevs.github.io/ai-primer/"
+SITE_URL = "https://rumblr.com/"
+
+
+def lesson_url(module: str) -> str:
+    """Where a lesson is read: its page on rumblr.com (addresses carry no .html)."""
+    return f"{SITE_URL}learn/{module.rsplit('.', 1)[-1].replace('_', '-')}"
 BRANCH = "main"
 
 
@@ -276,7 +281,7 @@ def readme_section() -> str:
         out.append(f"### {part.title}\n\n{part.blurb}\n\n| # | Lesson | What you'll be able to explain | Read |\n|---|---|---|---|")
         out += [
             f"| {i} | [{l.title}]({source_path(l.module)}) | {l.outcome} | "
-            f"[page]({SITE_URL}{l.module.replace('.', '/')}.html) · [tests]({tests_for(l.module)}) |"
+            f"[page]({lesson_url(l.module)}) · [tests]({tests_for(l.module)}) |"
             for i, l in lessons_in(part.key)
         ]
         out.append("")

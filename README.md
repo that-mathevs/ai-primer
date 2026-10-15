@@ -15,9 +15,9 @@ scratch**, builds the same thing in plain Python, drawn and explained, with ever
 decoded symbol by symbol (that part folds away as Level 3 on the site). Start at the top;
 descend as far as you like.
 
-## 👉 Read it here: [that-mathevs.github.io/ai-primer](https://that-mathevs.github.io/ai-primer/)
+## 👉 Read it here: [rumblr.com](https://rumblr.com/)
 
-**The website is the best place to read this.** Nothing to install: every
+**rumblr.com is the best place to read this**: the illustrated edition of every lesson, built from this repository. Nothing to install: every
 lesson in order, with its diagrams and figures drawn, the math typeset, a
 plain-English definition when you hover over any term, and a link from each
 explanation to the code that implements it and the tests that specify it.
@@ -71,13 +71,13 @@ numbers; each path skips lessons but never jumps backwards.
 ```bash
 git clone https://github.com/that-mathevs/ai-primer && cd ai-primer
 python -m pip install -e ".[dev,docs]"
-make docs            # builds the site; open docs/html/index.html in a browser
+make docs            # a plain local preview (docs/html); the published edition is rumblr.com
 ```
 
 **2. Pick how you read.** Each lesson works three ways, so use whichever suits you:
 
-- **In the browser** (recommended): [the live site](https://that-mathevs.github.io/ai-primer/),
-  or `docs/html/index.html` after `make docs`. It has every lesson in order,
+- **In the browser** (recommended): [rumblr.com](https://rumblr.com/), built from this
+  repository, or `docs/html/index.html` after `make docs` for a plain local preview. It has every lesson in order,
   diagrams and figures, and a plain-English definition when you hover over any
   underlined term. Every page has previous/next links, and every **In code:**
   line links to the function it names, with its source one click away (View
@@ -184,7 +184,7 @@ Every symbol an AI formula uses (Σ, ‖x‖, ∂, ᵀ), decoded as a short loop
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 0 | [Math notation, from zero](primer/notation.py) | Every symbol in an ML formula, as a short loop | [page](https://that-mathevs.github.io/ai-primer/primer/notation.html) · [tests](tests/test_notation.py) |
+| 0 | [Math notation, from zero](primer/notation.py) | Every symbol in an ML formula, as a short loop | [page](https://rumblr.com/learn/notation) · [tests](tests/test_notation.py) |
 
 ### Part 1: how a language model works
 
@@ -192,15 +192,15 @@ What happens between your prompt and the reply: text becomes numbers, a stack of
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 1 | [The big picture](primer/ml/big_picture.py) | What happens, end to end, when you send a prompt | [page](https://that-mathevs.github.io/ai-primer/primer/ml/big_picture.html) · [tests](tests/test_big_picture.py) |
-| 2 | [Neural networks](primer/ml/neural_net.py) | How a network of simple units learns from its mistakes, built and trained by hand | [page](https://that-mathevs.github.io/ai-primer/primer/ml/neural_net.html) · [tests](tests/test_neural_net.py) |
-| 3 | [Loss functions](primer/ml/losses.py) | The one number training pushes down, and why choosing it is choosing the behaviour | [page](https://that-mathevs.github.io/ai-primer/primer/ml/losses.html) · [tests](tests/test_losses.py) |
-| 4 | [Optimizers](primer/ml/optimizers.py) | How a step is taken down the loss, and why the learning rate matters more than the rule | [page](https://that-mathevs.github.io/ai-primer/primer/ml/optimizers.html) · [tests](tests/test_optimizers.py) |
-| 5 | [Training deep networks](primer/ml/deep_nets.py) | Why deep stacks stop learning, and the fixes inside every transformer block | [page](https://that-mathevs.github.io/ai-primer/primer/ml/deep_nets.html) · [tests](tests/test_deep_nets.py) |
-| 6 | [Attention](primer/ml/attention.py) | How each word looks at the others, and why the cost grows with the square of the length | [page](https://that-mathevs.github.io/ai-primer/primer/ml/attention.html) · [tests](tests/test_attention.py) |
-| 7 | [Positional information](primer/ml/positional.py) | Why order must be added, sinusoids and RoPE | [page](https://that-mathevs.github.io/ai-primer/primer/ml/positional.html) · [tests](tests/test_positional.py) |
-| 8 | [The transformer](primer/ml/transformer.py) | The block every language model stacks, and how to turn a config file into gigabytes | [page](https://that-mathevs.github.io/ai-primer/primer/ml/transformer.html) · [tests](tests/test_transformer.py) |
-| 9 | [Tokenization](primer/ml/tokenization.py) | How text becomes the pieces a model reads, and why models miscount letters | [page](https://that-mathevs.github.io/ai-primer/primer/ml/tokenization.html) · [tests](tests/test_tokenization.py) |
+| 1 | [The big picture](primer/ml/big_picture.py) | What happens, end to end, when you send a prompt | [page](https://rumblr.com/learn/big-picture) · [tests](tests/test_big_picture.py) |
+| 2 | [Neural networks](primer/ml/neural_net.py) | How a network of simple units learns from its mistakes, built and trained by hand | [page](https://rumblr.com/learn/neural-net) · [tests](tests/test_neural_net.py) |
+| 3 | [Loss functions](primer/ml/losses.py) | The one number training pushes down, and why choosing it is choosing the behaviour | [page](https://rumblr.com/learn/losses) · [tests](tests/test_losses.py) |
+| 4 | [Optimizers](primer/ml/optimizers.py) | How a step is taken down the loss, and why the learning rate matters more than the rule | [page](https://rumblr.com/learn/optimizers) · [tests](tests/test_optimizers.py) |
+| 5 | [Training deep networks](primer/ml/deep_nets.py) | Why deep stacks stop learning, and the fixes inside every transformer block | [page](https://rumblr.com/learn/deep-nets) · [tests](tests/test_deep_nets.py) |
+| 6 | [Attention](primer/ml/attention.py) | How each word looks at the others, and why the cost grows with the square of the length | [page](https://rumblr.com/learn/attention) · [tests](tests/test_attention.py) |
+| 7 | [Positional information](primer/ml/positional.py) | Why order must be added, sinusoids and RoPE | [page](https://rumblr.com/learn/positional) · [tests](tests/test_positional.py) |
+| 8 | [The transformer](primer/ml/transformer.py) | The block every language model stacks, and how to turn a config file into gigabytes | [page](https://rumblr.com/learn/transformer) · [tests](tests/test_transformer.py) |
+| 9 | [Tokenization](primer/ml/tokenization.py) | How text becomes the pieces a model reads, and why models miscount letters | [page](https://rumblr.com/learn/tokenization) · [tests](tests/test_tokenization.py) |
 
 ### Part 2: how it is trained and judged
 
@@ -208,15 +208,15 @@ How a model gets its weights, from pretraining on the internet to fine-tuning, r
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 10 | [Training stages](primer/ml/training_stages.py) | The stages that turn a random network into an assistant, and when to fine-tune instead of prompt | [page](https://that-mathevs.github.io/ai-primer/primer/ml/training_stages.html) · [tests](tests/test_training_stages.py) |
-| 11 | [Pretraining at scale](primer/ml/pretraining.py) | What it takes to train on the internet: the data belt, parallelism across GPUs, mixed precision | [page](https://that-mathevs.github.io/ai-primer/primer/ml/pretraining.html) · [tests](tests/test_pretraining.py) |
-| 12 | [Fine-tuning in practice](primer/ml/fine_tuning.py) | What a fine-tune costs and risks, and how to prepare data so the model keeps its old skills | [page](https://that-mathevs.github.io/ai-primer/primer/ml/fine_tuning.html) · [tests](tests/test_fine_tuning.py) |
-| 13 | [Overfitting and regularization](primer/ml/regularization.py) | Why a model memorises instead of learning, and the checks that catch it | [page](https://that-mathevs.github.io/ai-primer/primer/ml/regularization.html) · [tests](tests/test_regularization.py) |
-| 14 | [Reinforcement learning](primer/ml/reinforcement.py) | How a model learns from a score instead of an answer, and how it games the score | [page](https://that-mathevs.github.io/ai-primer/primer/ml/reinforcement.html) · [tests](tests/test_reinforcement.py) |
-| 15 | [Reasoning models](primer/ml/reasoning.py) | Why letting a model think before it answers helps, and when the extra tokens are worth it | [page](https://that-mathevs.github.io/ai-primer/primer/ml/reasoning.html) · [tests](tests/test_reasoning.py) |
-| 16 | [Alignment and safety](primer/ml/alignment.py) | How a model is taught to behave, and why a score that keeps rising can hide a worse model | [page](https://that-mathevs.github.io/ai-primer/primer/ml/alignment.html) · [tests](tests/test_alignment.py) |
-| 17 | [Metrics](primer/ml/metrics.py) | The numbers that decide whether a model ships, and the one that fools you on rare events | [page](https://that-mathevs.github.io/ai-primer/primer/ml/metrics.html) · [tests](tests/test_metrics.py) |
-| 18 | [Reading benchmarks](primer/ml/benchmarks.py) | What a benchmark score can and cannot tell you, and how wide its error bar really is | [page](https://that-mathevs.github.io/ai-primer/primer/ml/benchmarks.html) · [tests](tests/test_benchmarks.py) |
+| 10 | [Training stages](primer/ml/training_stages.py) | The stages that turn a random network into an assistant, and when to fine-tune instead of prompt | [page](https://rumblr.com/learn/training-stages) · [tests](tests/test_training_stages.py) |
+| 11 | [Pretraining at scale](primer/ml/pretraining.py) | What it takes to train on the internet: the data belt, parallelism across GPUs, mixed precision | [page](https://rumblr.com/learn/pretraining) · [tests](tests/test_pretraining.py) |
+| 12 | [Fine-tuning in practice](primer/ml/fine_tuning.py) | What a fine-tune costs and risks, and how to prepare data so the model keeps its old skills | [page](https://rumblr.com/learn/fine-tuning) · [tests](tests/test_fine_tuning.py) |
+| 13 | [Overfitting and regularization](primer/ml/regularization.py) | Why a model memorises instead of learning, and the checks that catch it | [page](https://rumblr.com/learn/regularization) · [tests](tests/test_regularization.py) |
+| 14 | [Reinforcement learning](primer/ml/reinforcement.py) | How a model learns from a score instead of an answer, and how it games the score | [page](https://rumblr.com/learn/reinforcement) · [tests](tests/test_reinforcement.py) |
+| 15 | [Reasoning models](primer/ml/reasoning.py) | Why letting a model think before it answers helps, and when the extra tokens are worth it | [page](https://rumblr.com/learn/reasoning) · [tests](tests/test_reasoning.py) |
+| 16 | [Alignment and safety](primer/ml/alignment.py) | How a model is taught to behave, and why a score that keeps rising can hide a worse model | [page](https://rumblr.com/learn/alignment) · [tests](tests/test_alignment.py) |
+| 17 | [Metrics](primer/ml/metrics.py) | The numbers that decide whether a model ships, and the one that fools you on rare events | [page](https://rumblr.com/learn/metrics) · [tests](tests/test_metrics.py) |
+| 18 | [Reading benchmarks](primer/ml/benchmarks.py) | What a benchmark score can and cannot tell you, and how wide its error bar really is | [page](https://rumblr.com/learn/benchmarks) · [tests](tests/test_benchmarks.py) |
 
 ### Part 3: how it is run
 
@@ -224,11 +224,11 @@ What it costs, in time and memory, to turn a trained model into answers: the chi
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 19 | [The hardware underneath](primer/ml/hardware.py) | Why a GPU is fast at some work and slow at the rest, and how to read a spec sheet | [page](https://that-mathevs.github.io/ai-primer/primer/ml/hardware.html) · [tests](tests/test_hardware.py) |
-| 20 | [Inference](primer/ml/inference.py) | Why the first token is slow and the rest are cheap, and what memory a conversation costs | [page](https://that-mathevs.github.io/ai-primer/primer/ml/inference.html) · [tests](tests/test_inference.py) |
-| 21 | [Structured output](primer/ml/structured_output.py) | How to guarantee valid JSON by controlling which tokens a model may pick | [page](https://that-mathevs.github.io/ai-primer/primer/ml/structured_output.html) · [tests](tests/test_structured_output.py) |
-| 22 | [Long context and efficient architectures](primer/ml/efficient_architectures.py) | How a model handles a million tokens without a million-squared attention | [page](https://that-mathevs.github.io/ai-primer/primer/ml/efficient_architectures.html) · [tests](tests/test_efficient_architectures.py) |
-| 23 | [Looking inside the model](primer/ml/interpretability.py) | How to read the numbers inside a trained model and find what a layer represents | [page](https://that-mathevs.github.io/ai-primer/primer/ml/interpretability.html) · [tests](tests/test_interpretability.py) |
+| 19 | [The hardware underneath](primer/ml/hardware.py) | Why a GPU is fast at some work and slow at the rest, and how to read a spec sheet | [page](https://rumblr.com/learn/hardware) · [tests](tests/test_hardware.py) |
+| 20 | [Inference](primer/ml/inference.py) | Why the first token is slow and the rest are cheap, and what memory a conversation costs | [page](https://rumblr.com/learn/inference) · [tests](tests/test_inference.py) |
+| 21 | [Structured output](primer/ml/structured_output.py) | How to guarantee valid JSON by controlling which tokens a model may pick | [page](https://rumblr.com/learn/structured-output) · [tests](tests/test_structured_output.py) |
+| 22 | [Long context and efficient architectures](primer/ml/efficient_architectures.py) | How a model handles a million tokens without a million-squared attention | [page](https://rumblr.com/learn/efficient-architectures) · [tests](tests/test_efficient_architectures.py) |
+| 23 | [Looking inside the model](primer/ml/interpretability.py) | How to read the numbers inside a trained model and find what a layer represents | [page](https://rumblr.com/learn/interpretability) · [tests](tests/test_interpretability.py) |
 
 ### Part 4: embeddings and search
 
@@ -236,14 +236,14 @@ Vectors that capture meaning, and the search systems built on them: how a questi
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 24 | [Word embeddings](primer/ml/embeddings/word2vec.py) | How a word becomes a vector that captures its meaning, and what that vector cannot capture | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/word2vec.html) · [tests](tests/test_emb_word2vec.py) |
-| 25 | [Similarity](primer/ml/embeddings/similarity.py) | How to compare two embeddings, and why the wrong metric ranks silently wrong | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/similarity.html) · [tests](tests/test_emb_similarity.py) |
-| 26 | [Training embedding models](primer/ml/embeddings/contrastive.py) | How an embedding model is taught what similar means, from pairs of texts that belong together | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/contrastive.html) · [tests](tests/test_emb_contrastive.py) |
-| 27 | [Dimensions and compression](primer/ml/embeddings/compression.py) | How to store millions of embeddings in a fraction of the memory without losing your neighbours | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/compression.html) · [tests](tests/test_emb_compression.py) |
-| 28 | [Vector indexes](primer/ml/embeddings/ann.py) | How an index finds the nearest vectors among millions without checking every one | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/ann.html) · [tests](tests/test_emb_ann.py) |
-| 29 | [Retrieval](primer/ml/embeddings/retrieval.py) | The whole search pipeline: keywords, embeddings, hybrid ranking, rerankers and chunking | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/retrieval.html) · [tests](tests/test_emb_retrieval.py) |
-| 30 | [Clustering and matching](primer/ml/embeddings/clustering.py) | How embeddings group a pile of unlabelled text, find duplicates and route requests | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/clustering.html) · [tests](tests/test_emb_clustering.py) |
-| 31 | [Embeddings in production](primer/ml/embeddings/operations.py) | What breaks when an embedding index serves real traffic, and how to measure retrieval on its own | [page](https://that-mathevs.github.io/ai-primer/primer/ml/embeddings/operations.html) · [tests](tests/test_emb_operations.py) |
+| 24 | [Word embeddings](primer/ml/embeddings/word2vec.py) | How a word becomes a vector that captures its meaning, and what that vector cannot capture | [page](https://rumblr.com/learn/word2vec) · [tests](tests/test_emb_word2vec.py) |
+| 25 | [Similarity](primer/ml/embeddings/similarity.py) | How to compare two embeddings, and why the wrong metric ranks silently wrong | [page](https://rumblr.com/learn/similarity) · [tests](tests/test_emb_similarity.py) |
+| 26 | [Training embedding models](primer/ml/embeddings/contrastive.py) | How an embedding model is taught what similar means, from pairs of texts that belong together | [page](https://rumblr.com/learn/contrastive) · [tests](tests/test_emb_contrastive.py) |
+| 27 | [Dimensions and compression](primer/ml/embeddings/compression.py) | How to store millions of embeddings in a fraction of the memory without losing your neighbours | [page](https://rumblr.com/learn/compression) · [tests](tests/test_emb_compression.py) |
+| 28 | [Vector indexes](primer/ml/embeddings/ann.py) | How an index finds the nearest vectors among millions without checking every one | [page](https://rumblr.com/learn/ann) · [tests](tests/test_emb_ann.py) |
+| 29 | [Retrieval](primer/ml/embeddings/retrieval.py) | The whole search pipeline: keywords, embeddings, hybrid ranking, rerankers and chunking | [page](https://rumblr.com/learn/retrieval) · [tests](tests/test_emb_retrieval.py) |
+| 30 | [Clustering and matching](primer/ml/embeddings/clustering.py) | How embeddings group a pile of unlabelled text, find duplicates and route requests | [page](https://rumblr.com/learn/clustering) · [tests](tests/test_emb_clustering.py) |
+| 31 | [Embeddings in production](primer/ml/embeddings/operations.py) | What breaks when an embedding index serves real traffic, and how to measure retrieval on its own | [page](https://rumblr.com/learn/operations) · [tests](tests/test_emb_operations.py) |
 
 ### Part 5: other kinds of model, and generating media
 
@@ -251,12 +251,12 @@ When the transformer is not the model: trees for tables of data, convolutions fo
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 32 | [Trees and boosting](primer/ml/classical.py) | How a tree learns a table of data, and why boosted trees still beat neural networks there | [page](https://that-mathevs.github.io/ai-primer/primer/ml/classical.html) · [tests](tests/test_classical.py) |
-| 33 | [CNNs and RNNs](primer/ml/cnn_rnn.py) | How convolutions see and recurrent nets remember, and why transformers won | [page](https://that-mathevs.github.io/ai-primer/primer/ml/cnn_rnn.html) · [tests](tests/test_cnn_rnn.py) |
-| 34 | [Autoencoders and VAEs](primer/ml/generative/autoencoders.py) | Squeezing data into a code and back, and sampling new data from it | [page](https://that-mathevs.github.io/ai-primer/primer/ml/generative/autoencoders.html) · [tests](tests/test_autoencoders.py) |
-| 35 | [GANs](primer/ml/generative/gans.py) | A forger against a detective: adversarial training, and why it is unstable | [page](https://that-mathevs.github.io/ai-primer/primer/ml/generative/gans.html) · [tests](tests/test_gans.py) |
-| 36 | [Diffusion and flow matching](primer/ml/generative/diffusion.py) | Turning noise into images one small step at a time | [page](https://that-mathevs.github.io/ai-primer/primer/ml/generative/diffusion.html) · [tests](tests/test_diffusion.py) |
-| 37 | [Multimodal models](primer/ml/generative/multimodal.py) | Images, audio and video into a language model | [page](https://that-mathevs.github.io/ai-primer/primer/ml/generative/multimodal.html) · [tests](tests/test_multimodal.py) |
+| 32 | [Trees and boosting](primer/ml/classical.py) | How a tree learns a table of data, and why boosted trees still beat neural networks there | [page](https://rumblr.com/learn/classical) · [tests](tests/test_classical.py) |
+| 33 | [CNNs and RNNs](primer/ml/cnn_rnn.py) | How convolutions see and recurrent nets remember, and why transformers won | [page](https://rumblr.com/learn/cnn-rnn) · [tests](tests/test_cnn_rnn.py) |
+| 34 | [Autoencoders and VAEs](primer/ml/generative/autoencoders.py) | Squeezing data into a code and back, and sampling new data from it | [page](https://rumblr.com/learn/autoencoders) · [tests](tests/test_autoencoders.py) |
+| 35 | [GANs](primer/ml/generative/gans.py) | A forger against a detective: adversarial training, and why it is unstable | [page](https://rumblr.com/learn/gans) · [tests](tests/test_gans.py) |
+| 36 | [Diffusion and flow matching](primer/ml/generative/diffusion.py) | Turning noise into images one small step at a time | [page](https://rumblr.com/learn/diffusion) · [tests](tests/test_diffusion.py) |
+| 37 | [Multimodal models](primer/ml/generative/multimodal.py) | Images, audio and video into a language model | [page](https://rumblr.com/learn/multimodal) · [tests](tests/test_multimodal.py) |
 
 ### Part 6: building systems people rely on
 
@@ -264,22 +264,22 @@ How to build on a language model: the message exchange, the agent loop, tools, r
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 38 | [Talking to a model](primer/agents/llm.py) | The message format, and what tool calling really is | [page](https://that-mathevs.github.io/ai-primer/primer/agents/llm.html) · [tests](tests/test_agents_llm.py) |
-| 39 | [Orchestration](primer/agents/orchestration.py) | When to script the steps and when to let the model choose them, and the named patterns in between | [page](https://that-mathevs.github.io/ai-primer/primer/agents/orchestration.html) · [tests](tests/test_agents_orchestration.py) |
-| 40 | [The agent loop](primer/agents/agent_loop.py) | The loop that runs a model's errands, with the limits that let it stop | [page](https://that-mathevs.github.io/ai-primer/primer/agents/agent_loop.html) · [tests](tests/test_agents_agent_loop.py) |
-| 41 | [Tools](primer/agents/tools.py) | How to design a tool so a wrong call is caught before it costs money | [page](https://that-mathevs.github.io/ai-primer/primer/agents/tools.html) · [tests](tests/test_agents_tools.py) |
-| 42 | [Coding and computer-use agents](primer/agents/coding_agents.py) | Why agents became dependable on code first, and how one drives a repository or a screen | [page](https://that-mathevs.github.io/ai-primer/primer/agents/coding_agents.html) · [tests](tests/test_agents_coding_agents.py) |
-| 43 | [Model Context Protocol](primer/agents/mcp.py) | How one tool can serve every application, what goes over the wire, and the risks of a stranger's tools | [page](https://that-mathevs.github.io/ai-primer/primer/agents/mcp.html) · [tests](tests/test_agents_mcp.py) |
-| 44 | [Retrieval-augmented generation](primer/agents/rag.py) | How a model answers from your documents, with citations and access control | [page](https://that-mathevs.github.io/ai-primer/primer/agents/rag.html) · [tests](tests/test_agents_rag.py) |
-| 45 | [Context engineering](primer/agents/context.py) | What goes in the prompt when code assembles it, and why an agent gets worse as a session runs | [page](https://that-mathevs.github.io/ai-primer/primer/agents/context.html) · [tests](tests/test_agents_context.py) |
-| 46 | [Memory](primer/agents/memory.py) | How an agent carries what it learned across conversations, and keeps one user's memory from another's | [page](https://that-mathevs.github.io/ai-primer/primer/agents/memory.html) · [tests](tests/test_agents_memory.py) |
-| 47 | [Planning](primer/agents/planning.py) | Why a twenty-step task fails when a three-step demo worked, and how a plan survives it | [page](https://that-mathevs.github.io/ai-primer/primer/agents/planning.html) · [tests](tests/test_agents_planning.py) |
-| 48 | [Evaluation](primer/agents/evals.py) | How to know a change helped before a customer finds out that it did not | [page](https://that-mathevs.github.io/ai-primer/primer/agents/evals.html) · [tests](tests/test_agents_evals.py) |
-| 49 | [Guardrails](primer/agents/guardrails.py) | How to keep text a model reads from becoming commands it follows, and check what it sends out | [page](https://that-mathevs.github.io/ai-primer/primer/agents/guardrails.html) · [tests](tests/test_agents_guardrails.py) |
-| 50 | [Cost and latency](primer/agents/cost.py) | The one number that decides cost, and the levers that move it | [page](https://that-mathevs.github.io/ai-primer/primer/agents/cost.html) · [tests](tests/test_agents_cost.py) |
-| 51 | [Observability](primer/agents/observability.py) | How to find out what an agent did yesterday, and turn that record into the next improvement | [page](https://that-mathevs.github.io/ai-primer/primer/agents/observability.html) · [tests](tests/test_agents_observability.py) |
-| 52 | [Safe deployment](primer/agents/deployment.py) | How an agent earns the right to act, one step of trust at a time | [page](https://that-mathevs.github.io/ai-primer/primer/agents/deployment.html) · [tests](tests/test_agents_deployment.py) |
-| 53 | [Why the hard ones fail](primer/agents/failures.py) | The common failure modes, and the fix for each | [page](https://that-mathevs.github.io/ai-primer/primer/agents/failures.html) · [tests](tests/test_agents_failures.py) |
+| 38 | [Talking to a model](primer/agents/llm.py) | The message format, and what tool calling really is | [page](https://rumblr.com/learn/llm) · [tests](tests/test_agents_llm.py) |
+| 39 | [Orchestration](primer/agents/orchestration.py) | When to script the steps and when to let the model choose them, and the named patterns in between | [page](https://rumblr.com/learn/orchestration) · [tests](tests/test_agents_orchestration.py) |
+| 40 | [The agent loop](primer/agents/agent_loop.py) | The loop that runs a model's errands, with the limits that let it stop | [page](https://rumblr.com/learn/agent-loop) · [tests](tests/test_agents_agent_loop.py) |
+| 41 | [Tools](primer/agents/tools.py) | How to design a tool so a wrong call is caught before it costs money | [page](https://rumblr.com/learn/tools) · [tests](tests/test_agents_tools.py) |
+| 42 | [Coding and computer-use agents](primer/agents/coding_agents.py) | Why agents became dependable on code first, and how one drives a repository or a screen | [page](https://rumblr.com/learn/coding-agents) · [tests](tests/test_agents_coding_agents.py) |
+| 43 | [Model Context Protocol](primer/agents/mcp.py) | How one tool can serve every application, what goes over the wire, and the risks of a stranger's tools | [page](https://rumblr.com/learn/mcp) · [tests](tests/test_agents_mcp.py) |
+| 44 | [Retrieval-augmented generation](primer/agents/rag.py) | How a model answers from your documents, with citations and access control | [page](https://rumblr.com/learn/rag) · [tests](tests/test_agents_rag.py) |
+| 45 | [Context engineering](primer/agents/context.py) | What goes in the prompt when code assembles it, and why an agent gets worse as a session runs | [page](https://rumblr.com/learn/context) · [tests](tests/test_agents_context.py) |
+| 46 | [Memory](primer/agents/memory.py) | How an agent carries what it learned across conversations, and keeps one user's memory from another's | [page](https://rumblr.com/learn/memory) · [tests](tests/test_agents_memory.py) |
+| 47 | [Planning](primer/agents/planning.py) | Why a twenty-step task fails when a three-step demo worked, and how a plan survives it | [page](https://rumblr.com/learn/planning) · [tests](tests/test_agents_planning.py) |
+| 48 | [Evaluation](primer/agents/evals.py) | How to know a change helped before a customer finds out that it did not | [page](https://rumblr.com/learn/evals) · [tests](tests/test_agents_evals.py) |
+| 49 | [Guardrails](primer/agents/guardrails.py) | How to keep text a model reads from becoming commands it follows, and check what it sends out | [page](https://rumblr.com/learn/guardrails) · [tests](tests/test_agents_guardrails.py) |
+| 50 | [Cost and latency](primer/agents/cost.py) | The one number that decides cost, and the levers that move it | [page](https://rumblr.com/learn/cost) · [tests](tests/test_agents_cost.py) |
+| 51 | [Observability](primer/agents/observability.py) | How to find out what an agent did yesterday, and turn that record into the next improvement | [page](https://rumblr.com/learn/observability) · [tests](tests/test_agents_observability.py) |
+| 52 | [Safe deployment](primer/agents/deployment.py) | How an agent earns the right to act, one step of trust at a time | [page](https://rumblr.com/learn/deployment) · [tests](tests/test_agents_deployment.py) |
+| 53 | [Why the hard ones fail](primer/agents/failures.py) | The common failure modes, and the fix for each | [page](https://rumblr.com/learn/failures) · [tests](tests/test_agents_failures.py) |
 
 <!-- END curriculum -->
 

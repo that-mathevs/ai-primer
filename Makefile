@@ -7,7 +7,7 @@ export MKL_NUM_THREADS := 1
 export VECLIB_MAXIMUM_THREADS := 1
 MODULES = $(shell find primer -name '*.py' ! -name '__init__.py' ! -name '_*' | sed 's|/|.|g; s|\.py$$||' | sort)
 
-.PHONY: test spec readme demos figures docs sitecheck browsercheck gate links clean
+.PHONY: test spec readme demos figures docs redirects sitecheck browsercheck gate links clean
 
 test:  ## run the full suite
 	$(PY) -m pytest
@@ -27,7 +27,10 @@ demos:  ## run every lesson's walkthrough
 figures:  ## render every lesson's figures() into docs/figures and check each is explained
 	$(PY) tools/figures.py
 
-docs: readme  ## figures + pdoc + papers + hover glossary -> docs/html (uses pdoc, or uvx pdoc if not installed)
+redirects:  ## the published site: one redirect to rumblr.com per page the old site had -> docs/html
+	$(PY) tools/redirect_site.py
+
+docs: readme  ## a local HTML preview of the lessons -> docs/html (not published; rumblr.com is; uses pdoc, or uvx pdoc)
 	$(PY) tools/docsite.py
 
 sitecheck:  ## crawl the built site and fail on any broken internal link (run after make docs)

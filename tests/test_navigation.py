@@ -318,10 +318,11 @@ class TestLinksIntoTheCode:
                   or not (n.startswith("primer.") or defined_here(n))]
         assert broken == []
 
-    def test_given_the_readme_each_lesson_row_links_its_page_on_the_live_site(self):
-        from primer.curriculum import SITE_URL
+    def test_given_the_readme_each_lesson_row_links_its_page_on_rumblr(self):
+        from primer.curriculum import lesson_url
 
-        assert f"({SITE_URL}primer/ml/attention.html)" in readme_section()
+        assert lesson_url("primer.ml.attention") == "https://rumblr.com/learn/attention"
+        assert "(https://rumblr.com/learn/attention)" in readme_section()
 
     def test_given_the_readme_it_says_how_to_clone_the_real_repository(self):
         from primer.curriculum import REPO_URL

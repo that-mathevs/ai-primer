@@ -1,5 +1,6 @@
-# Build the HTML site (lessons, figures, hover glossary, annotated papers)
-# and publish it with GitHub Pages on every push to main.
+# The lessons are read at rumblr.com, built from this repository. GitHub Pages
+# serves one redirect per page the old site had, so old links still land.
+# Run the tests, then publish the redirects on every push to main.
 name: pages
 
 on:
@@ -22,9 +23,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -e ".[dev,docs]" matplotlib
       - run: make test
-      - run: make docs
-      - run: make sitecheck
-      - run: make browsercheck
+      - run: make redirects
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/html

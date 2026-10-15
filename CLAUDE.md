@@ -173,7 +173,7 @@ sources of truth:
 | a term | [`primer/glossary.py`](primer/glossary.py) | the Glossary page, hover definitions on every page (`glossary.js`) |
 | a paper | [`docs/papers/CATALOG.md`](docs/papers/CATALOG.md) | papers index, `catalog.js`, companion nav, the home page's paper list |
 | a link from prose to code | an `**In code:**` line naming the function or class in backticks (fully dotted if it lives in another module) | a link to its entry on the page, with View Source and its exact lines on GitHub |
-| the site's address | `SITE_URL` in [`primer/curriculum.py`](primer/curriculum.py) | the README's links to the live site (absolute, because the built HTML isn't committed) |
+| where a lesson is read | `SITE_URL` and `lesson_url` in [`primer/curriculum.py`](primer/curriculum.py) | the README's links to each lesson on rumblr.com, and [`tools/redirect_site.py`](tools/redirect_site.py), the redirects GitHub Pages serves in place of the old site |
 
 Text between `<!-- BEGIN … -->` and `<!-- END … -->` markers is generated.
 Edit its source, never the text itself. [`tests/test_navigation.py`](tests/test_navigation.py) fails
@@ -273,7 +273,8 @@ make spec     # the suite printed as a readable specification
 make demos    # run every module's walkthrough
 make readme   # regenerate README's reading order from primer/curriculum.py
 make figures  # render every figures() into docs/figures/*.svg
-make docs     # readme + figures + the HTML site (nav, hover glossary, papers) into docs/html
+make docs     # readme + figures + a local HTML preview into docs/html (rumblr.com is what readers see)
+make redirects  # the published site: a redirect to rumblr.com for every page the old site had
 make sitecheck  # crawl the built site; fails on any broken internal link
 make links    # check every external URL (needs network; run before publishing)
 python -m primer.ml.attention        # any single lesson
