@@ -1,13 +1,12 @@
 """
 # AI Primer
 
-Two parts, each a subpackage:
+Two subpackages, six parts (the parts are in `primer.curriculum`):
 
-* `primer.ml`: **Part 1, ML foundations: how the model works inside.** Neural nets, backprop,
-  optimizers, attention, transformers, tokenization, training vs. inference,
-  losses and metrics, regularization, CNNs/RNNs, and (the centerpiece)
-  `primer.ml.embeddings`.
-* `primer.agents`: **Part 2, Applied AI: building agents and RAG systems that people rely on.** Agent loops, tool
+* `primer.ml`: **how the model works, how it is trained and judged, how it is run** (Parts 1 to 3),
+  the embeddings and search lessons (Part 4, `primer.ml.embeddings`) and the other kinds of
+  model and the generators (Part 5, with `primer.ml.generative`).
+* `primer.agents`: **Part 6, building systems people rely on.** Agent loops, tool
   calling, RAG, memory, planning, evals, guardrails, cost, observability,
   and safe deployment.
 

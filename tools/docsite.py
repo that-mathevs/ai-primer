@@ -1096,6 +1096,9 @@ def part_intro(part_key: str) -> str:
     if len(packages) != 1:
         return ""
     package = packages.pop()
+    # A package shared between parts (primer.ml spans Parts 1 to 3) has no one part to introduce.
+    if {l.part for l in CURRICULUM if l.module.rsplit(".", 1)[0] == package} != {part_key}:
+        return ""
     doc = importlib.import_module(package).__doc__ or ""
     intro = doc.split("## Reading order")[0].strip()
     intro = re.sub(r"^# .*\n", "", intro).strip()

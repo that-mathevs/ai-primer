@@ -4,7 +4,7 @@
 
 A public, open-source **primer on how modern AI works, built from scratch in
 Python**, written as a gift to engineers who want to understand the machinery
-rather than call it. Two parts:
+rather than call it. Two subpackages (the course's six parts are in [`primer/curriculum.py`](primer/curriculum.py)):
 
 - [`primer/ml/`](primer/ml): ML foundations. Neural nets, attention, transformers,
   tokenization, training and inference, losses and metrics, and the

@@ -1,5 +1,5 @@
 """
-# Part 2: building systems people rely on
+# Part 6: building systems people rely on
 
 Everything here runs offline against `primer.agents.llm.ScriptedLLM`, a
 deterministic stand-in for a model, so every failure mode can be reproduced

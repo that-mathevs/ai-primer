@@ -3,7 +3,7 @@
 Generated from each lesson's `## Self-test questions` section by `make readme`; edit the lesson, not this file. Answer each question out loud before reading the answer.
 
 
-## Before you begin
+## Reference: reading the symbols
 
 
 ### 0. Math notation, from zero
@@ -30,7 +30,7 @@ For every weight, how fast the loss rises as that weight increases. Training
 moves each weight the opposite way, scaled by the learning rate η.
 
 
-## Part 1: how the model works inside
+## Part 1: how a language model works
 
 
 ### 1. The big picture
@@ -96,7 +96,38 @@ A batch is the examples per update, a step is one update, an epoch is one
 full pass over the data.
 
 
-### 3. Optimizers
+### 3. Loss functions
+
+From [`primer.ml.losses`](../primer/ml/losses.py).
+
+**The model puts 1% on the right token. What's the loss, and why so large?**
+−ln(0.01) = 4.61, about 44× the loss at 90% (0.105). The log punishes confident
+mistakes steeply, which pushes the model toward calibrated probabilities.
+
+**Loss is 0.69 per token. What's the perplexity?**
+e^0.69 = 2: as uncertain as a coin flip between two options.
+
+**Why compute cross-entropy from logits instead of from softmax outputs?**
+Softmax of large logits overflows, and the log of a tiny probability
+underflows to −∞. Log-sum-exp subtracts the max first and never
+exponentiates a large number. The fused gradient is simply softmax − onehot.
+
+**When would you pick MAE over MSE?**
+When outliers are noise you don't want to chase. MSE squares errors, so one
+huge miss dominates; MAE weighs errors linearly.
+
+**How does InfoNCE get negatives without labelling them?**
+It uses the other items in the batch: for each query, every other query's
+positive passage is a negative. Bigger batches mean more (and harder)
+negatives for free.
+
+**Why do hard negatives matter?**
+Easy negatives are already far away and contribute almost no gradient. Hard
+negatives score high and produce most of the learning signal, teaching the
+model to separate "on topic" from "actually answers the question".
+
+
+### 4. Optimizers
 
 From [`primer.ml.optimizers`](../primer/ml/optimizers.py).
 
@@ -131,7 +162,7 @@ weights far off. Clipping the combined norm scales every tensor by the same
 factor, which preserves the update's direction.
 
 
-### 4. Training deep networks
+### 5. Training deep networks
 
 From [`primer.ml.deep_nets`](../primer/ml/deep_nets.py).
 
@@ -166,7 +197,7 @@ Initialization (and normalization) fix the cause, keeping per-layer gain
 near 1. Clipping is a safety net for occasional spikes.
 
 
-### 5. Attention
+### 6. Attention
 
 From [`primer.ml.attention`](../primer/ml/attention.py).
 
@@ -209,7 +240,7 @@ cache that is several times smaller. That means more concurrent requests
 and longer contexts per GPU.
 
 
-### 6. Positional information
+### 7. Positional information
 
 From [`primer.ml.positional`](../primer/ml/positional.py).
 
@@ -241,7 +272,7 @@ They are simple and effective within the trained length, but they cannot
 represent any position beyond the table size.
 
 
-### 7. The transformer
+### 8. The transformer
 
 From [`primer.ml.transformer`](../primer/ml/transformer.py).
 
@@ -278,7 +309,7 @@ load-balancing.
 6 × 7e9 × 2e12 = 8.4e22 FLOPs.
 
 
-### 8. Tokenization
+### 9. Tokenization
 
 From [`primer.ml.tokenization`](../primer/ml/tokenization.py).
 
@@ -313,7 +344,10 @@ line up with place value.
 0.006 + 0.0075 = \$0.0135. And 1,000 tokens is about 750 English words.
 
 
-### 9. Training stages
+## Part 2: how it is trained and judged
+
+
+### 10. Training stages
 
 From [`primer.ml.training_stages`](../primer/ml/training_stages.py).
 
@@ -368,7 +402,7 @@ relative preferences among wrong answers, not just its top pick; the T²
 factor keeps gradient sizes comparable.
 
 
-### 10. Pretraining at scale
+### 11. Pretraining at scale
 
 From [`primer.ml.pretraining`](../primer/ml/pretraining.py).
 
@@ -437,7 +471,7 @@ work redone after failures. Faster, asynchronous saves allow more frequent
 checkpoints and less waste.
 
 
-### 11. Fine-tuning in practice
+### 12. Fine-tuning in practice
 
 From [`primer.ml.fine_tuning`](../primer/ml/fine_tuning.py).
 
@@ -497,7 +531,44 @@ conflict-resolving merge such as TIES, and a held-out check on every task
 either way.
 
 
-### 12. Reinforcement learning
+### 13. Overfitting and regularization
+
+From [`primer.ml.regularization`](../primer/ml/regularization.py).
+
+**Training loss drops while validation loss rises. What's happening, and what helps?**
+Overfitting: the model is memorising training-set noise. Stop early (keep
+the best-validation weights), add regularization (dropout, weight decay),
+get more or more varied data, or reduce capacity.
+
+**How do you tell underfitting from overfitting?**
+Underfitting: training and validation errors are both high. Overfitting:
+training error is low and validation error is much higher. They need
+opposite fixes.
+
+**Why does dropout scale the surviving activations by 1/(1 − p)?**
+So the expected value of each activation is the same during training as at
+evaluation, where nothing is dropped. The evaluation-time network can then
+be used as is.
+
+**Why does L1 produce exact zeros but L2 doesn't?**
+L1's penalty has a constant slope, so small weights feel a fixed pull toward
+zero that the data can't outweigh; they're thresholded to zero. L2's pull is
+proportional to the weight, so it fades as a weight shrinks and never quite
+reaches zero.
+
+**Why must the test set be touched only once?**
+Every decision made by looking at test scores fits the model to the test
+set a little. Do it repeatedly and the test score stops being an unbiased
+estimate of performance on new data.
+
+**Give two examples of data leakage.**
+The same (or near-duplicate) documents in both the training and test
+splits; and a feature that's only known after the outcome (a chargeback flag
+in a fraud model). For LLM evaluation: benchmark questions present in the
+pretraining data.
+
+
+### 14. Reinforcement learning
 
 From [`primer.ml.reinforcement`](../primer/ml/reinforcement.py).
 
@@ -555,7 +626,7 @@ blind spots to exploit and costs nothing to label, so RL can run for a long
 time against it without the reward drifting away from correctness.
 
 
-### 13. Reasoning models
+### 15. Reasoning models
 
 From [`primer.ml.reasoning`](../primer/ml/reasoning.py).
 
@@ -617,7 +688,7 @@ The chain is useful evidence and often helpful, but it is not a guaranteed
 record of the computation.
 
 
-### 14. Alignment and safety
+### 16. Alignment and safety
 
 From [`primer.ml.alignment`](../primer/ml/alignment.py).
 
@@ -680,258 +751,7 @@ landed, which makes the gate a formality. Fixed limits turn noisy
 measurements into a decision made in advance.
 
 
-### 15. The hardware underneath
-
-From [`primer.ml.hardware`](../primer/ml/hardware.py).
-
-**Why are GPUs, rather than CPUs, used to train and run neural networks?**
-Nearly all of a network's work is matrix multiplication, where every output
-cell is an independent dot product. A GPU spends its silicon on thousands
-of simple arithmetic units (plus matrix units) that apply the same
-instruction to different numbers, so it can compute thousands of cells at
-once. A CPU spends its silicon on a few flexible cores that are better at
-branchy, sequential code.
-
-**How many FLOPs does multiplying a 1,000 × 2,000 matrix by a 2,000 × 500 matrix take, and why that formula?**
-2 × 1,000 × 500 × 2,000 = 2 × 10⁹. There are m·n = 500,000 output cells,
-each a dot product of length k = 2,000, and each step of a dot product is
-one multiply and one add.
-
-**The chip can do 10¹⁵ FLOPs per second but a model runs far slower. What is usually the bottleneck, and how do you tell?**
-Memory bandwidth. Compare the work's arithmetic intensity (FLOPs per byte
-moved from HBM) with the chip's break-even ratio, peak FLOPs divided by
-bandwidth (about 299 here). Below it, the arithmetic units wait on memory;
-generating one token for one user has an intensity near 1, so it is
-deeply memory-bound.
-
-**How does tiling a matrix multiply reduce memory traffic, and what limits it?**
-Each block of numbers is loaded into fast on-chip memory once and used for
-every multiplication it takes part in, T times, instead of being fetched
-again for each one. Reads fall from 2n³ to 2n³/T. The limit is fast-memory
-size: three T × T tiles must fit at once, so real kernels tile at several
-levels of the hierarchy.
-
-**What is the difference between bf16 and fp16, and why do many training runs prefer bf16?**
-Both have 16 bits. bf16 has fp32's 8 exponent bits and 7 mantissa bits:
-the same range as fp32, less precision. fp16 has 5 exponent bits and 10
-mantissa bits: more precision, but a range that tops out at 65,504 and
-rounds gradients smaller than about 3 × 10⁻⁸ to zero. bf16 avoids the need for
-loss scaling; its coarse precision is handled by keeping fp32 master
-weights and fp32 sums.
-
-**Why does halving the bits per number roughly double throughput?**
-Three reasons: half the bytes to move, so memory-bound work runs twice as
-fast and twice the parameters fit; twice the FLOPs per byte for the same
-tile, so more work clears the break-even point; and multipliers whose area
-grows with the square of the significand bits, so many more small
-multipliers fit in the same silicon.
-
-**Why is tensor parallelism usually kept inside one machine while data parallelism spans many?**
-Tensor parallelism splits every matrix multiply, so GPUs must exchange
-partial results inside every layer, many times per step: it needs the fast
-in-machine links. Data parallelism communicates once per step (an
-all-reduce of the gradients), which a ring spreads so each GPU sends only
-about twice its gradient, and which can overlap with the backward pass, so
-it tolerates the slower network.
-
-**Will a 70-billion-parameter model serve from one 80 GB GPU?**
-Not in 16-bit: the weights alone are 140 GB. In 8-bit the weights take 70
-GB, leaving about 10 GB, around 30,000 tokens of 16-bit KV cache for a
-model with 80 layers and 8 KV heads of 128 dimensions. In 4-bit, 45 GB is
-left, about 137,000 tokens. Leave headroom for activations and the serving
-software.
-
-
-### 16. Inference
-
-From [`primer.ml.inference`](../primer/ml/inference.py).
-
-**Q: Why is decoding slow even on a huge GPU?**
-A: Each token needs every weight read from memory but does only about one
-operation per byte read, far below the GPU's break-even (~300 FLOPs/byte).
-The arithmetic units mostly wait on memory.
-
-**Q: What is the KV cache, and why does it matter for serving cost?**
-A: Stored keys and values of all earlier tokens, so each new token is
-computed once instead of recomputing the whole sequence. It grows with
-context length and batch size, and that memory caps how many requests a GPU
-serves at once.
-
-**Q: How much memory does a 70B model need at 16-bit and at 4-bit?**
-A: 140 GB and 35 GB for weights alone, plus KV cache and activations.
-
-**Q: Estimate the KV cache for one 32k-token request on a Llama-3-8B-shaped
-model.**
-A: 2 × 32 × 8 × 128 × 2 = 131,072 bytes per token; × 32,000 ≈ 4.2 GB.
-
-**Q: Why does grouped-query attention make serving cheaper?**
-A: It shares each key/value head among several query heads, shrinking the
-KV cache (4× for 32 → 8 KV heads), so more requests fit per GPU.
-
-**Q: Why isn't temperature 0 perfectly deterministic?**
-A: Floating-point addition isn't associative, and GPU reduction order can
-change with kernels and batch composition, so nearly tied logits can flip.
-
-**Q: How can speculative decoding be faster yet produce the same
-distribution?**
-A: Verifying several draft tokens costs one memory-bound pass of the big
-model, about the same as generating one. The min(1, p/q) accept rule plus
-resampling from max(0, p − q) on rejection makes the output exactly the big
-model's distribution.
-
-**Q: What does continuous batching fix?**
-A: Idle slots: static batches wait for their longest request, while
-continuous batching refills any freed slot immediately, raising utilisation.
-
-**Q: How do you structure a prompt to benefit from prompt caching?**
-A: Put stable content (system prompt, tool definitions, reference documents)
-first and anything that varies (the question, timestamps, IDs) last, because
-a cache is valid only up to the first differing token.
-
-
-### 17. Structured output
-
-From [`primer.ml.structured_output`](../primer/ml/structured_output.py).
-
-**Why does asking a model for JSON in the prompt fail some of the time, and why do longer outputs fail more?**
-Each token is a separate draw with some small chance of being wrong, and a
-single wrong token breaks the parse. The chance that all n tokens are right
-is about $p^n$, which shrinks as n grows: 98% per token gives 82% at 10 tokens
-and 13% at 100.
-
-**What exactly does constrained decoding change in the model?**
-Nothing in the weights. At each step it sets the logits of forbidden tokens to
-minus infinity (probability zero) before sampling. The allowed tokens keep
-their relative odds, and temperature and top-p still apply to them.
-
-**Why is the output valid "by construction", and what can still go wrong with the shape?**
-Every prefix is kept completable, and the end token is allowed only when the
-answer is complete, so any answer that ends is valid. It can still be cut off
-by the token budget, leaving a valid but unfinished prefix.
-
-**How do you decide whether a multi-character token is allowed in a given state?**
-Walk its characters through the state machine one at a time from the current
-state. It is allowed if the walk never gets stuck. `cat` is allowed at the
-start of `cat|car|dog`; `at` is not, because the start has no "a" line.
-
-**Why can't a finite-state machine check arbitrary JSON?**
-JSON nests without limit, and closing correctly requires remembering every
-open bracket in order. A machine with a fixed number of states can't count
-without limit. A stack, which a pushdown automaton adds, can.
-
-**Why can masks be precomputed for a pattern but not fully for a JSON Schema?**
-A pattern's machine has a fixed number of states, so the allowed tokens for
-each can be tabled once. With nesting the stack can take unboundedly many
-forms. Engines precompute the tokens whose fate depends only on the current
-position and check the rest against the stack at run time.
-
-**How can constrained decoding make answers worse?**
-It forces the model's choices into the allowed set even when the model
-believed something else: an integer field makes it invent a number when the
-honest answer was null, and token-by-token masking can commit early to a
-path the model thought unlikely overall. Allowing null, or letting the model
-reason before the structured part, helps.
-
-**When is validating and retrying good enough?**
-When the model is valid almost every time (95% needs about 1.05 calls on
-average), when you can't change the decoder, or when the rule can't be
-written as a grammar. It gets expensive fast as the valid rate falls: 1/p
-calls on average.
-
-**What does a strict schema guarantee about tool arguments, and what doesn't it?**
-It guarantees the shape: field names, types, required fields, enum values.
-It does not guarantee the values are true or allowed: a customer ID can be
-well formed and not exist, and an amount can fit the type while breaking a
-minimum. Your code still validates business rules.
-
-
-### 18. Long context and efficient architectures
-
-From [`primer.ml.efficient_architectures`](../primer/ml/efficient_architectures.py).
-
-**Why does doubling the context quadruple attention's compute but only
-double its cache?**
-Every token's query is scored against every key, so the scores form an
-n × n table: doubling n quadruples it. The cache stores one key and one value
-per token per layer, a list that grows by one entry per token, so doubling n
-doubles it.
-
-**A model uses a 4,096-token sliding window in all 32 layers. Can token
-100,000 be influenced by token 1?**
-Yes, in principle: information moves up to w − 1 = 4,095 positions per
-layer, so 32 layers reach 131,040 positions back. In practice it must be
-relayed through about 25 intermediate tokens and layers, so it arrives
-weakened; direct, exact lookup only works within the window.
-
-**What does a global token do in a sparse pattern, and why is it cheap?**
-Every token reads it and it reads every token, so any two tokens are at most
-two hops apart. It adds only about one column and one row of scores, a cost
-that grows with n rather than n².
-
-**Why can linear attention run as a recurrence but softmax attention cannot?**
-Linear attention's weight φ(q)·φ(k) splits into a query part and a key part,
-so the key-and-value parts can be summed ahead of time into a fixed-size
-state that any later query can read. The softmax weight e^(q·k) does not
-split that way, so each new query must revisit every stored key.
-
-**What does "selective" mean in Mamba, and what problem does it fix?**
-The step size Δ, and with it how much of the old state is kept and how much
-of the new token is written, is computed from each token. A fixed SSM applies
-the same keep and write amounts to every token, so it cannot both absorb one
-important token and ignore the filler around it.
-
-**If a selective SSM's parameters change every step, how does it train in
-parallel?**
-The update "multiply by a, add b" can be merged: two consecutive steps form
-one step of the same kind. A parallel scan merges pairs, then pairs of
-pairs, and finishes in about log₂ n rounds.
-
-**How does latent KV caching save memory without changing the attention
-outputs?**
-Keys and values are computed as a small cached latent times fixed
-up-projection matrices, so storing the latent is enough to rebuild them
-exactly. The up-projection can even be folded into the query and output
-side, so the full keys and values are never built.
-
-**Why do hybrid models keep a few attention layers instead of going all-SSM?**
-A fixed-size state is a lossy summary, which hurts copying and exact recall
-over long contexts. A handful of attention layers restores exact lookup
-while most layers keep constant memory, so the cache shrinks roughly by the
-fraction of layers that are SSMs.
-
-
-### 19. Loss functions
-
-From [`primer.ml.losses`](../primer/ml/losses.py).
-
-**The model puts 1% on the right token. What's the loss, and why so large?**
-−ln(0.01) = 4.61, about 44× the loss at 90% (0.105). The log punishes confident
-mistakes steeply, which pushes the model toward calibrated probabilities.
-
-**Loss is 0.69 per token. What's the perplexity?**
-e^0.69 = 2: as uncertain as a coin flip between two options.
-
-**Why compute cross-entropy from logits instead of from softmax outputs?**
-Softmax of large logits overflows, and the log of a tiny probability
-underflows to −∞. Log-sum-exp subtracts the max first and never
-exponentiates a large number. The fused gradient is simply softmax − onehot.
-
-**When would you pick MAE over MSE?**
-When outliers are noise you don't want to chase. MSE squares errors, so one
-huge miss dominates; MAE weighs errors linearly.
-
-**How does InfoNCE get negatives without labelling them?**
-It uses the other items in the batch: for each query, every other query's
-positive passage is a negative. Bigger batches mean more (and harder)
-negatives for free.
-
-**Why do hard negatives matter?**
-Easy negatives are already far away and contribute almost no gradient. Hard
-negatives score high and produce most of the learning signal, teaching the
-model to separate "on topic" from "actually answers the question".
-
-
-### 20. Metrics
+### 17. Metrics
 
 From [`primer.ml.metrics`](../primer/ml/metrics.py).
 
@@ -968,7 +788,7 @@ A: Not necessarily. If 90% of answers are "pass", a judge that always says
 agreement.
 
 
-### 21. Reading benchmarks
+### 18. Reading benchmarks
 
 From [`primer.ml.benchmarks`](../primer/ml/benchmarks.py).
 
@@ -1031,169 +851,230 @@ the length (and other style features) difference as extra factors in the
 Bradley-Terry fit separates the style preference from the model's strength.
 
 
-### 22. Overfitting and regularization
-
-From [`primer.ml.regularization`](../primer/ml/regularization.py).
-
-**Training loss drops while validation loss rises. What's happening, and what helps?**
-Overfitting: the model is memorising training-set noise. Stop early (keep
-the best-validation weights), add regularization (dropout, weight decay),
-get more or more varied data, or reduce capacity.
-
-**How do you tell underfitting from overfitting?**
-Underfitting: training and validation errors are both high. Overfitting:
-training error is low and validation error is much higher. They need
-opposite fixes.
-
-**Why does dropout scale the surviving activations by 1/(1 − p)?**
-So the expected value of each activation is the same during training as at
-evaluation, where nothing is dropped. The evaluation-time network can then
-be used as is.
-
-**Why does L1 produce exact zeros but L2 doesn't?**
-L1's penalty has a constant slope, so small weights feel a fixed pull toward
-zero that the data can't outweigh; they're thresholded to zero. L2's pull is
-proportional to the weight, so it fades as a weight shrinks and never quite
-reaches zero.
-
-**Why must the test set be touched only once?**
-Every decision made by looking at test scores fits the model to the test
-set a little. Do it repeatedly and the test score stops being an unbiased
-estimate of performance on new data.
-
-**Give two examples of data leakage.**
-The same (or near-duplicate) documents in both the training and test
-splits; and a feature that's only known after the outcome (a chargeback flag
-in a fraud model). For LLM evaluation: benchmark questions present in the
-pretraining data.
+## Part 3: how it is run
 
 
-### 23. Trees and boosting
+### 19. The hardware underneath
 
-From [`primer.ml.classical`](../primer/ml/classical.py).
+From [`primer.ml.hardware`](../primer/ml/hardware.py).
 
-**Why is Gini impurity 0.5 for a pile that is half spam and half not?**
-It is the chance that two emails drawn at random (with replacement) carry
-different labels: $1 - (0.5^2 + 0.5^2) = 0.5$. For two labels that is the
-most mixed a pile can be.
+**Why are GPUs, rather than CPUs, used to train and run neural networks?**
+Nearly all of a network's work is matrix multiplication, where every output
+cell is an independent dot product. A GPU spends its silicon on thousands
+of simple arithmetic units (plus matrix units) that apply the same
+instruction to different numbers, so it can compute thousands of cells at
+once. A CPU spends its silicon on a few flexible cores that are better at
+branchy, sequential code.
 
-**Why weight each child pile by its size when scoring a split?**
-Otherwise a question that peels off one example into a tiny pure pile
-would look as good as one that sorts half the data cleanly. Weighting by
-size measures how much of the data the question actually tidied.
+**How many FLOPs does multiplying a 1,000 × 2,000 matrix by a 2,000 × 500 matrix take, and why that formula?**
+2 × 1,000 × 500 × 2,000 = 2 × 10⁹. There are m·n = 500,000 output cells,
+each a dot product of length k = 2,000, and each step of a dot product is
+one multiply and one add.
 
-**Why does a tree need no feature scaling, when a neural network does?**
-A tree only compares one column against a threshold, so any change that
-keeps the order of values (rescaling, logarithms) produces the same splits
-and the same predictions. A network multiplies and adds columns together,
-so a column measured in tens of thousands drowns the others and saturates
-its neurons.
+**The chip can do 10¹⁵ FLOPs per second but a model runs far slower. What is usually the bottleneck, and how do you tell?**
+Memory bandwidth. Compare the work's arithmetic intensity (FLOPs per byte
+moved from HBM) with the chip's break-even ratio, peak FLOPs divided by
+bandwidth (about 299 here). Below it, the arithmetic units wait on memory;
+generating one token for one user has an intensity near 1, so it is
+deeply memory-bound.
 
-**A tree scores 100% on training data and 80% on validation. What happened,
-and what are two fixes?**
-It overfitted: it kept splitting until each leaf fenced off individual
-noisy examples. Limit its depth (or require a minimum number of examples per
-leaf, or prune), or replace it with a random forest that averages many such
-trees.
+**How does tiling a matrix multiply reduce memory traffic, and what limits it?**
+Each block of numbers is loaded into fast on-chip memory once and used for
+every multiplication it takes part in, T times, instead of being fetched
+again for each one. Reads fall from 2n³ to 2n³/T. The limit is fast-memory
+size: three T × T tiles must fit at once, so real kernels tile at several
+levels of the hierarchy.
 
-**Why does a random forest use random feature subsets, not just bootstrap
-samples?**
-The forest's variance is $\rho\sigma^2 + (1 - \rho)\sigma^2/B$. More trees
-only shrink the second term; the floor is set by the correlation $\rho$
-between trees. With bagging alone every tree tends to pick the same strong
-feature first and they stay correlated. Random subsets force different
-trees down different paths, lowering $\rho$.
+**What is the difference between bf16 and fp16, and why do many training runs prefer bf16?**
+Both have 16 bits. bf16 has fp32's 8 exponent bits and 7 mantissa bits:
+the same range as fp32, less precision. fp16 has 5 exponent bits and 10
+mantissa bits: more precision, but a range that tops out at 65,504 and
+rounds gradients smaller than about 3 × 10⁻⁸ to zero. bf16 avoids the need for
+loss scaling; its coarse precision is handled by keeping fp32 master
+weights and fp32 sums.
 
-**Does adding more trees overfit a random forest? Does adding more rounds
-overfit gradient boosting?**
-More trees in a forest does not: accuracy rises and then levels off, only
-costing time. More rounds of boosting does: each round fits the training
-residuals more closely, so validation error reaches a minimum and then
-climbs. Boosting needs early stopping; forests don't.
+**Why does halving the bits per number roughly double throughput?**
+Three reasons: half the bytes to move, so memory-bound work runs twice as
+fast and twice the parameters fit; twice the FLOPs per byte for the same
+tile, so more work clears the break-even point; and multipliers whose area
+grows with the square of the significand bits, so many more small
+multipliers fit in the same silicon.
 
-**Why is the residual the right target for each boosting tree?**
-For squared-error loss $\frac{1}{2}(y - F)^2$, the negative derivative with
-respect to the prediction $F$ is $y - F$, the residual. Fitting a tree to it
-and taking a step is gradient descent on the predictions. With another
-loss, the tree fits that loss's negative gradient instead, such as $y - p$
-for log loss.
+**Why is tensor parallelism usually kept inside one machine while data parallelism spans many?**
+Tensor parallelism splits every matrix multiply, so GPUs must exchange
+partial results inside every layer, many times per step: it needs the fast
+in-machine links. Data parallelism communicates once per step (an
+all-reduce of the gradients), which a ring spreads so each GPU sends only
+about twice its gradient, and which can overlap with the backward pass, so
+it tolerates the slower network.
 
-**What does a smaller learning rate buy in gradient boosting, and what does
-it cost?**
-Each tree contributes only a fraction of its correction, so no single noisy
-tree can move the model far and many trees must agree. That usually
-generalizes better (0.110 against 0.122 in this lesson's sweep). It costs
-more rounds, so more training and prediction time.
-
-**Why can't a boosted-tree model predict a house price above the highest
-price it trained on?**
-Every leaf predicts an average of training values, and the model is a sum of
-such leaves anchored at the training mean. Beyond the edge of the training
-data every question gives the same answer as at the edge, so the prediction
-stays flat.
-
-**What is wrong with trusting impurity-based feature importance?**
-It is measured on training data, where splits on noise still tidy up piles.
-It favours columns with many distinct values and splits credit between
-correlated columns. Permutation importance on held-out data is more honest,
-and neither measures cause and effect.
-
-**When would you choose a neural network over gradient-boosted trees?**
-When one input is an image, audio clip, text or other sequence whose
-meaning lies in the arrangement of raw values; when the data is huge or a
-pretrained model can be reused; when predictions must extrapolate smoothly;
-or when the model must be trained end to end with other neural parts.
+**Will a 70-billion-parameter model serve from one 80 GB GPU?**
+Not in 16-bit: the weights alone are 140 GB. In 8-bit the weights take 70
+GB, leaving about 10 GB, around 30,000 tokens of 16-bit KV cache for a
+model with 80 layers and 8 KV heads of 128 dimensions. In 4-bit, 45 GB is
+left, about 137,000 tokens. Leave headroom for activations and the serving
+software.
 
 
-### 24. CNNs and RNNs
+### 20. Inference
 
-From [`primer.ml.cnn_rnn`](../primer/ml/cnn_rnn.py).
+From [`primer.ml.inference`](../primer/ml/inference.py).
 
-**Q: What does one number in a feature map mean?**
-A: How strongly the filter's pattern matches the image patch at that
-position: the sum of filter weights times the pixels under them.
+**Q: Why is decoding slow even on a huge GPU?**
+A: Each token needs every weight read from memory but does only about one
+operation per byte read, far below the GPU's break-even (~300 FLOPs/byte).
+The arithmetic units mostly wait on memory.
 
-**Q: Why does a CNN need far fewer parameters than a dense layer on images?**
-A: Weight sharing: one small filter is reused at every position, so the
-parameter count depends on filter size and number of filters, not on image
-size.
+**Q: What is the KV cache, and why does it matter for serving cost?**
+A: Stored keys and values of all earlier tokens, so each new token is
+computed once instead of recomputing the whole sequence. It grows with
+context length and batch size, and that memory caps how many requests a GPU
+serves at once.
 
-**Q: What does pooling buy you?**
-A: Smaller maps (less computation), a faster-growing receptive field, and
-tolerance to small shifts, since the strongest response in a neighbourhood
-survives wherever exactly it was.
+**Q: How much memory does a 70B model need at 16-bit and at 4-bit?**
+A: 140 GB and 35 GB for weights alone, plus KV cache and activations.
 
-**Q: Why did VGG use stacks of 3×3 filters instead of larger ones?**
-A: Two 3×3 layers see a 5×5 region with 18 weights instead of 25, and add an
-extra nonlinearity between them.
+**Q: Estimate the KV cache for one 32k-token request on a Llama-3-8B-shaped
+model.**
+A: 2 × 32 × 8 × 128 × 2 = 131,072 bytes per token; × 32,000 ≈ 4.2 GB.
 
-**Q: How does a Vision Transformer turn an image into tokens?**
-A: It cuts the image into fixed-size patches (e.g. 16×16), flattens each
-into a vector, projects it to the model width and adds a position
-embedding; the patches are then processed like words.
+**Q: Why does grouped-query attention make serving cheaper?**
+A: It shares each key/value head among several query heads, shrinking the
+KV cache (4× for 32 → 8 KV heads), so more requests fit per GPU.
 
-**Q: Why do plain RNNs struggle with long-range dependencies?**
-A: Backpropagation through time multiplies the gradient by the recurrent
-weights and tanh slopes at every step, so it shrinks geometrically (or
-explodes) and early inputs stop influencing learning.
+**Q: Why isn't temperature 0 perfectly deterministic?**
+A: Floating-point addition isn't associative, and GPU reduction order can
+change with kernels and batch composition, so nearly tied logits can flip.
 
-**Q: How do LSTM gates fix that?**
-A: The cell state is updated additively, c = f ⊙ c_prev + i ⊙ g, so with the
-forget gate near 1 information and gradients flow through many steps almost
-unchanged.
+**Q: How can speculative decoding be faster yet produce the same
+distribution?**
+A: Verifying several draft tokens costs one memory-bound pass of the big
+model, about the same as generating one. The min(1, p/q) accept rule plus
+resampling from max(0, p − q) on rejection makes the output exactly the big
+model's distribution.
 
-**Q: Why did transformers replace RNNs?**
-A: RNNs process tokens sequentially, which prevents parallel training, and
-force all history through one fixed-size state. Attention connects any two
-tokens in one step and trains all positions in parallel.
+**Q: What does continuous batching fix?**
+A: Idle slots: static batches wait for their longest request, while
+continuous batching refills any freed slot immediately, raising utilisation.
 
-**Q: What did CNNs contribute that still matters?**
-A: Residual connections (from ResNet), which make very deep networks
-trainable and are in every transformer block, plus the general lesson that
-built-in assumptions help when data is limited.
+**Q: How do you structure a prompt to benefit from prompt caching?**
+A: Put stable content (system prompt, tool definitions, reference documents)
+first and anything that varies (the question, timestamps, IDs) last, because
+a cache is valid only up to the first differing token.
 
 
-### 25. Looking inside the model
+### 21. Structured output
+
+From [`primer.ml.structured_output`](../primer/ml/structured_output.py).
+
+**Why does asking a model for JSON in the prompt fail some of the time, and why do longer outputs fail more?**
+Each token is a separate draw with some small chance of being wrong, and a
+single wrong token breaks the parse. The chance that all n tokens are right
+is about $p^n$, which shrinks as n grows: 98% per token gives 82% at 10 tokens
+and 13% at 100.
+
+**What exactly does constrained decoding change in the model?**
+Nothing in the weights. At each step it sets the logits of forbidden tokens to
+minus infinity (probability zero) before sampling. The allowed tokens keep
+their relative odds, and temperature and top-p still apply to them.
+
+**Why is the output valid "by construction", and what can still go wrong with the shape?**
+Every prefix is kept completable, and the end token is allowed only when the
+answer is complete, so any answer that ends is valid. It can still be cut off
+by the token budget, leaving a valid but unfinished prefix.
+
+**How do you decide whether a multi-character token is allowed in a given state?**
+Walk its characters through the state machine one at a time from the current
+state. It is allowed if the walk never gets stuck. `cat` is allowed at the
+start of `cat|car|dog`; `at` is not, because the start has no "a" line.
+
+**Why can't a finite-state machine check arbitrary JSON?**
+JSON nests without limit, and closing correctly requires remembering every
+open bracket in order. A machine with a fixed number of states can't count
+without limit. A stack, which a pushdown automaton adds, can.
+
+**Why can masks be precomputed for a pattern but not fully for a JSON Schema?**
+A pattern's machine has a fixed number of states, so the allowed tokens for
+each can be tabled once. With nesting the stack can take unboundedly many
+forms. Engines precompute the tokens whose fate depends only on the current
+position and check the rest against the stack at run time.
+
+**How can constrained decoding make answers worse?**
+It forces the model's choices into the allowed set even when the model
+believed something else: an integer field makes it invent a number when the
+honest answer was null, and token-by-token masking can commit early to a
+path the model thought unlikely overall. Allowing null, or letting the model
+reason before the structured part, helps.
+
+**When is validating and retrying good enough?**
+When the model is valid almost every time (95% needs about 1.05 calls on
+average), when you can't change the decoder, or when the rule can't be
+written as a grammar. It gets expensive fast as the valid rate falls: 1/p
+calls on average.
+
+**What does a strict schema guarantee about tool arguments, and what doesn't it?**
+It guarantees the shape: field names, types, required fields, enum values.
+It does not guarantee the values are true or allowed: a customer ID can be
+well formed and not exist, and an amount can fit the type while breaking a
+minimum. Your code still validates business rules.
+
+
+### 22. Long context and efficient architectures
+
+From [`primer.ml.efficient_architectures`](../primer/ml/efficient_architectures.py).
+
+**Why does doubling the context quadruple attention's compute but only
+double its cache?**
+Every token's query is scored against every key, so the scores form an
+n × n table: doubling n quadruples it. The cache stores one key and one value
+per token per layer, a list that grows by one entry per token, so doubling n
+doubles it.
+
+**A model uses a 4,096-token sliding window in all 32 layers. Can token
+100,000 be influenced by token 1?**
+Yes, in principle: information moves up to w − 1 = 4,095 positions per
+layer, so 32 layers reach 131,040 positions back. In practice it must be
+relayed through about 25 intermediate tokens and layers, so it arrives
+weakened; direct, exact lookup only works within the window.
+
+**What does a global token do in a sparse pattern, and why is it cheap?**
+Every token reads it and it reads every token, so any two tokens are at most
+two hops apart. It adds only about one column and one row of scores, a cost
+that grows with n rather than n².
+
+**Why can linear attention run as a recurrence but softmax attention cannot?**
+Linear attention's weight φ(q)·φ(k) splits into a query part and a key part,
+so the key-and-value parts can be summed ahead of time into a fixed-size
+state that any later query can read. The softmax weight e^(q·k) does not
+split that way, so each new query must revisit every stored key.
+
+**What does "selective" mean in Mamba, and what problem does it fix?**
+The step size Δ, and with it how much of the old state is kept and how much
+of the new token is written, is computed from each token. A fixed SSM applies
+the same keep and write amounts to every token, so it cannot both absorb one
+important token and ignore the filler around it.
+
+**If a selective SSM's parameters change every step, how does it train in
+parallel?**
+The update "multiply by a, add b" can be merged: two consecutive steps form
+one step of the same kind. A parallel scan merges pairs, then pairs of
+pairs, and finishes in about log₂ n rounds.
+
+**How does latent KV caching save memory without changing the attention
+outputs?**
+Keys and values are computed as a small cached latent times fixed
+up-projection matrices, so storing the latent is enough to rebuild them
+exactly. The up-projection can even be folded into the query and output
+side, so the full keys and values are never built.
+
+**Why do hybrid models keep a few attention layers instead of going all-SSM?**
+A fixed-size state is a lossy summary, which hurts copying and exact recall
+over long contexts. A handful of attention layers restores exact lookup
+while most layers keep constant memory, so the cache shrinks roughly by the
+fraction of layers that are SSMs.
+
+
+### 23. Looking inside the model
 
 From [`primer.ml.interpretability`](../primer/ml/interpretability.py).
 
@@ -1239,10 +1120,10 @@ directions; too large and it shrinks activations and leaves much of the
 model's activity unexplained.
 
 
-## Embeddings, the centerpiece
+## Part 4: embeddings and search
 
 
-### 26. Word embeddings
+### 24. Word embeddings
 
 From [`primer.ml.embeddings.word2vec`](../primer/ml/embeddings/word2vec.py).
 
@@ -1273,7 +1154,7 @@ Contextual embeddings from transformers compute a vector per word *in
 context*, so each sense gets its own representation.
 
 
-### 27. Similarity
+### 25. Similarity
 
 From [`primer.ml.embeddings.similarity`](../primer/ml/embeddings/similarity.py).
 
@@ -1301,7 +1182,7 @@ search gets expensive. Real embeddings have structure, and approximate
 indexes trade a little recall for large speedups.
 
 
-### 28. Training embedding models
+### 26. Training embedding models
 
 From [`primer.ml.embeddings.contrastive`](../primer/ml/embeddings/contrastive.py).
 
@@ -1336,7 +1217,7 @@ evaluate recall@k on a held-out set against the base model, then re-embed
 the corpus with the new model.
 
 
-### 29. Dimensions and compression
+### 27. Dimensions and compression
 
 From [`primer.ml.embeddings.compression`](../primer/ml/embeddings/compression.py).
 
@@ -1361,7 +1242,7 @@ A smaller model trained for your domain often beats a bigger generic one,
 so benchmark on your own queries.
 
 
-### 30. Vector indexes
+### 28. Vector indexes
 
 From [`primer.ml.embeddings.ann`](../primer/ml/embeddings/ann.py).
 
@@ -1421,7 +1302,7 @@ while real embeddings are clustered. A benchmark with different structure,
 dimension or size predicts little. Always measure on your own vectors.
 
 
-### 31. Retrieval
+### 29. Retrieval
 
 From [`primer.ml.embeddings.retrieval`](../primer/ml/embeddings/retrieval.py).
 
@@ -1506,7 +1387,7 @@ chunking, prefixes, domain fine-tuning). If it is there, the problem is in
 generation.
 
 
-### 32. Clustering and matching
+### 30. Clustering and matching
 
 From [`primer.ml.embeddings.clustering`](../primer/ml/embeddings/clustering.py).
 
@@ -1537,7 +1418,7 @@ serves stale facts. Filter by context first, then match strictly, and
 expire entries.
 
 
-### 33. Embeddings in production
+### 31. Embeddings in production
 
 From [`primer.ml.embeddings.operations`](../primer/ml/embeddings/operations.py).
 
@@ -1567,7 +1448,132 @@ search); if yes, it's generation (fix prompt and context). Track recall@k on
 a labeled set continuously.
 
 
-## Generating images, audio and video
+## Part 5: other kinds of model, and generating media
+
+
+### 32. Trees and boosting
+
+From [`primer.ml.classical`](../primer/ml/classical.py).
+
+**Why is Gini impurity 0.5 for a pile that is half spam and half not?**
+It is the chance that two emails drawn at random (with replacement) carry
+different labels: $1 - (0.5^2 + 0.5^2) = 0.5$. For two labels that is the
+most mixed a pile can be.
+
+**Why weight each child pile by its size when scoring a split?**
+Otherwise a question that peels off one example into a tiny pure pile
+would look as good as one that sorts half the data cleanly. Weighting by
+size measures how much of the data the question actually tidied.
+
+**Why does a tree need no feature scaling, when a neural network does?**
+A tree only compares one column against a threshold, so any change that
+keeps the order of values (rescaling, logarithms) produces the same splits
+and the same predictions. A network multiplies and adds columns together,
+so a column measured in tens of thousands drowns the others and saturates
+its neurons.
+
+**A tree scores 100% on training data and 80% on validation. What happened,
+and what are two fixes?**
+It overfitted: it kept splitting until each leaf fenced off individual
+noisy examples. Limit its depth (or require a minimum number of examples per
+leaf, or prune), or replace it with a random forest that averages many such
+trees.
+
+**Why does a random forest use random feature subsets, not just bootstrap
+samples?**
+The forest's variance is $\rho\sigma^2 + (1 - \rho)\sigma^2/B$. More trees
+only shrink the second term; the floor is set by the correlation $\rho$
+between trees. With bagging alone every tree tends to pick the same strong
+feature first and they stay correlated. Random subsets force different
+trees down different paths, lowering $\rho$.
+
+**Does adding more trees overfit a random forest? Does adding more rounds
+overfit gradient boosting?**
+More trees in a forest does not: accuracy rises and then levels off, only
+costing time. More rounds of boosting does: each round fits the training
+residuals more closely, so validation error reaches a minimum and then
+climbs. Boosting needs early stopping; forests don't.
+
+**Why is the residual the right target for each boosting tree?**
+For squared-error loss $\frac{1}{2}(y - F)^2$, the negative derivative with
+respect to the prediction $F$ is $y - F$, the residual. Fitting a tree to it
+and taking a step is gradient descent on the predictions. With another
+loss, the tree fits that loss's negative gradient instead, such as $y - p$
+for log loss.
+
+**What does a smaller learning rate buy in gradient boosting, and what does
+it cost?**
+Each tree contributes only a fraction of its correction, so no single noisy
+tree can move the model far and many trees must agree. That usually
+generalizes better (0.110 against 0.122 in this lesson's sweep). It costs
+more rounds, so more training and prediction time.
+
+**Why can't a boosted-tree model predict a house price above the highest
+price it trained on?**
+Every leaf predicts an average of training values, and the model is a sum of
+such leaves anchored at the training mean. Beyond the edge of the training
+data every question gives the same answer as at the edge, so the prediction
+stays flat.
+
+**What is wrong with trusting impurity-based feature importance?**
+It is measured on training data, where splits on noise still tidy up piles.
+It favours columns with many distinct values and splits credit between
+correlated columns. Permutation importance on held-out data is more honest,
+and neither measures cause and effect.
+
+**When would you choose a neural network over gradient-boosted trees?**
+When one input is an image, audio clip, text or other sequence whose
+meaning lies in the arrangement of raw values; when the data is huge or a
+pretrained model can be reused; when predictions must extrapolate smoothly;
+or when the model must be trained end to end with other neural parts.
+
+
+### 33. CNNs and RNNs
+
+From [`primer.ml.cnn_rnn`](../primer/ml/cnn_rnn.py).
+
+**Q: What does one number in a feature map mean?**
+A: How strongly the filter's pattern matches the image patch at that
+position: the sum of filter weights times the pixels under them.
+
+**Q: Why does a CNN need far fewer parameters than a dense layer on images?**
+A: Weight sharing: one small filter is reused at every position, so the
+parameter count depends on filter size and number of filters, not on image
+size.
+
+**Q: What does pooling buy you?**
+A: Smaller maps (less computation), a faster-growing receptive field, and
+tolerance to small shifts, since the strongest response in a neighbourhood
+survives wherever exactly it was.
+
+**Q: Why did VGG use stacks of 3×3 filters instead of larger ones?**
+A: Two 3×3 layers see a 5×5 region with 18 weights instead of 25, and add an
+extra nonlinearity between them.
+
+**Q: How does a Vision Transformer turn an image into tokens?**
+A: It cuts the image into fixed-size patches (e.g. 16×16), flattens each
+into a vector, projects it to the model width and adds a position
+embedding; the patches are then processed like words.
+
+**Q: Why do plain RNNs struggle with long-range dependencies?**
+A: Backpropagation through time multiplies the gradient by the recurrent
+weights and tanh slopes at every step, so it shrinks geometrically (or
+explodes) and early inputs stop influencing learning.
+
+**Q: How do LSTM gates fix that?**
+A: The cell state is updated additively, c = f ⊙ c_prev + i ⊙ g, so with the
+forget gate near 1 information and gradients flow through many steps almost
+unchanged.
+
+**Q: Why did transformers replace RNNs?**
+A: RNNs process tokens sequentially, which prevents parallel training, and
+force all history through one fixed-size state. Attention connects any two
+tokens in one step and trains all positions in parallel.
+
+**Q: What did CNNs contribute that still matters?**
+A: Residual connections (from ResNet), which make very deep networks
+trainable and are in every transformer block, plus the general lesson that
+built-in assumptions help when data is limited.
 
 
 ### 34. Autoencoders and VAEs
@@ -1812,7 +1818,7 @@ patch tokens, lower the resolution, transcribe the soundtrack to text, or
 split the video and summarise the parts.
 
 
-## Part 2: building systems people rely on
+## Part 6: building systems people rely on
 
 
 ### 38. Talking to a model

@@ -133,7 +133,7 @@ class TestTheSite:
     def test_given_a_lesson_its_nav_names_the_part_it_belongs_to(self):
         from tools.docsite import lesson_nav
 
-        assert "Embeddings, the centerpiece" in lesson_nav("primer.ml.embeddings.ann")
+        assert "Part 4: embeddings and search" in lesson_nav("primer.ml.embeddings.ann")
 
     def test_given_the_catalog_every_paper_is_listed_with_its_slug(self):
         from tools.docsite import catalog
@@ -438,9 +438,9 @@ class TestNoPageRepeatsTheHomePage:
 
         assert package_forwards() == {
             "primer.html": "index.html#lessons",
-            "primer/ml.html": "../index.html#ml",
+            "primer/ml.html": "../index.html#model",  # primer.ml spans Parts 1 to 3; its page goes to the first
             "primer/ml/embeddings.html": "../../index.html#embeddings",
-            "primer/ml/generative.html": "../../index.html#generative",
+            "primer/ml/generative.html": "../../index.html#other",
             "primer/agents.html": "../index.html#agents",
         }
 
@@ -468,7 +468,7 @@ class TestNoPageRepeatsTheHomePage:
         # pdoc's title and sidebar link each lesson to its package pages.
         page = '<a href="./../../../primer.html">primer</a>.<a href="./../../ml.html">ml</a> <a href="../embeddings.html">up</a>'
         linked = skip_forwarded_pages(page, "primer/ml/embeddings/ann.html")
-        assert linked == ('<a href="../../../index.html#lessons">primer</a>.<a href="../../../index.html#ml">ml</a> '
+        assert linked == ('<a href="../../../index.html#lessons">primer</a>.<a href="../../../index.html#model">ml</a> '
                           '<a href="../../../index.html#embeddings">up</a>')
 
     def test_given_a_link_to_a_lesson_it_is_left_alone(self):
@@ -1010,7 +1010,7 @@ class TestTheHomePageHeader:
 
         n = len(CURRICULUM)
         assert f"{n} lessons, numbered 0 to {n - 1}" in render_home()
-        assert f"Lesson 5 of 0 to {n - 1}" in lesson_nav("primer.ml.attention")
+        assert f"Lesson 6 of 0 to {n - 1}" in lesson_nav("primer.ml.attention")
 
 
 class TestDiagramsDrawOnce:
