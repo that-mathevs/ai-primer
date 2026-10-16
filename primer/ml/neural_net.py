@@ -115,31 +115,27 @@ check. If you only needed to read a training config, you are done.
 
 ## Level 2: How it works, from scratch
 
-A neuron is six lines of arithmetic, a layer is a matrix multiply, and
-training is a loop of four boxes. This level builds each one with numbers
-small enough to check by hand, then verifies the hand-written gradients
-against a numerical check.
+A neural network turns its inputs into an answer using a long list of
+numbers called **weights**. The weights start out random, so the first
+answers are wrong, and training changes each one a little at a time in
+whichever direction makes the answers less wrong.
 
-## The idea: learning is adjusting knobs to be less wrong
+## Learning with one weight
 
-Picture learning to throw darts blindfolded, with a friend calling out "a bit
-high, a bit left". You throw, hear how far off you were, and adjust your arm
-a little. After enough throws your arm "knows" where the bullseye is. A
-neural network learns the same way. Its "arm" is millions of numbers called
-**weights**, and the friend is a formula (the **loss**) that says how far
-off each guess was and which way to adjust.
+Take a model with one weight, *w*, that predicts y = w·x. It should learn
+y = 3x, and its one training example is x = 1, y = 3. How wrong it is at any
+setting of w is measured by the **loss**, here the squared miss (w·1 − 3)²,
+which is 0 at w = 3 and grows on either side.
 
-Two words carry this whole lesson. The **derivative** (or **slope**) of the
-loss with respect to a weight answers "if I nudge this weight up a tiny bit,
-does the loss go up or down, and how fast?" The **gradient** is simply the
-list of those slopes, one per weight. Stepping *against* the gradient is
-walking downhill. (New to the notation? `primer.notation` builds every symbol
-used here from zero.)
+To improve, the model needs to know which way to turn w. The **derivative**,
+or **slope**, of the loss with respect to a weight answers that: if the
+weight goes up a tiny bit, does the loss go up or down, and how fast? Here
+the slope is 2(w − 3). A model with many weights has one slope per weight,
+and the list of them is the **gradient**. Moving each weight against its
+slope moves the loss downhill. (`primer.notation` explains every symbol used
+here.)
 
-Worked example with a single knob: a model with one weight *w* predicts
-y = w·x and should learn y = 3x from the example x = 1, y = 3. The loss is
-(w·1 − 3)². Its slope with respect to w is 2(w − 3). Start at w = 0 and step
-against the slope with step size 0.25:
+Start at w = 0 and step against the slope with step size 0.25:
 
 | step | w | slope 2(w − 3) | new w = w − 0.25·slope |
 |---|---|---|---|
@@ -147,7 +143,8 @@ against the slope with step size 0.25:
 | 1 | 1.5 | −3 | 2.25 |
 | 2 | 2.25 | −1.5 | 2.625 |
 
-Each step halves the distance to 3. That's all training is.
+Each step halves the distance to 3. A full-size network trains the same
+way, around a loop of four steps:
 
 ```mermaid
 flowchart LR
@@ -158,14 +155,15 @@ flowchart LR
   O -->|next batch| D
 ```
 
-**Reading it:** follow the arrows clockwise. A batch of examples goes in; the
-forward pass turns them into predictions; the loss scores how wrong those
-predictions were as a single number; backpropagation works out, for every
-weight, which direction would have made that number smaller; the optimizer
-nudges each weight a small step that way. Then the next batch arrives. The
-single-knob table above is one trip around this loop, three times.
+**Reading it:** start at the batch of examples and follow the arrows. The
+forward pass turns the examples into predictions, and the loss scores how
+wrong they were as one number. Backpropagation works out, for every weight,
+which direction would have made that number smaller, and the optimizer
+moves each weight a small step that way. The arrow labelled "next batch"
+closes the loop. Each row of the one-weight table is one trip around it.
 
-The update rule, for every weight at once, with learning rate η:
+The step size is called the **learning rate**, written η. The update rule,
+applied to every weight at once, is:
 
 $$
 w \leftarrow w - \eta \, \frac{\partial \mathcal{L}}{\partial w}
@@ -199,26 +197,27 @@ for step in range(3):
     print(w)  # → 1.5 2.25 2.625
 ```
 
-`learn_one_weight` runs the table above; `train` runs the loop for a real
-network.
+The same loop trains a spam filter and the largest language models; what
+changes is the size of the network, the data and the loss. When a training
+run misbehaves, the fault is in one of its four steps.
 
-**Why it matters:** this loop is identical for a spam filter and for a
-frontier language model. Only the size of the network, the data, and the
-loss change. When a training run misbehaves, the fault is in one of these
-four boxes.
+**In code:** `learn_one_weight` runs the table, and `train` runs the loop
+for a real network.
 
-## A neuron: a weighted vote followed by a decision
+## A neuron: a weighted sum and a rule
 
-Think of a judge at a cooking contest. They score taste, presentation and
-originality, but care about taste most, so they weight it more. They add a
-baseline ("everyone starts at half a point"), then apply a rule to turn the
-total into a verdict ("negative totals count as zero"). That is a neuron:
-**weights** are how much each input matters, the **bias** is the baseline,
-and the **activation function** is the rule.
+The weight above multiplied a single input. A **neuron** takes several
+inputs and multiplies each by its own weight, so an input with a large
+weight counts for more, and one with a negative weight counts against. It
+adds the products together with one more number, the **bias**, a baseline
+that shifts the total whatever the inputs are. Then it passes the total
+through a fixed rule, the **activation function**, which decides what the
+neuron puts out.
 
-Worked example: inputs (2, 3), weights (0.5, 1.0), bias 0.5.
-Weighted sum: 2 × 0.5 + 3 × 1.0 + 0.5 = 4.5. The ReLU rule keeps positive
-values, so the output is 4.5.
+Take inputs (2, 3), weights (0.5, 1.0) and bias 0.5. The weighted sum is
+2 × 0.5 + 3 × 1.0 + 0.5 = 4.5. The rule here is **ReLU**, which passes a
+positive total through unchanged and turns a negative one into 0, so the
+output is 4.5.
 
 ```mermaid
 flowchart LR
@@ -229,11 +228,17 @@ flowchart LR
   A --> Y((y = 4.5))
 ```
 
-**Reading it:** each input travels along an edge that multiplies it by that
-edge's weight; the middle node adds the products and the bias; the
-activation reshapes the sum into the output. A **layer** is this picture
-repeated side by side, every input wired to every neuron, which is exactly a
-matrix multiply. A **network** is layers stacked.
+**Reading it:** start at the two inputs on the left. Each edge multiplies
+its input by the weight written on it, the middle box adds the two products
+and the bias, and the activation turns that sum into the output on the
+right.
+
+A **layer** is many neurons side by side, each wired to every input, and
+computing a whole layer for a batch of examples is one matrix multiply (the
+second formula below). A **neural network** is layers stacked, each layer's
+outputs becoming the next layer's inputs. The feed-forward half of every
+transformer block, which holds most of a language model's parameters, is two
+such layers.
 
 $$
 y = \phi\left(\sum_i w_i x_i + b\right) = \phi(w \cdot x + b), \qquad
@@ -277,21 +282,26 @@ sum(w_i * x_i for w_i, x_i in zip(w, x))  # → 4.0
 phi(sum(w_i * x_i for w_i, x_i in zip(w, x)) + b)  # → 4.5
 ```
 
-**Why it matters:** every dense layer in every model is this, including the
-feed-forward half of each transformer block, where most of a language
-model's parameters live. `MLP.forward` is two of these layers in six lines.
+**In code:** `MLP.forward` computes two of these layers.
 
 ## Backpropagation: passing the blame backwards
 
-Picture an assembly line that produced a faulty product. The inspector at the
-end measures how bad it is and passes the complaint back. Each station
-works out how much of the fault was its own doing, based on what it received
-and what it did to it, and passes the rest further back. Every station ends
-up knowing exactly how to adjust its own machine. Backpropagation is that
-blame-passing, done with derivatives.
+Suppose the right answer for the neuron's inputs (2, 3) was 5. Its output
+was 4.5, so the loss, the squared miss, is (5 − 4.5)² = 0.25. To reduce it,
+each of the neuron's three knobs, the two weights and the bias, needs its
+own slope: how much the loss changes when that knob alone moves.
+**Backpropagation** finds every slope by starting at the loss and working
+backwards.
 
-Worked example, continuing the neuron: the target was 5, so the loss is
-(5 − 4.5)² = 0.25.
+Think of an assembly line that turned out a faulty product. The inspector
+at the end measures the fault and passes the complaint back. Each station
+works out how much of the fault came from what it did, passes the rest
+further back, and so learns how to adjust its own machine. In the neuron,
+the loss is the inspector, and the activation and the sum are the stations.
+
+Each row of the table is one link: its local derivative is how much that
+step scales a change passing through it, and the running blame is the
+product of the local derivatives from the loss to that point.
 
 | link | local derivative | running blame |
 |---|---|---|
@@ -301,10 +311,10 @@ Worked example, continuing the neuron: the target was 5, so the loss is
 | z → w2 | x2 = 3 | **−3** |
 | z → b | 1 | **−1** |
 
-One step with learning rate 0.01 moves weights to (0.52, 1.03) and bias to
-0.51. The new output is 4.64 and the loss drops from 0.25 to 0.1296. The
-weight whose input was bigger (3) received the bigger share of blame and
-moved more.
+One step with learning rate 0.01 moves the weights to (0.52, 1.03) and the
+bias to 0.51. The new output is 4.64, and the loss falls from 0.25 to
+0.1296. The weight whose input was bigger (3) got the bigger share of the
+blame and moved more.
 
 ```mermaid
 flowchart RL
@@ -315,11 +325,12 @@ flowchart RL
   Z -- "× 1 → dL/db = −1" --> Bb[b]
 ```
 
-**Reading it:** this is the neuron read right to left. Start at the loss and
-multiply the local derivatives along each path; that product is the chain
-rule. All paths share the first two links (−1 × 1), then split. Each weight's
-gradient is the blame arriving at the sum times the input that weight
-multiplied. Negative gradient means "increase me to reduce the loss".
+**Reading it:** this is the neuron drawn right to left, starting from the
+loss. Multiply the numbers on the arrows from the loss to any knob and you
+get that knob's gradient. All three paths share the first two links, −1 and
+then 1, and split at the sum, where each picks up the input its knob
+multiplied. A negative gradient means that turning the knob up lowers the
+loss.
 
 $$
 \frac{\partial \mathcal{L}}{\partial w_i} =
@@ -372,26 +383,28 @@ y_new = w[0] * x[0] + w[1] * x[1] + b
 round(y_new, 2), round((t - y_new) ** 2, 4)  # → (4.64, 0.1296)
 ```
 
-`one_neuron_worked_example` computes every row of the table.
+PyTorch's `loss.backward()` does the same for billions of weights: it
+records the forward computation and replays it backwards, applying the
+chain rule at each step.
 
-**Why it matters:** PyTorch's `loss.backward()` does exactly this, for
-billions of weights, by recording the forward computation and replaying it
-backwards. Knowing it is just the chain rule is what lets you reason about
-vanishing gradients, memory use, and why some architectures train and others
-don't.
+**In code:** `one_neuron_worked_example` computes every row of the table.
 
 ## Why the nonlinearity is essential
 
-Stack three sheets of tinted glass and you get one darker sheet of glass: no
-arrangement of flat panes can bend light around a corner. Linear layers are
-flat panes. However many you stack, the result is one linear layer, which can
-only separate classes with a straight line. The activation function is the
-bend.
+In the neuron above, ReLU passed 4.5 through unchanged, so the rule seemed
+to do nothing. It starts to matter once layers are stacked. A layer without
+an activation is **linear**: it only multiplies and adds, and two linear
+layers in a row multiply out to a single linear layer. However many you
+stack, the result is one layer, and one linear layer can separate two
+classes only with a straight line. Tinted glass behaves the same way: stack
+three sheets and you get one darker sheet, and no arrangement of flat panes
+bends light around a corner. A **nonlinear** activation between the layers
+is the bend.
 
-Worked example in one dimension: a layer that multiplies by 3, followed by a
-layer that multiplies by 2, is the same as one layer that multiplies by 6.
-With a ReLU between them, inputs −1 and 1 give 0 and 6. No single
-multiplication does that.
+In one dimension: a layer that multiplies by 3, followed by a layer that
+multiplies by 2, is the same as one layer that multiplies by 6. With a ReLU
+between them, inputs −1 and 1 give 0 and 6, and no single multiplication
+does that.
 
 ```mermaid
 flowchart LR
@@ -403,11 +416,11 @@ flowchart LR
   end
 ```
 
-**Reading it:** in the top row the multiplications are chained with nothing
-in between, and associativity lets you multiply the weights together first:
-three layers equal one. In the bottom row a nonlinearity φ sits between the
-multiplies, the product can no longer be pre-computed, and the network can
-bend its decision boundary.
+**Reading it:** in the top row the multiplications follow one another with
+nothing in between, so the weights can be multiplied together first and
+three layers equal one. In the bottom row an activation φ sits between the
+multiplies, so the product can no longer be worked out in advance, and the
+line between the classes (the **decision boundary**) can bend.
 
 $$
 (XW_1)W_2 = X(W_1W_2) \quad\text{but}\quad \phi(XW_1)W_2 \neq X W' \text{ for any } W'
@@ -447,30 +460,33 @@ def phi(z): return max(0, z)
 
 ![Two-moons decision boundaries: logistic regression's straight line misclassifies the moon tips (88%), while one hidden tanh layer bends around the gap (99.75%)](figures/primer.ml.neural_net.decision_boundaries.svg)
 
-**Reading it:** both panels show the same two interleaving half-moons,
-coloured by class; the shaded background is what each model predicts at
-every point. On the left, a single linear layer can only split the plane with
-a straight line, so the tips of both moons land on the wrong side (about 88%
-accuracy). On the right, one hidden tanh layer bends the boundary to follow
-the gap between the moons (99.75%, one point of 400 wrong). Same data, same optimizer: the only
-difference is a nonlinearity between two layers.
+**Reading it:** both panels show the same 400 points in two interleaving
+half-moons, coloured by class, and the shading is what each model predicts
+at every spot. On the left, one linear layer splits the plane with a
+straight line, and the tips of both moons fall on the wrong side (about 88%
+accuracy). On the right, a hidden tanh layer bends the boundary through the
+gap between the moons (99.75%, one point of 400 wrong). The data and the
+optimizer are the same in both; only the activation between the layers
+differs.
 
-**In code:** `make_moons` builds the two interleaving half-moons (and `make_xor` the four-point XOR puzzle); `train_logistic_regression` fits the straight-line baseline in the left panel.
-
-**Why it matters:** "depth" is only worth anything because of the
-activations between layers. `linear_stack_collapses` shows five stacked
-linear layers matching their single-matrix product to 1e-16.
+**In code:** `make_moons` builds the half-moons, `train_logistic_regression`
+fits the straight line on the left, and `linear_stack_collapses` checks
+that five stacked linear layers match their single-matrix product to 1e-16.
 
 ## Activation functions: the rule after the sum
 
-Think of different kinds of switch. **ReLU** is a one-way valve: water flows
-freely forward, not at all backward. **Sigmoid** is a dimmer that squeezes
-any input into 0–1 but barely moves at the extremes. **Tanh** is the same
-dimmer centred on zero. **GELU** is a valve that leaks a little when nearly
-closed.
+ReLU is one rule among several, and each has a different shape. **ReLU**
+passes positive inputs unchanged and turns negative ones into 0.
+**Sigmoid** squeezes any input into the range 0 to 1 and flattens out at
+both ends. **Tanh** has the same S shape, centred on zero and running from
+−1 to 1. **GELU** follows ReLU but curves smoothly near zero, so small
+negative inputs give small negative outputs.
 
-Worked example, values you can check on a calculator (the ′ mark, as in
-sigmoid′, means "the slope of"):
+What matters most about the shape is its slope. Backpropagation multiplies
+the blame by the activation's slope at every neuron it passes back through;
+in the backpropagation example, ReLU's slope of 1 let all of it through. Here are values you
+can check on a calculator (the ′ mark, as in sigmoid′, means "the slope
+of"):
 
 | z | ReLU | sigmoid | sigmoid' | tanh' | GELU |
 |---|---|---|---|---|---|
@@ -483,11 +499,17 @@ sigmoid′, means "the slope of"):
 **Reading it:** the left panel shows each activation's output, the right its
 derivative, which is how much gradient passes back through it. Look at the
 tails of the right panel first: sigmoid and tanh derivatives fall to almost
-zero once |z| passes 3, so a *saturated* neuron barely learns. Sigmoid's
+zero once |z| passes 3, so a neuron sitting out there, called *saturated*,
+barely learns. Sigmoid's
 derivative never exceeds 0.25 even at its peak; stack ten such layers and the
 gradient can shrink by 0.25¹⁰ ≈ 1e-6. ReLU's derivative is a step: exactly 1
 for positive inputs (no shrinking) and exactly 0 for negatives. GELU's is a
 smooth version of that step.
+
+The slope decides whether the blame survives a deep stack. With sigmoid in
+every layer, deep networks were hard to train before 2010; ReLU and residual
+connections are what made them trainable (see `primer.ml.deep_nets`). The
+table says where each rule is used.
 
 | Function | Formula | Range | Where it's used |
 |---|---|---|---|
@@ -502,27 +524,27 @@ Reading the formulas: *e* is Euler's number, about 2.718, and e^z means
 Φ(z) is the fraction of a bell curve (the standard normal distribution) that
 lies below z: Φ(0) = 0.5, Φ(1) = 0.841. **Softmax** turns a list of scores
 into shares that are all positive and add up to 1: raise *e* to each score,
-then divide each by the total (Σ means "add them all up"). See
-`primer.notation` for each symbol, and `primer.ml.attention` for softmax
-worked through by hand.
+then divide each by the total (Σ means "add them all up").
+`primer.ml.attention` works softmax through by hand.
 
-**In code:** `relu`, `sigmoid`, `tanh` and `gelu` compute each rule, and `relu_grad`, `sigmoid_grad`, `tanh_grad` and `gelu_grad` compute its slope; `gelu_tanh` is the cheaper approximation GPT-2 uses, and `softmax` subtracts the largest score first so nothing overflows.
-
-**Why it matters:** activation choice decides whether gradients survive a
-deep stack. Sigmoid everywhere is why deep networks were hard to train
-before 2010; ReLU and residual connections are why they aren't now (see
-`primer.ml.deep_nets`).
+**In code:** `relu`, `sigmoid`, `tanh` and `gelu` compute each rule, and
+`relu_grad`, `sigmoid_grad`, `tanh_grad` and `gelu_grad` compute its slope.
 
 ## Backprop through two layers
 
-Now the assembly line has two stations. The blame from the end first reaches
-the output weights, then travels back through the hidden layer to the first
-weights. On the way it passes through the hidden activation, which can
-shrink it, just as a station that barely changed the product can take only a
-little of the blame.
+A network with more than one layer is an assembly line with more than one
+station. With two layers, a **hidden layer** (any layer between the input
+and the output) and an output layer, the blame from the loss first reaches
+the output layer's weights, then travels back through the hidden layer's
+activation to the hidden layer's weights. Crossing the activation multiplies
+it by the activation's slope, which can shrink it.
 
-Worked example, one input, one hidden unit, one output: x = 1, w1 = 0.5,
-tanh, w2 = 2, sigmoid, target 1.
+Take the smallest such network: one input x = 1, one hidden unit with
+weight w1 = 0.5 and rule tanh, and one output with weight w2 = 2 and rule
+sigmoid, which turns its sum into a probability ŷ. The target is 1. The loss
+is binary cross-entropy (below), and its slope at the output's sum works out
+to prediction minus target, ŷ − y. The first four rows run forward, the
+last five run back.
 
 | step | value |
 |---|---|
@@ -551,17 +573,18 @@ flowchart LR
   X -. cached .-> dW1
 ```
 
-**Reading it:** the top row is the forward pass, left to right; the dotted
-arrows are the backward pass, starting at the loss and walking back one box
-at a time. Each label is one line of `MLP.backward`, and the worked table
-above is that same path with numbers. Notice the three "cached" arrows: the
-backward pass reuses h and X from the forward pass. That dependency is why
-training must keep every layer's activations in memory, and inference does
-not.
+**Reading it:** the top row is the forward pass, left to right. The dotted
+arrows are the backward pass, walking back from the loss one box at a time
+along the same path as the table's last five rows. Then find the three
+arrows marked "cached": the backward pass reuses h and X from the forward
+pass. That is why training must keep every layer's activations in memory,
+while running the trained network (**inference**) can drop each one once
+the next layer has used it.
 
-For a batch, with binary cross-entropy (the loss for yes/no predictions,
-$-[y\ln\hat{y} + (1-y)\ln(1-\hat{y})]$; see `primer.ml.losses`), which
-fuses with sigmoid into the simple error ŷ − y:
+**Binary cross-entropy**, $-[y\ln\hat{y} + (1-y)\ln(1-\hat{y})]$, is the
+usual loss for yes-or-no predictions (see `primer.ml.losses`). After a
+sigmoid output its slope simplifies to ŷ − y. For a whole batch, the five
+backward lines are:
 
 $$
 \frac{\partial L}{\partial z_2} = \hat{y} - y,\;
@@ -621,26 +644,31 @@ dL_dW1 = X * dL_dz1
 [round(v, 4) for v in (dL_dz2, dL_dW2, dL_dh, dL_dz1, dL_dW1)]  # → [-0.2841, -0.1313, -0.5682, -0.4469, -0.4469]
 ```
 
-The hand-written gradients are checked two ways: a **numerical gradient
-check** (nudge each weight by ±ε and measure the loss change; see
-`gradient_check`) and, in the tests, PyTorch autograd.
+The factor (1 − h²) is where the blame shrinks. It is at most 1 and near 0
+when tanh is saturated, so after fifty layers of it the first layers hear
+almost nothing. This is the **vanishing gradient** problem, and
+`primer.ml.deep_nets` covers the fixes.
 
-**In code:** `tiny_two_layer_example` computes every row of the worked table; `MLP` holds both layers' weights and biases, `MLP.loss` scores a batch with `binary_cross_entropy`, and `numerical_gradient` is the slow nudge-every-weight answer that `gradient_check` compares against.
+Hand-written gradients like these can be checked without calculus: move one
+weight up by a tiny amount ε and then down by ε, and divide the change in
+the loss by 2ε. This **numerical gradient check** is slow, two forward
+passes for every weight, but it catches a wrong derivative.
 
-**Why it matters:** the factor (1 − h²) is where gradients shrink. Chain
-fifty of them and the first layers hear almost nothing: the vanishing
-gradient problem. The cached activations are why training a model needs
-several times the memory of serving it.
+**In code:** `tiny_two_layer_example` computes every row of the table, and
+`gradient_check` compares the network's hand-written gradients with
+numerical ones.
 
 ## Batch, step, epoch
 
-Imagine studying a deck of 400 flashcards. You work through a pile of 32,
-then pause to update your notes; that pause is a **step**. The pile is a
-**batch**. Going through the whole deck once is an **epoch**; then you
-shuffle and start again.
+Each step worked by hand so far used a single example. A real training run deals
+its examples into small piles and takes one step per pile, averaging the
+blame over the pile. Think of studying a deck of 400 flashcards: you work
+through a pile of 32, then pause to update your notes. The pile is a
+**batch**, the pause is a **step**, and one pass through the whole deck is
+an **epoch**, after which the deck is shuffled and dealt again.
 
-Worked example: 400 examples in batches of 32 is 12 full batches plus one of
-16, so ⌈400/32⌉ = 13 steps per epoch. Two epochs: 26 steps.
+400 examples in batches of 32 make 12 full batches and one of 16, so
+⌈400/32⌉ = 13 steps per epoch, and two epochs take 26 steps.
 
 ```mermaid
 flowchart LR
@@ -651,9 +679,10 @@ flowchart LR
   S13 -->|next epoch| E
 ```
 
-**Reading it:** an epoch reshuffles the data and slices it into batches;
-every batch produces exactly one weight update. Shuffling each epoch means
-batches differ every time, so the gradient noise doesn't repeat.
+**Reading it:** follow one epoch from the left: shuffle, then 13 batches,
+each followed by its one weight update, then back to the start. Because the
+deck is shuffled every epoch, the batches differ each time, so the noise in
+each batch's gradient does not repeat.
 
 ![Training loss per epoch on a log axis: slow at first, a steep fall once hidden units find features, then a flat tail near zero](figures/primer.ml.neural_net.training_curve.svg)
 
@@ -661,8 +690,7 @@ batches differ every time, so the gradient noise doesn't repeat.
 axis is the loss on the whole training set after each one. Loss drops slowly
 at first while the weights are near their random start, falls steeply once
 the hidden units find useful features, then flattens as the remaining errors
-get harder. Plotting this curve is the first thing to do when training
-anything.
+get harder.
 
 $$
 \text{steps per epoch} = \left\lceil \frac{N}{B} \right\rceil, \qquad
@@ -694,22 +722,28 @@ math.ceil(N / B)  # → 13
 epochs * math.ceil(N / B)  # → 26
 ```
 
-**In code:** `train` reshuffles the data every epoch, takes one plain gradient step per batch and records the loss after each epoch; `MLP.accuracy` reports the fraction of examples classified correctly.
+A larger batch gives a smoother estimate of the gradient and keeps a GPU
+busy, but needs more memory. The number of epochs depends on how much data
+there is. Pretraining a language model makes roughly one pass over
+trillions of tokens, so it rarely sees the same text twice. Fine-tuning
+makes several passes over a small dataset, which is why a fine-tune can
+overfit, memorising its examples instead of learning the pattern.
 
-**Why it matters:** larger batches give smoother gradient estimates and keep
-GPUs busy, but need more memory. Pretraining a language model runs roughly
-one epoch over trillions of tokens (it rarely sees the same text twice);
-fine-tuning runs several epochs over a small dataset, which is why
-fine-tunes can overfit.
+**In code:** `train` reshuffles the data every epoch, takes one gradient
+step per batch and records the loss after each epoch.
 
 ## In 20 seconds
-- A neuron is a weighted sum plus bias through a nonlinearity; a layer is a
-  matrix multiply; a network is stacked layers.
-- Without nonlinearity, depth is pointless: stacked linear layers equal one.
-- Training loop: forward, loss, backprop (the chain rule gives a gradient per
-  weight), optimizer step. Repeat.
-- Backprop reuses forward activations, so training needs far more memory
-  than inference.
+- A neuron multiplies each input by a weight, adds the products and a bias,
+  and passes the total through an activation function. A layer is many
+  neurons computed at once as a matrix multiply, and a neural network is
+  layers stacked.
+- Without an activation between them, stacked layers collapse into one
+  layer, so extra depth adds nothing.
+- Training repeats one loop: predict, measure the loss, find every weight's
+  gradient by backpropagation (the chain rule), and step each weight
+  against it.
+- Backpropagation reuses the values computed on the way forward, so
+  training needs more memory than inference.
 
 ## Self-test questions
 
