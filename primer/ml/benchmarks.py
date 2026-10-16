@@ -135,26 +135,10 @@ card with the right suspicion, you are done.
 
 ## Level 2: How it works, from scratch
 
-A benchmark is a school exam for models. Everyone sits the same paper, it is
-marked with the same answer key, and the result is one number you can put in
-a table. Exams are useful, and every way an exam can mislead, a benchmark can
-too:
-
-- **The marking scheme matters.** Two teachers can mark the same paper
-  differently: one accepts "ninety-five", the other only "95".
-- **One sitting is luck as well as skill.** A student who scores 80 on a
-  20-question quiz might score 70 or 90 next week.
-- **The paper can leak.** If last year's exam was posted online and a
-  student memorised it, a perfect score says nothing about understanding.
-- **Easy exams stop sorting students.** When everyone scores 98, the exam
-  can no longer tell the best from the good.
-- **Teaching to the test.** Drill students on the exam's format and their
-  scores rise faster than their knowledge.
-
-And sometimes there is no answer key at all, only taste. Then you run a
-**blind taste test**: show people two unlabelled answers, ask which is
-better, and turn thousands of those votes into a league table. That is an
-**arena**.
+A benchmark works like a school exam: every model sits the same paper, it is
+marked against the same key, and the result is one number in a table. The
+number passes through several steps on its way from the questions to the
+table:
 
 ```mermaid
 flowchart LR
@@ -167,23 +151,19 @@ flowchart LR
   AVG --> CI["± error bar<br/>how much is luck"]
 ```
 
-**Reading it:** follow a benchmark score from left to right. Only the first
-box is "the benchmark" in the everyday sense; every box after it is a choice
+**Reading it:** follow a score from left to right. Only the first box is
+"the benchmark" in the everyday sense; every box after it is a choice
 someone made. The prompt template decides how many worked examples the model
-sees; the scoring rule decides which answers count; the average throws away
-which questions were missed; and the last box, the error bar, is the one
-most tables leave out. Each section below opens one of these boxes.
+sees, the scoring rule decides which answers count, and the average throws
+away which questions were missed. The last box, the error bar, is the one
+most tables leave out.
 
 ## 1. What a benchmark is: questions, a rule, a number
 
-**Everyday picture.** A driving test: a fixed route, an examiner with a
-checklist, pass or fail. The route decides *what* is tested (no motorway on
-the route, no motorway skill measured), and the checklist decides what
-counts as a mistake.
-
-**Tiny worked example.** A five-question quiz. The model gets questions 1, 2,
-4 and 5 right and question 3 wrong. Its per-question scores are
-$s = (1, 1, 0, 1, 1)$ and its benchmark score is their average, 4 / 5 = 0.8.
+The headline number is an average. Take a five-question quiz on which the
+model gets questions 1, 2, 4 and 5 right and question 3 wrong. Its
+per-question scores are $s = (1, 1, 0, 1, 1)$, and its benchmark score is
+their average, 4 / 5 = 0.8.
 
 $$
 \text{score} = \frac{1}{n} \sum_{i=1}^{n} s_i
@@ -224,11 +204,10 @@ narrower than its name suggests:
 | Code with unit tests | HumanEval: 164 Python functions, each with hidden tests | run the tests; report pass@k | whether short functions actually work | code quality, large codebases, security |
 | Human preference | arenas: people vote between two anonymous answers | turn votes into ratings | which answers people prefer in open conversation | correctness that voters can't check; it also rewards style |
 
-**Why it matters in practice.** A benchmark is a sample of a skill, not the
-skill. Before reading a number, ask which of these four kinds produced it,
-and whether that kind resembles your own use. The only benchmark that
-matches your use exactly is one you build from your own tasks, which is what
-`primer.agents.evals` does.
+Each kind samples a narrow slice of a skill. Before reading a number, ask
+which kind produced it and whether that kind resembles your own use. Only a
+benchmark built from your own tasks matches your use exactly (see
+`primer.agents.evals`).
 
 **In code:** `accuracy` is the average of per-question scores.
 
@@ -236,20 +215,22 @@ matches your use exactly is one you build from your own tasks, which is what
 
 ### Multiple choice: likelihood or generation
 
-**Everyday picture.** There are two ways to mark a multiple-choice paper.
-You can read each option aloud to the student and watch how sure they look
-(**likelihood scoring**), or let them write their answer down and mark what
-they wrote (**generation scoring**). A student can look sure of the right
-option and still write the wrong letter, and the two methods give different
-marks.
+An average of right-or-wrong marks needs a rule for what counts as right,
+and a multiple-choice question can be marked in two ways. **Likelihood
+scoring** never lets the model write: it asks how probable the model finds
+each option and takes the most probable one as its answer. **Generation
+scoring** lets the model write an answer and marks what it wrote. A model
+can find the right option most probable and still write the wrong letter,
+so the two rules can give different marks.
 
-**Tiny worked example.** "Why do we see lightning before we hear thunder?"
-A language model gives every token a probability (see
-`primer.ml.inference`). Scoring by likelihood means asking how probable the
-model finds each option's tokens, one after another. We work with the
-**logarithm** of each probability (the log-probability), because
-multiplying probabilities becomes adding logs, and because a probability
-below 1 has a negative log: the closer to 0, the more negative.
+Take the question "Why do we see lightning before we hear thunder?" A
+language model gives every token a probability (see `primer.ml.inference`),
+so scoring by likelihood means asking how probable the model finds each
+option's tokens, one after another. We work with the **logarithm** of each
+probability (the log-probability), because multiplying probabilities
+becomes adding logs, and because a probability below 1 has a negative log:
+the closer to 0, the more negative. The log-probabilities here are made up
+but plausible:
 
 | Option | Tokens | Token log-probabilities | Sum | Per token |
 |---|---|---|---|---|
@@ -276,11 +257,10 @@ flowchart TB
 ```
 
 **Reading it:** the two branches are two different tests of the same model.
-The left branch never lets the model speak: it only asks how probable each
-option is, and a single switch (sum or average) changes which option wins.
-The right branch lets the model answer freely, and then everything depends
-on the parser: an answer it cannot read goes straight to "scored wrong",
-however correct it was.
+On the left, one switch (sum or per-token average) decides which option
+wins. On the right, the parser decides: an answer it cannot read goes
+straight to "scored wrong", however correct it was. Both branches end at the
+same answer key.
 
 $$
 \log P(o \mid q) = \sum_{t=1}^{T} \log P(o_t \mid q, o_{<t})
@@ -324,44 +304,38 @@ round(sum(light) / len(light), 2), sum(luck) / len(luck)  # → (-0.32, -1.4)
 ```
 
 This is the same log-probability that cross-entropy loss is built from
-(`primer.ml.losses`); a benchmark harness simply reads it off instead of
-training on it.
+(`primer.ml.losses`). A **harness**, the program that runs a benchmark,
+reads it off instead of training on it.
 
 ![Summed log-probability favours the one-token option Luck; the per-token average favours the correct five-token answer](figures/primer.ml.benchmarks.option_scores.svg)
 
-**Reading it:** each pair of bars is one option, and taller (closer to zero)
-wins. The grey bars are the summed log-probabilities: "Luck" has the tallest
-grey bar, so a sum-based harness marks the model wrong. The blue bars are
-per-token averages: the correct answer's blue bar is by far the tallest. The
-model didn't change; the rule did.
+**Reading it:** each pair of bars is one option, and the taller bar (closer
+to zero) wins. Among the grey bars, the sums, "Luck" is tallest, so a
+harness that sums marks the model wrong. Among the blue bars, the per-token
+averages, the correct answer is far ahead. The two sets of bars come from
+the same model's numbers.
 
-**Generated answers have the same problem in another form.** Maths
-benchmarks usually let the model write out its working and take the **last
-number** as its answer. "She sells 12 + 7 = 19 a day, so 19 × 5 = 95
-muffins" is read as 95 and marked right. "She sells ninety-five muffins" has
-no digits, so the parser finds nothing and the answer is marked wrong,
-although it is correct.
+Generated answers have the same problem in another form. Maths benchmarks
+usually let the model write out its working and take the **last number** as
+its answer. "She sells 12 + 7 = 19 a day, so 19 × 5 = 95 muffins" is read as
+95 and marked right. "She sells ninety-five muffins" has no digits, so the
+parser finds nothing and marks a correct answer wrong.
 
-**Why it matters in practice.** The same model on the same questions can
-score several points apart under different harnesses: summed or averaged
-likelihoods, letters or full options, strict or lenient parsing, zero or
-five worked examples in the prompt (**shots**), with or without room to
-reason first. Scores are comparable only when they come from the same
-harness with the same settings, which is why shared open-source harnesses
-exist.
+So the same model on the same questions can score several points apart
+under different harnesses: summed or averaged likelihoods, letters or full
+options, strict or lenient parsing, zero or five worked examples in the
+prompt (**shots**), with or without room to reason first. Scores are
+comparable only when they come from the same harness with the same
+settings, which is why shared open-source harnesses exist.
 
-**In code:** `option_logprob` sums (or averages) an option's token log-probabilities, `pick_option` chooses the option that scores highest, and `extract_final_number` is the last-number parser.
+**In code:** `option_logprob` scores one option, `pick_option` picks the highest, and `extract_final_number` is the last-number parser.
 
 ### pass@k: many attempts at a coding problem
 
-**Everyday picture.** A basketball player takes free throws. If you allow
-them five tries, what is the chance at least one goes in? You don't know
-their true accuracy, but you watched ten throws and three went in. From
-those ten, you can work out the answer exactly.
-
-**Tiny worked example.** A code benchmark asks the model for a function, and
-hidden unit tests decide pass or fail. We sample the model $n = 10$ times on
-one problem and $c = 3$ samples pass. **pass@1**, the chance a single sample
+A code benchmark has a rule of its own. The model writes a function, hidden
+unit tests decide pass or fail, and because the model can be sampled many
+times, the score also depends on how many attempts are allowed. Sample the
+model $n = 10$ times on one problem, and say $c = 3$ samples pass. **pass@1**, the chance a single sample
 passes, is 3 / 10 = 0.3. **pass@5** asks: if we picked 5 of the 10 samples
 at random, how likely is it that at least one passes? Count the ways. There
 are 252 ways to pick 5 samples from 10, and 21 of those picks use only the
@@ -381,7 +355,7 @@ flowchart LR
 are imagined, not run. For each problem we count, rather than simulate, how
 many of the possible $k$-sample draws contain no passing sample, and take
 the complement. The benchmark's pass@k is the average of that number over
-all problems, exactly like the average in section 1.
+all problems, the same kind of average as the quiz score.
 
 $$
 \text{pass@}k = 1 - \frac{\binom{n-c}{k}}{\binom{n}{k}}
@@ -408,9 +382,9 @@ random from the $n$ we generated, all fail."
 0.917. When fewer than $k$ samples fail ($n - c < k$), every draw contains a
 pass and pass@k is exactly 1.
 
-Why not just estimate the pass rate as $\hat{p} = c / n$ and plug it into
-$1 - (1 - \hat{p})^k$? That gives 1 − 0.7⁵ = 0.832, and the gap is not
-luck. Suppose the true per-sample pass rate is 0.2, so the true pass@5 is
+The tempting shortcut is to estimate the pass rate as $\hat{p} = c / n$ and
+plug it into $1 - (1 - \hat{p})^k$. That gives 1 − 0.7⁵ = 0.832, and the gap
+is not luck. Suppose the true per-sample pass rate is 0.2, so the true pass@5 is
 1 − 0.8⁵ = 0.672. Average each formula over every possible outcome of the
 ten samples: the counting formula averages exactly 0.672 (it is
 **unbiased**), while the plug-in formula averages 0.594. It runs low every
@@ -444,32 +418,33 @@ round(unbiased, 3), round(plug_in, 3), round(1 - (1 - p) ** k, 3)  # → (0.672,
 passing samples. The x-axis is the number of attempts allowed, and the solid
 line is pass@k. All three rise steeply: a problem the model solves only 1
 time in 20 still reaches pass@20 = 1.0. The dashed lines are the plug-in
-formula on the same data, and they always sit below. Look at $k = 5$ on the
-blue line to see the bias that the counting formula removes.
+formula on the same data, and they always sit below. At $k = 5$ on the blue
+line, the gap between solid and dashed is the bias the counting formula
+removes.
 
-**Why it matters in practice.** pass@1 and pass@10 answer different
-questions. pass@1 is what a user gets from one try. pass@k for large $k$ is
-what you get when something (unit tests, a checker) can pick the good answer
-out of many, and it is always higher. A table that sets one model's pass@10
-beside another's pass@1 is comparing different tests.
+pass@1 and pass@10 answer different questions. pass@1 is what a user gets
+from one try. pass@k for large $k$ is what you get when something (unit
+tests, a checker) can pick the good answer out of many, and it is never
+lower. A table that sets one model's pass@10 beside another's pass@1 is
+comparing different tests.
 
-**In code:** `pass_at_k` is the counting formula, `naive_pass_at_k` the plug-in, and `expected_pass_at_k` averages either one over every possible count of passing samples.
+**In code:** `pass_at_k` is the counting formula and `naive_pass_at_k` the plug-in.
 
 ## 3. A score is an estimate
 
-**Everyday picture.** An opinion poll asks 1,000 people and reports 52%,
-"with a margin of error of 3 points". Nobody thinks the true figure is
-exactly 52.0: a different 1,000 people would give a slightly different
-answer. A benchmark is a poll of questions. The model has some **true solve
-rate** on the whole universe of questions like these; the benchmark asks a
-sample of them and reports the share it got right.
+With the scoring rule and the harness fixed, the score still moves, because
+the questions are a sample. An opinion poll asks 1,000 people and reports
+52%, "with a margin of error of 3 points"; a different 1,000 people would
+give a slightly different answer. A benchmark is a poll of questions. The
+model has some **true solve rate** on the whole universe of questions like
+these, and the benchmark asks a sample of them and reports the share it got
+right.
 
-**Tiny worked example.** A model gets 80 of 100 questions right. How far
-might 0.80 be from its true rate? The typical size of that error, the
-**standard error**, is $\sqrt{0.8 \times 0.2 / 100} = 0.04$: four points. A
-range of about two standard errors either side, 72% to 88%, is a **95%
-confidence interval**: built this way, such ranges contain the true rate 95
-times in 100.
+Say a model gets 80 of 100 questions right. The typical distance between
+0.80 and its true rate, the **standard error**, is
+$\sqrt{0.8 \times 0.2 / 100} = 0.04$: four points. A range of about two
+standard errors either side, 72% to 88%, is a **95% confidence interval**:
+built this way, such ranges contain the true rate 95 times in 100.
 
 $$
 \text{SE} = \sqrt{\frac{p\,(1-p)}{n}}
@@ -525,18 +500,16 @@ inside the noise; the same lead on 14,000 questions does not.
 
 ### The bootstrap: error bars without a formula
 
-**Everyday picture.** You'd like to rerun the exam on a fresh set of
-questions to see how much the score moves, but you only have one set. So
-you fake it: make a "new" exam by drawing questions at random *from the ones
-you have*, allowing repeats, and score the model's existing answers on it.
-Do that a few thousand times and watch the score wobble.
-
-**Tiny worked example.** The 80-out-of-100 model again. One resample might
-draw question 17 three times and never draw question 42, and score 0.83.
-Another scores 0.77. After 2,000 resamples, the middle 95% of the scores runs
-from 0.72 to 0.88, matching the formula above. The method is called the
-**bootstrap**, and it needs no formula, so it works for any score: pass@k,
-an F1, a median.
+The formula covers a share of right answers. For any other score (pass@k,
+an F1, a median) there is a method that needs no formula. You would like to
+rerun the benchmark on fresh questions and see how much the score moves, but
+you have only one set. So you build new sets from it: draw questions at
+random *from the ones you have*, allowing repeats, and rescore the model's
+existing answers on each. This is the **bootstrap**. For the
+80-out-of-100 model, one resample might draw question 17 three times and
+never draw question 42, and score 0.83; another scores 0.77. After 2,000
+resamples, the middle 95% of the scores runs from 0.72 to 0.88, matching the
+formula above.
 
 ```mermaid
 flowchart LR
@@ -548,30 +521,26 @@ flowchart LR
   P --> I[95% interval]
 ```
 
-**Reading it:** the loop is the whole method. Each trip round the loop is one
-pretend rerun of the benchmark. The spread of the collected scores is the
-uncertainty, and the two **percentiles** (the values below which 2.5% and
-97.5% of the scores fall) are the ends of the interval. Nothing is assumed
-about bell curves.
+**Reading it:** each trip round the loop is one pretend rerun of the
+benchmark. The spread of the 2,000 scores is the uncertainty, and the two
+**percentiles** (the values below which 2.5% and 97.5% of the scores fall)
+are the ends of the interval. No bell curve is assumed.
 
 **In code:** `bootstrap_interval` resamples the questions and returns the middle 95% of the rescored results.
 
 ### Is the gap between two models real?
 
-**Everyday picture.** Two runners' best times differ by a tenth of a second.
-Is one faster, or was it the wind? If they ran *the same race side by side*,
-you learn much more than from two races on different days.
-
-**Tiny worked example.** Model A scores 82% and model B 79% on the same 200
-questions. Treated as two separate polls, each has a standard error near
-2.8 points, and the gap's standard error is $\sqrt{0.028^2 + 0.029^2} \approx$
-4 points: a 95% margin of ±7.8 on a 3-point gap. Nothing to see. But the
-models answered *the same* questions: both got 150 right and both missed 28.
-Only the 22 questions where they disagree carry information: A alone is
-right on 14, B alone on 8. The **paired bootstrap** resamples questions,
-keeping both models' results together, and puts the gap between −1.5 and
-+7.5 points. Zero is inside: the data can't tell them apart. The same
-pattern on 5,000 questions gives +2.1 to +4.0, and then the gap is real.
+Error bars matter most when two models are compared. Model A scores 82% and
+model B 79% on the same 200 questions. Treated as two separate polls, each
+has a standard error near 2.8 points, and the gap's standard error is
+$\sqrt{0.028^2 + 0.029^2} \approx$ 4 points: a 95% margin of ±7.8 on a
+3-point gap. But the models answered *the same* questions: both got 150
+right and both missed 28. Only the 22 questions where they disagree carry
+information: A alone is right on 14, B alone on 8. The **paired bootstrap**
+resamples questions, keeping both models' results together, and puts the
+gap between −1.5 and +7.5 points. Zero is inside, so the data cannot tell
+the two apart. The same pattern on 5,000 questions gives +2.1 to +4.0, and
+then the gap is real.
 
 $$
 \text{SE}_{A-B} = \sqrt{\text{SE}_A^2 + \text{SE}_B^2}
@@ -622,27 +591,27 @@ its neighbours. Model C, truly the third best, lands last; model A, truly
 the worst, lands fourth. A leaderboard that ranks by score alone, without
 the bars, is presenting this luck as a ranking.
 
-**Why it matters in practice.** Before reading "A beats B", find $n$,
-compute the margin, and ask whether the gap is bigger. When you run the
-comparison yourself, score both models on the same questions and use a
-paired test. Report the interval, not only the point.
+So before reading "A beats B", find $n$, compute the margin, and ask whether
+the gap is bigger. To run the comparison yourself, score both models on the
+same questions, use a paired test, and report the interval with the score.
 
-**In code:** `unpaired_difference_se` is the add-in-squares formula, `paired_bootstrap_difference` resamples questions with both models' results kept together, and `questions_needed` solves the margin formula for $n$.
+**In code:** `paired_bootstrap_difference` is the paired bootstrap, and `questions_needed` solves the margin formula for $n$.
 
 ## 4. Contamination: when the test leaks into training
 
-**Everyday picture.** The exam paper was posted on a forum a week before the
-exam. A student who memorised it scores full marks without understanding a
-thing, and the marker has no way to tell from the score. Language models
-are trained on huge scrapes of the web, and benchmark questions, with their
+An error bar measures the luck of which questions were asked, and it
+assumes the model meets them for the first time. Language models are
+trained on huge scrapes of the web, and benchmark questions, with their
 answers, get copied into forums, blog posts, code repositories and study
 guides. If those copies end up in the training data, the model may have
-*seen the exam*.
+*seen the exam*, and a right answer can be recall rather than skill. This is
+**contamination**.
 
-**Tiny worked example.** A test question: "A baker sells 12 muffins each
-morning and 7 each afternoon. How many muffins does she sell in 5 days?"
-A simple detector lowercases the text, splits it into words, and lists every
-run of $n$ consecutive words, an **n-gram**. The question has 20 words, so
+The simplest detector looks for word runs that a test question shares with
+the training data. Take the question "A baker sells 12 muffins each morning
+and 7 each afternoon. How many muffins does she sell in 5 days?" The
+detector lowercases the text, splits it into words, and lists every run of
+$n$ consecutive words, an **n-gram**. The question has 20 words, so
 it has 16 five-word runs and 13 eight-word runs. Then it checks which of
 those runs also appear in the training data:
 
@@ -672,8 +641,8 @@ flowchart LR
 **Reading it:** the solid path is the leak: the benchmark, meant only for
 the evaluation box, reaches the model by a detour through the web. The
 dotted path is the detector, which compares the training data with the
-benchmark and flags items that overlap. Notice that the detector needs
-access to the training data, so only whoever trained the model can run it.
+benchmark and flags items that overlap. The detector needs the training
+data, so only whoever trained the model can run it.
 
 $$
 \text{overlap}_n(x, D) = \frac{|G_n(x) \cap G_n(D)|}{|G_n(x)|}
@@ -717,14 +686,12 @@ len(grams(item, 5) & grams(paraphrase, 5)) / len(grams(item, 5))  # → 0.0625
 
 ### Why leaked questions inflate the score
 
-**Everyday picture.** A student who has memorised 30% of the answers gets
-those right for free, and answers the rest at their real level.
-
-**Tiny worked example.** A model's true skill is 60%. 30% of the test
-leaked and was memorised. It scores 100% on the leaked 30% and 60% on the
-other 70%: 0.3 + 0.7 × 0.6 = 0.72. A 12-point gain from memory alone. In a
-simulation with 2,000 questions, it reports 72.9%, while the clean
-questions alone score 61.1%, close to the truth.
+A model answers the leaked questions from memory and the rest at its real
+level. Say its true skill is 60% and 30% of the test leaked and was
+memorised. It scores 100% on the leaked 30% and 60% on the other 70%:
+0.3 + 0.7 × 0.6 = 0.72, twelve points from memory alone. In a simulation
+with 2,000 questions, it reports 72.9%, while the clean questions alone
+score 61.1%, close to the truth.
 
 $$
 \text{reported} = f + (1 - f)\,p
@@ -769,7 +736,7 @@ than on items that don't, memory is doing some of the work.
 2. **Decontamination by n-gram overlap.** Model trainers remove, or at least
    report, test items that overlap with their training data, as the GPT-3
    paper did with long word runs. It misses paraphrases and translations,
-   as the table above showed.
+   as the muffin paraphrase showed.
 3. **Held-out test sets.** The questions are never published; an
    organisation runs submitted models against them privately.
 4. **Fresh questions.** Tests written after the model's training data was
@@ -778,25 +745,22 @@ than on items that don't, memory is doing some of the work.
    model that aces old problems and stumbles on new ones of the same
    difficulty has memorised.
 
-**Why it matters in practice.** The older and more famous a benchmark is,
-the more copies of it are on the web, and the less its score can be taken
-at face value. Leakage is the same failure as training on your test set in
-`primer.ml.regularization`, only at the scale of the internet.
+The older and more famous a benchmark is, the more copies of it are on the
+web, and the less its score can be taken at face value. Leakage is the same
+failure as training on your test set (see `primer.ml.regularization`), at
+the scale of the internet.
 
-**In code:** `inflated_score` is the formula, `simulate_contamination` scores a model that recites leaked answers and reports the clean subset separately, and `filter_canaried` drops documents carrying `CANARY`.
+**In code:** `inflated_score` is the formula, and `simulate_contamination` scores a model that recites leaked answers.
 
 ## 5. Saturation and Goodhart's law
 
 ### Saturation: when the exam gets too easy
 
-**Everyday picture.** A spelling test of "cat", "dog" and "sun" cannot tell
-a ten-year-old from a novelist: both score 100%. A test only sorts people
-whose ability sits near the difficulty of its questions.
-
-**Tiny worked example.** A common model of test-taking, from **item
-response theory**, gives each model an ability $\theta$ ("theta") and each
-question a difficulty $b$, and says the chance of a right answer depends
-only on the difference $\theta - b$. Take two models with abilities 3 and
+A benchmark that is large and has not leaked can still stop telling models
+apart, once its questions are too easy for them. A standard description of
+test-taking, from **item response theory**, gives each model an ability
+$\theta$ ("theta") and each question a difficulty $b$, and says the chance
+of a right answer depends only on the difference $\theta - b$. Take two models with abilities 3 and
 5, which are very different. On a benchmark of easy questions (difficulty
 −2), they score 99.3% and 99.9%: 0.6 points apart. On a benchmark of hard
 questions (difficulty 4), they score 26.9% and 73.1%: 46 points apart. The
@@ -853,8 +817,8 @@ round((1 - 0.05) * sigma(50), 2)  # → 0.95
 benchmark separates models only where its curve is steep. The grey band
 marks our two models: on the green (easy) benchmark the curve is already
 flat at the top, so they tie; on the red (hard) one the curve is steep, so
-they are far apart. As models improve, they move right, and yesterday's
-hard benchmark becomes today's green curve.
+they are far apart. As models improve they move right along the x-axis, so
+in time a hard benchmark flattens out for them the way the easy one has.
 
 ```mermaid
 flowchart LR
@@ -867,7 +831,7 @@ flowchart LR
 
 **Reading it:** a benchmark has a life cycle. It is most informative while
 scores spread out across the middle; once they bunch near the top, the
-remaining gaps are smaller than the noise from section 3, and the last few
+remaining gaps are smaller than a score's error bar, and the last few
 points are partly the wrong answer keys. A score *above* the key-error
 ceiling is itself a warning: the only way to "match" a wrong key is to have
 seen it.
@@ -876,17 +840,16 @@ seen it.
 
 ### Goodhart's law: when the score becomes the target
 
-**Everyday picture.** "When a measure becomes a target, it ceases to be a
-good measure." A call centre rewarded for short calls soon has staff who
-hang up on hard problems. The number improves; the thing it measured
-doesn't.
-
-**Tiny worked example.** A lab trains 20 versions of a model that are all
-*equally good*: each truly solves 70% of problems. It scores them on the
-same 200-question test and ships the best. Their test scores differ only by
-luck, so "the best" is simply the luckiest: on average, its test score is
-75.8%. Rescore it on 200 fresh questions and it gets 70.0%. Six points of
-the headline were selection, not skill. This is the **winner's curse**.
+Saturation comes from outside, as models improve. The other way a
+benchmark wears out comes from using it to decide. **Goodhart's law** puts
+it as "When a measure becomes a target, it ceases to be a good measure."
+The simplest case is choosing between versions. A lab trains 20 versions of
+a model that are all *equally good*: each truly solves 70% of problems. It
+scores them on the same 200-question test and ships the best. Their test
+scores differ only by luck, so the best is the luckiest: on average, its
+test score is 75.8%. Rescored on 200 fresh questions, it gets 70.0%. Six
+points of the headline came from the choosing. This is the **winner's
+curse**.
 
 ```mermaid
 flowchart LR
@@ -901,7 +864,7 @@ flowchart LR
 
 **Reading it:** every trip round this loop consults the test set, and every
 "keep" favours changes that happened to suit those particular questions.
-After enough trips, the test set has quietly become a training set: the
+After enough trips, the test set has in effect become a training set: the
 dotted arrow reports a number that the loop was tuned to raise. The same
 loop runs with prompt formats tuned per benchmark, with training data
 chosen to resemble a benchmark, and with announcements that report only the
@@ -919,7 +882,7 @@ $$
 | $p$ | their shared true solve rate | 0.70 |
 | $n$ | questions in the test | 200 |
 | $z_K$ | the average of the largest of $K$ draws from a standard bell curve; it grows slowly with $K$ | $z_{20} \approx 1.87$ |
-| $\sqrt{p(1-p)/n}$ | the standard error from section 3 | 0.0324 |
+| $\sqrt{p(1-p)/n}$ | the standard error of one score, as before | 0.0324 |
 
 **In words:** "the best of $K$ equally good versions looks better than it
 is by about $z_K$ standard errors, just from being picked."
@@ -947,34 +910,37 @@ rescores the same winner on questions it was never chosen by, and it stays
 on the dashed truth. The gap between the lines is the price of choosing
 with the test set.
 
-A striking check of how much this matters: researchers rebuilt the ImageNet
-test set from scratch, following the original recipe, and rescored many
-published models. Accuracy fell by roughly 11 to 14 points, yet the
-*ranking* of models barely changed. Fresh questions are the honest test,
-and ranks tend to survive better than absolute numbers.
+Researchers have tested a famous benchmark for this. They rebuilt the
+ImageNet test set from scratch, following the original recipe, and
+rescored many published models. Accuracy fell by 11 to 14 points, yet the
+*ranking* of models barely changed. The authors traced the drop to the new
+images being slightly harder, not to a decade of reuse, so the old test set
+had kept its order, while its absolute numbers did not carry over to fresh
+questions.
 
-**Why it matters in practice.** Keep a private test set that you consult
-rarely, and never to choose between versions; choose with a separate
-validation set. Distrust a single headline benchmark, and be suspicious
-when a model's gains are concentrated on the benchmarks its makers chose to
-report. Reinforcement learning's reward hacking is this same law, with the
-reward model as the measure.
+The defence against the winner's curse is to keep a private test set that
+you consult rarely, and never to choose between versions; choose with a
+separate validation set. Distrust a single headline benchmark, and be
+suspicious when a model's gains are concentrated on the benchmarks its
+makers chose to report. Reinforcement learning's reward hacking is this
+same law, with the reward model as the measure.
 
 **In code:** `winners_curse` picks the best of several equally good versions by test score and rescores it on fresh questions.
 
 ## 6. Arenas: ratings from pairwise votes
 
-**Everyday picture.** A blind taste test. Two unlabelled cups, you pick the
-one you prefer, and thousands of people do the same with every pairing. No
-answer key is needed, only preferences, and from them you can build a
-league table in which every drink has a rating and the gap between two
-ratings predicts how often one beats the other. Chess has done this for
-decades with the **Elo rating**.
+Every benchmark so far had an answer key. Open conversation has none:
+which of two replies is better is a matter of taste. An **arena** asks
+people. Like a blind taste test, it shows a user two anonymous answers to
+their own prompt, asks which is better, and turns thousands of such votes
+into a league table. Every model gets a rating, and the gap between two
+ratings predicts how often one beats the other. Chess has rated players
+this way for decades with the **Elo rating**.
 
-**Tiny worked example.** Models A and B meet 10 times, and people prefer A
-in 7. What ratings explain that best? The answer is ratings whose predicted
-win chance for A is exactly 7 / 10, and on the Elo scale that is a gap of
-147 points. Ratings translate into win chances by a fixed rule:
+Say models A and B meet 10 times, and people prefer A in 7. The ratings
+that explain this best predict a win chance for A of exactly 7 / 10, and on
+the Elo scale that is a gap of 147 points. Ratings translate into win
+chances by a fixed rule:
 
 | Rating gap | Stronger side wins |
 |---|---|
@@ -992,12 +958,11 @@ flowchart LR
   FIT --> BOARD["Leaderboard<br/>ratings with intervals"]
 ```
 
-**Reading it:** the arena never asks a model a question with a known
-answer. It collects *comparisons*: each vote says only that one answer was
-preferred to another on one prompt. The fit turns the whole vote log into
-one number per model, chosen so that the gaps between numbers predict the
-observed win rates as well as possible. The model names are hidden while
-people vote so that reputation can't sway them.
+**Reading it:** each vote in the log records only that one answer was
+preferred to another on one prompt. The fit turns the whole log into one
+number per model, chosen so that the gaps between numbers predict the
+observed win rates as well as possible. The names stay hidden while people
+vote, so reputation cannot sway them.
 
 $$
 P(i \text{ beats } j) = \frac{1}{1 + e^{-(\beta_i - \beta_j)}} = \frac{1}{1 + 10^{(R_j - R_i)/400}}
@@ -1041,21 +1006,19 @@ round(1 / (1 + 10 ** (-400 / 400)), 3)  # → 0.909
 
 **In code:** `elo_win_probability` turns two ratings into a win chance.
 
-### Fitting the ratings: online Elo, and why arenas moved past it
+### Fitting the ratings: online Elo or one fit over every vote
 
-**Everyday picture.** Chess Elo adjusts ratings game by game: beat someone
-you were expected to beat and you gain a little; beat a favourite and you
-gain a lot. That suits players who improve over time. Models don't change
-between votes, though, and game-by-game updates remember recent games more
-than old ones, so the same votes in a different order give a different
-table.
-
-**Tiny worked example.** Two models start at 1000, and the first wins one
-vote. It was expected to win half the time, so the surprise is 1 − 0.5 =
-0.5, and with a step size $K = 32$ it gains 16 points while the loser drops
-16. Now replay a log of 20,000 simulated votes (the lesson's demo does
-this): online Elo puts model 0 at 1026 in one order and at 1140 in the
-reverse order, while its true rating is 1100.
+Chess Elo adjusts ratings game by game: beat someone you were expected to
+beat and you gain a little; beat a favourite and you gain a lot. That suits
+players, who improve over time. Models do not change between votes, though,
+and game-by-game updates weigh recent games more than old ones, so the same
+votes in a different order give a different table. Two models start at
+1000, and the first wins one vote. It was expected to win half the time, so
+the surprise is 1 − 0.5 = 0.5, and with a step size $K = 32$ it gains 16
+points while the loser drops 16. Replay 20,000 simulated votes between four
+models whose true ratings are 1100, 1050, 950 and 900, and online Elo puts
+the strongest, model 0, at 1026 in one order and at 1140 in the reverse
+order.
 
 $$
 R_a \leftarrow R_a + K\,(S - E)
@@ -1106,12 +1069,11 @@ max((g / 100 for g in range(201)), key=log_likelihood)  # → 0.85
 round(math.log(7 / 3), 3), round(400 * math.log10(7 / 3), 1)  # → (0.847, 147.2)
 ```
 
-Finding the strengths for many models at once is **logistic regression**:
+Fitting the strengths of many models at once is **logistic regression**:
 each vote is a row with +1 under the first model, −1 under the second, and
-the result as the label. The lesson's fit uses Newton's method, which
-jumps straight to the most probable strengths in a few steps. On 20,000
-simulated votes between four models with true ratings 1100, 1050, 950 and
-900, it recovers 1097, 1047, 952 and 904.
+the result as the label. Newton's method reaches the most probable
+strengths in a few steps. On the same 20,000 votes, the fit recovers 1097,
+1047, 952 and 904.
 
 ![Online Elo ratings wander by tens of points as votes arrive and end somewhere else in reverse order; the Bradley-Terry fit is one fixed line per model](figures/primer.ml.benchmarks.elo_order.svg)
 
@@ -1123,18 +1085,14 @@ to stop depends on which votes came last. The crosses at the right edge are
 where online Elo ends if the same votes arrive in reverse order. The dashed
 lines don't depend on order at all, and sit close to the true ratings.
 
-**In code:** `elo_online` applies the game-by-game update, `simulate_arena` produces votes between randomly paired models, and `fit_bradley_terry` fits every strength at once by Newton's method.
+**In code:** `elo_online` is the game-by-game update and `fit_bradley_terry` the fit over every vote.
 
 ### Style and length bias
 
-**Everyday picture.** A talent show where the judges love volume: the
-loudest act wins whether or not it sang in tune. People voting between two
-answers are swayed by things other than correctness: length, confident
-tone, headings and bullet points. Those preferences are real, but they are
-not the same as being right.
-
-**Tiny worked example.** In the four-model arena, model 2 (true rating 950)
-writes answers three times as long as the others: 600 tokens against 200.
+A vote records a preference, and people choosing between two answers are
+swayed by more than correctness: by length, confident tone, headings and
+bullet points. In the four-model arena, let model 2 (true rating 950) write
+answers three times as long as the others: 600 tokens against 200.
 Voters add a bonus of 0.25 strength units for every extra hundred tokens.
 Against model 1 (true rating 1050), model 2 gives away 100 Elo points of
 quality, which is −0.576 in strength units, but gains 4 × 0.25 = 1.0 for
@@ -1156,7 +1114,7 @@ $$
 | $\beta_i - \beta_j$ | the quality difference, as before | −0.576 (950 against 1050) |
 | $\ell_i, \ell_j$ | the two answers' lengths in hundreds of tokens | 6 and 2 |
 | $\gamma$ | "gamma": how much voters reward each extra hundred tokens | 0.25 |
-| $\sigma$ | the sigmoid, as in section 5 | |
+| $\sigma$ | the sigmoid, as in saturation above | |
 
 **In words:** "the chance that $i$ wins depends on the quality gap plus a
 bonus for being longer; fitting both at once separates quality from
@@ -1185,27 +1143,22 @@ at model 2: its red bar towers over its grey one and over every other red
 bar. The other models' red bars drop, because every win model 2 takes from
 them counts against them. The blue bars match the grey ones.
 
-**Why it matters in practice.** An arena measures what people prefer in
-quick side-by-side reading, which is worth knowing and is not the same as
-correctness on hard problems that voters can't check. Its prompts are
-whatever users type, which may not resemble your workload. Style can be
-tuned for, which is Goodhart again, and a lab that privately tests many
-variants and publishes the best meets the winner's curse. Look for
-style-controlled ratings and their confidence intervals, and read a
-difference of a few Elo points as a tie. The same biases affect an LLM used
-as a judge (see `primer.ml.metrics`).
+An arena measures what people prefer in quick side-by-side reading. That is
+worth knowing, and it is not correctness on hard problems that voters
+cannot check. Its prompts are whatever users type, which may not resemble
+your workload. Style can be tuned for, which is Goodhart's law again, and a
+lab that privately tests many variants and publishes the best meets the
+winner's curse. Look for style-controlled ratings and their confidence
+intervals, and read a difference of a few Elo points as a tie. The same
+biases affect a language model used as a judge (see `primer.ml.metrics`).
 
-**In code:** `simulate_arena` takes each model's typical answer length and the voters' length bonus; `fit_bradley_terry` given the per-vote length differences also returns the fitted length effect.
+**In code:** `simulate_arena` takes each model's answer length and the voters' length bonus, and `fit_bradley_terry` returns the fitted length effect.
 
 ## 7. Reading a model announcement's results table
 
-**Everyday picture.** A car advert says "up to 60 miles per gallon". The
-useful questions are all about the small print: on what route, at what
-speed, measured by whom, and compared with which other car under which
-conditions?
-
-**Tiny worked example.** An announcement's table claims four wins. Put each
-claim through the questions of this lesson:
+Each check so far applies to the results table in a model announcement.
+Here is one that claims four wins, with the small print each claim leaves
+out:
 
 | Claim | What the small print shows | Verdict |
 |---|---|---|
@@ -1234,15 +1187,15 @@ of them reaches the bottom box, and even that box is qualified: evidence
 *for tasks like the benchmark's*. Whether those tasks resemble yours is a
 question no public benchmark can answer.
 
-The checklist, one question per box of the first diagram:
+As a checklist:
 
 1. **Is it the same test?** Same number of worked examples (shots), same
    prompt format, same room to reason before answering, same number of
    attempts (pass@1 against pass@1), same harness. Footnotes such as
    "5-shot", "CoT" (chain of thought, reasoning written out first) and
    "maj@32" (majority vote over 32 samples) each change the test.
-2. **How many questions?** Compute the margin from section 3. A few
-   points on a few hundred questions is a tie.
+2. **How many questions?** Compute the 95% margin. A few points on a few
+   hundred questions is a tie.
 3. **Was the comparison run by the same people?** Numbers copied from
    another team's paper were produced by another harness.
 4. **Could the questions have leaked?** Was the benchmark public before
@@ -1250,12 +1203,13 @@ The checklist, one question per box of the first diagram:
    reported? Are results on fresh questions shown?
 5. **Is the benchmark saturated?** Scores in the 90s are separated by
    noise and wrong keys more than by skill.
-6. **Which benchmarks are missing?** A table is a selection. Last year's
-   standard benchmarks that have quietly disappeared are a signal.
-7. **Is it your task?** A benchmark is someone else's golden set. For a
-   decision that matters, build your own, as in `primer.agents.evals`.
+6. **Which benchmarks are missing?** A table is a selection. When last
+   year's standard benchmarks are absent, ask why.
+7. **Is it your task?** A benchmark is someone else's choice of questions.
+   For a decision that matters, build your own from your own tasks (see
+   `primer.agents.evals`).
 
-**In code:** `ReportedScore` holds one cell of a results table with the settings that produced it, and `critique` puts a claimed win through the checklist and returns every concern it finds.
+**In code:** `critique` puts a claimed win, held as a `ReportedScore`, through the checklist.
 
 ## In 20 seconds
 
