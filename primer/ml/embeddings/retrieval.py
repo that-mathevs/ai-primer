@@ -129,40 +129,20 @@ design the pipeline, you are done.
 
 ## Level 2: How it works, from scratch
 
-Level 2 builds every box of that pipeline from nothing, starting in a
-library.
+The examples search a small company knowledge base: twenty help articles
+from IT, finance and HR, such as "Password policy", "Car mileage expense"
+and "Error ERR-4012: VPN tunnel failed". Twenty test questions come with
+their known answers, so every method can be scored the same way. Two terms
+are used throughout:
 
-**The everyday picture.** You walk into a library with a question. Two librarians are on duty.
-
-- **The keyword librarian** takes your words literally. They count how often
-  each word of your question appears in each book, give *rare* words far more
-  weight than common ones, stop getting more excited after the tenth mention,
-  and are a little suspicious of very long books that mention everything.
-  Ask about "ERR-4012" and they find the one page that says "ERR-4012". Ask
-  about "automobile reimbursement" and they find nothing, because the book
-  says "car" and "reimbursed".
-- **The meaning librarian** understands what you *mean*: "automobile" is a
-  "car", "scam" is "phishing". But they remember the gist of each book, not
-  its serial numbers, so "ERR-4012" and "ERR-4013" blur together.
-
-Real systems ask **both** and trust the books both recommend. Then an
-expert reads the top handful of candidates carefully, next to your question,
-and puts them in final order. That's the whole modern retrieval pipeline,
-and this lesson builds every piece of it.
-
-Words used throughout, in plain terms:
-
-- **Retrieval.** Finding the documents that answer a question, ranked best
-  first. In a RAG system (`primer.agents.rag`) the language model can only use
-  what retrieval hands it, so retrieval quality caps answer quality.
 - **Token.** Here, one word after lowercasing and dropping filler words
-  ("the", "is"): see `primer.common.text`.
+  ("the", "is").
 - **Recall@k.** The share of questions whose answer appears in the top k
   results. **MRR** (mean reciprocal rank) also rewards putting the answer
   *first*: an answer at rank 1 scores 1, at rank 2 scores 1/2, missing scores
   0, averaged over questions.
 
-The full pipeline, which the sections below build one box at a time:
+The full pipeline, one box per section below:
 
 ```mermaid
 flowchart LR
@@ -175,20 +155,22 @@ flowchart LR
   R --> T[Top 3 to 5 passages<br/>to the language model]
 ```
 
-**Reading it:** two cheap, wide searches run side by side and see the whole
-collection. Their rankings are merged into one shortlist. Only the shortlist
-reaches the expensive, precise reranker on the right. Everything left of the
-shortlist must be fast because it faces millions of documents; everything
-right of it can be slow because it faces only a hundred. Each box below gets
-its own section.
+**Reading it:** two cheap, wide searches run side by side over the whole
+collection, and their rankings are merged into one shortlist. Only the
+shortlist reaches the reranker on the right, which is slow but precise.
+Everything left of the shortlist must be fast, because it faces millions of
+documents; everything right of it can be slow, because it faces a hundred at
+most.
 
 ## 1. Keyword search: BM25
 
-**The everyday picture.** The keyword librarian from above: rare words count
-more, repetition helps less and less, and long books get a small penalty for
-mentioning everything.
+Keyword search scores a document by the words it shares with the question.
+**BM25**, the standard scoring rule, refines plain counting in three ways: a
+rare word counts for more than a common one, each extra mention of a word
+adds less than the one before, and a mention in a long document counts for a
+little less than the same mention in a short one.
 
-**A tiny worked example.** Three one-line "documents":
+Take three one-line documents:
 
 | Doc | Words | Length |
 |---|---|---|
@@ -197,7 +179,7 @@ mentioning everything.
 | d₃ | fish | 1 |
 
 The average length is (3 + 2 + 1)/3 = 2. Search for **cat**. It appears in
-one of the three documents, so it's rare and gets a high weight (0.981,
+one of the three documents, so it is rare and gets a high weight (0.981,
 computed below); "dog" is in two, so it would get less (0.470). Only d₁
 contains "cat", twice, and d₁ is a bit longer than average. Plugging in,
 d₁ scores **1.207** and the others score 0.
@@ -216,9 +198,9 @@ flowchart LR
 **Reading it:** each query word contributes one product: *how rare the word
 is* times *how much this document talks about it*. The length box feeds into
 the count box because a mention in a short document is stronger evidence than
-the same mention in a long one. Words the document doesn't contain
-contribute zero, so a document sharing no words with the query scores exactly
-0. That's the blind spot the meaning librarian covers.
+the same mention in a long one. A word the document doesn't contain
+contributes zero, so a document that shares no words with the query scores
+0, however close its meaning.
 
 $$
 \text{BM25}(q, d) = \sum_{t \in q} \text{IDF}(t) \cdot
@@ -284,29 +266,29 @@ winning. Smaller k₁ flattens sooner. On the right, one mention in documents
 of different lengths: with b = 0 length is ignored; with b = 0.75 a mention
 in a document twice the average length counts noticeably less.
 
-**In code:** `BM25` precomputes each word's IDF and each document's length;
-`BM25.scores` applies the formula to every document, and `BM25.search`
-returns the top k with a non-zero score.
+**In code:** `BM25.scores` applies the formula to every document.
 
-**Why it matters:** BM25 is decades old, needs no training, runs on any
-search engine (Elasticsearch, OpenSearch, Lucene), and is still very hard to
-beat on exact identifiers: product codes, error numbers, names, ticket IDs.
-Those are everywhere in company data.
+BM25 needs no training and runs in any search engine (Elasticsearch,
+OpenSearch, Lucene). It is hard to beat on exact identifiers such as product
+codes, error numbers, names and ticket IDs, and company data is full of
+them. Its blind spot is the paraphrase. Ask the help articles about
+"automobile reimbursement" and keyword search finds nothing, because the
+article that answers it says "car" and "reimbursed".
 
 ## 2. Meaning search: dense retrieval with a bi-encoder
 
-**The everyday picture.** The meaning librarian writes a one-line summary
-card for every book *before* anyone asks anything. When your question
-arrives, they write a summary card for it too and pull the books whose cards
-are most similar. "Automobile reimbursement" and "car mileage expense" get
-similar cards even though they share no words.
+Meaning search finds that article. An embedding model turns every document
+into a card of numbers, its embedding, before any question arrives. When a
+question comes in, the same model makes a card for it, and the search
+returns the documents whose cards are closest. Searching this way is called
+**dense retrieval**.
 
-**A tiny worked example.** With this repo's toy embedding model
-(`primer.common.embedder`), the query "automobile reimbursement" and the
-car-mileage article share zero words, yet their vectors have cosine
-similarity of about 0.8, the highest in the collection. "What does ERR-4012
-mean", by contrast, puts the right article only 4th: the code is one
-blurred word among many, and "what" and "mean" pull the vector elsewhere.
+With a small toy embedding model, the question "automobile reimbursement"
+and the car-mileage article share no words, yet their cards have a cosine
+similarity of about 0.8, the highest in the collection. Exact codes go the
+other way. For "What does ERR-4012 mean" the right article comes only 4th:
+"what" and "does" are dropped as filler, the code is one of the two words
+left, and "mean" pulls the card elsewhere.
 
 ```mermaid
 flowchart LR
@@ -316,46 +298,43 @@ flowchart LR
   subgraph NOW["At question time"]
     Q[Question] --> E2[Same encoder] --> QV[Question vector]
   end
-  QV --> NN["Nearest vectors<br/>(ann.py)"]
+  QV --> NN["Nearest vectors<br/>(a vector index)"]
   V --> NN
   NN --> R[Ranked documents]
 ```
 
 **Reading it:** the encoder runs twice, but never on the question and a
-document *together*. That's why it's called a **bi-encoder**: two separate
-encodings. Documents are encoded once, at ingestion. A question costs one
+document *together*, which is why this design is called a **bi-encoder**.
+Documents are encoded once, when they are added. A question costs one
 encoding plus a nearest-neighbor lookup (see `primer.ml.embeddings.ann`),
-which takes milliseconds over millions of documents. The price: the model
-never sees the question and the document side by side, so it can't check
-fine details like "does this passage answer *this* question, or just share
-its topic?".
+which takes milliseconds over millions of documents. Because the model never
+sees the question and the document side by side, it cannot check whether a
+passage answers *this* question or only shares its topic.
 
-**In code:** `SearchEngine` embeds every document once with
-`primer.common.embedder.ConceptEmbedder` into a
-`primer.ml.embeddings.ann.FlatIndex`; `SearchEngine.dense` embeds the
-question and returns the nearest documents. `doc_text` decides what gets
-indexed: the title plus the body.
+**In code:** `SearchEngine.dense` embeds the question and returns the
+nearest documents.
 
-**Why it matters:** dense retrieval handles paraphrases, synonyms and other
-languages, but it blurs exact tokens. Measure both kinds of queries on your
-own data before trusting either librarian alone.
+Dense retrieval handles paraphrases, synonyms and other languages, and blurs
+exact tokens; keyword search does the reverse. Measure both kinds of
+question on your own data before trusting either search alone.
 
 ## 3. Hybrid search: reciprocal rank fusion (RRF)
 
-**The everyday picture.** Ask both librarians for their top-10 lists, then
-hold a vote. A book earns points for each list it's on, more the higher it
-sits. Books both librarians rank highly rise to the top. Crucially, you only
-compare *positions*, never the librarians' private scoring systems, which
-aren't on the same scale.
+Each search finds answers the other misses, so **hybrid search** runs both
+and merges their two ranked lists. The usual merge is **reciprocal rank
+fusion** (RRF). Each list votes for the documents on it, a higher place
+earning a bigger vote, and a document's votes are added up. Only positions
+are compared, never the two searches' scores, which are not on the same
+scale.
 
-**A tiny worked example.** With the standard constant k = 60:
+With the standard constant k = 60:
 
 | Document | Dense rank | BM25 rank | RRF score |
 |---|---|---|---|
 | X | 1 | 3 | 1/61 + 1/63 = 0.0164 + 0.0159 = **0.0323** |
 | Y | 1 | (absent) | 1/61 = **0.0164** |
 
-X, which both methods like, beats Y, which only one method loves.
+X, high on both lists, beats Y, first on only one.
 
 ```mermaid
 flowchart LR
@@ -367,10 +346,10 @@ flowchart LR
 ```
 
 **Reading it:** the two rankings are the only inputs; their raw scores are
-thrown away on purpose. BM25 scores run from 0 to about 20; cosine
-similarities from −1 to 1. Adding them would let one system drown the other,
-and fixing that needs tuning per collection. Ranks are always on the same
-scale, so RRF works out of the box.
+thrown away on purpose. BM25 scores run from 0 to about 20, cosine
+similarities from −1 to 1, so adding them would let one search drown the
+other, and fixing that would need tuning for each collection. Ranks are on
+the same scale for every search, so RRF needs no tuning.
 
 $$
 \text{RRF}(d) = \sum_{i=1}^{m} \frac{1}{k + \text{rank}_i(d)}
@@ -421,8 +400,8 @@ that dense search wrongly ranked first gets only its blue half.
 the rank at which the right answer appeared (✗ = not in the top 10). Look at
 where the colors differ. BM25's failures (the paraphrase block) are where
 dense search succeeds, and dense search's failures (the error-code block) are
-where BM25 succeeds. Because their mistakes don't overlap, fusing them fixes
-both: the hybrid column is all 1s.
+where BM25 succeeds. Their mistakes don't overlap, so the hybrid column is
+all 1s.
 
 | Method | recall@3 (20 questions) | MRR |
 |---|---|---|
@@ -430,35 +409,32 @@ both: the hybrid column is all 1s.
 | Dense alone | 0.90 | 0.85 |
 | **Hybrid (RRF)** | **1.00** | **1.00** |
 
-**In code:** `reciprocal_rank_fusion` adds up 1/(k + rank) across any number
-of rankings; `SearchEngine.hybrid` fuses `SearchEngine.bm25` with
-`SearchEngine.dense`, and `evaluate` measures recall@k and MRR for any search
-method.
+**In code:** `reciprocal_rank_fusion` fuses any number of rankings, and
+`evaluate` measures recall@k and MRR for any search method.
 
-**Why it matters:** company data is full of both paraphrase-style questions
-and exact identifiers, so hybrid search almost always beats either method
-alone. It's cheap to add: most search engines and vector databases support
-it built in.
+Company data is full of both paraphrases and exact identifiers, so there
+too hybrid search usually beats either method alone. Elasticsearch and most
+vector databases offer it built in.
 
 ## 4. Reranking: bi-encoder vs. cross-encoder
 
-**The everyday picture.** A matchmaker has two ways to work. The fast way:
-write an index card for each person once, then match cards, so thousands of
-people can be pre-filed. The careful way: sit the two people down *together*
-and watch them talk. That's far more accurate, but every pair needs its own
-meeting. A **bi-encoder** is the index card. A **cross-encoder** is the
-meeting. So you use cards to shortlist, then hold meetings only with the
-shortlist.
+Hybrid search ranks every test question's answer first, but a document on
+the right topic can still fool it. Ask "What are the password rules?" Two
+articles are about passwords. The password *reset* how-to (it-001) mentions
+"password" three times; the password *policy* (it-002) is the real answer.
+BM25 and the fused hybrid ranking both put the how-to first. A document like
+this, which looks relevant but doesn't answer the question, is called a
+**hard negative**.
 
-**A tiny worked example: a hard negative.** "What are the password rules?"
-has two candidate answers on the same topic. The password *reset* how-to
-(it-001) mentions "password" three times; the password *policy* (it-002) is
-the real answer. BM25 and the fused hybrid ranking both put the how-to first.
-A **hard negative** is exactly this: a document that looks relevant (right
-topic) but doesn't answer the question.
+Meaning search cannot settle it, because each document's card was made
+without seeing the question. A **cross-encoder** reads the question and a
+document together, as one input, and scores the pair. That is more accurate,
+and more expensive: every pair needs its own pass through the model, so a
+cross-encoder only reorders a shortlist that a cheaper search has already
+found. This step is **reranking**.
 
-Our toy cross-encoder reads the question and the document together and
-checks which of the question's *ideas* the document covers:
+A toy cross-encoder shows the idea. It checks which of the question's
+*ideas* the document covers:
 
 | | question ideas: {password, rules} | coverage | phrase | exact | score |
 |---|---|---|---|---|---|
@@ -493,34 +469,34 @@ of time. In the bottom box they're one input, so attention (see
 word: "rules" can notice that the document says "policy" and "must". Nothing
 can be precomputed, because the score depends on the pair.
 
-**The cost argument.** Say a cross-encoder pass takes 10 ms on a GPU. Over a
-1-million-document collection that's 10,000 seconds per question. Over a
-shortlist of 50, it's 0.5 s, or much less when the pairs are batched. That
-is why the standard pipeline is *retrieve wide and cheap, then rerank narrow
-and precise*, and why you cap the shortlist to keep latency predictable.
+The cost decides how the two kinds of model are combined. Say a
+cross-encoder pass takes 10 ms on a GPU. Over a collection of a million
+documents that is 10,000 seconds per question; over a shortlist of 50 it is
+0.5 s, or much less when the pairs are batched. So the cheap searches
+retrieve wide, the cross-encoder reranks narrow, and the shortlist is capped
+to keep latency predictable.
 
-**In code:** `CrossEncoder.score` reads one question-document pair and adds
-`CrossEncoder.coverage`, `CrossEncoder.phrase` and `CrossEncoder.exact`, with
-`ideas` grouping synonyms into ideas. `retrieve_then_rerank` shortlists with
-hybrid search, then reorders the shortlist with the cross-encoder.
+**In code:** `retrieve_then_rerank` shortlists with hybrid search, then
+reorders the shortlist with `CrossEncoder.score`.
 
-**Why it matters, and a warning:** rerankers are models too, and can be wrong.
-On this repo's 20 questions, reranking fixes the hard negatives but demotes
-one answer ("refund for the hotel" → it prefers the car-mileage article,
-which talks about reimbursing trips). Measure recall@k and MRR with and
-without the reranker before shipping it.
+A reranker is a model, and it can be wrong too. On the twenty test
+questions, where hybrid search already ranks every answer first, it demotes
+one: for "refund for the hotel" it prefers the car-mileage article, which
+talks about reimbursing trips. Measure recall@k and MRR with and without the
+reranker before shipping it.
 
 ## 5. Late interaction: ColBERT
 
-**The everyday picture.** Instead of one summary card per book, keep a card
-for *every word* in the book. When your question arrives, each of your words
-looks for its single best-matching card in the book, and the book's score is
-how well your words found partners. That's more precise than one summary per
-book, and unlike the matchmaker's meetings, the cards can still be written
-ahead of time.
+A bi-encoder is fast because every document's card is made in advance, and
+coarse because a whole document is squeezed into one card. A cross-encoder
+is precise and can prepare nothing in advance. **Late interaction**,
+introduced with the ColBERT model, sits between them. It keeps a card for *every word*
+of a document, made in advance. When a question arrives, each of its words
+looks for its single best-matching word in the document, and the document's
+score adds up how well the question's words found partners.
 
-**A tiny worked example.** Two-number word vectors. The query has words
-(1, 0) and (0, 1); the document has words (1, 0) and (0.6, 0.8).
+Take two-number word vectors. The query has words (1, 0) and (0, 1); the
+document has words (1, 0) and (0.6, 0.8).
 
 | Query word | vs. doc word 1 | vs. doc word 2 | best |
 |---|---|---|---|
@@ -587,33 +563,31 @@ that row's maximum, the only number that counts. "password" finds itself
 (0.85), a synonym it could never match by spelling. The score is the sum of
 the outlined cells: 1.00 + 0.85 = 1.85.
 
-**In code:** `maxsim` computes the score from two sets of word vectors;
-`LateInteraction.token_vectors` gives a text one vector per word, and
-`LateInteraction.search` ranks documents by MaxSim.
+**In code:** `LateInteraction.search` ranks documents by `maxsim`.
 
-**Why it matters:** late interaction gets much of a cross-encoder's precision
-while keeping precomputed documents. The cost is storage: one vector per
-*word* instead of per document, often 50 to 200 times more. ColBERTv2
-compresses those vectors to make it practical.
+Late interaction gets much of a cross-encoder's precision while keeping
+documents precomputed. The cost is storage: one vector per *word* instead of
+one per document, often 50 to 200 times more. ColBERTv2 compresses those
+vectors to make that affordable.
 
 ## 6. Chunking: how documents are cut before indexing
 
-**The everyday picture.** You're turning a cookbook into index cards. Cut
-every 50 words and a recipe's title lands on one card and its oven
-temperature on the next. Nobody searching for that recipe finds the
-temperature. Cut at each recipe instead, and every card is self-contained.
+Every search so far ranked whole help articles a few sentences long. A
+longer document is cut into pieces called **chunks** before it is indexed,
+and each chunk is embedded and searched on its own. Where the cuts fall
+decides whether a fact stays next to the heading that explains it.
 
-**A tiny worked example.** A 130-word text, 50-word chunks with 10 words of
-overlap: windows start every 50 − 10 = 40 words, at 0, 40 and 80, giving
-**3 chunks** (words 1–50, 41–90, 81–130). Each shares 10 words with the next,
-so a sentence cut at a boundary survives whole in at least one chunk, if
-it's short.
+The simplest cut is a fixed-size window. Cut a 130-word text into 50-word
+chunks with 10 words of overlap, and a window starts every 50 − 10 = 40
+words, at 0, 40 and 80, giving **3 chunks** (words 1–50, 41–90, 81–130).
+Each shares 10 words with the next, so a sentence no longer than the overlap
+that is cut at one boundary survives whole in the next chunk.
 
-On this lesson's remote-work handbook, the question "home internet stipend"
-shows the difference. With 40-word fixed chunks, the best-matching chunk
-holds the heading "Home internet stipend" but the amount, "50 dollars per
-month", fell into the next window. With structure-aware chunks, cut at
-headings, the best chunk holds both.
+Fixed windows ignore the document's structure. Take a short remote-work
+handbook and the question "home internet stipend". With 40-word fixed
+chunks, the best-matching chunk holds the heading "Home internet stipend",
+but the amount, "50 dollars per month", fell into the next window. With
+**structure-aware** chunks, cut at headings, the best chunk holds both.
 
 ```mermaid
 flowchart LR
@@ -624,8 +598,8 @@ flowchart LR
   META --> EMB[Embed + index]
 ```
 
-**Reading it:** chunking is a small pipeline, not a single split. Parsing
-decides what the structure *is* (and is where most quality is lost on messy
+**Reading it:** chunking takes several steps. Parsing decides what the
+structure *is* (and is where most quality is lost on messy
 PDFs). Splitting respects that structure. Prefixing the heading means a
 chunk that says "The stipend is 50 dollars" still says *which* stipend: the
 idea behind *contextual retrieval*. Metadata rides along so later stages can
@@ -641,8 +615,8 @@ red marker is the "Home internet stipend" heading and the green marker the
 it, one chunk spans both. Notice also that the fixed windows cut straight
 through section boundaries.
 
-**Try it:** the handbook below is cut by `fixed_size_chunks`, then searched
-with hybrid search and reranked with the cross-encoder from section 4. With
+**Try it:** the handbook below is cut into fixed windows, searched with
+hybrid search and reranked by the toy cross-encoder described above. With
 the stipend question and 40-word chunks, retrieval ranks chunk 2 (the
 heading) first, and reranking lifts chunk 3, which holds the amount. Now pick
 the VPN question at 30 words with no overlap: the answer sentence is cut
@@ -653,8 +627,9 @@ help.
 <div class="viz" data-viz="rag-pipeline" aria-label="Chunking, retrieval and reranking explorer"></div>
 
 **Parent-child retrieval.** Small chunks match precisely; big chunks give the
-model enough context. Get both: index small *children* (single sentences),
-and when one matches, hand the model its *parent* (the whole section).
+model enough context. Parent-child retrieval gets both. It indexes small
+*children* (single sentences), and when one matches, it hands the model the
+child's *parent* (the whole section).
 
 ```mermaid
 flowchart LR
@@ -665,9 +640,9 @@ flowchart LR
 ```
 
 **Reading it:** the search happens on the left, at sentence level, where
-matches are sharp. The answer handed on happens on the right, at section
-level, where context is complete. The lookup in the middle is just a
-dictionary from child to parent.
+matches are sharp. The hand-over happens on the right, at section level,
+where context is complete. The lookup in the middle maps each child to its
+parent.
 
 $$
 \text{number of chunks} = \left\lceil \frac{n - o}{s - o} \right\rceil
@@ -698,35 +673,27 @@ n, s, o = 130, 50, 10
 math.ceil((n - o) / (s - o))  # → 3
 ```
 
-**In code:** `fixed_size_chunks` cuts overlapping windows of words;
-`structure_aware_chunks` cuts at headings and paragraphs and returns `Chunk`
-records that carry their heading and metadata. `best_chunk` picks the chunk
-BM25 ranks highest, and `parent_child_search` matches a sentence and returns
-its whole section. `chunk_engine` indexes one document's chunks so that
-`retrieve_then_rerank` runs on them, as in the widget above.
+**In code:** `fixed_size_chunks` and `structure_aware_chunks` cut the two
+ways, and `parent_child_search` matches a sentence and returns its section.
 
-**Why it matters:** chunking choices often matter more than the choice of
-embedding model. Split on structure, keep headings with their content, add
-modest overlap, and attach metadata for filtering.
+Good chunking comes down to four rules: split on structure, keep headings
+with their content, add modest overlap, and attach metadata for filtering.
 
 ## 7. Asymmetric retrieval and the forgotten prefix
 
-**The everyday picture.** A filing clerk was trained on sheets stamped
-"QUESTION:" or "DOCUMENT:", and files each kind in a matching drawer. Hand
-them an unstamped sheet and they don't complain: they file it anyway, in a
-drawer nobody will look in. Nobody notices until people stop finding things.
+A badly placed cut loses an answer without raising an error. So can an
+embedding model that is called the wrong way. Retrieval is **asymmetric**:
+questions are short and phrased as asks, while passages are long
+statements. Some embedding models (the E5 family, for example) are trained
+to expect a `"query: "` prefix on questions and a `"passage: "` prefix on
+documents: a stamp that tells the model which side a text is on. Forget a
+prefix and every vector still looks normal (right length, plausible scores)
+but sits in a slightly wrong part of the space.
 
-Questions are short and phrased as asks; passages are long statements. Some
-embedding models (the E5 family, for example) are trained to expect a
-`"query: "` prefix on questions and a `"passage: "` prefix on documents, so
-they can encode each side appropriately. Forget a prefix and every vector
-still looks normal (right length, plausible scores) but sits in a slightly
-wrong part of the space.
-
-**A tiny worked example.** This lesson simulates such a model. With both
-prefixes, 11 of the 12 everyday questions find their answer in the top 3.
-Index the documents *without* "passage: " and the same questions fall to 9
-of 12, and MRR drops from 0.875 to about 0.57. No error is raised anywhere.
+A simulated model shows the size of the effect. With both prefixes, 11 of 12
+everyday questions find their answer in the top 3. Index the documents
+*without* "passage: " and the same questions fall to 9 of 12, and MRR drops
+from 0.875 to about 0.57. No error is raised anywhere.
 
 ```mermaid
 flowchart LR
@@ -744,32 +711,32 @@ flowchart LR
 stamped, vectors aligned. In the bottom box the documents were indexed
 unstamped. The model still returns vectors, and the pipeline runs, but the
 two sides no longer line up well. The only way to catch it is to measure
-recall on labeled questions, which is the habit this whole lesson argues for.
+recall on a set of questions with known answers.
 
-**In code:** `PrefixedEmbedder` simulates such a model:
-`PrefixedEmbedder.encode_one` strips a known prefix and encodes normally, but
-partly rotates the vector of any text that lacks one.
+**In code:** `PrefixedEmbedder` simulates the model: it partly rotates the
+vector of any text that lacks a prefix.
 
-**Why it matters:** always read the embedding model's card for required
-prefixes or instructions, use the *same* model and settings at indexing and
-query time, and keep a small labeled set so silent regressions show up.
+Read the embedding model's documentation for required prefixes or
+instructions, use the *same* model and settings at indexing and query time,
+and keep a small set of questions with known answers, so that a drop in
+recall shows up.
 
 ## In 20 seconds
 - **BM25** scores keyword matches: rare words weigh more (IDF), repeated
-  mentions saturate (k₁), long documents are discounted (b). It's great at
-  exact IDs and blind to synonyms.
-- **Dense retrieval** (bi-encoder) finds meaning and paraphrases, but blurs
+  mentions saturate (k₁), long documents are discounted (b). It finds exact
+  IDs and misses synonyms.
+- **Dense retrieval** (bi-encoder) finds meaning and paraphrases but blurs
   exact tokens. Documents are embedded once, ahead of time.
 - **Hybrid search** fuses both rankings with **RRF**, Σ 1/(60 + rank), using
-  ranks not scores, and almost always beats either alone.
+  ranks, not scores, and usually beats either search alone.
 - **Retrieve, then rerank:** a bi-encoder or hybrid search shortlists 50 to
   100 cheaply; a cross-encoder reads each (question, candidate) pair together
-  and reorders the shortlist precisely.
+  and reorders the shortlist.
 - **ColBERT** keeps a vector per word and scores with MaxSim: close to
   cross-encoder precision, still precomputable, much more storage.
-- **Chunk on structure**, keep headings with content, attach metadata, and
-  **measure recall@k** on labeled questions: it's how you catch silent bugs
-  like a forgotten prefix.
+- **Chunk on structure**, keep headings with their content and attach
+  metadata. **Measure recall@k** on questions with known answers: a forgotten
+  prefix raises no error, and only that measurement catches it.
 
 ## Self-test questions
 
