@@ -125,17 +125,9 @@ rollout, you are done.
 
 ## Level 2: How it works, from scratch
 
-A new pilot doesn't get the captain's seat on day one. First they sit in the
-right seat and call out every move they *would* make while the captain
-flies. Then they fly with the captain's hands hovering over the controls.
-Then they fly routine legs alone, while the captain still handles storms.
-Trust is earned in steps, with evidence at each one, and it can be taken
-back.
-
-Deploying an agent that takes real actions (refunds, emails, changes to a
-company's records) works the same way. This lesson builds each mechanism:
-graduated autonomy, prompt versioning, canary releases, kill switches, rate
-limits, and a tamper-evident audit log.
+An agent that takes real actions (refunds, emails, changes to a company's
+records) does real damage when it gets one wrong. So before anything
+happens, every action it proposes passes the same gates, in the same order.
 
 ```mermaid
 flowchart LR
@@ -150,31 +142,35 @@ flowchart LR
   E --> L[Append to<br/>audit log]
 ```
 
-**Reading it:** every action the agent proposes passes the same gates in
-the same order, cheapest and most absolute first. The kill switch stops
-everything instantly; the rate limit bounds how much damage even a
-misbehaving agent can do per minute; the autonomy level decides whether a
-person must approve. Whatever executes is written to the audit log.
+**Reading it:** follow a proposed action from the left. The first two gates,
+the kill switch and the rate limit, are the cheapest to check and can only
+block. The third decides whether the agent may act alone or must wait for a
+person to approve. Whatever runs, alone or approved, is written to the audit
+log on the right.
 
-**In code:** each gate is one call: `KillSwitch.allowed`, then
-`TokenBucket.allow`, then `AutonomyController.may_act_alone`, and finally
-`AuditLog.append` for whatever executes.
+**In code:** the gates are `KillSwitch.allowed`, `TokenBucket.allow` and
+`AutonomyController.may_act_alone`, and `AuditLog.append` records what runs.
 
-## Graduated autonomy: shadow mode, approval, then autonomy
+## Graduated autonomy: from shadow mode to acting alone
 
-**Everyday picture.** The trainee pilot again: call out moves (shadow), fly
-with the captain ready to take over (approval), fly routine legs alone
-(autonomy for low-risk actions), and hand back the controls after any
-incident.
+The third gate is the one that takes judgement, and the agent earns its
+setting. A new pilot does not start in the captain's seat. First they sit
+beside the captain and call out every move they would make. Then they fly
+with the captain's hands near the controls. Then they fly routine legs
+alone while the captain still takes the storms, and after any incident the
+captain takes over again. Letting an agent onto real work in steps like
+these is called **graduated autonomy**.
 
 In **shadow mode** the agent runs on real inputs and records what it
-*would* do, but takes no action; people keep doing the work. You compare its
-decisions with theirs. When agreement is high enough, it **proposes**
-actions and a person approves each one. When approvals are nearly always
-"yes", it may act alone on low-risk actions, while high-risk ones keep
-needing a person. Any incident or drop in quality sends it back a level.
+*would* do, but takes no action. People keep doing the work, and you compare
+its decisions with theirs. When it agrees with them often enough, it
+**proposes** actions and a person approves each one. When nearly every
+proposal is approved, it may act alone on low-risk actions, while high-risk
+ones, such as large refunds or deletions, still go to a person. Any
+incident or drop in quality sends it back a level.
 
-**Worked example.** Ten support tickets in shadow mode:
+The shadow comparison says most when you break it down by action. Here are
+ten support tickets:
 
 | Agent proposed | Human did | Agree? |
 |---|---|---|
@@ -186,8 +182,8 @@ needing a person. Any incident or drop in quality sends it back a level.
 | refund | refund | yes |
 
 Overall agreement is 8/10 = 80%. Broken down by what the agent proposed,
-replies agree 5/5 = 100% but refunds only 3/5 = 60%. The breakdown tells
-you *what* to let the agent do first: replies, not refunds.
+replies agree 5/5 = 100% but refunds only 3/5 = 60%. So the agent should be
+trusted with replies first, and refunds later.
 
 $$
 \text{agreement} = \frac{1}{N} \sum_{i=1}^{N} \mathbb{1}[a_i = h_i]
@@ -203,8 +199,8 @@ $$
 | $\mathbb{1}[\ldots]$ | 1 if the condition is true, 0 if not (an *indicator*) | 0 for case 2 |
 | $\sum_{i=1}^{N}$ | add up over all cases | |
 
-**In words:** agreement is the share of cases where the agent proposed
-exactly what the human did.
+**In words:** agreement is the share of cases where the agent proposed what
+the human did.
 
 **On the worked example:** eight of the ten indicators are 1, so agreement
 = 8/10 = 0.8.
@@ -233,60 +229,56 @@ stateDiagram-v2
   Approve --> Shadow: incident
 ```
 
-**Reading it:** each box is a level of trust; each arrow is labelled with
-the evidence needed to move. Promotions need a sustained record over a
-window of recent decisions, not a lucky streak; demotions happen at once,
-on a single incident. Even at the top level, high-risk actions (large
-refunds, deletions) keep needing a person.
+**Reading it:** start at shadow mode and follow the arrows. Each promotion
+names the record it needs over the last 50 decisions, so a short lucky
+streak is not enough. Each arrow back names a single event: one incident
+demotes the agent at once.
 
 ![Rolling agreement with humans must first clear the 95% bar over a full 50-decision window, and only then is the agent promoted](figures/primer.agents.deployment.shadow.svg)
 
-**Reading it:** the x-axis counts shadow decisions; the blue line is
-agreement with humans over the last 50 of them. The dashed line is the 95%
-bar. Early on the window is too short to judge (grey region); the marker
-shows where the rolling agreement first clears the bar and the agent is
-promoted to proposing actions for approval.
+**Reading it:** the x-axis counts shadow decisions, and the blue line is
+agreement with humans over the last 50 of them. In the grey region fewer
+than 50 decisions have been made, too few to judge. The green dot is where
+agreement first clears the dashed 95% bar and the agent moves up to
+proposing actions for approval.
 
-**In code:** `shadow_agreement` computes agreement overall and per proposed
-action. `AutonomyController` is the state diagram: `AutonomyController.record_shadow`
-and `AutonomyController.record_approval` promote once a full window clears
-the bar, while `AutonomyController.record_incident` and
-`AutonomyController.record_quality` demote at once.
+**In code:** `shadow_agreement` computes agreement overall and per action,
+and `AutonomyController` is the state diagram.
 
-## Prompts are code
+## Versioned prompts
 
-**Everyday picture.** A restaurant's recipe binder where every recipe
-change gets a new revision number, the old version stays in the binder, and
-the kitchen can switch back in one step if customers complain.
+Once an agent has earned its autonomy, it keeps changing: someone edits its
+prompt, or the language model under it is replaced. A change to a prompt can break
+behaviour as badly as a change to code, so it gets the same treatment. It is
+versioned, reviewed and run through the evals before release
+(`primer.agents.evals`), and the previous version stays one step away.
 
-A change to a prompt can break behaviour as badly as a code change, so treat
-it the same way: version it, review it, run the evals before release
-(`primer.agents.evals`), and keep the previous version one step away.
-`PromptRegistry` is **content-addressed**: a version's name includes a
-**hash** of its text. A hash (here SHA-256) is a fixed-length fingerprint:
-the same text always gives the same fingerprint, and any change, even one
-character, gives a completely different one.
+The version's name can come from the prompt itself. A **hash** (here
+**SHA-256**) is a fixed-length fingerprint of a text: the same text always
+gives the same fingerprint, and any change, even one character, gives a
+completely different one. A prompt named by a hash of its own text is
+**content-addressed**. `"Be concise."` hashes to `ab018bdb…`, so its version
+is `support@ab018bdb`. Registering the same text again returns the same
+version, and `"Be concise and friendly."` gets a new one. Every trace
+records which version produced each model call (`primer.agents.observability`),
+so a change in behaviour can be tied to the prompt edit that caused it.
 
-**Worked example.** `"Be concise."` hashes to `ab018bdb…`, so its version is
-`support@ab018bdb`. Registering the same text again returns the same
-version; `"Be concise and friendly."` gets a new one. Every trace records
-which version produced each model call (`primer.agents.observability`), so
-a behaviour change can be tied to the exact prompt edit that caused it.
+**In code:** `PromptRegistry.register` turns a prompt into a version and
+makes it active, and `PromptRegistry.rollback` steps back one version.
 
-**In code:** `PromptRegistry.register` hashes the text into a version name
-and makes it active; `PromptRegistry.rollback` steps back one version;
-`PromptRegistry.active_text` returns the prompt currently in use.
+## Canary releases
 
-## Canary releases: try it on a few users first
+A new version that passes the evals has passed a fixed set of cases, and
+real users bring inputs that set never held. A **canary release** sends a small
+share of traffic to the new version, compares its success rate with the
+current version's (the *control*), and grows the share only while the new
+version keeps up. The name comes from the canaries miners once carried
+underground: when the air turned bad, the bird showed it before the miners
+were harmed.
 
-**Everyday picture.** Miners once carried a canary into the mine: if the air
-turned bad, the canary showed it before the miners were harmed. A **canary
-release** sends a small share of traffic to the new version, compares its
-metrics with the current version (the *control*), and grows the share only
-while the canary stays healthy.
-
-**Worked example.** Steps 1% → 5% → 25% → 50% → 100%, allowed drop 2 points,
-at least 100 canary tasks before judging:
+Take a rollout that grows from 1% of traffic to 5%, 25%, 50% and 100%. The
+canary may fall at most 2 points below the control, and it is not judged
+until it has handled 100 tasks:
 
 | Control success | Canary success | Canary tasks | Decision |
 |---|---|---|---|
@@ -321,9 +313,11 @@ p_canary < p_control - delta  # → True
 ```
 
 Users are assigned to the canary by hashing their id into one of 100
-buckets: the same user always lands in the same bucket, so nobody flips
-between versions mid-conversation, and growing from 5% to 25% only adds
-users.
+buckets. A user always lands in the same bucket, so no one switches versions
+in the middle of a conversation, and growing from 5% to 25% only adds users.
+A **feature flag** works the same way for a single capability: a switch in
+configuration that turns it on for chosen customers or users without
+redeploying, and off again as fast.
 
 ```mermaid
 sequenceDiagram
@@ -340,48 +334,42 @@ sequenceDiagram
   D-->>D: alert the owner with traces
 ```
 
-**Reading it:** the deploy system only ever acts on measurements. Each
-growth step waits for enough traffic to judge, and a single bad reading
-sends everyone back to the old version automatically. At worst, a few
-percent of users saw the bad version for one step.
+**Reading it:** read from the top. The deploy system grows the canary only
+after the metrics come back healthy. At 5% they show the new version 4
+points worse, more than the 2-point margin, so the deploy system sends every
+user back to the old version on its own and alerts the owner with the
+traces.
 
 ![The good version tracks the control through 1, 5, 25, 50 and 100%; the bad one passes the 1% step by luck and is rolled back at 5%](figures/primer.agents.deployment.canary.svg)
 
-**Reading it:** each panel is one rollout. The x-axis is the rollout step
-(with the share of traffic on the canary); the lines are measured success
-rates for control and canary. The good version (left) tracks the control
-and reaches 100%. The bad version (right), truly 91% successful, gets lucky
-on the 100 tasks of the 1% step and advances, then falls below the tolerance
-band at 5% and is rolled back to 0%, marked by the red cross. Small steps
-are cheap to get wrong; that's why there are several.
+**Reading it:** each panel is one rollout, with the share of traffic on the
+canary along the bottom. The grey line is the control, the blue line the
+canary, and the grey band the 2-point margin. On the left, a good version
+keeps up with the control all the way to 100%. On the right, a version that
+truly succeeds 91% of the time gets lucky on the 100 tasks of the 1% step
+and advances, then falls below the band at 5% and is rolled back to 0% (the
+red cross). It reached one user in twenty, for one step.
 
-**In code:** `in_canary` hashes a user id into one of 100 buckets.
-`CanaryController.observe` accumulates success counts, and
-`CanaryController.step` applies the rollback rule above: advance, wait for
-more samples, or roll back. `simulate_rollout` drives a whole rollout for the
-figure.
+**In code:** `in_canary` assigns users to buckets, `CanaryController.step`
+applies the rollback rule, and `simulate_rollout` runs the two rollouts in
+the chart.
 
-A **feature flag** is the same idea as an on/off switch in configuration:
-it turns a capability on for chosen tenants or users without redeploying,
-and off again just as fast.
+## Kill switches and rate limits
 
-## Kill switches and rate limits: bound the blast radius
+A canary judges a new version by its average over many tasks. Once a
+version is live, something else has to stop it when it goes wrong all at
+once, say by sending the same email again and again. A **kill switch**
+stops the agent at once, for one **tenant** (one customer organisation) or
+for everyone. A **rate limit** caps actions per unit of time, so even a
+malfunctioning agent can send only so many emails, or change only so many
+records, per minute. Together they bound the **blast radius**: how much
+damage a failure can do before someone notices.
 
-**Everyday picture.** The red emergency-stop button on a treadmill, and the
-turnstile at a stadium that lets people through only so fast however hard
-the crowd pushes.
-
-A **kill switch** stops the agent instantly, for one **tenant** (one
-customer organisation) or for everyone. A **rate limit** caps actions per
-unit time, so even a malfunctioning agent can only send so many emails or
-change so many records per minute. The **blast radius** is how much damage
-a failure can do before someone notices; these two mechanisms bound it.
-
-**Worked example: the token bucket.** Picture a jar that holds at most 5
-tokens and gains 1 token per second. Each action takes a token; with no
-token, the action is refused. Starting full: 5 actions in a burst succeed,
-the 6th is refused. After 2 seconds the jar has 2 tokens again: 2 more
-succeed, the next is refused.
+One way to build a rate limit is a **token bucket**. Picture a jar that
+holds at most 5 tokens and gains 1 token a second. Each action takes a
+token, and an action that finds the jar empty is refused. Starting full, a
+burst of 5 actions succeeds and the 6th is refused. After 2 seconds the jar
+holds 2 tokens again, so 2 more succeed and the next is refused.
 
 $$
 b(t) = \min\bigl(C,\; b(t_0) + r\,(t - t_0)\bigr)
@@ -420,34 +408,31 @@ b(60, 0, 0)  # → 5
 
 ![A burst of 8 requests gets 5 through before the bucket empties, then requests pass one per second at the refill rate](figures/primer.agents.deployment.token_bucket.svg)
 
-**Reading it:** the blue line is the number of tokens in the jar over time;
-green dots are allowed actions and red crosses refused ones. The opening
-burst drains the jar, refusals follow, and then actions trickle through at
-the refill rate: bursts are allowed, sustained floods are not.
+**Reading it:** the blue line is the number of tokens in the jar over time.
+Along the top, green dots are allowed actions and red crosses refused ones.
+The opening burst empties the jar and the refusals start; after that,
+actions get through one a second, at the refill rate. The jar lets a short
+burst through but not a sustained flood.
 
-**In code:** `KillSwitch` holds the global and per-tenant off switches.
-`TokenBucket.level` is the formula for $b(t)$, and `TokenBucket.allow`
-spends a token or refuses.
+**In code:** `KillSwitch` holds the global and per-tenant switches, and
+`TokenBucket.allow` spends a token or refuses.
 
 ## A tamper-evident audit log
 
-**Everyday picture.** A ledger where every page ends with a wax seal
-pressed from the previous page's seal plus this page's contents. Change one
-number on page 12 and its seal no longer matches, and neither does any seal
-after it.
-
-An **audit log** records which agent took which action, for which user,
-with what inputs. For regulated work, it must be **tamper-evident**: an
-alteration can't go unnoticed. A **hash chain** does this: each entry
-stores the hash of the previous entry, and its own hash covers its contents
-and that previous hash.
+Once the kill switch has been pulled, someone has to find out what the agent
+did. An **audit log** records which agent took which action, for which
+user, with what inputs. For regulated work it must be **tamper-evident**,
+so that no alteration goes unnoticed. A **hash chain** does this with the
+fingerprints that named the prompt versions: each entry stores the hash of
+the entry before it, and its own hash covers its contents together with
+that previous hash.
 
 $$
 h_i = \operatorname{SHA256}(h_{i-1} \,\Vert\, \text{entry}_i), \qquad h_0 = 00\ldots0
 $$
 
-(Entries are numbered from 1 here; `verify()` reports Python list
-positions, which start at 0, so "entry 2" is position 1.)
+(Entries are numbered from 1 here, but verification reports positions
+counted from 0, as Python lists are, so entry 2 is position 1.)
 
 **Symbols**
 
@@ -462,12 +447,13 @@ positions, which start at 0, so "entry 2" is position 1.)
 **In words:** each entry's fingerprint is the fingerprint of the previous
 fingerprint joined to this entry's contents.
 
-**On the worked example:** three entries: refund A200 for 40, refund A201
-for 15, escalate A300. Change entry 2's amount from 15 to 1,500 and
-recomputing its fingerprint no longer gives the stored $h_2$, so `verify()`
-reports position 1. Delete entry 2 instead, and entry 3 moves up to position
-1; its stored previous fingerprint is $h_2$, the deleted entry's, which
-doesn't match $h_1$, so the break is again reported at position 1.
+**On the worked example:** take three entries: refund A200 for 40, refund
+A201 for 15, escalate A300. Change entry 2's amount from 15 to 1,500, and
+recomputing its fingerprint no longer gives the stored $h_2$, so
+verification reports position 1. Delete entry 2 instead, and entry 3 moves
+up to position 1. The previous fingerprint it stores is $h_2$, the deleted
+entry's, which doesn't match $h_1$, so the break is again reported at
+position 1.
 
 **In Python:**
 
@@ -503,36 +489,39 @@ flowchart LR
   E2 --> E3["entry 3: escalate A300<br/>prev = h2<br/>h3 = SHA256(h2 ‖ entry 3)"]
 ```
 
-**Reading it:** each box carries the fingerprint of the box before it, so
-the boxes are chained. Editing any box changes its fingerprint, which breaks
-the link to the next box, so verification walks the chain and stops at the
-first broken link. In production, also write the log to storage that can't
-be modified afterwards (write-once storage) and link each entry to its full
-trace.
+**Reading it:** each box carries the fingerprint of the box before it. Edit
+any box and its own fingerprint changes, so it no longer matches what the
+next box carries. Verification walks the chain from the left and stops at
+the first link that doesn't match.
 
-**In code:** `AuditLog.append` stores the previous entry's hash in the new
-entry and seals it with its own; `AuditLog.verify` walks the chain and
-returns the position of the first broken link, or None.
+In production, the log also goes to storage that can't be modified
+afterwards (write-once storage), and each entry links to its full trace.
 
-## Change management: adoption is part of the job
+**In code:** `AuditLog.append` seals each new entry with the previous
+entry's hash, and `AuditLog.verify` returns the position of the first
+broken link, or None.
 
-A technically working agent still fails if people don't trust or use it.
-Involve the people whose work it touches from shadow mode onwards (their
-corrections are your best eval data), design around their actual workflow,
-show sources and confidence so they can check answers, and make handing a
-case to a person one click.
+## Change management
+
+Every control so far keeps a working agent safe. The agent still fails if
+the people whose work it touches don't trust it or don't use it. Involve
+them from shadow mode on, since their corrections are your best eval data.
+Design around the way they already work, show sources and confidence so
+they can check an answer, and make handing a case to a person one click.
 
 ## In 20 seconds
-- Earn autonomy in steps: shadow mode, then human approval of each action,
+- Earn autonomy in steps: shadow mode, then a person approves each action,
   then autonomy for low-risk actions only; demote on any incident or drift.
-- Treat prompts as code: versioned (content hashes), reviewed, evaluated,
-  and one step from rollback.
-- Release to a small canary share first and grow it only while its metrics
-  match the current version; roll back automatically otherwise.
-- Bound the blast radius: kill switches per tenant and globally, and rate
+- Treat prompts as code: name each version by a hash of its text, review
+  and evaluate it before release, and keep the previous version one step
+  away.
+- Send a new version to a small canary share of users first, grow the share
+  only while its success rate keeps up with the current version's, and roll
+  back automatically when it doesn't.
+- Bound the blast radius with kill switches, per tenant and global, and rate
   limits on actions.
 - Keep a tamper-evident audit log (a hash chain) linking every action to its
-  user, authority and trace.
+  user and its trace.
 
 ## Self-test questions
 
