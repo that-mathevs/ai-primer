@@ -115,32 +115,20 @@ needed to choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-An embedding describes a text with a long list of numbers, like describing
-a person with hundreds of adjectives. More adjectives let you tell very
-similar people apart, but every adjective takes shelf space, and a search
-system has to keep millions of these descriptions in fast memory.
+A search system keeps an embedding for every document. There are three ways to make each embedding
+smaller: keep fewer of its numbers, store each number more roughly, or keep
+only whether each number is positive. Each one saves memory and moves the
+vector a little away from where it pointed, so a search with it misses some
+of the right neighbours. Even the roughest form is good enough to make a
+shortlist, which the full vectors then put in order.
 
-This lesson is about making the descriptions smaller without mixing people
-up. There are three tricks, each with an everyday twin:
+## Counting bytes
 
-- **Keep fewer numbers** (Matryoshka truncation): a well-written news story
-  puts the headline first and the details later, so you can cut from the
-  bottom and still know what happened.
-- **Store each number more roughly** (scalar quantization): round every
-  price to the nearest dollar. Totals barely change, and the list gets much
-  shorter to write down.
-- **Keep only a yes/no per number** (binary quantization): instead of
-  "4.7 out of 10", just record "above average: yes". Crude, but amazingly
-  good for a first sort.
-
-And one trick that rescues the crude ones: **shortlist, then check**. Skim a
-pile of CVs fast to pick 100, then read those 100 carefully.
-
-## A tiny worked example: counting bytes
-
-A **dimension** is one number in the vector. A 32-bit float (the usual
-format) takes 4 bytes. So one 1,536-dimension vector takes 1,536 × 4 = 6,144
-bytes, and ten million of them take:
+A **dimension** is one number in the vector. A 32-bit float, the usual
+format, takes 4 bytes, so one vector of 1,536 dimensions takes
+1,536 × 4 = 6,144 bytes. A number stored as a one-byte integer (int8) takes
+8 bits, and a single bit takes 1. A collection of n vectors of d numbers, at
+b bits each, takes:
 
 $$
 \text{bytes} = n \times d \times \frac{b}{8}
@@ -175,35 +163,33 @@ n * 2 * 16 * 4 / 1e9  # → 1.28
 ```
 
 The index adds its own overhead. An HNSW graph (`primer.ml.embeddings.ann`)
-stores about 2·M neighbour ids per vector at 4 bytes each: with M = 16 that's
-10M × 32 × 4 = **1.28 GB** more.
+stores about 2·M neighbour ids per vector at 4 bytes each: with M = 16 that is
+10M × 32 × 4 = **1.28 GB** more. Fast indexes such as HNSW keep every vector
+in RAM, so this sum tells you how big a machine the index needs.
 
 ![Ten million 3,072-dimension vectors take 123 GB as float32, 31 GB as int8 and under 4 GB as binary; smaller dimensions shrink each bar in proportion](figures/primer.ml.embeddings.compression.storage.svg)
 
 **Reading it:** each group of bars is one common embedding size, from 384 to
-3,072 dimensions. Within a group, the three bars are float32, int8 and
-binary storage for ten million vectors, on a log scale (each gridline is 10×).
-A 3,072-dimension float32 index needs over 120 GB of memory; the same
-vectors as bits fit in under 4 GB.
+3,072 dimensions, and its three bars are float32, int8 and binary storage
+for ten million vectors. The scale is logarithmic: each gridline is ten times
+the one below. At 3,072 dimensions, float32 needs over 120 GB of memory; the
+same vectors as bits fit in under 4 GB.
 
-**In code:** `storage_bytes` computes n × d × b/8 exactly, and
-`hnsw_link_bytes` adds the 2·M neighbour ids an HNSW graph keeps per vector.
+**In code:** `storage_bytes` is the sum, and `hnsw_link_bytes` adds the
+graph's links.
 
-**Why it matters:** fast vector indexes like HNSW want every vector in RAM,
-so storage *is* the server bill. Being able to do this sum in your head
-tells you in seconds whether a design fits on one machine.
+## Matryoshka embeddings: fewer numbers
 
-## Matryoshka: important numbers first, then cut
+The number of vectors is set by the collection, but the other two factors in
+the sum can shrink. The first is d, the numbers in each vector. Keep only the
+first m of them, rescale what is left to length 1, and the vector is d/m
+times smaller. Whether it still finds the right neighbours depends on what
+the dropped numbers held.
 
-**Everyday picture:** Russian nesting dolls: a small doll inside a bigger one
-inside a bigger one, each complete on its own. A **Matryoshka embedding** is
-trained so its first 64 numbers are a decent embedding, its first 256 a
-better one, and the full vector the best.
-
-**Tiny example:** a vector (0.9, 0.4, 0.1, 0.05) where the numbers shrink in
-importance. Keep the first two, (0.9, 0.4), and rescale it to length 1
-(divide by √(0.81 + 0.16) = 0.985): (0.914, 0.406). The dropped numbers were
-small, so the direction barely moves: its cosine with the full (normalized)
+Take the vector (0.9, 0.4, 0.1, 0.05), whose numbers shrink in importance.
+Keep the first two, (0.9, 0.4), and divide by their length,
+√(0.81 + 0.16) = 0.985, to get (0.914, 0.406). The dropped numbers were
+small, so the direction barely moves: the cosine with the full, normalized
 vector is 0.994.
 
 $$
@@ -243,13 +229,14 @@ full = math.sqrt(sum(v_i ** 2 for v_i in v))
 round(sum(a * b / full for a, b in zip(v_m, v)), 3)  # → 0.994
 ```
 
-This only works if the important numbers really come first. A real
-Matryoshka model is *trained* that way: the same contrastive loss
-(`primer.ml.embeddings.contrastive`) is applied to several prefixes at once
-(the first 64, 128, 256, … numbers), so each prefix must work on its own.
-Here we imitate it by rotating vectors onto their **principal directions**
-(the directions along which the collection varies most, found with the SVD;
-see `primer.notation`), which puts the most informative number first.
+Cutting works only when the important numbers come first. In a model not
+trained for it, the information is spread across all the numbers. A
+**Matryoshka embedding** is trained to put it first. It is named after the
+Russian nesting dolls: its first 64 numbers are a usable embedding, its
+first 256 a better one, and the full vector the best. Training applies the
+usual contrastive loss (`primer.ml.embeddings.contrastive`) to several
+prefixes at once (the first 64, 128, 256, … numbers) and adds the losses up,
+so each prefix must work on its own.
 
 ```mermaid
 flowchart LR
@@ -262,36 +249,47 @@ flowchart LR
 
 **Reading it:** one text, one encoder, one vector, scored several times. Each
 prefix of the vector is judged by the usual contrastive loss, and the model
-is trained on the sum. That's the whole trick: nothing about the model
-changes, only how its output is graded.
+is trained on the sum. The model itself is unchanged; only the grading of its
+output is new.
+
+The charts that follow measure this on a made-up test collection: 5,000
+documents and 100 queries, each a vector of 256 numbers, with every query's
+true 10 nearest documents found by an exact search. Instead of training a
+model, the vectors are rotated onto their **principal directions**, the
+directions along which the collection varies most (found with the SVD; see
+`primer.notation`). That puts the most informative number first, as a
+Matryoshka model would. The control is the same vectors in a random order.
 
 ![In importance order variance drops steeply, the first 16 of 256 dimensions holding 96% of it; in random order it stays in a narrow band with no standouts](figures/primer.ml.embeddings.compression.spectrum.svg)
 
-**Reading it:** the horizontal axis is the dimension number and the vertical
-axis is how much the collection varies along it (its **variance**: the
-average squared distance from the mean, on a log scale). In importance
-order, the first few dimensions carry most of the variation and it falls
-steadily after that, so cutting from the end loses little. In a random
-order every dimension carries a similar share, so cutting any of them costs
-the same.
+**Reading it:** the horizontal axis numbers the 256 dimensions. The vertical
+axis, on a log scale, is how much the collection varies along each one: its
+**variance**, the average squared distance from the mean. In importance
+order the first few dimensions carry most of the variation and the rest fall
+away, so cutting from the end loses little. In random order every dimension
+carries a similar share, so every cut costs about the same.
 
 ![Keeping 32 of 256 dimensions finds 93% of true top-10 neighbours in importance order but 44% in random order; re-ranking a 100 shortlist finds all](figures/primer.ml.embeddings.compression.matryoshka.svg)
 
-**Reading it:** the horizontal axis is how many leading dimensions we keep
-(of 256); the vertical axis is **recall@10**, the share of each query's true
-top-10 neighbours we still find. In importance order, 32 dimensions (one
-eighth) still find about 93% of the neighbours; in random order they find
-about 44%. The star is the two-stage design: search with the first 32
-numbers to shortlist 100 candidates, then re-rank those 100 with the full
-vectors. It finds all of them.
+**Reading it:** the horizontal axis is how many leading dimensions are kept,
+of 256. The vertical axis is **recall@10**: of each query's true 10 nearest
+documents, the share the shortened search still finds. In importance order,
+32 dimensions (one eighth) find about 93% of them; in random order, about
+44%. The star uses the first 32 numbers only to pick a shortlist of 100
+candidates, then re-ranks those 100 with the full vectors, and it finds all
+of them.
 
-**In code:** `matryoshka_order` rotates vectors onto their principal
-directions, most informative first, and `random_order` is the control.
-`search_truncated` searches with the first m numbers only;
-`search_truncated_then_rescore` shortlists that way, then re-ranks the
-shortlist with the full vectors.
+**In code:** `matryoshka_order` puts the principal directions first,
+`random_order` is the control, and `search_truncated` searches with the first
+m numbers.
 
-## Measuring what compression costs: recall@k
+## Measuring the cost: recall@k
+
+Each Matryoshka cut was scored by how many of the true neighbours it still
+found. That score is **recall@k**, and every method from here on is measured
+with it. An exact search with the full vectors gives each query's true top k.
+The compressed search gives its own top k. Recall@k is the share of the true
+ones that the compressed search also found:
 
 $$
 \text{recall@}k = \frac{\lvert \text{found}_k \cap \text{true}_k \rvert}{k}
@@ -307,7 +305,7 @@ $$
 | ∩ | "items in both" | {1, 3} |
 | \|·\| | count the items | 2 |
 
-**In words:** the share of the true top-k that the compressed search also
+**In words:** the share of the true top k that the compressed search also
 found.
 
 **On an example:** true (1, 2, 3), found (3, 4, 1): two of the three appear,
@@ -325,22 +323,26 @@ found_k & true_k  # → {1, 3}
 round(len(found_k & true_k) / k, 2)  # → 0.67
 ```
 
-**In code:** `recall_at_k` averages this share over every query. `top_k`
-runs the exact full-precision search that supplies trueₖ, and `make_corpus`
-builds the documents, queries and true neighbours every experiment here
-uses.
+To judge a compression for your own index, run both searches on a sample of
+your own queries.
 
-## Scalar quantization: 256 levels per number
+**In code:** `recall_at_k` averages this share over every query, and
+`make_corpus` builds the test collection.
 
-**Everyday picture:** rounding prices to the nearest dollar. Here, every
-number is rounded to one of 256 marks on a ruler that runs from the smallest
-to the largest value seen in that dimension. 256 marks fit in one byte
-(**int8**), a quarter of a float's 4 bytes.
+## Scalar quantization: one byte per number
 
-**Tiny example:** a dimension whose values run from lo = −1 to hi = 1. The 256
-marks are 2/255 = 0.00784 apart. The value 0 sits at (0 − (−1)) / 2 × 255 = 127.5
-marks, rounds to mark **128**, and decodes back to −1 + 128/255 × 2 = **0.00392**.
-It's off by 0.00392, half a mark, the worst case.
+Matryoshka shrinks d. **Scalar quantization** keeps every number and shrinks
+b, the bits each one takes, from 32 to 8. Each number is rounded to one of
+256 marks on a ruler that runs from the smallest to the largest value seen in
+its dimension across the documents. One byte can number 256 marks, so the
+mark is stored as a one-byte integer (**int8**), a quarter of a float's 4
+bytes.
+
+Take a dimension whose values run from lo = −1 to hi = 1. Its 256 marks are
+2/255 = 0.00784 apart. The value 0 sits at (0 − (−1)) / 2 × 255 = 127.5
+marks, rounds to mark **128**, and decodes back to −1 + 128/255 × 2 =
+**0.00392**. That is off by 0.00392, half a mark, the most rounding can be
+off.
 
 $$
 \text{code} = \operatorname{round}\!\left(\frac{x - lo}{hi - lo} \times 255\right),
@@ -380,24 +382,27 @@ round(x_hat, 5)  # → 0.00392
 
 ![The decoded int8 steps track the first 40 numbers of the vector almost exactly; the rounding error never exceeds half of one step](figures/primer.ml.embeddings.compression.int8.svg)
 
-**Reading it:** the line shows the first 40 numbers of one real vector from
-this lesson's corpus; the steps show the same numbers after rounding to
-256 levels and decoding. The two are almost indistinguishable: the rounding
-error (the bottom panel) never exceeds half a mark. That's why int8 search
-here still finds about 98% of the true neighbours.
+**Reading it:** the line is the first 40 numbers of one vector from the test
+collection, and the steps are the same numbers after rounding to 256 levels
+and decoding. The two almost coincide: the rounding error, in the bottom
+panel, never exceeds half a mark. Over the whole collection, int8 search
+finds about 98% of the true neighbours.
 
-**In code:** `scalar_quantize_int8` turns each number into its code,
-`dequantize_int8` walks back to x̂, and `search_int8` calibrates lo and hi
-on the documents and searches the decoded vectors.
+**In code:** `search_int8` measures lo and hi on the documents, rounds every
+vector and searches the decoded ones.
 
 ## Binary quantization: one bit per number
 
-**Everyday picture:** a yes/no questionnaire. For each number, record only
-"positive: yes or no". Two texts are compared by counting how many answers
-differ, the **Hamming distance**.
+int8 still spends 8 bits on each number. The roughest form spends one.
 
-**Tiny example:** the eight values (0.3, −0.2, 0.0, 5, −1, 2, −3, 0.1) become the
-bits 1 0 0 1 0 1 0 1, packed into one byte: 0b10010101 = **149**. Compare with
+### Signs and the Hamming distance
+
+**Binary quantization** keeps a single bit for each number: 1 if the number
+is positive, 0 if not. Two vectors are then compared by their **Hamming
+distance**, the number of positions where their bits differ.
+
+The eight values (0.3, −0.2, 0.0, 5, −1, 2, −3, 0.1) become the bits
+1 0 0 1 0 1 0 1, packed into one byte: 0b10010101 = **149**. Compare it with
 0b00010100: they differ in the first and last positions, so the Hamming
 distance is **2**.
 
@@ -422,9 +427,9 @@ $$
 measure distance as the number of positions where two codes disagree.
 
 **On the example:** 149 = 10010101 vs 20 = 00010100: positions 1 and 8 differ,
-so the distance is 2. Computers do this with one XOR (mark the differing
-bits) and one popcount (count them), which is why binary search is extremely
-fast.
+so the distance is 2. A computer does this with one XOR, which marks the
+differing bits, and one popcount, which counts them. That is why a search
+over bits is fast.
 
 **In Python:**
 
@@ -443,6 +448,17 @@ sum(a_i != b_i for a_i, b_i in zip(a, b))  # → 2
 bin(149 ^ 20).count("1")  # → 2
 ```
 
+**In code:** `binary_quantize` packs the signs 8 to a byte, and
+`hamming_distances` counts the differing bits.
+
+### Shortlist, then re-score
+
+Bits alone rank poorly: on the test collection, a search by Hamming distance
+finds 54% of the true top 10. They are good enough to find candidates,
+though. A search can scan every document's bits for a shortlist of 100, then
+re-rank only those 100 with the full float vectors. That brings recall back to
+97%, while reading only 100 full vectors per query.
+
 ```mermaid
 flowchart LR
   Q[Query] --> B["Stage 1: bits + Hamming<br/>scan all 5,000 docs<br/>(32× smaller, very fast)"]
@@ -453,40 +469,35 @@ flowchart LR
   STORE --> F
 ```
 
-**Reading it:** the cheap representation is used where the work is big (every
-document), and the expensive one where the work is small (100 candidates).
-The bits live in fast memory; the full vectors can live somewhere slower
-because only a hundred are read per query.
+**Reading it:** the cheap form does the big job, scanning every document, and
+the expensive form does the small one, ordering 100 candidates. The bits live
+in fast memory. The full vectors can sit somewhere slower, because only a
+hundred are read per query.
 
 ![Recall@10: int8 keeps 0.98 and binary alone only 0.54, but binary re-scored over 100 candidates recovers 0.97 and a 32-dimension shortlist reaches 1.00](figures/primer.ml.embeddings.compression.quantization.svg)
 
-**Reading it:** each bar is one way of storing the documents, measured by
-recall@10 against exact float32 search. int8 alone keeps about 98%. Binary
-alone keeps only about half: signs lose a lot. But binary as a *shortlist*,
-re-scored with full vectors, climbs back to about 97%, and 32-dimension
-Matryoshka shortlists to 100%. Crude-then-exact is the pattern to remember.
+**Reading it:** each bar is one way of storing the documents, scored by
+recall@10 against exact float32 search. int8 alone keeps about 98%, and
+binary alone about half. Used for a shortlist and re-scored with the full
+vectors, binary climbs back to about 97%, and a shortlist from the first 32
+Matryoshka dimensions reaches 100%.
 
-**In code:** `binary_quantize` keeps each number's sign and packs 8 bits per
-byte, and `hamming_distances` counts differing bits with XOR and a popcount
-table. `search_binary` ranks by bits alone; `search_binary_then_rescore`
-re-ranks the bit-based shortlist with the full float vectors.
-
-**Why it matters:** these knobs move real money. Many vector databases ship
-int8 and binary quantization with re-scoring built in, and embedding
-providers increasingly ship Matryoshka-trained models so you can pick your
-dimension. The cost is always measured the same way: recall@k on your own
-queries.
+**In code:** `search_binary_then_rescore` shortlists by Hamming distance and
+re-ranks with the full vectors; `search_truncated_then_rescore` does the same
+with the first m numbers.
 
 ## In 20 seconds
-- Raw storage is n × d × bytes per number: 10M × 1,536 float32 ≈ 61 GB, before
-  index overhead.
-- Matryoshka models put the important information in the leading numbers,
-  so you can truncate and re-normalize.
-- int8 stores 256 levels per number (4× smaller, little loss); binary keeps
-  signs only (32× smaller, big loss alone).
-- Shortlist with the crude form, re-score with full vectors: most of the
-  quality at a fraction of the memory.
-- Always measure the cost as recall@k against exact search.
+- Storage is vectors × numbers per vector × bytes per number: ten million
+  vectors of 1,536 float32 numbers take 61 GB, before the index adds its own.
+- A Matryoshka model is trained to put the important information in its
+  first numbers, so its vectors can be cut short and rescaled to length 1.
+- The cost of any compression is its recall@k: the share of the exact
+  search's top k that the compressed search still finds.
+- int8 rounds each number to one of 256 levels: 4× smaller, with recall@10
+  of 0.98 on the test collection. Keeping only signs is 32× smaller, with
+  recall@10 of 0.54.
+- Bits make a good shortlist: re-ranking their top 100 with the full vectors
+  brings recall@10 back to 0.97.
 
 ## Self-test questions
 
