@@ -142,27 +142,16 @@ done.
 
 ## Level 2: How it works, from scratch
 
-Imagine a brilliant reader who can take in only one thing: a long row of
-index cards, each card holding a short list of numbers. That is a language
-model. Every word it reads arrives as one card, the word's vector (see
-`primer.ml.tokenization` and `primer.ml.transformer`). It has never seen a
-photograph or heard a voice.
+A language model reads a sequence of vectors, one for each token, all the
+same width (see `primer.ml.tokenization` and `primer.ml.transformer`).
+Attention then lets each vector take information from the others, and it
+works the same whatever the vectors stand for. A **multimodal model**, one
+that takes in more than one **modality** (kind of input: text, images, audio,
+video), relies on that. It turns a picture or a recording into vectors as
+wide as the word vectors, puts them in the sequence with the words, and
+attends over all of them together.
 
-To tell this reader about a photo, you cut the photo into small squares and
-write one card per square. To tell it about a voice recording, you write one
-card for every fiftieth of a second of sound. If the cards are written in the
-same "handwriting" as the word cards, the reader handles a photo the way it
-handles a sentence: it pays attention across all the cards at once.
-
-That is the whole idea of a **multimodal model**, a model that takes in more
-than one **modality** (kind of input: text, images, audio, video):
-
-> Turn every modality into a sequence of vectors ("tokens") that a transformer
-> can attend over.
-
-Everything in this lesson is a way of making those cards: for images, for
-sound, for video, and, run backwards, for a model that *produces* pictures
-and speech.
+Each modality needs its own front end to make those vectors:
 
 ```mermaid
 flowchart LR
@@ -175,18 +164,18 @@ flowchart LR
   SEQ --> LM["Decoder language model"] --> OUT["Next token:<br/>a word, or a codebook id<br/>for a picture or a sound"]
 ```
 
-**Reading it:** three roads, one destination. Each modality has its own
-front end (top three rows), and every front end ends in the same place: a
-list of vectors as wide as the language model's word vectors. From the box
-"One sequence of vectors" onwards there is no difference between a word, a
-patch of an image and a slice of sound; the language model attends over all
-of them together. The last box shows the trick for *output*: if pictures and
-sounds can be written as numbered tokens, the model can generate them the
-way it generates words (see "Generating images and speech" below).
+**Reading it:** read each of the top three rows from the left. Image,
+audio and text pass through their own front ends and arrive in the same box,
+one sequence of vectors as wide as the language model's word vectors. From
+that box on, the language model treats a word, a patch of an image and a
+slice of sound alike. The last box is about *output*: if pictures and sounds
+are written as numbered tokens, the model can generate them the way it
+generates words (see "Generating images and speech" below).
 
-## A tiny worked example: a 4×4 picture becomes 4 tokens
+## A 4×4 picture becomes 4 tokens
 
-Take a grayscale picture of 4×4 pixels, each pixel a brightness from 0 to 15:
+The image front end is easiest to follow on a picture small enough to work
+by hand. Take a grayscale picture of 4×4 pixels, each pixel a brightness from 0 to 15:
 
 ```text
  0  1 |  2  3
@@ -212,25 +201,24 @@ Take a grayscale picture of 4×4 pixels, each pixel a brightness from 0 to 15:
 | bottom left  | 8, 9, 12, 13    | (17, 25)  | (1, 0)     | **(18, 25)** |
 | bottom right | 10, 11, 14, 15  | (21, 29)  | (1, 1)     | **(22, 30)** |
 
-The picture is now four tokens of two numbers each: exactly the shape of
-input a transformer reads. A real model does the same with bigger numbers:
+The picture is now four tokens of two numbers each, the shape of input a
+transformer reads. A real model does the same with bigger numbers:
 patches of 14 or 16 pixels, and hundreds or thousands of numbers per token.
 
 **In code:** `worked_example_patches` runs these four steps on this picture and returns the patches, the projections and the tokens.
 
-## Images: a Vision Transformer from scratch
+## Images: the Vision Transformer
 
-`primer.ml.cnn_rnn` introduced the idea of patches as tokens. Here we build
-the whole front end, the **Vision Transformer** (ViT), and count what it
+The same four steps at full size, followed by a stack of transformer blocks,
+make the **Vision Transformer** (ViT). Patches as tokens first came up in
+`primer.ml.cnn_rnn`. The first step, cutting, also decides what a picture
 costs.
 
 ### Cutting and counting
 
-**Everyday picture.** Lay a sheet of graph paper over a photo and cut along
-every fourth line. You get a grid of small tiles, and you can hand them over
-one by one, left to right and top to bottom, like the words of a sentence.
-
-**Tiny example.** A 224×224 image in 16-pixel patches is a grid of
+Cutting a picture into a grid of square patches and reading them left to
+right, top to bottom, gives one token per patch. A 224×224 image in 16-pixel
+patches is a grid of
 224 / 16 = 14 patches down and 14 across: 14 × 14 = **196** tokens. A
 336×336 image in 14-pixel patches is 24 × 24 = **576** tokens.
 
@@ -288,27 +276,23 @@ the tokens it becomes. Each curve bends upward because the count grows with
 the *square* of the side: double the side and the tokens quadruple. Bigger
 patches (blue) give fewer tokens than smaller ones (red). The green curve
 merges each 2×2 block of neighbouring patch vectors into one token before
-the language model sees them, a common trick that cuts the count by four.
+the language model sees them, a common step that cuts the count by four.
 
-**In code:** `image_to_patches` cuts and flattens an image (the cutting is `primer.ml.cnn_rnn.patchify`), refusing sizes the patch does not divide, and `count_image_tokens` is the formula above, with an optional merge.
+**In code:** `image_to_patches` cuts and flattens an image, and `count_image_tokens` is the formula, with an optional merge.
 
-**Why it matters in practice.** Resolution is a cost dial. Small text in a
-screenshot needs a high resolution to be legible, and every doubling of the
-side costs four times the tokens (and attention cost grows faster still; see
-`primer.ml.attention`). Systems resize images to a supported size, cut very
-large ones into tiles, and merge neighbouring patches to keep the count
-manageable.
+So resolution sets the cost. Small text in a screenshot needs a high
+resolution to be legible, and every doubling of the side costs four times
+the tokens (attention's cost grows faster still; see `primer.ml.attention`).
+Systems resize images to a supported size, cut very large ones into tiles,
+and merge neighbouring patches to keep the count down.
 
 ### From patch to token: projection and position
 
-**Everyday picture.** Every tile gets the same questionnaire: "how bright is
-your top half? your bottom half? is there an edge?" The answers become the
-tile's card. Then a sticker with the tile's grid address goes on the card,
-so shuffling the cards loses nothing.
-
-**Tiny example.** In the worked example, the questionnaire had two
-questions (top-row total, bottom-row total), and the sticker was the patch's
-(row, column).
+Each flattened patch becomes a token in two moves. A learned matrix turns
+its pixels into d numbers, the model's width, and a learned position vector
+for its place in the grid is added. In the 4×4 example the matrix took two
+totals from each patch, its top row and its bottom row, and the position was
+the patch's (row, column).
 
 $$
 z_i = x_i W_E + p_i
@@ -349,8 +333,8 @@ xW  # → [5, 13]
 [a + b for a, b in zip(xW, p_i)]  # → [5, 14]
 ```
 
-Why the position vector? Attention compares every token with every other
-and ignores their order (see `primer.ml.positional`). Without $p_i$, a sky
+The position vector is needed because attention compares every token with
+every other and ignores their order (see `primer.ml.positional`). Without $p_i$, a sky
 patch at the top and the same sky colour in a puddle at the bottom would be
 the same token, and "the sun is above the field" could not be expressed.
 
@@ -370,27 +354,23 @@ is read left to right, so a text decoder hides the future; a picture has no
 future, so every patch may look at every other, above, below and to either
 side. The output has one vector per patch, now informed by the whole image.
 
-**In code:** `VisionEncoder` holds W_E, the position table and a stack of `primer.ml.transformer.TransformerBlock` with `causal=False`; `VisionEncoder.embed` is the formula above, and calling the encoder runs the blocks.
+**In code:** `VisionEncoder.embed` is the formula, and calling a `VisionEncoder` runs the encoder blocks.
 
-**Why it matters in practice.** The vision encoder inside most
-vision-language models is a ViT that was first trained as the image half of
+Builders seldom train this encoder from scratch. The vision encoder inside
+most vision-language models is a ViT first trained as the image half of
 CLIP (see `primer.ml.embeddings.contrastive`). CLIP training pulled its
 image vectors towards the vectors of matching captions, so its outputs
-already carry meaning a language model can use. That is why builders start
-from it instead of training vision from scratch.
+already carry meaning a language model can use.
 
 ## Connecting vision to a language model
 
-### The projector: a plug adapter
+### The projector
 
-**Everyday picture.** Your laptop charger has the right voltage but the
-wrong plug for the wall socket abroad. A small adapter changes the shape,
-not the power. The vision encoder speaks in vectors of its own width and
-style; the language model expects vectors shaped like its word embeddings.
-A **projector** is the adapter between them.
-
-**Tiny example.** A vision vector with 2 numbers, (1, 2), must become a
-language-model vector with 3 numbers.
+The vision encoder's vectors have a width of their own, and nothing has
+trained them to look like the language model's word embeddings. A
+**projector** is a small learned layer that maps one into the other. Take a
+vision vector of 2 numbers, (1, 2), that must become a language-model vector
+of 3 numbers.
 
 $$
 h = v \, W_P
@@ -425,17 +405,16 @@ Many models use two such layers with a **GELU** between them (a smooth
 small feed-forward network. Either way, the projector is tiny next to the
 two models it joins: a few million numbers between models with billions.
 
-**In code:** `Projector` is a single linear layer by default and a two-layer MLP when given a hidden width; `worked_example_projection` computes the (1, 2, 3) above.
+**In code:** `Projector` is one linear layer, or two when given a hidden width.
 
 ### Splicing image tokens into the prompt
 
-**Everyday picture.** Writing a letter and taping a strip of photos into the
-middle of a sentence. The reader reads the words, then the photos, then the
-rest of the words, in order.
-
-**Tiny example.** The prompt "what is this `<image>`" has four text tokens,
-one of them a placeholder. The placeholder is replaced by the image's 4
-projected vectors, so the language model reads 3 + 4 = **7** rows.
+The projected vectors go into the prompt where the image belongs. The
+prompt holds a placeholder token at that spot, and the placeholder's single
+row is replaced by the image's rows. In the small toy model laid out in the
+table below, the prompt "what is this `<image>`" has four text tokens, one of them the placeholder. The
+image becomes 4 projected vectors, so the language model reads 3 + 4 = **7**
+rows.
 
 | Step | Shape (toy model) | Meaning |
 |---|---|---|
@@ -458,7 +437,7 @@ flowchart LR
 
 **Reading it:** two front ends meet in the "Splice" box, where the
 placeholder's single row is replaced by the four projected image rows.
-After that the language model runs completely unchanged: positions are
+After that the language model runs unchanged: positions are
 added (image tokens take up positions too), the causal decoder blocks run,
 and every row produces scores over the vocabulary. The language model never
 learns that some rows came from a picture.
@@ -468,26 +447,21 @@ Because the decoder is causal, a token can use the image only if it comes
 were no picture. That is why prompts usually put the image first and the
 question after it.
 
-**In code:** `VisionLanguageModel.splice` builds the spliced sequence and a flag for each row saying whether it is an image token; calling `VisionLanguageModel` runs `primer.ml.transformer.TinyGPT`'s blocks on it; `build_toy_vlm` wires up the toy model in the table.
+**In code:** `build_toy_vlm` builds the toy model in the table, and `VisionLanguageModel.splice` does the splice.
 
-**Why it matters in practice.** This "encode, project, splice" design (as in
-LLaVA) is the simplest and most common. Two other families exist. One adds
+Encode, project and splice is the simplest design, and the one LLaVA uses.
+Two other designs exist. One adds
 new cross-attention layers inside the language model that look at the image
 vectors (as in Flamingo), leaving the text sequence short. Another first
 compresses any image into a fixed small number of tokens, such as 32 or 64,
 with a little attention module of learned queries (as in BLIP-2's
 Q-Former). Both trade some detail for fewer tokens.
 
-### How such a model is trained
+### Training: align the projector, then tune
 
-**Everyday picture.** Two experts who don't share a language: a
-photographer and a writer. You hire an interpreter. First, the interpreter
-learns vocabulary while both experts carry on exactly as they are: the
-photographer points at pictures, the writer names them. Then all three
-practise real conversations together, and the writer is allowed to adapt a
-little too.
-
-That is the usual two-stage recipe:
+The vision encoder and the language model arrive already trained, each on
+its own, with a new, untrained projector between them. The usual recipe trains the
+joined model in two stages:
 
 1. **Alignment.** Freeze the vision encoder and the language model. Train
    only the projector on image-caption pairs, so the projected image tokens
@@ -502,8 +476,8 @@ negative log of the probability given to the right token; see
 `primer.ml.losses`), counted only on the answer tokens. The model is not
 graded on predicting the image tokens or the question it was given.
 
-**Tiny example.** The answer is "horizontal stripes", two tokens. The model
-gives the right first token probability 0.5 and the right second token 0.25.
+Say the answer is "horizontal stripes", two tokens, and the model gives the
+right first token probability 0.5 and the right second token 0.25.
 
 $$
 L = -\frac{1}{|A|} \sum_{t \in A} \log p\,(y_t \mid \text{image}, y_{<t})
@@ -558,8 +532,8 @@ language model joins in, so it learns to *use* the image tokens to follow
 instructions, answer questions and describe details, not just name things.
 The vision encoder often stays frozen throughout.
 
-Our toy does stage 1. Its vision encoder and language model are random and
-frozen; only the projector learns, from 80 small pictures of four patterns
+A toy run of stage 1 shows how little has to move. Its vision encoder and
+language model are random and frozen; only the projector learns, from 80 small pictures of four patterns
 (horizontal, vertical, diagonal, checkered), to make the language model's
 output layer pick the right pattern word.
 
@@ -570,44 +544,38 @@ of a blind guess among 12 words (log 12 = 2.48), and falls steadily. On the
 right, the green line is the share of training images whose correct word
 scores highest, and the red dots are the same measure on 80 images the
 projector never saw: 24% before training (chance is 25%) and 99% after.
-Nothing but the projector changed, which is the point of stage 1: a small
-adapter is enough to make an existing vision encoder and an existing
-language model understand each other.
 
-**In code:** `align_projector` trains only the projector's weights with cross-entropy on the caption word and returns the loss and accuracy per step; `caption_accuracy` measures how often the right word wins. The toy scores a pooled image vector directly against the language model's token table (the last step of the real path) rather than back-propagating through every layer.
+**In code:** `align_projector` runs this training. To stay small, it scores a pooled image vector directly against the language model's token table (the last step of the real path) instead of back-propagating through every layer.
 
-**Why it matters in practice.** Stage 1 is cheap enough to run in hours,
-because almost every weight is frozen. Stage 2 decides the model's
-behaviour: the quality and variety of the image-instruction data matter
-more than its size. A common failure of a weakly aligned model is
-describing objects that are not in the picture, a visual form of
-hallucination.
+With almost every weight frozen, stage 1 runs in hours. Stage 2 decides how
+the model behaves, and there the quality and variety of the
+image-instruction data matter more than its size. A common failure of a
+weakly aligned model is describing objects that are not in the picture, a
+visual form of hallucination.
 
 ## Audio: from a waveform to tokens
 
 ### Sound is a list of numbers
 
-**Everyday picture.** A microphone is a tiny eardrum. It measures air
-pressure many thousands of times a second, and the recording is just that
-list of measurements: the **waveform**. Drawn on paper, it looks like a
-seismograph trace.
+An image arrives as a grid of pixels, ready to cut into patches. Sound
+arrives as one long list of numbers. A microphone measures air pressure
+thousands of times a second, and the recording is that list of
+measurements, the **waveform**. Speech is usually recorded at a **sample
+rate** of 16,000 measurements per second, so one second is 16,000 numbers
+and a 30-second clip is 480,000. That is far too many positions to use as
+tokens, and what matters, which pitches are sounding, is hidden in the
+wiggles (top panel of the spectrogram figure below). So the front end for
+sound first turns the waveform into a picture of which pitches sound when.
 
-**Tiny example.** Speech is usually recorded at a **sample rate** of 16,000
-measurements per second, so one second is 16,000 numbers and a 30-second
-clip is 480,000. Used directly as tokens that would be ruinous, and the
-thing that matters, which pitches are sounding, is hidden in the wiggles
-(top panel of the spectrogram figure below).
+### The Fourier transform: how much of each pitch
 
-### How much of each pitch: the Fourier transform
+The **Fourier transform** measures how much of each pitch a recording holds.
+For each pitch it lines a pure wave of that pitch up against the recording,
+multiplies matching samples and adds them up. A pitch that is present lines
+up again and again and scores high; a pitch that is absent lines up as often
+as it clashes and scores zero.
 
-**Everyday picture.** A prism splits white light into its colours. The
-**Fourier transform** splits a sound into its pitches. It works by holding
-a pure wave of each pitch up against the recording and asking "how well do
-you line up?". A pitch that is present lines up again and again and scores
-high; a pitch that is absent lines up as often as it clashes and scores
-zero.
-
-**Tiny example.** Eight samples of a wave that goes up and down twice:
+Take eight samples of a wave that goes up and down twice:
 (1, 0, −1, 0, 1, 0, −1, 0). Line it up against a wave that also cycles
 twice, cos: (1, 0, −1, 0, 1, 0, −1, 0). Multiply matching positions and add:
 1 + 0 + 1 + 0 + 1 + 0 + 1 + 0 = 4. A wave that cycles once agrees for half
@@ -661,24 +629,25 @@ def magnitude(k):
 2 * 8 / N  # → 2.0
 ```
 
-**In code:** `dft_magnitudes` is this formula for every k at once, written from the definition (the tests check it against NumPy's fast Fourier transform, which computes the same numbers far faster).
+**In code:** `dft_magnitudes` is this formula for every k at once; the tests check it against NumPy's fast Fourier transform.
 
 ### The spectrogram: one Fourier transform per slice
 
-**Everyday picture.** A piano roll, or sheet music: time runs left to
-right, pitch runs bottom to top, and a mark means "this note is sounding
-now". To make one from a recording, listen through a short window, say
-25 milliseconds, ask "which pitches are in here?", slide the window along a
-little, and ask again. That is the **short-time Fourier transform** (STFT),
-and its picture is a **spectrogram**.
+Speech changes pitch from moment to moment, so one Fourier transform over a
+whole recording would blur it together. Instead, take a short window, say
+25 milliseconds, measure which pitches are in it, slide the window along a
+little, and measure again. That is the **short-time Fourier transform**
+(STFT). Its picture is a **spectrogram**, laid out like a piano roll: time
+runs left to right, pitch runs bottom to top, and brightness shows how loud
+each pitch is at each moment.
 
 Each slice is faded in and out with a **Hann window** (a smooth hump from 0
 up to 1 and back) before measuring, because chopping a wave off abruptly
 creates a click, and a click contains every pitch at once.
 
-**Tiny example.** Speech systems commonly use 25 ms windows (400 samples at
-16 kHz) that start every 10 ms (160 samples). How many windows fit in one
-second?
+Speech systems commonly use 25 ms windows (400 samples at 16 kHz) that
+start every 10 ms (160 samples). The number of windows, or frames, in a
+recording is:
 
 $$
 T = 1 + \left\lfloor \frac{L - N}{H} \right\rfloor
@@ -723,7 +692,7 @@ boxes are the STFT; the shape under the Fourier box says each frame now
 holds one number per frequency bin. The last two boxes, explained next,
 shrink those bins into a few dozen bands spaced the way ears hear, and put
 loudness on a log scale. The result, a **log-mel spectrogram**, is what
-speech models actually read.
+speech models read.
 
 ![A 20-millisecond waveform of wiggles, then a spectrogram of the same second of sound showing a flat line at 1000 Hz and a line rising from 200 to 3000 Hz, then the log-mel version where the rising line curves](figures/primer.ml.generative.multimodal.spectrogram.svg)
 
@@ -737,19 +706,18 @@ bands. The rising line now *curves*, climbing fast through the low bands and
 slowly through the high ones, because mel bands are narrow at low pitch and
 wide at high pitch, which is also where ears are more and less sensitive.
 
-**In code:** `stft` slices, windows (with `hann`) and measures every frame; `frame_count` is the formula above; `log_mel_spectrogram` adds the mel pooling and the log.
+**In code:** `stft` and `log_mel_spectrogram` make these two pictures, and `frame_count` is the formula.
 
 ### The mel scale: spacing pitch the way ears do
 
-**Everyday picture.** On a piano, every octave takes up the same width of
+The spectrogram's frequency bins are evenly spaced in hertz, but ears do
+not hear pitch that way. On a piano, every octave takes up the same width of
 keyboard, yet each octave *doubles* the frequency: the A keys are at 110,
-220, 440 and 880 Hz. Ears work the same way above about 1,000 Hz: a jump
+220, 440 and 880 Hz. Above about 1,000 Hz ears work the same way: a jump
 from 1,000 to 2,000 Hz sounds about as big as a jump from 2,000 to 4,000.
 The **mel scale** relabels frequencies so that equal steps in mel sound like
-equal steps in pitch.
-
-**Tiny example.** By construction 1,000 Hz is 1,000 mel. The 7,000 Hz from
-1,000 to 8,000 Hz shrinks to just 1,840 mel.
+equal steps in pitch. By construction 1,000 Hz is 1,000 mel, and the
+7,000 Hz from 1,000 to 8,000 Hz shrinks to 1,840 mel.
 
 $$
 m = 2595 \, \log_{10}\!\left(1 + \frac{f}{700}\right)
@@ -794,17 +762,15 @@ line is where it would be if mel were simply hertz. They agree near the
 bottom (the red dot, 1,000 Hz = 1,000 mel) and part ways above: the top
 7,000 Hz of the range is squeezed into under 2,000 mel. On the right are 10
 mel filters for 16 kHz audio. Each peaks at 1 and overlaps its neighbours;
-the low ones are a few bins wide and the top one spans over 3,000 Hz. Detail
-is spent where ears, and speech, need it.
+the low ones are a few bins wide and the top one spans over 3,000 Hz, so the
+detail goes where ears, and speech, need it.
 
-**In code:** `hz_to_mel` is the formula, and `mel_filterbank` builds the triangles, evenly spaced in mel.
+**In code:** `hz_to_mel` is the formula, and `mel_filterbank` builds the triangles.
 
 ### Speech recognition: an encoder over frames, a decoder for text
 
-**Everyday picture.** A court stenographer listens to a whole sentence, then
-types it out word by word, glancing back at what they heard as they go.
-
-**Tiny example.** Take a 30-second clip. With 10 ms hops it is 3,000 frames
+A log-mel spectrogram is a grid, like an image, and the rest of the audio
+front end follows the image recipe. Take a 30-second clip. With 10 ms hops it is 3,000 frames
 of 80 mel bands each. A small convolution that moves two frames at a time
 halves that to **1,500** encoder positions: **50 audio tokens per second**.
 A transformer encoder attends over all 1,500 at once, and a decoder writes
@@ -832,25 +798,22 @@ generation loop: each new word is fed back in.
 
 **In code:** `audio_tokens` counts encoder positions from a clip's length, the hop and the downsampling.
 
-**Why it matters in practice.** The same audio encoder can feed a general
-language model instead of a dedicated decoder: add a projector, splice the
-audio tokens into the prompt, and the model can answer questions about a
-recording, exactly as with images. Fifty tokens a second is manageable for
+The same audio encoder can also feed a general language model instead of a
+dedicated decoder: add a projector, splice the audio tokens into the prompt,
+and the model can answer questions about a recording, as with images. Fifty tokens a second is manageable for
 a short voice message and expensive for an hour-long meeting.
 
 ## Generating images and speech: discrete tokens from a codebook
 
-So far the model *reads* pictures and sound. To *write* them, a language
-model needs them as something it can predict one at a time from a fixed
-vocabulary, the way it predicts words.
+Every front end so far makes vectors for the model to *read*. To *write*
+pictures and sound, a language model needs them as something it can predict
+one at a time from a fixed vocabulary, the way it predicts words. A
+**codebook** gives them one: a numbered list of vectors, learned from the
+data. **Vector quantization** replaces each vector with the number of its
+nearest codebook entry, the way a paint-by-numbers kit describes each patch
+of a picture by the number of the paint pot closest to its colour.
 
-**Everyday picture.** A paint-by-numbers kit comes with a palette of
-numbered pots. Any small area of a picture is described by the number of
-the pot closest to its colour. The whole picture becomes a grid of pot
-numbers, and anyone with the same palette can repaint it. The palette is a
-**codebook**; snapping to the nearest entry is **vector quantization**.
-
-**Tiny example.** A codebook of three 2-number entries: $c_0 = (0, 0)$,
+Take a codebook of three 2-number entries: $c_0 = (0, 0)$,
 $c_1 = (1, 0)$, $c_2 = (0, 1)$. The vector $z = (0.9, 0.2)$ has squared
 distances 0.85, 0.05 and 1.45 to them, so it becomes id **1**. Decoding id 1
 gives back (1, 0): close, not exact.
@@ -905,14 +868,13 @@ flowchart LR
 sounds are encoded, snapped to the codebook, and become sequences of ids
 that sit in the training text next to their descriptions. The language
 model learns to continue a caption with ids the same way it learns to
-continue a sentence with words; its vocabulary is simply enlarged by $K$
-entries. At generation time (bottom row) the model writes ids, the codebook
+continue a sentence with words; its vocabulary grows by $K$ entries. At generation time (bottom row) the model writes ids, the codebook
 turns them back into vectors, and a decoder paints pixels or synthesises a
 waveform. The encoder, codebook and decoder together are a VQ-VAE (see
 `primer.ml.generative.autoencoders`).
 
-How is the codebook chosen? It is learned so that the entries sit where the
-data actually is, which amounts to k-means clustering (see
+The codebook is learned so that its entries sit where the data is, which
+amounts to k-means clustering (see
 `primer.ml.embeddings.clustering`): snap every vector to its nearest entry,
 move each entry to the average of the vectors that chose it, and repeat.
 For audio, one codebook is rarely precise enough, so neural audio codecs
@@ -925,7 +887,7 @@ of sound becomes a small stack of ids.
 **Reading it:** the x-axis is bits per patch: a codebook of $K$ entries
 costs log₂ $K$ bits per id, so 64 entries is 6 bits. The y-axis (log scale)
 is the reconstruction error on patches of *new* pictures, not the ones the
-codebook was learned from. Random codebooks (red) are useless at every
+codebook was learned from. Random codebooks (red) stay high at every
 size: their entries sit where no data lives. Learned codebooks (blue) fall
 fast and then flatten near the dotted line, which is the error you would get
 by reproducing each clean pattern perfectly and dropping only the pixel
@@ -934,14 +896,14 @@ previous one's leftovers: after four stages (12 bits) they reach below the
 dotted line, because the extra codes start describing the noise of each
 particular patch too.
 
-**In code:** `quantize` is the arg min above and `dequantize` the lookup; `kmeans_codebook` learns a codebook; `learn_residual_codebooks` and `residual_quantize` stack codebooks on the leftovers.
+**In code:** `quantize` is the formula, `kmeans_codebook` learns a codebook, and `residual_quantize` stacks them.
 
-**Why it matters in practice.** Discrete tokens let one model read and
-write every modality with one mechanism, next-token prediction. The costs
-are real: a 256×256 image compressed eight-fold per side is 32 × 32 =
-1,024 ids (the scheme of the original DALL·E), and a neural audio codec
-running at 75 frames a second with 8 codebooks writes 600 ids a second. The
-other road to generating images is diffusion (see
+With discrete tokens, one model reads and writes every modality by
+next-token prediction. Each picture or second of sound becomes many ids: a
+256×256 image compressed eight-fold per side is 32 × 32 = 1,024 ids (the
+scheme of the original DALL·E), and a neural audio codec running at 75
+frames a second with 8 codebooks writes 600 ids a second. The other way to
+generate images is diffusion (see
 `primer.ml.generative.diffusion`): the language model supplies text or
 vectors that *condition* a diffusion model, which paints the pixels in many
 small denoising steps. Discrete tokens are simpler to bolt onto a language
@@ -949,11 +911,10 @@ model; diffusion usually renders finer detail.
 
 ## Video: pictures over time
 
-**Everyday picture.** A flipbook. Each page is a picture, and neighbouring
-pages are almost identical. To follow the story you don't need to look at
-every page; a glance at every tenth page shows what happens.
-
-**Tiny example.** A 10-second clip at 30 frames a second, with each frame
+Back on the input side, a video is a run of images, and each frame goes
+through the image front end. Neighbouring frames are almost identical, so a
+model needs far fewer of them than a camera records. Take a 10-second clip
+at 30 frames a second, with each frame
 cut into 256 tokens (224×224 in 14-pixel patches): 300 frames × 256 =
 **76,800 tokens**, more than half of a 128,000-token context, for ten
 seconds. Keeping one frame a second gives 10 × 256 = **2,560**.
@@ -1006,26 +967,24 @@ flowchart LR
 ```
 
 **Reading it:** each box from left to right cuts the token count. Frame
-sampling throws away near-duplicate pages of the flipbook; tubelets and
+sampling drops near-duplicate frames; tubelets and
 merging squeeze each kept moment into fewer tokens. A short text timestamp
 before each frame's tokens ("at 0:05") lets the model say *when* something
 happened. What is left is the image pipeline, repeated once per kept frame.
 
 **In code:** `video_tokens` is the formula, and `sample_frames` picks the evenly spaced frames to keep.
 
-**Why it matters in practice.** Sampling is a bet that nothing important
-happens between the frames you keep: one frame a second is fine for a
-lecture and useless for a golf swing. Real systems adapt: more frames for
+Sampling is a bet that nothing important happens between the frames you
+keep: one frame a second is fine for a lecture and useless for a golf swing.
+Systems adapt the rate: more frames for
 short or fast clips, fewer and smaller ones for long recordings, and a
 transcript of the soundtrack alongside.
 
 ## What it costs: tokens per second and the context budget
 
-**Everyday picture.** Packing a suitcase. Text is neatly folded shirts;
-images are shoes; video is an inflatable boat. The suitcase (the context
-window) is the same size whatever you pack.
-
-**Tiny example.** A 128,000-token window holds 128,000 / 256 = **500
+Every input above ends as tokens in the same **context window**, the fixed
+number of tokens a model can read at once. What differs is how fast each
+kind of input fills it. A 128,000-token window holds 128,000 / 256 = **500
 seconds**, about 8 minutes, of video sampled at one frame a second, before
 a single word of the question. The same window holds about 11 hours of
 speech written out as text.
@@ -1046,39 +1005,39 @@ shifted up or down by its tokens per second. Read across at a dashed line
 (grey) is so dense that hours of speech fit easily. Audio tokens (green)
 fill a 128k window in about 43 minutes, sampled video (blue) in about 8,
 and full-rate video (red) in under 20 seconds. The gap between the grey
-line and the others is the price of keeping the raw signal instead of
-words.
+line and the rest is what it costs to keep the sound or picture itself
+instead of a transcript.
 
 **In code:** `seconds_that_fit` divides a window by a rate, and `TOKENS_PER_SECOND` holds the rates in the table.
 
-**Why it matters in practice.** Every image and second of audio is billed
-and computed like text: it takes room in the context window, lengthens the
+Every image and second of audio is billed and computed like text: it takes room in the context window, lengthens the
 prefill before the first word of the answer (see `primer.ml.inference`),
 and competes with instructions and retrieved documents for attention (see
-`primer.agents.context`). The practical levers follow from the formulas:
-send the smallest resolution that still shows the detail you need, crop to
+`primer.agents.context`). The formulas give the ways to spend less: send
+the smallest resolution that still shows the detail you need, crop to
 the region that matters, sample fewer frames, and transcribe audio to text
 when the words matter and the tone does not.
 
 ## In 20 seconds
 
-- **One idea:** every modality becomes a sequence of vectors as wide as the
-  language model's word vectors; after that it is ordinary attention.
-- **Images:** a Vision Transformer cuts a picture into patches, projects each
-  one, adds a position, and runs non-causal encoder blocks. Tokens =
-  (H/P)·(W/P), so they grow with the square of the resolution.
-- **Connecting to a language model:** a small projector maps image vectors
-  into the embedding space, and they are spliced into the prompt. Train the
-  projector first with everything frozen, then fine-tune on image
-  instructions.
-- **Audio:** waveform, then a log-mel spectrogram (a Fourier transform per
-  25 ms slice, pooled into ear-shaped bands), then an encoder: about 50
-  tokens a second.
-- **Generating pictures and sound:** snap vectors to a learned codebook so
-  they become ids a language model can predict like words; or hand off to a
-  diffusion model.
-- **Video and cost:** frames multiply image tokens by time; sample frames,
-  merge tokens, and remember that text is by far the densest input.
+- Every input becomes a sequence of vectors as wide as the language model's
+  word vectors, and the model attends over them as it does over words.
+- A Vision Transformer cuts an image into patches, projects each one, adds a
+  position and runs encoder blocks without a causal mask. It makes
+  (H/P)·(W/P) tokens, so the count grows with the square of the resolution.
+- A small projector maps the image vectors into the language model's
+  embedding space, and they take the place of a placeholder in the prompt.
+  Training aligns the projector first, with both models frozen, then tunes
+  on image instructions.
+- Audio becomes a log-mel spectrogram (a Fourier transform per 25 ms slice,
+  pooled into bands spaced the way ears hear), and an encoder turns that
+  into about 50 tokens a second.
+- To generate pictures or sound, a model predicts ids from a learned
+  codebook, and a decoder turns them back into pixels or a waveform. The
+  other way is to hand off to a diffusion model.
+- Video multiplies image tokens by the frames kept, so frame sampling and
+  token merging set its cost. Text is the densest input: speech written out
+  takes about 3 tokens a second, against 50 as audio tokens.
 
 ## Self-test questions
 
