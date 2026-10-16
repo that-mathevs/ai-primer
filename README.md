@@ -254,9 +254,9 @@ Models that are not transformers, and models that make pictures and sound: trees
 | 32 | [Trees and boosting](primer/ml/classical.py) | How a tree learns a table of data, and why boosted trees still beat neural networks there | [page](https://rumblr.com/learn/classical) · [tests](tests/test_classical.py) |
 | 33 | [CNNs and RNNs](primer/ml/cnn_rnn.py) | How convolutions see and recurrent nets remember, and why transformers won | [page](https://rumblr.com/learn/cnn-rnn) · [tests](tests/test_cnn_rnn.py) |
 | 34 | [Autoencoders and VAEs](primer/ml/generative/autoencoders.py) | Squeezing data into a code and back, and sampling new data from it | [page](https://rumblr.com/learn/autoencoders) · [tests](tests/test_autoencoders.py) |
-| 35 | [GANs](primer/ml/generative/gans.py) | A forger against a detective: adversarial training, and why it is unstable | [page](https://rumblr.com/learn/gans) · [tests](tests/test_gans.py) |
+| 35 | [GANs](primer/ml/generative/gans.py) | How two neural networks trained against each other learn to make realistic samples, and why the training is unstable | [page](https://rumblr.com/learn/gans) · [tests](tests/test_gans.py) |
 | 36 | [Diffusion and flow matching](primer/ml/generative/diffusion.py) | Turning noise into images one small step at a time | [page](https://rumblr.com/learn/diffusion) · [tests](tests/test_diffusion.py) |
-| 37 | [Multimodal models](primer/ml/generative/multimodal.py) | Images, audio and video into a language model | [page](https://rumblr.com/learn/multimodal) · [tests](tests/test_multimodal.py) |
+| 37 | [Multimodal models](primer/ml/generative/multimodal.py) | How pictures and sound become tokens a language model can read, and what each costs in context | [page](https://rumblr.com/learn/multimodal) · [tests](tests/test_multimodal.py) |
 
 ### Part 6: building systems people rely on
 
