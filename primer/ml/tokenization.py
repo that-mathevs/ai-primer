@@ -123,27 +123,34 @@ count and budget, you are done.
 
 ## Level 2: How it works, from scratch
 
-Level 2 builds the kit of bricks from nothing, starting with what a token
-is.
+A language model works on numbers, not text. Before it reads a prompt, the
+prompt has to be cut into pieces and each piece swapped for a number, and
+how that cut is made decides what a call costs and what the model can know
+about spelling.
 
-## 1. Tokens: building words from a fixed kit of bricks
+## Tokens: pieces from a fixed kit
 
-**Everyday picture.** A box of Lego with a fixed set of bricks. Common
-shapes have a ready-made brick; anything unusual gets assembled from smaller
-bricks. You can build *anything*, but some builds take many more bricks than
-others. A **tokenizer** is that kit for text: a fixed vocabulary of pieces
-(typically 32,000 to 200,000 of them), each with a number, its **token id**.
+Think of a box of Lego with a fixed set of bricks. Common shapes have a
+ready-made brick, and anything unusual is assembled from smaller ones, so
+you can build *anything*, though some builds take many more bricks than
+others. A **tokenizer** is that kit for text: a fixed vocabulary of pieces,
+called **tokens**, each with a number, its **token id**. Real kits typically
+hold 32,000 to 200,000 pieces.
 
-**Tiny worked example.** With a kit that contains `the`, `un`, `believ` and
-`able`, "the" takes 1 brick and "unbelievable" takes 3: `un` + `believ` +
-`able`. The model never sees the letters; it sees a short list of ids such
-as `[262, 403, 11009, 540]`.
+With a kit that contains `the`, `un`, `believ` and `able`, "the" takes 1
+brick and "unbelievable" takes 3: `un` + `believ` + `able`. The model never
+sees the letters, only a short list of ids such as `[262, 403, 11009, 540]`.
+
+There are three ways to stock the kit, and "unbelievable" shows what each
+one costs:
 
 | Approach | Kit size | "unbelievable" | Problem |
 |---|---|---|---|
 | Whole words | huge (every form of every word, every name) | 1 piece, if it's in the kit | words not in the kit become `<unk>`; typos break |
 | Single bytes | 256 | 12 pieces | sequences 4-5× longer, and attention cost grows with length squared |
 | **Subwords** | 32k to 200k | ~3 pieces | the middle ground every modern LLM uses |
+
+Whichever kit is used, the text stops at the tokenizer:
 
 ```mermaid
 flowchart LR
@@ -155,28 +162,27 @@ flowchart LR
 ```
 
 **Reading it:** text enters on the left and never reaches the model as
-text. The tokenizer cuts it into pieces from its fixed kit and swaps each
-piece for its number. Those numbers pick rows from the embedding table (see
-`primer.ml.big_picture`), and only those vectors reach the model. Everything
-the model knows about spelling it had to learn through this narrow window.
+text. The tokenizer cuts it into pieces from its kit and swaps each piece
+for its number. Those numbers pick rows from the embedding table (see
+`primer.ml.big_picture`), and only those vectors reach the model, so
+whatever the model knows about spelling it had to learn from the ids alone.
 (The ids shown are illustrative.)
 
 **In code:** `trained_tokenizer` builds this lesson's toy kit, and
 `ByteBPE.encode` turns any text into its list of ids.
 
-**Why it matters.** Everything downstream is counted in tokens: price,
-speed, and how much fits in the context window.
+## Byte Pair Encoding (BPE): learning the kit from data
 
-## 2. Byte Pair Encoding (BPE): learning the kit from data
+A subword kit is learned from a sample of text, not written by hand.
+**Byte Pair Encoding** (BPE) learns it the way a court stenographer invents
+shorthand. Whatever pair of letters they write most often gets its own
+squiggle. Then the most common pair *including* that squiggle gets one too,
+and so on, until they have as many squiggles as they can remember. BPE does
+the same with symbols: start from single letters, find the neighbouring pair
+that occurs most often, glue it into one new symbol, write that down as a
+merge rule, and repeat.
 
-**Everyday picture.** A court stenographer inventing shorthand. Whatever
-pair of letters they write most often gets its own squiggle. Then the most
-common pair *including* that squiggle gets one too, and so on, until they
-have as many squiggles as they can remember.
-
-**Tiny worked example.** Training text "low lower lowest". Start from single
-letters and repeatedly merge the most frequent neighbouring pair
-(`train_char_bpe` reproduces this exactly):
+Here are the first three rounds on the training text "low lower lowest":
 
 | Step  | Most frequent pair | New token | Text becomes                    |
 |-------|--------------------|-----------|---------------------------------|
@@ -199,11 +205,12 @@ flowchart LR
 **Reading it:** training is a loop around two boxes. "Count adjacent pairs"
 looks at every neighbouring pair of symbols in the corpus; "Merge" glues the
 winner into one new symbol everywhere and appends that rule to an ordered
-list. The loop exits when the vocabulary reaches its target size. The output
-is not just a vocabulary but the *ordered* merge list, and encoding depends
-on that order.
+list. The loop exits when the vocabulary reaches its target size. What comes
+out is the vocabulary and the merge rules in the order they were learned,
+and encoding depends on that order.
 
-**The math and the code.** Each round picks the pair with the largest count:
+"Most often" has a precise meaning. Each round picks the pair with the
+largest count:
 
 $$
 \text{count}(a, b) = \sum_{w} f_w \cdot n_w(a, b)
@@ -224,8 +231,7 @@ $$
 inside it, multiply by how often the word occurs, and add everything up."
 
 **With the numbers:** count(l, o) = 1·1 (low) + 1·1 (lower) + 1·1 (lowest) =
-**3**; count(e, r) = 1·1 (lower) = **1**. `train_char_bpe` computes the same
-totals with a `Counter`.
+**3**; count(e, r) = 1·1 (lower) = **1**.
 
 **In Python:**
 
@@ -241,24 +247,28 @@ def count(a, b):
 count("l", "o"), count("e", "r")  # → (3, 1)
 ```
 
+Because the most frequent pairs are merged first, frequent strings end up
+as single tokens and rare ones stay in pieces. That is why token counts
+differ from word counts, and why a tokenizer trained mostly on English is
+cheap for English and expensive for most other text.
+
 **In code:** `train_char_bpe` runs the count-and-merge loop and returns one
 `MergeStep` per round, holding the winning pair, its count, the new token
 and the text after the merge (one row of the table above).
 
-**Why it matters.** Frequent strings end up as single tokens and rare ones
-stay in pieces, which is exactly why token counts differ from word counts,
-and why a tokenizer trained mostly on English is cheap for English and
-expensive for everything else (section 6).
+## Encoding new text: replay the merges in order
 
-## 3. Encoding new text: replay the merges in order
+Training hands over an ordered list of merge rules. To cut new text, the
+tokenizer starts from its letters and applies the rules in the order they
+were learned. At each step it looks at the pairs present, merges the pair
+whose rule was learned earliest, everywhere it occurs, and looks again,
+until no pair left is a rule. Training and encoding agree because both use the rules in
+the same order.
 
-**Everyday picture.** Following a recipe card: do step 1 everywhere it
-applies, then step 2, and so on. Skipping ahead would give a different dish.
-
-**Tiny worked example.** Encode "lowest" with the three merges learned
-above: `l o w e s t` → (merge 1) `lo w e s t` → (merge 2) `low e s t` →
-(merge 3) `lowe s t`. Result: 3 tokens. A word never seen in training still
-works: "slow" → `s low`; "newer" matches no merge and stays as letters.
+Encode "lowest" with the three merges learned above: `l o w e s t` →
+(merge 1) `lo w e s t` → (merge 2) `low e s t` → (merge 3) `lowe s t`.
+Result: 3 tokens. A word that never appeared in training still gets cut:
+"slow" → `s low`, while "newer" matches no merge and stays as letters.
 
 ```mermaid
 flowchart LR
@@ -268,29 +278,33 @@ flowchart LR
   R3 --> OUT["no learned merge applies<br/>tokens: lowe | s | t"]
 ```
 
-**Reading it:** each box applies one merge rule, in the order the rules
-were learned, to every place it fits. The word shrinks from 6 symbols to 3.
-It stops when none of the remaining neighbouring pairs is in the rule list.
+**Reading it:** follow the word from left to right. Each box applies one
+merge rule, in the order the rules were learned, to every place it fits,
+and the word shrinks from 6 symbols to 3. It stops when none of the
+remaining neighbouring pairs is in the rule list.
 
-**The code.** `encode_char_bpe` repeatedly finds, among the pairs present,
-the one learned *earliest*, merges it, and loops. Training and encoding
-agree because they apply rules in the same order.
+Since the rules are applied in a fixed order, the same text always gives
+the same ids. Prompt caching and cost estimates rely on that.
 
-**Why it matters.** Encoding is deterministic: the same text always gives
-the same ids, which is what makes prompt caching and cost estimates possible.
+**In code:** `encode_char_bpe` replays the merges on one word.
 
-## 4. Byte-level BPE: nothing is ever unknown
+## Byte-level BPE: nothing is ever unknown
 
-**Everyday picture.** Every file on a computer, whatever it holds, is a
+A kit whose smallest pieces are letters has a gap: a character that is not
+in it, an emoji, say, or a Chinese character the training text never
+contained, has no id, and a real tokenizer can only replace it with an
+"unknown" token, losing it. (The toy letter tokenizer in this lesson passes such
+characters through instead, to keep the code short.) Byte-level BPE closes the gap by
+starting one layer lower. Every file on a computer, whatever it holds, is a
 sequence of **bytes**: numbers from 0 to 255. If the smallest bricks in the
-kit are those 256 byte values, then no text can ever be unbuildable: emoji,
-Chinese, source code or garbage all come apart into bytes.
+kit are those 256 byte values, no text is ever unbuildable: emoji, Chinese,
+source code or garbage all come apart into bytes.
 
-**Tiny worked example.** In UTF-8 (the standard way to store text as bytes)
-"a" is one byte, 97; "é" is two bytes, 195 169; "🙂" is four bytes,
-240 159 153 130. An untrained byte-level tokenizer turns "é🙂" into 6 tokens.
-After training on English, " password" is one token, id 291, because it was
-frequent.
+**UTF-8** is the standard way to store text as bytes. In it "a" is one
+byte, 97; "é" is two bytes, 195 169; and "🙂" is four bytes, 240 159 153
+130. An untrained byte-level tokenizer turns "é🙂" into 6 tokens, one per
+byte. After training on English, " password" is one token, id 291, because
+it was frequent.
 
 ```mermaid
 flowchart LR
@@ -306,14 +320,15 @@ text-matching pattern) first cuts the text into chunks, each keeping its
 leading space; merges never cross a chunk boundary. Each chunk becomes raw
 bytes (ids 0-255). The tokenizer then applies whichever learned merge came
 earliest among the pairs present, until none applies. The ids shown are what
-this module's toy tokenizer produces: "Reset" is two tokens (`Re` `set`),
+the toy tokenizer trained for this lesson produces: "Reset" is two tokens (`Re` `set`),
 " password" is one. Decoding is the reverse lookup: every id maps to a fixed
-byte string, and concatenating them restores the exact original bytes. That
-is why a byte-level tokenizer round-trips any text.
+byte string, and joining them restores the original bytes, so a byte-level
+tokenizer gets back any text it was given.
 
-**The code.** `ByteBPE` is `train_char_bpe` with bytes instead of letters,
-ids 0-255 for the bytes and 256, 257, ... for each merge. GPT-2, GPT-4's
-`cl100k_base`, Llama 3 and most current LLMs work this way.
+This is BPE with bytes in place of letters: ids 0-255 stand for the bytes
+and 256, 257, ... for the merges. GPT-2, GPT-4's `cl100k_base`, Llama 3 and
+most current LLMs tokenize this way. The more merges a tokenizer learns, the
+more text each token covers:
 
 ![Compression climbs steeply from 1.0 to 2.0 characters per token in the first 44 merges, then flattens near 3.1 by 500 entries](figures/primer.ml.tokenization.merge_curve.svg)
 
@@ -328,33 +343,33 @@ tokenizers sit far to the right, at 50k to 200k entries, and reach about 4
 characters per token on English. Bigger kits mean shorter sequences but a
 larger embedding table and output layer.
 
-**In code:** `ByteBPE.train` learns the byte merges, `ByteBPE.encode` and
-`ByteBPE.decode` make the round trip, and `compression_curve` trains
-tokenizers of growing size and measures each one for the figure above.
-
-**Try it:** the tokenizer below is this lesson's own, with its 144 learned
-merges. Drag the merges down to 0 and every byte is its own token; drag them
-back up and watch frequent pieces such as " the" and " password" fuse, one
-merge at a time, while characters per token climbs like the curve above. Then
-type a word the corpus never saw, or an accent or an emoji, and watch it stay
-in small pieces.
+**Try it:** this is the toy tokenizer from the diagram, with its 144
+learned merges. Drag the merges down to 0 and every byte is its own token.
+Drag them back up and watch frequent pieces such as " the" and " password"
+fuse, one merge at a time, while characters per token climbs as in the
+chart. Then type a word the corpus never saw, an accent or an emoji, and
+see it stay in small pieces.
 
 <div class="viz" data-viz="tokenizer" aria-label="Byte-level BPE tokenizer: type text and choose how many merges apply"></div>
 
-**Why it matters.** No "unknown token" failures, ever, for any input. The
-price is that unfamiliar scripts fall back to near-byte level and cost many
-more tokens.
+So a byte-level tokenizer never meets an unknown token, whatever the input.
+It pays in length instead: text in a script it rarely saw falls back to
+near-byte pieces and costs many more tokens.
 
-## 5. The cousins: WordPiece and Unigram
+**In code:** `ByteBPE.train` learns the byte merges, `ByteBPE.encode` and
+`ByteBPE.decode` make the round trip, and `compression_curve` measures
+tokenizers of growing size for the chart.
 
-**Everyday picture.** BPE glues the *most common* pair. WordPiece glues the
-most *inseparable* pair: two pieces that almost never appear apart, like
-"Q" and "u" in English. Unigram works the other way round: start with a huge
-kit and keep throwing out the bricks you'd miss least.
+## Other ways to learn a kit: WordPiece and Unigram
 
-**Tiny worked example.** On "low lower lowest", BPE's first merge is `l+o`.
-WordPiece's first merge is `s+t`: "s" and "t" each appear exactly once, and
-always together.
+BPE is not the only way to learn a kit. **WordPiece** also merges pairs,
+but where BPE glues the *most common* pair, WordPiece glues the most
+*inseparable* one: two pieces that rarely appear apart, like "Q" and "u" in
+English. **Unigram** works the other way round: it starts with a huge kit
+and keeps throwing out the pieces it would miss least.
+
+On "low lower lowest", BPE's first merge is `l+o`. WordPiece's first merge
+is `s+t`: "s" and "t" each appear once, and always together.
 
 ```mermaid
 flowchart TB
@@ -373,7 +388,7 @@ flowchart TB
 in how they rank candidate pairs. The bottom row prunes top-down. All three
 end with a fixed kit and a rule for cutting new text into pieces from it.
 
-**The math.** WordPiece ranks pairs by
+WordPiece ranks pairs by
 
 $$
 \text{score}(a, b) = \frac{\text{count}(ab)}{\text{count}(a) \cdot \text{count}(b)}
@@ -392,7 +407,7 @@ $$
 appears at all."
 
 **With the numbers:** score(s, t) = 1 / (1 · 1) = **1.0**; score(l, o) =
-3 / (3 · 3) = **0.33**. WordPiece merges s+t first (`wordpiece_scores`).
+3 / (3 · 3) = **0.33**, so WordPiece merges s+t first.
 
 **In Python:**
 
@@ -411,19 +426,22 @@ BERT marks continuation pieces with `##` ("un", "##believ", "##able").
 **SentencePiece** is a library that runs BPE or Unigram directly on raw text,
 writing spaces as the visible symbol `▁`.
 
-**Why it matters.** Different model families segment the same text
-differently, so their token counts and costs differ. Always count with the
-tokenizer of the model you'll actually call.
+Each model family is trained with its own kit, so two families cut the same
+text into different pieces and count it as a different number of tokens.
+Count with the tokenizer of the model you will call.
 
-## 6. Tokens are the unit of cost, speed and memory
+**In code:** `wordpiece_scores` scores every neighbouring pair.
 
-**Everyday picture.** A taxi meter that ticks per token, not per mile, with
-a pricier meter for the return trip: output tokens usually cost several
-times more than input tokens.
+## Tokens are the unit of cost, speed and memory
 
-**Tiny worked example.** A prompt of 2,000 tokens with a 500-token answer, at
-example prices of \$3 per million input tokens and \$15 per million output
-tokens: 0.006 + 0.0075 = **\$0.0135**. A million such calls cost \$13,500.
+That count is what you pay for. Providers bill by the token, and they run
+two meters, like a taxi with a pricier meter for the return trip: one for
+the tokens you send in and one for the tokens the model writes back. Output
+tokens usually cost several times more than input tokens.
+
+Take a prompt of 2,000 tokens with a 500-token answer, at example prices of
+\$3 per million input tokens and \$15 per million output tokens:
+0.006 + 0.0075 = **\$0.0135**. A million such calls cost \$13,500.
 
 ```mermaid
 flowchart LR
@@ -439,7 +457,7 @@ on the way in; they also have to fit in the model's context window (the
 dotted arrow). Output tokens are counted on the way out, and each one also
 takes a full step of generation, so they drive latency as well as cost.
 
-**The math and the code.**
+The bill for one call is
 
 $$
 \text{cost} = \frac{T_{in}}{10^6}\,p_{in} + \frac{T_{out}}{10^6}\,p_{out}
@@ -459,7 +477,7 @@ $$
 tokens in millions times the output price."
 
 **With the numbers:** 2,000/1,000,000 × 3 + 500/1,000,000 × 15 = 0.006 +
-0.0075 = **\$0.0135** (`estimate_cost`).
+0.0075 = **\$0.0135**.
 
 **In Python:**
 
@@ -470,15 +488,17 @@ p_in, p_out = 3, 15
 round(T_in / 10**6 * p_in + T_out / 10**6 * p_out, 4)  # → 0.0135
 ```
 
-**Rule of thumb:** English prose averages about **4 characters per token**,
-or **0.75 words per token**, so 1,000 tokens ≈ 750 words
-(`estimate_tokens`, `tokens_to_words`). Use it for quick estimates; count
-with the real tokenizer for anything that matters.
+To estimate a token count without a tokenizer, use the rule of thumb for
+English prose: about **4 characters per token**, or **0.75 words per
+token**, so 1,000 tokens ≈ 750 words. Count with the real tokenizer for
+anything that matters, because the rule holds only for English prose. The
+same English-trained tokenizer needs far more tokens for other kinds of
+text:
 
 ![English prose gets 2.6 characters per token; German, code and JSON 1.2 to 1.4; Hindi and emoji under 0.4](figures/primer.ml.tokenization.content_types.svg)
 
 **Reading it:** each bar is one kind of text encoded by the same
-English-trained tokenizer from this module; taller bars mean each token
+English-trained toy tokenizer; taller bars mean each token
 carries more text, so the content is cheaper. English prose scores highest
 because the merges were learned from English. Code and JSON score lower
 because symbols and unusual identifiers were rarely merged. German shares the
@@ -486,20 +506,20 @@ alphabet but not the words. Hindi and emoji fall below one character per
 token: each character is 3-4 UTF-8 bytes and few of those byte pairs were
 ever merged, the worst case of byte-level fallback.
 
-**In code:** `chars_per_token` computes each bar: the length of the text
-divided by the number of ids `ByteBPE.encode` returns for it.
+So the same request can differ several-fold in cost, latency and context
+used, depending on its language and content.
 
-**Why it matters.** The same request can differ several-fold in cost,
-latency and context usage depending on language and content: dense JSON,
-code, tables and non-English text all need more tokens than English prose.
+**In code:** `estimate_cost` prices a call, `estimate_tokens` and
+`tokens_to_words` apply the rule of thumb, and `chars_per_token` computes
+each bar: the length of the text divided by the number of ids
+`ByteBPE.encode` returns for it.
 
-## 7. Quirks the tokenizer explains
+## Quirks the tokenizer explains
 
-**Everyday picture.** Reading through frosted glass that only shows whole
-bricks. You can tell which bricks are there, but not the letters printed on
-them.
-
-**Tiny worked example** (this module's toy tokenizer):
+The model receives ids, not letters, so whatever sits inside a token is
+hidden from it, as if it read through frosted glass that shows which bricks
+are there but not the letters printed on them. The toy tokenizer trained
+above shows three cases:
 
 | Text | Tokens | What it explains |
 |---|---|---|
@@ -520,20 +540,22 @@ discarded before the model saw anything. It has to have *memorized* how
 spelling and letter-counting questions trip up models that handle much
 harder reasoning.
 
-**The code.** `ByteBPE.tokens(text)` shows the pieces for any string; the
-demo prints these cases.
+Some newer tokenizers split digits into fixed groups of up to 3 to reduce
+the arithmetic problem.
 
-**Why it matters.** These quirks explain surprising behaviour: miscounted
-letters, shaky arithmetic, odd handling of rare names. Some newer tokenizers
-split digits into fixed groups of up to 3 to reduce the arithmetic problem.
+**In code:** `ByteBPE.tokens` shows the pieces of any string, and the demo
+prints these cases.
 
 ## In 20 seconds
-- Text is split into subword pieces by BPE: start from characters or bytes
-  and repeatedly merge the most frequent neighbouring pair.
-- Byte-level BPE can encode anything with no unknown token.
-- Cost, latency and context limits are counted in tokens; English is about
-  4 characters (0.75 words) per token, while code and non-English text need
-  more tokens.
+- BPE learns a kit of subword pieces from text: start from characters or
+  bytes and repeatedly merge the most frequent neighbouring pair.
+- Byte-level BPE starts from the 256 byte values, so it can encode any text
+  with no unknown token.
+- Cost, latency and context limits are counted in tokens. English is about
+  4 characters (0.75 words) per token; code and non-English text need more
+  tokens.
+- The model sees token ids, not letters, which is why it can miscount the
+  letters in a word.
 
 ## Self-test questions
 
