@@ -130,19 +130,10 @@ only needed to choose a model or clean a corpus, you are done.
 
 ## Level 2: How it works, from scratch
 
-Imagine writing an encyclopedia by reading everything ever printed. Two
-problems appear at once.
-
-First, most of what is printed is junk: flyers, receipts, the same cookie
-notice on a million websites, spam. You need a sorting line that throws out
-the junk and the photocopies before anyone reads a page.
-
-Second, no single reader can do the reading. You hire a thousand readers,
-and now you have a management problem: how do they split the work, share
-what they learned, and keep going when one of them gets sick?
-
-Pretraining is exactly those two problems. The first is data curation. The
-second is distributed training.
+Pretraining runs as a chain, from a crawl of the web to a base model. Its
+first half is **data curation**: cleaning the crawl into training text. Its
+second half is **distributed training**: spreading one training run across
+thousands of GPUs.
 
 ```mermaid
 flowchart LR
@@ -161,23 +152,20 @@ many of its quirks are settled here, before any GPU is switched on. The right
 half (parallel training, mixed precision, stability) decides whether the
 learning can happen at all: a 7-billion-parameter model does not fit on one
 GPU, and a months-long run on thousands of GPUs will see hardware fail many
-times. Every box gets its own section below, in this order.
+times. The chapters below follow the chain from left to right; turning text
+into tokens has a lesson of its own (`primer.ml.tokenization`).
 
 ## 1. Where the data comes from, and how it is cleaned
 
-**Everyday picture.** Think of a recycling plant. Trucks tip mixed rubbish
-onto a conveyor belt. Magnets pull out the steel, blowers lift out the paper,
-people pick out what the machines miss, and only a small fraction reaches the
-bale at the end. Pretraining data goes down a belt like this, and just as in
-a recycling plant, most of what goes in never comes out.
-
 The raw material is usually **Common Crawl**, a nonprofit's public archive of
 the web: regular snapshots, each of billions of pages. A page arrives as
-HTML full of menus, adverts and scripts, so the first machine on the belt is
-**text extraction**, which keeps the main body text. After that come the
-filters this section builds: language identification, quality filters,
-deduplication and mixing. FineWeb, an open dataset built this way from 96
-Common Crawl snapshots, ends with about 15 trillion tokens.
+HTML full of menus, adverts and scripts, so the first step is **text
+extraction**, which keeps the main body text. Then the text goes down a
+sorting line, like the conveyor belt in a recycling plant: each check pulls
+out what it is built to catch, and most of what goes in never comes out.
+The checks are language identification, quality filters and deduplication,
+and what survives is then mixed by source. FineWeb, an open dataset built
+this way from 96 Common Crawl snapshots, ends with about 15 trillion tokens.
 
 ```mermaid
 flowchart LR
@@ -197,15 +185,14 @@ flowchart LR
 leaves the belt. The order matters for cost: language ID and quality rules
 look at one page at a time, so they are cheap and run first. Deduplication
 compares pages *with each other*, which is the expensive part, so it runs
-last, on what survived. The rest of this section builds every diamond in turn.
+last, on what survived.
 
 ### 1a. Language identification
 
-**Everyday picture.** Overhear two words of a phone call, "le" and "et", and
-you already guess French. Every language has a handful of little words that
-turn up in almost every sentence.
-
-**Tiny worked example.** "the cat is in the garden and it was happy" has 10
+The first check asks what language a page is in. Every language has a
+handful of little words that turn up in almost every sentence ("le" and "et"
+in French, "the" and "and" in English), so counting them gives a quick
+guess. "the cat is in the garden and it was happy" has 10
 words; 7 of them are on the English list of little words (the, is, in, the,
 and, it, was) and none are on the French, German or Spanish lists, so the
 guess is English with a share of 0.7. "SKU-4431 X99 blk/wht 12pk" matches no
@@ -220,12 +207,10 @@ each language and pick the strongest.
 
 ### 1b. Heuristic quality filters
 
-**Everyday picture.** A librarian sorting donations does not read every
-book. A book with no pages, a pamphlet that is all hashtags, a sheet of
-keywords: each is rejected at a glance by a simple rule.
-
-**Tiny worked example.** The Gopher paper (Rae et al., 2021) published a
-set of such rules. Here is what they say about a navigation bar, "Home |
+A page in the right language can still be junk: a navigation bar, a page of
+hashtags, a list of keywords. Simple rules catch pages like these without
+reading for meaning. The Gopher paper (Rae et al., 2021) published a set of such
+rules. Here is what they say about a navigation bar, "Home |
 About us | Contact | Privacy policy | Log in":
 
 | Rule | Keep only if | The navigation bar | Verdict |
@@ -236,8 +221,8 @@ About us | Contact | Privacy policy | Log in":
 | words containing a letter | at least 80% | 8 of 12 = 67% | fail |
 | common English words | at least 2 of: the, be, to, of, and, that, have, with | none | fail |
 
-The last rule is the clever one. Real prose cannot avoid words like "the"
-and "of"; keyword-stuffed pages and lists of product names avoid them
+Real prose cannot avoid words like "the" and "of", so the last rule catches
+keyword-stuffed pages and lists of product names, which avoid them
 completely. Other rules in the set catch pages that are mostly bullet points
 or mostly lines ending in "...".
 
@@ -251,10 +236,10 @@ articles, books, pages that trusted sites link to) against random crawl, and
 then keep pages that score like the reference. GPT-3 filtered Common Crawl
 with a simple linear classifier of this kind; FineWeb-Edu asked a large
 model to rate pages for educational value and trained a small classifier on
-those ratings. We build the simplest version, **naive Bayes**: every word
-casts a vote, and the votes add up.
+those ratings. The simplest version is **naive Bayes**: every word casts a
+vote, and the votes add up.
 
-**Tiny worked example.** Our reference examples contain the word "river" 3
+In a small training set, the reference examples contain the word "river" 3
 times and the spam examples 0 times; "click" appears 0 times in the
 reference and 4 times in spam. So "river" votes for good and "click" votes
 for bad. A whole page's score is the sum of its words' votes.
@@ -306,27 +291,25 @@ round(vote(3, 0), 3)  # → 1.158
 round(vote(0, 4), 3)  # → -1.837
 ```
 
-Why "naive"? It treats every word as independent evidence, which is false
-(words come in phrases) but works well enough to sort billions of pages
-cheaply. The practical danger is that a classifier keeps whatever resembles
-its reference set, including its blind spots: pick only encyclopedia text
-as "good" and you quietly filter out dialects, forums and whole topics.
+The method is called naive because it treats every word as independent
+evidence, which is false (words come in phrases), but it works well enough
+to sort billions of pages cheaply. The practical danger is that a classifier
+keeps whatever resembles its reference set, blind spots included: pick only
+encyclopedia text as "good" and you filter out dialects, forums and whole
+topics without noticing.
 
-**In code:** `QualityClassifier.trained_on_examples` counts words in `GOOD_EXAMPLES` and `BAD_EXAMPLES`; `QualityClassifier.word_vote` is the formula for one word and `QualityClassifier.score` adds the votes.
+**In code:** `QualityClassifier.word_vote` is the formula for one word, and `QualityClassifier.score` adds the votes.
 
 ### 1d. Exact duplicates: one fingerprint per page
 
-**Everyday picture.** A cloakroom attendant does not compare every coat
-with every other coat. Each coat gets a numbered ticket, and two coats with
-the same ticket are the same coat.
-
-The web is full of copies: mirrored sites, syndicated news, the same terms
-of service on a million shops. For exact copies the trick is a **hash**: a
-function that turns any text into a short fingerprint, always the same for
-the same text and almost never the same for different texts. Lowercase the
-text and squash its spaces first, so that trivially reformatted copies get
-the same fingerprint, then keep the first page with each fingerprint. One
-pass, one lookup per page, no comparisons.
+The pages that pass the filters still include copies: mirrored sites,
+syndicated news, the same terms of service on a million shops. Exact copies
+are caught with a **hash**: a function that turns any text into a short
+fingerprint, always the same for the same text and almost never the same
+for different texts. Lowercase the text and squash its spaces first, so that
+trivially reformatted copies get the same fingerprint, then keep the first
+page with each fingerprint. That takes one pass over the crawl and one
+lookup per page, with no comparisons between pages.
 
 **In code:** `normalize_for_exact` lowercases and collapses whitespace, and `exact_dedup` keeps the first document with each SHA-1 fingerprint.
 
@@ -334,13 +317,12 @@ pass, one lookup per page, no comparisons.
 
 A scraper site that copies an article and adds "Read more on our site"
 defeats the exact hash: one changed character gives a completely different
-fingerprint. We need a measure of *how much* two pages overlap.
+fingerprint. Catching it needs a measure of *how much* two pages overlap.
 
-**Everyday picture.** Cut each page into overlapping strips of a few words,
-like roof shingles, and put each page's strips in a bag. Two pages are near
-duplicates when their bags hold mostly the same strips.
-
-**Tiny worked example.** With 2-word shingles:
+Cut each page into overlapping runs of a few words, called **shingles**
+because they overlap like the shingles on a roof, and put each page's
+shingles in a bag. Two pages are near duplicates when their bags hold mostly
+the same shingles. With 2-word shingles:
 
 | Sentence | Its shingles |
 |---|---|
@@ -368,9 +350,9 @@ $$
 number of different shingles they have between them."
 
 **With the numbers:** J = 3 / 7 = **0.43**. Real pipelines use 5-word
-shingles on whole pages; the scraper's copy of our 68-word river paragraph
-(one phrase changed, one sentence added) shares 78% of its shingles with
-the original.
+shingles on whole pages; a scraper's copy of a 68-word paragraph about
+river deltas (one phrase changed, one sentence added) shares 78% of its
+shingles with the original.
 
 **In Python:**
 
@@ -395,16 +377,16 @@ comparing every pair is impossible (a billion pages make about 5 × 10¹⁷
 pairs). **MinHash** compresses each page into a short list of numbers, its
 **signature**, such that comparing two signatures estimates their Jaccard.
 
-**Everyday picture.** Shuffle a deck containing every shingle in the world
+The idea is a shuffle. Shuffle a deck holding every shingle in the world
 and deal from the top. Stop at the first card that belongs to page A, and
 separately at the first card that belongs to page B. Those two "first cards"
-are the same card exactly when the first card from A's-or-B's pile happens
-to be one they share. The more they share, the likelier that is.
+are the same card when the first card from either page happens to be one
+they share, and the more they share, the likelier that is.
 
-**Tiny worked example.** A = {a, b, c} and B = {b, c, d}, so J = 2/4 = 0.5.
-Shuffle the four letters in all 24 possible orders. In 12 of them the first
-letter from A ∪ B is b or c (a shared letter), and then A's first and B's
-first are the same letter. 12 / 24 = 0.5, exactly J.
+Take A = {a, b, c} and B = {b, c, d}, so J = 2/4 = 0.5. Shuffle the four
+letters in all 24 possible orders. In 12 of them the first letter from
+A ∪ B is b or c (a shared letter), and then A's first and B's first are the
+same letter. 12 / 24 = 0.5, which is J.
 
 $$
 P\big[\min h(A) = \min h(B)\big] = J(A, B),
@@ -455,9 +437,9 @@ round(math.sqrt(0.5 * 0.5 / 128), 3)  # → 0.044
 scale) and the vertical axis the MinHash estimate. Each colour is one pair
 of sets and its dashed line is that pair's true Jaccard. On the left, with
 only a few hashes, the estimate can only be a coarse fraction and lurches
-around. Moving right, each line settles onto its dashed line. That is the
-whole promise of MinHash: a fixed, small signature per page, with error you
-choose by choosing k.
+around. Moving right, each line settles onto its dashed line. So each page
+needs only a small signature of fixed length, and the choice of k sets the
+error.
 
 **In code:** `MinHasher` draws k hash functions of the form (a·x + b) mod p and `MinHasher.signature` keeps the minimum under each; `estimate_jaccard` counts agreeing slots.
 
@@ -535,13 +517,12 @@ the cliff sits: more rows per band push it right and make it sharper.
 
 ### 1h. Why duplicates hurt
 
-**Everyday picture.** A student who reads the same paragraph a hundred
-times can recite it, but has not learned a hundred paragraphs' worth. A
-model that sees a page thousands of times does the same: it spends capacity
+All this machinery for removing copies exists because of what copies do to
+a model. A model that sees a page thousands of times spends its capacity
 memorizing that page, and learns to recite it when prompted.
 
-**Tiny worked example.** A **bigram model** predicts each word from the
-word before it, by counting pairs. Train one on five short lines plus the
+The smallest language model shows it. A **bigram model** predicts each word
+from the word before it, by counting pairs. Train one on five short lines plus the
 boilerplate "click here to subscribe for free updates", and ask for the
 probability that it continues "click" into the whole boilerplate line:
 
@@ -556,7 +537,7 @@ probability that it continues "click" into the whole boilerplate line:
 | **whole line** | **1/72 = 0.014** | **0.93** |
 
 Kept once, the model has many ways to continue "click". Repeated 100 times,
-the line becomes the only road, and the model regurgitates it 93% of the
+the line becomes the only road, and the model recites it whole 93% of the
 time. Lee et al. (2021) found a single 61-word sentence repeated more than
 60,000 times in the C4 dataset, and that models trained on deduplicated
 data emit memorized training text about ten times less often. Duplicates
@@ -568,7 +549,7 @@ measures recall, not skill.
 
 ### 1i. The whole belt on a small crawl
 
-`CRAWL_SAMPLE` holds seven pages. Running `curate` over it:
+Here is the whole belt, in order, run on seven sample pages:
 
 | Page | What it is | Verdict |
 |---|---|---|
@@ -580,17 +561,16 @@ measures recall, not skill.
 | 5 | page 0 with a phrase changed and a link added | near duplicate of 0 |
 | 6 | a clean English paragraph about stars | kept |
 
-Two of seven survive. That is not unusual: large public pipelines keep only
-a small fraction of the raw crawl they start from.
+Two of the seven survive. Large public pipelines, too, keep only a small
+fraction of the raw crawl they start from.
 
 **In code:** `curate` runs language ID, the quality rules, the exact hash and a MinHash comparison in that order, and returns one verdict per page.
 
 ### 1j. Data mixtures: how much of each source
 
-**Everyday picture.** A diet is not "all the food in the shop". You choose
-proportions: mostly staples, some vegetables, a little of the rich stuff.
-Pretraining data is mixed the same way from sources that differ in size and
-value: web text, code, books, encyclopedias, scientific papers, maths.
+The web is one source among several. Pretraining data also comes from code,
+books, encyclopedias, scientific papers and maths, sources that differ in
+size and in value.
 
 Each source gets a **mixture weight**: its share of the tokens the model
 will see. Weights do not follow size. A small, valuable source (an
@@ -640,9 +620,9 @@ training, up-weighting the cleanest sources.
 
 ### 1k. Token budgets: how much data for how big a model
 
-**Everyday picture.** A bigger brain can learn more, but only if you give
-it more to read. Given a fixed amount of study time (compute), there is a
-best split between "bigger brain" and "more reading".
+The mixture sets each source's share; the budget sets the total. A bigger
+model can learn more, but only from more text, and for a fixed amount of
+compute there is a best split between the two.
 
 All budgets are counted in **tokens**, the pieces a tokenizer cuts text
 into (see `primer.ml.tokenization`); in English a token is roughly three
@@ -689,28 +669,28 @@ C  # → 5.88e+21
 round(C / 400e12 / 3600)  # → 4083
 ```
 
-In practice, models that will serve billions of requests are trained far
-past this point, because a smaller model trained longer is cheaper to run
-forever after. Llama 2 7B saw 2 trillion tokens (about 286 per parameter);
-Llama 3 was trained on about 15 trillion tokens across the family (15.6 trillion for the 405B). That is why data, not compute, is now
-often the binding limit, and why the next topic exists.
+Models that will serve billions of requests are trained far past this
+point, because a smaller model trained longer is cheaper to run forever
+after. Llama 2 7B saw 2 trillion tokens (about 286 per parameter); Llama 3
+was trained on about 15 trillion tokens across the family (15.6 trillion for
+the 405B). So data, not compute, is now often the limit.
 
 **In code:** `chinchilla_tokens` and `training_flops` are the two rules of thumb.
 
 ### 1l. Synthetic data, and model collapse
 
-When good human text runs short, models generate more: rewritten web pages,
-worked maths solutions checked by a program, question-and-answer pairs
-drawn out of textbooks. Used carefully this works well: it can turn a
-messy page into a clear one, and a checked answer is clean signal. Used
-carelessly it has a known failure.
-
-**Everyday picture.** Photocopy a photo, then photocopy the copy, and keep
-going. Each copy is nearly right, but fine detail disappears first, and
+When good human text runs short, labs have models generate more: rewritten
+web pages, worked maths solutions checked by a program, question-and-answer
+pairs drawn out of textbooks. A rewrite can turn a messy page into a clear
+one, and an answer checked by a program is clean signal. Done carelessly,
+it leads to **model collapse**. Photocopy a photo, then photocopy the copy,
+and keep going: each copy is nearly right, but fine detail goes first, and
 after enough rounds you have a grey smudge. A model trained on its own
-outputs loses the rare, surprising parts of the data (the tails) first.
+outputs loses the rare, surprising parts of the data (the **tails**) first
+in the same way.
 
-**Tiny worked example.** Draw 20 numbers from a bell curve with spread 1.
+A bell curve shows it with numbers. Draw 20 numbers from a bell curve with
+spread 1.
 Fit a bell curve to those 20 numbers, draw 20 new numbers from the fit, fit
 again, and repeat. Each fit is a slightly narrower guess on average, and the
 narrowing compounds.
@@ -772,8 +752,8 @@ round(math.sqrt(shrink), 4)  # → 0.0059
 the fitted spread, on a log scale so that halving always looks the same
 size. Each coloured line is one run with a different seed and the dashed
 line is the formula's average. The runs wander, up some generations and
-down others, but the trend is relentlessly downward, and a typical run
-falls even faster than the dashed line: the average is held up by rare runs
+down others, but the trend is down, and a typical run falls even faster
+than the dashed line: the average is held up by rare runs
 that happen to stay wide. After 200 generations the "model" can only
 produce values in a sliver of the original range.
 Shumailov et al. (2023) showed the same effect in language models trained
@@ -783,16 +763,13 @@ recursively on their own text.
 
 ## 2. Why one GPU is not enough: the memory bill
 
-**Everyday picture.** To bake one cake you need the recipe, but to *learn*
-to bake you also need your notes on every attempt: what went wrong, how
-much to change, how confident you are in each change. Training a model is
-the same. The weights are the recipe; training also keeps a gradient for
-every weight (what to change) and the optimizer's running notes (how it has
-been changing), and those notes are bigger than the recipe.
-
-**Tiny worked example.** Take one parameter trained with Adam (see
-`primer.ml.optimizers`) in mixed precision, the standard recipe (section 4
-explains the number formats):
+The data half of the chain ends with a token budget. The training half
+starts with a plainer question: can one GPU hold the training at all?
+Training keeps far more than the weights. For every weight it also keeps a
+gradient (what to change) and the optimizer's running averages (how it has
+been changing). Here is what one parameter costs when it is trained with
+Adam (see `primer.ml.optimizers`) in mixed precision, the standard recipe,
+whose number formats are explained under mixed precision below:
 
 | What is stored per parameter | Format | Bytes |
 |---|---|---|
@@ -895,30 +872,29 @@ model alone, split by what it holds; the dashed line is an 80 GB GPU. The
 three bars differ only in how activations are handled: stored naively,
 without attention scores, or checkpointed. Even the leanest bar is above
 the line, because the 112 GB of weights, gradients and optimizer state is
-there in every bar. Shrinking activations is not enough: the state itself
-has to be split across GPUs. That is the next section.
+there in every bar. Shrinking activations is not enough; the state itself
+has to be split across GPUs.
 
 **In code:** `training_memory` itemizes the 16 bytes per parameter, and `activation_bytes` is the activation formula, with `store_scores=False` for FlashAttention-style kernels and `checkpointed=True` for activation checkpointing.
 
 ## 3. Parallelism: many GPUs, one model
 
-**Everyday picture.** A restaurant can serve more diners in three ways.
-Open identical kitchens that each cook whole meals (**data parallelism**).
-Split one dish across cooks working side by side on the same step, one
-chopping the left half of the onions and one the right (**tensor
-parallelism**). Or build an assembly line, with each cook doing one stage
-and passing the plate on (**pipeline parallelism**). Real training runs use
-all three at once.
+A training state too big for one GPU has to be split across many, and the
+work with it. There are three ways to split the work. **Data parallelism**
+gives every GPU a whole copy of the model and a different slice of the
+batch. **Tensor parallelism** splits each matrix multiply across GPUs.
+**Pipeline parallelism** splits the model by layers, so each GPU runs a few
+layers and hands its output to the next. Large runs use all three at once.
 
 ### 3a. Data parallelism: identical copies, averaged gradients
 
-Every GPU holds a full copy of the model and processes a different slice of
-the batch. After the backward pass, the GPUs average their gradients so all
+In data parallelism, every GPU holds a full copy of the model and processes
+a different slice of the batch. After the backward pass, the GPUs average their gradients so all
 copies take the same step and stay identical. This works because the
 gradient of an average loss is the average of the gradients.
 
-**Tiny worked example.** A one-weight model predicts y = w·x, with loss the
-mean of (w·x − y)². Batch: x = 1, 2, 3, 4 with y = 2, 4, 6, 8, and w = 1. On
+Take a one-weight model that predicts y = w·x, with loss the mean of
+(w·x − y)². Batch: x = 1, 2, 3, 4 with y = 2, 4, 6, 8, and w = 1. On
 one GPU the gradient is (2/4)·Σ x(wx − y) = (2/4)·(−1 − 4 − 9 − 16) = **−15**.
 Split across two GPUs: GPU 1 gets x = 1, 2 and computes −5; GPU 2 gets
 x = 3, 4 and computes −25. Their average is (−5 − 25)/2 = **−15**, the same.
@@ -1014,12 +990,9 @@ holds all 16 bytes per parameter.
 
 ### 3b. Sharding the state: ZeRO and FSDP
 
-**Everyday picture.** A reading group with one expensive textbook does not
-buy a copy each. They tear it into chapters, each keeps one, and whoever
-needs a chapter borrows it for the evening and hands it back.
-
 In plain data parallelism, every GPU stores an identical copy of the
-optimizer state, the gradients and the weights: pure waste. **ZeRO** (the
+optimizer state, the gradients and the weights, so G GPUs hold G copies of
+the same 16 bytes per parameter. **ZeRO** (the
 Zero Redundancy Optimizer) keeps data parallelism's split of the batch but
 gives each GPU only a 1/G shard of that state, in three stages. PyTorch's
 **FSDP** (fully sharded data parallel) implements the third.
@@ -1074,8 +1047,8 @@ is not sharded stays whole on every GPU."
 
 **With the numbers:** 7.5B parameters on 64 GPUs (the example in Figure 1
 of the ZeRO paper): stage 0, **120 GB**; stage 1, 30 + 1.4 = **31.4 GB**;
-stage 2, 15 + 1.6 = **16.6 GB**; stage 3, **1.9 GB**. The 7B model that could
-not fit on one GPU now needs under 2 GB of state per GPU.
+stage 2, 15 + 1.6 = **16.6 GB**; stage 3, **1.9 GB**. A model of that size,
+whose state could not fit on one GPU, now needs under 2 GB of it per GPU.
 
 **In Python:**
 
@@ -1103,16 +1076,11 @@ straight line, because nothing is left unsharded.
 
 ### 3c. Tensor parallelism: splitting one matrix multiply
 
-**Everyday picture.** Two people fill in one large multiplication table:
-one does the left half of the columns, the other the right half. Neither
-needs the other's work until the end, when the halves are placed side by
-side.
-
-The biggest operations in a transformer are matrix multiplies, X·W. They
-can be split across GPUs in two ways, and both give *exactly* the unsplit
-answer.
-
-**Tiny worked example.** X = [1, 2] and
+Data parallelism and ZeRO split the batch and the stored state, but every
+GPU still computes every layer in full. Tensor parallelism splits the
+computation inside a layer. The biggest operations in a transformer are
+matrix multiplies, X·W, and they can be split across GPUs in two ways that
+both give *exactly* the unsplit answer. Take X = [1, 2] and
 
 W = [[1, 2, 3, 4], [5, 6, 7, 8]], so X·W = [11, 14, 17, 20].
 
@@ -1188,13 +1156,12 @@ within one server of 8 GPUs.
 
 ### 3d. Pipeline parallelism, and the bubble
 
-**Everyday picture.** A car assembly line with four stations. The first
-car takes four steps to roll off the end, and while it travels, stations
-further down stand idle. Only when many cars are on the line at once is
-every station busy.
-
-Pipeline parallelism gives each GPU a consecutive block of layers (a
-**stage**). To keep the stages busy, the batch is cut into
+Tensor parallelism talks inside every layer. Pipeline parallelism splits
+the model the other way, by layers: each GPU gets a consecutive block of
+layers (a **stage**) and passes its output to the next, like the stations of
+an assembly line. As on an assembly line, the first item has to pass every
+station before it is done, and the stations further down stand idle while
+it travels. To keep the stages busy, the batch is cut into
 **micro-batches** that follow each other down the line. The idle time at
 the start and end is the **pipeline bubble**.
 
@@ -1258,8 +1225,8 @@ end. Count them: 24 of the 88 cells are empty, 3/11 of the grid.
 **Reading it:** the horizontal axis is the number of micro-batches (log
 scale) and the vertical axis the idle fraction. Each line is a pipeline
 depth. To keep the bubble under about 10%, you need roughly ten times as
-many micro-batches as stages, which pushes up the batch size. Smarter
-schedules exist for exactly this reason: "one forward, one backward" (1F1B)
+many micro-batches as stages, which pushes up the batch size. Other
+schedules reduce the cost: "one forward, one backward" (1F1B)
 starts backward passes early to free activation memory, and interleaved
 stages (Narayanan et al., 2021) give each GPU several smaller stages to
 shrink the bubble further.
@@ -1293,26 +1260,21 @@ long sequences.
 
 ## 4. Mixed precision: doing the maths in fewer bits
 
-**Everyday picture.** A carpenter measures a room with a tape measure and a
-table leg with calipers. Using calipers for everything would be slow; using
-the tape measure for everything would give wobbly tables. Mixed precision
-does each job with the coarsest number format that is good enough: the
-heavy matrix multiplies in 16 (or 8) bits, and the few places where tiny
-differences matter in 32.
-
-The payoff is large. Halving the bits halves the memory and the data moved,
-and GPU tensor cores run 16-bit maths many times faster than 32-bit (see
-`primer.ml.hardware`).
+The memory bill already assumed **mixed precision**: the heavy matrix
+multiplies done in 16 (or 8) bits, and 32 bits kept for the few places where
+tiny differences matter. Halving the bits halves the memory and the data
+moved, and GPU tensor cores run 16-bit maths many times faster than 32-bit
+(see `primer.ml.hardware`).
 
 ### 4a. What a floating-point number is
 
-**Everyday picture.** Scientific notation, in binary. "6.02 × 10²³" has a
-sign, a few significant digits and an exponent. A float is the same three
+A floating-point number is scientific notation in binary. "6.02 × 10²³" has
+a sign, a few significant digits and an exponent. A float is the same three
 parts in bits: the exponent sets the **range** (how large or small a number
 can be), and the fraction bits set the **precision** (how many significant
 digits it keeps).
 
-**Tiny worked example.** In bf16, 1/3 is stored as sign 0, exponent field
+In bf16, for example, 1/3 is stored as sign 0, exponent field
 125 and fraction field 0101011 in binary (43). The value is
 2^(125 − 127) × (1 + 43/128) = 0.25 × 1.3359375 = **0.333984375**. Seven
 fraction bits keep only about three significant decimal digits, so bf16
@@ -1380,13 +1342,12 @@ gradient survives; precision (not shown) decides how finely it is recorded.
 
 ### 4b. Underflow, and loss scaling
 
-**Everyday picture.** A kitchen scale that reads to the nearest gram
-shows 0 for a pinch of saffron. Weigh the saffron together with a known
-1 kg jar, subtract the jar afterwards, and the pinch shows up.
-
-Gradients are often tiny. Many are smaller than fp16's smallest subnormal
-(about 6 × 10⁻⁸), so a backward pass in fp16 silently turns them to 0 and
-those weights stop learning. **Loss scaling** is the jar: multiply the loss
+Range is the first cost, and it falls on the gradients, which are often
+tiny. Many are smaller than fp16's smallest subnormal (about 6 × 10⁻⁸), so a
+backward pass in fp16 turns them to 0, with no warning, and those weights
+stop learning. A kitchen scale that reads to the nearest gram has the same
+problem with a pinch of saffron, and a fix: weigh the saffron together with
+a 1 kg jar, then subtract the jar. **Loss scaling** is the jar: multiply the loss
 by a large number S before the backward pass, so every gradient is S times
 larger (the chain rule passes the factor through unchanged); then divide
 by S in fp32, before the update.
@@ -1465,13 +1426,12 @@ default for training on hardware that supports it.
 
 ### 4c. Why the master copy stays in fp32
 
-**Everyday picture.** Pour a teaspoon of water into a full bathtub and
-measure with a bucket: the level has not changed, as far as the bucket can
-tell. Do it a thousand times and you have added four litres, but every
-single measurement still reads "no change".
-
-**Tiny worked example.** A weight of 1.0 receives an update of +0.0001 per
-step. Next to 1.0, bf16 can only step in increments of 0.0078, so 1.0001
+Precision is the second cost, and it falls on the weights. Pour a teaspoon
+of water into a full bathtub and measure with a bucket: as far as the bucket
+can tell, the level has not changed. Do it a thousand times and the tub
+holds litres more, but every single measurement still reads "no change". A
+16-bit weight has the same problem. A weight of 1.0 receives an update of
++0.0001 per step. Next to 1.0, bf16 can only step in increments of 0.0078, so 1.0001
 rounds straight back to 1.0. After 1,000 updates the bf16 weight is still
 exactly 1.0; an fp32 weight has moved to 1.1, as it should.
 
@@ -1497,19 +1457,15 @@ float(w16), round(float(w32), 4)  # → (1.0, 1.1)
 weight's value. The fp32 line rises steadily by 0.0001 per step. The bf16
 and fp16 lines are flat at 1.0 for the whole run: each update is smaller
 than half the gap to the next representable number, so it is rounded away
-every time. The error is not noise that averages out; it is a systematic
-loss of every small update, which is exactly what late training consists of.
+every time. This rounding does not average out: every small update is lost,
+and late in training the updates are small.
 
 **In code:** `accumulate_updates` adds the same update many times, rounding the weight to a chosen format after each step.
 
 ### 4d. fp8: the next halving
 
-**Everyday picture.** A ruler with only eight marks is useless for
-measuring a hair, unless you first slide it under a magnifying glass set to
-the right zoom. fp8 is that short ruler, and a per-tensor scale is the
-magnifying glass.
-
-Recent GPUs multiply 8-bit floats at twice the 16-bit rate. With so few
+fp8 halves the bits again. Recent GPUs multiply 8-bit floats at twice the
+16-bit rate. With so few
 bits, one format cannot cover everything, so training uses two: **E4M3**
 (more precision, range to 448) for weights and activations, and **E5M2**
 (more range, to 57,344) for gradients. Because the range is so short, every
@@ -1521,13 +1477,9 @@ higher precision.
 
 ## 5. Stability at scale: loss spikes, clipping, warmup and checkpoints
 
-**Everyday picture.** A ship on a months-long voyage does not assume the
-sea stays calm. It trims the sails when gusts come (clipping), leaves port
-slowly (warmup), keeps a log of its position (checkpoints), and has a
-drill for when something goes wrong (rolling back).
-
-A large run does see storms. The loss curve occasionally jumps upward, a
-**loss spike**, sometimes recovering by itself and sometimes diverging for
+With the data cleaned, the state split and the numbers in fewer bits, the
+run can start, and a large one lasts for months. Two kinds of trouble come
+in that time. The loss curve occasionally jumps upward, a **loss spike**, sometimes recovering by itself and sometimes diverging for
 good. Causes include a batch of bad data, a learning rate a little too high
 for the model's current state, attention logits growing without bound, and
 numerical overflow. And separately from the maths, hardware fails: in the
@@ -1550,16 +1502,17 @@ flowchart LR
 upper diamond watches the loss. A brief blip is ignored, since clipping
 usually absorbs it; a spike that persists sends the run back to an earlier
 checkpoint, and the data batches that were in flight around the spike are
-skipped. PaLM's authors did exactly this: restart about 100 steps before the
+skipped. PaLM's authors did this: restart about 100 steps before the
 spike and skip roughly 200 to 500 batches, which removed the spikes. A
 checkpoint must include the optimizer state and the position in the data,
 or the resumed run is not the same run.
 
 ### 5a. Spotting a spike
 
-**Tiny worked example.** Losses 3.0, 2.9, 2.8, 2.8, 2.7, then **8.5**. The
-median of the previous four is 2.8, and 8.5 is more than twice that, so step
-5 is flagged. The next step, 4.0, is compared with the median of 2.8, 2.8,
+To catch a spike automatically, compare each loss with the median of the
+few losses before it. Number the steps from 0: losses 3.0, 2.9, 2.8, 2.8 and
+2.7 at steps 0 to 4, then **8.5** at step 5. The median of the previous four
+is 2.8, and 8.5 is more than twice that, so step 5 is flagged. The next step, 4.0, is compared with the median of 2.8, 2.8,
 2.7, 8.5, which is still 2.8: one spike does not raise the bar, which is
 why the rule uses the median and not the mean.
 
@@ -1599,8 +1552,8 @@ w, f = 4, 2.0
 
 Clipping by global norm (built in `primer.ml.optimizers`) caps the length
 of the whole gradient vector: if it is longer than c, shrink every entry by
-the same factor. At scale there is a twist. With ZeRO or tensor parallelism
-no GPU holds the whole gradient, so none can measure its length alone. Each
+the same factor. With ZeRO or tensor parallelism no GPU holds the whole
+gradient, so none can measure its length alone. Each
 GPU sums the squares of its own shard, one all-reduce adds those sums (a
 single number per GPU, so it is nearly free), and every GPU takes the
 square root and applies the same factor.
@@ -1662,25 +1615,21 @@ do.
 
 ### 5c. Warmup
 
-**Everyday picture.** Nobody floors the accelerator in a car they have
-never driven; they ease on until they know how it responds.
-
-At the start of training the weights are random and Adam's running averages
-have seen only a handful of gradients, so its step sizes are unreliable. A
+Clipping caps any one step. The first steps need a different protection:
+the weights are random and Adam's running averages have seen only a handful of
+gradients, so its step sizes are unreliable. A
 full learning rate at step 1 can throw the model into a region it never
-recovers from. **Warmup** ramps the learning rate linearly from 0 to its
+recovers from. **Warmup** guards against it by ramping the learning rate linearly from 0 to its
 peak over the first few hundred to few thousand steps; `primer.ml.optimizers`
-derives the warmup-then-cosine schedule with worked numbers. At scale it
-matters more, not less: bigger models and bigger batches tolerate smaller
+derives the warmup-then-cosine schedule with worked numbers. It matters
+more at scale: bigger models and bigger batches tolerate smaller
 peak learning rates, and a spike early in a months-long run wastes the most.
 
 ### 5d. Checkpoints: how often to save
 
-**Everyday picture.** Saving a long document every few seconds wastes time
-on saving; saving once an hour risks losing an hour of work to a crash.
-Somewhere in between is the least total waste.
-
-**Tiny worked example.** Suppose writing a checkpoint pauses training for 1
+Hardware failures are handled by checkpoints, and the question is how often
+to write one. Saving often wastes time on saving; saving rarely loses more
+work to each failure. Suppose writing a checkpoint pauses training for 1
 minute, and the cluster suffers a failure every 180 minutes on average.
 Saving every 19 minutes spends 1/19 of the time saving, and each failure
 loses on average half an interval, 9.5 minutes, every 180 minutes. Both
@@ -1735,30 +1684,35 @@ round(math.sqrt(2 * C * M), 1), round(C / math.sqrt(2 * C * M) + math.sqrt(2 * C
 valley: on the left, saving too often; on the right, losing too much work
 per failure. The dots mark √(2CM), the bottom of each valley. A faster save
 moves the whole valley down and to the left, which is why large training
-systems invest heavily in fast, asynchronous checkpointing: at thousands of
-GPUs, failures are not an exception but the weather.
+systems invest in fast, asynchronous checkpointing: on thousands of GPUs, a
+failure every few hours is normal.
 
 **In code:** `wasted_fraction` is the waste formula and `optimal_checkpoint_interval` is Young's square-root rule.
 
 ## In 20 seconds
 
-- **Data:** pretraining data is mostly web crawl, pushed through language
-  ID, quality rules, a quality classifier, and exact and near-duplicate
-  removal (MinHash with LSH); most of the crawl is discarded. Duplicates
-  cause memorization and waste compute.
-- **Mixture and budget:** sources are mixed by weight, not size; a
-  compute-optimal budget is about 20 tokens per parameter, compute is about
-  6·N·D, and models meant for heavy use are trained far longer.
-- **Memory:** Adam in mixed precision needs 16 bytes per parameter before
-  activations (112 GB for 7B), so training needs many GPUs.
-- **Parallelism:** data parallel (all-reduce gradients), ZeRO/FSDP (shard
-  the state), tensor parallel (split each matmul, inside a server) and
-  pipeline parallel (split the layers, mind the bubble (p − 1)/(m + p − 1)).
-- **Precision:** compute in bf16 (fp32's range, less precision) or fp8 with
-  scaling; fp16 needs loss scaling; the master weights stay in fp32 so small
-  updates are not rounded away.
-- **Stability:** warmup, global-norm clipping, spike detection with
-  rollback, and checkpoints every √(2·C·M).
+- **Data:** pretraining data is mostly a web crawl, and most of the crawl is
+  thrown away. Pages pass through language ID, quality rules and a quality
+  classifier, then exact and near-duplicate removal (MinHash with LSH).
+  Duplicates are removed because a model memorizes what it sees many times,
+  and because they waste compute.
+- **Mixture and budget:** sources are mixed by weight, not by size. A
+  compute-optimal budget is about 20 tokens per parameter, training costs
+  about 6·N·D operations, and models meant for heavy use are trained on far
+  more tokens.
+- **Memory:** training with Adam in mixed precision needs 16 bytes per
+  parameter before activations, 112 GB for a 7B model, so it needs many
+  GPUs.
+- **Parallelism:** data parallelism copies the model and averages the
+  gradients; ZeRO and FSDP shard the training state; tensor parallelism
+  splits each matrix multiply, inside one server; pipeline parallelism
+  splits the layers and leaves an idle bubble of (p − 1)/(m + p − 1).
+- **Precision:** the maths runs in bf16 (fp32's range, less precision) or
+  in fp8 with scaling. fp16 needs loss scaling. The master weights stay in
+  fp32 so small updates are not rounded away.
+- **Stability:** warmup, global-norm clipping and spike detection with
+  rollback keep a run steady, and a checkpoint every √(2·C·M) limits what
+  a failure costs.
 
 ## Self-test questions
 
