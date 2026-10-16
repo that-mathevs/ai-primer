@@ -127,31 +127,28 @@ only needed to size a deployment or set a request, you are done.
 
 ## Level 2: How it works, from scratch
 
-Training happens once; inference happens every time anyone uses the model,
-so this is where the money goes. Generating text has two very different
-phases, one memory trick that makes it affordable (the KV cache), a few
-knobs that decide *which* token comes out (sampling), and a toolbox of
-speedups: quantization, speculative decoding, continuous batching and
-prompt caching. Every one of them follows from one fact:
+The time and money a reply costs come from one fact:
 
 > **Generating one token requires reading every weight of the model from
 > memory, and memory is much slower than arithmetic.**
 
+A reply is made in two phases, and they meet this fact in opposite ways.
+
 ## 1. Two phases: prefill and decode
 
-**Everyday picture.** You are handed a letter and asked to reply. Reading the
-letter is fast: your eyes take in whole lines at once. Writing the reply is
-slow: one word at a time, and before each word you must walk to a filing
-cabinet and flip through an entire reference binder. The walk, not the
-thinking, is what takes the time.
+Suppose you are handed a letter and asked to reply. Reading the letter is
+fast: your eyes take in whole lines at once. Writing the reply is slow,
+because before each word you must walk to a filing cabinet and leaf through
+an entire reference binder. The walk, not the thinking, takes the time.
 
-The model is the same. **Prefill** reads the whole prompt in one parallel
-pass. **Decode** then produces the answer one token at a time, and every
-single token requires streaming all the weights from GPU memory.
+A language model answers a prompt the same way. **Prefill** reads the whole
+prompt in one parallel pass. **Decode** then writes the answer one token at
+a time, and each token means reading all the weights from GPU memory again.
+That read is the walk to the cabinet.
 
-**Tiny worked example.** An 8-billion-parameter model stored at 16 bits is
-16 GB of weights. On a GPU that moves 3.35 TB/s from memory and does about
-10¹⁵ 16-bit operations per second:
+Take an 8-billion-parameter model stored at 16 bits, which is 16 GB of
+weights, on a GPU that reads 3.35 TB/s from memory and does about 10¹⁵
+16-bit operations per second:
 
 * Prefill of a 1,000-token prompt: 2 × 8×10⁹ × 1,000 = 1.6×10¹³ operations,
   about **16 ms**.
@@ -172,15 +169,16 @@ sequenceDiagram
   end
 ```
 
-**Reading it:** time runs downward. The first arrow is prefill: one big
-parallel pass over the whole prompt, which also fills the KV cache (section
-2). It decides the **time to first token**. Everything inside the loop is
-decode: one small pass per token, each reading the cache and adding one
-entry to it. It decides **tokens per second**. Long prompts slow the first
-token; long answers slow the total.
+**Reading it:** time runs downward. Above the loop is prefill: one parallel
+pass over the whole prompt, which also stores the prompt's keys and values
+in a KV cache (the next chapter explains it). Prefill sets the **time to
+first token**. Inside the loop is decode, one small pass per token, each
+reading the cache and adding one entry to it. Decode sets **tokens per
+second**. A long prompt delays the first token; a long answer stretches the
+whole reply.
 
-The reason the phases behave so differently is **arithmetic intensity**:
-how many operations you do for each byte you fetch from memory.
+The two phases differ in their **arithmetic intensity**: how many
+operations they do for each byte they read from memory.
 
 $$
 I = \frac{2\,n}{b} \qquad
@@ -232,43 +230,45 @@ round(2 * P * 1000 / FLOPS * 1000, 1)  # → 16.0
 
 ![Decode for 1 user uses 0.3% of the GPU's compute and a batch of 64 reaches 21%, while a 1,000-token prefill passes the 299 break-even to run at full speed](figures/primer.ml.inference.roofline.svg)
 
-**Reading it:** the x-axis is arithmetic intensity (log scale); the y-axis
-is the speed the GPU can actually reach. The sloped part of the roof is the
-memory limit (bandwidth × intensity); the flat part is the arithmetic limit.
-The corner is the break-even point, ~299. Decode at batch size 1 sits at
-intensity 1, deep in the memory-bound region, using well under 1% of the
-GPU's arithmetic. Batching many users together moves decode to the right,
-because one read of the weights then serves every user in the batch. That is
-the economic reason inference servers batch aggressively.
+**Reading it:** a chart of this kind is called a **roofline**. The x-axis
+is arithmetic intensity (log scale) and the y-axis is the speed the GPU can
+reach. Follow the roof from the left: on its slope memory sets the speed
+(bandwidth × intensity), and past the corner at about 299 the flat
+arithmetic limit takes over. Decode for one user (blue) sits at intensity
+1, far down the slope, using well under 1% of the GPU's arithmetic. A batch
+of 64 users (red) sits further up, because one read of the weights serves
+all 64; that is why inference servers batch many users together. A
+1,000-token prefill (green) is on the flat part, past the corner.
 
-**In code:** `arithmetic_intensity` computes I, `ridge_point` finds the
-break-even, and `bottleneck` says which side a pass falls on;
-`decode_seconds_per_token` and `prefill_seconds` give the two time bounds.
+So when a system feels slow, first ask which phase is slow. A slow first
+token means a long prompt: trim it, or cache it. Slow streaming means decode
+is waiting on memory, and the fix is to read fewer bytes or to make each
+read of the weights serve more tokens.
 
-**Why it matters in practice.** When a system feels slow, ask which phase
-dominates. Slow first token: the prompt is long (trim it, or cache it).
-Slow streaming: decode is memory-bound (quantize, batch, speculate).
+**In code:** `arithmetic_intensity`, `ridge_point` and `bottleneck` place a
+pass on the roofline; `decode_seconds_per_token` and `prefill_seconds` give
+the two time bounds.
 
-## 2. The KV cache: take notes instead of rereading
+## 2. The KV cache
 
-**Everyday picture.** Reading a mystery novel, you don't reread the whole book
-before each new sentence; you keep notes on every character and clue. For
-each new sentence you glance at your notes and add one line.
+Reading the weights is not decode's only cost. To write each new token,
+attention compares it with every token before it, through each earlier
+token's key and value (see `primer.ml.attention`). Because of causal
+masking, an earlier token's key and value never change when later tokens
+arrive. They can be computed once and kept in a **KV cache**, instead of
+being worked out again at every step.
 
-Attention needs every earlier token's key and value (see `primer.ml.attention`).
-Because of causal masking, an earlier token's keys and values never change
-when later tokens arrive, so they can be computed once and kept.
-
-**Tiny worked example.** An 8-token prompt, then 16 generated tokens.
+Take an 8-token prompt followed by 16 generated tokens.
 
 * Without a cache, step k re-processes the whole sequence so far: 8 + 9 + … +
   23 = **248** token positions.
 * With a cache: prefill the 8 prompt tokens once, then 1 new position for
   each of the next 15 tokens = **23** token positions.
 
-On `TinyDecoder` that is about 11× fewer operations for this short run, and
-the gap grows with length: without a cache the total work grows with the
-*square* of the length.
+In a small decoder that counts its own operations, that is about 11× fewer
+operations for this short run. The gap grows with length: without a cache
+the total work grows with the *square* of the length, and with one it grows
+in a straight line.
 
 ```mermaid
 flowchart LR
@@ -280,39 +280,32 @@ flowchart LR
   end
 ```
 
-**Reading it:** the top row recomputes a sequence that grows by one each
-step. The bottom row computes each token exactly once: prefill stores keys
-and values for the prompt, and each decode step computes only the newest
-token's query, key and value, reading everything older from the cache. The
-outputs are identical (`TinyDecoder` checks this to 10 decimal places); only
-the cost differs.
+**Reading it:** in the top row every step starts over, on a sequence one
+token longer than the step before. In the bottom row prefill stores the
+prompt's keys and values once, and each later step computes only the newest
+token's query, key and value, reading everything older from the cache. Both
+rows write the same tokens (the small decoder's outputs agree to 10 decimal
+places); only the cost differs.
 
 ![Without a cache, total work curves upward to about 20 times the cached total after 32 tokens; with the cache it grows in a straight line](figures/primer.ml.inference.kv_cache_work.svg)
 
-**Reading it:** the x-axis is how many tokens have been generated after an
-8-token prompt; the y-axis is total operations spent so far, counted inside
-`TinyDecoder`. Without a cache the curve bends upward (each step costs more
-than the last); with a cache it is a straight line (each step costs about the
-same). The gap between them is pure waste the cache removes.
+**Reading it:** the x-axis counts tokens generated after an 8-token prompt,
+and the y-axis is the total operations spent so far. Without a cache the
+line bends upward, because each step costs more than the last. With the
+cache it stays straight, because each step costs about the same. By 32
+tokens the uncached total is about 20 times the cached one.
 
-**In code:** `TinyDecoder.forward_full` processes a whole sequence (and
-fills a cache during prefill), `TinyDecoder.forward_step` processes one new
-token against the cache from `TinyDecoder.new_cache`, and
-`TinyDecoder.generate` runs either way, returning a `Generation` that holds
-the tokens and the work counted.
-
-**Why it matters in practice.** The cache trades memory for speed, and that
-memory is what limits how many users one GPU can serve. Section 3 does the
-math.
+**In code:** `TinyDecoder.generate` writes with or without the cache and
+counts the work, using `TinyDecoder.forward_full` for a whole sequence and
+`TinyDecoder.forward_step` for one new token.
 
 ## 3. Memory math: will it fit?
 
-**Everyday picture.** Packing for a trip. The suitcase is GPU memory. The
-model's weights are the big fixed items that always go in. Every active
-conversation adds a bag of notes (its KV cache) whose size grows with the
-conversation's length. Once the suitcase is full, the next customer waits.
-
-**Tiny worked example.**
+The cache trades memory for speed, and memory is what limits how many
+conversations one GPU can serve at once. The GPU's memory holds the
+weights, which never change size, and one KV cache for every active
+conversation, which grows with the conversation's length. When the memory
+is full, the next request waits. Both parts are short multiplications:
 
 * Weights: 70×10⁹ parameters × 2 bytes (16-bit) = **140 GB**: more than one
   80 GB GPU. At 4 bits (half a byte) it is **35 GB** and fits on one.
@@ -361,18 +354,18 @@ round(32_000 * 131_072 / 1e9, 1)  # → 4.2
 
 ![At 128k tokens, 32 KV heads need 67 GB, more than the 64 GB free, while 8 KV heads need 17 GB, so three such requests fit](figures/primer.ml.inference.kv_memory.svg)
 
-**Reading it:** the x-axis is context length per request; the y-axis is KV
-cache memory for one request. The steep line is a model with 32 KV heads
-(classic multi-head attention); the shallow one has 8 (grouped-query
-attention, like Llama 3). The dashed line is the 64 GB left on an 80 GB GPU
-after 16 GB of weights. With 32 KV heads a single 128k-token request would
-not fit; with 8 it fits three times over. Doing this arithmetic out
-loud is the fastest way to size a deployment.
+**Reading it:** each line is the cache one request needs as its context
+grows to the right. The steep line has 32 KV heads, one for every query
+head (classic multi-head attention). The shallow line has 8, because
+several query heads share each key and value head (grouped-query
+attention, as in Llama 3). The dashed line is the 64 GB left on an 80 GB
+GPU after 16 GB of weights. At 128k tokens the steep line is above it, so
+one such request does not fit; the shallow line needs 17 GB, so three fit.
 
 **Try it:** pick a model shape, then drag the context length and the number
-of requests. The bar is one GPU's memory: the grey part is the weights, the
-coloured part the KV cache. Watch how quickly a long context pushes the cache
-past the weights, and how much further 8 KV heads go than 32.
+of requests. The bar is one GPU's memory: grey for the weights, colour for
+the KV cache. Watch a long context push the cache past the weights, and
+compare 8 KV heads with 32.
 
 <div class="viz" data-viz="kv-cache" aria-label="KV cache memory calculator"></div>
 
@@ -383,14 +376,21 @@ weights.
 
 ## 4. Sampling: from scores to one token
 
-**Everyday picture.** Choosing where to eat. *Greedy* always picks the
-top-rated place. *Sampling* holds a lottery weighted by rating. *Temperature*
-is how adventurous you feel: low means you nearly always pick the favourite,
-high means long shots get a real chance. *Top-k* says "only consider the top
-3". *Top-p* says "consider just enough places to cover 90% of my
-enthusiasm": one place if you have a clear favourite, several if you're torn.
+So far a decode step has been a cost: one read of the weights and one more
+entry in the cache. What the step produces is a score for every token in
+the vocabulary, its **logit**. Which token is written next is decided by
+settings sent with the request. **Greedy** decoding always takes the top
+score. **Sampling** turns the scores into probabilities and draws one token
+by a lottery weighted by them.
 
-**Tiny worked example.** Scores (logits) 2, 1, 0 for three tokens:
+Three settings shape that lottery. **Temperature** divides every score before
+the scores become probabilities: below 1 the favourite pulls further ahead,
+and above 1 the long shots catch up. **Top-k** keeps only the k likeliest
+tokens, and **top-p** keeps the fewest tokens whose probabilities add up to
+p.
+
+With scores 2, 1 and 0 for three tokens, temperature moves the
+probabilities like this:
 
 | temperature | probabilities |
 |---|---|
@@ -412,10 +412,10 @@ flowchart LR
   P --> R[Renormalise<br/>and draw one token]
 ```
 
-**Reading it:** the model only ever produces the scores on the left;
-everything after that is a choice *you* make at request time. Temperature
-reshapes the whole distribution; top-k and top-p then cut off the unreliable
-tail before the draw, so a rare nonsense token can't be picked by bad luck.
+**Reading it:** the language model produces only the logits on the left;
+every box after them runs on the settings in the request. Temperature
+reshapes the whole distribution, then top-k and top-p cut off the unlikely
+tail, so a rare nonsense token cannot be drawn by bad luck.
 
 $$
 p_i = \frac{e^{z_i / T}}{\sum_j e^{z_j / T}}
@@ -452,44 +452,50 @@ round(sum(exps), 1)  # → 63.0
 
 ![Five tokens at three temperatures: at T = 0.5 the favourite takes 79% and top-p 0.9 cuts three tokens; at T = 2 it falls to 38% and only one is cut](figures/primer.ml.inference.sampling.svg)
 
-**Reading it:** five candidate tokens with fixed scores, shown at three
-temperatures. At T = 0.5 (left) the favourite takes 79%; at T = 2 (right) it
-falls to 38% and the rest spread out, down to 7% for the least likely. The
-hatched bars are the tokens top-p = 0.9 would cut: three at T = 0.5, two at
-T = 1, one at T = 2. A confident model reaches 90% with fewer tokens, so
-top-p cuts more of them; an unsure one needs more tokens to reach 90%, so it
-cuts fewer. That's why top-p adapts where a fixed top-k can't.
+**Reading it:** the same five tokens at three temperatures, rising from
+left to right. Watch the favourite's bar: 79% at T = 0.5, 38% at T = 2,
+where even the least likely token reaches 7%. Then count the hatched bars,
+the tokens top-p = 0.9 cuts: three at T = 0.5, two at T = 1, one at T = 2.
+When the distribution is confident, a few tokens reach 90% and top-p cuts
+the rest; when it is unsure, top-p keeps more. A fixed top-k keeps the same
+number either way.
+
+Use a low temperature where there is one right answer, as in extraction,
+classification and tool calls, and a higher one for brainstorming and
+creative text.
 
 **Temperature 0 is not a determinism guarantee.** Floating-point addition
-isn't associative: in 32-bit floats, (10⁸ + 1) − 10⁸ = 0 but (10⁸ − 10⁸) + 1 = 1.
-On a GPU the order of additions can depend on the kernel chosen and on what
-else is in the batch, so two nearly tied tokens can swap places between
-otherwise identical requests.
+isn't associative, which means the order of the additions changes the sum:
+in 32-bit floats, (10⁸ + 1) − 10⁸ = 0 but (10⁸ − 10⁸) + 1 = 1. On a GPU the
+order of additions can depend on the kernel chosen and on what else is in
+the batch, so two nearly tied tokens can swap places between otherwise
+identical requests.
 
-**In code:** `temperature_probs` applies the formula, `top_k_filter` and
-`top_p_filter` cut the tail, and `sample_next` chains them into one draw.
-`float32_sum` and `greedy_pick_with_summation_order` show a near tie flipping
-with the order of additions.
+**In code:** `sample_next` chains `temperature_probs`, `top_k_filter` and
+`top_p_filter` into one draw; `greedy_pick_with_summation_order` shows a
+near tie flipping with the order of additions.
 
-**Why it matters in practice.** Use low temperature for extraction,
-classification and tool calls; higher for brainstorming and creative text.
+## 5. Speculative decoding
 
-## 5. Speculative decoding: a junior drafts, a senior checks
+Each pass of the language model ends in one sampled token, and every pass
+reads all the weights. Speculative decoding gets several tokens out of one
+pass. Picture a junior writer who drafts the next few sentences quickly,
+and a senior editor who reads the whole draft *at once*, keeps every
+sentence they would have written themselves, rewrites the first one they
+wouldn't, and throws away the rest. The senior reads fast and writes
+slowly, so the pair moves at the junior's speed and produces the senior's
+text.
 
-**Everyday picture.** A junior writer drafts the next few sentences quickly.
-A senior editor reads the whole draft *at once*, keeps every sentence they
-would have written themselves, rewrites the first one they wouldn't, and
-throws away the rest. The senior's reading is fast; their writing is slow.
-So the team moves at the junior's speed but produces the senior's text.
+Here the junior is a small language model and the senior is the big one.
+The check is cheap because decode is memory-bound: scoring 5 draft tokens
+in one pass of the big model costs about the same as generating 1.
 
-This works because decode is memory-bound: checking 5 draft tokens in one
-pass of the big model costs about the same as generating 1.
-
-**Tiny worked example.** The big model's next-token probabilities are
-(0.5, 0.3, 0.2); the small model's are (0.3, 0.3, 0.4). A draft token
-survives with probability Σ min = 0.3 + 0.3 + 0.2 = **0.8**. Drafting 4
-tokens per round yields on average (1 − 0.8⁵) / (1 − 0.8) = **3.36** tokens
-per pass of the big model instead of 1.
+Suppose the big model's next-token probabilities are (0.5, 0.3, 0.2) and
+the small model's are (0.3, 0.3, 0.4). A draft survives with probability
+equal to the overlap of the two, the sum of the smaller probability for
+each token: 0.3 + 0.3 + 0.2 = **0.8**. Drafting 4 tokens per round then
+yields on average (1 − 0.8⁵) / (1 − 0.8) = **3.36** tokens per pass of the
+big model instead of 1.
 
 ```mermaid
 flowchart TD
@@ -501,13 +507,14 @@ flowchart TD
   C -->|all kept| B[Bonus: draw one more<br/>token from the big model]
 ```
 
-**Reading it:** the loop in the middle walks the drafts left to right. A
-draft the big model likes at least as much as the small one did
-(p ≥ q) is always kept; one it likes less is kept only with probability
-p/q. The first rejection is replaced by a token drawn from exactly the
-probability the small model *under*-proposed, which is what makes the final
-output statistically identical to sampling from the big model alone. The
-test suite checks this empirically over 20,000 rounds.
+**Reading it:** the loop in the middle walks the drafts in order. A draft
+the big model likes at least as much as the small one did (p ≥ q) is
+always kept; one it likes less is kept with probability p/q. The first
+rejected draft is replaced by a token drawn from the probability the small
+model *under*-proposed, max(0, p − q), and the drafts after it are dropped.
+That replacement makes the output follow the same distribution as sampling
+from the big model alone, which a test confirms over 20,000 sampled
+rounds.
 
 $$
 P(\text{keep } x) = \min\!\left(1, \frac{p(x)}{q(x)}\right) \qquad
@@ -555,12 +562,15 @@ loop once, and `speculative_generate` repeats it until enough tokens exist.
 
 ## 6. Quantization: fewer bits per weight
 
-**Everyday picture.** Writing prices to the nearest dollar instead of the
-nearest cent: shorter to store, slightly less exact. Using one ruler per
-row of a spreadsheet, instead of one for the whole sheet, keeps a single
-huge number in one row from making every other row coarse.
+Speculative decoding gets more tokens from each read of the weights.
+Quantization makes the read smaller. A weight stored in 16 bits can be
+stored in 8 or 4 instead. Lay a ruler with evenly spaced marks over a row of
+weights, store each weight as the number of its nearest mark, and multiply
+back when the weight is used. Fewer bits mean fewer marks, so each weight
+lands further from where it was. Each row of a weight matrix gets its own
+ruler, so one huge weight coarsens only its own row.
 
-**Tiny worked example.** A row of weights (0.5, −1.27, 0.02).
+Take the row of weights (0.5, −1.27, 0.02).
 
 * **int8**: the largest magnitude, 1.27, maps to 127, so the step size is
   0.01. Codes: **50, −127, 2**. Decoding gives back exactly
@@ -609,35 +619,42 @@ round(s, 3), c  # → (0.181, [3, -7, 0])
 [round(s * c_j, 3) for c_j in c]  # → [0.544, -1.27, 0.0]
 ```
 
-**In code:** `quantize` returns the integer codes and one scale per row,
-`dequantize` multiplies them back, and `quantization_error` measures how far
-the round trip lands from the original weights.
+Rounding to 8 bits is nearly lossless. At 4 bits plain rounding erases
+small weights, as the 0.02 shows, so 4-bit methods such as GPTQ and AWQ
+round more carefully and keep most of the quality at a quarter of the
+memory. Fewer bytes per weight also make memory-bound decode faster.
 
-**Why it matters in practice.** 8-bit weights are nearly lossless; 4-bit
-methods with smarter rounding (GPTQ, AWQ) keep most quality at a quarter
-of the memory. Fewer bytes per weight also means faster memory-bound decode.
+**In code:** `quantize` and `dequantize` make the round trip, and
+`quantization_error` measures how far it lands from the original weights.
 
-## 7. Continuous batching: seat the next party as soon as a table frees
+## 7. Continuous batching
 
-**Everyday picture.** A restaurant with two tables. *Static batching* seats
-two parties and won't seat anyone new until *both* have left, so a table
-sits empty while one slow diner lingers. *Continuous batching* seats the next
-party the moment any table frees.
+Quantization shrinks each read of the weights; batching shares it. On the
+roofline, one read served a batch of 64 users and the GPU's arithmetic use
+rose from 0.3% to 21%. How the batch is kept full decides how much of that
+is real work.
 
-**Tiny worked example.** Four requests needing 4, 1, 1 and 1 decode steps,
-two slots. Static: {4, 1} runs 4 steps with one slot idle for 3, then
+A server writes many answers at once, each in its own place in
+the batch, called a **slot**, for as many decode steps as the answer has
+tokens, and answers differ in length. **Static batching** fills every slot
+and waits for the longest answer to finish before it seats anyone new, so
+slots sit empty. **Continuous batching** seats the next request the moment
+any slot frees.
+
+Take four requests needing 4, 1, 1 and 1 decode steps, on two slots. Static: {4, 1} runs 4 steps with one slot idle for 3, then
 {1, 1} runs 1: **5 steps, 70%** of slot-steps busy. Continuous: the short
 requests slide into the freed slot while the long one runs: **4 steps,
 87.5%** busy.
 
 ![With 32 requests on 8 slots, static batching leaves idle gaps and needs 433 steps at 60% busy; continuous batching needs 318 steps at 82%](figures/primer.ml.inference.batching.svg)
 
-**Reading it:** each row is a GPU batch slot and each column is one decode
-step; colour identifies the request occupying the slot, and white is an idle
-slot. On a realistic mix of 32 requests of varied length over 8 slots,
-static batching (top) leaves white holes wherever a short request finished
-early; continuous batching (bottom) keeps nearly every cell busy and
-finishes the same work in fewer steps (about 82% vs. 60% utilisation).
+**Reading it:** each row is a slot and time runs to the right in decode
+steps; each colour is a request and an empty stretch is an idle slot. This
+run has 32 requests of varied length on 8 slots. In the static timeline
+(top), find the empty gaps, left wherever a short request finished before
+the longest one in its batch. The continuous timeline (bottom) has almost
+none, and finishes the same work in 318 steps instead of 433, at 82%
+utilisation against 60%.
 
 $$
 U = \frac{\text{useful slot-steps}}{\text{steps} \times \text{slots}}
@@ -667,27 +684,23 @@ slots = 2
 useful / (5 * slots), useful / (4 * slots)  # → (0.7, 0.875)
 ```
 
-**In code:** `simulate_static_batching` and `simulate_continuous_batching`
-play out the two policies step by step, each returning a `ServingRun` that
-holds the slot timeline and its utilisation U.
+Continuous batching, together with KV-cache memory handed out in
+fixed-size pages (as in vLLM), is a large part of how modern inference
+servers reach high throughput.
 
-**Why it matters in practice.** Continuous batching (together with paged
-KV-cache memory, as in vLLM) is a large part of why modern inference servers
-reach high throughput.
+**In code:** `simulate_static_batching` and `simulate_continuous_batching`
+play out the two policies step by step and measure U.
 
 ## 8. Prompt caching: reuse the prefill of a shared prefix
 
-**Everyday picture.** A kitchen that pre-chops the ingredients every order
-uses, instead of chopping them again for each plate.
-
-The KV cache normally lives for one request. Prompt caching keeps it
-*across* requests: if many calls start with the same long system prompt,
+Batching shares work between requests; prompt caching skips work that
+requests repeat. The KV cache normally lives for one request. Prompt caching keeps it *across* requests: if many calls start with the same long system prompt,
 tool definitions or reference document, the provider stores that prefix's
 keys and values and skips its prefill next time. It is only valid up to the
 first differing token, because every token's keys depend on everything
 before it, so **put stable content first and volatile content last**.
 
-**Tiny worked example.** 100 requests, each a 10,000-token shared prefix
+Take 100 requests, each a 10,000-token shared prefix
 plus a 500-token question, at \$3 per million input tokens, with cache
 writes at 1.25× and cache reads at 0.1× (typical of providers; check
 current pricing):
@@ -705,31 +718,35 @@ flowchart LR
   S & T & D -.->|cached after the first call| C[(Prefix KV cache)]
 ```
 
-**Reading it:** the prompt is read left to right, and the cache can cover
-only an unbroken run from the very start. Stable parts go first so that
-every request shares the longest possible prefix; the part that changes on
-every call goes last. A timestamp or request ID placed at the top would
-break the match on the first token and silently disable caching.
+**Reading it:** the prompt is read left to right, and the cache covers only
+an unbroken run from the start. The stable parts go first, so every request
+shares the longest possible prefix, and the question that changes on every
+call goes last. A timestamp or request ID at the top would differ on the
+first token, and nothing would be reused.
 
 **In code:** `reusable_prefix_tokens` counts how many leading tokens two
 prompts share, and `prompt_cache_cost` prices a run of requests with and
 without the cache.
 
 ## In 20 seconds
-- Prefill reads the prompt in parallel (compute-bound, sets time to first
-  token); decode writes one token at a time (memory-bound, sets tokens per
-  second).
-- The KV cache stores every earlier token's keys and values so each step
-  computes one token; it trades GPU memory for speed.
-- Memory math: weights = parameters × bytes; KV per token = 2 × layers ×
-  KV heads × head dim × bytes. 70B at 16-bit is 140 GB; 32k tokens of
-  Llama-3-8B cache is about 4 GB.
-- Temperature reshapes the distribution; top-k and top-p cut the tail.
-  Temperature 0 reduces but does not guarantee determinism.
-- Speculative decoding: a small model drafts, the big one verifies in one
-  pass; output is identical in distribution.
-- Quantization, continuous batching and prompt caching are the other big
-  serving levers.
+- Each generated token reads every weight from memory, and memory is much
+  slower than arithmetic, so decode waits on memory.
+- Prefill reads the whole prompt in one parallel pass and sets the time to
+  the first token; decode writes one token per pass and sets tokens per
+  second.
+- The KV cache keeps every earlier token's keys and values, so each step
+  computes only the new token; it trades GPU memory for speed.
+- Weights take parameters × bytes: a 70B model is 140 GB at 16-bit. The
+  cache takes 2 × layers × KV heads × head size × bytes for every token:
+  32k tokens on a Llama-3-8B-shaped model is about 4 GB.
+- Temperature reshapes the probabilities, and top-k and top-p cut the
+  unlikely tail. Temperature 0 makes output more repeatable but does not
+  guarantee it.
+- In speculative decoding a small model drafts and the big one checks every
+  draft in one pass; the output follows the big model's distribution.
+- Quantization makes each read of the weights smaller, continuous batching
+  keeps every slot of a batch busy, and prompt caching skips the prefill of
+  a prefix that requests share.
 
 ## Self-test questions
 
