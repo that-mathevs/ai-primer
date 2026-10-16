@@ -123,35 +123,28 @@ you are done.
 
 ## Level 2: How it works, from scratch
 
-Every applied-AI system in this primer, from a one-shot classifier to a
-multi-agent research team, talks to the model the same way: it sends a list
-of **messages** and gets one message back. This lesson shows that exchange
-exactly, and then the one feature that turns a chatbot into an agent: **tool
-calling**.
+Think of the model as a consultant who works only by post and keeps no
+files. Each time you write, you send the whole correspondence so far, and you
+get one letter back. That letter is either an answer or a filled-in request
+form: "please look up the weather in Paris and send me the result." The
+consultant never makes the call. You decide whether to carry out the request,
+and if you do, you post the result back with the whole correspondence again.
 
-## The everyday picture
+In a program, each letter is a **message**: your code sends the list of
+messages so far and gets one back. The request form is a **tool call**, a
+request to run one of the functions, called tools, that your code offered the
+model. Two facts follow:
 
-Think of the model as a brilliant consultant who works by post. You mail a
-letter with your whole conversation so far (the consultant keeps no notes
-between letters) and get one letter back. The reply is either an answer, or
-a **filled-in request form**: "please look up the weather in Paris and send me
-the result." The consultant never picks up the phone themselves. *You* decide
-whether to run the request, run it, and mail back the result, together with
-the whole conversation again.
+1. **The model executes nothing.** A tool call is only a request, so your
+   code is the only thing that acts, and the checks belong there.
+2. **Every call resends everything.** Each request carries the full history,
+   so a long conversation costs more on every turn.
 
-Two facts fall straight out of this picture, and they explain most of the
-behaviour of real systems:
+## One tool call, traced
 
-1. **The model executes nothing.** A tool call is a request. Your code is
-   the only thing that acts, so your code is where safety lives.
-2. **Every call resends everything.** The model has no memory between calls,
-   so each request carries the full history. Long conversations cost more on
-   every single turn.
-
-## A tiny worked example: one tool call, traced
-
-A user asks "What's the weather in Paris?" and the application offers one
-tool, `get_weather`. Four messages later, the user has an answer:
+Here is the first fact at work. A user asks "What's the weather in Paris?",
+and the application offers the model one tool, `get_weather`. The answer
+takes four messages and two calls to the model:
 
 | # | Role | Content | Who produced it |
 |---|---|---|---|
@@ -160,11 +153,10 @@ tool, `get_weather`. Four messages later, the user has an answer:
 | 3 | user | `tool_result` for `toolu_1`: "18°C, sunny" | **your code**, after running the tool |
 | 4 | assistant | "It's 18°C and sunny in Paris." | the model (2nd call) |
 
-Message 3 has role `user` even though no human typed it: tool results always
-travel back in the user's turn. The `id` in message 2 and the `tool_use_id`
-in message 3 match, which is how the model knows which request a result
-answers when it asked for several at once. `trace_tool_call_round_trip()`
-produces exactly this transcript.
+Message 3 has the role `user` although no person typed it, because tool
+results always go back in the user's turn. Its `tool_use_id` repeats the `id`
+from message 2. When the model asks for several tools at once, those ids tell
+it which result answers which request.
 
 ```mermaid
 sequenceDiagram
@@ -183,21 +175,27 @@ sequenceDiagram
   A-->>U: It's 18°C and sunny in Paris.
 ```
 
-**Reading it:** time runs downwards. Solid arrows are requests and dashed
-arrows are replies. Notice that the model never talks to the tool: every
-arrow into `get_weather` starts at *your code*, and the self-arrow on your
-code ("validate, check permissions") is where production systems put their
-guardrails. Notice too that the second call to the model carries messages
-1 to 3, not just the new result: the model is stateless, so the history
-travels every time.
+**Reading it:** time runs downwards; solid arrows are requests and dashed
+arrows are replies. The arrow into `get_weather` comes from your code, never
+from the model, and the arrow that loops back on your code is where your
+checks run. Compare the two arrows into the model: the second carries
+messages 1 to 3, not only the new result, because the model kept nothing from
+the first call.
 
-**In code:** `ToolCall` holds the request in message 2, and
-`tool_result_block` builds the reply in message 3, carrying the matching id.
+**In code:** `trace_tool_call_round_trip()` produces this transcript.
+`ToolCall` holds the request in message 2, and `tool_result_block` builds the
+reply in message 3.
 
 ## The message format
 
-Messages use the Anthropic Messages API shape directly, so what you learn
-here maps one-to-one onto production code:
+The trace began with your code offering `get_weather`. That offer is a **tool
+definition**: a name, a description, and a JSON Schema listing the input's
+fields and their types. The model picks a tool by reading the descriptions,
+so writing them well is prompt engineering (see `primer.agents.tools`).
+
+The messages follow Anthropic's Messages API, so the same fields appear in
+production code. Here is a second exchange, a lookup in an HR knowledge
+base, in full:
 
 ```python
 {"role": "user", "content": "What's our PTO policy?"}
@@ -219,20 +217,21 @@ here maps one-to-one onto production code:
 | `tool_result` block | your answer to one `tool_use`, matched by `tool_use_id`; set `is_error: true` when the tool failed |
 | `stop_reason` | why the reply ended: `end_turn` (finished), `tool_use` (wants a tool), `max_tokens` (ran out of room), `refusal` (declined) |
 
-A **tool definition** is a name, a description and a JSON Schema for the
-input. The model chooses tools by reading those descriptions, so writing
-them well is prompt engineering (see `primer.agents.tools`).
+**In code:** `LLMResponse` holds one reply in this format, and
+`content_blocks`, `last_user_text`, `tool_results` and `tool_calls_so_far`
+read a conversation written in it.
 
-**In code:** `LLMResponse` is one reply, normalized: its text, its
-`ToolCall` list, its stop reason, its `Usage` and the exact content blocks
-to append as the assistant turn. `content_blocks`, `last_user_text`,
-`tool_results` and `tool_calls_so_far` read a conversation in this format.
+## A scripted model for testing
 
-## Two implementations of one interface
+Since the exchange is messages in and one message out, anything that takes
+the messages and returns a message can stand in for the model. Agent code can
+call one small interface, a single method that takes the system prompt, the
+messages and the tools, without knowing what answers it: a script, where a
+function you write decides each reply, or the real model.
 
-Every agent lesson is written against one small interface, `LLM`, with one
-method, `LLM.complete(system=..., messages=..., tools=...)`. Two classes
-implement it:
+The script is for tests. A test can make it loop, call the wrong tool or
+follow an instruction injected into a document, which a real model rarely
+does on cue, and then check that your code copes.
 
 ```mermaid
 flowchart LR
@@ -243,24 +242,25 @@ flowchart LR
   C --> P["production<br/>same agent code, real behaviour"]
 ```
 
-**Reading it:** the agent code on the right-hand side never knows which
-box it's talking to. `ScriptedLLM` lets every lesson run offline and
-deterministically, and lets tests stage a model that loops, calls the wrong
-tool or follows an injected instruction, which is hard to get a real model
-to do on cue. Swapping in `ClaudeLLM` runs the identical loop against the
-real thing.
+**Reading it:** start at the interface on the left and follow its two
+branches. One leads through the scripted model, offline and the same on
+every run, to demos and tests. The other leads through the real model,
+behind an API key, to production. The code that calls the interface is the
+same on both.
 
-**In code:** `ClaudeLLM.complete` builds its request with `claude_request`
-and turns the API's reply into an `LLMResponse`. `OllamaLLM` is a third
-implementation for a local open model (text only), using `ollama_request`
-and `parse_ollama_reply`.
+**In code:** the interface is `LLM`, with the one method
+`LLM.complete(system=..., messages=..., tools=...)`. `ScriptedLLM` and
+`ClaudeLLM` implement it, and `OllamaLLM` is a third, text-only
+implementation for a local open model.
 
-## Cost: why every call pays for the whole conversation
+## Cost: every call pays for the whole conversation
 
-Because the model is stateless, input tokens are billed per call on the
-entire history. In an agent loop with $n$ calls, where each call adds about
-$t$ new tokens to a history that started at $h_0$ tokens, the total input
-billed is:
+The second fact, that every call resends everything, has a price. Input
+tokens are billed on everything a call sends, so the history is billed again
+on every call. Take an **agent loop**, which calls the model, runs the tool
+it asks for and calls again until the task is done. If it makes $n$ calls,
+the first request holds $h_0$ tokens and each call adds about $t$ more, the
+total input billed is:
 
 $$
 \text{input tokens} \approx \sum_{i=1}^{n} \left(h_0 + (i-1)\,t\right) = n\,h_0 + t\,\frac{n(n-1)}{2}
@@ -300,30 +300,28 @@ n * h_0 + t * n * (n - 1) // 2  # → 42500
 
 ![Ten calls bill 42,500 input tokens in total, six times the 7,000-token conversation they end with, because every call re-sends the history](figures/primer.agents.llm.loop_tokens.svg)
 
-**Reading it:** the bars are the input tokens billed on each call. They grow
-by the same amount every step, because each call re-sends the whole history.
-The line is the running total, and it curves upwards (quadratic growth). The
-dashed line is what you might naively expect: the size of the final
-conversation, billed once. The gap between the dashed line and the curve is
-why prompt caching, trimming tool outputs and keeping loops short are the
-main cost levers (`primer.agents.cost`, `primer.agents.context`).
+**Reading it:** each bar is the input billed on one call, 500 tokens more
+than the call before. The curve is the running total, and it bends upwards.
+The dashed line is the size of the final conversation, what you might expect
+to pay for once. The gap between them is the cost of resending, which prompt
+caching, trimming tool outputs and shorter loops reduce
+(`primer.agents.cost`, `primer.agents.context`).
 
 **In code:** `loop_input_tokens` lists the tokens billed on each call of
-such a loop. `estimate_tokens` is the four-characters-per-token rule of
-thumb, and `conversation_chars` measures everything a call resends, which is
-how `ScriptedLLM` gives its fake replies realistic `Usage`.
+such a loop, and `estimate_tokens` is the rule of thumb of four characters
+per token.
 
 ## In 20 seconds
 
-- A model call sends the full list of messages and returns one message; the
-  model keeps no state between calls.
+- A call to a language model sends the whole conversation as a list of
+  messages and gets one message back. The model keeps nothing between calls.
 - A tool call is a structured *request* (`tool_use`). Your code validates it,
   runs it, and returns a `tool_result` with the matching id. The model
   executes nothing.
 - `stop_reason` tells you what to do next: `tool_use` means run tools and
   call again, `end_turn` means done.
-- Every call re-sends the whole history, so input cost grows quadratically
-  with the number of steps in a loop.
+- Every call re-sends the whole history, so the input billed for a loop
+  grows with the square of its number of steps.
 
 ## Self-test questions
 
