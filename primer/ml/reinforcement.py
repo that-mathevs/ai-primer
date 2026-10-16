@@ -113,27 +113,24 @@ can rerun. If you only needed to choose a training signal, you are done.
 
 ## Level 2: How it works, from scratch
 
-Think of teaching a dog to sit. You can't show it the right answer: you can
-only wait for it to try something and give it a treat when the something was
-good. Over many tries the dog does more of what earned treats and less of
-what didn't. Nobody ever told it what "sit" means; it worked it out from a
-score.
+You cannot show a dog the right way to sit. You wait for it to try
+something, and give it a treat when it sits. Over many tries the dog does
+more of what earned treats and less of what did not.
 
-That is **reinforcement learning (RL)**. An **agent** (the dog, or a
-language model) takes an **action** (sits, or writes an answer), the world
-hands back a **reward** (a treat, or a score from a grader), and the agent
-adjusts itself so that rewarded actions become more likely. The agent's
-current habits, written as a probability for every action, are called its
-**policy**.
+**Reinforcement learning (RL)** trains a model the same way. An **agent**
+(the dog, or a language model) takes an **action** (sits, or writes an
+answer), the world hands back a **reward** (a treat, or a score from a
+grader), and the agent adjusts itself so that rewarded actions become more
+likely. The agent's current habits, written as a probability for every
+action, are called its **policy**.
 
-Compare this with ordinary supervised learning (`primer.ml.losses`), where
-every example comes with the correct answer attached. In RL there is no
-answer key, only a score after the fact. That is exactly the situation a
-language model is in once pretraining is over: for "prove this theorem" or
-"write a helpful reply" there is no single correct text to copy, but a
-checker or a judge can say how good an attempt was. RL is how the model
-learns from those judgements (`primer.ml.training_stages` places it in the
-training pipeline).
+In supervised learning (`primer.ml.losses`), every example comes with the
+correct answer attached. RL has no answer key, only a score after the fact.
+A language model is in that position once pretraining is over: for "prove
+this theorem" or "write a helpful reply" there is no single correct text to
+copy, but a checker or a judge can say how good an attempt was. RL is how
+the model learns from those judgements, and `primer.ml.training_stages`
+shows where it sits among the stages of training.
 
 ```mermaid
 flowchart LR
@@ -143,20 +140,19 @@ flowchart LR
   R -->|nudge the policy| P
 ```
 
-**Reading it:** follow the loop clockwise. The policy is a set of
-probabilities, and the action is *sampled* from it, so the agent sometimes
-tries things it isn't sure about. The environment is whatever judges the
-action; the agent can't see inside it. The only thing that comes back is one
-number, the reward, and the only thing the agent can do with it is nudge its
-own probabilities. Everything in this lesson is a better answer to one
-question: how exactly should that nudge be computed?
+**Reading it:** follow the loop clockwise. The action is *sampled* from the
+policy's probabilities, so the agent sometimes tries things it is unsure
+of. The environment judges the action, and the agent cannot see inside it.
+One number comes back, the reward, and all the agent can do with it is
+nudge its own probabilities.
 
-## A tiny worked example: three slot machines
+## Three slot machines and the expected reward
 
-The simplest RL problem is a row of slot machines, called a **multi-armed
-bandit** (a slot machine is a "one-armed bandit"). Machine A pays out 20% of
-the time, B 50% and C 80%, but the agent isn't told that. Each pull pays 1
-or 0. The agent must find C by pulling and seeing what happens.
+Which way to nudge, and how far, is easiest to work out on the simplest RL
+problem: a row of slot machines, called a **multi-armed bandit** (a slot
+machine is a "one-armed bandit"). Machine A pays out 20% of the time, B 50%
+and C 80%, but the agent isn't told that. Each pull pays 1 or 0. The agent
+has to find C by pulling and seeing what happens.
 
 A policy here is three probabilities, one per arm. A policy that picks each
 arm a third of the time earns, on average, (0.2 + 0.5 + 0.8) / 3 = **0.5**
@@ -198,26 +194,25 @@ round(sum(p * r for p, r in zip([0, 0, 1], R)), 3)  # → 0.8
 ```
 
 The agent can't compute J, because it doesn't know R. It can only sample:
-pull an arm, see a 1 or a 0. Every method below turns those samples into an
-estimate of which way to move θ to make J bigger. Trying an arm you're
+pull an arm, see a 1 or a 0. Each method that follows turns those samples
+into an estimate of which way to move θ to make J bigger. Trying an arm you're
 unsure of is called **exploration**; sticking with the best arm so far is
 **exploitation**. A sampled policy does some of both automatically, as
 long as no arm's probability has collapsed to zero.
 
 **In code:** `Bandit` hides the win chances and pays out one pull at a time; `expected_reward` is the formula above.
 
-## Policy gradients: do more of what worked (REINFORCE)
+## REINFORCE: the policy gradient
 
-**Everyday picture.** A football coach reviews the tape after a match. For
-every play that led to a goal, they tell the team "a bit more of that"; for
-plays that went nowhere, nothing. They don't need to know *why* the play
-worked. Repeat over hundreds of matches and the team drifts towards the
-plays that score.
+The simplest rule for moving θ, **REINFORCE** (Williams, 1992), learns from
+one pull at a time. After each pull it makes the pulled arm more likely, by
+an amount proportional to what the pull paid. It never needs to know why
+an arm paid.
 
-**Tiny worked example.** Start with logits (0, 0, 0), so each arm has
-probability ⅓. The agent pulls C and wins: reward 1. The rule, explained
-next, says: add to each logit *learning rate × reward × (1 if it's the
-chosen arm, else 0, minus that arm's probability)*.
+Start with logits (0, 0, 0), so each arm has probability ⅓. The agent pulls
+C and wins: reward 1. The rule, derived below, adds to each logit *learning
+rate × reward × (1 if it's the chosen arm, else 0, minus that arm's
+probability)*.
 
 | Arm | Chosen? | 1[chosen] − π | × reward 1 × rate 0.5 | New logit | New probability |
 |---|---|---|---|---|---|
@@ -249,7 +244,7 @@ makes that action more likely (the `∇ log π` box), then scale that direction
 by how good the outcome was. A big reward is a big step towards repeating the
 action; zero reward is no step.
 
-### The log-probability trick, decoded
+### Where the rule comes from: the log-probability trick
 
 We want the **gradient** of J: for each logit, how much J rises if the
 logit rises a little (see `primer.notation` for gradients from scratch).
@@ -281,7 +276,7 @@ the direction that makes the sampled action more likely, weighted by the
 reward it earned. For a softmax policy, that direction is 'one for the
 chosen action, minus every action's probability'."
 
-Why is this true? Because the slope of a probability equals the probability
+This holds because the slope of a probability equals the probability
 times the slope of its log ($\nabla \pi = \pi \, \nabla \log \pi$, the chain
 rule applied to log). So $\nabla J = \sum_a \nabla\pi(a) R(a) = \sum_a \pi(a)
 \nabla\log\pi(a) R(a)$, and a sum weighted by $\pi(a)$ is an average over
@@ -314,8 +309,7 @@ z = [z_k + alpha * reward * g for z_k, g in zip(z, grad_log_pi)]
 [round(math.exp(z_k) / sum(math.exp(v) for v in z), 3) for z_k in z]  # → [0.274, 0.274, 0.452]
 ```
 
-This algorithm is called **REINFORCE** (Williams, 1992). Run it for 500
-pulls and the policy finds arm C:
+Run REINFORCE for 500 pulls and the policy finds arm C:
 
 ![REINFORCE on the three-armed bandit: the probability of arm C climbs from a third to about 0.96 within 500 pulls, and the average reward rises from 0.5 towards 0.8](figures/primer.ml.reinforcement.bandit_learning.svg)
 
@@ -324,37 +318,40 @@ pulls. All three start at ⅓. C's line (the 80% arm) climbs towards 1 while A
 and B sink; the wiggles are single lucky or unlucky pulls. On the right is
 the reward, averaged over the last 50 pulls. It starts near 0.5 (random
 pulling) and rises towards the dashed line at 0.8, the most any policy can
-earn. Nobody told the agent which arm was best: the 1s and 0s were enough.
+earn.
 
-**Why it matters in practice.** A language model is exactly this kind of
-policy, with a vocabulary of tokens as its arms, and one sampled answer is a
-string of sampled tokens. REINFORCE applies unchanged: sum the log
-probabilities of every token in the answer, and scale the gradient by the
-answer's reward. Every method below (PPO, GRPO) is REINFORCE with repairs.
+A language model is the same kind of policy, with its vocabulary of tokens
+as the arms, and one sampled answer is a string of sampled tokens.
+REINFORCE applies unchanged: sum the log probabilities of every token in
+the answer, and scale the gradient by the answer's reward. PPO and GRPO,
+which follow, are REINFORCE with repairs.
 
 **In code:** `grad_log_prob` is one-hot minus the probabilities, `reinforce_step` is one update, `worked_reinforce_step` is the table above, and `train_reinforce` runs the whole loop against a `Bandit`.
 
-## Variance and baselines: grade on a curve
+## Baselines: less noise, same direction
 
-**Everyday picture.** A teacher whose class all scores between 90 and 100
-learns nothing by being told "you got a 92". What matters is whether 92 is
-above or below the class average. Raw scores that are all large and
-positive make every attempt look good; only the difference from typical
-tells you which way to go.
+The first repair is for noise, and the noise is worst when every reward is
+large. A student in a class that all scores between 90 and 100 learns
+little from "you got a 92"; what tells them which way to go is whether 92
+is above or below the class average. REINFORCE has the same problem: when
+every reward is large and positive, every pull makes its arm more likely,
+and only the differences between the steps carry the signal.
 
-**Tiny worked example.** Two arms, a 50/50 policy, and every pull pays a lot:
-arm 1 always pays 10, arm 2 always pays 12. Arm 2 is better, so the logit of
-arm 2 should rise. Look at the REINFORCE estimate for that logit:
+Take two arms, a 50/50 policy, and pulls that always pay a lot: arm 1 always
+pays 10, arm 2 always pays 12. Arm 2 is better, so the logit of arm 2
+should rise. Here is the REINFORCE estimate for that logit:
 
 | Pulled | Reward | 1[arm 2] − π(arm 2) | Estimate (no baseline) | Estimate (baseline 11) |
 |---|---|---|---|---|
 | arm 1 | 10 | 0 − 0.5 = −0.5 | 10 × −0.5 = **−5** | (10 − 11) × −0.5 = **+0.5** |
 | arm 2 | 12 | 1 − 0.5 = +0.5 | 12 × +0.5 = **+6** | (12 − 11) × +0.5 = **+0.5** |
 
-Without a baseline the estimate is −5 or +6 depending on the coin flip.
-It averages to +0.5, the right answer, but any single sample points the
-wrong way half the time, and violently. Subtract the average reward, 11,
-first and *every* sample says +0.5. Same average, no noise at all.
+Without a baseline the estimate is −5 or +6, depending on which arm the
+coin flip picked. It averages to +0.5, the right answer, but half the
+samples point the wrong way, at ten times the true size. Subtract the
+average reward, 11, first and *every* sample says +0.5: the same average,
+with no noise. The number subtracted is the baseline, and what is left is
+the advantage:
 
 $$
 \nabla_\theta J(\theta) = \mathbb{E}_{a \sim \pi_\theta}\big[\, (R(a) - b)\, \nabla_\theta \log \pi_\theta(a) \,\big],
@@ -372,7 +369,7 @@ $$
 **In words:** "scale each step by how much better than typical the action
 did, not by its raw reward."
 
-Why is it allowed? Because the baseline's contribution averages to zero:
+Subtracting a baseline is allowed because its contribution averages to zero:
 $\mathbb{E}[\, b\, \nabla \log \pi(a)] = b \sum_a \nabla \pi(a) = b\, \nabla
 \sum_a \pi(a) = b\, \nabla 1 = 0$. Probabilities always add to 1, so pushing
 all of them up is impossible; the baseline only removes noise, never
@@ -410,9 +407,9 @@ this?". The sign of the advantage now decides the direction of the step,
 so a below-average action is actively pushed down, even though its raw
 reward was positive.
 
-To see it matter, give every arm of our bandit 5 extra points: rewards are
-now 5 or 6 instead of 0 or 1, and nothing about which arm is best has
-changed.
+On the bandit, the noise decides where training ends up. Give every arm 5
+extra points: rewards are now 5 or 6 instead of 0 or 1, and which arm is
+best has not changed.
 
 ![With rewards offset by 5, the gradient estimate's variance falls from about 20 to 0.15 with a baseline, and 20 training runs all find arm C with it, while without it most runs lock onto the wrong arm](figures/primer.ml.reinforcement.baselines.svg)
 
@@ -425,32 +422,27 @@ of picking C. With a running-average baseline (blue) every run ends near
 pulls of a mediocre arm paid 5 and were pushed up hard, and the policy
 committed before it ever learned C was better.
 
-**Why it matters in practice.** Every practical policy-gradient method uses
-a baseline. PPO learns one with a second network, the **value network** (or
-**critic**), which predicts the expected reward from each state. GRPO, below,
-gets one for free by comparing several answers to the same prompt.
+PPO and GRPO both use a baseline, and differ in where it comes from. PPO
+learns one with a second network, the **value network** (or **critic**),
+which predicts the reward to expect from where the policy is (for a
+language model, the prompt and the tokens so far). GRPO gets one without a
+second network, by comparing several answers to the same prompt.
 
 **In code:** `gradient_estimate_stats` computes the exact mean and variance of the estimate, `sampled_gradient_variance` measures it from real pulls, and `train_reinforce` subtracts a running average when `baseline=True`.
 
-## PPO: take several steps, but never too far
+## PPO: several steps from one batch, clipped
 
-**Everyday picture.** A chef tests a new recipe on one evening's diners.
-It would be wasteful to use their comments for just one small tweak, so the
-chef makes several rounds of changes from the same comment cards. But the
-further the recipe drifts from what the diners actually ate, the less their
-comments apply, so the chef caps each change: never more than 20% more or
-less of any ingredient per round.
+The next repair is for cost. For a language model, sampling answers is the
+expensive part (every answer is a full generation), so **PPO (Proximal
+Policy Optimization)** reuses each batch of answers for several gradient
+steps. Those answers say less about the policy the further it moves from
+the one that wrote them, so PPO measures how far it has moved and stops
+counting movement past a limit.
 
-For a language model, sampling answers is the expensive part (every answer
-is a full generation), so **PPO (Proximal Policy Optimization)** reuses each
-batch of answers for several gradient steps. It needs a way to tell how far
-the policy has moved since the batch was sampled, and a brake.
-
-**Tiny worked example.** The **probability ratio** compares the policy now
-with the policy that generated the sample. A ratio of 1.5 means the current
-policy is 50% more likely to produce that answer than when it was sampled.
-With a clip range ε = 0.2 the ratio is allowed to count only between 0.8
-and 1.2:
+The **probability ratio** compares the policy now with the policy that
+generated the sample. A ratio of 1.5 means the current policy is 50% more
+likely to produce that answer than when it was sampled. With a clip range
+ε = 0.2 the ratio counts only between 0.8 and 1.2:
 
 | Ratio ρ | Advantage A | ρ·A | clip(ρ, 0.8, 1.2)·A | min of the two | What happened |
 |---|---|---|---|---|---|
@@ -487,7 +479,7 @@ the ratio has moved more than ε from 1 in the direction the advantage wants,
 stop counting further movement; and always take the more pessimistic of the
 clipped and unclipped versions."
 
-The slope of ρ·A is exactly REINFORCE's gradient scaled by ρ (because
+The slope of ρ·A is REINFORCE's gradient scaled by ρ (because
 $\nabla\rho = \rho\,\nabla\log\pi_\theta$), so inside the band PPO is
 REINFORCE with importance weighting. Outside it, the clipped term is flat:
 that sample stops pushing.
@@ -542,21 +534,23 @@ advantage (red), it goes flat below 0.8. The dashed lines are what
 REINFORCE would keep climbing. On the right, the largest ratio in the batch
 after each of 50 passes. Unclipped (red), the policy chases the same 16
 pulls further every pass until C's probability is 2.5 times what it was,
-about 0.84 from sixteen pulls, which is wildly overconfident. Clipped
+about 0.84, far more confidence than sixteen pulls can justify. Clipped
 (blue), it levels off near 1.24: the brake is not a hard wall (other
 samples can still nudge the policy), but it removes the incentive to
 overfit one batch.
 
 **In code:** `ppo_clipped_objective` is the formula, `clipped_policy_update` makes several passes over one batch with or without the clip, and `ppo_drift_experiment` is the 50-pass comparison.
 
-### The KL leash: stay close to where you started
+### The KL leash
 
-**Everyday picture.** A dog on a long leash can explore, but it can't run
-off a cliff. In RL for language models, the leash ties the policy to a
-frozen copy of the model it started from, the **reference model** (usually
-the model after supervised fine-tuning).
+The clip limits how far one batch can move the policy. Over many batches
+the policy can still drift a long way from the model it started as, and
+lose the fluent language it had while it chases reward. The **KL leash**
+ties it to a frozen copy of that starting model, the **reference model**
+(usually the model after supervised fine-tuning), by charging a fee on
+every answer the policy has made more likely than the reference did.
 
-**Tiny worked example.** An answer earns reward 1.0. The policy now gives
+An answer earns reward 1.0. The policy now gives
 it probability 0.6; the reference gave it 0.3. With leash strength β = 0.1,
 the reward actually used for training is 1.0 − 0.1 × ln(0.6 / 0.3) =
 1.0 − 0.1 × 0.693 = **0.931**. The policy pays a small fee for having
@@ -598,28 +592,23 @@ round(R - beta * math.log(pi / pi_ref), 3)  # → 0.931
 round(R - beta * math.log(0.15 / pi_ref), 3)  # → 1.069
 ```
 
-**Why it matters in practice.** This is the "penalty for drifting" in the
-RLHF loop of `primer.ml.training_stages`, and the same β appears in DPO. It
-stops the policy from forgetting fluent language while it chases reward, and
-it is the first line of defence against reward hacking, below.
+This fee is the "penalty for drifting" in the RLHF loop of
+`primer.ml.training_stages`, and the same β appears in DPO. It is also one
+of the defences against reward hacking, below.
 
 **In code:** `kl_penalised_reward` is R′; `clipped_policy_update` adds the leash's gradient when given a reference policy and a β, and `primer.ml.training_stages.kl_divergence` computes the KL itself.
 
-## GRPO: compare answers to the same question
+## GRPO: a baseline from a group of answers
 
-**Everyday picture.** Instead of hiring an examiner to predict how hard
-each exam question is, a teacher gives the same question to eight students
-and marks each answer relative to the others on *that* question. On an easy
-question, getting it right is expected and earns little credit; on a hard
-one, the only right answer stands out.
+PPO's baseline comes from the value network, a second model, often as large
+as the policy, that has to be trained alongside it. **GRPO (Group Relative
+Policy Optimization)** drops the value network. For each prompt it samples
+a group of answers and uses the group's own average as the baseline, so each
+answer is marked against the others on the same question: on an easy
+question a right answer earns little, and on a hard one it stands out.
 
-PPO's baseline comes from the value network, a second model, often as large as the
-policy, that has to be trained alongside it. **GRPO (Group Relative Policy
-Optimization)** throws the value network away. For each prompt it samples
-a group of answers and uses the group's own average as the baseline.
-
-**Tiny worked example.** The prompt is "3 + 4 =". The model samples four
-answers and a checker scores them 1 if the answer is 7, else 0.
+Take the prompt "3 + 4 =". The model samples four answers, and a checker
+scores each 1 if it is 7, else 0.
 
 | Group rewards | Mean | Std | Advantages |
 |---|---|---|---|
@@ -627,9 +616,10 @@ answers and a checker scores them 1 if the answer is 7, else 0.
 | 1, 0, 0, 0 | 0.25 | 0.433 | **+1.73, −0.58, −0.58, −0.58** |
 | 1, 1, 1, 1 | 1 | 0 | **0, 0, 0, 0** |
 
-A lone right answer in a mostly wrong group earns a big advantage: it's
-rare, so it's strong evidence. A group that is all right (or all wrong)
-earns nothing: there is no contrast, so there is nothing to learn from.
+A lone right answer in a mostly wrong group earns a big advantage, because
+it is rare and so it is strong evidence. When the whole group is right, or
+the whole group is wrong, every advantage is zero and the prompt teaches
+nothing.
 
 $$
 A_i = \frac{r_i - \operatorname{mean}(r_1, \ldots, r_G)}{\operatorname{std}(r_1, \ldots, r_G)}
@@ -691,15 +681,16 @@ flowchart LR
 the same clipped update. PPO gets its baseline from a value network that
 must be trained, stored and run, which is roughly a second copy of the model.
 GRPO instead spends that compute on more answers per prompt and lets them
-grade each other. The verifier box can be any scorer, but GRPO shines when
-it is a program that checks the answer.
+grade each other. The verifier box can be any scorer; in the reasoning
+work below it is a program that checks the answer.
 
-### Verifiable rewards, and why GRPO trains reasoning
+### Verifiable rewards and reasoning
 
 A **verifiable reward** comes from a check that can't be argued with: does
-the arithmetic equal 7, do the unit tests pass, does the proof check. No
-learned reward model, so no learned blind spots (see reward hacking, next).
-Here is GRPO on a toy "language model" that answers eight addition prompts
+the arithmetic equal 7, do the unit tests pass, does the proof check. There
+is no learned reward model, so there are no learned blind spots (reward
+hacking, next, is about those). Here is GRPO on a toy "language model" that
+answers eight addition prompts
 with a single digit token. It starts out about 23% accurate and leans
 towards off-by-one mistakes.
 
@@ -711,35 +702,36 @@ prompt. The grey bars are the share of prompts whose group of 8 answers
 were all right or all wrong: a few percent at the start, over 80% by the
 end. They grow as the model masters the prompts:
 once every answer is right, the advantages are all zero and that prompt has
-nothing left to teach. Real GRPO training fights exactly this by filtering
-for prompts at the edge of the model's ability.
+nothing left to teach. Real GRPO training counters this by filtering for
+prompts at the edge of the model's ability.
 
-**Why it matters in practice.** This recipe, a verifier on the final
-answer plus GRPO, is how DeepSeek-R1-Zero learned to reason: rewarded only
-for correct final answers (and a required format), the model learned by
-itself to write longer chains of thought, to check its work and to back
-up from mistakes, because those behaviours raised the chance of a correct
-final answer. Each token in a long chain of thought shares its answer's
-advantage, so the whole chain is reinforced or discouraged together. See
+A verifier on the final answer plus GRPO is how DeepSeek-R1-Zero learned to
+reason. Rewarded only for correct final answers (and a required format),
+the model learned by itself to write longer chains of thought, to check its
+work and to back up from mistakes, because those behaviours raised the
+chance of a correct final answer. Each token in a long chain of thought
+shares its answer's advantage, so the whole chain is reinforced or
+discouraged together. See
 `primer.ml.reasoning` for what that training produces.
 
 **In code:** `group_advantages` is the formula, `verify` is the checker, `pretrained_logits` is the weak starting model, and `train_grpo` runs the loop.
 
-## Reward hacking: the score is not the goal
+## Reward hacking
 
-**Everyday picture.** A school pays tutors by the number of pages of
-homework feedback they write. Feedback gets longer, not better. An RL agent
-is the most literal-minded employee imaginable: it optimises the number you
-wrote down, not the thing you meant. When those two differ, it finds the
-difference. This is **reward hacking** (also called **specification
-gaming**), and it is Goodhart's law in code: *when a measure becomes a
-target, it ceases to be a good measure.*
+A verifier checks the thing you care about. Most goals, such as a helpful
+reply, have no such check, so the reward comes from a model fitted to
+people's ratings, and the policy optimises that model's score rather than
+the goal. Where the two disagree, optimisation finds the disagreement. A
+school that pays tutors by the page of homework feedback gets longer
+feedback, not better. This is **reward hacking** (also called
+**specification gaming**), Goodhart's law applied to training: *when a
+measure becomes a target, it ceases to be a good measure.*
 
-**Tiny worked example.** The goal is a good answer, and good answers here
-are about 4 sentences long. People rated answers of 1 to 4 sentences, and
-on those, longer really was better. A reward model fitted to their ratings
-learns a straight line: "each sentence is worth 0.19 points". Nobody ever
-rated a 10-sentence answer, so nobody told the reward model it was bad:
+Say the goal is a good answer, and good answers here are about 4 sentences
+long. People rated answers of 1 to 4 sentences, and on those, longer really
+was better. A reward model fitted to their ratings learns a straight line:
+"each sentence is worth 0.19 points". No one rated a 10-sentence answer, so
+the reward model has no way to know it is bad:
 
 | Sentences | 1 | 2 | 3 | **4** | 6 | 8 | **10** |
 |---|---|---|---|---|---|---|---|
@@ -796,8 +788,9 @@ w0 = q_bar - w1 * n_bar
 it, the reward model (red) and the truth (blue) agree on the direction:
 longer is better. Outside it, the reward model is extrapolating a straight
 line into territory it has never seen, while the truth turns over and
-dives. Every learned reward model has regions like this, and an optimiser
-is a machine for finding them.
+dives. Any reward model fitted to a finite set of ratings has regions it
+never saw, and an optimiser pushes the policy into them wherever the reward
+there is high.
 
 ```mermaid
 flowchart LR
@@ -825,20 +818,21 @@ short) against each reward:
 
 **Reading it:** on the left, true quality over 300 training steps. Against
 the flawed reward with no leash (red), quality *rises* at first, from 0.80
-to 0.93, because lengthening a too-short answer genuinely helps. It rests
-on 5-sentence answers for a while, then the reward model's pull wins again:
+to 0.93, because lengthening a too-short answer really helps. It rests on
+5-sentence answers for a while, then the reward model's pull wins again:
 around step 150 the policy jumps to 6 sentences and quality falls to 0.75,
 below where it started, while the reward model's score keeps climbing.
-That rise-then-fall is the signature of reward hacking, and it is why "the
-reward went up" proves nothing. With a KL leash (β = 0.3, orange) the
-policy also overshoots a little, but the leash holds it at 0.84. Against the true, verifiable quality (blue) it
-reaches 1.0. On the right, the best policy for each leash strength, placed
+That rise and fall is what reward hacking looks like on a training curve,
+and it is why a rising reward proves nothing on its own. With a KL leash
+(β = 0.3, orange) the policy also overshoots a little, but the leash holds
+it at 0.84. Against the true, verifiable quality (blue) it reaches 1.0. On
+the right, the best policy for each leash strength, placed
 by how far it strays from the reference (its KL). Near zero KL it barely
 moves; at moderate KL true quality peaks; as the leash loosens further, the
 proxy score keeps rising and the true quality collapses below zero.
 
-The right-hand panel uses a closed form: the best policy under a KL leash
-has an exact formula.
+The right-hand panel needs no training run, because the best policy under
+a KL leash has an exact formula:
 
 $$
 \pi^*(a) = \frac{\pi_{\text{ref}}(a)\, e^{R(a)/\beta}}{Z},
@@ -880,15 +874,16 @@ best_policy(0.1)  # → [0.99995, 5e-05]
 best_policy(100.0)  # → [0.5025, 0.4975]
 ```
 
-This is the same formula DPO starts from (`primer.ml.training_stages`): it
-is why β means the same thing in RLHF and DPO.
+DPO starts from the same formula (`primer.ml.training_stages`), which is
+why β means the same thing in RLHF and DPO.
 
-**Why it matters in practice.** Reward hacking shows up wherever RL does.
-A boat-racing game agent that learned to circle forever collecting bonus
-targets instead of finishing the race. RLHF'd chat models that learned
-long, flattering answers score well with raters (length bias and
-sycophancy). Coding models rewarded for passing tests that learned to edit
-or special-case the tests. The defences, strongest first:
+Reward hacking has been seen in games, chat models and coding models. A
+boat-racing game agent learned to
+circle forever collecting bonus targets instead of finishing the race. Chat
+models trained with RLHF learned that long, flattering answers score well
+with raters (length bias and sycophancy). Coding models rewarded for
+passing tests learned to edit or special-case the tests. The defences,
+strongest first:
 
 1. **Verifiable rewards** where the task allows: run the tests, check the
    answer. A check has no learned blind spot (though a buggy check does).
@@ -904,18 +899,21 @@ or special-case the tests. The defences, strongest first:
 
 ## In 20 seconds
 
-- **RL** learns from a score, not an answer: sample an action from the
-  policy, get a reward, make rewarded actions more likely.
-- **REINFORCE**: step along reward × ∇ log π(action); for softmax, ∇ log π
-  is one-hot minus the probabilities. Unbiased but noisy.
-- **Baselines** subtract the typical reward, turning rewards into
-  advantages. Same average gradient, far less variance.
+- **RL** learns from a score, not an answer: the policy samples an action,
+  gets a reward, and makes rewarded actions more likely.
+- **REINFORCE** steps along reward × ∇ log π(action), the direction that
+  makes the sampled action more likely, scaled by its reward. For a softmax
+  policy, ∇ log π is one-hot minus the probabilities. On average the step is
+  right; one sample at a time it is noisy.
+- **A baseline** subtracts the typical reward, so each action is scored by
+  its advantage, how much better than typical it did. The average step is
+  unchanged and the noise falls.
 - **PPO** reuses each batch for several steps, clips the probability ratio
-  to 1 ± ε so no step goes too far, and uses a value network as baseline
-  plus a KL leash to a reference model.
-- **GRPO** drops the value network: sample a group of answers per prompt
-  and normalise rewards within the group. With a verifier as reward, it is
-  how reasoning models are trained.
+  to 1 ± ε so no step goes too far, learns its baseline with a value
+  network, and keeps a KL leash to a reference model.
+- **GRPO** drops the value network: it samples a group of answers per
+  prompt and scores each against the group. With a program that checks the
+  answer as the reward, it is how DeepSeek-R1-Zero learned to reason.
 - **Reward hacking**: the policy optimises the reward you wrote, not the
   goal you meant. Defend with verifiable rewards, better reward models, a KL
   leash and a held-out check of the real goal.
