@@ -130,28 +130,30 @@ needed to read a model card or serve a model safely, you are done.
 
 ## Level 2: How it works, from scratch
 
-Level 2 starts with the problem itself, a bag of Scrabble tiles, and adds
-each family of positions in turn.
+Attention scores each pair of words by comparing their vectors, and the
+comparison comes out the same wherever the two words sit. So the order of the
+words has to be put in from outside: added to each word's vector, or built
+into the way attention compares them.
 
 ## The problem: attention reads a bag, not a sentence
 
-**Everyday picture.** Pour the words of a sentence into a bag of Scrabble
-tiles. The bag for "dog bites man" and the bag for "man bites dog" hold
-exactly the same tiles. Anyone who only gets the bag cannot tell a news
-story from a routine dog attack. Attention, on its own, only ever gets the bag.
+Think of the words as Scrabble tiles poured into a bag. The bag for "dog
+bites man" and the bag for "man bites dog" hold the same tiles, and anyone
+handed only the bag cannot tell a news story from a routine dog attack.
+Attention with no position information is handed only the bag.
 
-**Tiny worked example.** Give each word a 2-number embedding: dog = (1, 0),
-bites = (0, 1), man = (1, 1). Average the words of each sentence, which is
-the simplest possible "sentence vector":
+Give each word an embedding of two numbers: dog = (1, 0), bites = (0, 1),
+man = (1, 1). The simplest way to turn a sentence into one vector is to
+average its words:
 
 | sentence | sum of vectors | average |
 |---|---|---|
 | dog bites man | (1,0)+(0,1)+(1,1) = (2, 2) | (0.67, 0.67) |
 | man bites dog | (1,1)+(0,1)+(1,0) = (2, 2) | (0.67, 0.67) |
 
-Addition doesn't care about order, and neither does attention: every token
-compares itself with every other by dot product, and nothing in that
-computation says who came first.
+The averages match because addition ignores order. Attention is an average
+too, a weighted one, and its weights come from dot products between words,
+which ignore order in the same way.
 
 ```mermaid
 flowchart LR
@@ -164,17 +166,17 @@ flowchart LR
   ATT --> SAME[Same vectors, only reordered:<br/>the meaning difference is lost]
 ```
 
-**Reading it:** follow both sentences left to right. Embedding looks up each
-token independently, so both sentences produce the same three vectors.
-Attention only compares vectors with each other; it has no notion of slot 1
-versus slot 3. It sees the same *set* and produces the same output vectors,
-listed in a different order. Pool them into one sentence vector and the two
-sentences are identical.
+**Reading it:** follow both sentences from left to right. Embedding looks up
+each word on its own, so both sentences give the same three vectors, and
+attention receives the same *set*. Its outputs are the same vectors in a
+different order, so pooled into one sentence vector the two sentences are
+identical.
 
-**The math.** A **permutation** is a reshuffle of an ordered list. Written as
-a matrix (a grid of numbers), a permutation matrix is all zeros except one 1
-in each row, and multiplying by it just reorders rows. Attention without
-positions is *permutation-equivariant*:
+A **permutation** is a reshuffle of an ordered list. Written as a matrix (a
+grid of numbers), a permutation matrix is all zeros except one 1 in each row,
+and multiplying by it reorders rows. Attention without positions is
+**permutation-equivariant**: shuffle its input and its output is shuffled the
+same way.
 
 $$
 \text{Attn}(PX) = P\,\text{Attn}(X)
@@ -222,36 +224,38 @@ Attn(X)  # → [(0.802, 0.599), (0.599, 0.802), (0.752, 0.752)]
 Attn(PX)  # → [(0.752, 0.752), (0.599, 0.802), (0.802, 0.599)]
 ```
 
-Shuffle the input and you get the same outputs, shuffled the same way.
-`encode_sentence(..., scheme="none")` runs a real attention layer and shows
-the "dog" row is the same vector whether "dog" comes first or last.
+A larger layer, with 16 random numbers per word and random, untrained
+weights, behaves the same way:
 
 ![Without positions the two sentences are identical (similarity 1.0); sinusoidal codes and RoPE pull it just below 1, and a causal mask alone drops it to 0.52](figures/primer.ml.positional.order_blindness.svg)
 
-**Reading it:** each bar compares the pooled attention output of "dog bites
-man" with that of "man bites dog", as a cosine similarity (1.0 means
-identical). With no positions the bar reaches exactly 1: the model literally
-cannot tell the sentences apart. Adding sinusoidal codes or RoPE pulls the
-bar below 1: the sentences now look different. The causal-mask bar is below 1
-too, because a mask that lets token i see only i+1 tokens already leaks some
-order.
+**Reading it:** each bar is the cosine similarity of the two sentences'
+pooled outputs, where 1.0 means identical. With no positions the bar reaches
+exactly 1, so the layer cannot tell the sentences apart. Sinusoidal codes and
+RoPE pull it below 1. So does a causal mask, which lets each word see only
+the words before it, with no positions added at all.
 
-**In code:** `word_vector` gives each word a fixed random embedding, and `order_similarity` pools each sentence's outputs and compares them, which gives the bars in the figure.
+**In code:** `order_similarity` computes the bars, with `word_vector` giving each word its random numbers.
 
-**Why it matters.** Almost all meaning in language is carried by order:
-negation scope, who did what to whom, code. So position must be **injected**.
-There are three families, below.
+Order carries much of what a sentence means: who did what to whom, what a
+"not" applies to, what a line of code does. So position has to be
+**injected**, and the oldest way is to add a code for each position to the
+word's vector.
 
 ## 1. Sinusoidal codes (the original 2017 transformer)
 
-**Everyday picture.** A clock with many hands. The second hand moves fast
-and tells nearby moments apart; the hour hand moves slowly and tells morning
-from evening. Read all the hands together and every moment has a unique
-fingerprint. Sinusoidal codes give every position such a set of "hands" and
-add them to the token's embedding.
+A clock's second hand moves fast and tells nearby moments apart; its hour
+hand moves slowly and tells morning from evening. Read together, the hands
+give every moment of the day its own reading. **Sinusoidal codes** give each
+position a set of hands like these, each turning at its own speed, and add
+the reading to the word's embedding.
 
-**Tiny worked example.** With 4 dimensions there are two hands. The fast one
-turns 1 radian per position; the slow one turns 1/100 of a radian:
+Each hand is stored as two numbers. Picture the tip of a hand on a circle of
+radius 1. The angle it has turned is measured in **radians** (a full turn is
+2π ≈ 6.28 radians). The **cosine** of the angle is how far right the tip is,
+and the **sine** is how far up; both lie between −1 and +1, and both repeat
+every full turn. With 4 numbers per code there are two hands. The fast one
+turns 1 radian per position, the slow one 1/100 of a radian:
 
 | position | sin(pos·1) | cos(pos·1) | sin(pos/100) | cos(pos/100) |
 |---|---|---|---|---|
@@ -259,8 +263,8 @@ turns 1 radian per position; the slow one turns 1/100 of a radian:
 | 1 | 0.841 | 0.540 | 0.010 | 1.000 |
 | 2 | 0.909 | −0.416 | 0.020 | 1.000 |
 
-The fast pair already looks very different at positions 1 and 2; the slow
-pair barely moves, and it will only distinguish positions hundreds apart.
+From position 1 to position 2 the fast pair changes a lot and the slow pair
+hardly at all. The slow pair is there to separate positions hundreds apart.
 
 ```mermaid
 flowchart LR
@@ -271,16 +275,13 @@ flowchart LR
   ADD --> B["transformer blocks"]
 ```
 
-**Reading it:** two independent lookups meet at the plus sign. The top path
-says *what* the token is, the bottom path says *where* it is, and their sum
-is a single vector carrying both. Everything downstream sees only that sum,
-so position becomes part of the content attention compares.
+**Reading it:** two paths meet at the plus sign. The top path says *what*
+the word is, the bottom path says *where* it is, and their sum is one vector
+carrying both. Everything after it sees only that sum, so position becomes
+part of what attention compares.
 
-**The math and the code.** Two functions do the work. Picture a point
-walking around a circle of radius 1. The angle it has turned is measured in
-**radians** (a full turn is 2π ≈ 6.28 radians). **Cosine** of the angle is
-how far right the point is, and **sine** is how far up; both always lie
-between −1 and +1, and both repeat every full turn.
+In general, a code of d numbers has d/2 hands, and each turns more slowly
+than the one before:
 
 $$
 PE_{(pos,\,2i)} = \sin(pos\cdot\omega_i), \qquad PE_{(pos,\,2i+1)} = \cos(pos\cdot\omega_i),
@@ -324,33 +325,34 @@ for i in range(d // 2):
 [f"{v:.3f}" for v in PE]  # → ['0.841', '0.540', '0.010', '1.000']
 ```
 
-`sinusoidal_encoding(n, d)` builds the whole (n × d) table in four lines. A
-shift of k positions rotates every (sin, cos) pair by the same angle k·ω_i
-wherever you start, so **the dot product of two position codes depends only
-on their distance**.
+Moving k positions on turns every hand by the same angle, k·ω_i, wherever
+it starts. So **the dot product of two position codes depends only on how far
+apart the positions are**.
+
+**In code:** `sinusoidal_encoding(n, d)` builds the whole table, one row per position.
 
 ![Left columns flip colour every few positions and right columns change slowly, so every row is a unique fingerprint and neighbours look alike](figures/primer.ml.positional.sinusoidal_heatmap.svg)
 
-**Reading it:** each row is a position (0 at the top), each column one
-dimension, and colour is the value from −1 to +1. The left columns flip
-colour every few rows (fast hands); the right columns change slowly over
-hundreds of rows (slow hands). No two rows are identical, so every position
-has a unique fingerprint, and neighbouring rows look alike, so nearby
-positions get similar codes.
+**Reading it:** each row is a position (0 at the top), each column one of 64
+numbers, and colour is the value from −1 to +1. The left columns flip colour
+every few rows: the fast hands. The right columns change slowly over hundreds
+of rows: the slow hands. No two rows are identical, so every position has its
+own code, and neighbouring rows look alike, so nearby positions get similar
+codes.
 
-**Why it matters.** Fixed codes need no training and exist for any position,
-and the distance property lets the model learn "look 3 tokens back" once and
-use it everywhere. But the code is mixed into the content vector itself,
-which later methods avoid.
+The codes need no training and exist for every position. Because their
+similarity depends only on distance, a model can learn "look 3 tokens back"
+once and use it everywhere. The cost is that position is mixed into the
+word's vector itself.
 
 ## 2. Learned absolute positions (GPT-2, BERT)
 
-**Everyday picture.** Numbered theatre seats. Every seat has its own brass
-plate, and the theatre has a fixed number of seats.
-
-**Tiny worked example.** GPT-2 has a table of 1,024 position vectors, each
-768 numbers long: 786,432 extra parameters, learned like any other weight.
-Position 5 looks up row 5. Position 1,024 has no row at all.
+GPT-2 and BERT keep the addition but learn the position vectors instead of
+computing them. The model holds a table with one row per position, like
+numbered seats in a theatre, and the number of seats is fixed when the model
+is built. GPT-2's table has 1,024 rows of 768 numbers: 786,432 parameters,
+learned like any other weight. Position 5 reads row 5. Position 1,024, the
+1,025th token, has no row.
 
 ```mermaid
 flowchart LR
@@ -362,12 +364,11 @@ flowchart LR
   P2["position ≥ max_len"] -.-> X["no row: cannot be encoded"]
 ```
 
-**Reading it:** identical to the sinusoidal picture except that the bottom
-path is a second trainable table instead of a formula. The dotted arrow is
-the catch: the table ends at max_len, so a longer input simply has nowhere
-to look.
+**Reading it:** this is the sinusoidal picture with the formula on the
+bottom path replaced by a second learned table. Then follow the dotted arrow:
+the table ends at max_len, so a position past it has no row to look up.
 
-**The math and the code.**
+Each word's input is a sum of two rows:
 
 $$
 x_{pos} = E_{token} + P_{pos}
@@ -400,30 +401,33 @@ P = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.1, 0.3]]
 len(P) > 1024  # → False
 ```
 
-`primer.ml.transformer.TinyGPT` uses exactly this.
+**In code:** `primer.ml.transformer.TinyGPT` uses a table like this one.
 
-**Why it matters.** It's simple and works well inside the trained length,
-but it cannot extrapolate. That limitation pushed the field to RoPE.
+A learned table is simple and works well up to its last row. Past it there is
+nothing to look up, and the table cannot grow after training.
 
-## 3. Rotary position embeddings, RoPE (Llama, Mistral, Qwen and most modern LLMs)
+## 3. Rotary position embeddings, RoPE (Llama, Mistral, Qwen)
 
-**Everyday picture.** Two people point at a clock face, one at 1 o'clock and
-one at 4 o'clock. The angle between their arms is 90°. Move both of them on
-to 8 and 11 o'clock and the angle is still 90°. RoPE turns each token's
-query and key like clock hands, by an amount proportional to its position.
-When a query meets a key, only the **angle between them** (the distance
-between the tokens) affects the score, not where on the clock they started.
+Both schemes so far add a code to the word's vector, one code per position.
+RoPE adds nothing to the word. It turns the word's query and key, the two
+vectors attention compares to score a pair of words, like clock hands, by an
+angle that grows with the word's position. Two people pointing at a clock
+face, one at 1 o'clock and one at 4, hold their arms 90° apart. Move them on
+to 8 and 11 o'clock and the angle is still 90°. In the same way, when a
+turned query meets a turned key, only the **angle between them** affects the
+score, and that angle depends on how far apart the two words are, not on
+where they sit.
 
-**Tiny worked example.** Use 2 dimensions, so there is one pair turning 1
-radian per position. Let q = k = (1, 0). Put the query at position 3 and the
-key at position 7:
+Take a query and a key of two numbers each, q = k = (1, 0), so there is one
+pair, turning 1 radian per position. Put the query at position 3 and the key
+at position 7:
 
 * q turns by 3 rad: (cos 3, sin 3) = (−0.990, 0.141)
 * k turns by 7 rad: (cos 7, sin 7) = (0.754, 0.657)
 * score = −0.990·0.754 + 0.141·0.657 = −0.654 = cos(4)
 
-Now move both 100 positions later, to 103 and 107. The score is still
-cos(107 − 103) = cos 4 = −0.654. Only the distance, 4, survived.
+Move both 100 positions on, to 103 and 107, and the score is still
+cos(107 − 103) = cos 4 = −0.654. Only the distance between them counts.
 
 ```mermaid
 flowchart LR
@@ -439,19 +443,15 @@ flowchart LR
 ```
 
 **Reading it:** this is ordinary attention with one extra step on the query
-and key branches. After projection, each (even, odd) pair of numbers in q
-and k is spun like a clock hand by an angle that grows with the token's
-position: fast for the first pairs, slow for the last. In the dot product
-only the *difference* of the angles survives, so the score knows how far
-apart the tokens are but not where they sit in the document. The value
-branch is untouched, so what gets blended is plain content, and nothing is
-ever added to the embedding.
+and key branches. After projection, each pair of numbers in q and k is
+turned by an angle that grows with the word's position, fast for the first
+pairs and slow for the last. The value branch is not turned, so what gets
+blended is plain content.
 
-**The math and the code.** A **rotation** turns a point around the centre
-by some angle without changing its distance from the centre. Written as a
-2 × 2 grid times a column of two numbers (a **matrix-vector multiply**:
-each output number is one row of the grid multiplied position-by-position
-with the input and added up):
+A **rotation** turns a point around the centre by an angle without changing
+its distance from the centre. For one pair it is a 2 × 2 grid times a column
+of two numbers, a **matrix-vector multiply**: each output number is one row
+of the grid multiplied entry by entry with the input and added up.
 
 $$
 \begin{pmatrix} x'_{2i} \\ x'_{2i+1} \end{pmatrix} =
@@ -496,10 +496,10 @@ d, i = 2, 0
 10000 ** (-2 * i / d)  # → 1.0
 ```
 
-Why only the distance survives: turning q by angle a and k by angle b and
-then taking their **dot product** (multiply matching numbers, add them up;
-large when the vectors point the same way) gives the same answer as turning
-k alone by b − a. So
+The score is a **dot product** (multiply matching numbers and add them up;
+it is large when the vectors point the same way), and turning both vectors by
+the same angle does not change it. So turning q by angle a and k by angle b
+gives the same score as leaving q alone and turning k by b − a:
 
 $$
 \langle R_m q,\; R_n k\rangle = \langle q,\; R_{n-m}\, k\rangle
@@ -541,41 +541,44 @@ round(dot(q, R(7 - 3, k)), 3)  # → -0.654
 round(dot(R(103, q), R(107, k)), 3)  # → -0.654
 ```
 
-`apply_rope` does this for a vector or a whole sequence with three
-element-wise lines, and no matrix multiply.
+The same holds for vectors of 64 numbers, 32 pairs each turning at its own
+speed θ_i, starting anywhere in the text:
 
 ![The score curves for starting positions 0, 100 and 1,000 lie exactly on top of each other: only the distance matters](figures/primer.ml.positional.rope_relative.svg)
 
-**Reading it:** the x-axis is the distance n − m between a query and a key;
-each line uses the same q and k but places the pair at a different absolute
-starting position (0, 100, 1,000). The lines lie exactly on top of each
-other: the score depends only on distance. That is the relative-position
-property in one picture.
+**Reading it:** the distance n − m between query and key runs along the
+bottom. Each line uses the same q and k but starts the pair at a different
+position: 0, 100 or 1,000. The lines lie on top of each other, so the score
+depends only on distance.
+
+The pairs turn at speeds that fall from the first pair to the last, as the
+sinusoidal hands do:
 
 ![Pair 0 wraps a full turn about every 6 tokens while the last pairs barely turn across the whole range](figures/primer.ml.positional.rope_frequencies.svg)
 
-**Reading it:** each line is one pair of dimensions; the y-axis is how far
-that pair has turned (wrapped to one full turn, 2π) at each position on the
-x-axis. Pair 0 spins fastest and wraps every ~6 tokens, giving fine-grained
-local order. The last pairs barely turn across the whole range, giving
-coarse long-range position. It's the many-handed clock again, now applied
-inside attention.
+**Reading it:** position runs along the bottom, and each line is one pair,
+showing how far it has turned, wrapped at one full turn (2π). Pair 0 turns
+fastest and wraps about every 6 tokens, so it tells neighbours apart. Pair
+31, the last, barely turns across the whole range and carries long-range
+position. These are the sinusoidal clock's hands, now inside attention.
 
-**In code:** `rope_frequencies` returns each pair's turning speed θ_i, which `apply_rope` multiplies by the position to get every angle.
+**In code:** `rope_frequencies` gives each pair's speed θ_i, and `apply_rope` turns a vector or a whole sequence.
 
-**Why it matters.** Relative distance is what language actually uses ("the
-word two back"), rotation keeps vector lengths unchanged, and because
-position lives in angles, you can stretch it after training. That last
-point is the next section.
+Language works in relative distances ("the word two back"), and RoPE builds
+them into every score. Turning a vector never changes its length, so the
+word's content is left as it was. And because position now lives in angles,
+the angles can be rescaled after training.
 
 ## 4. Extending context after training
 
-**Everyday picture.** A ruler marked from 0 to 4,000. To measure something
-32,000 long you can shrink the object by 8× so it fits on the ruler
-(interpolation), or re-draw only the long-distance marks while keeping the
-fine millimetre marks (NTK-aware scaling).
+A RoPE model has only seen the angles produced by positions up to its
+training length. Past that length its slow pairs turn to angles it never met,
+and attention degrades. A ruler marked from 0 to 4,000 cannot measure
+something 32,000 long either. You can shrink the object 8× so it fits the
+ruler (**position interpolation**), or redraw the long-distance marks and
+keep the fine millimetre marks (**NTK-aware scaling**).
 
-**Tiny worked example.** A model trained on 4,096 tokens now reads 32,768.
+Say a model trained on 4,096 tokens has to read 32,768.
 Interpolation multiplies every position by 4096/32768 = 1/8, so position
 32,000 is treated as 4,000: an angle the model has seen. Neighbours are now
 1/8 of a position apart, which a short fine-tune teaches it to resolve.
@@ -590,13 +593,13 @@ flowchart LR
   R --> F["short fine-tune on long text"]
 ```
 
-**Reading it:** both paths solve the same problem: angles beyond what the
-model saw in training. Interpolation slows *every* hand equally, which also
-blurs the fast hands that encode local word order. NTK-aware scaling slows
-only the slow hands and leaves the fastest one untouched, so local order stays
-sharp. Both usually end with a brief fine-tune.
+**Reading it:** both paths bring the angles back inside the range seen in
+training. Interpolation slows *every* hand by the same factor, which also
+blurs the fast hands that carry local word order. NTK-aware scaling slows the
+slow hands and leaves the fastest one as it was, so local order stays sharp.
+Either is usually followed by a short fine-tune on long text.
 
-**The math and the code.** Position interpolation (`interpolate_positions`):
+Position interpolation is one multiplication:
 
 $$
 pos' = pos \cdot \frac{L_{train}}{L_{new}}
@@ -623,7 +626,8 @@ pos, L_train, L_new = 32_000, 4_096, 32_768
 pos * L_train / L_new  # → 4000.0
 ```
 
-NTK-aware scaling (`ntk_scaled_base`) changes the base instead:
+NTK-aware scaling leaves the positions alone and raises the base, the
+10,000 in θ_i, instead:
 
 $$
 base' = base \cdot s^{\,d/(d-2)}
@@ -661,39 +665,47 @@ f"{slowest(base):.2e}", f"{slowest(base_new):.2e}"  # → ('1.15e-04', '1.44e-05
 round(slowest(base) / slowest(base_new), 6)  # → 8.0
 ```
 
-YaRN refines this per frequency band and is
-used by many long-context models. ALiBi skips position vectors entirely and
-subtracts a penalty proportional to distance from each attention score.
+**In code:** `interpolate_positions` and `ntk_scaled_base`.
+
+**YaRN** refines NTK-aware scaling by treating each band of frequencies
+differently, and many long-context models use it. **ALiBi** takes another
+route: it adds no position vectors at all and subtracts a penalty
+proportional to distance from each attention score.
 
 ![Raw positions leave the trained angle band right after 4k and reach 8 times its top by 32k; interpolation and NTK scaling stay inside it](figures/primer.ml.positional.context_extension.svg)
 
-**Reading it:** the x-axis is position up to 32k and the y-axis is the angle
-of the slowest RoPE pair. The shaded band is the range of angles the model
-saw in training (positions up to 4k). The raw extended line leaves the band
-almost immediately after 4k: unfamiliar territory. The interpolated and
-NTK-scaled lines stay inside the band all the way to 32k.
+**Reading it:** position up to 32k runs along the bottom, and the angle of
+the slowest RoPE pair up the side. The shaded band is the angles the model
+saw in training, at positions up to 4k. The unscaled line leaves the band
+right after 4k. The interpolated and NTK-scaled lines stay inside it all the
+way to 32k.
 
-**Why it matters.** It's how models trained on a few thousand tokens are
-cheaply stretched to 100k or more, instead of being pretrained again from
-scratch.
+This is how a model trained on a few thousand tokens is stretched to 100k or
+more without pretraining it again from scratch.
 
-## A subtlety: the causal mask leaks order
+## 5. The causal mask leaks some order
 
-In a decoder, token i sees exactly i+1 tokens, so even with no position
-encoding ("NoPE") the model can partly infer where it is. Bidirectional
-attention (BERT-style) has no such crutch and is fully order-blind.
+Each scheme so far puts position in on purpose. A decoder, the kind of model
+that writes text one word at a time, also gets some order without one. Its
+causal mask lets each word see only itself and the words before it, so the
+word at position i sees i + 1 words. Even with no position encoding at all
+("NoPE"), the model can partly infer where each word sits from how many words
+it sees. In bidirectional attention, where every word sees every other (as in
+BERT), there is no such signal, and attention is blind to order.
 
-**In code:** `encode_sentence` with its causal flag set runs the same layer under `primer.ml.attention.causal_mask`; its pooled similarity is the "causal mask only" bar in the first figure.
+**In code:** `encode_sentence` with `causal=True` applies `primer.ml.attention.causal_mask` and gives the bar chart's "causal mask only" bar.
 
 ## In 20 seconds
-- Attention is permutation-equivariant: shuffle the words and the outputs
-  shuffle the same way, so without position information "dog bites man"
-  pools to exactly the same vector as "man bites dog".
-- The original transformer adds fixed sine/cosine codes; GPT-2 and BERT
-  learn a position table that ends at max_len.
-- Modern LLMs use RoPE: rotate q and k by a position-dependent angle so the
-  score depends only on relative distance. It also makes context extension
-  (interpolation, NTK/YaRN) practical.
+- Attention with no position information is blind to word order: shuffle
+  the words and its outputs are shuffled the same way, so "dog bites man"
+  pools to the same vector as "man bites dog".
+- The original transformer adds a fixed code of sines and cosines to each
+  word. GPT-2 and BERT learn a table of position vectors instead, and it has
+  no row past its last position.
+- Most current language models use RoPE, which turns each query and key by
+  an angle that grows with position, so a score depends only on how far
+  apart two words are. Because position lives in angles, a RoPE model can be
+  stretched to longer prompts after training.
 
 ## Self-test questions
 
