@@ -135,37 +135,32 @@ needed to know which lever to pull first, you are done.
 
 ## Level 2: How it works, from scratch
 
-A restaurant doesn't cut costs by buying worse ingredients for every dish.
-It sends simple orders to the line cook and complex ones to the head chef,
-pre-chops what every dish shares, doesn't plate food nobody eats, cooks
-things in parallel, does bulk prep overnight when it's cheaper, and watches
-the one kitchen station whose bills suddenly spike.
+A language model's bill is the sum of its calls, and each call is priced by
+its tokens. Lowering the bill takes three steps: work out what one call
+costs, work out what a finished task costs once failures are counted, and
+then pull the levers that bring it down, starting with the ones that
+cannot change the answers.
 
-Every lever in this lesson is one of those moves. The measure that matters
-is **cost per successful task**, not cost per call: a cheap attempt that
-fails still has to be paid for, and so does fixing it.
-
-**All prices in this module are illustrative constants** chosen for round
-arithmetic (a "large" model at \$5 per million input tokens and \$25 per
-million output tokens; a "small" one at \$1 and \$5). They show the *shape*
-of the trade-offs; check your provider's current price list for real
-numbers.
+All prices here are illustrative, chosen for round arithmetic: a "large"
+model at \$5 per million input tokens and \$25 per million output tokens,
+and a "small" one at \$1 and \$5. They show the shape of the trade-offs.
+For real numbers, check your provider's current price list.
 
 ## How a request is priced
 
-**Everyday picture.** A taxi that charges one rate for the distance to your
-pickup and a higher rate for the ride itself. Models charge per **token**
-(a word piece, about 4 characters of English): one rate for tokens you send
-(**input**) and a higher rate for tokens the model writes (**output**),
-because writing happens one token at a time (see `primer.ml.inference`).
+A model charges per **token** (a word piece, about 4 characters of
+English), at one rate for the tokens you send (**input**) and a higher rate
+for the tokens it writes (**output**). Output costs more because the model
+writes it one token at a time (see `primer.ml.inference`).
 
-**Worked example.** A large-model call with 10,000 input tokens and 500
-output tokens: 10,000 × \$5 / 1,000,000 = \$0.05 for input, plus
-500 × \$25 / 1,000,000 = \$0.0125 for output, total **\$0.0625**. If 8,000 of
-those input tokens are a stable prefix served from the **prompt cache**
-(reused work from an earlier identical beginning, billed here at 10% of the
-input price), input becomes 8,000 × \$0.50/M + 2,000 × \$5/M = \$0.014, and
-the call costs **\$0.0265**, 58% less.
+Take a large-model call with 10,000 input tokens and 500 output tokens.
+Input costs 10,000 × \$5 / 1,000,000 = \$0.05 and output costs
+500 × \$25 / 1,000,000 = \$0.0125, so the call costs \$0.0625. Now suppose
+8,000 of those input tokens are a stable prefix, the same system prompt and
+tool definitions sent on every call. The **prompt cache** reuses the work
+already done on a prefix it has seen, and bills it here at 10% of the input
+price. Input becomes 8,000 × \$0.50/M + 2,000 × \$5/M = \$0.014, and the
+call costs \$0.0265, 58% less.
 
 $$
 \text{cost} = \frac{c \cdot \rho\, p_{\text{in}} + (n_{\text{in}} - c)\, p_{\text{in}} + n_{\text{out}}\, p_{\text{out}}}{10^6}
@@ -197,25 +192,90 @@ cost = (c * rho * p_in + (n_in - c) * p_in + n_out * p_out) / 10**6
 round(cost, 4)  # → 0.0265
 ```
 
-Two facts fall out: output tokens cost several times more than input (ask
-for concise answers), and a cached prefix is nearly free (put stable content
-first; see `primer.agents.context`). Caches usually charge a small premium
-the first time a prefix is written; this module ignores it for simplicity.
+Two things follow. An output token costs five times as much as an input
+token here, so asking for concise answers pays. A cached prefix is nearly
+free, so put the content that never changes at the start of the prompt
+(see `primer.agents.context`). Some providers charge a small premium the
+first time a prefix is written to the cache; the arithmetic here leaves it
+out.
 
-**In code:** `request_cost` is the formula above, reading each model's
-`Price` from `PRICES`.
+**In code:** `request_cost` is the formula above.
+
+## Cost per successful task
+
+A call's price is not what a task costs: a failed attempt is paid for,
+and so is the retry or the person who fixes the result. Take a small model
+at \$0.002 an attempt that succeeds 60% of the time and a large one at
+\$0.010 that succeeds 95% of the time.
+
+$$
+\text{cost per success (retry until it works)} = \frac{c}{p}
+\qquad
+\text{cost per task (a person fixes failures)} = c + (1 - p)\,h
+$$
+
+**Symbols**
+
+| Symbol | Meaning here | Small model | Large model |
+|---|---|---|---|
+| $c$ | model cost of one attempt | \$0.002 | \$0.010 |
+| $p$ | chance an attempt succeeds | 0.60 | 0.95 |
+| $1/p$ | expected number of attempts until one succeeds | 1.67 | 1.05 |
+| $h$ | cost of a person fixing one failure (illustrative: a few minutes of staff time) | \$2.00 | \$2.00 |
+
+**In words:** if you can simply retry, you pay one attempt's cost for every
+expected attempt; if failures need a person, every task pays its attempt
+plus the chance of failure times the cost of the fix.
+
+**On the worked example:** retrying, the small model costs 0.002 / 0.60 =
+\$0.0033 per success and the large one 0.010 / 0.95 = \$0.0105, so the small
+model is cheaper. With a person fixing failures, the small model costs
+0.002 + 0.40 × 2.00 = \$0.802 per task and the large one
+0.010 + 0.05 × 2.00 = \$0.110: the cheap model costs seven times as much.
+
+**In Python:**
+
+```python
+def per_success(c, p):
+    # retry until it works
+    return c / p
+def per_task(c, p, h=2.00):
+    # a person fixes each failure
+    return c + (1 - p) * h
+round(per_success(0.002, 0.60), 4), round(per_success(0.010, 0.95), 4)  # → (0.0033, 0.0105)
+round(per_task(0.002, 0.60), 3), round(per_task(0.010, 0.95), 3)  # → (0.802, 0.11)
+# small vs. large, with cleanup
+round(per_task(0.002, 0.60) / per_task(0.010, 0.95))  # → 7
+```
+
+![With automatic retries the small model is cheaper per success (0.3 vs 1.1 cents); if a person fixes each failure the large model wins, 11 cents vs 80](figures/primer.agents.cost.unit_economics.svg)
+
+**Reading it:** the dollar axis is a log scale. On the left, failures are
+retried automatically and the small model's bar is the lower one. On the
+right, a person fixes each failure: the small model's bar rises to 80 cents
+and the large model's to 11. Once failures cost a person's time, the
+failure rate sets the cost, not the price per token.
+
+Every lever below is judged by this number. One that cuts the price of a
+call but raises the failure rate can make tasks dearer, so the levers that
+can change answers are checked against an evaluation set (see
+`primer.agents.evals`).
+
+**In code:** `cost_per_success_with_retries` is $c/p$ and
+`cost_per_success_with_cleanup` is $c + (1-p)\,h$.
 
 ## Route each task to the cheapest model that can do it
 
-**Everyday picture.** A hospital triage nurse: sprained ankles go to the
-nurse practitioner, chest pains to the cardiologist. Nobody sends every
-patient to the most expensive specialist.
+The first lever is which model runs the task. Many requests are simple:
+classify a ticket, pull a date out of an email. A small model handles
+those at a fifth of the large model's price per token. A **router** sits in
+front of every request and sends the simple ones to the small model and the
+hard ones (planning, analysis, reasoning over several steps) to the large
+one.
 
-**Worked example.** The sample workload is 10 tasks: 7 simple (classify a
-ticket, extract a date) and 3 complex (plan a migration). All on the large
-model it costs \$0.671. Routing the 7 simple ones to the small model, which
-is 5x cheaper per token, brings it to \$0.314: **53% saved**, with the hard
-tasks still on the strong model.
+The sample workload has 10 tasks, 7 simple and 3 complex (planning a
+migration). On the large model it costs \$0.671. Routing the 7 simple tasks to the small model brings it
+to \$0.314, 53% less, with the hard tasks still on the large model.
 
 ```mermaid
 flowchart LR
@@ -226,29 +286,29 @@ flowchart LR
   L --> O
 ```
 
-**Reading it:** the router is cheap (a few rules here; often a small
-classifier) and sits in front of every request. The whole saving comes from
-the left branch: most traffic in real systems is simple, and simple work
-runs well on small models. Validate the router with evals
-(`primer.agents.evals`): a router that sends hard tasks to the small model
-saves money and quietly loses quality.
+**Reading it:** every task passes through the router, which here is a few
+keyword rules; a production router is often a small classifier. All of the
+saving comes from the branch to the small model, and so does the risk: a
+hard task sent down it costs less and fails. Check the router against the
+evaluation set before and after you turn it on.
 
-**In code:** `route` is the rule-based router; `workload_cost` prices a list
-of `WorkItem` tasks with any levers switched on; `routing_savings` compares
-all-large against routed on `SAMPLE_WORKLOAD`.
+**In code:** `route` is the rule-based router, and `workload_cost` prices
+the sample workload with any combination of levers switched on.
 
 ## Response caching and semantic caching
 
-**Everyday picture.** A receptionist who's been asked "what's the wifi
-password?" a hundred times just answers from memory. That's an **exact
-response cache**: the same question (ignoring case and spaces) returns the
-stored answer with no model call. A **semantic cache** goes further and
-answers *similar* questions from memory, using embeddings (vectors where
-closeness means similar meaning, see `primer.ml.embeddings`) to decide
-"similar". That's where the receptionist starts giving the vacation-policy
-answer to someone asking about sick leave.
+Routing makes a call cheaper; a cache skips it. An **exact response
+cache** stores each answer under its question and returns it when the same
+question comes again (ignoring case and spacing). It costs nothing and is
+never wrong, but it misses every rewording. A **semantic cache** also
+answers questions *similar* to a stored one. It turns each question into an
+embedding (a vector in which closeness means similar meaning, see
+`primer.ml.embeddings.similarity`) and returns the stored answer when the nearest
+stored question is close enough. But similar is not the same: "How many
+sick days do I get?" sits very close to "How many vacation days do I get?"
+and needs a different answer.
 
-**Worked example.** With the toy embedder in `primer.common.embedder`:
+Here are four pairs scored by a small demonstration embedder:
 
 | Stored question | New question | Similarity | Same intent? |
 |---|---|---|---|
@@ -257,11 +317,13 @@ answer to someone asking about sick leave.
 | Request a new laptop | Request a new monitor | **0.96** | **no** |
 | What does ERR-4012 mean? | What does ERR-4013 mean? | 0.56 | no |
 
-The two near-misses score *higher* than a genuine paraphrase. No single
-threshold separates them. Two cheap **guards** help: identifiers and
-numbers must match exactly (ERR-4012 ≠ ERR-4013), and negation must match
-("cancel" ≠ "don't cancel"). They can't catch "sick" vs "vacation", which
-share a topic and differ in a single word.
+The two pairs that ask different things score higher than the genuine
+rewording, so a threshold high enough to reject them also rejects it. Two
+cheap **guards** catch some wrong matches before the threshold is tried:
+identifiers and numbers must match exactly (ERR-4012 is not ERR-4013), and
+negation must match ("cancel my order" is not "don't cancel my order").
+Neither guard can tell sick days from vacation days, which share a topic
+and differ by one word.
 
 ```mermaid
 flowchart TD
@@ -276,50 +338,52 @@ flowchart TD
   M --> S[Store the new answer]
 ```
 
-**Reading it:** the exact cache is checked first because it's free and never
-wrong. The semantic path adds two gates: the similarity threshold, and the
-guards. An expired entry (older than its **TTL**, time to live) is treated
-as a miss, so answers about changing facts don't go stale forever.
+**Reading it:** follow a question from the top. The exact cache comes
+first because it costs nothing and is never wrong. On a miss, the semantic
+path has two gates before it answers: the similarity threshold, then the
+guards. The guards also turn away an entry older than its **TTL** (time to
+live), so an answer about a fact that changes does not stay in use for
+ever.
 
-![No threshold separates them: wrong hits stay at 40 to 60% through 0.95, often above the paraphrase hit rate, and reach 0 only where paraphrase hits do too](figures/primer.agents.cost.semantic_cache.svg)
+![On twelve labelled pairs, wrong hits stay at 40 to 60% from 0.4 through 0.95, above the paraphrase hit rate, and reach 0 only where paraphrase hits do too](figures/primer.agents.cost.semantic_cache.svg)
 
-**Reading it:** the x-axis is the similarity threshold; the blue line is the
-share of genuine paraphrases answered from cache (good), and the red line is
-the share of different-intent questions answered from cache (a wrong answer
-served confidently). Lowering the threshold raises both, but look where the
-lines sit: from 0.4 upward the red line is above the blue one, so the cache
-serves more wrong answers than right ones (60% of different-intent questions
-against at most 57% of paraphrases). Even at 0.95 it still answers 40% of
-them wrongly and only 14% of paraphrases, because "sick" vs "vacation"
-scores 0.97. On everyday questions no threshold makes semantic caching safe;
-it's safe only for narrow, curated FAQ-style traffic, with guards, a TTL,
-and a measured wrong-hit rate.
+**Reading it:** the similarity threshold runs along the bottom. The blue
+line is the share of seven genuine rewordings answered from the cache; the
+red line is the share of five different-intent questions answered from it,
+each a confident wrong answer. The guards stop two of the five, so red tops
+out at 60%. From 0.4 to 0.95 red sits above blue: on these pairs, every
+threshold in that range gets a larger share of the different questions
+wrong than of the rewordings right. Above 0.95 the cache answers nothing.
 
-**In code:** `ResponseCache` is the exact cache. `SemanticCache` is the
-semantic path: `SemanticCache.lookup` skips expired entries and entries whose
-identifiers or negation differ, then returns the nearest survivor, and
-`SemanticCache.get` applies the threshold. `semantic_cache_sweep` draws the
+Twelve hand-written pairs and a toy embedder are a demonstration, not a
+measurement of semantic caching in general. What they show is the check to
+run first: label pairs from your own traffic and measure the wrong-hit rate
+at the threshold you plan to use. Keep the cache to narrow traffic, such as
+a curated FAQ, with the guards and a TTL.
+
+**In code:** `ResponseCache` is the exact cache and `SemanticCache` the
+semantic one, guards and TTL included. `semantic_cache_sweep` draws the
 figure from the labelled pairs in `CACHE_PAIRS`.
 
 ## Trim tokens
 
-**Everyday picture.** Don't photocopy the whole binder when the colleague
-needs one page. Compress tool results to the fields the next step needs
-(`primer.agents.context.compress_tool_output`), send the top few reranked
-chunks instead of dozens, remove repeated boilerplate from system prompts,
-and ask for concise output, because output is the expensive direction.
+Caching and routing lower the price of tokens; trimming sends fewer of
+them. Cut tool results down to the fields the next step needs (see
+`primer.agents.context`), send the top few reranked
+chunks instead of dozens, remove repeated boilerplate from the system
+prompt, and ask for concise answers, since output is the expensive
+direction.
 
 **In code:** `workload_cost` models trimming as cutting each task's tool
 output to 500 tokens, and concise output as cutting long answers by a third.
 
 ## Run independent tool calls at the same time
 
-**Everyday picture.** Boil the pasta while the sauce simmers. Cooking them
-one after the other takes the sum of the times; together, the time of the
-slowest.
-
-**Worked example.** Three independent lookups of 100 ms each: sequentially
-about 300 ms; concurrently about 100 ms.
+Latency, the wait for an answer, has a lever of its own. An agent that
+calls three tools one after another waits for each in turn. When the calls
+do not depend on each other, start them together, and the wait is the time
+of the slowest: three lookups of 100 ms each take about 300 ms in sequence
+and about 100 ms together.
 
 ```mermaid
 sequenceDiagram
@@ -347,47 +411,48 @@ sequenceDiagram
   T3-->>A: result
 ```
 
-**Reading it:** in the top half each call waits for the previous result; in
-the bottom half the three requests leave together and the agent waits only
-for the slowest. Models can ask for several tools in one turn (parallel tool
-use); run them concurrently and return all results in one message. Parallel
-calls cut wall-clock time, not tokens.
+**Reading it:** in the top half each call waits for the result of the one
+before; in the bottom half the three requests leave together and the agent
+waits once, for the slowest.
+
+A model can ask for several tools in one turn (**parallel tool use**). Run
+them concurrently and send all the results back in one message. This
+shortens the wait, not the bill: the tokens are the same.
 
 ![Three 100 ms tool calls take 300 ms end to end when run one after another, but only 100 ms when started together](figures/primer.agents.cost.parallel.svg)
 
-**Reading it:** each bar is one 100 ms tool call on a shared time axis. The
-sequential calls stack end to end, 300 ms in all; the parallel ones start
-together, so the whole batch finishes in the time of one. Run the lesson to
-measure it with `asyncio`: the real timings land within a few milliseconds
-of these bars.
+**Reading it:** the same three calls on a time axis in milliseconds. The
+sequential bars stack end to end and finish at 300; the parallel bars
+start together and finish at 100. The chart is drawn from the planned
+delays; running the module times real calls, which land within a few
+milliseconds of them.
 
 **In code:** `run_sequential` awaits each call before starting the next;
 `run_parallel` starts them all with Python's asyncio gather and waits once.
 
-**Streaming** (showing tokens as they're generated) doesn't reduce total
-time either, but users see progress immediately, which changes how fast the
-system *feels*.
+**Streaming**, showing the answer as it is generated, does not shorten the
+total time either, but the user sees progress at once, so the system feels
+faster.
 
 ## Batch what isn't interactive
 
-**Everyday picture.** Sending the laundry out to be done overnight at half
-price instead of waiting at the express counter. Providers offer **batch
-APIs**: submit many requests, get results within hours (often within 24),
-typically at about half the price. Use them for anything no one is waiting
-on: nightly evals, backfilling document processing, bulk classification.
+Some work has no one waiting on it: nightly evaluation runs, reprocessing a
+backlog of documents, classifying a pile of old tickets. Providers offer
+**batch APIs** for it. You submit many requests at once and collect the
+results later, within a day, at about half the normal price.
 
-**In code:** `batch_cost` prices a list of requests at the batch discount.
+**In code:** `batch_cost` prices a list of requests at half price.
 
 ## Budgets and alerts
 
-**Everyday picture.** A prepaid card with a hard limit, and a bank that
-texts you when a purchase looks nothing like your usual spending.
+The levers so far lower the normal bill. Budgets guard against an abnormal
+one, from an agent stuck in a loop or a customer whose usage runs away.
 
-A **task budget** caps steps and tokens per task, so a confused agent stops
-instead of looping all night. A **tenant spend cap** (a tenant is one
-customer organisation on a shared platform) stops one customer's runaway
-usage from becoming a surprise invoice. An **anomaly alert** fires when a
-task uses far more tokens than usual:
+A **task budget** caps the steps and tokens one task may use, so a confused
+agent stops instead of looping all night. A **tenant spend cap** (a tenant
+is one customer organisation on a shared platform) stops one customer's
+runaway usage from turning into a surprise invoice. An **anomaly alert**
+fires when a task uses far more tokens than usual:
 
 $$
 \text{alert if } x > \mu + z\,\sigma
@@ -409,8 +474,8 @@ three times the usual spread.
 1,000 and standard deviation ≈ 71 (the squared distances from the mean add
 up to 25,000; divided by 6 − 1 = 5 that's 5,000, whose square root is 70.7),
 so the line is 1,000 + 3 × 70.7 ≈ 1,212.
-A 10,000-token task is far above it: alert. Such jumps usually mean a loop
-or a bad deploy.
+A 10,000-token task is far above it, so the alert fires. A jump like that
+points to a loop or a bad deploy.
 
 **In Python:**
 
@@ -428,103 +493,47 @@ round(mu + z * sigma)  # → 1212
 10_000 > mu + z * sigma  # → True
 ```
 
-**In code:** `TaskBudget.charge` counts each step's tokens and raises
-`BudgetExceeded` at either limit; `TenantSpend.record` adds a finished task's
-cost to its tenant's total and returns a cap alert or an anomaly alert (the
-formula above).
+**In code:** `TaskBudget` stops a task at its step or token limit, and
+`TenantSpend` keeps each tenant's total and raises the cap and anomaly
+alerts.
 
-## Unit economics: cost per successful task
+## The levers in order
 
-**Everyday picture.** A cheap printer that jams on 40% of pages isn't
-cheap once you count the wasted paper and the time spent clearing jams.
-
-$$
-\text{cost per success (retry until it works)} = \frac{c}{p}
-\qquad
-\text{cost per task (a person fixes failures)} = c + (1 - p)\,h
-$$
-
-**Symbols**
-
-| Symbol | Meaning here | Small model | Large model |
-|---|---|---|---|
-| $c$ | model cost of one attempt | \$0.002 | \$0.010 |
-| $p$ | chance an attempt succeeds | 0.60 | 0.95 |
-| $1/p$ | expected number of attempts until one succeeds | 1.67 | 1.05 |
-| $h$ | cost of a person fixing one failure (illustrative: a few minutes of staff time) | \$2.00 | \$2.00 |
-
-**In words:** if you can simply retry, you pay one attempt's cost for every
-expected attempt; if failures need a person, every task pays its attempt
-plus the chance of failure times the cost of the fix.
-
-**On the worked example:** retrying, the small model costs 0.002 / 0.60 =
-\$0.0033 per success and the large one 0.010 / 0.95 = \$0.0105, so the small
-model wins. With human cleanup, the small model costs 0.002 + 0.40 × 2.00 =
-**\$0.802** per task and the large one 0.010 + 0.05 × 2.00 = **\$0.110**: the
-"cheap" model is 7x more expensive.
-
-**In Python:**
-
-```python
-def per_success(c, p):
-    # retry until it works
-    return c / p
-def per_task(c, p, h=2.00):
-    # a person fixes each failure
-    return c + (1 - p) * h
-round(per_success(0.002, 0.60), 4), round(per_success(0.010, 0.95), 4)  # → (0.0033, 0.0105)
-round(per_task(0.002, 0.60), 3), round(per_task(0.010, 0.95), 3)  # → (0.802, 0.11)
-# small vs. large, with cleanup
-round(per_task(0.002, 0.60) / per_task(0.010, 0.95))  # → 7
-```
-
-![With automatic retries the small model is cheaper per success (0.3 vs 1.1 cents); if a person fixes each failure the large model wins, 11 cents vs 80](figures/primer.agents.cost.unit_economics.svg)
-
-**Reading it:** the left pair of bars assumes failures can be retried
-automatically: the small model wins. The right pair assumes a person has to
-fix each failure: the large model wins by a mile. Which world you're in
-decides which model is cheaper, and the model's price per token barely
-matters in the second one.
-
-**In code:** `cost_per_success_with_retries` is $c/p$ and
-`cost_per_success_with_cleanup` is $c + (1-p)\,h$.
-
-## Putting it together: a 5x plan, in order
-
-Order the levers so the ones that can't hurt quality come first:
+Take the levers that cannot hurt quality first:
 
 1. **Prompt caching**: reorder the prompt so the stable prefix is reused.
-   No behaviour change.
+   The answers do not change.
 2. **Trim tokens**: compress tool results and send fewer chunks.
 3. **Concise output**: ask for shorter answers where length adds nothing.
-4. **Route easy tasks to the small model**: the first lever that *can*
-   change quality, so it's validated with evals before and after.
-5. **Batch** the non-interactive share.
+4. **Route easy tasks to the small model**: the first lever that can change
+   the answers, so check it against the evaluation set before and after.
+5. **Batch** the work no one is waiting on.
 
 ![Workload cost falls from 67 to 8 cents as levers stack: caching 2.2x, trimming 3.6x, concise output 3.9x, routing 7.8x, batching 8.4x](figures/primer.agents.cost.five_x.svg)
 
-**Reading it:** each bar is the cost of the same 10-task workload after
-applying every lever up to and including that one; the label is the
-cumulative reduction. Caching alone roughly halves it, trimming and concise
-output take it past 3x, routing takes it past 7x, and batching adds the
-last few percent. The three levers after the baseline (caching, trimming,
-concise output) are the free wins that don't touch quality.
+**Reading it:** each bar is the cost of the same 10-task workload with
+that lever and every lever to its left switched on; the label is the total
+reduction so far. Caching alone more than halves the cost. Trimming and
+concise output take it to 3.9x, routing to 7.8x and batching to 8.4x, from
+67 cents to 8. The three blue bars are the levers that cannot change
+quality.
 
 **In code:** `five_x_plan` switches the levers on one at a time, in this
 order, and reports the cost and cumulative reduction after each.
 
 ## In 20 seconds
-- Measure cost per *successful* task, not per call; include retries and
-  human cleanup.
-- Free wins first: prompt caching (stable prefix first), trimming tool
-  output and chunks, concise output, batch APIs for non-interactive work.
-- Then route easy tasks to small models, validated with evals.
-- Run independent tool calls in parallel; stream to improve perceived
-  speed.
-- Budgets per task, spend caps per tenant, and alerts on sudden jumps in
-  tokens per task.
-- Semantic caches can serve confidently wrong answers; use them only on
-  narrow traffic, with guards and a measured wrong-hit rate.
+- Measure cost per successful task, not per call. A cheap model that fails
+  often can cost more per task than a dear one.
+- First take the levers that cannot change quality: prompt caching,
+  trimming tool output and chunks, and concise answers.
+- Then route easy tasks to a small model, checked against an evaluation
+  set.
+- Batch work no one waits on, at about half price; run independent tool
+  calls together; stream answers so the wait feels shorter.
+- Cap steps and tokens per task and spend per customer; alert on sudden
+  jumps in tokens per task.
+- A semantic cache can answer a different question with confidence;
+  measure its wrong-hit rate before using it.
 
 ## Self-test questions
 
