@@ -1254,9 +1254,11 @@ relayed through about 25 intermediate tokens and layers, so it arrives
 weakened; direct, exact lookup only works within the window.
 
 **What does a global token do in a sparse pattern, and why is it cheap?**
-Every token reads it and it reads every token, so any two tokens are at most
-two hops apart. It adds only about one column and one row of scores, a cost
-that grows with n rather than n².
+Every token reads it, and where attention runs both ways (Longformer,
+BigBird) it reads every token, so any two tokens are at most two hops apart.
+In a causal model it only gives every token a view of the beginning. It adds
+only about one column and one row of scores, a cost that grows with n rather
+than n².
 
 **Why can linear attention run as a recurrence but softmax attention cannot?**
 Linear attention's weight φ(q)·φ(k) splits into a query part and a key part,
