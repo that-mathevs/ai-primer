@@ -129,15 +129,15 @@ new golden task. If you only needed to decide how to grade, you are done.
 
 ## Level 2: How it works, from scratch
 
-A driving test doesn't ask the learner to describe driving; it puts them on
-a fixed route with known hazards and a checklist. Pass the route, get the
-licence. Change the car, retake the test.
-
-An **eval** (evaluation) is that test for an AI system: a fixed set of real
-tasks, a way to judge each result, and a score. Every time you change a
-prompt, a model, a tool or a retrieval setting, you rerun it. For agents
-this is *the* core engineering discipline: without it, every change is a
-guess, and regressions reach users silently.
+Take a small customer-support agent. It has three tools (look up an order,
+refund it, or escalate it to a person) and one rule: a refund above 500
+must go to a person. Someone rewords its prompt. To find out whether the
+new version is better, run both versions on the same fixed tasks, the
+**golden set**, and grade every run. A run leaves behind its
+**trajectory**: the answer, every tool call, the end state of the order
+database, the tokens used and the time taken. The grades add up to a
+scorecard for each version, and the two scorecards decide whether the new
+version ships. That whole procedure is an eval.
 
 ```mermaid
 flowchart LR
@@ -152,22 +152,23 @@ flowchart LR
   D -->|no| FIX[Fix and rerun]
 ```
 
-**Reading it:** left to right is one eval run. The golden set is fixed; the
-agent version changes. Each run leaves a full trajectory, and graders turn
-it into numbers. The diamond is the release gate: a new version ships only
-if it's at least as good as the current one on the same test.
+**Reading it:** follow one version of the agent from left to right. Only
+the second box changes from one eval run to the next; the golden set stays
+the same. The trajectory goes to two kinds of grader, code and a language
+model acting as judge, and both feed one scorecard. The diamond is the
+release gate: a new version ships only if it does at least as well as the
+current one on the same tasks.
 
-**In code:** `evaluate` is one lap of this diagram: it runs every golden task
-through `run_task`, grades each run and returns the scorecard.
+**In code:** `evaluate` runs every golden task through `run_task`, grades
+each run and returns the scorecard.
 
-## The golden set: a fixed route with known answers
+## The golden set
 
-**Everyday picture.** A teacher's answer key, built from past exam papers
-that real students actually got wrong.
-
-**Worked example.** This module's golden set has four support tasks against
-a small order database (A100 shipped, total 25; A200 delivered, total 40;
-A300 delivered, total 900; refunds above 500 must be escalated to a person):
+The support agent's golden set has four tasks. Each one runs against the
+same small order database: A100 has shipped (total 25), A200 has been
+delivered (total 40), and A300 has been delivered (total 900). For each
+task, the right-hand column says what must be true when the agent has
+finished.
 
 | Task id | User says | Pass means |
 |---|---|---|
@@ -176,32 +177,29 @@ A300 delivered, total 900; refunds above 500 must be escalated to a person):
 | `refund-over-limit` | "Refund order A300, the TV was damaged." | A300 ends up **escalated**, not refunded |
 | `out-of-scope` | "Can you change my shipping address to Paris?" | answer hands off to the support team; no refund |
 
-Start with even 50 cases taken from real traffic, and grow the set by adding
-every production failure you find (see "Closing the loop").
+A real golden set starts with 30 to 50 requests taken from real traffic,
+and grows by one task for every failure found in production (online
+evaluation, below).
 
-**In code:** `Task` holds one golden case (the prompt, the expected end state,
-required and forbidden tools, a step limit), and `GOLDEN_TASKS` is the table
-above. `Run` holds everything one attempt left behind: answer, tool calls,
-end state, tokens, time and cost.
+**In code:** `Task` holds one golden case and `GOLDEN_TASKS` is the table
+above; `Run` holds one trajectory.
 
 ## Grade outcomes, not paths
 
-**Everyday picture.** A maths teacher who marks the answer and checks that
-you didn't use a calculator, but doesn't insist you solved it with their
-favourite method.
-
-An agent can reach the right result by many routes, so you **grade the end
-state and constraints, not the exact sequence of steps**:
+With the tasks fixed, every run needs a grade. An agent can reach the right
+result by more than one route, so a grader that demands one exact sequence
+of tool calls fails runs that did the job. Grade two things instead:
 
 1. **Outcome**: is the database in the expected end state? Does the answer
    contain the facts it must?
-2. **Constraints on the path** (the trajectory): were required tools used,
-   were forbidden tools avoided, did it stay under the step limit?
+2. **Constraints on the path**: were the required tools used, were the
+   forbidden tools avoided, and did the run stay within the step limit?
 
-**Worked example.** For `refund-small`, a run that calls `refund` first and
-`lookup_order` second passes: the end state is right, the required tool was
-used, and 2 steps ≤ 5. For `status`, a run with a perfect answer that also
-called `refund` fails: `refund` is forbidden on a status question.
+For `refund-small`, a run that calls `refund` first and `lookup_order`
+second passes: the end state is right, the required tool was used, and 2
+steps is within the limit of 5. For `status`, a run with a perfect answer
+that also called `refund` fails, because `refund` is forbidden on a status
+question.
 
 ```mermaid
 flowchart TD
@@ -216,14 +214,17 @@ flowchart TD
   S -->|yes| P[Pass]
 ```
 
-**Reading it:** a run passes only by getting through every diamond. None of
-them asks "did it call the tools in the order I expected?". That's why two
-quite different correct runs both pass, and why a run that gets the right
-answer by doing something forbidden still fails.
+**Reading it:** a run passes only if it gets through all four diamonds,
+from top to bottom. No diamond looks at the order of the tool calls, so two
+different correct runs both pass. A run with the right answer that called a
+forbidden tool fails at the third.
 
-**Code graders** (exact match, schema validation, database checks) are
-cheap, fast and deterministic: use them wherever the outcome can be checked
-by code. **Trajectory metrics** measure how well it got there:
+Each diamond is a **code grader**, a check written in code; an exact match
+against an expected answer and a schema check are two more. Code graders are
+cheap and fast, and give the same answer every time, so use them wherever
+code can check the outcome. **Trajectory metrics** don't pass or fail a
+run. They measure how well it got where it did, which helps find what went
+wrong. One is tool selection accuracy:
 
 $$
 \text{tool selection accuracy} = \frac{|T_{\text{required}} \cap T_{\text{called}}|}{|T_{\text{required}}|}
@@ -254,24 +255,23 @@ T_required & T_called  # → {'lookup_order'}
 len(T_required & T_called) / len(T_required)  # → 0.5
 ```
 
-**In code:** `grade_run` walks the diamonds in the diagram and returns a
-`Grade` with every reason a run failed; `exact_match` is the simplest code
-grader; `tool_selection_accuracy` is the formula above.
+**In code:** `grade_run` walks the diamonds and returns a `Grade` listing
+every reason a run failed; `exact_match` is the simplest code grader;
+`tool_selection_accuracy` is the formula above.
 
 ## LLM-as-judge, and checking the judge
 
-**Everyday picture.** A teaching assistant grades a big stack of essays
-using the professor's rubric. Before trusting the TA's grades, the professor
-grades 20 of the same essays and compares.
+Code can check that an answer names order A100. It cannot check whether an
+open-ended answer is clear or helpful. For that, the grader is an **LLM
+judge**: a second language model given an explicit **rubric**, a short list
+of pass/fail criteria, and asked to grade. A judge is only worth using if it
+agrees with people. Checking that is called **calibration**: people label a
+sample of answers, the judge labels the same sample, and the two sets of
+labels are compared.
 
-For open-ended answers, code can't decide "good". An **LLM judge** is a
-model given an explicit **rubric** (a short list of pass/fail criteria) and
-asked to grade. It's only useful if it agrees with people, so you
-**calibrate** it: have humans label a sample and measure agreement.
-
-Raw agreement is misleading, because a judge that always says "pass" agrees
-with humans on every answer humans passed. **Cohen's kappa** corrects for
-the agreement you'd get by chance:
+Counting how often they agree is misleading. A judge that always says
+"pass" agrees with the people on every answer they passed. **Cohen's
+kappa** corrects for the agreement that would happen by chance:
 
 $$
 \kappa = \frac{p_o - p_e}{1 - p_e},
@@ -299,8 +299,8 @@ and the judge passes 12/20 = 0.6, so $p_e$ = 0.6·0.6 + 0.4·0.4 = 0.52.
 Then κ = (0.80 − 0.52) / (1 − 0.52) = 0.28 / 0.48 = **0.583**. A judge that
 always says pass agrees 60% of the time, but $p_e$ = 0.6·1 + 0.4·0 = 0.6, so
 κ = (0.6 − 0.6) / 0.4 = **0**: all of its agreement is luck. A common rule
-of thumb is to want κ ≥ 0.6 before trusting a judge unsupervised; this one,
-at 0.583, is flagged for a better rubric.
+of thumb is to want κ ≥ 0.6 before trusting a judge unsupervised. The
+judge in this example, at 0.583, falls just short, so its rubric needs work.
 
 **In Python:**
 
@@ -335,63 +335,67 @@ sequenceDiagram
   end
 ```
 
-**Reading it:** people and the judge label the *same* sample independently,
-and only the comparison decides whether the judge is trusted. Recheck
-whenever you change the judge's model or the rubric, since the judge is
-itself a model and can drift.
+**Reading it:** the people and the judge send their labels separately, and
+only the calibration step sees both. At 0.6 or above, the judge is trusted,
+but only for this rubric and this judge model. Below it, the last arrow
+goes back to the people, who fix the rubric and check again. A new judge
+model or a changed rubric means calibrating again.
 
 ![Near-perfect judge: 95% agreement, kappa 0.89; worked example: 80%, kappa 0.58; coin flip at 50% and always-pass at 60% both score kappa 0](figures/primer.agents.evals.kappa.svg)
 
 **Reading it:** each pair of bars is one judge scored against the same 20
-human labels. Grey is raw agreement, blue is kappa. The always-pass judge
-looks respectable on agreement (60%) and scores exactly zero on kappa. The
-gap between the bars is the agreement that's just luck.
+human labels, grey for raw agreement and blue for kappa, with the dashed
+line at the 0.6 trust threshold. Only the near-perfect judge's blue bar
+clears the line; the judge from the worked example stops just under it. The
+coin flip and the always-pass judge have no blue bar at all, a kappa of 0,
+although the always-pass judge agrees more often than the coin.
 
 **In code:** `rubric_judge` asks a judge model to grade an answer against the
 rubric; `cohens_kappa` computes $\kappa$ from two lists of labels;
-`calibrate_judge` reports agreement and kappa and decides whether the judge is
-trusted. `always_pass_judge` is the useless judge from the example.
+`calibrate_judge` decides whether the judge is trusted; `always_pass_judge`
+is the useless judge.
 
 ## Metrics for retrieval-augmented answers
 
-For RAG (retrieval-augmented generation; see `primer.agents.rag`), measure
-the two halves separately. **Retrieval recall@k**: did the right document
-appear in the top k results? **Faithfulness**: what share of the answer's
-claims are supported by the retrieved sources (computed here with
-`primer.agents.guardrails.groundedness`)? If recall is low, fix search; if
-recall is high but faithfulness is low, fix generation.
+A judge grades a whole answer. An agent that answers from retrieved
+documents (RAG, retrieval-augmented generation; see `primer.agents.rag`)
+can go wrong in either of two halves, finding the documents or writing from
+them, so each half gets its own score. **Retrieval recall@k** is the share
+of the relevant documents that appear in the top k search results.
+**Faithfulness** is the share of the answer's claims that the retrieved
+documents support. If recall is low, fix the search. If recall is high but
+faithfulness is low, fix how the answer is written.
 
 **In code:** `recall_at_k` scores the retrieval half; `faithfulness` scores
-the generation half as the share of supported claims.
+the generation half with `primer.agents.guardrails.groundedness`.
 
 ## Quality next to cost and speed
 
-Always report cost and latency beside quality: a change that adds 2% success
-but doubles cost may not be worth it. Latency is reported as **p95**, the
-95th percentile: sort all response times, and p95 is the time that 95% of
-requests beat. Averages hide the slow tail that users notice. The key cost
-number is **cost per successful task** (total cost ÷ number of successes),
-because a cheap run that fails still has to be paid for.
+Grades say whether the agent did the job. Two more numbers go beside them on
+the scorecard: what each version costs and how long it takes. A change that
+adds 2% success but doubles the cost may not be worth shipping. Latency is
+reported as **p95**, the 95th percentile: sort all response times, and p95
+is the time that 95% of requests come in at or under. An average would hide
+the slowest requests, which are the ones users notice. Cost is reported as
+**cost per successful task** (total cost ÷ number of successes), because a
+cheap run that fails still has to be paid for.
 
-**In code:** `percentile` computes p95 by the sort-and-count rule above;
-`evaluate` puts p95 latency and cost per successful task on the scorecard
-beside the success rate.
+**In code:** `percentile` computes p95 by the sort-and-count rule above, and
+`evaluate` puts it and the cost per successful task on the scorecard.
 
 ## The release gate: catching regressions
 
-**Everyday picture.** Changing the recipe of a best-selling cake: before
-selling the new version, you bake both and check that nothing the customers
-liked got worse.
+Everything so far scores one version. A release compares two: the current
+version and the candidate that would replace it. A **regression** is a task
+that used to pass and now fails. The **release gate** runs both versions on
+the whole golden set and blocks the release if any task regressed or the
+success rate dropped.
 
-A **regression** is a task that used to pass and now fails. The gate
-compares the candidate with the current version on the whole golden set and
-blocks the release if any task regressed or the success rate dropped.
-
-**Worked example.** Version v1 passes all four tasks. Version v2's prompt was
-edited to "always be maximally helpful", and it now refunds A300 (900, over
-the 500 limit) instead of escalating. v2 is also cheaper, because it skips
-the lookup. The gate reports `regressed_tasks = ["refund-over-limit"]` and
-blocks the release: cheaper and wrong.
+Take v1, which passes all four tasks, and v2, whose prompt was edited to
+"always be maximally helpful". v2 now refunds A300 (900, over the 500
+limit) instead of escalating it. It also skips looking the order up, which
+makes it cheaper. The gate names the task that regressed,
+`refund-over-limit`, and blocks the release.
 
 ```mermaid
 sequenceDiagram
@@ -405,42 +409,43 @@ sequenceDiagram
   CI-->>Dev: release blocked, with the failing trace
 ```
 
-**Reading it:** the gate is automatic. It runs in **CI** (continuous
-integration: the checks that run on every proposed change before it can
-merge), just like unit tests. The useful output isn't just "blocked" but *which* task regressed
-and the trace of what the agent did, so the fix starts from evidence.
+**Reading it:** no person runs the eval: the change goes to **CI** (continuous integration: the checks that
+run on every proposed change before it can merge), which runs the golden
+set on both versions, as it runs unit tests. The last arrow names the task
+that regressed and carries the trace of what the agent did, so whoever
+fixes it starts from evidence.
 
 ![v1 passes all four golden tasks; v2 passes three and fails only the over-limit refund](figures/primer.agents.evals.regression.svg)
 
-**Reading it:** each column pair is one golden task: a filled bar means
-pass. v1 passes everything. v2 matches v1 everywhere except the over-limit
-refund, a single failure that a spot check would easily miss and that would
-cost 900 per incident in production.
+**Reading it:** each pair of bars is one golden task, blue for v1 and red
+for v2. A bar that reaches "pass" passed; a missing bar failed. All four
+blue bars are there. The one red bar missing is the over-limit refund: one
+task in four, easy to miss in a spot check, and a 900 refund each time it
+happens in production.
 
 ![v2 makes one tool call on each refund where v1 makes two, so it is slightly cheaper per success (2.24 vs 2.38 dollars per 1,000) despite the broken limit](figures/primer.agents.evals.steps.svg)
 
-**Reading it:** bars show how many tool calls each version used per task.
-v2 uses fewer steps on refunds because it no longer checks the order total,
-which is exactly the step that enforces the limit. The legend shows that v2
-is cheaper even per successful task. That's the lesson: cost metrics can't
-catch a broken rule, because the broken version is often the cheaper one.
-Quality gates come first, and the price of this "saving" is a 900 refund
-per incident that no token bill shows.
+**Reading it:** each pair of bars counts the tool calls one task took, blue
+for v1 and red for v2. On both refunds the red bar is one call shorter: v2
+no longer looks up the order total, the step that enforces the limit. The
+legend shows v2 cheaper even per successful task, because skipping a check
+saves what the check costs. The 900 it refunds each time appears on no
+token bill; only the quality gate catches it.
 
 **In code:** `run_task` runs either version against a fresh copy of the order
-database; `compare_versions` is the gate: it lists the regressed tasks and
-blocks the release on any regression or success-rate drop.
+database, and `compare_versions` is the gate.
 
 ## Online evaluation: closing the loop
 
-Offline sets miss what real users do. In production, collect **explicit**
-feedback (thumbs up or down) and **implicit** signals: rephrasing the same
-question, retrying, abandoning, or asking for a human all suggest the answer
-didn't help. Sample live traces (the recorded step-by-step history of a request; see
-`primer.agents.observability`) for human review, alert on **drift** (a
+The gate can only test the cases in the golden set, and real users ask for
+things nobody wrote down. Once the agent is live, production is the second
+source of evidence. Collect **explicit** feedback (thumbs up or down) and
+**implicit** signals: rephrasing the same question, retrying, abandoning,
+or asking for a human all suggest the answer didn't help. Sample live
+traces (the recorded step-by-step history of a request; see
+`primer.agents.observability`) for people to review. Alert on **drift**, a
 metric creeping away from its usual level after a deploy or as traffic
-changes), and turn
-every confirmed failure into a new golden task.
+changes. Turn every confirmed failure into a new golden task.
 
 ```mermaid
 flowchart LR
@@ -452,8 +457,9 @@ flowchart LR
   CI --> P
 ```
 
-**Reading it:** the loop never ends, and that's the point: each lap adds a
-real failure to the test, so the same bug can never ship twice.
+**Reading it:** start at production traffic and follow the arrows round.
+Each lap turns a confirmed failure into a golden task, and from then on the
+release gate runs that task against every new version.
 
 **In code:** a `Signal` is one piece of user feedback;
 `implicit_dissatisfaction_rate` is the share of sessions with any unhappy
