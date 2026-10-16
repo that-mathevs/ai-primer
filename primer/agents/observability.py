@@ -119,28 +119,23 @@ and where to send it, you are done.
 
 An aeroplane's flight recorder writes down every control input, every
 instrument reading and every radio call, each stamped with the time. When
-something goes wrong, investigators don't guess; they replay the flight.
-
-A **trace** is a flight recorder for one agent run. It records the whole
-task and every step inside it (each model call, each tool call, each
-search) with its inputs, outputs, timing, token counts, cost, and which
-model and prompt version produced it. Without traces, "why did the agent
-refund that order?" is guesswork. With them, it's a lookup.
+something goes wrong, investigators replay the flight instead of guessing.
+A **trace** does the same for one run of an agent. The agent traced here
+is a small support agent built on the tool-calling loop (see
+`primer.agents.agent_loop`): it answers questions about orders with one
+tool, `lookup_order`. Its model is scripted and its clock is fake, with a
+model call taking 400 ms and a tool call 100 ms, so every trace below is
+the same on every run.
 
 ## Spans: the steps of a run, as a tree
 
-**Everyday picture.** A recipe card with sub-recipes: "make the lasagne"
-contains "make the sauce" and "make the béchamel", each with its own start
-and end time.
+Each step of a run is a **span**: a named, timed unit of work with
+key-value **attributes** (model name, tokens, tool name and so on), a status
+(ok or error) and a parent. The top span is the whole task, and everything
+the agent does sits under it. All the spans of one run share a **trace
+id**, so they can be gathered back together.
 
-Each step is a **span**: a named, timed unit of work with key-value
-**attributes** (model name, tokens, tool name…), a status (ok or error), and
-a parent. The top span is the whole task; everything the agent does is a
-child of it. All spans of one run share a **trace id**, so they can be
-gathered back together.
-
-**Worked example.** "Where is order A100?" produces this trace, on a clock
-where a model call takes 400 ms and a tool call 100 ms:
+The question "Where is order A100?" produces this trace:
 
 ```text
 invoke_agent support-agent  900 ms  [ok]
@@ -149,10 +144,11 @@ invoke_agent support-agent  900 ms  [ok]
 └─ chat scripted-large  400 ms  [ok]  in=127 out=14 tokens
 ```
 
-The model asked for a tool (first `chat`), the tool ran, and the model
-answered (second `chat`). Durations add up: 400 + 100 + 400 = 900 ms. The
-second model call has more input tokens because the conversation, including
-the tool result, is resent every step.
+The model asked for a tool (the first `chat`), the tool ran, and the model
+answered (the second `chat`). The durations add up: 400 + 100 + 400 = 900
+ms. The second model call reads more input tokens than the first because
+the whole conversation, now including the tool's result, is sent again at
+every step.
 
 ```mermaid
 flowchart TD
@@ -161,17 +157,23 @@ flowchart TD
   R --> C2["chat: model call 2<br/>400 ms, 127 in / 14 out"]
 ```
 
-**Reading it:** the root box is the whole task; the three children are the
-steps, left to right in time. Every box carries its own timing and
-attributes, and every box can be opened to see exactly what went in and
-came out. Retrieval, sub-agents and guardrail checks become spans too, so
-the tree shows the whole path.
+**Reading it:** the root box is the whole task, and its three children are
+the steps, left to right in the order they ran. Each box keeps its own
+timing and attributes, and in a tracing tool each one opens to show what
+went in and what came out. In a bigger agent, retrieval, sub-agents and
+guardrail checks become spans as well.
 
-**In code:** `Span` holds one step: its name, kind, start and end times,
-attributes, status and children. `walk` visits a tree parents first, in time
-order, and `render` draws it as the text tree above.
+**In code:** `Span` holds one step, `walk` visits a tree parents first in
+time order, and `render` prints the text tree above.
 
 ## Recording spans as the agent runs
+
+A **tracer** builds the tree while the agent runs. Before each model or
+tool call the loop opens a span; after it, the loop closes the span and
+records what came back, such as the token counts, the model's name and why
+it stopped. That is all **instrumentation** means. In Python it is a
+`with tracer.span(...):` block, and an exception raised inside the block
+marks the span as an error by itself.
 
 ```mermaid
 sequenceDiagram
@@ -198,30 +200,31 @@ sequenceDiagram
   A-->>U: Order A100 has shipped.
 ```
 
-**Reading it:** the tracer sits beside the agent loop and is told when each
-step starts and ends; it never changes what the agent does. Opening a span
-before a call and closing it after is all **instrumentation** means. In
-Python it's a `with tracer.span(...):` block, and an exception inside the
-block marks the span as an error automatically.
+**Reading it:** time runs down the page. Every call to the model or the
+tool sits between an "open span" and a "close span" sent to the tracer, and
+the `invoke_agent` span opens first and closes last, so it encloses the
+other three. No arrow comes back from the tracer: it only records, and
+never changes what the agent does.
 
-**In code:** `Tracer.span` opens a child of whatever span is open, and
-closes and times it when the block ends; `Span.fail` marks an error that
-didn't raise. `FakeClock` makes the timings deterministic, and
-`run_traced_agent` is the agent loop in the diagram, recording every step.
+**In code:** `Tracer.span` opens a child of whichever span is open and
+closes and times it when the block ends, and `Span.fail` marks an error
+that didn't raise. `FakeClock` makes the timings repeat exactly, and
+`run_traced_agent` is the loop in the diagram.
 
 ## Speaking a common language: OpenTelemetry
 
-**Everyday picture.** Shipping containers: because every container has the
-same shape, any ship, crane or truck can carry any of them.
-
-**OpenTelemetry** (OTel) is the open standard for traces, metrics and logs,
-and its **GenAI semantic conventions** standardize the attribute names for
-model and agent spans: `gen_ai.request.model`, `gen_ai.usage.input_tokens`,
-`gen_ai.tool.name` and so on. Use them, and your traces flow into whatever
-the organisation already runs (Datadog, Grafana, Honeycomb) or into
-LLM-specific tools (Langfuse, LangSmith, Arize Phoenix, Braintrust) with no
-custom glue. Attributes this module invents itself use an `app.` prefix,
-such as `app.prompt.version` and `app.cost_usd`.
+The step names in these trees, `chat`, `execute_tool` and `invoke_agent`,
+come from **OpenTelemetry** (OTel), the open standard for traces, metrics
+and logs. Its **GenAI
+semantic conventions** fix the names of the attributes on model and agent
+spans: `gen_ai.request.model`, `gen_ai.usage.input_tokens`,
+`gen_ai.tool.name` and the rest. With these names, the same traces can go
+into whatever monitoring the organisation already runs (Datadog, Grafana,
+Honeycomb) or into tools built for language model traces (Langfuse,
+LangSmith, Arize Phoenix, Braintrust), without a converter for each.
+Attributes the standard doesn't cover, such as the prompt version and the
+cost, get a prefix of your own; here it is `app.`, as in
+`app.prompt.version` and `app.cost_usd`.
 
 | Attribute | Meaning | Example |
 |---|---|---|
@@ -232,6 +235,13 @@ such as `app.prompt.version` and `app.cost_usd`.
 | `gen_ai.tool.name`, `gen_ai.tool.call.id` | which tool, which call | `lookup_order`, `toolu_1` |
 | `app.prompt.version` | which prompt produced this call | `support-v3` |
 
+The spans reach those tools in two hops. The agent hands each finished span
+to an **exporter**, which sends it in the standard's own format, **OTLP**
+(the OpenTelemetry Protocol). A **collector**
+receives the spans and forwards them to every destination it is configured
+for. Changing vendors then means changing the collector's configuration,
+and the agent's code stays as it is.
+
 ```mermaid
 flowchart LR
   A[Agent code<br/>+ tracer] -->|spans| X[Exporter]
@@ -241,21 +251,17 @@ flowchart LR
   C --> W[Warehouse<br/>for evals and audits]
 ```
 
-**Reading it:** the agent only knows how to hand spans to an **exporter**,
-which ships them in the standard **OTLP** format (OpenTelemetry Protocol).
-A **collector** fans them out to as many destinations as you like. Swapping
-vendors means changing the collector's configuration, not the agent.
-`to_otel` in this module produces OTLP-shaped span records.
+**Reading it:** read left to right. The agent's side ends at the exporter.
+Everything from the collector on is configuration, and each of the three
+destinations receives the same spans.
+
+**In code:** `to_otel` turns a trace into OTLP-shaped span records.
 
 ## Debugging a failure from its trace
 
-**Everyday picture.** Replaying the flight recorder to the moment the
-warning light came on.
-
-**Worked example.** A user asks "Where is order A-100?" (with a hyphen). The
-agent's answer is an unhelpful "I couldn't find order A-100." From the
-answer alone the order might simply not exist. The trace shows why in one
-line:
+Like a flight recorder, a trace is read after something goes wrong. A user asks "Where is order A-100?", with a hyphen, and the agent
+answers "I couldn't find order A-100." From the answer alone, the order
+might not exist. The trace shows what happened in one line:
 
 ```text
 invoke_agent support-agent  900 ms  [ok]
@@ -264,49 +270,61 @@ invoke_agent support-agent  900 ms  [ok]
 └─ chat scripted-large  400 ms  [ok]  in=135 out=15 tokens
 ```
 
-The model extracted the id exactly as typed and the tool doesn't normalize
-hyphens. `first_error` walks the tree and returns that span. The fix
-belongs in the tool (normalize ids, or return an error the model can act
-on, such as "ids look like A100"), not in the prompt, and it's the trace
-that tells you so.
+The model passed the id on as the user typed it, and the tool doesn't strip
+hyphens. To find this line in a bigger tree, walk the spans in time order
+and stop at the first one marked as an error. The fix belongs in the tool:
+normalise the id, or return an error the model can act on, such as "ids
+look like A100". A rewritten prompt would leave the bug where it is.
+
+**In code:** `first_error` walks the tree and returns the first span marked
+as an error.
+
+### Where the time and the tokens go
+
+A trace also answers questions that arrive without a complaint: where a run
+spends its time, and what it is billed for. The next three charts come from
+the same agent asked about several orders at once.
 
 ![In a three-order run, four 400 ms model calls alternate back to back with three 100 ms tool calls, so model calls fill most of the 1,900 ms](figures/primer.agents.observability.waterfall.svg)
 
-**Reading it:** the classic trace view. Each row is a span, its bar placed
-on a shared time axis; the top row is the whole task. Model calls (blue)
-alternate with tool calls (orange), each one starting the moment the
-previous one ends: that staircase is the loop's rhythm, think, act, think,
-act. The blue bars are four times as long as the orange ones, so where the
-time goes is visible at a glance. In a real trace, a gap between two bars
-would be time spent outside any span (a queue, a retry wait, untraced
-code), and worth a look.
+**Reading it:** this is the waterfall view that tracing tools draw, for a
+run that looks up three orders. Each row is a span with its bar on a shared
+time axis, and the top row is the whole task. Model calls (blue) and tool
+calls (orange) take turns, each starting as the one before it ends, and
+every blue bar is four times as long as an orange one. In a real trace, a
+gap between two bars is time spent outside any span (a queue, a wait
+before a retry, code with no span around it), and worth a look.
 
 ![Input tokens climb with every model call, because each call resends the growing history](figures/primer.agents.observability.tokens.svg)
 
-**Reading it:** each bar is one model call in a run that looks up six
-orders one at a time. Input tokens climb with every step because each call
-resends the growing history. Traces make this visible per call, which is
-how you notice a verbose tool result or a runaway loop before the bill
-does.
+**Reading it:** each bar is one model call, in order, from a run that looks
+up six orders one at a time. The blue part is input and the orange part is
+output. The input grows with every call, since the whole conversation so
+far is sent again each time. A per-call record shows this
+climb before the bill does, which is how a tool that returns too much text,
+or a loop that keeps going, gets caught.
 
 ![In the six-order run, model calls take far more of the time than tool calls do](figures/primer.agents.observability.latency.svg)
 
-**Reading it:** total milliseconds spent in model calls versus tool calls
-for that six-order run. Model calls dominate, so the biggest latency wins
-are fewer model calls (batch tool calls into one turn, run them in
-parallel) and smaller contexts, not faster tools.
+**Reading it:** the total milliseconds the same six-order run spent in
+model calls and in tool calls. The model calls take most of it, so the
+biggest gains in speed come from making fewer model calls (asking for
+several tools in one turn, running them in parallel) and from sending
+shorter contexts, not from faster tools.
 
-**In code:** `trace_totals` adds up a trace's duration, model and tool calls,
-tokens, cost and errors, the numbers behind these figures.
+**In code:** `trace_totals` adds up a trace's duration, model and tool
+calls, tokens, cost and errors, the numbers behind these charts.
 
 ## Closing the loop
 
-Traces become most valuable when linked to feedback and evals. When a user
-clicks thumbs-down, the feedback is stored against the trace id; an engineer
-opens the exact trace, sees what went wrong, and turns it into a golden
-test case (`golden_case_from_trace`, see `primer.agents.evals`). The fix is
-made, the eval suite passes in CI (the automated checks run on every
-change), and it ships.
+Reading one trace fixes one failure. Keeping it fixed takes a link from the
+trace to the evaluation suite. When a user clicks thumbs-down, the feedback
+is stored against the trace id. An engineer opens that trace, finds what
+went wrong, and adds the run to the **golden set**, the fixed list of tasks
+with known good answers that every change is graded on (see
+`primer.agents.evals`). Then the fix is made, the evaluation suite passes
+in CI (the checks that run automatically on every change), and the fix
+ships.
 
 ```mermaid
 flowchart LR
@@ -319,21 +337,25 @@ flowchart LR
   D --> P
 ```
 
-**Reading it:** follow the loop clockwise from production. Each lap turns a
-real failure into a permanent test, so quality ratchets up and the same bug
-can't come back unnoticed. Without traces the loop breaks at the second
-box: you know something failed but not why.
+**Reading it:** start at production traffic and follow the arrows back to
+it. Each lap adds a real failure to the golden set as a permanent test, so
+the same bug cannot come back without an eval failing. Without traces the
+loop stops at the second box, with a failure in hand and no cause.
+
+**In code:** `golden_case_from_trace` turns a flagged trace into a new case
+for the golden set.
 
 ## In 20 seconds
-- A trace records one run as a tree of spans: the task, then each model
-  call, tool call and retrieval, with inputs, outputs, tokens, latency,
-  cost, and model and prompt versions.
-- Use the OpenTelemetry GenAI attribute names so traces flow into existing
-  monitoring or LLM tracing tools without custom glue.
-- Debug from traces: find the first error span; the fix often belongs in a
-  tool or in retrieval, not the prompt.
-- Link traces to feedback and evals: production failure → trace → golden
-  case → fix → CI → deploy.
+- A trace records one agent run as a tree of spans: the task at the root,
+  then each model call, tool call and retrieval, with inputs, outputs,
+  tokens, latency, cost, and model and prompt versions.
+- Name the attributes with the OpenTelemetry GenAI conventions, and the
+  traces flow into existing monitoring or LLM tracing tools without a
+  converter for each.
+- To debug a run, find its first error span. The fix may belong in a tool
+  or in retrieval rather than the prompt.
+- Store user feedback against the trace id, so a failure in production
+  becomes a test: failure → trace → golden case → fix → CI → deploy.
 
 ## Self-test questions
 
