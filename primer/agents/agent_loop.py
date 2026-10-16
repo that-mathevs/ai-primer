@@ -117,22 +117,16 @@ choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-The loop itself is ten lines: call the model, run the tools it asks for,
-append the results, repeat until it stops asking. Everything else in this
-lesson exists because the ten-line version fails in production, and each
-failure gets a named control.
+Each reply from the model is either an answer or a request to use a tool.
+The loop's work is to tell the two apart, carry out each request, and call
+the model again with the result. Follow one question through it.
 
-## The idea
+## The loop, on one question
 
-**Everyday picture.** A new assistant runs errands for you. They can't do
-anything themselves. They come back after *every* errand and say: "here's
-what I found; next I'd like to do X." You carry out X and hand them the
-result. They decide the next step, and so on, until they say "done" (or you
-say "that's enough, you've spent the budget"). The assistant is the model,
-the errands are tool calls, and *you* are the loop in this file.
-
-**Tiny worked example.** "How many PTO days does alice have left, and what
-rolls over?" Here's the real transcript the happy-path demo produces:
+Take the question "How many PTO days does alice have left, and what rolls
+over?" (PTO is paid time off) and an agent with two tools: one searches the
+company's policy documents, the other looks up an employee's leave balance.
+Here is the transcript of a run in which a scripted stand-in plays the model:
 
 ```text
 [user]       How many PTO days does alice have left, and what rolls over?
@@ -145,11 +139,15 @@ rolls over?" Here's the real transcript the happy-path demo produces:
              (stop_reason: end_turn)
 ```
 
-Two model calls, two tools run in parallel, one answer. **ReAct** ("reason +
-act") is the research name for this pattern of alternating a bit of
-reasoning ("I'll check both at once") with actions (tool calls). The loop
-itself is ten lines of code. Everything else in this file exists because
-the ten-line version fails in production.
+The model's first reply is a sentence and two requests, one for each tool.
+It asks for both in one turn because neither answer depends on the other.
+The loop runs both tools and sends the two results back as the next user
+message. With the policy and the balance in front of it, the model writes
+its answer and ends its turn, which the API reports as `end_turn`.
+
+This alternation of a short piece of reasoning ("I'll check both at once")
+with actions, each followed by reading what came back, is called **ReAct**
+("reason + act"), after the paper that named it.
 
 ```mermaid
 flowchart LR
@@ -161,18 +159,20 @@ flowchart LR
   D -->|Yes| F[Final answer<br/>or hand to human]
 ```
 
-**Reading it:** start at *Goal* on the left and follow the arrows around the
-cycle. The model only ever does the *Think* box: it looks at everything so
-far and picks the next action. *Call a tool* and *Observe result* are your
-code. The diamond is the only exit, and it has three ways out: the model
-says it's done, a limit trips, or the agent hands the task to a person. An
-agent without that diamond is a loop you can't stop.
+**Reading it:** start at *Goal* on the left and follow the arrows round the
+cycle. The model only ever does the *Think* box: it reads everything so far
+and picks the next action. *Call a tool* and *Observe result* are your code.
+The diamond is the only exit, with three ways out: the model says it is
+done, a limit trips, or the task goes to a person.
 
-**In code:** `run_agent` is this loop, and it returns an `AgentResult`
-holding the final text, the stop cause, every step, the usage and the cost.
-`search_kb` and `get_pto_balance` are the two tools in the example.
+**In code:** `run_agent` is this loop, and `search_kb` and `get_pto_balance`
+are the two tools. It returns an `AgentResult` with the final text, the stop
+cause, every step, the usage and the cost.
 
 ## One round trip, message by message
+
+The same question, drawn as the messages that pass between the user, your
+loop, the model and the tools:
 
 ```mermaid
 sequenceDiagram
@@ -193,22 +193,85 @@ sequenceDiagram
 
 **Reading it:** time runs top to bottom. The model's reply is a *request*
 (`tool_use`), never an action. Everything between that request and the next
-call to the model happens in your loop, which is where every control in
-this file lives: validation, budgets, loop detection, concurrency. Notice
-the model is called twice for one question. Each call re-sends the whole
-history, and that's where the cost comes from.
+call to the model happens in your loop: checking the request, the budget and
+any repeats, then running the tools. Look at the two arrows into the model.
+The second carries the whole conversation again, the first exchange
+included.
 
-**In code:** each pass through `run_agent` appends the model's full
-assistant content, runs the requested tools, and appends every result in one
-user message; a `Step` records that one model call and the `ToolExecution`s
-it triggered.
+**In code:** each pass through `run_agent` appends the model's full reply,
+runs the requested tools and appends every result in one user message. A
+`Step` records one model call and the `ToolExecution`s it triggered.
+
+## Why cost grows quadratically
+
+Because every call sends the *entire* conversation so far, a run costs more
+than its length suggests. If every step adds about $t$ tokens, call $k$
+sends roughly $k\,t$ input tokens, so a run of $n$ steps sends
+
+$$
+\text{total input} \approx \sum_{k=1}^{n} k\,t = \frac{t\,n(n+1)}{2} \approx \frac{t\,n^2}{2}.
+$$
+
+**Symbols**
+
+| Symbol | Meaning |
+|---|---|
+| $t$ | new tokens each step adds to the conversation (tool call + result) |
+| $k$ | the step number, 1, 2, 3, ... |
+| $n$ | total steps in the run |
+
+**In words:** call $k$ carries all $k$ steps so far, so the total is $t$
+times $1 + 2 + \dots + n$, which is about half of $n$ squared times $t$.
+
+**On the example:** with $t = 500$ and $n = 10$, the total is
+$500 \times 55 = 27{,}500$ input tokens, not the $5{,}000$ you'd guess. Double
+to $n = 20$ and it's $500 \times 210 = 105{,}000$, almost 4x.
+
+**In Python:**
+
+```python
+t = 500
+def total_input(n):
+    # Σ_k k·t: step k re-sends k steps' worth
+    return sum(k * t for k in range(1, n + 1))
+total_input(10)  # → 27500
+total_input(20)  # → 105000
+# almost 4x
+round(total_input(20) / total_input(10), 1)  # → 3.8
+```
+
+![At 10 steps re-sending the history costs 27,500 input tokens against the 5,000 a flat per-step cost suggests, and the gap keeps widening](figures/primer.agents.agent_loop.quadratic_cost.svg)
+
+**Reading it:** the x-axis is the number of steps in a run and the y-axis
+the total input tokens sent, at 500 new tokens a step. The straight line is
+what you would expect if every step cost the same. The curve is what
+re-sending the history costs. At 10 steps the gap is about 5x, and it widens
+with every step. Trimming tool output and prompt caching (see
+`primer.agents.cost`) flatten the curve.
+
+A model that keeps working without ever finishing climbs that curve until
+something stops it. In the next run a scripted model searches again and
+again with a new query each time, so it never repeats itself, and the loop
+has a budget of 12,000 tokens.
+
+![Each call of a runaway agent sends more tokens than the last, and the run stops at the first call where the running total passes the 12,000-token budget](figures/primer.agents.agent_loop.tokens_per_step.svg)
+
+**Reading it:** each bar is one call to the model, and the bars grow
+because the history grows. The line is the running total, which is what you
+pay for, and it bends upward. The dashed horizontal line is the budget. The
+run stops at the first step where the total crosses it.
+
+**In code:** `cumulative_input_tokens` evaluates the formula, $t$ times
+$n(n+1)/2$, for any run length.
 
 ## The controls, in the order the loop checks them
 
-**Everyday picture.** Lending your car to a new driver: a full tank but no
-more fuel money (budget), "come back by six" (step limit), "if you drive past
-the same petrol station three times, you're lost, so come home" (loop
-detection), and "call me if anything feels off" (hand-off to a human).
+A runaway bill is one way the ten-line loop fails. Each way gets a control,
+much as an assistant sent out on errands gets a spending limit (the budget),
+a time to be back by (the step limit), an instruction to come home if they
+pass the same shop a third time (loop detection), and a number to call if
+something feels wrong (the hand-off to a person). The loop checks its
+controls after every reply from the model, in a fixed order.
 
 ```mermaid
 flowchart TD
@@ -229,13 +292,12 @@ flowchart TD
   N -->|no| M[Call the model again]
 ```
 
-**Reading it:** every box that starts with `stop:` is an exit, and each of
-the seven is a named `stop_cause` in `AgentResult`.
-Read top to bottom: first trust the model's own stop reason, then protect
-your wallet (budget), then honor an explicit escalation, then protect
-against repetition, and only then spend time running tools. The order
-matters. A truncated response (`max_tokens`) is checked before tools run,
-because a call cut off mid-argument must never execute.
+**Reading it:** every box that starts with `stop:` is an exit, seven in
+all, and each is a cause the run reports when it ends. Read top to bottom:
+the model's own stop reason comes first, then the budget, then a request
+for a person, then repetition, and only after all of those does the loop
+spend time running tools. A truncated reply (`max_tokens`) is caught before
+any tool runs, because a call cut off mid-argument must never execute.
 
 | Failure | What happens | Control in `run_agent` |
 |---|---|---|
@@ -249,19 +311,20 @@ because a call cut off mid-argument must never execute.
 | Safety refusal (`refusal`) | Content is not an answer | stop with cause `refusal` |
 | Task is outside the agent's authority | Agent guesses | a `handoff_to_human` tool that ends the run cleanly |
 
-"It stopped" is not an outcome you can monitor; "it stopped because of
-loop_detected at step 3" is.
+Three rows never stop the run. A failed tool call and a call to a missing
+tool go back to the model as error messages it can act on, such as "date
+must be YYYY-MM-DD", and running calls at once only saves time. Every other
+row ends the run with a named cause, such as `loop_detected` at step 3,
+which you can count and alert on.
 
-**In code:** `AgentConfig` holds every limit (steps, tokens, dollars, the
-loop threshold) and the prices `AgentConfig.cost` uses to turn `primer.agents.llm.Usage` into
-dollars. A tool raises `ToolError` to send the model an actionable error
-result, and `HANDOFF_TOOL_DEF` is the hand-off tool's definition.
+**In code:** `AgentConfig` holds every limit and the prices that turn token
+usage into dollars. A tool raises `ToolError` to send the model an error it
+can act on, and `HANDOFF_TOOL_DEF` defines the hand-off tool.
 
-## Parallel tool calls: fan out, fan in
+## Parallel tool calls
 
-**Everyday picture.** Three errands in three different shops. You can do them
-one after another, or send three friends at once and be done when the
-slowest one gets back.
+When the model asks for several tools in one turn, as it did for the leave
+question, the loop can run them all at once.
 
 ```mermaid
 flowchart LR
@@ -273,87 +336,30 @@ flowchart LR
   C --> J
 ```
 
-**Reading it:** the model asked for A, B and C in the same turn, before
-seeing any result, so they can't depend on each other and it's safe to run
-them at once. Wall-clock time becomes the *slowest* call instead of the
-*sum*. On the way back, all three results go in a single user message. The
-API pairs each result with its request by id, and splitting them teaches the
-model to stop asking for parallel calls.
-
-**In code:** `execute_tools` runs one turn's calls on a thread pool and
-returns their results in the order they were asked for, turning an unknown
-tool name or a raised exception into an error result instead of a crash.
-
-## Why cost grows quadratically
-
-Each call sends the *entire* conversation so far. If every step adds about
-$t$ tokens, call $k$ sends roughly $k\,t$ input tokens, so a run of $n$ steps
-sends
-
-$$
-\text{total input} \approx \sum_{k=1}^{n} k\,t = \frac{t\,n(n+1)}{2} \approx \frac{t\,n^2}{2}.
-$$
-
-**Symbols**
-
-| Symbol | Meaning |
-|---|---|
-| $t$ | new tokens each step adds to the conversation (tool call + result) |
-| $k$ | the step number, 1, 2, 3, ... |
-| $n$ | total steps in the run |
-
-**In words:** step $k$ re-sends everything from the $k$ steps before it, so
-the total is $t$ times $1 + 2 + \dots + n$, which is about half of $n$ squared times $t$.
-
-**On the example:** with $t = 500$ and $n = 10$, the total is
-$500 \times 55 = 27{,}500$ input tokens, not the $5{,}000$ you'd guess. Double
-to $n = 20$ and it's $500 \times 210 = 105{,}000$, almost 4x.
-
-**In Python:**
-
-```python
-t = 500
-def total_input(n):
-    # Σ_k k·t: step k re-sends k steps' worth
-    return sum(k * t for k in range(1, n + 1))
-total_input(10)  # → 27500
-total_input(20)  # → 105000
-# almost 4x
-round(total_input(20) / total_input(10), 1)  # → 3.8
-```
-
-![Each call of a runaway agent sends more tokens than the last, and the run stops at the first call where the running total passes the 12,000-token budget](figures/primer.agents.agent_loop.tokens_per_step.svg)
-
-**Reading it:** each bar is one call to the model in the budget-burner demo
-(a model that keeps searching). Bars grow step by step because the history
-grows. The line is the running total, which is what you pay for, and it
-bends upward. The dashed horizontal line is the token budget. The run stops
-at the first step where the total crosses it, instead of carrying on.
-
-![At 10 steps re-sending the history costs 27,500 input tokens against the 5,000 a flat per-step cost suggests, and the gap keeps widening](figures/primer.agents.agent_loop.quadratic_cost.svg)
-
-**Reading it:** the x-axis is the number of steps in a run, and the y-axis is
-the total input tokens sent. The straight line is what people intuitively expect
-("each step costs the same"). The curve is what actually happens when every
-call re-sends the history. At 10 steps the gap is about 5x, and it keeps
-widening. That gap is why step limits, trimming tool output, and prompt
-caching (`primer.agents.cost`) matter.
+**Reading it:** the model asked for A, B and C in the same turn, before it
+saw any result, so none depends on another and they are safe to run at
+once. The turn then takes as long as the *slowest* call instead of the
+*sum* of all three. On the way back, all three results go in a single user
+message, where the API pairs each with its request by id. Splitting them
+across messages teaches the model to stop asking for parallel calls.
 
 ![Run one after another, tool calls take the sum of their latencies and keep climbing; run concurrently, they take only as long as the slowest call](figures/primer.agents.agent_loop.parallel_latency.svg)
 
-**Reading it:** the x-axis is how many tools the model requested in one turn,
-each with a realistic latency between 0.2 s and 1.2 s. Run one after another,
-the time is the *sum* and climbs with every tool. Run concurrently, it's
-the *max*, which flattens out near the slowest single call. Parallel tool
-calls are among the cheapest latency wins in agent systems.
+**Reading it:** the x-axis is how many tools the model asked for in one
+turn. Each tool has an illustrative latency, drawn at random between 0.2 s
+and 1.2 s. Run one after another, the time is the *sum* and climbs with
+every tool. Run concurrently, it is the *longest* single call, and the line
+levels off.
 
-**In code:** `cumulative_input_tokens` evaluates the formula above, $t$
-times $n(n+1)/2$, for any run length.
+**In code:** `execute_tools` runs one turn's calls on a thread pool and
+returns their results in the order they were asked for, with an unknown tool
+or a raised exception turned into an error result.
 
 ## Running it against a real model
 
-The loop only depends on the `LLM` protocol, so the same code runs against
-Claude:
+Every run so far used a scripted stand-in for the model. The loop needs only
+something that takes the messages and returns a reply (the `LLM` protocol in
+`primer.agents.llm`), so the same code runs against Claude:
 
 ```python
 from primer.agents.llm import ClaudeLLM
@@ -370,16 +376,15 @@ result = run_agent(
 print(result.stop_cause, result.final_text)
 ```
 
-The SDK also ships a *tool runner* (`client.beta.messages.tool_runner`)
-that drives this loop for you. Owning the loop, as here, is what you do
-when you need custom budgets, loop detection, approval gates or tracing in
-exactly your shape.
+Anthropic's SDK also ships a *tool runner* (`client.beta.messages.tool_runner`)
+that runs this loop for you. Write the loop yourself when you need your own
+budgets, loop detection, approval steps or tracing.
 
 ## In 20 seconds
-- The agent loop is: call model, run the tools it asks for, append results, repeat until `end_turn`.
-- The model never executes anything. Your code validates and runs every tool call.
-- Production loops need step limits, token/cost budgets, loop detection, error-as-result handling, and a human hand-off.
-- Parallel tool calls: run them concurrently, return all results in a single user message.
+- The agent loop calls the model, runs the tools it asks for, appends the results and repeats until the model ends its turn (`end_turn`).
+- The model never runs anything. Your code checks and runs every tool call.
+- A production loop adds step limits, token and dollar budgets, loop detection, errors returned as results, and a hand-off to a person.
+- Tools requested in the same turn run at once, and all their results go back in one user message.
 - Input cost grows roughly with the square of the number of steps, because every call re-sends the history.
 
 ## Self-test questions
@@ -388,13 +393,13 @@ exactly your shape.
 A: Steps per task and tokens per step, from traces. A jump usually means a loop
 (the same call repeated), a tool that started returning huge payloads, or a
 prompt change that stopped the model from recognizing "done". Step budgets and
-loop detection cap the damage; alerts on tokens-per-task catch it early.
+loop detection cap the damage; alerts on tokens per task catch it early.
 
 **Q: A tool throws an exception mid-run. What should the loop do?**
 A: Catch it and return a `tool_result` with `is_error: true` and a message the
 model can act on ("date must be YYYY-MM-DD, got 'next friday'"). The model
 usually fixes its next call. Crashing the loop throws away the work so far;
-swallowing the error silently makes the model guess.
+hiding the error makes the model guess.
 
 **Q: Why return all parallel tool results in one message?**
 A: The API pairs each `tool_use` with its `tool_result` by id in the next user
@@ -403,15 +408,16 @@ teaches the model to stop making parallel calls, which slows every run.
 
 **Q: When should an agent hand off to a human?**
 A: When it lacks authority (refunds over a limit), lacks information after
-reasonable search, detects conflicting sources, or hits a budget. Make hand-off a
+reasonable search, finds conflicting sources, or hits a budget. Make hand-off a
 tool, so it is an explicit, logged outcome rather than a vague final answer.
 
 ## The papers behind this lesson
 
 - **Yao et al., *ReAct: Synergizing Reasoning and Acting in Language Models* (2022).**
-  https://arxiv.org/abs/2210.03629. It showed that interleaving short reasoning
-  traces with tool actions, then observing the results, beats reasoning alone or
-  acting alone, and this loop is the shape of nearly every agent built since.
+  https://arxiv.org/abs/2210.03629. A language model that alternated short
+  reasoning with tool actions, reading each result before its next step, made
+  up fewer facts than one that only reasoned, and beat earlier methods on a
+  text game and a shopping website. The loop in this lesson has that shape.
   [annotated companion](../../papers/react.html)
 
 ## Further reading

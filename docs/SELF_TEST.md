@@ -1898,13 +1898,13 @@ From [`primer.agents.agent_loop`](../primer/agents/agent_loop.py).
 A: Steps per task and tokens per step, from traces. A jump usually means a loop
 (the same call repeated), a tool that started returning huge payloads, or a
 prompt change that stopped the model from recognizing "done". Step budgets and
-loop detection cap the damage; alerts on tokens-per-task catch it early.
+loop detection cap the damage; alerts on tokens per task catch it early.
 
 **Q: A tool throws an exception mid-run. What should the loop do?**
 A: Catch it and return a `tool_result` with `is_error: true` and a message the
 model can act on ("date must be YYYY-MM-DD, got 'next friday'"). The model
 usually fixes its next call. Crashing the loop throws away the work so far;
-swallowing the error silently makes the model guess.
+hiding the error makes the model guess.
 
 **Q: Why return all parallel tool results in one message?**
 A: The API pairs each `tool_use` with its `tool_result` by id in the next user
@@ -1913,7 +1913,7 @@ teaches the model to stop making parallel calls, which slows every run.
 
 **Q: When should an agent hand off to a human?**
 A: When it lacks authority (refunds over a limit), lacks information after
-reasonable search, detects conflicting sources, or hits a budget. Make hand-off a
+reasonable search, finds conflicting sources, or hits a budget. Make hand-off a
 tool, so it is an explicit, logged outcome rather than a vague final answer.
 
 
