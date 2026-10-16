@@ -136,54 +136,49 @@ you only needed to choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-You phone a friend and describe a picture so they can draw it, but you are
-allowed to say only two numbers. You would agree on a system first: the first
-number says which way the line runs, the second says how far it sits from the
-middle. You squeeze the picture into two numbers, send them, and your friend
-rebuilds it.
+Suppose you have to describe a picture of a single line to a friend over the
+phone, and you may say only two numbers. You would agree on a system first:
+the first number says which way the line runs, the second says how far it
+sits from the middle. You squeeze the picture into two numbers, send them,
+and your friend draws it again.
 
-An **autoencoder** is a neural network that invents that system by itself. It
-has two halves. The **encoder** squeezes a picture into a few numbers, called
-the **code**. The **decoder** rebuilds the picture from the code. Nobody tells
-it what the numbers should mean. The only instruction is "the rebuild must
-match the original", and to obey it through such a narrow gap the network has
-to discover what really varies in the data.
+An **autoencoder** is a neural network that invents such a system by itself.
+It has two halves. The **encoder** squeezes a picture into a few numbers,
+called the **code**. The **decoder** rebuilds the picture from the code. The
+network is never told what the numbers should mean, only that the rebuild
+must match the original. With so few numbers to pass through, it can meet
+that demand only by finding what really varies from picture to picture.
 
-Then comes a second question. If your friend can draw from *any* two numbers,
-can you invent a new picture by making up two numbers? With a plain
-autoencoder, usually not: most made-up codes were never used for anything,
-and the drawing comes out as a smudge. A **variational autoencoder (VAE)** is
-trained so that a made-up code drawn from a known range draws something
-sensible. That step, from compressing to generating, is what this lesson is
-about, and it opens this part of the primer: GANs
-(`primer.ml.generative.gans`) and diffusion (`primer.ml.generative.diffusion`)
-are other answers to the same question.
+A second question follows. If your friend can draw from any two numbers, can
+you get a new picture by making two up? From a plain autoencoder, mostly
+not: most made-up codes are ones it never used, and they decode to smudges.
+A **variational autoencoder (VAE)** is trained so that a code drawn at random
+from a known range decodes to something sensible, which makes it a generator.
 
 ## The toy data: pictures of pen strokes
 
-**Tiny example.** Every picture in this lesson is 8 × 8 = 64 pixels holding
-one soft pen stroke. The stroke runs in one of four directions (horizontal,
-vertical, diagonal down, diagonal up) and is shifted up to 2.5 pixels from
-the centre. The ink fades like a bell curve either side of the line: a pixel
-on the line has brightness 1.0, a pixel one pixel away about 0.25, a pixel
-two away almost nothing.
+Both kinds of network are trained here on tiny pictures of one line each.
+Every picture is 8 × 8 = 64 pixels holding one soft pen stroke. The stroke
+runs in one of four directions (horizontal, vertical, diagonal down,
+diagonal up) and is shifted up to 2.5 pixels from the centre. The ink fades
+like a bell curve either side of the line: a pixel on the line has
+brightness 1.0, a pixel one pixel away about 0.25, a pixel two away almost
+nothing.
 
 So each picture is 64 numbers, but only **two facts** change from picture to
-picture: the direction (one of four) and the offset (any amount). A good
-2-number code has to rediscover both from the pixels alone. The 200 pictures
-are the top row of the first figure below.
+picture: the direction (one of four) and the offset (any amount). These are
+the two numbers of the phone call, and a good 2-number code has to find both
+from the pixels alone. The training set is 200 such pictures; eight of them
+are the top row of the second figure below.
 
-**In code:** `make_strokes` draws the pictures and returns their hidden directions and offsets; `STROKE_KINDS` names the four directions.
+**In code:** `make_strokes` draws the pictures and returns their hidden directions and offsets.
 
 ## Squeeze and rebuild: the autoencoder
 
-**Everyday picture.** A zip file squeezes a document and gets it back
-exactly. An autoencoder is a *lossy*, *learned* zip: it keeps what matters
-most for this kind of data and lets the rest go.
-
-**Tiny example: a one-number code you can check by hand.** Take points that
-lie on the line y = 2x, such as (1, 2) and (2, 4). Each takes two numbers to
-write down, but one number is enough: how far along the line the point is.
+Before the pictures, here is a code small enough to check by hand. Take
+points that lie on the line y = 2x, such as (1, 2) and (2, 4). Each takes two
+numbers to write down, but one number is enough: how far along the line the
+point is.
 
 - **Encoder:** code = u · x, where u = (1, 2)/√5 = (0.447, 0.894) is the
   line's direction scaled to length 1, and "·" is the dot product (multiply
@@ -195,8 +190,8 @@ origin), and rebuild = 2.236 × (0.447, 0.894) = (1, 2). Nothing lost.
 
 For (2, 3), which is *off* the line: code = (2 + 6)/√5 = 3.578, and
 rebuild = 3.578 × (0.447, 0.894) = (1.6, 3.2), the closest point on the line.
-The part that pointed away from the line, (0.4, −0.2), is gone. That loss is
-exactly what training measures and shrinks:
+The part that pointed away from the line, (0.4, −0.2), is gone. Training
+measures that loss, averaged over the examples, and shrinks it:
 
 $$
 L_{\text{rec}} = \frac{1}{n} \sum_{i=1}^{n} \bigl\lVert x_i - g\bigl(f(x_i)\bigr) \bigr\rVert^2
@@ -268,13 +263,12 @@ flowchart LR
 ```
 
 **Reading it:** follow the picture left to right. It is 64 numbers wide at
-both ends and only 2 numbers wide in the middle: that narrow middle is the
-**bottleneck**, and it is the whole point. Without it the network could copy
-the pixels straight through and learn nothing. The loss box compares the two
-ends, and the dotted arrow is backpropagation carrying the blame back through
-the decoder and on into the encoder, so both halves learn together. The
-encoder never sees a target code; it learns whatever code the decoder finds
-most useful.
+both ends and only 2 numbers wide in the middle. That narrow middle is the
+**bottleneck**: without it the network could copy the pixels straight
+through and learn nothing. The loss box compares the two ends, and the
+dotted arrow is backpropagation carrying the blame back through the decoder
+and on into the encoder, so both halves learn together. The encoder is never
+shown a target code; it learns whatever code the decoder finds most useful.
 
 ![Eight strokes, their autoencoder rebuilds from 2 numbers (error 0.07) and their PCA rebuilds from 2 numbers (error 4.42): the autoencoder's are near perfect, PCA's are grey smudges](figures/primer.ml.generative.autoencoders.reconstructions.svg)
 
@@ -283,77 +277,78 @@ The middle row is what the autoencoder rebuilds from just 2 numbers per
 picture: nearly identical. The average error is about 0.07, against about
 8.8 units of squared ink in a whole stroke, so it keeps over 99% of the
 picture. The bottom row squeezes the same pictures to 2 numbers with PCA and
-rebuilds them: grey smudges, keeping only about half. Same budget of two
-numbers, very different results. The next section explains why.
+rebuilds them: grey smudges, keeping only about half of the picture.
 
-**In code:** `worked_example_line` is the hand example above; `Autoencoder` holds both halves and its hand-written backward pass in `Autoencoder.loss_and_gradients`; `train` runs Adam; `trained_autoencoder` is the lesson's trained network; `reconstruction_error` measures the rebuilds.
+**In code:** `Autoencoder` holds both halves and their backward pass; `train` runs Adam.
 
 ### PCA is the straight-line special case
 
-**Everyday picture.** PCA (principal component analysis, built in
-`primer.ml.embeddings.clustering`) fits a flat sheet through the data and
-records where each point lands on the sheet. That is an autoencoder with no
-bends: the encoder is one matrix multiply, and so is the decoder.
+PCA (principal component analysis, built in
+`primer.ml.embeddings.clustering`) had the same budget of two numbers and
+failed. It fits a flat sheet through the data and records where each point
+lands on the sheet. That is an autoencoder with no bends: the encoder is one
+matrix multiply, and so is the decoder.
 
-**Tiny example.** Scatter 100 points near the line y = 2x and train exactly
-that no-bend autoencoder, with a 1-number code, by plain gradient descent.
-The direction it learns is (0.447, 0.894), the line's own direction, and its
-rebuild error matches PCA's with one component. Baldi and Hornik proved in
-1989 that this always happens: a linear autoencoder trained on squared error
-lands on the same flat sheet as PCA.
+The hand example above was such an autoencoder, with the direction written
+in by hand. Scatter 100 points near the line y = 2x and train a no-bend
+autoencoder with a 1-number code by plain gradient descent, and it finds that
+direction for itself: (0.447, 0.894), with the same rebuild error as PCA with
+one component. Baldi and Hornik proved in 1989 that this always happens: a
+linear autoencoder trained on squared error lands on the same flat sheet as
+PCA.
 
-So why did PCA smudge the strokes? Because a stroke sliding across the image
-does not travel in a straight line through pixel space. Take a horizontal
+PCA smudged the strokes because a stroke sliding across the image does not
+travel in a straight line through pixel space. Take a horizontal
 stroke at the top and another at the bottom. Their average, the point halfway
 along the straight line between them, is *two faint lines*, not one stroke in
 the middle. The real strokes lie on a curved surface in the 64-dimensional
 space of pictures, and a flat sheet can only cut through it. The
 autoencoder's tanh layers let its "sheet" bend to follow the curve.
 
-**Why it matters in practice.** Before generation, autoencoders earned their
-keep as learned compressors. They compress, they denoise (train on noisy
-inputs, ask for clean outputs), and they detect anomalies: an input the
-network rebuilds badly is unlike anything it trained on, which is a standard
-way to flag fraud or a failing machine.
+**In code:** `train_linear_autoencoder` is the no-bend autoencoder; `pca_reconstruction` rebuilds from the top principal components.
+
+### The code the network found
+
+The autoencoder was never told about direction or offset. To see what its
+two numbers mean, place every picture at its code.
 
 ![The plain autoencoder's 200 codes form separate strands, one colour per stroke direction, spread from about -24 to 14, far from the small circle where a standard normal draw usually lands](figures/primer.ml.generative.autoencoders.ae_codes.svg)
 
 **Reading it:** each dot is one picture, placed at its 2-number code and
 coloured by its stroke direction, with bigger dots for larger offsets. The
-codes form **strands**: pictures of one direction line up along a curve (now
-and then broken into pieces), and sliding along a strand slides the stroke.
-The network rediscovered both hidden facts without being told either. Now
-look at the axes: the codes run from about −24 to 14. Nothing asked for that
-range; it is an accident of training. The dashed circle near 0 is where a
-"random" code from the bell curve would usually land, and it catches almost
-none of the strands. Hold on to that for the next section.
-
-**In code:** `train_linear_autoencoder` is the no-bend autoencoder; `pca_reconstruction` rebuilds from the top principal components.
+codes form **strands**: pictures of one direction line up along a curve,
+now and then broken into pieces, and moving along a strand slides the
+stroke. So the network found both hidden facts. Now look at the axes: the
+codes run from about −24 to 14. Nothing asked for that range; it is an
+accident of training. The dashed circle near 0 is where a code drawn at
+random from a bell curve would usually land, and it catches almost none of
+the strands.
 
 ## Why a plain autoencoder cannot generate: holes
 
-**Everyday picture.** Imagine a town where houses were built only along four
-winding roads. Pick a random spot inside the town limits and you will most
-likely land in a field. Ask the decoder to draw the picture that "lives" in
-that field, and it answers anyway, with whatever its weights happen to
-produce, because nothing in training ever asked it about that spot.
+To make a new picture, make up a code and decode it. The simplest way to make
+up a code is to draw each number from the **standard normal distribution**,
+the bell curve centred on 0 with a spread (standard deviation) of 1: most
+draws fall between −1 and 1, almost all between −3 and 3. Written
+$\mathcal{N}(0, I)$ for several numbers at once, it means "draw each number
+from that bell curve, independently".
 
-**Tiny example.** The obvious way to make up a random code is to draw each
-number from the **standard normal distribution**, the bell curve centred on
-0 with a spread (standard deviation) of 1: most draws fall between −1 and 1,
-almost all between −3 and 3. Written $\mathcal{N}(0, I)$ for several numbers
-at once, it means "draw each number from that bell curve, independently".
+The decoder turns any code into some picture. But training only ever showed
+it the codes of real pictures, which lie on the strands. Off the strands it
+draws whatever its weights happen to produce. Call a decoded picture
+**junk** when its squared distance to the nearest real stroke is more than
+1.0, about a ninth of a whole stroke's squared ink.
 
 Draw the code z = (1.2, −0.9) and decode it with the plain autoencoder. The
-result is a bright smear with about three times the ink of any real stroke;
-its squared distance to the nearest real stroke is about 7.5. Do that 500
-times and the median distance is about 3, while three quarters of the draws
-land further than 1.0 from every real stroke. That 1.0 is this lesson's line
-for **junk**: about a ninth of a whole stroke's squared ink.
+result is a bright smear with about three times the ink of any real stroke,
+at a squared distance of about 7.5 from the nearest one. Over 500 such
+draws the median distance is about 3, and three quarters of the draws are
+junk.
 
-To be fair to the autoencoder, draw instead from the box that holds its own
-codes, from −24 to 1.6 across and −17 to 14 up. Still about 44% of those
-codes decode to junk. They fall in the **holes** between the strands.
+The standard normal is a hard test for this autoencoder, whose codes sit
+far from 0. Draw instead from the box that holds its own codes, from −24 to
+1.6 across and −17 to 14 up, and about 44% of the codes still decode to
+junk. They fall in the **holes** between the strands.
 
 ![Left: the autoencoder's codes and 300 random codes from their bounding box, 44 percent marked as junk; right: the worst decoded ones are black blobs and the best are clean strokes](figures/primer.ml.generative.autoencoders.holes.svg)
 
@@ -366,30 +361,35 @@ worst (top two rows) are black blobs no pen would draw, and the 12 best
 (bottom) are clean strokes, because those random codes happened to land on
 a strand.
 
-**Why it matters in practice.** A compressor is not a generator. To sample
-new data you need a code space with a **known shape** that you can draw from,
-**no holes** inside that shape, and **smoothness**, so nearby codes decode to
-similar pictures. A plain autoencoder promises none of these, because its
-loss only ever looks at codes of real pictures.
+So a good compressor is not yet a generator. To sample new data you need a
+code space with a known shape that you can draw from, no holes inside that
+shape, and smoothness, so that nearby codes decode to similar pictures. A
+plain autoencoder gives none of these, because its loss only ever looks at
+the codes of real pictures.
 
-**In code:** `generate` decodes codes drawn from the standard normal; `codes_in_box` draws from a model's own code range; `distance_to_data` measures how far each image is from the nearest real stroke, and `JUNK_DISTANCE` is the line between plausible and junk.
+**In code:** `distance_to_data` measures how far each picture is from the nearest real stroke, and `JUNK_DISTANCE` is the line for junk.
 
 ## The VAE: encode to a fuzzy region, not a point
 
-**Everyday picture.** Instead of pinning each picture to one exact spot on
-the map, the encoder draws a small fuzzy circle: "somewhere around here".
-During training the decoder is handed a random point from inside that circle,
-so it must draw the right picture from anywhere nearby. A whole neighbourhood
-now decodes sensibly, not just one pin. A second rule stops the encoder from
-cheating: every circle pays **rent**, more the further it sits from the
-middle of the map and more if it shrinks towards a pin. Circles crowd
-towards the centre and overlap, and the fields between the roads fill in.
+A VAE changes what the encoder outputs. Instead of placing each picture at
+one point on the map of codes, the encoder gives it a small fuzzy region,
+"somewhere around here": a centre μ and a spread σ. During training the
+decoder is handed a random point from inside that region, so it must draw
+the right picture from anywhere nearby. A whole neighbourhood now decodes
+sensibly, not just one point.
 
-**Tiny example.** One picture, one code number. The encoder says
-μ = 0.5 and σ = 0.5: "about 0.5, give or take 0.5". This step, a bell-curve
-roll gives ε = 1.2, so the decoder is handed z = 0.5 + 0.5 × 1.2 = 1.1. Next
-step the roll is ε = −0.4 and the decoder gets z = 0.5 − 0.2 = 0.3. Both must
-rebuild the same picture.
+On its own, that would not last. Rebuilding is easiest from a tiny region,
+so the encoder would shrink every region back to a point, anywhere on the
+map. A second term in the loss stops it. Every region pays
+a penalty, called **rent** here, which grows the further the region sits
+from the middle of the map and the smaller it shrinks. The regions crowd
+towards the centre and overlap, and the holes between the strands fill in.
+
+Take one picture and one code number. The encoder says μ = 0.5 and σ = 0.5:
+"about 0.5, give or take 0.5". At one training step a draw from the standard
+bell curve gives ε = 1.2, so the decoder is handed z = 0.5 + 0.5 × 1.2 = 1.1.
+At the next step the draw is ε = −0.4 and the decoder gets
+z = 0.5 − 0.2 = 0.3. From both codes it must rebuild the same picture.
 
 ```mermaid
 flowchart LR
@@ -411,31 +411,35 @@ flowchart LR
 **Reading it:** compare it with the plain autoencoder's diagram. The encoder
 now has two outputs per code number: a centre μ and a size, given as
 log σ² (the logarithm of the variance, used because it can be any number
-while σ itself must stay positive). The box z = μ + σ·ε is where the fuzzy
-region becomes one concrete code: ε is fresh random noise every step. The
-loss has two parts. The rebuild error, as before, wants each region small and
-distinct so the decoder knows exactly which picture it came from. The KL
-rent, fed straight from μ and log σ², wants every region to look like the
-standard bell curve. Training settles on a compromise between them, and β
-sets the exchange rate.
+while σ itself must stay positive). In the box z = μ + σ·ε the fuzzy region
+becomes one concrete code, with fresh random noise ε at every step. The loss
+has two parts. The rebuild error, as before, wants each region small and
+apart from the others, so the decoder can tell which picture it came from.
+The rent, labelled KL for a reason given below, is fed straight from μ and
+log σ² and wants every region to look like the standard bell curve.
+Training settles on a compromise between the two, and a weight β sets the
+exchange rate.
 
-**In code:** `VAE` is the `Autoencoder` with a two-headed encoder; `VAE.encode_distribution` returns μ and log σ², and `VAE.encode` returns just the centre μ, the best single code for a picture.
+**In code:** `VAE` is the `Autoencoder` with an encoder that has two outputs, μ and log σ².
 
-### The reparameterization trick: moving the dice outside
+### The reparameterization trick: noise as an input
 
-**Everyday picture.** To pick a random seat in a row, you could close your
-eyes and point. If someone then moves the row one seat to the left, you have
-no idea how your pick would have changed. Or you could roll a die for "how
-many seats from the middle" and count from wherever the middle is. Now if the
-row moves one seat left, your seat moves exactly one seat left. Same kind of
-random seat, but you can say how it responds to the row moving.
+The random draw in the middle of the network is a problem for training.
+Backpropagation asks of every step: "if I nudge this number, how does the
+loss change?" That rate of change is the **gradient**, or **derivative**
+(see `primer.notation`). A code drawn straight from the region gives no
+answer for how it would move if μ or σ moved, so the gradient stops at the
+draw and the encoder never learns.
 
-Training needs exactly that. Backpropagation asks of every step: "if I nudge
-this number, how does the loss change?" (that rate of change is the
-**gradient**, or **derivative**; see `primer.notation`). A raw dice roll has
-no answer, so the gradient would stop at the sampling step and the encoder
-would never learn. The **reparameterization trick** rolls the dice first, as
-an ordinary input ε, and builds the code with arithmetic:
+Picking a random seat in a row shows the way round. You could close your
+eyes and point; if someone then moves the row one seat to the left, there
+is no saying where your finger would have landed. Or you could roll a die
+for how many seats from the middle, and count from wherever the middle is.
+Now if the row moves one seat left, your seat moves one seat left with it.
+Both give a random seat, but only the second says how the seat responds when
+the row moves. The **reparameterization trick** does the second: it draws
+the noise ε first, as an ordinary input, and builds the code from it with
+arithmetic:
 
 $$
 z = \mu + \sigma \odot \varepsilon, \qquad \varepsilon \sim \mathcal{N}(0, I), \qquad \sigma = e^{\frac{1}{2} \log \sigma^2}
@@ -502,20 +506,20 @@ bell curve centred on μ with spread σ. In the top row the randomness sits
 *between* the encoder's outputs and the loss, and the dotted arrow of
 backpropagation has nowhere to go. In the bottom row the randomness comes in
 from the side as ε, an input like a pixel, and everything from μ and σ to the
-loss is ordinary arithmetic the chain rule can pass through. The encoder
-learns because of this one rearrangement.
+loss is ordinary arithmetic the chain rule can pass through.
 
-**Why it matters in practice.** The same trick lets gradients pass through
-random choices elsewhere too, for example in the noisy steps of diffusion
-models (`primer.ml.generative.diffusion`) and in reinforcement learning with
-continuous actions. It is a large part of why the VAE paper mattered.
+The same trick lets gradients pass through random draws elsewhere, for
+example in the noisy steps of diffusion models
+(`primer.ml.generative.diffusion`) and in reinforcement learning with
+continuous actions.
 
-**In code:** `reparameterize` is the formula; in `VAE.loss_and_gradients` the lines under "Through z = μ + σ·ε" are the two gradients above, and a test checks them against finite differences.
+**In code:** `reparameterize` is the formula; a test checks the two gradients against small nudges.
 
 ### The KL penalty: rent for every region
 
-**Everyday picture.** The rent from the everyday picture has a formal name:
-the **KL divergence** (Kullback-Leibler divergence) from the region to the
+With gradients flowing through the draw, the encoder can learn μ and σ. What
+it learns depends on the rent. The rent has a formal name: the
+**KL divergence** (Kullback-Leibler divergence) from the region to the
 standard bell curve, a measure of how different two distributions are that
 is 0 only when they match (`primer.ml.training_stages` uses it for
 distillation). For a bell-curve region and the standard bell curve, it has a
@@ -532,7 +536,7 @@ $$
 | $\mathrm{KL}(q \,\Vert\, p)$ | how much distribution $q$ differs from distribution $p$; 0 when they match | |
 | $\mathcal{N}(\mu, \sigma^2)$ | the picture's region: a bell curve with centre μ and variance σ² | $\mathcal{N}(0.5, 0.25)$ |
 | $\mathcal{N}(0, 1)$ | the standard bell curve every region is pulled towards | |
-| $k$ | how many numbers in the code | 1 (the lesson's network uses 2) |
+| $k$ | how many numbers in the code | 1 (the stroke network uses 2) |
 | $j$ | a counter over the code numbers | |
 | $\mu_j^2$ | rent for sitting away from the centre: 0 at μ = 0, growing on both sides | 0.25 |
 | $\sigma_j^2 - \log \sigma_j^2$ | rent on size: smallest (exactly 1) when σ = 1, huge as σ shrinks to a pin, growing if it bloats | $0.25 + 1.386$ |
@@ -576,14 +580,17 @@ round(kl(0.5, 0.05 ** 2), 2)  # → 2.62
 centre: a bowl with its bottom at μ = 0, so sitting at 0.5 costs 0.125 and
 sitting at 3 costs 4.5. The right curve holds the centre at 0 and changes
 the spread. It is 0 at σ = 1 (the dashed line), rises gently if the region
-bloats, and shoots up as σ heads towards 0. That steep wall on the left is
-what stops the encoder from shrinking every region to a pin and turning back
-into a plain autoencoder with holes. The two red dots add up to the worked
-example's 0.443.
+bloats, and shoots up as σ heads towards 0. That steep wall on the left
+stops the encoder from shrinking every region to a pin, which would turn it
+back into a plain autoencoder with holes. The two red dots add up to the
+worked example's 0.443.
 
-**In code:** `kl_to_standard_normal` is the formula, summed over the code numbers; a test checks it against a brute-force average over 400,000 samples.
+**In code:** `kl_to_standard_normal` is the formula; a test checks it against a brute-force average over 400,000 samples.
 
 ### The whole VAE loss
+
+Add the rent, weighted by β, to the rebuild error, and you have the loss a
+VAE trains on:
 
 $$
 L = \bigl\lVert x - \hat{x} \bigr\rVert^2 + \beta \cdot \mathrm{KL}\bigl(q(z \mid x) \,\big\Vert\, \mathcal{N}(0, I)\bigr)
@@ -598,7 +605,7 @@ $$
 | $\lVert x - \hat{x} \rVert^2$ | the rebuild error, as in the plain autoencoder | 0.2 |
 | $q(z \mid x)$ | the region the encoder draws for picture $x$: read "q of z given x" | $\mathcal{N}(0.5, 0.25)$ |
 | $\beta$ | "beta": how much one unit of KL rent costs, in units of rebuild error | 0.3 |
-| KL(…) | the rent from the previous section | 0.443 |
+| KL(…) | the rent, worked out above | 0.443 |
 
 **In words:** "rebuild well, but pay β for every unit by which your regions
 differ from the standard bell curve."
@@ -613,13 +620,14 @@ rebuild, kl_value, beta = 0.2, 0.443, 0.3
 round(rebuild + beta * kl_value, 3)  # → 0.333
 ```
 
-Where does this come from? The VAE paper derives the loss (with β = 1) as the
-negative of the **evidence lower bound (ELBO)**: a quantity that is
-guaranteed never to exceed the log-probability the model gives to the real
-pictures, so pushing the bound up pushes that probability up. Choosing
-squared error amounts to assuming each pixel is the decoder's output plus
-bell-curve noise of spread s, and working that through gives β = 2s². This
-lesson uses β = 0.3, which assumes pixel noise of spread about 0.39.
+The VAE paper derives this loss, with β = 1, as the negative of the
+**evidence lower bound (ELBO)**: a quantity that can never exceed the
+log-probability the model gives to the real pictures, so pushing the bound
+up pushes that probability up. Choosing squared error amounts to assuming
+each pixel is the decoder's output plus bell-curve noise of spread s, and
+working that through gives β = 2s². The stroke VAE uses β = 0.3, which
+assumes pixel noise of spread about 0.39. Trained with it, the VAE places
+the 200 pictures like this:
 
 ![The VAE's 200 codes packed within about two units of the origin, one strand per stroke direction, each with a small shaded fuzzy region](figures/primer.ml.generative.autoencoders.vae_codes.svg)
 
@@ -628,25 +636,22 @@ placed at their centres μ, each with its fuzzy region shaded around it
 (regions are drawn one σ wide). The dashed circles are radius 1 and 2 of the
 standard bell curve. Compare the axes with the plain autoencoder's: the codes
 now sit around 0 with a spread of about 1.1 in each direction, instead of
-wandering from −24 to 14. The strands are still there (the code still knows
-direction and offset), but they are packed side by side and the regions
-(σ about 0.14) overlap along each strand, so there is far less empty field
-left.
+wandering from −24 to 14. The strands are still there, so the code still
+holds direction and offset, but they are packed side by side, and the
+regions (σ about 0.14) overlap along each strand. Far less empty space is
+left between them.
 
-**In code:** `VAE.loss_and_gradients` computes both terms and their gradients; `trained_vae` trains the lesson's VAE at a chosen β.
+**In code:** `VAE.loss_and_gradients` computes both terms and their gradients.
 
 ## Sampling new strokes
 
-**Everyday picture.** Once the map is packed, throw a dart at the middle of
-it and you land in a neighbourhood, not a field. Generating is exactly that:
-throw away the encoder, draw a code from the standard bell curve, and decode.
-
-**Tiny example.** Draw the same code as before, z = (1.2, −0.9), and decode
-it with the VAE. Out comes a horizontal stroke through the centre of the
-picture, with squared distance about 0.06 from a real stroke in the training
-set. The plain autoencoder turned that same code into a smear 7.5 away.
-Over 500 draws the VAE's median distance is about 0.56 against the plain
-autoencoder's 3.
+With the codes packed around 0, generating no longer needs the encoder:
+draw a code from the standard bell curve and decode it. Take the same code
+as before, z = (1.2, −0.9). The VAE decodes it to a horizontal stroke
+through the centre of the picture, at a squared distance of about 0.06 from
+a real stroke in the training set, where the plain autoencoder made a smear
+7.5 away. Over 500 draws the VAE's median distance is about 0.56, against
+the plain autoencoder's 3.
 
 ```mermaid
 flowchart LR
@@ -655,38 +660,39 @@ flowchart LR
 ```
 
 **Reading it:** generating uses only the right half of the network. The
-encoder's job was done during training: it taught the decoder, through the
-KL rent, that codes live where the standard normal puts them. That is why the
-first box can draw from $\mathcal{N}(0, I)$ with confidence. The dotted arrow
-is a reminder that nothing flows from the encoder here.
+encoder did its job during training: through the rent, it taught the
+decoder that codes live where the standard normal puts them. That is why the
+first box can draw from $\mathcal{N}(0, I)$. The dotted arrow marks that
+nothing flows from the encoder here.
 
 ![Left: 24 codes from N(0, I) decoded by the plain autoencoder, many black blobs; right: the same codes decoded by the VAE, clean strokes and a few soft blends](figures/primer.ml.generative.autoencoders.samples.svg)
 
 **Reading it:** both panels decode the *same* 24 random codes. The plain
 autoencoder (left) gives blobs, broken lines and a few strokes by luck. The
 VAE (right) gives strokes in all four directions at many offsets, plus a few
-soft blends of two directions. Those blends are the VAE's honest weak spot:
-with only 2 numbers to hold four directions, some codes sit on the border
-between two strands, and the decoder hedges between them. About a third of
-the VAE's samples still cross the junk line, most of them blends like these.
+soft blends of two directions. The blends are where the VAE still falls
+short. With only 2 numbers to hold four directions, some codes sit on the
+border between two strands, and the decoder hedges between them. About a
+third of the VAE's samples are still junk, most of them blends like these.
+
+The third need was smoothness: nearby codes should decode to similar
+pictures. To check it, decode an even grid of codes over the middle of the
+map. A space of codes where position means something in this way is called
+a **latent space**.
 
 ![An 11 by 11 grid of codes from -2.2 to 2.2, each decoded by the VAE: neighbouring tiles are similar strokes, and regions of the map hold each direction](figures/primer.ml.generative.autoencoders.latent_grid.svg)
 
-**Reading it:** every tile is the VAE's decoding of one point on an even
-grid over the middle of the code map. Read along any row or column: the
-stroke changes a little at a time, sliding or turning, with no sudden jumps
-to junk. Whole regions of the map belong to one direction, and the borders
-between them are where the blends live. This is what a **latent space**
-means: a space of codes where position means something. That smoothness is
-what lets you edit or explore a picture by moving its code.
+**Reading it:** every tile is the VAE's decoding of one point on the grid.
+Read along any row or column: the stroke changes a little at a time,
+sliding or turning, with no sudden jumps to junk. Whole regions of the map
+belong to one direction, and the blends sit on the borders between them.
+Because of this smoothness, moving a picture's code edits the picture.
 
 ### Interpolation: walking between two codes
 
-**Everyday picture.** A morph between two faces in a film: every in-between
-frame should look like a face, not a double exposure.
-
-**Tiny example.** Encode two pictures to codes $z_a$ and $z_b$, step along
-the straight line between them, and decode every stop:
+Smoothness can also be checked along a line. Encode two pictures to codes
+$z_a$ and $z_b$, step along the straight line between them, and decode
+every stop:
 
 $$
 z_t = (1 - t)\, z_a + t\, z_b, \qquad 0 \le t \le 1
@@ -730,24 +736,23 @@ believable stroke, never more than 0.70 from a real one. Averaged over 60
 random pairs, the VAE's biggest jump from one frame to the next is also
 smaller (about 1.6 against 2.4).
 
-**Why it matters in practice.** Smooth latent spaces are what made "move
-this slider to add a smile" demos possible, and interpolation is still a
-standard sanity check for any learned code: if the walk is full of junk, the
-space has holes.
+A walk like this is a common check on any learned code: if the walk passes
+through junk, the space has holes.
 
-**In code:** `generate` draws and decodes; `interpolate` encodes two pictures and decodes the walk between them; `largest_step` measures its biggest jump.
+**In code:** `generate` draws codes and decodes them; `interpolate` decodes the walk between two pictures.
 
 ## The trade-off: β, blur and collapse
 
-**Everyday picture.** Go back to the rent. Set it too low and every region
-shrinks to a pin far from the centre: rebuilds are sharp, but the holes come
-back. Set it too high and every region moves to the centre and swells to
-the full bell curve. Then every picture's region is the same region, the
-code carries no information at all, and the decoder can do nothing better
-than draw the average of all the strokes: a grey smudge. That failure is
+The stroke VAE was trained with β = 0.3, and the choice matters, because
+β sets the price of the rent. Set it too low and
+every region shrinks to a pin far from the centre: rebuilds are sharp, but
+the holes come back. Set it too high and every region moves to the centre
+and swells to the full bell curve. Then every picture's region is the same
+region, the code carries no information, and the decoder can do no better
+than draw the average of all the strokes, a grey smudge. That failure is
 called **posterior collapse**.
 
-**Tiny example.** The lesson trains six VAEs, with β from 0.01 to 3:
+VAEs trained at β from 0.01 to 3 show both failures:
 
 | β | rebuild error | KL (information in the code) | median sample distance to a real stroke |
 |---|---|---|---|
@@ -756,8 +761,6 @@ called **posterior collapse**.
 | 0.3 | 0.31 | 4.4 | 0.56 |
 | 1 | 0.92 | 2.9 | 0.81 |
 | 3 | 6.08 | 0.0 | 4.73 |
-
-(`beta_sweep` produces this table, including β = 0.03, and `demo` prints it.)
 
 The samples are best in the middle. At β = 3 the KL is zero: the regions are
 the standard bell curve itself, and the rebuild error of 6.08 is what you get
@@ -818,22 +821,26 @@ On the right are eight samples at each β. The top rows have sharp ink in
 junk shapes. The middle rows are clean strokes. The β = 1 row is softer.
 The bottom row is eight copies of the same grey smudge: the collapse.
 
-**Why it matters in practice.** β is a real dial, and the name β-VAE
-(Higgins and colleagues, 2017) comes from turning it up to get codes whose
-numbers line up with separate factors, like direction and offset here. The
-blur is the VAE's best-known weakness. Modern systems fix it by adding a
-second judge of realism to the loss (an adversarial loss, the trick behind
-`primer.ml.generative.gans`, as in VQGAN), or by letting a stronger generator
-do the generating while the autoencoder only compresses.
+Some uses turn β up on purpose. The β-VAE (Higgins and colleagues, 2017)
+does, to get codes whose numbers line up with separate factors, like
+direction and offset here, and pays for it in blur. Systems built on VAEs
+deal with blur in one of two ways. They add a second judge of realism to the loss
+(an adversarial loss, the idea behind `primer.ml.generative.gans`, as in
+VQGAN), or they let a stronger generator do the generating while the
+autoencoder only compresses.
 
-**In code:** `beta_sweep` trains and measures one VAE per β; `expected_squared_error` is the grey-pixel calculation.
+**In code:** `beta_sweep` trains and measures one VAE per β, including β = 0.03, which the table leaves out.
 
-## Where autoencoders live today
+## What autoencoders are used for
 
-**Everyday picture.** The autoencoder became the zip format for images and
-sound that other generative models work inside.
+Compressing was the autoencoder's job before it was ever a generator, and it
+still is. A plain autoencoder compresses, it denoises (train on noisy
+inputs, ask for clean outputs), and it detects anomalies: an input the
+network rebuilds badly is unlike anything it trained on, which is one way to
+flag fraud or a failing machine.
 
-**Tiny example.** Stable Diffusion's autoencoder turns a 512 × 512 colour
+Inside today's image generators, the autoencoder does the compressing for a
+stronger generator. Stable Diffusion's autoencoder turns a 512 × 512 colour
 image (512 × 512 × 3 = 786,432 numbers) into a 64 × 64 × 4 grid of codes
 (16,384 numbers): 48 times fewer. The diffusion model does all its work on
 that small grid, and the decoder paints full-size pixels only at the very
@@ -843,8 +850,8 @@ rent to keep the codes well-behaved.
 A **VQ-VAE** (vector-quantized VAE) goes one step further: it snaps each code
 vector to the nearest entry of a learned **codebook**, so an image becomes a
 grid of whole numbers, the entries' positions in the codebook. Those numbers
-are **tokens**, and a transformer can read and write them exactly as it
-reads and writes words. Neural audio codecs do the same for sound.
+are **tokens**, and a transformer can read and write them the way it reads
+and writes words. Neural audio codecs do the same for sound.
 
 ```mermaid
 flowchart LR
@@ -871,17 +878,16 @@ continuous codes into token ids, which is how images and audio can enter
 and leave a language-model-style transformer (see
 `primer.ml.generative.multimodal`).
 
-**Why it matters in practice.** When a model "generates an image", there is
-very often an autoencoder at both ends of the pipeline. Its quality sets a
-ceiling: whatever detail the decoder cannot rebuild, no generator working in
-its latent space can produce.
+So in a generator that works on codes, an autoencoder sits at both ends of
+the pipeline, and its quality sets a ceiling: whatever detail the decoder
+cannot rebuild, no generator working in its latent space can produce.
 
 ## In 20 seconds
 
 - **Autoencoder:** an encoder squeezes data through a narrow code (the
   bottleneck) and a decoder rebuilds it; training minimises the rebuild
-  error. With no bends it learns exactly what PCA learns; with bends it can
-  follow curved data far better.
+  error. With no bends it learns what PCA (principal component analysis)
+  learns; with bends it can follow curved data far better.
 - **No generation from a plain autoencoder:** its codes land wherever
   training put them, with holes in between, so random codes decode to junk.
 - **VAE:** the encoder outputs a region (μ, σ); the reparameterization trick
