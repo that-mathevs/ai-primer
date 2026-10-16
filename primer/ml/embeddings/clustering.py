@@ -124,50 +124,43 @@ thresholds, you are done.
 
 ## Level 2: How it works, from scratch
 
-Level 2 builds each of those methods from nothing, starting with a sack of
-mail.
-
-**The everyday picture.** Tip a sack of unlabeled mail onto a table and sort it into piles by what
-each letter is about. Nobody gave you the pile names; you notice that some
-letters are about passwords and others about holidays, and similar letters
-end up together. That's **clustering**: finding groups in data without being
-told what the groups are.
-
-Embeddings make it possible for text. Every ticket, email or document gets
-coordinates on a map of meaning (`primer.ml.embeddings.similarity`), so
-"similar" becomes "close", and sorting mail becomes finding crowds of nearby
-points. The same closeness also powers four everyday jobs: spotting
-**near-duplicates**, **routing** requests to the right team, flagging
-**anomalies**, and **caching** answers to questions already asked.
-
-This lesson uses 30 short IT, HR and finance support tickets (five kinds, six
-of each) and two off-topic ones, embedded with the repo's toy embedder
-(`primer.common.embedder`).
+The examples throughout are 32 short support tickets. Thirty are about IT,
+HR and finance, in five kinds with six tickets each: login, VPN, printer,
+expenses and leave. The other two are off-topic, one about a coffee machine
+and one about a dog. A small toy embedder (`primer.common.embedder`) turns
+each ticket into a vector, and tickets that mean similar things get vectors
+with a high cosine similarity (`primer.ml.embeddings.similarity`). Sort the
+tickets by kind, compare every pair, and the groups are plain to see.
 
 ![Tickets of the same kind form five bright squares along the diagonal, and the two off-topic tickets are dark almost everywhere](figures/primer.ml.embeddings.clustering.similarity.svg)
 
-**Reading it:** rows and columns are the 32 tickets in the same order, grouped
-by kind, and brighter cells mean a higher cosine similarity. The five bright
-squares along the diagonal are the five kinds: tickets of one kind resemble
-each other and not the rest. The last two rows and columns (the off-topic
-tickets) are dark almost everywhere. Clustering is the job of finding those
-squares *without* knowing the order.
+**Reading it:** rows and columns are the 32 tickets in the same order,
+grouped by kind, and a brighter cell means a higher cosine similarity. Each
+bright square along the diagonal is one kind, whose six tickets resemble each
+other and not the rest. The last two rows and columns, the off-topic
+tickets, are dark almost everywhere.
 
-**In code:** `ticket_embeddings` returns the tickets' unit vectors and texts,
-and `ticket_kinds` their true kinds, which the clustering never sees.
+A clustering method is not given that order. It gets the tickets shuffled,
+with no kinds attached, and has to find the squares from the similarities
+alone.
+
+**In code:** `ticket_embeddings` returns the tickets' vectors, and
+`ticket_kinds` the true kinds, which no clustering method sees.
 
 ## k-means: k meeting points
 
-**Everyday picture:** a town wants k post boxes placed so that everyone's
-walk to their nearest box is as short as possible. Start with the boxes
-anywhere. Everyone walks to their nearest box; then each box moves to the
-middle of the people who chose it. Repeat until nobody switches box.
+The simplest method decides the number of groups, k, in advance. Think of a
+town that wants k post boxes placed so that everyone's walk to their nearest
+box is as short as possible. Put the boxes anywhere to start. Everyone walks
+to their nearest box, then each box moves to the middle of the people who
+chose it, and the two steps repeat until nobody changes box. That is
+**k-means**, with points for the people and centres for the boxes.
 
-**Tiny worked example:** four points, (0, 0), (0, 1), (10, 0), (10, 1), and
-k = 2. However the boxes start, the two left points pick one box and the two
-right points the other. Each box moves to the middle of its pair: (0, 0.5) and
-(10, 0.5). Every point is now 0.5 away from its box, so the total squared
-walk is 4 × 0.5² = **1.0**, and nothing changes on the next round.
+Take four points, (0, 0), (0, 1), (10, 0) and (10, 1), and k = 2. However
+the boxes start, the two left points pick one box and the two right points
+the other. Each box moves to the middle of its pair, (0, 0.5) and (10, 0.5).
+Every point is now 0.5 from its box, so the total squared walk is
+4 × 0.5² = **1.0**, and the next round changes nothing.
 
 ```mermaid
 flowchart LR
@@ -178,13 +171,15 @@ flowchart LR
   C -->|no| D[Done: labels + centres]
 ```
 
-**Reading it:** two steps alternate, assign and move, until the centres stop
-moving. Each step can only shrink the total squared distance (assigning to
-the nearest centre can't make anyone's walk longer; moving a centre to the
-mean of its points is the spot that minimizes their squared walks), so the
-loop always ends. The start matters: **k-means++** picks each new starting
-centre far from the ones already chosen, which avoids two centres fighting
-over one crowd.
+**Reading it:** follow the loop from assign to move and back, until no
+centre moves. It always ends, because neither step can lengthen the total
+squared walk: joining the nearest centre cannot make anyone's walk longer,
+and a group's mean is the spot with the shortest total squared walk to its
+points. Where it ends depends on the start. **k-means++** picks each new
+starting centre far from the ones already chosen, so that two centres do not
+begin in the same crowd.
+
+The total squared walk is called **inertia**, and k-means makes it small:
 
 $$
 J = \sum_{i=1}^{N} \lVert x_i - \mu_{c(i)} \rVert^2
@@ -225,33 +220,33 @@ J  # → 1.0
 
 ![k-means centres drift into the middle of their crowds round by round while the total squared distance only goes down](figures/primer.ml.embeddings.clustering.kmeans_steps.svg)
 
-**Reading it:** three snapshots of k-means on 2-D points. Colours are the
-current assignments and black crosses are the centres. On the left, the
-k-means++ starting centres; in the middle, after the first assign-and-move
-round; on the right, the final state. The centres drift into the middle of
-their crowds and the total squared distance printed above each panel only
-goes down.
+**Reading it:** three snapshots of k-means on 2-D points, read left to
+right. Colours are the current assignments and black crosses are the
+centres: the k-means++ starts, then the state after one assign-and-move
+round, then the final state. The centres drift into the middle of their
+crowds, and J, printed above each panel, falls from one panel to the next.
 
-**In code:** `kmeans` alternates assign and move from k-means++ starts and
-returns the labels, centres and inertia J of the best of several restarts;
-`kmeans_history` records one run round by round, which is what this figure
-draws.
+**In code:** `kmeans` runs the loop from k-means++ starts and keeps the best
+of several restarts; `kmeans_history` records the rounds drawn here.
 
-**Why it matters:** k-means is fast and simple, and it's inside things you
-use: IVF vector indexes cluster the corpus with it (`primer.ml.embeddings.ann`),
-and topic discovery over tickets or documents often starts with it. Its
-weaknesses are that you must choose k and that it assumes round, similar-sized
-clusters.
+k-means is fast, and it reappears in vector search, where IVF indexes use it
+to split a corpus into cells (`primer.ml.embeddings.ann`). It has two
+weaknesses. You must choose k, and it assumes the clusters are round and of
+similar size.
 
 ## Choosing k: the elbow and the silhouette
 
-**Everyday picture:** at a party, you're in the right group if the people in
-your group are much closer to you than the people in the next group over.
+To choose k, run k-means for several values of k and score each result.
+Inertia cannot be the score, because it falls every time k grows: more boxes
+always mean shorter walks. What can be read from it is the **elbow**, the k
+after which it stops falling steeply. A better score asks every point
+whether it sits much closer to its own cluster than to the nearest other
+one. That score is the **silhouette**.
 
-**Tiny worked example:** the four points again, split into the two pairs.
-For (0, 0): its partner is a = **1** away; the other pair is 10 and √101 = 10.05
-away, on average b = **10.025**. Its score is (b − a) / b = 9.025 / 10.025 = **0.900**,
-and by symmetry every point scores the same, so the silhouette is 0.900.
+Back to the four points, split into the two pairs. For (0, 0), its partner
+is a = **1** away. The other pair is 10 and √101 = 10.05 away, on average
+b = **10.025**. Its score is (b − a) / b = 9.025 / 10.025 = **0.900**. By
+symmetry every point scores the same, so the silhouette is 0.900.
 
 $$
 s(i) = \frac{b(i) - a(i)}{\max\big(a(i), b(i)\big)}
@@ -288,27 +283,30 @@ round((b - a) / max(a, b), 3)  # → 0.9
 
 ![Inertia falls at every k, so it cannot pick k, while the silhouette peaks clearly at the true k of 5](figures/primer.ml.embeddings.clustering.choose_k.svg)
 
-**Reading it:** both panels sweep k from 2 to 8 on the 30 tickets. On the
-left, inertia always falls as k grows (more boxes, shorter walks), so the
-lowest value is useless; you look for the **elbow** where it stops falling
-steeply. On the right, the silhouette has a clear peak at k = 5, the true
-number of ticket kinds. When the elbow is vague, the silhouette usually
-isn't.
+**Reading it:** both panels run k-means on the 30 tickets for every k from 2
+to 8. On the left, inertia falls at every k, steeply up to k = 5 and more
+slowly after it. On the right, the silhouette peaks at k = 5,
+the true number of ticket kinds. The elbow has to be judged by eye, while
+the silhouette's peak is a single number to pick.
 
-**In code:** `silhouette` averages s(i) over every point, and
-`best_k_by_silhouette` runs `kmeans` for each candidate k and keeps the one
-with the highest silhouette.
+**In code:** `best_k_by_silhouette` runs `kmeans` for each candidate k and
+keeps the one with the highest `silhouette`.
 
 ## Density clustering: DBSCAN and HDBSCAN
 
-**Everyday picture:** a festival seen from a drone. A crowd is wherever
-people stand shoulder to shoulder; a loner by the fence belongs to no crowd.
-You don't decide in advance how many crowds there are.
+Even with k chosen well, k-means assumes round clusters, and it puts every
+point in some cluster, so the coffee-machine ticket joins one of the five
+kinds. Density clustering takes another view, the one you get of a festival from a drone. A crowd is
+wherever people stand shoulder to shoulder, and a loner by the fence belongs
+to no crowd. How many crowds there are is not decided in advance.
+**DBSCAN** makes this a rule with two settings: a reach, ε, for how close
+counts as shoulder to shoulder, and the number of points within reach that
+make a crowd.
 
-**Tiny worked example:** points on a line at 0, 0.1, 0.2, 5.0, 5.1, 5.2 and 20,
-with reach ε = 0.15 and "a crowd needs at least 2". 0, 0.1 and 0.2 chain
-together (each within 0.15 of the next); so do 5.0, 5.1 and 5.2. 20 has nobody
-within 0.15. Result: two clusters and one noise point, labels
+Take points on a line at 0, 0.1, 0.2, 5.0, 5.1, 5.2 and 20, with a reach of
+ε = 0.15 and a crowd of at least 2. The points 0, 0.1 and 0.2 chain together,
+each within 0.15 of the next, and so do 5.0, 5.1 and 5.2. Nothing is within
+0.15 of 20. The result is two clusters and one noise point, labelled
 **0 0 0 1 1 1 −1**.
 
 $$
@@ -360,57 +358,58 @@ flowchart TD
   L --> P
 ```
 
-**Reading it:** DBSCAN walks the points. A point with too few neighbours is
-left as noise (it can still be claimed later as the edge of someone else's
-crowd). A core point starts a cluster that floods outward through other core
-points, the self-loop on the "Add" box, until the crowd's edge is reached.
+**Reading it:** DBSCAN takes the points one at a time. A point with too few
+neighbours is left as noise for now; a later crowd can still claim it as an
+edge point. A core point starts a cluster, which floods outward through
+other core points (the loop on the "Add" box) until it reaches the crowd's
+edge.
 
-**In code:** `dbscan` finds the core points, floods each cluster outward
-through them, and labels everything unreached −1 (noise).
+**In code:** `dbscan` labels the clusters 0, 1, 2 and so on, and gives
+noise the label −1.
 
 ![DBSCAN at reach 0.6 marks exactly the two off-topic tickets as noise but merges the VPN and printer tickets into one cluster](figures/primer.ml.embeddings.clustering.dbscan.svg)
 
-**Reading it:** the tickets drawn on the 2-D map from the next section,
-coloured by the clusters DBSCAN found (cosine distance, so ε = 0.6 means
-"cosine at least 0.4"; minPts = 3). Grey crosses are noise: exactly the two
-off-topic tickets, found without anyone telling DBSCAN how many clusters
-exist. Notice that VPN and printer tickets share a cluster: a chain of
-tickets that are each close to the next ("can't connect", "not working",
-"offline") bridges the two kinds.
+**Reading it:** the tickets on a flat 2-D map, coloured by the clusters
+DBSCAN found. Distance here is 1 − cosine, so ε = 0.6 means "cosine at least
+0.4", and minPts = 3. The grey crosses are noise: the two off-topic tickets
+and no others, found without telling DBSCAN how many clusters there are.
+Now look at the VPN and printer tickets, which share one cluster. A
+single pair joins them: "vpn client fails to start" and "printing fails with
+an error" are within reach of each other.
 
 ![No reach gets DBSCAN right: small reaches strand real tickets as noise, and by the time noise is only the off-topic pair the kinds have begun chaining together](figures/primer.ml.embeddings.clustering.eps_sweep.svg)
 
 **Reading it:** the horizontal axis is the reach ε. The blue line counts
 clusters and the orange line counts noise points; the dashed line marks the
-two truly off-topic tickets. At the smallest reach (0.45) most tickets have
-too few neighbours: DBSCAN finds only three clusters and calls 22 of the 32
-tickets noise. Between 0.5 and 0.55 it finds all five kinds, but still
-strands genuine tickets as noise (15, then 9). By 0.6 noise is down to just
-the off-topic pair, but kinds have already started **chaining** together (A
-is near B, B is near C, so A and C end up in one cluster): VPN and printer
-share a cluster, so only four are left. Keep widening and the chains keep
-growing, to three clusters, then two, until by 0.825 one cluster holds every
-kind and has swallowed an off-topic ticket as well, leaving a single noise
-point. No single ε gets everything right, and on real data you rarely know
-where the sweet spot is.
+two off-topic tickets. At the smallest reach, 0.45, most tickets have too
+few neighbours, and DBSCAN finds three clusters and calls 22 of the 32
+tickets noise. At 0.5 and 0.55 it finds all five kinds, but calls 15, then
+9, tickets noise, most of them genuine. At 0.6 the noise is down to the
+off-topic pair, but the kinds have started **chaining**: A is near B and B
+is near C, so A and C end up in one cluster. VPN and printer merge, leaving
+four clusters. Wider still, the chains leave three clusters, then two, until
+at 0.825 one cluster holds every kind and one off-topic ticket as well. No
+single ε gets every ticket right, and real data has no labels to show where
+the best one is.
 
-That's the problem **HDBSCAN** solves. It effectively runs DBSCAN at every
-reach at once, builds a tree of how crowds merge as the reach grows, and keeps
-the crowds that persist over the widest range of reaches. It handles clusters
-of different densities, needs no ε, and is the usual choice for exploring
-messy real text such as support tickets.
+**HDBSCAN** removes ε. In effect it runs DBSCAN at every reach, builds a
+tree of how crowds merge as the reach grows, and keeps the crowds that last
+over the widest range of reaches. That lets it find dense and loose clusters
+in the same data, which is what messy text such as support tickets needs.
 
 ## Seeing the map: PCA (and why UMAP and t-SNE mislead on distance)
 
-**Everyday picture:** a shadow on a wall. A 3-D object casts a 2-D shadow;
-turn the object and the shadow changes. **PCA** (principal component
-analysis) turns the object so its shadow is as spread out as possible,
-keeping as much of the original variation as a flat picture can.
+The DBSCAN figure drew the tickets, each a list of 128 numbers, on a flat
+page. Any such map is a shadow. A 3-D object casts a 2-D shadow on a wall,
+and turning the object changes the shadow. **PCA** (principal component analysis) turns the data so
+that its shadow is as spread out as possible, which keeps as much of the
+original variation as a flat picture can.
 
-**Tiny worked example:** three points on a straight line, (1, 1), (2, 2),
-(3, 3). All their variation runs along the diagonal, so the first direction
-explains **100%** of it and the second **0%**. Along that direction the points
-sit √2 = **1.414** apart, exactly as in the original.
+Take three points on a straight line, (1, 1), (2, 2) and (3, 3). All their
+variation runs along the diagonal, so the first direction explains **100%**
+of it and the second **0%**. Along that direction the points sit
+√2 = **1.414** apart, as they do in the original. PCA scores each direction
+by its share of the total spread:
 
 $$
 \text{explained}_j = \frac{\sigma_j^2}{\sum_k \sigma_k^2}
@@ -426,7 +425,8 @@ $$
 | Σₖ σₖ² | the total spread over all directions k | |
 | explainedⱼ | the share of all the spread that direction j captures | 0 to 1 |
 
-**In words:** the share of all the spread that direction j captures.
+**In words:** square each direction's singular value and divide by the sum
+of all the squares.
 
 **On the example:** centred, the points are (−1, −1), (0, 0), (1, 1). Their
 singular values are 2 along the diagonal and 0 across it, so the shares are
@@ -450,23 +450,30 @@ sigma = [math.sqrt(sum((x * u_j[0] + y * u_j[1]) ** 2 for x, y in centred))
 
 ![Squashed to 2-D, each kind of ticket forms its own patch with its k-means centre inside it](figures/primer.ml.embeddings.clustering.map.svg)
 
-**Reading it:** the 128-dimensional ticket embeddings squashed to 2-D with
-PCA, coloured by their true kind; black crosses are the k-means centres,
-projected the same way, and the grey ✕ markers are the off-topic tickets.
-Kinds form separate patches and the centres sit inside them. The title says
-what share of the variation the two axes keep: the rest is invisible here,
-so tickets that look close on this map can be far apart in the real space.
+**Reading it:** the 128-number ticket embeddings flattened to 2-D with PCA
+and coloured by their true kind. Black crosses are the k-means centres,
+projected the same way, and grey ✕ markers are the off-topic tickets. Each
+kind forms its own patch, with a centre inside it. The title gives the share
+of the variation the two axes keep. The rest is invisible, so two tickets
+that look close on this map can be far apart in the full space.
 
-**In code:** `pca` centres the data, projects it onto the top n directions
-from the SVD, and returns each direction's explained share.
+**In code:** `pca` projects the centred data onto its top directions and
+returns each direction's share.
 
-UMAP and t-SNE draw prettier maps by a different rule: keep each point's
-*neighbours* next to it, and let distances elsewhere stretch. Like a subway
-map, they're great for "what's near what" and misleading for "how far" or
-"how big": gaps between clusters and cluster sizes in those plots don't
-reflect the real space. Use them for intuition, never for measurement.
+UMAP and t-SNE draw maps by a different rule. They keep each point's
+*neighbours* next to it and let every other distance stretch. Like a subway
+map, the result shows what is near what, but not how far apart things are or
+how big they are: the gaps between clusters and the sizes of clusters on
+such a map do not match the real space. Read them for neighbours, and
+measure in the full space.
 
 ## Everyday uses
+
+Clustering looks at a whole collection at once. Most systems also have to
+decide about each new item as it arrives, and the same closeness answers
+that question: is this like something already seen? Four everyday jobs ask
+it, spotting **near-duplicates**, **routing** requests to the right team,
+flagging **anomalies** and **caching** answers.
 
 ```mermaid
 flowchart LR
@@ -482,24 +489,23 @@ flowchart LR
   C -->|yes| HIT[Return cached answer]
 ```
 
-**Reading it:** one embedding feeds four independent checks, each a
-comparison with things already known. All four have the same shape: a
-distance and a threshold. What differs is what's being compared against
-(stored documents, route examples, cluster centres, cached questions) and
-what happens on a hit.
+**Reading it:** one embedding feeds four separate checks, each a distance
+and a threshold. Read across the four branches: what changes is what the new
+text is compared with (stored documents, route examples, cluster centres,
+cached questions) and what happens on a hit.
 
-**Near-duplicates.** Photocopies with a sticky note on them: nearly
-identical vectors. "password reset link expired" and "The password reset
-link has expired!" score cosine 1.0 here; flag pairs above a threshold
-calibrated on labeled pairs (`primer.ml.embeddings.similarity`).
+**Near-duplicates.** The same ticket filed twice, with slightly different
+wording, gets nearly identical vectors. "password reset link expired" and
+"The password reset link has expired!" score a cosine of 1.0 with the toy
+embedder. Flag pairs above a threshold set on pairs you have labelled by
+hand (`primer.ml.embeddings.similarity`).
 
-**In code:** `near_duplicates` embeds a list of texts and returns every pair
-whose cosine reaches the threshold.
+**In code:** `near_duplicates` returns every pair of texts whose cosine
+reaches the threshold.
 
-**Routing.** A receptionist listening to a request and pointing to the right
-desk. Each route (a team, a tool, an agent) is represented by the centroid
-of a few example requests; a new request goes to the closest centroid, or to
-a fallback when nothing is close:
+**Routing.** Each route (a team, a tool or an agent) is represented by the
+centroid of a few example requests. A new request goes to the closest
+centroid, or to a fallback when no centroid is close enough:
 
 $$
 \text{route}(q) =
@@ -520,8 +526,8 @@ $$
 | arg maxᵣ | the route that gives the largest value | |
 | θ (theta) | the confidence threshold | 0.3 here |
 
-**In words:** send the request to the route it's most similar to, unless even
-the best match is weak, in which case hand it off.
+**In words:** send the request to the route it is most similar to, unless
+even the best match is weak, in which case hand it to the fallback.
 
 **On the example:** "my vpn tunnel drops when I work remote" scores highest
 against the IT helpdesk; "what is the capital of france" is near 0 against
@@ -554,28 +560,28 @@ def route(q):
 
 ![The VPN complaint clears the threshold only for IT, the receipt question only for finance, and the off-topic question for no route, so it goes to a human](figures/primer.ml.embeddings.clustering.router.svg)
 
-**Reading it:** each group of bars is one incoming request; each bar is its
-cosine with one route's centroid; the dashed line is the threshold θ. The
-VPN complaint clears the line only for IT, the receipt question only for
-finance, and the off-topic question clears nothing, so it goes to a human.
-The fallback is the important part: a router without one sends every
-unanswerable question *somewhere*.
+**Reading it:** each group of bars is one incoming request, each bar its
+cosine with one route's centroid, and the dashed line the threshold θ. The
+VPN complaint clears the line only for IT and the receipt question only for
+finance. The off-topic question clears nothing, so it goes to a human.
+Without the fallback it would go to whichever team scored highest, however
+low that score.
 
-**In code:** `Router` holds one unit-length centroid per route;
-`Router.scores` gives a request's cosine with each, and `Router.route`
-applies θ and the fallback. `support_router` builds the lesson's three
-routes.
+**In code:** `Router.route` applies θ and the fallback; `support_router`
+builds the three routes shown here.
 
-**Anomaly detection.** A stranger at a party is far from every group. Score
-each item by its distance to the nearest cluster centre; the largest scores
-are the unusual items. Here the coffee machine and the dog come out on top.
+**Anomaly detection.** An item far from every cluster centre is unlike
+anything seen so far. Score each item by its distance to the nearest centre,
+and the largest scores are the unusual items. Among the tickets, the coffee
+machine and the dog score highest.
 
 **In code:** `anomaly_scores` returns each point's distance to its nearest
 cluster centre.
 
-**Semantic caching.** An FAQ desk that remembers answers. If a new question
-means the same as one already answered, return the stored answer and skip
-the model call, saving cost and latency. Three guards keep it safe:
+**Semantic caching.** If a new question means the same as one already
+answered, return the stored answer and skip the call to the language model,
+which saves its cost and its wait. Three guards stop the cache from
+returning a wrong answer:
 
 - **A strict, calibrated threshold.** "How do I reset my VPN?" is only about
   0.46 similar to "How do I reset my password?" here: related, but a
@@ -594,25 +600,26 @@ flowchart LR
   T -->|no| M[Miss: call the model,<br/>store the new answer]
 ```
 
-**Reading it:** the filter comes *before* the similarity search, not after:
-an answer from another user's context is never even a candidate, so no
-threshold setting can leak it. Only then does similarity decide.
+**Reading it:** follow the arrows. The filter comes *before* the
+similarity search, so an answer stored in another user's context is never a
+candidate, and no threshold setting can leak it. Similarity decides only
+among what is left.
 
-**In code:** `SemanticCache.put` stores a question, its answer and its
-context; `SemanticCache.lookup` filters by context and expiry, then finds the
-most similar entry, and `SemanticCache.get` returns its answer only above the
+**In code:** `SemanticCache.lookup` filters by context and expiry before it
+compares, and `SemanticCache.get` returns an answer only above the
 threshold.
 
 ## In 20 seconds
-- k-means alternates "assign to nearest centre" and "move centre to the
-  mean"; you choose k, using the silhouette or the elbow.
-- DBSCAN/HDBSCAN find crowds by density, choose the number of clusters
-  themselves, and mark loners as noise; better for messy text.
-- PCA gives an honest but lossy 2-D shadow; UMAP/t-SNE keep neighbours but
-  distort distances and sizes.
-- Near-duplicates, routing, anomaly detection and semantic caching are all
-  "embed, compare, threshold".
-- Semantic caches need a strict threshold, a context key and an expiry.
+- k-means alternates two steps, "join the nearest centre" and "move each
+  centre to the mean of its points"; you choose k, by the elbow or the
+  silhouette.
+- DBSCAN and HDBSCAN find clusters as dense crowds, decide how many there
+  are themselves, and mark loners as noise, which suits messy text.
+- A PCA map keeps the directions of widest spread and drops the rest; UMAP
+  and t-SNE keep neighbours together but distort distances and sizes.
+- Near-duplicates, routing, anomaly detection and semantic caching each
+  embed a new item, compare it with stored ones and apply a threshold.
+- A semantic cache needs a strict threshold, a context key and an expiry.
 
 ## Self-test questions
 
@@ -651,7 +658,7 @@ expire entries.
 - **Campello, Moulavi and Sander, *Density-Based Clustering Based on Hierarchical Density Estimates* (HDBSCAN, 2013)**: https://doi.org/10.1007/978-3-642-37456-2_14.
   Removed DBSCAN's single reach parameter by building a hierarchy over all reaches and keeping the most persistent clusters.
 - **McInnes, Healy and Melville, *UMAP* (2018)**: https://arxiv.org/abs/1802.03426.
-  A fast neighbour-preserving projection now standard for visualizing embeddings.
+  A fast projection that keeps each point's neighbours near it, used to draw maps of embeddings.
 
 ## Further reading
 - scikit-learn user guide, clustering: https://scikit-learn.org/stable/modules/clustering.html
