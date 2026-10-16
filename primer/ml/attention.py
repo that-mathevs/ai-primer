@@ -137,28 +137,25 @@ prompt, you are done.
 
 ## Level 2: How it works, from scratch
 
-Level 2 builds the mechanism from nothing, starting with a glance around a
-room.
-
-**The everyday picture.** Imagine you're in a meeting and someone says "it's broken, can you fix it?"
+Imagine you're in a meeting and someone says "it's broken, can you fix it?"
 To know what "it" means, you glance around the room: at the laptop on the
 table, at the person who just walked in, at the whiteboard. You pay a lot of
 attention to the laptop, a little to everything else, and your understanding
 of "it" becomes mostly *laptop*.
 
-That glance is attention. Every word in a sentence gets to look at every
-other word, decide how relevant each one is, and rebuild its own meaning as
-a mix of the relevant ones. "Bank" next to "river" becomes a riverbank; next
-to "loan" it becomes a lender. The word is the same, but what it paid
+Attention gives every word of a text that glance. Each word looks at every
+other word, decides how relevant each one is, and rebuilds its own meaning
+as a mix of the relevant ones. "Bank" next to "river" becomes a riverbank;
+next to "loan" it becomes a lender. The word is the same, but what it paid
 attention to is different.
 
-## A tiny worked example: what does "it" refer to?
+## A worked example: what does "it" refer to?
 
 Take "The animal didn't cross the street because it was tired" and follow
 the word "it". To keep the numbers small, it compares itself with just three
-other words. Each comparison gives a relevance **score** (how the score is
-made comes next). Then we turn scores into shares of attention that add up
-to 1:
+other words. Each comparison gives a relevance **score** (where scores come
+from is explained after softmax). Two steps turn the scores into shares of
+attention that add up to 1:
 
 1. Exponentiate each score (e^score), which makes every number positive and
    stretches the gaps between them.
@@ -171,16 +168,15 @@ to 1:
 | street | 0.5   | 1.65    | 1.65 / 11.76 = **0.14** |
 
 Those two steps are called **softmax**. The new meaning of "it" is 63%
-"animal", 23% "tired" and 14% "street". Without being told any grammar rule,
-the model has worked out that "it" is the animal.
+"animal", 23% "tired" and 14% "street". No grammar rule took part: "it"
+leans on "animal" because "animal" scored highest.
 
 **In code:** `worked_example_it` runs these three scores through softmax and returns each word's share.
 
 ### Softmax, decoded
 
 Softmax turns any list of numbers, positive or negative, into shares that
-are all positive and add up to exactly 1. Think of it as a vote where louder
-voices get disproportionately more say.
+are all positive and add up to 1.
 
 $$
 \text{softmax}(z)_i = \frac{e^{z_i}}{\sum_{j=1}^{n} e^{z_j}}
@@ -228,31 +224,31 @@ total? Three reasons you can check on the table above:
    so no word ever gets a negative share.
 2. **Order is kept.** A higher score always gets a bigger share.
 3. **Gaps are stretched.** Adding 1 to a score multiplies its *e*-value by
-   2.72, so the winner pulls ahead decisively. (Plain division would give
-   "animal" 2.0 / 3.5 = 0.57, a timid 57%, and would break on negative
-   scores.)
+   2.72, so the highest score pulls further ahead. (Plain division would
+   give "animal" 2.0 / 3.5 = 0.57, and would break on negative scores.)
 
-One more property matters later: adding the same number to every score
-changes nothing, because it multiplies the top and bottom of the fraction by
-the same amount. The code uses this to subtract the largest score before
-exponentiating, which stops *e*¹⁰⁰⁰ from overflowing to infinity. See
-`primer.notation` for exponents and sums from scratch.
+Adding the same number to every score changes nothing, because it
+multiplies the top and bottom of the fraction by the same amount. The code
+uses this to subtract the largest score before exponentiating, which stops
+*e*¹⁰⁰⁰ from overflowing to infinity. See `primer.notation` for exponents
+and sums from scratch.
 
 ![For the word it, scores 2, 1 and 0.5 become weights 0.63, 0.23 and 0.14: animal scores twice tired yet gets almost three times its attention](figures/primer.ml.attention.it_weights.svg)
 
-**Reading it:** for each word, the grey bar is its share of the raw scores
-and the blue bar is its share of attention after softmax. Softmax exaggerates
-differences: "animal" scores only twice as high as "tired", yet it ends up
-with almost three times the attention, because exponentiating stretches the
-gaps. That is how attention commits to the most relevant word while keeping
-a little of the others.
+**Reading it:** compare the two bars for each word. Grey is the word's
+share of the raw scores, blue its share of attention after softmax.
+"animal" scores twice as high as "tired" but gets almost three times its
+attention. "animal" gains, "tired" loses the most, and "street" barely
+moves. Softmax moves weight towards the highest score without taking all of
+it from the others.
 
 **In code:** `softmax` subtracts the largest score before exponentiating, and turns masked scores of −∞ into weights of exactly 0.
 
 ## Where the scores come from: queries, keys and values
 
-Each word turns its vector into three new vectors by multiplying it by three
-learned matrices:
+The worked example took its scores as given. To make them, each word starts
+from its vector, the list of numbers that stands for it, and multiplies that
+vector by three learned matrices to get three new vectors:
 
 - a **query**: what am I looking for? ("it" is looking for a noun that can
   be tired.)
@@ -292,11 +288,12 @@ sum(q_m * k_m for q_m, k_m in zip(q, k))  # → 4.0
 ```
 
 Vectors that point the same way give big positive scores, vectors at right
-angles give zero, and opposite vectors give negative scores. That is why the
-dot product works as a relevance score. The values are then blended with
-the softmax shares, exactly as in the table above.
+angles give zero, and opposite vectors give negative scores, so the dot
+product measures how well a query and a key match. Softmax turns each word's
+scores into shares, as in the worked example, and the values are blended in
+those shares.
 
-A library search is a good analogy. The query is what you type into the
+A library search works the same way. The query is what you type into the
 search box, the keys are the catalogue entries, and the values are the books
 on the shelf. You get back a *blend* of books, weighted by how well each
 catalogue entry matched your search.
@@ -315,11 +312,11 @@ flowchart LR
 ```
 
 **Reading it:** follow the arrows left to right. The token vectors split
-three ways. Queries and keys meet in the Scores box: that is where relevance
-is decided. The values take the lower path and wait, untouched, until the
-Weighted sum box, where the relevance shares decide how much of each value
-is mixed in. Keep the two roles apart: **Q and K decide *how much*; V carries
-*what*.** The Scale and Mask boxes are explained in their own sections below.
+three ways. Queries and keys meet in the Scores box, where relevance is
+decided. The values take the lower path and wait, untouched, until the
+Weighted sum box, where the shares decide how much of each value is mixed
+in. Keep the two roles apart: **Q and K decide *how much*; V carries
+*what*.** The Scale and Mask boxes have their own sections below.
 
 Written as one formula, with every word's query stacked into a matrix Q (and
 likewise K and V), the whole diagram is:
@@ -377,15 +374,14 @@ weights = [e / sum(exps) for e in exps]
 [round(sum(w * v[c] for w, v in zip(weights, V)), 2) for c in range(2)]  # → [0.77, 0.37]
 ```
 
-In practice this one line runs in every layer of every modern language
-model, for every word, many times per word generated. Nearly everything
-about a model's speed and memory use traces back to it.
+A transformer runs this formula in every attention layer, for every token.
 
 **In code:** `scaled_dot_product_attention` is the whole formula, one commented step per box of the diagram, and returns both the blended values and the attention weights.
 
-## Shapes: the part that is easiest to get wrong
+## Shapes
 
-For one sequence of `n` tokens with model width `d_model`:
+The formula works on whole matrices, one row per token. For one sequence of
+`n` tokens with model width `d_model`, their shapes are:
 
 | Tensor | Shape | Meaning |
 |---|---|---|
@@ -398,12 +394,17 @@ For one sequence of `n` tokens with model width `d_model`:
 | weights | (n, n) | each row sums to 1 |
 | output | (n, d_v) | one context-aware vector per token |
 
-## Causal masking: no peeking at the answer
+Only the scores and the weights are n × n. The other matrices have one row
+per token, or, like the learned projections, do not depend on n at all.
 
-A decoder model (GPT, Claude, Llama) is trained to predict the *next* token.
-If position i could attend to position i+1, it could simply read the answer.
-So the scores for future positions are set to −∞ *before* softmax. Because
-e^−∞ = 0, those weights come out as exactly zero.
+## Causal masking
+
+The n × n score matrix gives every token a score for every other token,
+including the ones that come after it. A decoder model, one that writes text
+left to right (GPT, Claude, Llama), is trained to predict the *next* token,
+so if position i could attend to position i+1, it could read the answer. The scores for later positions are
+therefore set to −∞ *before* softmax. Because e^−∞ = 0, those weights come
+out as zero.
 
 ```mermaid
 flowchart LR
@@ -420,18 +421,18 @@ flowchart LR
 **Reading it:** each row is one token looking at the sequence. A ✓ is a
 position it may read and a · is the future, which gets masked. The allowed
 region is a lower triangle: the first token sees only itself and the last
-sees everything before it. The same triangle appears as the dark region in
-the heatmap below.
+sees everything before it. The same triangle appears as the shaded region
+in the heatmap below.
 
 ![Every cell above the diagonal is zero, so each of the 10 words attends only to itself and earlier words, and each row sums to 1](figures/primer.ml.attention.causal_heatmap.svg)
 
 **Reading it:** rows are the token doing the looking (the query), columns are
-the tokens being looked at (the keys), and darker means more weight. The
-upper-right triangle is exactly zero, so nothing reads the future. Each row
-sums to 1, so a token's attention is a budget it spends across the past. The
-weights come from random projections here, so the pattern itself means
-nothing; the triangle is what matters. In a trained model, rows light up on
-the tokens that actually help, such as "it" lighting up "animal".
+the tokens being looked at (the keys), and darker means more weight. Look at
+the empty upper-right triangle: those weights are zero. Each row sums to 1,
+so a token's attention is a budget it spends across the past. The weights
+come from random projections, so only the triangle means anything here. In
+a trained model, a row is darkest on the tokens that help, such as "it" on
+"animal".
 
 **Try it:** here is the same sentence with hand-picked queries and keys, so
 the pattern does mean something; "it" keeps the worked example's scores for
@@ -442,25 +443,25 @@ towards one word, and above 1 to watch it flatten towards an even spread.
 
 <div class="viz" data-viz="attention-matrix" aria-label="Attention heatmap for the sentence, with a causal mask and a temperature"></div>
 
-Masking only the future is also what makes generation cheap: a token's
-output never changes when later tokens arrive, so it can be computed once
-and cached. See `primer.ml.inference` for the KV cache.
+The mask also makes generation cheaper. Because a token never sees later
+tokens, its output does not change when they arrive, so it can be computed
+once and cached. See `primer.ml.inference` for the KV cache.
 
 **In code:** `causal_mask` builds the lower triangle of allowed positions, and `scaled_dot_product_attention` sets every score outside it to −∞ before softmax. `worked_example_sentence` holds the hand-picked queries and keys the heatmap above draws.
 
 ## Why divide by √d_k?
 
-**Everyday picture.** Roll one die and the result swings between 1 and 6.
-Add up a hundred dice and the total swings far more, by dozens in either
-direction. A dot product is exactly that kind of sum: one small random-ish
-product per position. The wider the vectors, the more terms get added, and
-the wilder the scores swing.
+A dot product is a sum of one product per entry, and a sum of many terms
+swings more than a sum of few. Roll one die and the result swings between 1
+and 6; add up a hundred dice and the total swings by dozens in either
+direction. The wider the query and key vectors, the more products get
+added, and the wider the scores swing.
 
-**Tiny example.** With d_k = 4, a query and a key of random ±1 entries give
-four products of +1 or −1, so the score lands between −4 and +4 and is
-usually within ±2. With d_k = 256 it's a sum of 256 such products: usually
-within ±16. Softmax of scores like (16, 3, −9) gives about (0.999998, …, …).
-All the attention lands on one word, whether or not that is right.
+With d_k = 4, a query and a key of random ±1 entries give four products of
++1 or −1, so the score lands between −4 and +4 and is usually within ±2.
+With d_k = 256 it is a sum of 256 such products, usually within ±16.
+Softmax of scores like (16, 3, −9) gives about (0.999998, …, …), so all the
+attention lands on one word, whether or not that is right.
 
 $$
 \operatorname{Var}(q \cdot k) = d_k
@@ -503,12 +504,12 @@ statistics.pvariance([s / math.sqrt(d_k) for s in scores])  # → 1.0
 round(math.sqrt(128), 1)  # → 11.3
 ```
 
-Why "all attention on one word" is bad, beyond being a wrong answer: softmax
-has stopped responding. Its **gradient** (the signal training uses to
-adjust the weights) is `diag(p) − p pᵀ`, and when one share is 1 and the rest
-are 0, every entry of that matrix is 0. The query and key weights receive no
-signal and stop learning. This is called *saturation*.
-`sqrt_dk_experiment` measures all of this.
+Putting all the attention on one word also stops training. Softmax's
+**gradient** (the signal training uses to adjust the weights) is
+`diag(p) − p pᵀ`, and when one share is 1 and the rest are 0, every entry of
+that matrix is 0. The query and key weights receive no signal and stop
+learning. This is called *saturation*. The chart measures both effects on
+random queries and keys, with and without the division.
 
 ![As head width grows from 2 to 1024, unscaled attention's top weight climbs from 0.29 to 0.96 and its gradient shrinks fivefold; scaled stays flat](figures/primer.ml.attention.sqrt_dk.svg)
 
@@ -518,20 +519,17 @@ attention on one token. On the right, it is the size of the softmax gradient.
 The unscaled lines (red) climb towards 1.0 on the left and fall towards zero
 on the right as d_k grows: the wider the head, the more attention collapses
 onto a single token and the less signal flows back. The scaled lines (blue)
-stay flat at every width. That flatness is the whole reason for the √d_k.
+stay flat at every width.
 
-In one sentence: *dot products grow with dimension, large scores saturate
-softmax and kill gradients, and scaling by √d_k keeps scores in the range
-where softmax is smooth and trainable.*
-
-**In code:** `softmax_jacobian` builds the diag(p) − p pᵀ matrix, so you can watch every entry fall to 0 as one share approaches 1.
+**In code:** `sqrt_dk_experiment` runs the chart's measurements; `softmax_jacobian` builds the diag(p) − p pᵀ matrix, so you can watch every entry fall to 0 as one share approaches 1.
 
 ## Multi-head attention
 
-Instead of one attention with d_k = d_model, run h heads in parallel, each
-with d_k = d_model / h and its own W_q, W_k and W_v. The total compute is the
-same, but each head can specialise: one tracks syntax, another which noun a
-pronoun refers to, another the previous token.
+A transformer splits attention into h **heads** that run in parallel. Each
+head has d_k = d_model / h, rather than the full d_model, and its own W_q,
+W_k and W_v. The total compute is the same as one full-width attention, but
+each head can specialise: one tracks syntax, another which noun a pronoun
+refers to, another the previous token.
 
 ```mermaid
 flowchart LR
@@ -555,10 +553,12 @@ stack.
 
 ## Grouped-query attention: sharing keys and values
 
-With **grouped-query attention (GQA)**, several query heads share one
-key/value head. Llama 3 8B has 32 query heads but only 8 KV heads, so it
-stores 4× fewer keys and values per token. Multi-query attention (MQA) is the
-extreme: one KV head for everyone.
+Every head has its own keys and values, and a model generating text keeps
+them for every earlier token (the KV cache from causal masking). With
+**grouped-query attention (GQA)**, several query heads share one key/value
+head. Llama 3 8B has 32 query heads but only 8 KV heads, so it stores 4×
+fewer keys and values per token. Multi-query attention (MQA) goes furthest:
+one KV head shared by every query head.
 
 ```mermaid
 flowchart TB
@@ -593,8 +593,10 @@ conversations fit on one GPU, at a small cost in quality. See
 
 ## Cost: why long context is expensive
 
-The score matrix is n × n per head per layer, so compute and memory grow
-with **n²**. Doubling the context roughly quadruples attention's cost.
+Sharing keys and values shrinks what is stored, but every query head still
+scores every token. The score matrix is n × n per head per layer, so compute
+and memory grow with **n²**. Doubling the context roughly quadruples
+attention's cost.
 
 ![On log axes, the n-squared attention cost overtakes the linear projection cost at 8,192 tokens (twice d_model of 4,096) and then pulls away](figures/primer.ml.attention.quadratic_cost.svg)
 
@@ -605,9 +607,9 @@ marker is where they cross, at n = 2·d_model. Past that point, most of the
 work is tokens comparing themselves to other tokens, and every doubling of
 context costs 4× there.
 
-The standard mitigations each attack this picture. FlashAttention produces
-the exact same result but computes it in tiles sized for fast on-chip GPU
-memory, so the n × n matrix is never written to slow memory. Sliding-window
+Several techniques reduce this cost. FlashAttention produces the same
+result but computes it in tiles sized for fast on-chip GPU memory, so the
+n × n matrix is never written to slow memory. Sliding-window
 and sparse attention let each token see only some others. GQA and MQA shrink
 the KV cache. State-space models such as Mamba replace attention with a
 linear-time recurrence.
@@ -616,16 +618,18 @@ linear-time recurrence.
 
 ## In 20 seconds
 
-- **Attention:** each token builds a query, key and value. Query-key
-  similarity decides how much each token listens to each other token, and
-  the output is a weighted blend of their values.
-- **Why √d_k:** dot products grow with dimension, and large scores saturate
-  softmax and kill gradients. Scaling keeps training stable.
-- **Causal mask:** future scores are set to −∞ before softmax, so each token
-  sees only the past. That is what makes next-token training honest and
-  generation cacheable.
-- **Long context cost:** attention compares every pair of tokens, so it is
-  O(n²), and the KV cache grows with every token.
+- **Attention:** each token builds a query, a key and a value. How well one
+  token's query matches another's key decides how much it takes from that
+  token, and its output is a blend of the values in those shares.
+- **Why √d_k:** dot products grow with the width of the vectors. Large scores
+  saturate softmax, which then passes back no gradient, so dividing by √d_k
+  keeps training stable.
+- **Causal mask:** scores for later tokens are set to −∞ before softmax, so
+  each token sees only itself and the tokens before it. A model can then be
+  trained to predict the next token without seeing it, and during generation
+  earlier tokens' keys and values can be cached.
+- **Long context cost:** attention compares every pair of tokens, so its cost
+  grows as O(n²), and the KV cache grows with every token.
 
 ## Self-test questions
 
