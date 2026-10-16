@@ -188,7 +188,7 @@ Every symbol an AI formula uses (Σ, ‖x‖, ∂, ᵀ), decoded as a short loop
 
 ### Part 1: how a language model works
 
-What happens between your prompt and the reply: text becomes numbers, a stack of layers transforms them, and one word comes out at a time. By the end you can read the architecture line of a model card and know what each number means. In a hurry, read the first lesson and Attention.
+The machinery inside a language model: a neural network, the loss and the optimizer that train it, how text becomes tokens, and the attention and transformer blocks that turn them into a reply. If you read one lesson here besides the first, read Attention.
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
@@ -204,7 +204,7 @@ What happens between your prompt and the reply: text becomes numbers, a stack of
 
 ### Part 2: how it is trained and judged
 
-How a model gets its weights, from pretraining on the internet to fine-tuning, reward training and alignment, and how to tell whether the result is any good. By the end you can choose between prompting, fine-tuning and retrieval, and read a benchmark score without being fooled. In a hurry, read Training stages and Reading benchmarks.
+How a language model gets its weights: pretraining on a large share of the web, then fine-tuning, reward training, reasoning and alignment. Along the way it covers how to judge the result: overfitting, metrics and benchmark scores. In a hurry, read Training stages and Reading benchmarks.
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
@@ -220,7 +220,7 @@ How a model gets its weights, from pretraining on the internet to fine-tuning, r
 
 ### Part 3: how it is run
 
-What it costs, in time and memory, to turn a trained model into answers: the chip, the cache, the sampling step, and the designs that make long inputs affordable. By the end you can explain a latency or a GPU bill with arithmetic instead of a guess. The last lesson opens the trained model up to see what it learned.
+What it takes, in time and memory, to turn a trained model into answers: the chip, the cache, the sampling step and the designs that make long inputs affordable. Latency and GPU bills follow from arithmetic you can do by hand. The last lesson looks inside a trained model at what it learned.
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
@@ -232,7 +232,7 @@ What it costs, in time and memory, to turn a trained model into answers: the chi
 
 ### Part 4: embeddings and search
 
-Vectors that capture meaning, and the search systems built on them: how a question finds the passages that answer it among millions. Every retrieval-augmented system in Part 6 stands on this part. By the end you can choose an embedding model, a similarity metric and an index, and measure whether search is working.
+Embeddings are lists of numbers that place similar meanings close together. This part builds them, then the search systems that use them to find, among millions of passages, the few that answer a question. The retrieval systems in Part 6 are built on it.
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
@@ -247,7 +247,7 @@ Vectors that capture meaning, and the search systems built on them: how a questi
 
 ### Part 5: other kinds of model, and generating media
 
-When the transformer is not the model: trees for tables of data, convolutions for images, and the generators (autoencoders, GANs, diffusion) behind pictures, sound and video, ending with the models that see and hear. Skip it if your work is text on a hosted model; read it when you have an image, signal or tabular problem of your own.
+Models that are not transformers, and models that make pictures and sound: trees for tables of data, convolutions for images, and the autoencoders, GANs and diffusion models behind generated images, audio and video. It ends with models that see and hear. Skip it if your work is text on a hosted model.
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
@@ -260,7 +260,7 @@ When the transformer is not the model: trees for tables of data, convolutions fo
 
 ### Part 6: building systems people rely on
 
-How to build on a language model: the message exchange, the agent loop, tools, retrieval, context and memory, then evaluation, guardrails, cost, observability and safe deployment. By the end you can build an agent that does real work, know whether it works, and limit the damage when it does not. The last lesson is why the hard ones fail.
+How to build on a language model: the message exchange, the agent loop, tools, retrieval, context and memory. Then how to know it works and keep it safe: evaluation, guardrails, cost, observability and deployment. The last lesson is about why hard tasks still fail.
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
