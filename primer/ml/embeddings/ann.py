@@ -692,14 +692,14 @@ more IVF lists, and `efSearch` widens the HNSW beam. To compare them, run
 both on the same collection at several settings, and score each run's
 results against a flat search.
 
-![Both HNSW and IVF rise steeply and then flatten as their dial widens, and HNSW reaches about 0.95 recall while comparing around a fifth of the 2,000 vectors](figures/primer.ml.embeddings.ann.recall_vs_work.svg)
+![Both HNSW and IVF rise steeply and then flatten as their dial widens, and HNSW reaches about 0.93 recall while comparing around a fifth of the 2,000 vectors](figures/primer.ml.embeddings.ann.recall_vs_work.svg)
 
 **Reading it:** each point is one setting of the dial (the small labels are
 efSearch for HNSW and nprobe for IVF). The x-axis is the share of the whole
 collection compared per query, on a log scale (each tick is 10× more work),
 and the dashed line at 100% is a flat scan. The y-axis is recall@10. Read it
 as a menu: the further up and to the left, the better. HNSW reaches about
-0.95 recall while comparing around a fifth of these 2,000 vectors. On
+0.93 recall while comparing around a fifth of these 2,000 vectors. On
 collections of millions the share is far smaller, because the number of
 hops grows only slowly with N. Both curves rise steeply and then flatten,
 so the last few points of recall cost the most work.
