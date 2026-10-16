@@ -121,41 +121,28 @@ to decide whether and how to fine-tune, you are done.
 
 ## Level 2: How it works, from scratch
 
-Picture a skilled cook who joins your restaurant. They already know how to
-cook (that is the pretrained model). You want them to cook *your* menu, *your*
-way. You can hand them a note with every order (a prompt), give them the
-recipe binder to look things up in (retrieval, RAG), or send them on a course
-about your kitchen (fine-tuning). The course is the only option that changes
-the cook, and it comes with the risks every teacher knows: the lessons can
-be badly written, the cook can cram the practice exam instead of learning,
-and a month of drilling one cuisine can make them rusty at everything else.
+Picture a skilled cook who joins your restaurant. They can already cook:
+that is the pretrained model. You want them to cook *your* menu, *your*
+way, and there are three ways to get it. You can hand them a note with
+every order (a prompt), give them a recipe binder to look things up in
+(retrieval, RAG), or send them on a course about your kitchen
+(fine-tuning). Only the course changes the cook.
 
-Everything below is one of those risks, measured on a model small enough to
-train in a fraction of a second.
+The course costs the most, so the first question is whether it pays.
+After that come the ways a course goes wrong: a badly written course
+book, a cook who loses old dishes while drilling new ones, and a cook who
+memorises the practice exam instead of learning. The last chapter
+combines two finished fine-tunes into one model without any more
+training. The forgetting, the memorising and the merging are all measured
+on one model small enough to train in a fraction of a second.
 
 ## 1. Should you fine-tune at all?
 
-**Everyday picture.** Giving the cook a note with every order costs a
-little each time. The course costs a lot once, and it has to be repeated
-whenever you hire a new cook (switch to a newer base model). The course pays
-off only when the notes would otherwise be long, sent millions of times, or
-simply not enough to make the cook consistent.
-
-**Tiny worked example.** A support bot sends a 3,000-token prompt full of
-instructions and examples on every request. A fine-tuned model has learned
-that behaviour and needs only 300 tokens of prompt. Take these illustrative
-prices (real ones vary by provider and change often): \$2 per million input
-tokens for the general model, \$4 per million for the tuned one, because
-hosting a custom model usually costs more per token.
-
-| | Tokens per request | Price per million | Cost per request |
-|---|---|---|---|
-| prompted | 3,000 | \$2 | 3,000 × 2 / 1,000,000 = **\$0.0060** |
-| fine-tuned | 300 | \$4 | 300 × 4 / 1,000,000 = **\$0.0012** |
-
-Each request saves \$0.0048. Writing and checking 1,000 training examples
-plus the training run costs, say, \$600 once. After 600 / 0.0048 = **125,000
-requests** the course has paid for itself: 25 days at 5,000 requests a day.
+The note, the binder and the course form a ladder, cheapest first. Before
+trying any of them, build an **evaluation set** (the eval): a fixed set of
+examples with known answers, kept out of training, that every option is
+scored on. Then move down the ladder only when the eval shows that the
+option above falls short.
 
 ```mermaid
 flowchart TD
@@ -171,15 +158,37 @@ flowchart TD
   M3 -->|no| P
 ```
 
-**Reading it:** start at the top, and notice that the first box is not a
-model at all: it is the evaluation set, the fixed exam every option is
-scored on. Each rung is cheaper and faster to change than the one below it,
-so you climb down only when the eval proves the rung above falls short.
-Missing knowledge goes to retrieval, because fine-tuning is a poor way to
-add facts; wrong behaviour that no prompt can pin down goes to fine-tuning.
-The last diamond matters most: a fine-tune ships only if it beats the prompt
-on the same eval. `primer.ml.training_stages` has the same decision as a
-flowchart of approaches; this one adds the measurement at every step.
+**Reading it:** start at the top, where the first box is the eval, not a
+model. Each rung is cheaper and faster to change than the one below it.
+Missing facts go to retrieval, because facts learned by fine-tuning go
+stale and are hard to update. Wrong behaviour that no prompt can pin down
+goes to fine-tuning. The last diamond holds the rule: a fine-tune ships
+only if it beats the prompt on the same eval. `primer.ml.training_stages`
+has the same decision as a flowchart of approaches; this one adds the
+measurement at every step.
+
+Cost can decide the question too. In the kitchen, a note costs a little
+with every order, and the course costs a lot once. A fine-tune is the
+same: it costs money once, for the examples and the training run, and
+then saves a little on every request, because a fine-tuned model needs a
+much shorter prompt. It pays for itself only after enough requests.
+
+Say a support bot sends a 3,000-token prompt full of instructions and
+examples on every request, and a fine-tuned model that has learned that
+behaviour needs only 300 tokens of prompt. Take these illustrative prices
+(real ones vary by provider and change often): \$2 per million input
+tokens for the general model, and \$4 per million for the tuned one,
+because hosting a custom model usually costs more per token.
+
+| | Tokens per request | Price per million | Cost per request |
+|---|---|---|---|
+| prompted | 3,000 | \$2 | 3,000 × 2 / 1,000,000 = **\$0.0060** |
+| fine-tuned | 300 | \$4 | 300 × 4 / 1,000,000 = **\$0.0012** |
+
+Each request saves \$0.0048. Writing and checking 1,000 training examples
+plus the training run costs, say, \$600 once. After 600 / 0.0048 =
+**125,000 requests** the fine-tune has paid for itself: 25 days at 5,000
+requests a day.
 
 $$
 N^\star = \frac{C_{\text{once}}}{c_{\text{prompt}} - c_{\text{tuned}}},
@@ -198,8 +207,8 @@ $$
 | $p$ | price in dollars per million input tokens | \$2 and \$4 |
 | $10^6$ | one million: prices are quoted per million tokens | |
 
-**In words:** "divide what the course costs once by what it saves on each
-request; that is how many requests it takes to earn the cost back."
+**In words:** "divide what the fine-tune costs once by what it saves on
+each request; that is how many requests it takes to earn the cost back."
 
 **With the numbers:** $c_{\text{prompt}}$ = 3,000 × 2 / 10⁶ = 0.006,
 $c_{\text{tuned}}$ = 300 × 4 / 10⁶ = 0.0012, so $N^\star$ = 600 / 0.0048 =
@@ -234,20 +243,19 @@ cross, and the only reason left to fine-tune would be quality.
 `break_even_requests` returns $N^\star$, or infinity when the tuned model
 saves nothing per request.
 
-**Why it matters in practice.** Three costs hide outside this formula.
-Every new base model means repeating the fine-tune, so $C_{\text{once}}$
-recurs. Facts learned by fine-tuning go stale and are hard to update, which
-is why knowledge belongs in retrieval (`primer.agents.rag`). And the
-engineering time to build an eval is spent whichever way you go, which is
-why it comes first.
+Two costs sit outside the formula. Every new base model means repeating
+the fine-tune, so $C_{\text{once}}$ comes back with each upgrade. And the
+eval takes engineering time whichever option wins, which is why it is
+built first.
 
 ## 2. Preparing the data
 
-**Everyday picture.** Before the course, someone writes the course book.
-Every recipe must be written in the same layout, no recipe may appear five
-times, some recipes are locked in a drawer for the final exam *before* the
-cook ever sees the book, and the recipes must actually be right. Most
-fine-tuning failures are course-book failures.
+Once a fine-tune is worth trying, the work moves to its examples, the
+course book. Every example must use the same layout, no example may
+appear five times, the exam questions must be set aside before the cook
+sees the book, and the answers must be right. The pipeline below has a
+step for each. After it comes one more question: how many examples are
+enough.
 
 ```mermaid
 flowchart LR
@@ -261,19 +269,17 @@ flowchart LR
   SPLIT --> EVAL[Held-out set]
 ```
 
-**Reading it:** raw examples enter on the left and pass through five
-filters. The branch at "Set aside the held-out set" is the important one:
-the held-out examples leave the pipeline *before* anything is trained or
-tuned, and the step after it removes any training example that nearly
-copies one of them. The subsections below build each box.
+**Reading it:** raw examples enter on the left and pass through each step
+in turn. Watch the branch at "Set aside the held-out set": the held-out
+examples leave *before* anything is trained or tuned, and the next step
+removes any training example that nearly copies one of them.
 
 ### 2a. Formatting chat examples
 
-**Everyday picture.** A play script: every line starts with who speaks it.
-The model learns the play by reading scripts, and it is graded only on the
-lines of the character it will play, the assistant.
-
-**Tiny worked example.** One example as a list of role-tagged messages:
+A chat model learns from conversations, so each training example is a
+list of messages, each tagged with who speaks it: the system (standing
+instructions), the user, or the assistant. The model is trained only on
+the assistant's lines, the part it will play. Here is one example:
 
 | Turn | Role | Content | Trained on? |
 |---|---|---|---|
@@ -295,33 +301,30 @@ flowchart LR
 
 **Reading it:** the solid arrows are the order the model reads the turns.
 The dotted arrows carry no training signal: the system and user turns are
-context the model conditions on. Only the thick arrow feeds the loss, so the
-model learns to *answer*, not to write questions. This is the loss mask from
-`primer.ml.training_stages`, section 2.
+context the model conditions on. Only the thick arrow feeds the loss, so
+the model learns to *answer*, not to write questions. This is the loss
+mask of supervised fine-tuning (see `primer.ml.training_stages`).
 
-**The rules that matter.** Use the exact chat template the base model was
-trained with; the role markers above are illustrative, and each model family
-has its own. Train with the same system prompt you will deploy with. Reject
-examples whose last turn is not the assistant's (nothing to learn), whose
-turns are empty, or whose roles are unknown.
+Three rules keep the format right. Use the exact chat template the base
+model was trained with: the role markers above are illustrative, and each
+model family has its own. Train with the system prompt you will deploy
+with. And reject any example whose last turn is not the assistant's
+(there is nothing to learn), whose turns are empty, or whose roles are
+unknown. A wrong template raises no error: training succeeds, the loss
+falls, and the deployed model sees markers it never learned, so it
+behaves like the base model or worse.
 
-**In code:** `chat_example` builds the message list, `render_chat` flattens
-it into (segment, trained?) pairs, and `validate_chat` lists every problem
-with an example.
-
-**Why it matters in practice.** A template mismatch is silent: training
-succeeds, the loss falls, and the deployed model sees markers it never
-learned, so it behaves like the base model or worse.
+**In code:** `chat_example` builds the message list, `render_chat`
+flattens it into (segment, trained?) pairs, and `validate_chat` lists
+every problem with an example.
 
 ### 2b. Deduplication
 
-**Everyday picture.** A flashcard deck with the same card in it five times.
-You study that card five times as often, and you start answering every
-question with it.
-
-**Tiny worked example.** Compare questions by their **word pairs** (two
-neighbouring words; a window of k words is called a **shingle**), after
-lowercasing and dropping punctuation:
+Next, remove repeats. A training set that holds the same example five
+times trains on it five times as often, and the model starts to parrot
+it. An exact match misses a reworded copy, so compare texts by their
+**word pairs** (two neighbouring words; a window of k words is called a
+**shingle**), after lowercasing and dropping punctuation:
 
 | Text | Word pairs |
 |---|---|
@@ -331,6 +334,8 @@ lowercasing and dropping punctuation:
 
 The first two share 5 of the 6 distinct pairs between them: a
 near-duplicate. The first and third share 2 of 8: different questions.
+The share of pairs two texts have in common is their **Jaccard
+similarity**:
 
 $$
 J(A, B) = \frac{|A \cap B|}{|A \cup B|}
@@ -380,33 +385,31 @@ flowchart LR
 ```
 
 **Reading it:** examples arrive one at a time and are compared against
-everything already kept. A match above the threshold is dropped; anything
-else joins the kept list. The first copy of each group survives, so the
-order of the data decides which wording you keep.
+everything already kept. A match at or above the threshold is dropped;
+anything else joins the kept list. The first copy of each group survives,
+so the order of the data decides which wording you keep.
 
 **In code:** `normalize` lowercases and strips punctuation, `shingles`
 collects the word pairs, `jaccard` scores two texts and `deduplicate`
-returns the indices worth keeping. Comparing every pair is fine for
-thousands of examples; at web scale, MinHash estimates the same Jaccard
-without comparing every pair.
+returns the indices worth keeping.
 
-**Why it matters in practice.** Duplicates overweight a few examples, so the
-model parrots them. Worse, a near-copy of an eval question in the training
-set lets the model recite the answer, and the eval score becomes a memory
-test. Lee et al. found training sets with thousands of near-duplicates, and
-removing them made models memorise less.
+Comparing every pair is fine for thousands of examples; at web scale,
+MinHash estimates the same Jaccard without comparing every pair. Lee et
+al. found training sets with thousands of near-duplicates, and removing
+them made models memorise less. Duplicates that cross into the eval do
+a different kind of harm: a near-copy of an eval question in the training set lets
+the model recite the answer, and the eval score becomes a memory test.
 
 ### 2c. The held-out set comes first
 
-**Everyday picture.** A good teacher writes the final exam before teaching
-the course and locks it in a drawer. If the exam were written afterwards,
-it would drift towards what the class happened to practise.
-
-**Tiny worked example.** Fifty support questions are deduplicated, shuffled
-with a fixed seed, and 10 (20%) go in the drawer. Only then are the other 40
-used, and any of the 40 that nearly copies one of the 10 is removed. Every
-later choice (prompt wording, learning rate, which checkpoint to ship) is
-scored on those 10. But how much can 10, or even 100, questions tell you?
+So the held-out set is made first and then frozen. Chosen any later, it
+would drift towards whatever the training data happened to cover. Say
+fifty support questions are deduplicated, shuffled with a fixed seed,
+and 10 (20%) are set aside. Only then are the other 40 used, and any of
+the 40 that nearly copies one of the 10 is removed. Every later choice
+(prompt wording, learning rate, which checkpoint to ship) is scored on
+those 10. A score on 10 questions, or even 100, is uncertain, and the
+uncertainty has a size, the **margin of error**:
 
 $$
 \text{margin} = z \sqrt{\frac{a\,(1 - a)}{n}}
@@ -473,22 +476,20 @@ and a few dozen can only detect big differences.
 freezes the held-out set and removes leaks with `remove_leaks`;
 `margin_of_error` gives the ± for any accuracy and size.
 
-**Why it matters in practice.** Every time you look at held-out scores and
-change something, the held-out set leaks a little into your decisions. A
-held-out set built first and used sparingly is the only honest measure of
-whether the fine-tune helped. See `primer.ml.regularization` for train,
-validation and test splits, and `primer.agents.evals` for building evals.
+Even a frozen set leaks a little: every time you look at its scores and
+change something, it seeps into your decisions, so use it sparingly.
+`primer.ml.regularization` covers train, validation and test splits, and
+`primer.agents.evals` covers building evals.
 
 ### 2d. Label quality
 
-**Everyday picture.** An answer key with typos. A student who gets every
-question right is marked wrong wherever the key is wrong, and a student who
-makes the *same* mistake as the key is marked right.
-
-**Tiny worked example.** A model is truly right 90% of the time, and 10% of
-the reference labels are wrong. It scores a point when it is right on a
-right label (0.9 × 0.9 = 0.81), or when it is wrong on a wrong label and the
-two mistakes cancel (0.1 × 0.1 = 0.01). The eval reports **82%**, not 90%.
+A held-out set is only as good as its answer key. A key with typos marks
+a student wrong wherever the key is wrong, and right wherever the student
+makes the *same* mistake as the key. Labels do the same to a model. Say a
+model is truly right 90% of the time, and 10% of the reference labels are
+wrong. It scores a point when it is right on a right label
+(0.9 × 0.9 = 0.81), or when it is wrong on a wrong label and the two
+mistakes cancel (0.1 × 0.1 = 0.01). The eval reports **82%**, not 90%.
 
 $$
 a_{\text{measured}} = a\,(1 - \varepsilon) + (1 - a)\,\varepsilon
@@ -541,33 +542,30 @@ the label right? Multiply along a path to get its share. Two paths are
 scored as right, 0.81 and 0.01, which add up to the 0.82 the eval reports.
 The 0.09 on the second path is a correct answer marked wrong by a bad label.
 
-**How to check label quality.** Have two people label the same sample
-independently and measure how often they agree. Above, they agree on 4 of
-5 items, 80%: one item in five is ambiguous or mislabelled, and your eval
-can't resolve differences smaller than that noise. Read every disagreement;
-they are usually unclear instructions, not careless labelers.
+To check the labels, have two people label the same sample independently
+and measure how often they agree. The two labelers in the code above
+agree on 4 of 5 items, 80%: one item in five is ambiguous or mislabelled,
+and your eval can't resolve differences smaller than that noise. Read
+every disagreement; most come from unclear instructions, not careless
+labelers.
 
 **In code:** `measured_accuracy` applies the formula and `label_agreement`
 compares two labelers.
 
-**Why it matters in practice.** Bad training labels teach the model the
-mistakes (section 4 shows a small model memorising three of them). Bad eval
-labels hide real improvements. Zhou et al. (LIMA) fine-tuned a large model
-on just 1,000 carefully chosen examples and got a strong assistant: quality
-of examples beats quantity.
+Wrong training labels do separate damage: the model learns the mistakes,
+as the small dataset in the overfitting chapter shows with three of them.
+Care counts for more than volume. Zhou et al. (LIMA) fine-tuned a large
+model on just 1,000 carefully chosen examples and got a strong assistant.
 
 ### 2e. How many examples?
 
-**Everyday picture.** Teaching a house style is not teaching a language.
-A new cook learns how you plate a dish from a few dozen good examples; they
-don't need ten thousand.
-
-**Tiny worked example.** Fine-tuning teaches a *behaviour* the base model
-can almost do already, so the useful sizes are small: a few dozen examples
-to show a format, hundreds for a consistent style or a narrow task,
-thousands for a harder specialised skill. Section 4 fine-tunes on 16
-examples and shows the other side: with so few, the model soon memorises
-them, noise included.
+Fewer than you might expect, because fine-tuning teaches a *behaviour*
+the base model can almost do already. A few dozen examples show a format,
+hundreds give a consistent style or a narrow task, and thousands teach a
+harder specialised skill. Too few has its own cost: the overfitting
+chapter fine-tunes on 16 examples, and the model soon memorises them,
+noise included. Labelled data is the expensive part of fine-tuning, so
+grow it only while it helps:
 
 ```mermaid
 flowchart LR
@@ -578,28 +576,25 @@ flowchart LR
   Q -->|no| STOP[Stop adding data:<br/>fix quality or approach]
 ```
 
-**Reading it:** the loop grows the dataset only while each doubling still
-buys a real improvement, meaning one larger than the held-out margin from
-section 2c. When a doubling stops paying, more of the same data won't help;
+**Reading it:** the loop doubles the dataset only while each doubling
+buys a real improvement, one larger than the held-out set's margin of
+error. When a doubling stops paying, more of the same data won't help:
 the fix is better examples or a different approach.
-
-**Why it matters in practice.** Labelled data is the expensive part of
-fine-tuning. Doubling until the gains flatten spends it where it helps, and
-the held-out set tells you when to stop.
 
 ## 3. Catastrophic forgetting
 
-**Everyday picture.** Someone who learned to drive in Britain, keeping
-left, moves to the United States and practises keeping right every day for
-a month. The new habit wins, and on a trip home they drift to the wrong side
-of the road. Nobody told them to forget the old rule; the new practice
-simply rewrote the reflex both rules use. Neural networks do this to an
-extreme: train on a new task alone and an old one can vanish. This is
-**catastrophic forgetting**.
+With the data ready, the training run has its own risk: the model can
+lose skills it already had. Someone who learned to drive in Britain,
+keeping left, moves to the United States and practises keeping right
+every day for a month. The new habit wins, and on a trip home they drift
+to the wrong side of the road, because the new practice rewrote the
+reflex both rules use. Neural networks do this to an extreme: train on a
+new task alone and an old one can vanish. This is **catastrophic
+forgetting**.
 
-**The model we'll fine-tune.** To watch it happen, we need a model small
-enough to train instantly. Each example is four numbers, and the answer is
-yes or no:
+To watch it happen, here is the small model the rest of the lesson
+uses: a neural network that reads four numbers and answers yes or no,
+and four tasks for it:
 
 | Task | Inputs it uses | Rule | Plays the role of |
 |---|---|---|---|
@@ -623,28 +618,22 @@ flowchart LR
 **Reading it:** four numbers go in, 16 hidden units each mix all of them,
 and one output unit turns the hidden units into a probability. Every weight
 (64 in the first layer, 16 hidden biases, 16 output weights and one output
-bias) sits in a single vector θ of 97 numbers. Every task flows through the
-same hidden units, which is exactly why one task's training can damage
-another. `primer.ml.neural_net` builds this kind of network from scratch.
+bias) sits in a single vector θ of 97 numbers. Every task flows through
+the same hidden units, so training on one task can damage another.
+`primer.ml.neural_net` builds this kind of network from scratch.
 
 The base model is this network trained on the general task (99% accuracy
 on held-out examples). Every fine-tune below starts from it and runs plain
 gradient descent on 200 examples.
 
-**In code:** `TinyNet` holds θ and computes predictions, loss and
-`TinyNet.gradient`; `make_task` draws examples for each of the `TASKS`;
-`base_model` pretrains the base and `fine_tune` trains a copy, leaving the
-starting model untouched.
+**In code:** `TinyNet` is the network, `make_task` draws each task's
+examples, `base_model` trains the base and `fine_tune` trains a copy of
+it.
 
 ### 3a. The general skill fades while you teach a new one
 
-**Everyday picture.** A month of drilling one cuisine makes the cook a
-little rusty at everything else, and a second month of drilling it makes
-them rustier still, even though they had mastered the cuisine in the first
-week.
-
-**Tiny worked example.** Fine-tune the base on task A (learning rate 0.5)
-and check both skills on held-out examples:
+Fine-tune the base on task A (learning rate 0.5) and check both skills on
+held-out examples as it trains:
 
 | After step | Accuracy on A | General skill | Distance from base |
 |---|---|---|---|
@@ -655,7 +644,8 @@ and check both skills on held-out examples:
 
 Task A is learned in 5 steps. The next 295 steps teach nothing new about A
 but keep eroding the general skill, from 0.825 to 0.655. The last column
-explains why: the weights keep travelling away from the base.
+shows why: the weights keep travelling away from the base. It measures
+that distance as the length of the change in every weight:
 
 $$
 d_t = \lVert \theta_t - \theta_{\text{base}} \rVert = \sqrt{\sum_{i=1}^{P} \left(\theta_{t,i} - \theta_{\text{base},i}\right)^2}
@@ -703,8 +693,7 @@ flowchart LR
 **Reading it:** the gradient from task A's examples moves the shared
 weights, and both skills read those same weights. The dotted arrow is what
 is missing: the general skill has no examples in this training run, so
-nothing pushes back when a change that helps A hurts it. Forgetting is not
-an event; it is the absence of a counterweight.
+nothing pushes back when a change that helps A hurts it.
 
 ![Left: accuracy on A jumps to 1 within a few steps while the general skill slides from 0.99 to 0.66 at learning rate 0.5 and only to 0.79 at 0.02. Right: the general skill falls as distance from the base grows](figures/primer.ml.fine_tuning.general_skill.svg)
 
@@ -715,49 +704,46 @@ few steps and the general skill then slides for the rest of the run. With
 the small rate, A is learned later (around step 70) and the general skill
 ends at 0.79 instead of 0.655, with A just as good. On the right, every
 step of both runs is plotted as distance from the base against the general
-skill: the points fall along one downward curve. **Forgetting tracks how
-far the weights move.**
+skill: the points fall along one downward curve. Forgetting tracks how far
+the weights move.
 
-**Mitigations that shorten the trip.** Three knobs limit the distance, and
-the toy measures two of them:
+So the way to forget less is a shorter trip. Three changes shorten it,
+and the small model measures two of them:
 
 - **Fewer steps.** Stop once the held-out score on the new task stops
   improving. Here, stopping at step 10 keeps the general skill at 0.79
   instead of 0.655, with A at 0.995.
 - **A lower learning rate.** Smaller steps travel less far for the same
   result: 0.79 instead of 0.655 after 300 steps.
-- **A smaller update.** LoRA (`primer.ml.training_stages`, section 4)
-  freezes the base weights and allows only a low-rank change. Biderman et
-  al. measured this on real language models and summed it up in their
-  title: LoRA learns less and forgets less.
+- **A smaller update.** LoRA (see `primer.ml.training_stages`) freezes the
+  base weights and allows only a low-rank change. Biderman et al.
+  measured this on real language models and summed it up in their title:
+  LoRA learns less and forgets less.
 
 **In code:** `general_skill_run` fine-tunes on A and records, after every
 step, accuracy on A, the general skill and the distance from the base.
 
-**Why it matters in practice.** A fine-tuned assistant that has become
-worse at everything outside its narrow task is the most common
-fine-tuning disappointment. Always score the general skills you care about
-alongside the new task, and prefer the earliest checkpoint that has learned
-the task.
+A fine-tuned assistant can come back worse at everything outside its
+narrow task. Score the general skills you care about alongside the new
+task, and prefer the earliest checkpoint that has learned the task.
 
 ### 3b. A new task that contradicts an old one
 
-**Everyday picture.** Back to the driver. Practising "keep right" does not
-merely add a skill; it pushes directly against "keep left", because both
-use the same reflex.
-
-**Tiny worked example.** Take the model fine-tuned on A (98% on A), then
-fine-tune it on B alone for 300 steps:
+The general skill faded because nothing defended it. A new task that
+contradicts an old one does more damage. Back to the driver: practising
+"keep right" pushes directly against "keep left", because both use the
+same reflex. Take the model fine-tuned on A (98% on A), then fine-tune it
+for 300 steps on B alone, or on C alone:
 
 | Second fine-tune | A before | A after | New task after |
 |---|---|---|---|
 | on B (contradicts A) | 0.98 | **0.025** | 1.00 |
 | on C (separate inputs) | 0.98 | 0.97 | 0.98 |
 
-After B, the model does not merely forget A; it answers A's questions
-backwards, because it learned "yes when x₂ < 0" everywhere. After C, A is
-barely touched: C's inputs never flowed through the weights A relies on
-most.
+After B, the model answers A's questions backwards, because it learned
+"yes when x₂ < 0" everywhere. After C, A is barely touched: C's inputs
+never flowed through the weights A relies on most. Forgetting is measured
+as the accuracy the old task lost:
 
 $$
 F = \text{acc}_{\text{old}}^{\text{before}} - \text{acc}_{\text{old}}^{\text{after}}
@@ -805,13 +791,12 @@ overlaps and conflicts with the old one.
 the y-axis held-out accuracy. Solid lines are plain fine-tuning on B: B
 (green) climbs to 1 while A (blue) falls to about half in the same few
 steps, and A keeps sliding towards zero for as long as training continues.
-Dashed lines add 10 replayed A examples (section 3c): A still dips
-at first (to about 0.2 around step 40), then climbs back to 0.945 while B
+Dashed lines add 10 replayed A examples (replay, below): A still dips at
+first (to about 0.2 around step 40), then climbs back to 0.945 while B
 reaches 0.99.
 
-**Does a lower learning rate help here?** Only in the sense of slowing the
-slide. At learning rate 0.02, or stopping after 10 steps, B reaches 0.975
-and A still drops to 0.355.
+The cures for plain fading only slow this slide. At learning rate 0.02,
+or stopping after 10 steps, B reaches 0.975 and A still drops to 0.355.
 
 ![Accuracy on A against accuracy on B during the second fine-tune: every run on B alone traces the same curve whatever the learning rate and ends near zero on A, while the replay run climbs the right edge to the top-right corner](figures/primer.ml.fine_tuning.tradeoff.svg)
 
@@ -822,28 +807,25 @@ trace the same curve, close to the dotted line where A + B = 1: every point
 of B they gain costs about a point of A, and once B is learned, further
 steps slide A down the right edge towards zero. The replay run (dashed)
 follows the same curve at first, then climbs the right edge and ends in
-the top-right corner, knowing both. When the new data
-contradicts the old skill, slowing down can't help, because nothing in B's
-data says A still matters.
+the top-right corner, knowing both. When the new data contradicts the old
+skill, slowing down can't help, because nothing in B's data says A still
+matters.
 
 **In code:** `sequential_run` starts from the A fine-tune, trains on a new
 task (optionally with replay), and records both accuracies at every step;
 `forgetting` computes F.
 
-**Why it matters in practice.** Real fine-tunes contradict the base model
-more often than you'd think: "always answer in JSON" contradicts "chat
-naturally"; "be terse" contradicts "explain in detail". Expect the old
-behaviour to vanish wherever your data overrides it, and test for it.
+Real fine-tunes contradict the base model in ordinary ways: "always
+answer in JSON" contradicts "chat naturally", and "be terse" contradicts
+"explain in detail". Expect the old behaviour to vanish wherever your
+data overrides it, and test for it.
 
 ### 3c. Replay: keep practising the old skill
 
-**Everyday picture.** A pianist learning a new piece plays one old piece
-at the start of every practice session. It costs a few minutes and keeps
-the old repertoire alive.
-
-**Tiny worked example.** Add just 10 of task A's 200 training examples to
-B's 200: under 5% of the mix. The result: A **0.945**, B 0.99 (up from A
-0.025 without replay). Why can so few examples do so much? Look at the loss.
+If nothing in B's data says A still matters, put some of A in. Add just
+10 of task A's 200 training examples to B's 200, under 5% of the mix.
+With them, A ends at **0.945** and B at 0.99, against A 0.025 without
+replay. So few examples can do this because of how the loss is averaged.
 Suppose that early in training the model already scores B well (loss 0.05
 per example) but has started forgetting A (loss 3.0 on each replayed
 example):
@@ -868,7 +850,8 @@ examples, so each group counts in proportion to its size times its loss."
 **With the numbers:** (200 × 0.05 + 10 × 3.0) / 210 = (10 + 30) / 210 =
 0.19. The 10 replayed examples are under 5% of the data but contribute
 0.143 of the 0.19: three quarters of the loss, and so most of the gradient.
-The old examples shout loudest exactly when they are being forgotten.
+The old examples carry the most weight at the moment they are being
+forgotten.
 
 **In Python:**
 
@@ -892,32 +875,32 @@ flowchart LR
 ```
 
 **Reading it:** the old task's small sample joins the new data before
-training, so every gradient step sees both. This supplies exactly the
-counterweight that was missing in section 3a's diagram: when a change that
-helps B starts hurting A, the replayed examples' loss rises and pushes back.
+training, so every gradient step sees both. This is the counterweight the
+general skill lacked when the model trained on A alone: when a change
+that helps B starts hurting A, the replayed examples' loss rises and
+pushes back.
 
 **In code:** `replay_mix` appends the old examples, `mixed_loss` is the
 formula, and `sequential_run` with `n_replay=10` runs the experiment.
 
-**Why it matters in practice.** When fine-tuning a language model, mix some
-general instruction-following data into your task data, so the model keeps
-being a good assistant while it learns your task. When you can't replay
-(the old data is gone or private), methods such as elastic weight
-consolidation (Kirkpatrick et al.) instead penalise changes to the weights
-the old task relied on most.
+When fine-tuning a language model, mix some general instruction-following
+data into your task data, so the model stays a good assistant while it
+learns your task. When you can't replay (the old data is gone or
+private), methods such as elastic weight consolidation (Kirkpatrick et
+al.) instead penalise changes to the weights the old task relied on most.
 
 ## 4. Overfitting a small dataset
 
-**Everyday picture.** A student with only 16 flashcards, three of which
-have the wrong answer on the back. For a while, studying teaches the
-pattern. Keep drilling and the student memorises every card word for word,
-including the three wrong answers, and gets worse on new questions.
+Forgetting can happen on a dataset of any size. A small dataset adds a
+second risk: the model memorises it. At first, training on a few examples
+teaches the pattern. Keep going and the model learns every example by
+heart, mistakes included, and gets worse on new questions.
 `primer.ml.regularization` builds this idea from scratch; here it is in a
 fine-tune.
 
-**Tiny worked example.** Fine-tune the base on only 16 examples of task A,
-3 of them deliberately mislabelled, for 1,500 epochs. (With full-batch
-training, one step is one pass over the data, one **epoch**.)
+Fine-tune the base on only 16 examples of task A, 3 of them deliberately
+mislabelled, for 1,500 epochs. (With full-batch training, one step is one
+pass over the data, one **epoch**.)
 
 | | At the best epoch (71) | At the end (1,500 epochs) |
 |---|---|---|
@@ -925,8 +908,8 @@ training, one step is one pass over the data, one **epoch**.)
 | validation loss | **0.319** | 1.277 |
 
 At the best epoch, training loss is *higher* than validation loss: the
-model is refusing to fit the three wrong labels, which is exactly right. By
-the end, training loss is nearly zero, so the wrong labels have been
+model is refusing to fit the three wrong labels, which is what you want.
+By the end, training loss is nearly zero, so the wrong labels have been
 memorised, and validation loss has quadrupled.
 
 $$
@@ -981,27 +964,32 @@ The loop keeps going while scores improve or patience remains, and when it
 stops, the checkpoint that ships is the marked best, not whatever the last
 epoch left behind.
 
-**In code:** `overfitting_run` fine-tunes on the 16 examples and records
-both losses every epoch; `primer.ml.regularization.early_stopping` replays
-the validation curve and returns the best epoch and the stopping epoch.
+**In code:** `overfitting_run` records both losses at every epoch, and
+`primer.ml.regularization.early_stopping` finds the best epoch and the
+epoch to stop at.
 
-**Why it matters in practice.** Fine-tuning datasets are small compared to
-pretraining, and big models memorise quickly, so fine-tunes typically run
-for only a few epochs. Save checkpoints, score each on the held-out set,
-and ship the best one.
+Fine-tuning datasets are small next to pretraining data, and big models
+memorise quickly, so fine-tunes run for only a few epochs. Save a
+checkpoint every epoch, score each one on the held-out set, and ship the
+best.
 
 ## 5. Model merging
 
+So far, each fine-tune has learned one task. Sometimes there are two
+fine-tunes: two teams fine-tune copies of the same base model, each
+for its own task, perhaps on data that cannot be pooled. **Model
+merging** combines them into one model with no more training, by
+arithmetic on the weights.
+
 ### 5a. Weight averaging and task arithmetic
 
-**Everyday picture.** Two editors each take a copy of the same draft and
-make tracked changes: one fixes the grammar, the other tightens the
-argument. You can apply both sets of changes to the original. If instead
-you "average" the two edited copies, each change is applied at half
-strength: half the grammar fixed, half the argument tightened.
-
-**Tiny worked example.** A three-weight base (1, 0, 2). One fine-tune
-moves it to (1.5, 0, 2); another to (1, −1, 2).
+Two editors each take a copy of the same draft and make tracked changes:
+one fixes the grammar, the other tightens the argument. You can apply
+both sets of changes to the original. If instead you "average" the two
+edited copies, each change is applied at half strength: half the grammar
+fixed, half the argument tightened. Weights work the same way. Take a
+three-weight base (1, 0, 2). One fine-tune moves it to (1.5, 0, 2);
+another to (1, −1, 2).
 
 | | Weights | Change from the base |
 |---|---|---|
@@ -1037,8 +1025,8 @@ changes up, scale them by λ, and apply them to the base."
 
 **With the numbers:** θ_merged = (1, 0, 2) + 1 × (0.5, −1, 0) = (1.5, −1, 2).
 With λ = 1/2: (1, 0, 2) + 0.5 × (0.5, −1, 0) = (1.25, −0.5, 2), which is
-exactly the average of the two fine-tunes. **Averaging T fine-tunes is task
-arithmetic with λ = 1/T.**
+the average of the two fine-tunes. Averaging T fine-tunes is task
+arithmetic with λ = 1/T.
 
 **In Python:**
 
@@ -1075,8 +1063,7 @@ flowchart LR
 is what makes their changes comparable. Subtracting the base turns each
 fine-tuned model into a task vector, the arrows are added and scaled, and
 the result is added back to the base. No data and no gradient steps are
-involved: merging is arithmetic on weights, and the merged model is the same
-size and speed as the base.
+involved, and the merged model is the same size and speed as the base.
 
 ![Merging the fine-tunes on A and C: at lambda 1 the merged model scores 0.97 on both, while plain averaging (lambda one half) scores only 0.635 on A](figures/primer.ml.fine_tuning.merge_separate.svg)
 
@@ -1092,23 +1079,21 @@ disturbs the other.
 vectors back, and `merge_run` merges two fine-tunes at several λ and scores
 the result.
 
-**Why it matters in practice.** Merging combines skills trained separately,
-by different teams or on data that can't be pooled, without any further
-training and at no extra inference cost. Averaging several fine-tunes of the
-same task ("model soups", Wortsman et al.) often beats the best single one.
-Task vectors can also be *subtracted*: Ilharco et al. negated a task vector
-learned from toxic text to make a model less toxic.
+Averaging has a use of its own: averaging several fine-tunes of the
+*same* task ("model soups", Wortsman et al.) often beats the best single
+one. And task vectors can be subtracted as well as added: Ilharco et al.
+negated a task vector learned from toxic text to make a model less toxic.
 
 ### 5b. Interference: when task vectors collide
 
-**Everyday picture.** Two editors rewrote the *same* sentence in opposite
-directions, one making it warmer and one making it colder. Applying both
-sets of tracked changes gives a sentence neither intended.
-
-**Tiny worked example.** Our three-weight changes again, plus a new one:
-τ_A = (0.5, 0, 0), τ_C = (0, −1, 0) and τ_B = (−0.4, 0, 0.3). τ_A and τ_C
-touch different weights: no conflict. τ_B pulls the first weight the other
-way from τ_A. The **cosine** measures how aligned two changes are:
+Adding works while the two editors change different sentences. If they
+rewrite the *same* sentence in opposite directions, one making it warmer
+and one colder, applying both sets of changes gives a sentence neither
+intended. Task vectors collide the same way. Take the three-weight changes
+again, plus a new one: τ_A = (0.5, 0, 0), τ_C = (0, −1, 0) and
+τ_B = (−0.4, 0, 0.3). τ_A and τ_C touch different weights, so they do not
+conflict. τ_B pulls the first weight the other way from τ_A. The
+**cosine** measures how aligned two changes are:
 
 $$
 \cos(\tau_A, \tau_B) = \frac{\tau_A \cdot \tau_B}{\lVert \tau_A \rVert \, \lVert \tau_B \rVert}
@@ -1146,20 +1131,19 @@ round(cos(tau_A, tau_B), 2)  # → -0.8
 cos(tau_A, tau_C)  # → 0.0
 ```
 
-In the toy, the fine-tunes on A and on B (which reverses A's rule) have task
-vectors with cosine **−0.25**, against −0.04 for A and C. Each fine-tune
-learned its rule everywhere, not just in its own region, so the two vectors
-rewrite the same weights in opposite directions.
+In the small network, the fine-tunes on A and on B (which reverses A's
+rule) have task vectors with cosine **−0.25**, against −0.04 for A and C.
+Each fine-tune learned its rule everywhere, not just in its own region, so
+the two vectors rewrite the same weights in opposite directions.
 
 ![Merging the fine-tunes on A and B: at every lambda at least one task stays at or below a coin flip, and the best the merge manages on both at once is 0.525](figures/primer.ml.fine_tuning.merge_conflict.svg)
 
 **Reading it:** the same axes as the previous figure, now merging A with B.
 No value of λ lifts both lines: wherever one task improves, the other
 sits near or below a coin flip, and from λ = 1 on both stay there, because
-the two changes cancel. A
-model *can* do both tasks (replay in section 3c got 0.945 and 0.99), but
-this merge can't reach it: that model needs to tell the regions apart, and
-neither fine-tune learned to.
+the two changes cancel. A model *can* do both tasks (replay got 0.945 and
+0.99), but this merge can't reach it: that model needs to tell the regions
+apart, and neither fine-tune learned to.
 
 ```mermaid
 flowchart TD
@@ -1173,40 +1157,41 @@ flowchart TD
   JOINT --> EV
 ```
 
-**Reading it:** a cheap check before merging is the cosine between task
-vectors. Near zero, the changes live in different weights and adding them
-usually works. Clearly negative, they fight: train on both datasets
+**Reading it:** start at the cosine between the task vectors, a check that
+costs nothing. Near zero, the changes live in different weights and adding
+them usually works. Clearly negative, they fight: train on both datasets
 together if you can; if you can't, conflict-resolving merges such as
 TIES-merging (Yadav et al.) drop each task's smallest changes and, for each
 weight, keep only the changes that agree with the majority sign. Every path
-ends at the same place: score the merge on every task's held-out set.
+ends at the same box: score the merge on every task's held-out set.
 
 **In code:** `cosine` measures the angle between two task vectors, and
 `merge_run` reports it alongside the merged accuracies.
 
-**Why it matters in practice.** Merges are free to try, which makes them
-tempting to trust. A merged model can quietly lose a skill both parents
-had, so it is evaluated like any new model. The cosine tells you in advance
-which merges to be nervous about.
+A merge is free to try, and that makes it tempting to trust. It can still
+lose a skill both of its parents had, so it is scored like any new model.
 
 ## In 20 seconds
 
-- **Decide with an eval:** build a held-out set first; try prompting, then
-  retrieval, and fine-tune only for behaviour a prompt can't pin down. It
-  pays off after C / (c_prompt − c_tuned) requests.
-- **Data:** use the model's chat template and train only on assistant turns;
-  deduplicate (Jaccard on word shingles); freeze the held-out set before
-  training and remove near-copies of it; audit labels, because wrong labels
-  cap what the eval can show. Quality beats quantity.
-- **Forgetting:** every weight is shared, so learning a new task erodes old
-  ones, in proportion to how far the weights move and how much the tasks
+- **Decide with an eval:** build a held-out set first, try a prompt, then
+  retrieval, and fine-tune only for behaviour no prompt can pin down. The
+  break-even point, in requests, is the fine-tune's one-off cost divided
+  by what it saves on each request.
+- **Data:** use the base model's chat template and train only on the
+  assistant's turns; remove near-duplicates; set the held-out set aside
+  before training and remove training examples that nearly copy it; check
+  the labels, because wrong labels cap what the eval can show. Careful
+  examples count for more than many examples.
+- **Forgetting:** every weight is shared, so learning a new task erodes
+  old skills, more the further the weights move and the more the tasks
   conflict. Fewer steps, a lower learning rate and LoRA shorten the trip;
-  replaying a little old data is what keeps a contradicted skill.
-- **Overfitting:** on small data, validation loss bottoms out early; ship
-  the best checkpoint, not the last.
-- **Merging:** a task vector is θ_ft − θ_base. Adding task vectors combines
-  skills without training; averaging is λ = 1/T and dilutes them; vectors
-  that point in opposite directions interfere.
+  only replaying some old data keeps a skill the new task contradicts.
+- **Overfitting:** on a small dataset, validation loss bottoms out early;
+  ship the best checkpoint, not the last.
+- **Merging:** a task vector is what a fine-tune changed,
+  θ_ft − θ_base. Adding task vectors combines skills with no training;
+  averaging is λ = 1/T, which dilutes each skill; vectors that point in
+  opposite directions cancel.
 
 ## Self-test questions
 
