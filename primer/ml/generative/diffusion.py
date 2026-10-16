@@ -135,18 +135,17 @@ you only needed to set the dials, you are done.
 
 ## Level 2: How it works, from scratch
 
-Imagine a sculptor who cannot carve a statue in one go. Hand them a shapeless
-block and ask for a horse, and they freeze. But hand them a *slightly rough*
-horse, and they can always make it a little less rough: smooth this bump,
-deepen that line. Now chain that one modest skill. Start from a shapeless
-block, make it a bit more horse-like, then a bit more, a hundred times over,
-and a horse comes out.
+Imagine a sculptor who cannot carve a statue in one go. Hand them a
+shapeless block and ask for a horse, and they freeze. Hand them a *slightly
+rough* horse, though, and they can always make it a little less rough:
+smooth this bump, deepen that line. Start from the shapeless block, repeat
+that one modest skill a hundred times, and a horse comes out.
 
-A diffusion model is that sculptor. It never learns "draw a picture from
-nothing", which is very hard. It learns "here is a picture with a little too
-much noise in it: take some of the noise away", which is much easier. And
-the practice material is free: take any real picture, add noise yourself,
-and you know exactly what the answer should be.
+A diffusion model works like that sculptor. It never learns to draw a
+picture from nothing, which is hard. It learns to take a picture with a
+little too much noise in it and remove some of that noise, which is much
+easier. Its practice material costs nothing: take any real picture, add the
+noise yourself, and you know the answer.
 
 ```mermaid
 flowchart LR
@@ -155,34 +154,29 @@ flowchart LR
 ```
 
 **Reading it:** the top arrow is the *forward process*: it destroys data by
-adding noise a little at a time, and it involves no learning at all. The
-bottom arrow runs the same road backwards, and that direction is what the
-network learns. At generation time only the bottom arrow runs, starting
-from fresh noise, so every run ends at a different, new sample.
+adding noise a little at a time, and it involves no learning. The bottom
+arrow runs the same road backwards, and that direction is what the network
+learns. To generate, only the bottom arrow runs, starting from fresh noise,
+so every run ends at a new sample.
 
-**The tiny world this lesson works in.** A real image is a long list of
-numbers, one per pixel colour. To keep everything small enough to see, our
-"images" have just two numbers, so each one is a dot on a flat plane. The
-real data is four round blobs of dots, one in each corner (north-east,
-north-west, south-west, south-east), 600 dots in all. The job: learn to make
-*new* dots that land in the blobs, starting from random noise. Every idea
-below works unchanged on a 512 × 512 colour image; it just has 786,432
-numbers per "dot" instead of 2.
+**A world small enough to see.** A real image is a long list of numbers,
+one per pixel colour. The "images" here have just two numbers, so each one
+is a dot on a flat plane. The real data is four round blobs of dots, one in
+each corner (north-east, north-west, south-west, south-east), 600 dots in
+all. The task is to make *new* dots that land in the blobs, starting from
+random noise. Every idea below works unchanged on a 512 × 512 colour image,
+which has 786,432 numbers per "dot" instead of 2.
 
-Notice one thing about the blobs now, because it matters later: their
-average is the empty middle. A model that plays safe and outputs "the
-average answer" puts its dots where no real data lives. The same failure
-makes blurry images: the average of many sharp faces is a blur.
+One fact about the blobs matters later: their average is the empty middle.
+A generator that plays safe and outputs the average answer puts its dots
+where no real data lives. The same failure blurs images, because the
+average of many sharp faces is a blur.
 
 ## Step 1: the forward process, adding noise a little at a time
 
-**Everyday picture.** Think of an old television slowly losing its signal.
-Turn the static dial up one notch: the picture fades a little and a little
-snow creeps in. Turn it a hundred notches and you see only snow, and nothing
-in it tells you what the programme was.
-
-**Tiny worked example.** Follow one pixel whose clean value is $x_0 = 2.0$.
-Each step keeps most of the signal and mixes in a little fresh random noise.
+The forward process is the half that needs no learning, so it comes
+first. Follow one pixel whose clean value is $x_0 = 2.0$. Each step keeps
+most of the signal and mixes in a little fresh random noise.
 The **noise** is a random number drawn from a **standard normal
 distribution**: the bell curve centred on 0 whose typical size is 1 (values
 like 0.5, −1.2 and 0.1 are common, 3 is rare). Say step 1 mixes in a share
@@ -221,19 +215,18 @@ round(math.sqrt(beta) * eps, 3)  # → 0.158
 round(math.sqrt(1 - beta) * x_prev + math.sqrt(beta) * eps, 2)  # → 2.06
 ```
 
-Why the square roots? A value's **variance** (its typical squared size) is
-what matters, and variances of independent things add. If the old value has
-variance 1, the new one has variance $(1 - \beta) \cdot 1 + \beta \cdot 1 = 1$:
-exactly 1 again. The square roots keep every step at the same overall size,
-so after many steps the value is noise of size 1, not a number that has
-blown up or faded to zero.
+The square roots hold the value's size steady. What matters is its
+**variance** (its typical squared size), and the variances of independent
+things add. If the old value has variance 1, the new one has variance
+$(1 - \beta) \cdot 1 + \beta \cdot 1 = 1$ again. So after many steps the
+value is noise of size 1, not a number that has blown up or faded to zero.
 
-### The shortcut: jump straight to any step
+### The shortcut to any step
 
-Running $t$ steps one by one is slow, and training needs noisy examples at
-every step. Luckily, adding noise twice is the same as adding it once in a
-bigger dose, so there is a formula that jumps straight to step $t$. First,
-multiply up how much signal survives every step so far:
+Training needs noisy examples at every step, and running $t$ steps one by
+one to make each of them is slow. Adding noise twice is the same as adding
+it once in a bigger dose, so one formula jumps straight to step $t$. First
+multiply together the share of signal that each step keeps:
 
 $$
 \bar\alpha_t = \prod_{s=1}^{t} (1 - \beta_s)
@@ -257,7 +250,7 @@ $$
 then the noisy value is that much of the clean value plus the rest in noise."
 
 **With the numbers:** two steps with $\beta = 0.1$ then $0.2$ leave
-$\bar\alpha_2 = 0.9 \times 0.8 = 0.72$. In this lesson's schedule, step 30
+$\bar\alpha_2 = 0.9 \times 0.8 = 0.72$. In the schedule used here, step 30
 leaves $\bar\alpha_{30} = 0.64$, so the pixel at 2.0 with noise 0.5 lands at
 $x_{30} = 0.8 \cdot 2.0 + 0.6 \cdot 0.5 = 1.6 + 0.3 = 1.9$.
 
@@ -284,12 +277,12 @@ flowchart LR
 
 **Reading it:** the solid chain is the slow way: one small dose of noise per
 arrow. The dotted arrow is the shortcut: pick any step $t$, look up
-$\bar\alpha_t$, draw one noise sample, and land exactly where the chain
-would have taken you (in distribution: the same spread of possible values).
+$\bar\alpha_t$, draw one noise sample, and land where the chain would have
+taken you (in distribution: with the same spread of possible values).
 Training uses only the shortcut.
 
-The **noise schedule** is the list of $\beta_t$. This lesson uses $T = 100$
-steps with $\beta$ rising in a straight line from 0.0001 to 0.1: tiny doses
+The **noise schedule** is the list of $\beta_t$. The one used here has
+$T = 100$ steps with $\beta$ rising in a straight line from 0.0001 to 0.1: tiny doses
 first, while there is fine detail to lose, bigger ones once little is left.
 
 ![Five panels: the four coloured blobs at step 0 blur at step 30, merge at step 50, and are a single shapeless cloud by step 100](figures/primer.ml.generative.diffusion.noising.svg)
@@ -299,9 +292,9 @@ title, with every dot keeping its blob's colour. Step 10 barely differs from
 the clean data (its signal share $\sqrt{\bar\alpha}$ is still 0.98). By step 30
 the blobs have swollen into each other, though each colour still keeps to
 its own corner. By step 50 the colours overlap. At step 100 only
-7% of the signal is left and the colours are thoroughly mixed: a round cloud
-of plain noise, the same cloud whatever data you started from. That last
-fact is what makes generation possible: we know how to draw from that cloud.
+7% of the signal is left and the colours are mixed into a round cloud of
+plain noise. That cloud is the same whatever data you start from, and it is
+easy to draw from, so generation can start there.
 
 ![Two curves over 100 steps: the signal share falls from 1 to 0.07 while the noise share rises from 0 to nearly 1, crossing at step 37](figures/primer.ml.generative.diffusion.schedule.svg)
 
@@ -312,32 +305,24 @@ $\sqrt{1 - \bar\alpha_t}$. The two dots at step 30 are the worked example's
 Early steps change little (the curves are flat at the left), so the network
 gets plenty of practice on nearly clean data, where the fine detail lives.
 
-**In code:** `linear_schedule` builds the list of $\beta_t$ as a `NoiseSchedule`, whose `NoiseSchedule.alpha_bars` is the running product; `noise_step` is one step and `add_noise` is the shortcut.
-
-**Why it matters in practice.** The forward process has no parameters and
-needs no training. Its only job is to manufacture unlimited practice
-material, and thanks to the shortcut, any clean example can be turned into a
-practice question at any noise level in one line.
+**In code:** `linear_schedule` builds the schedule, `noise_step` takes one step and `add_noise` is the shortcut.
 
 ## Step 2: learning to denoise
 
-**Everyday picture.** A photo restorer wants to practise removing specks of
-dust. They take clean photos and sprinkle dust on them *themselves*, keeping
-a note of exactly where every speck went. Now they can practise all day:
-guess where the dust is, then check against the note. The homework is
-unlimited and every answer is known.
+The shortcut turns any clean example into a practice question at any noise
+level. Take
+the pixel from before: $x_0 = 2.0$, noise $\varepsilon = 0.5$, step 30, so
+$x_{30} = 1.9$. The network is shown only $x_{30} = 1.9$ and the step number
+30, and asked what noise was added. The right answer is 0.5. If it guesses
+0.4, it is off by 0.1 and scores $(0.5 - 0.4)^2 = 0.01$, where lower is
+better.
 
-**Tiny worked example.** Take the pixel from before: $x_0 = 2.0$, noise
-$\varepsilon = 0.5$, step 30, so $x_{30} = 1.9$. The network is shown only
-$x_{30} = 1.9$ and the step number 30, and asked: "what noise was added?"
-The right answer is 0.5. If it guesses 0.4, it is off by 0.1 and scores
-$(0.5 - 0.4)^2 = 0.01$. Lower is better.
-
-Why guess the noise rather than the clean value? The two are equivalent:
-given $x_t$, $t$ and the noise, the clean value follows by undoing the
-shortcut, $x_0 = (1.9 - 0.6 \cdot 0.5) / 0.8 = 2.0$. Guessing the noise
-simply works better in practice, because the target always has the same
-size (a standard-normal draw), whatever the step.
+The network could be asked for the clean value instead, since the two
+answers carry the same information: given $x_t$, $t$ and the noise, the
+clean value follows by undoing the shortcut,
+$x_0 = (1.9 - 0.6 \cdot 0.5) / 0.8 = 2.0$. Guessing the noise trains
+better, because its target has the same size (a standard-normal draw)
+whatever the step.
 
 ```mermaid
 flowchart LR
@@ -356,7 +341,7 @@ which step, which noise. The shortcut mixes them into a noisy point. The
 network sees only the noisy point and the step (not the noise, and not the
 clean point). The noise takes the lower path straight to the loss, where the
 guess is graded against it. Everything after the loss is ordinary training,
-exactly as in `primer.ml.neural_net`.
+as in `primer.ml.neural_net`.
 
 $$
 L(\theta) = \mathbb{E}_{x_0,\, t,\, \varepsilon}\Big[\, \big\| \varepsilon - \varepsilon_\theta(x_t, t) \big\|^2 \,\Big]
@@ -398,16 +383,18 @@ draws = [random.gauss(0, 1) ** 2 + random.gauss(0, 1) ** 2 for _ in range(100_00
 round(sum(draws) / len(draws), 1)  # → 2.0
 ```
 
-This is plain **regression** (predicting numbers, graded by squared error),
-the most stable kind of training there is. There is no opponent to balance
-and no trick: that is a big part of why diffusion displaced GANs.
+This is plain **regression**: predicting numbers, graded by squared error.
+Unlike a GAN, it has no opponent to keep in balance, and that stability is
+a large part of why diffusion displaced GANs. The original DDPM paper and
+the first Stable Diffusion models trained with this same loss, on far
+bigger networks and on images.
 
-**The network.** Our denoiser is a small multi-layer network: the noisy
-point (2 numbers), plus the step turned into 8 numbers of sines and cosines
-(a single number "30" is hard for a small network to use; a spread of waves
-at different speeds is easy, the same trick as the sinusoidal positions in
-`primer.ml.positional`), go through two hidden layers of 64 ReLU units
-and come out as 2 numbers, the noise guess. It trains for 1,500 steps of
+**The network.** The denoiser here is a small multi-layer network. Its
+input is the noisy point (2 numbers) plus the step, turned into 8 numbers of
+sines and cosines. A single number such as 30 is hard for a small network
+to use, while a spread of waves at different speeds is easy: the same trick
+as the sinusoidal positions in `primer.ml.positional`. Two hidden layers of
+64 ReLU units turn that input into 2 numbers, the noise guess. It trains for 1,500 steps of
 Adam (`primer.ml.optimizers`) on batches of 256, in about half a second.
 
 ![A training curve that starts at 2, the score of guessing zero, drops below 0.7 within a hundred steps and settles near 0.6](figures/primer.ml.generative.diffusion.training.svg)
@@ -416,20 +403,20 @@ Adam (`primer.ml.optimizers`) on batches of 256, in about half a second.
 average squared error. The dashed red line at 2 is the "always guess zero"
 baseline, and the untrained network starts right on it (its last layer
 starts near zero). The loss plunges within a hundred steps, then creeps
-down. It never reaches 0, and cannot: at low noise levels the noise is
-hidden inside the blob's own natural spread, so even a perfect network can
-only guess its average. The floor near 0.6 is that honest uncertainty, not
-a failure.
+down. It cannot reach 0: at low noise levels the noise is hidden inside
+the blob's own natural spread, so even a perfect network can only guess its
+average. The floor near 0.6 is that uncertainty, not a failure of
+training.
 
-### What the noise guess really is: the score
+### The noise guess is the score
 
 Flip the noise guess around and it becomes an arrow pointing *toward the
-data*. If the noise pushed the point up and to the right, the way back is
-down and to the left. That arrow has a name, the **score**: at any point,
-the direction in which the data gets more crowded, fastest. Learning to
-guess noise is secretly learning the score at every noise level, which is
-why diffusion models are also called *score-based models*, and why the
-training trick is called **denoising score matching**.
+data*: if the noise pushed the point up and to the right, the way back is
+down and to the left. That arrow is the **score**: at any point, the
+direction in which the data gets more crowded fastest. A network that has
+learned to guess noise has learned the score at every noise level. That is
+why diffusion models are also called *score-based models*, and why this way
+of training is called **denoising score matching**.
 
 $$
 \nabla_{x} \log p_t(x_t) \;\approx\; -\,\frac{\varepsilon_\theta(x_t, t)}{\sqrt{1 - \bar\alpha_t}}
@@ -454,7 +441,7 @@ divided by the noise share."
 noisy version is the plain bell curve, whose score at $x$ is $-x$ (the slope
 of $-x^2/2$). At $x_t = 1.5$ with $\bar\alpha_t = 0.64$, the best possible
 noise guess is $0.6 \times 1.5 = 0.9$, and the formula gives
-$-0.9 / 0.6 = -1.5$: exactly the score, pointing back toward the crowd at 0.
+$-0.9 / 0.6 = -1.5$, the score itself, pointing back toward the crowd at 0.
 
 **In Python:**
 
@@ -468,21 +455,15 @@ round(eps_hat, 2)  # → 0.9
 round(-eps_hat / math.sqrt(1 - alpha_bar), 2)  # → -1.5
 ```
 
-**In code:** `DenoiserMLP` is the network with its hand-written backward pass (`denoiser_gradient_check` compares it with finite differences), `time_features` turns the step into waves, `train_noise_predictor` is the training loop in the diagram and returns a `NoisePredictor`, and `noise_to_score` is the score formula.
-
-**Why it matters in practice.** This loss, a squared error on guessed noise,
-is the training loss of the original DDPM paper and of the first Stable
-Diffusion models. The network is far bigger and the data is images, but the
-training loop is the boxes above.
+**In code:** `DenoiserMLP` is the network, `train_noise_predictor` is the training loop in the diagram, and `noise_to_score` is the score formula.
 
 ## Step 3: sampling, running the process backwards
 
-**Everyday picture.** Back to the sculptor. Look at the block, guess which
-bits are "not horse", chip away a small part of them, look again. Never
-chip away everything you think is wrong at once: the guess is rough when the
-block is rough, and it gets better as the shape emerges.
-
-**Tiny worked example.** A point sits at $x_t = 1.0$ at a step with
+A trained noise guesser generates the way the sculptor works: look at the
+block, guess which parts are not horse, chip away a small share of them,
+and look again. The sculptor never chips away everything that looks wrong
+at once, because the guess is rough while the block is rough and improves
+as the shape emerges. In numbers, a point sits at $x_t = 1.0$ at a step with
 $\beta_t = 0.19$ and $\bar\alpha_t = 0.75$. The network guesses the noise in
 it is $\hat\varepsilon = 0.5$. One step back removes a scaled share of that
 guess, undoes the shrinking, and (except on the very last step) adds a
@@ -525,12 +506,12 @@ z = 0.5
 round(mean + math.sqrt(beta) * z, 4)  # → 1.1179
 ```
 
-Why add noise while trying to remove it? The network's guess is an average
-over every clean point that could have produced $x_t$. Stepping to that
-average would drift every sample toward the safe, blurry middle. The fresh
-wobble keeps each sample committed to one specific possibility, so the
-samples spread out over the whole data, as the real data does. This recipe
-is **DDPM** (denoising diffusion probabilistic models).
+Adding noise while removing it looks backwards, but the network's guess is
+an average over every clean point that could have produced $x_t$. Stepping
+to that average every time would pull every sample toward the safe, blurry
+middle. The fresh wobble lets each sample commit to one possibility, so the
+samples spread over the whole data, as the real data does. This recipe is
+**DDPM** (denoising diffusion probabilistic models).
 
 ```mermaid
 flowchart LR
@@ -544,8 +525,7 @@ flowchart LR
 
 **Reading it:** the loop runs once per step, $T = 100$ times here and 1,000
 in the original paper. Each lap costs one full run of the network, so the
-number of laps is the price of a sample. Keep that in mind: the rest of the
-lesson is largely about making that loop shorter.
+number of laps sets the price of a sample.
 
 ![Five panels of purple dots over grey blobs: a round noise cloud at step 100 is still shapeless at 40 and 20, splits into four clusters by 10, and matches the blobs at 0](figures/primer.ml.generative.diffusion.denoising.svg)
 
@@ -554,17 +534,16 @@ being generated, shown at five moments of the backwards run. For the first
 half almost nothing seems to happen: the network makes coarse, whole-cloud
 decisions while the noise is still loud. Between steps 20 and 10 the cloud
 splits toward the four corners, and the last few steps tighten each group
-onto its blob. Nobody told the network there were four blobs; it learned
-that from guessing noise.
+onto its blob. The network was never told there are four blobs; it
+learned that from guessing noise.
 
-### Fewer steps: jump, don't crawl (DDIM)
+### Fewer steps with DDIM
 
-**Everyday picture.** A sculptor in a hurry doesn't chip a sliver per look.
-They glance at the block, picture the *finished* horse, then rough the block
-out to a state only slightly less finished than that, and look again. Big
-confident moves, a handful of looks.
-
-**Tiny worked example.** From the Step 1 pixel: $x_t = 1.9$ at
+A hundred network calls per sample is slow. A sculptor in a hurry works
+differently: they picture the *finished* horse, rough the block out to a
+state only slightly less finished than that, and look again, making a few
+big moves instead of many small ones. DDIM samples the same way. Take the
+pixel from Step 1: $x_t = 1.9$ at
 $\bar\alpha_t = 0.64$, and suppose the network guesses the noise perfectly,
 $\hat\varepsilon = 0.5$. First predict the finished value, then re-noise it
 to a much quieter level, $\bar\alpha_s = 0.96$, reusing the same noise guess
@@ -608,36 +587,38 @@ round(x0_hat, 4)  # → 2.0
 round(math.sqrt(alpha_bar_s) * x0_hat + math.sqrt(1 - alpha_bar_s) * eps_hat, 4)  # → 2.0596
 ```
 
-This is **DDIM** (denoising diffusion implicit models). It uses the very
-same trained network; only the sampling loop changes. Because it adds no
-fresh noise, the same starting noise always gives the same sample, and it
-can take 20 jumps instead of 100 small steps. On the blobs, 20 DDIM jumps
-land as close to the data as 100 DDPM steps (the spec checks both).
+This is **DDIM** (denoising diffusion implicit models). It uses the same
+trained network and changes only the sampling loop. It adds no fresh noise,
+so the same starting noise always gives the same sample, and it can take 20
+jumps instead of 100 small steps. On the blobs, 20 DDIM jumps land about as
+close to the data as 100 DDPM steps. Closeness here is the **two-way
+distance**: the average of two distances, from each sample to its nearest
+real point and from each real point to its nearest sample, so piling every
+sample onto one blob cannot score well.
 
-**In code:** `ddpm_step` and `ddpm_sample` are the small-step sampler (`ddpm_trajectory` keeps snapshots for the figure); `ddim_step` and `ddim_sample` are the jumping one; `two_way_distance` measures how close samples land to the data, in both directions, so piling every sample onto one blob can't score well.
+**In code:** `ddpm_sample` is the small-step sampler, `ddim_sample` the jumping one, and `two_way_distance` the measure of closeness.
 
-**Why it matters in practice.** Sampling cost is the number of network
-calls. The original DDPM used 1,000; samplers like DDIM brought that to
-about 20 to 50, which is what made diffusion usable in products. Pushing
-toward a handful of steps is the next idea.
+The price of a sample is its number of network calls. The original DDPM
+used 1,000, and samplers like DDIM brought that down to about 20 to 50.
 
-## Step 4: flow matching, the straight road
+## Step 4: flow matching, straight paths from noise to data
 
-**Everyday picture.** Diffusion's road from noise to data is a winding
-mountain path set by the schedule. Flow matching asks: why not draw a
-straight line from each noise point to a data point, and learn the *current*
-that carries you along it? The network becomes a map of arrows, like a
-weather map of wind: at every place and time, it says which way to drift,
-and how fast. To generate, drop a leaf (a noise point) on the map and let it
+Going below 20 to 50 calls needs a straighter road. A diffusion sample's
+path from noise to data curves, in a shape set by the noise schedule, and a
+sampler taking big steps cuts its corners. **Flow matching** draws a
+straight line from each noise point to a data point instead, and trains the
+network to report the motion along it. The network becomes a map of arrows,
+like a weather map of wind: at every place and time it says which way to
+move, and how fast. To generate, drop a noise point on the map and let it
 drift.
 
-**One warning about labels.** In flow-matching papers, and in this section,
+**A warning about labels.** From here on, as in flow-matching papers,
 $x_0$ is the **noise** and $x_1$ is the **data**, and time runs from 0
-(noise) to 1 (data). That is the opposite of the diffusion sections above,
-where $x_0$ was the clean data.
+(noise) to 1 (data). In the diffusion chapters before, $x_0$ was the clean
+data.
 
-**Tiny worked example.** Noise point $x_0 = -1$, data point $x_1 = 2$. The
-straight line between them passes, a quarter of the way along, through
+Take the noise point $x_0 = -1$ and the data point $x_1 = 2$. The straight
+line between them passes, a quarter of the way along, through
 $0.75 \cdot (-1) + 0.25 \cdot 2 = -0.25$. The speed along the line is
 constant: it covers the distance $2 - (-1) = 3$ in one unit of time, so the
 velocity is 3 everywhere on it. The network is trained to output 3 when
@@ -701,7 +682,7 @@ $$
 network says."
 
 **With the numbers:** from $x_{0.25} = -0.25$, one step of $h = 0.75$ at
-velocity 3 gives $-0.25 + 0.75 \times 3 = 2.0$: exactly the data point. On a
+velocity 3 gives $-0.25 + 0.75 \times 3 = 2.0$, the data point. On a
 straight line, one step of any size is exact, because there is no bend to
 cut.
 
@@ -736,12 +717,12 @@ the target: a velocity along a straight line rather than hidden noise.
 Sampling (bottom) is a plain loop of Euler steps from $t = 0$ to $t = 1$,
 with no schedule, no shrink factors and no fresh noise.
 
-There is a catch, and it is instructive. Many different straight lines pass
+Training on random pairs has a catch. Many different straight lines pass
 through the same point (from different noise to different data), so the
-network cannot know which one it is on. It learns the *average* of their
-velocities. The learned paths are therefore only roughly straight: they
-bend, because two paths can never cross (at any point the network gives one
-velocity, so two paths that met would continue together).
+network cannot know which one it is on, and it learns the *average* of
+their velocities. The learned paths are therefore only roughly straight.
+They bend, because two paths can never cross: at any point the network
+gives one velocity, so two paths that met would continue together.
 
 ![Left: 16 straight lines from noise to data that cross each other. Right: the learned flow's 16 paths from the same noise, which never cross and curve to reach the blobs](figures/primer.ml.generative.diffusion.flow_paths.svg)
 
@@ -750,15 +731,15 @@ ends. On the left are training pairs: every line is straight, but they
 criss-cross because noise and data were paired at random. On the right, the
 learned flow starts from the same noise. Its paths never cross, so they
 bend to share out the blobs, mostly near the end. The straighter the paths,
-the fewer Euler steps you need. That is why *rectified flow* retrains on
-the model's own (noise, sample) pairs, which no longer cross: each round
-makes the paths straighter, until one or two steps are enough.
+the fewer Euler steps you need. *Rectified flow* uses this: it retrains on
+the model's own (noise, sample) pairs, which no longer cross, and each
+round makes the paths straighter, until one or two steps are enough.
 
-The average also explains the extreme case. With a single Euler step from
-$t = 0$, every noise point moves by the average velocity toward "the data
-in general" and lands on the data's average: the empty middle of the four
-blobs (the spec checks it). Straight-line training does not make one step
-free; straight *learned* paths do.
+The same averaging explains what a single step does. With one Euler step
+from $t = 0$, every noise point moves by the average velocity toward the
+data in general, and lands on the data's average: the empty middle of the
+four blobs. Training on straight lines does not make one step enough; only
+straight *learned* paths do.
 
 ![Sample quality against the number of network calls, on log axes: at one or two calls both are about as far off as plain noise; flow matching nears the fresh-data floor by about 5 calls, diffusion by about 10](figures/primer.ml.generative.diffusion.steps.svg)
 
@@ -768,39 +749,34 @@ floor is a fresh draw of the real blobs, as good as samples can get; the
 grey line is plain noise. At one or two calls neither method does much
 better than noise. Flow matching (teal) gets close to the floor within about
 5 calls, while diffusion's DDIM jumps (purple) need about 10 to get as
-close. Same network size, same training time: the straighter paths need
-roughly half the steps.
+close. Both had the same network size and training time, so the straighter
+paths alone account for needing roughly half the steps.
 
-**In code:** `flow_point` and `flow_target` build the training pairs, `train_velocity_predictor` trains a `VelocityPredictor`, `euler_step` and `euler_sample` follow it, and `step_sweep` measures both methods at each step count.
+**In code:** `train_velocity_predictor` trains the velocity network, `euler_sample` follows it, and `step_sweep` measures both methods at each step count.
 
-**Why it matters in practice.** Flow matching and rectified flow give a
-simpler recipe (no noise schedule to tune, just straight lines) and need
-fewer sampling steps. Stable Diffusion 3 is trained as a rectified flow, and
-many recent image and video generators follow. Under the hood it is the same
+Flow matching also has no noise schedule to tune. Stable Diffusion 3 is
+trained as a rectified flow. Underneath, flow matching belongs to the same
 family as diffusion: a network trained by squared error to point from noise
 toward data, followed step by step.
 
 ## Step 5: conditioning and guidance, generating what you asked for
 
-**Everyday picture.** A caricaturist draws a famous face by noticing what
-makes it different from an average face (the big chin, the eyebrows) and
-exaggerating exactly that difference. Guidance does the same: compare "what
-I'd draw if told what to draw" with "what I'd draw anyway", and push further
-in the direction of the difference.
-
-**Conditioning** first: to ask for a specific corner, feed the label to the
-network as an extra input. Our labels are four corners, given as a
+So far the generator makes a dot in whichever blob its noise leads to. To
+ask for a particular corner, it needs **conditioning**: the label goes into
+the network as an extra input. Our labels are four corners, given as a
 **one-hot** vector (all zeros except a 1 in the chosen slot), plus a fifth
 slot that means "no label". A text-to-image model does the same with a
 sentence in place of a corner name.
 
-**Classifier-free guidance** trains *one* network to answer both questions:
-in training, the label is hidden (replaced by "no label") on a random 20% of
-examples. At sampling time the network is asked twice per step, once with
-the label and once without, and the two guesses are mixed.
+**Classifier-free guidance** goes further by comparing two guesses: the
+network's noise guess when told the label, and its guess without it.
+*One* network learns both. In training, the label is hidden (replaced by
+"no label") on a random 20% of examples. At sampling time the network is
+asked twice per step, once with the label and once without, and the
+sampler pushes past the labelled guess, further in the direction the label
+moved it.
 
-**Tiny worked example.** At some point during sampling, the guess without
-the label is $\hat\varepsilon_\varnothing = 0.2$ and the guess with the label
+Say that at some point during sampling the guess without the label is $\hat\varepsilon_\varnothing = 0.2$ and the guess with the label
 "south-west" is $\hat\varepsilon_c = 0.5$. The label moves the guess by
 $0.5 - 0.2 = 0.3$. With guidance weight $w = 3$, move three times as far.
 
@@ -847,8 +823,8 @@ flowchart LR
 **Reading it:** each step runs the *same* network twice, once with the
 label hidden and once with it shown, which doubles the cost of a step. The
 two guesses meet in the mixing box, and only the mixed guess reaches the
-sampler, which is otherwise unchanged. Nothing new was trained for guidance:
-it is a choice made at sampling time.
+sampler, which is otherwise unchanged. No second network is trained: the
+weight is a choice made at sampling time.
 
 ![Three panels of 400 green samples asked to be south-west: at w = 0 they spread over all four blobs (27% south-west); at w = 1 all land on the south-west blob with spread 0.27; at w = 3 they bunch into a tight knot at its outer edge](figures/primer.ml.generative.diffusion.guidance.svg)
 
@@ -858,30 +834,27 @@ samples land in all four corners, only about a quarter in the south-west.
 At $w = 1$ nearly all land in the right blob with roughly the real blob's
 spread. At $w = 3$ they are all on target but bunched into a tight knot,
 pushed to the side of the blob *farthest from the other blobs*: the most
-unmistakably south-west spot. That is guidance in one picture: more
-on-label, less varied, and exaggerated.
+unmistakably south-west spot. Raising the weight trades variety for being
+on target, and past a point it exaggerates.
 
-**In code:** `network_inputs` appends the one-hot label with its "no label" slot, `train_noise_predictor` hides labels at random when given them, `guided_noise` is the formula, `ddim_sample` applies it at every jump when given a label, and `guidance_sweep` measures the share on target and the spread at each weight.
+**In code:** `guided_noise` is the formula, and `guidance_sweep` measures the share on target and the spread at each weight.
 
-**Why it matters in practice.** Text-to-image systems use guidance weights
-well above 1, because unguided samples follow the prompt only loosely. Turn
-it too high and images become oversaturated and samey, the image version of
-the tight knot above. The "guidance scale" slider in image tools is this $w$.
+The "guidance scale" setting in image tools is this $w$. Text-to-image
+systems run it well above 1, because unguided samples follow the prompt
+only loosely. Set too high, it makes images oversaturated and alike, the
+image version of the tight knot.
 
 ## Step 6: scaling up to real images, video and audio
 
-**Everyday picture.** An architect doesn't design a skyscraper by placing
-every brick. They draw a floor plan, small enough to think about, and a
-builder turns the plan into a building. Latent diffusion does the creative
-work on a small "plan" of the image, and a separate decoder builds the
-pixels.
-
-**Tiny worked example.** A 512 × 512 colour image is $512 \times 512 \times 3
-= 786{,}432$ numbers. An **autoencoder** (a network that squeezes an image
-into a small code and rebuilds it; see `primer.ml.generative.autoencoders`)
-shrinks each side by 8 and keeps 4 numbers per position: $64 \times 64 \times
-4 = 16{,}384$ numbers. The denoiser now works on 48 times fewer numbers, and
-every one of its many steps is that much cheaper.
+Everything so far ran on dots of two numbers. A 512 × 512 colour image is
+$512 \times 512 \times 3 = 786{,}432$ numbers, and the denoiser would run
+on all of them at every step. **Latent diffusion** works on a much smaller
+code of the image, its **latent**, instead. An **autoencoder** (a network
+that squeezes an image into a small code and rebuilds it; see
+`primer.ml.generative.autoencoders`) shrinks each side by 8 and keeps 4
+numbers per position: $64 \times 64 \times 4 = 16{,}384$ numbers. The
+denoiser now works on 48 times fewer numbers, and every one of its many
+steps is that much cheaper.
 
 $$
 \text{shrink factor} = \frac{H \cdot W \cdot 3}{(H/f) \cdot (W/f) \cdot c}
@@ -942,10 +915,10 @@ encoder**, such as CLIP's text half (`primer.ml.embeddings.contrastive`),
 turns it into token vectors that the denoiser reads through
 **cross-attention** (attention whose queries come from the image patches and
 whose keys and values come from the text tokens). Guidance's "no label"
-answer is simply an empty prompt. Only at the very end does the decoder
+answer is an empty prompt. Only at the very end does the decoder
 turn the latent into pixels, once.
 
-Three more scale-ups follow the same pattern:
+The same recipe has grown in three directions:
 
 - **The denoiser became a transformer.** Early systems used a U-Net (a
   convolutional network, `primer.ml.cnn_rnn`); the **diffusion transformer**
@@ -965,23 +938,21 @@ Three more scale-ups follow the same pattern:
 | Covers all of the data? | can **mode collapse** (ignore whole regions) | yes | yes |
 | Cost of one sample | one network call | one network call | 5 to 50 network calls |
 
-**In code:** `latent_shrink` counts pixels against latent numbers and `patch_tokens` counts a diffusion transformer's tokens, per frame.
+**In code:** `latent_shrink` and `patch_tokens` do the counting above.
 
-**Why it matters in practice.** Latent space made high-resolution diffusion
-affordable on a single GPU, transformers made it scale, text encoders made
-it follow prompts, and guidance made it follow them closely. The price that
-remains is many network calls per sample, which is why step-reduction
-(DDIM, flow matching, distillation into few-step students) is where so much
-engineering effort goes.
+What stays expensive is the number of network calls per sample. DDIM, flow
+matching and **distillation** (training a second network to reach in a few
+steps what the first reaches in many) all aim to cut it.
 
 ## In 20 seconds
 
-- **Forward process:** mix data with a little Gaussian noise per step until
+- **Forward process:** mix data with a little random noise per step until
   only noise is left; the shortcut $x_t = \sqrt{\bar\alpha_t}\,x_0 +
   \sqrt{1-\bar\alpha_t}\,\varepsilon$ jumps to any step in one go.
-- **Training:** show the network a noised example and the step; it guesses
-  the noise; grade by squared error. Plain, stable regression, and secretly
-  learning the score (the direction toward the data).
+- **Training:** show the network a noised example and its step; it guesses
+  the noise and is graded by squared error. This is plain, stable
+  regression, and the noise guess is the score (the direction toward the
+  data), flipped and rescaled.
 - **Sampling:** start from pure noise and repeatedly remove a little guessed
   noise (DDPM, with a fresh wobble each step), or take a few big
   deterministic jumps (DDIM).
