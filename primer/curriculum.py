@@ -206,7 +206,7 @@ PARTS: list[Part] = [
 CURRICULUM: list[Lesson] = [
     Lesson("primer.notation", "Math notation, from zero", "Every symbol in an ML formula, as a short loop", "reference"),
     Lesson("primer.ml.big_picture", "The big picture", "What happens, end to end, when you send a prompt", "model"),
-    Lesson("primer.ml.neural_net", "Neural networks", "How a network of simple units learns from its mistakes, built and trained by hand", "model"),
+    Lesson("primer.ml.neural_net", "Neural networks", "How a neural network, a program made of simple units, learns from its mistakes", "model"),
     Lesson("primer.ml.losses", "Loss functions", "The one number training pushes down, and why choosing it is choosing the behaviour", "model"),
     Lesson("primer.ml.optimizers", "Optimizers", "How a step is taken down the loss, and why the learning rate matters more than the rule", "model"),
     Lesson("primer.ml.deep_nets", "Training deep networks", "Why deep stacks stop learning, and the fixes inside every transformer block", "model"),
@@ -214,7 +214,7 @@ CURRICULUM: list[Lesson] = [
     Lesson("primer.ml.positional", "Positional information", "Why order must be added, sinusoids and RoPE", "model"),
     Lesson("primer.ml.transformer", "The transformer", "The block every language model stacks, and how to turn a config file into gigabytes", "model"),
     Lesson("primer.ml.tokenization", "Tokenization", "How text becomes the pieces a model reads, and why models miscount letters", "model"),
-    Lesson("primer.ml.training_stages", "Training stages", "The stages that turn a random network into an assistant, and when to fine-tune instead of prompt", "training"),
+    Lesson("primer.ml.training_stages", "Training stages", "The stages that turn a random neural network into a chat assistant, and when to fine-tune instead of prompt", "training"),
     Lesson("primer.ml.pretraining", "Pretraining at scale", "What it takes to train on the internet: the data belt, parallelism across GPUs, mixed precision", "training"),
     Lesson("primer.ml.fine_tuning", "Fine-tuning in practice", "What a fine-tune costs and risks, and how to prepare data so the model keeps its old skills", "training"),
     Lesson("primer.ml.regularization", "Overfitting and regularization", "Why a model memorises instead of learning, and the checks that catch it", "training"),

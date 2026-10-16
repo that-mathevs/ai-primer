@@ -193,7 +193,7 @@ The machinery inside a language model: a neural network, the loss and the optimi
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
 | 1 | [The big picture](primer/ml/big_picture.py) | What happens, end to end, when you send a prompt | [page](https://rumblr.com/learn/big-picture) · [tests](tests/test_big_picture.py) |
-| 2 | [Neural networks](primer/ml/neural_net.py) | How a network of simple units learns from its mistakes, built and trained by hand | [page](https://rumblr.com/learn/neural-net) · [tests](tests/test_neural_net.py) |
+| 2 | [Neural networks](primer/ml/neural_net.py) | How a neural network, a program made of simple units, learns from its mistakes | [page](https://rumblr.com/learn/neural-net) · [tests](tests/test_neural_net.py) |
 | 3 | [Loss functions](primer/ml/losses.py) | The one number training pushes down, and why choosing it is choosing the behaviour | [page](https://rumblr.com/learn/losses) · [tests](tests/test_losses.py) |
 | 4 | [Optimizers](primer/ml/optimizers.py) | How a step is taken down the loss, and why the learning rate matters more than the rule | [page](https://rumblr.com/learn/optimizers) · [tests](tests/test_optimizers.py) |
 | 5 | [Training deep networks](primer/ml/deep_nets.py) | Why deep stacks stop learning, and the fixes inside every transformer block | [page](https://rumblr.com/learn/deep-nets) · [tests](tests/test_deep_nets.py) |
@@ -208,7 +208,7 @@ How a language model gets its weights: pretraining on a large share of the web, 
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 10 | [Training stages](primer/ml/training_stages.py) | The stages that turn a random network into an assistant, and when to fine-tune instead of prompt | [page](https://rumblr.com/learn/training-stages) · [tests](tests/test_training_stages.py) |
+| 10 | [Training stages](primer/ml/training_stages.py) | The stages that turn a random neural network into a chat assistant, and when to fine-tune instead of prompt | [page](https://rumblr.com/learn/training-stages) · [tests](tests/test_training_stages.py) |
 | 11 | [Pretraining at scale](primer/ml/pretraining.py) | What it takes to train on the internet: the data belt, parallelism across GPUs, mixed precision | [page](https://rumblr.com/learn/pretraining) · [tests](tests/test_pretraining.py) |
 | 12 | [Fine-tuning in practice](primer/ml/fine_tuning.py) | What a fine-tune costs and risks, and how to prepare data so the model keeps its old skills | [page](https://rumblr.com/learn/fine-tuning) · [tests](tests/test_fine_tuning.py) |
 | 13 | [Overfitting and regularization](primer/ml/regularization.py) | Why a model memorises instead of learning, and the checks that catch it | [page](https://rumblr.com/learn/regularization) · [tests](tests/test_regularization.py) |
