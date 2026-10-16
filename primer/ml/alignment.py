@@ -42,7 +42,7 @@ before you fix.
   that look sensitive, off-limits requests, and factual questions asked
   plainly and after a wrong assertion. They give you over-refusal, harmful
   compliance and a sycophancy flip rate. Set the limits first.
-- A model that refuses too much: lower the threshold on your own
+- A model that refuses too much: raise the threshold on your own
   classifier, or change the prompt to ask for a stated reason instead of a
   refusal; then check harmful compliance did not rise past its limit,
   because a threshold only moves requests between the two errors.

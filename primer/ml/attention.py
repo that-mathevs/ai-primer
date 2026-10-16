@@ -72,7 +72,7 @@ the most committed:
 
 - Compute. The score-and-mix step is quadratic in tokens and is paid in full
   when a prompt is first read: that is the pause before the first output
-  token. From `attention_cost` with a 4,096-wide model, at 8,000 tokens the
+  token. From `attention_cost` with a 4,096-wide model, at 8,192 tokens the
   quadratic part equals the linear part; at 128,000 tokens it is about 16
   times larger.
 - Memory. Every token of every live conversation keeps its keys and values
@@ -117,7 +117,7 @@ of width 64 on 512-wide vectors. Anthropic's context-window documentation gives 
 window and counts everything in the request towards it: system prompt, tool
 definitions, tool results and the model's own thinking. Hugging Face model
 configs expose `num_attention_heads`, `num_key_value_heads` and
-`max_position_embeddings`; Llama 3 pairs 32 query heads with 8 key-value
+`max_position_embeddings`; Llama 3.1 pairs 32 query heads with 8 key-value
 heads and reaches 128K tokens, and Mistral 7B uses the same 32-to-8 split
 plus a 4,096-token sliding window whose reach grows to about 131K tokens
 across its 32 layers. The GQA paper converted multi-head checkpoints with 5%
