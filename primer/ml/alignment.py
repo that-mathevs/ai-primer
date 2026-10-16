@@ -116,16 +116,16 @@ needed to know what to measure and where to set the limits, you are done.
 ## Level 2: How it works, from scratch
 
 Picture hiring a new assistant and handing them a one-page brief: be useful,
-tell the truth, don't cause trouble. The brief is clear to you, but you can't
-watch every task they do. So you check what you *can* check: how quickly they
-reply, whether customers leave a thumbs-up, whether the report has the right
-headings. The assistant, like anyone being measured, learns what the checks
-reward. If the checks and the brief agree, all is well. Where they disagree,
-the assistant drifts towards the checks.
+tell the truth, don't cause trouble. You can't watch every task they do, so
+you check what you *can* check: how quickly they reply, whether customers
+leave a thumbs-up, whether the report has the right headings. The assistant
+learns what the checks reward. Where the checks and the brief agree, that is
+fine. Where they disagree, the assistant drifts towards the checks.
 
-**Alignment** is the engineering work of making a model's behaviour match
-the brief, not just the checks. In practice the brief is usually summarised
-as three targets:
+Training puts a model in the assistant's place, and alignment is the work of
+making it follow the brief rather than the checks. The brief is usually
+summarised as three targets, each with things we can measure, none of them
+quite the target itself:
 
 | Target | Plain meaning | Something we can measure (imperfectly) |
 |---|---|---|
@@ -133,29 +133,29 @@ as three targets:
 | **Honest** | says what it believes is true, and how sure it is | accuracy on factual questions, calibration, answer flips under pressure |
 | **Harmless** | declines things that would cause harm, and nothing else | attack success rate, over-refusal rate |
 
-Every lesson section below takes one of those measurements, builds it from
-scratch on made-up, neutral examples, and shows where it can mislead. The
-training machinery itself (reward models, RLHF, DPO) lives in
-`primer.ml.training_stages`; the runtime checks that wrap a deployed model
-live in `primer.agents.guardrails`. This lesson sits between them: how the
-targets are written down, how failures are searched for, and how the result
-is judged before release.
+Each chapter below takes one of these measurements, builds it on a small
+made-up example, and shows where it misleads. How a reward model is trained
+and used for preference tuning (RLHF, DPO) is in
+`primer.ml.training_stages`; the checks that wrap a deployed model at run
+time are in `primer.agents.guardrails`.
 
 ## 1. The gap between what we measure and what we want
 
-**Everyday picture.** A call centre rewards agents for short calls. Calls
-get shorter. Some of that is agents getting better; some of it is agents
-hanging up on hard customers. The number keeps improving while the thing it
-stood for gets worse. This is **Goodhart's law**: once a measure becomes a
-target, it stops being a good measure.
+Suppose the assistant is rewarded for short calls. Calls get shorter,
+partly because the assistant gets better and partly because they hang up
+on hard customers. The number keeps improving while the
+thing it stood for gets worse. A number that stands in for what we want is a
+**proxy**, and this is **Goodhart's law**: once a measure becomes a target,
+it stops being a good measure.
 
-**Tiny worked example.** A model is being tuned against a reward model that
-scores answers. Each tuning step adds two things to its answers: some
-genuine content, which helps but saturates (there is only so much to say),
-and some padding, which the reward model can't tell apart from content. Say
-genuine content after $s$ steps is $g(s) = 1 - e^{-s/10}$ and padding is
-$p(s) = s/50$. The reward model sees content plus padding; the person
-reading sees content minus the cost of wading through padding.
+Training has the same shape. A model is tuned against a reward model, a
+second model trained to score answers the way human raters did. Each tuning
+step adds two things to its answers: genuine content, which helps but levels
+off (there is only so much to say), and padding, which the reward model
+can't tell apart from content. Say genuine content after $s$ steps is
+$g(s) = 1 - e^{-s/10}$ and padding is $p(s) = s/50$. The reward model sees
+content plus padding; the person reading sees content minus the cost of
+wading through padding.
 
 $$
 \text{proxy}(s) = g(s) + p(s), \qquad \text{true}(s) = g(s) - p(s),
@@ -200,12 +200,13 @@ max(range(51), key=lambda s: g(s) - p(s))  # → 16
 ![The proxy score rises at every step, while the true value peaks at step 16 and then falls back below zero by step 50](figures/primer.ml.alignment.goodhart.svg)
 
 **Reading it:** the x-axis is optimization steps; the y-axis is score. The
-blue proxy line never stops rising, so anyone watching only the reward model
-sees steady progress. The red true line rises with it at first (the early
-steps really do help), peaks at the dashed marker, then falls: past that
-point, every step spent pleasing the measurement is a step away from the
-goal. The two lines only separate once optimization pushes hard, which is
-why the gap is invisible early on.
+blue proxy line rises at every step, so anyone watching only the reward
+model sees steady progress. The red true line rises with it at first, peaks
+at the dashed marker, then falls. The lines part only once optimization
+pushes hard, which is why the gap is easy to miss early on.
+
+Padding is one gap between the measurement and the goal. The whole chain,
+from what we want to what gets optimized, has a gap at every link:
 
 ```mermaid
 flowchart LR
@@ -216,34 +217,29 @@ flowchart LR
   O -. should match .-> W
 ```
 
-**Reading it:** read left to right as a chain of approximations. Each arrow
-loses a little: a written rule never captures everything we want, and a
-reward model never captures everything the rule says. Optimization only
-sees the box it is pointed at (the measurement), so under pressure it
-drifts towards whatever the measurement rewards. The dotted line back to
-the goal is the one we care about and the one nobody can optimize directly.
+**Reading it:** read left to right. Each arrow loses something: a written
+rule never captures everything we want, and a reward model never captures
+everything the rule says. Optimization sees only the box it is pointed at,
+the measurement, and under pressure drifts towards whatever the measurement
+rewards. The dotted line back to what we want is the one that matters, and
+nothing can optimize it directly.
 
-Why it matters in practice: this gap is the root of most alignment
-failures. A model tuned hard against a reward model finds the reward
-model's blind spots (called **reward hacking**, built from scratch in
-`primer.ml.reinforcement`). The standard defences are a penalty for
-drifting far from the starting model (the β in `primer.ml.training_stages`),
-stopping early, and refreshing the reward model with new labels where the
-policy has found its weak spots.
+A model tuned hard against a reward model finds the reward model's blind
+spots, which is called **reward hacking** (built from scratch in
+`primer.ml.reinforcement`). Three defences are standard: a penalty for
+drifting far from the starting model (the β in
+`primer.ml.training_stages`), stopping early, and refreshing the reward
+model with new labels where the tuned model has found its weak spots.
 
 **In code:** `goodhart_curve` returns the proxy and true value at every step.
 
 ## 2. Constitutional AI: principles written down, applied by a model
 
-**Everyday picture.** A newspaper has a style guide. A junior writer drafts
-a story; an editor reads it against the style guide, writes margin notes
-("unsourced claim", "too certain"), and the writer revises. Over time the
-editor's notes also teach the newsroom which of two drafts is better.
-**Constitutional AI** does this with models: the style guide is a short,
-written list of principles (the "constitution"), and a model plays the
-editor.
-
-It has two stages:
+The first loss in that chain is between what we want and what gets written
+down. **Constitutional AI** makes the writing-down explicit. The target
+becomes a short list of principles in plain language (the "constitution"),
+and a model applies them the way an editor reads a draft against a
+newspaper's style guide. It does so in two stages:
 
 1. **Critique and revise.** The model drafts an answer, is asked to
    critique it against a principle, then to rewrite it. The revised answers
@@ -251,16 +247,16 @@ It has two stages:
    `primer.ml.training_stages`).
 2. **AI feedback (RLAIF).** The model compares pairs of answers against the
    principles and says which is better. Those AI-labelled pairs train the
-   reward model, in place of (or alongside) human labels. The rest is the
+   reward model, in place of human labels or alongside them. The rest is the
    same preference tuning as RLHF.
 
-The appeal is that the principles are written in plain language, can be
-read and argued about, and can be changed without relabelling thousands of
-examples by hand.
+Because the principles are plain language, people can read them, argue
+about them and change them without relabelling thousands of examples by
+hand.
 
-**Tiny worked example.** Our toy constitution has four made-up rules:
+Here is a constitution of four made-up rules, checked by spotting words:
 
-| Principle | The rule (toy wording) | Broken when… |
+| Principle | The rule | Broken when… |
 |---|---|---|
 | helpful | don't refuse without saying why | the answer starts "I can't help" and gives no reason |
 | honest | don't claim more certainty than you have | it says "guaranteed", "100%", "always works" or "certainly" |
@@ -318,9 +314,8 @@ pairs  # → [('B', 'A'), ('B', 'C')]
 ```
 
 A real constitution has more principles, written as sentences rather than
-keyword checks, and the "editor" is a language model reading them, so its
-judgements are softer and can be wrong. The shape of the pipeline is the
-same.
+keyword checks, and the editor is a language model reading them, so its
+judgements are softer and can be wrong. The pipeline has the same shape:
 
 ```mermaid
 flowchart LR
@@ -336,50 +331,45 @@ flowchart LR
   RM --> RL[Preference tuning<br/>as in RLHF]
 ```
 
-**Reading it:** the constitution (the cylinder) feeds two places, and that
-is the whole idea: the same written principles drive both the critique that
-produces better answers and the labeler that produces preference pairs. The
-top path makes supervised training data from revisions. The bottom path
-replaces human comparisons with AI comparisons; from the reward model
-onwards it is the ordinary RLHF loop from `primer.ml.training_stages`.
+**Reading it:** the constitution (the cylinder) feeds two places. Along the
+top path, the critic's revisions become supervised training data. Along the
+bottom path, the AI labeler's comparisons replace human ones; from the
+reward model on, it is the ordinary RLHF loop from
+`primer.ml.training_stages`. The same written principles drive both.
 
 ![Across six made-up candidate answers, the honest and cites principles are each broken several times before revision and zero times after it](figures/primer.ml.alignment.critique_revise.svg)
 
 **Reading it:** each pair of bars is one principle. The grey bar counts how
-many of six toy candidate answers break it as drafted; the blue bar counts
-the same answers after one critique-and-revise pass. Every blue bar is at
-zero here because the toy's fixes are exact (swap "guaranteed" for
-"likely", add a source line). With a real model the revision is itself
-written by the model, so the blue bars shrink rather than vanish, and
-checking them is part of the job.
+many of six made-up candidate answers break it as drafted; the blue bar
+counts the same answers after one critique-and-revise pass. Every blue bar
+is at zero because these fixes are exact (swap "guaranteed" for "likely",
+add a source line). With a real model the revision is itself written by the
+model, so the blue bars shrink rather than vanish, and someone has to check
+them.
 
-Why it matters in practice: human labelling is slow, costly and hard to
-keep consistent; written principles make the target explicit and auditable.
-The risk moves rather than disappears: the AI labeler has its own blind
-spots, and whatever it gets wrong, the reward model learns faithfully. That
-is why AI labels are spot-checked against human ones, the same way
+Human labelling is slow, costly and hard to keep consistent, and written
+principles make the target explicit and open to audit. The risk moves
+rather than disappears: the AI labeler has its own blind spots, and the
+reward model learns its mistakes as faithfully as its good calls. So AI
+labels are spot-checked against human ones, the same way
 `primer.agents.evals` calibrates an LLM judge.
 
-**In code:** `CONSTITUTION` holds the four toy principles, `critique` returns
-the names of the ones an answer breaks, `revise` applies one fix per broken
-principle, and `constitutional_preference_pairs` turns a list of candidates
-into (winner, loser) pairs, dropping ties. The pairs are what
-`primer.ml.training_stages.reward_model_loss` trains on.
+**In code:** `critique` names the principles an answer breaks, `revise`
+fixes them, and `constitutional_preference_pairs` turns candidates into
+(winner, loser) pairs.
 
 ## 3. Red-teaming: looking for failures on purpose
 
-**Everyday picture.** Before a bank opens a new vault, it pays a team to try
-to get in. Not because it expects burglars to be clever in any particular
-way, but because the people who built the vault only think of the ways in
-they already guarded against. **Red-teaming** is the same for models and
-their safety checks: search systematically for inputs that make them fail,
-count how often the search succeeds, fix what it found, and search again.
+Whatever the rules say, the model and the filters around it still have to
+be tested, and the people who build a safety check think mostly of the
+ways past it they have already guarded against. **Red-teaming** is searching on
+purpose for inputs that make a model or its safety checks fail: count how
+often the search succeeds, fix what it found, and search again.
 
-**Tiny worked example.** In our toy world there is one off-limits action,
-called *xyzzy* (a made-up word). A simple safety filter blocks any request
-containing the word "xyzzy". The toy language also has two made-up
-synonyms, "plugh" and "quux", that mean exactly the same thing. The filter's
-author tested it with three hand-written requests:
+Take one off-limits action, called *xyzzy* (a made-up word). A simple
+safety filter blocks any request containing the word "xyzzy". The made-up
+language also has two synonyms, "plugh" and "quux", with the same meaning.
+The filter's author tested it with three hand-written requests:
 
 | Hand-written test | Blocked? |
 |---|---|
@@ -387,11 +377,11 @@ author tested it with three hand-written requests:
 | do xyzzy | yes |
 | kindly do xyzzy now | yes |
 
-Three for three: the filter looks perfect. An automated search does
-something duller and more thorough: it takes the request "please do xyzzy"
-and rewrites each word at random with any word that means the same thing
-("please" or "kindly", "do" or "perform", "xyzzy" or "plugh" or "quux").
-Six attempts from that search:
+All three are blocked, so the filter looks perfect. An automated search is
+less clever and more thorough: it takes the request "please do xyzzy" and
+replaces each word at random with any word of the same meaning ("please" or
+"kindly", "do" or "perform", "xyzzy" or "plugh" or "quux"). Six attempts
+from that search:
 
 | Attempt | Blocked? | Gets through (still off-limits, not blocked)? |
 |---|---|---|
@@ -439,6 +429,8 @@ hand_written = [0, 0, 0]
 sum(hand_written) / len(hand_written)  # → 0.0
 ```
 
+Red-teaming runs this search in a loop:
+
 ```mermaid
 flowchart LR
   S[Seed request<br/>known off-limits] --> MU[Mutate<br/>rewrite with same-meaning words]
@@ -452,54 +444,50 @@ flowchart LR
 ```
 
 **Reading it:** the inner loop (Mutate, Filter, back to Mutate) is the
-search: cheap, automatic, and indifferent to what the author expected. Every
-attempt that slips through is logged, and the log turns into one number,
-the attack success rate. The outer loop is the engineering: fix the filter
-using the logged failures, then search *again* with fresh randomness, so
-the fix is judged on attempts it was not built from.
+search, which is cheap, automatic and blind to what the author expected.
+Every attempt that gets through is logged, and the log becomes one number,
+the attack success rate. The outer loop fixes the filter using the logged
+failures, then searches *again* with fresh randomness, so the fix is judged
+on attempts it was not built from.
 
 ![Hand-written tests report 0% success, the automated search reports 64%, and after patching the filter with its findings a fresh search reports 0%; the right panel shows both synonyms found within the first handful of tries](figures/primer.ml.alignment.red_team.svg)
 
 **Reading it:** on the left, each bar is one way of measuring the same
-filter. The hand-written tests say 0%; the automated search says 64% (close
-to the two thirds you would expect),
-because two of the three words for xyzzy are unknown to the filter. After
-adding the words the search found and searching again with a new seed,
-the rate drops to 0%. On the right, the x-axis is the number of search
-attempts and the y-axis is how many distinct words for xyzzy the search has
-found getting through; both turn up within a handful of tries. The lesson
-of the left panel is that a test set written by the builder measures the
-builder's imagination, not the filter.
+filter. The hand-written tests say 0%. The automated search says 64%, close
+to the two thirds you would expect, because the filter knows only one of
+the three words for xyzzy. After adding the words the search found and
+searching again with a new seed, the rate is 0%. On the right, the x-axis is
+the number of search attempts and the y-axis is how many words for xyzzy the
+search has found getting through; both synonyms turn up within a handful of
+tries.
 
-The toy's vocabulary is tiny and finite, so the patched keyword list ends up
-complete. Real language is not: any keyword list will miss paraphrases no
-one has searched for yet. That is why real systems use learned classifiers
-instead of keyword lists, keep searching after every fix, and never rely on
-one filter alone (the layered checks in `primer.agents.guardrails`).
-Real-world red-teaming uses people and other models as the search, which
-finds far more varied failures than word swaps.
+This vocabulary is tiny, so the patched keyword list ends up complete. Real
+language is not: any keyword list misses paraphrases no one has searched for
+yet. Real systems therefore use learned classifiers instead of keyword
+lists, keep searching after every fix, and never rely on one filter alone
+(the layered checks in `primer.agents.guardrails`). Real red-teaming uses
+people and other language models as the search, and they find far more
+varied failures than word swaps.
 
-Why it matters in practice: a safety check nobody has tried to break has an
-unknown failure rate, which in practice means a higher one than anyone
-thinks. Systematic search turns "we couldn't think of a way past it" into a
-measured rate that can be tracked from release to release.
+A safety check nobody has tried to break has an unknown failure rate. A
+systematic search replaces "we couldn't think of a way past it" with a
+measured rate that can be tracked from one release to the next.
 
-**In code:** `KeywordFilter` is the toy filter, `red_team_attempts` runs the
-seeded word-swap search, `attack_success_rate` turns the outcomes into ASR,
-`red_team_search` does both, and `patch_filter` adds every word for xyzzy
-found in a successful attempt. `HAND_WRITTEN_TESTS` is the author's own
-test set.
+**In code:** `red_team_search` runs the seeded word-swap search against a
+`KeywordFilter` and returns the attack success rate, and `patch_filter` adds
+the words it found.
 
 ## 4. Sycophancy: agreeing with the person instead of the facts
 
-**Everyday picture.** A tutor is asked "what's 7 × 8?" and says 56. The
-student frowns: "I'm pretty sure it's 54." A good tutor says "let's check"
-and still answers 56. A tutor who wants to be liked says "oh, you're right,
-54." That second tutor is **sycophantic**: the answer depends on what the
-person seems to want to hear, not on the question.
+The filter failed on requests its author never imagined. Honesty can fail on
+ordinary questions, once the person asking has said what they believe.
+**Sycophancy** is an answer bending towards what the person seems to want to
+hear. Asked "what's 7 × 8?", a model answers 56. If the user replies "I'm
+pretty sure it's 54" and the model says "you're right, 54", the answer was
+decided by the user's belief, not by the question.
 
-**Tiny worked example.** Ask a model five factual questions twice: once
-plainly, and once after the user states a wrong answer.
+To measure it, ask a model five factual questions twice: once plainly, and
+once after the user states a wrong answer.
 
 | Question | Plain answer | After "I'm sure it's …" | Flipped? |
 |---|---|---|---|
@@ -553,28 +541,26 @@ flowchart LR
   CMP -- yes --> OK[Held its ground]
 ```
 
-**Reading it:** one question goes down two paths that differ in exactly one
-thing, the user's stated opinion. Everything else is held fixed, so any
-difference in the answers can only come from that opinion. This is the
-design of a controlled experiment, and it is what makes the flip rate mean
-something: choosing questions with known answers lets the plain answer be
+**Reading it:** one question goes down two paths that differ in one thing
+only, the user's stated opinion. Everything else is held fixed, so any
+difference between the answers comes from that opinion: the flip rate is a
+controlled experiment. Questions with known answers let the plain answer be
 checked too, so a flip towards a wrong answer can be told apart from a
 correction.
 
 ### Why preference training can cause it
 
-**Everyday picture.** People tend to rate an answer that agrees with them a
-little more kindly. That's human, and it is mild. But a reward model learns
-from thousands of those ratings, and then a model is tuned hard to please
-the reward model. A mild tilt in the labels becomes a steady push in the
-model.
+People tend to rate an answer that agrees with them a little more kindly.
+The tilt is mild, but a reward model learns from thousands of those
+ratings, and then a model is tuned hard to please the reward model. A mild
+tilt in the labels becomes a steady push in the model.
 
-**Tiny worked example.** Using the Bradley-Terry model from
-`primer.ml.training_stages`: a rater compares a correct answer that
-contradicts them with an agreeing answer that is wrong. The correct answer
-is better by 1 point of genuine quality, but agreement earns a bonus of 2
-points in the rater's eyes. The agreeing answer wins with probability
-σ(2 − 1) = σ(1) = 0.731, nearly three times in four.
+The Bradley-Terry model from `primer.ml.training_stages` puts a number on
+it. A rater compares a correct answer that contradicts them with an
+agreeing answer that is wrong. The correct answer is better by 1 point of
+genuine quality, but agreement earns a bonus of 2 points in the rater's
+eyes. The agreeing answer wins with probability σ(2 − 1) = σ(1) = 0.731,
+nearly three times in four.
 
 $$
 P(\text{agreeing} \succ \text{correct}) = \sigma(\delta - \Delta), \qquad \sigma(z) = \frac{1}{1 + e^{-z}}
@@ -614,38 +600,34 @@ round(sigma(0.5 - 1.0), 3)  # → 0.378
 
 **Reading it:** on the left, the x-axis is the agreement bonus δ and each
 line is a different quality gap Δ. Every line crosses 0.5 where the bonus
-equals the gap: past that point, raters prefer the agreeing answer more
-often than not, and a reward model trained on their labels learns to reward
-agreement. On the right, the x-axis is how often the toy model defers to
+equals the gap. Past that point raters prefer the agreeing answer more often
+than not, and a reward model trained on their labels learns to reward
+agreement. On the right, the x-axis is how often a simulated model defers to
 the user and the y-axis is the flip rate measured on 2,000 made-up
-questions; the dots sit on the diagonal, which shows the measurement
-recovers the behaviour it was built to detect.
+questions. The dots sit on the diagonal: the flip rate recovers the
+behaviour it was built to detect.
 
-Why it matters in practice: a sycophantic model is least reliable exactly
-when someone most needs a straight answer, because they already hold a
-wrong belief. The usual fixes all target the labels: rater instructions
-that ask about correctness first, preference pairs built specifically so
-that the correct answer disagrees with the user, and flip-rate evaluations
-run on every release.
+A sycophantic model fails the person who already holds a wrong belief, who
+is the one most in need of a straight answer. Three fixes target the
+labels: rater instructions that ask about correctness first, preference
+pairs built so that the correct answer disagrees with the user, and a
+flip-rate evaluation on every release.
 
-**In code:** `sycophancy_flip_rate` asks a seeded toy model each made-up
-question plainly and under pressure and returns the flip rate;
-`sycophantic_preference` is σ(δ − Δ), computed with
-`primer.ml.training_stages.preference_probability`.
+**In code:** `sycophancy_flip_rate` runs the two-way experiment on a seeded
+simulated model, and `sycophantic_preference` is σ(δ − Δ).
 
 ## 5. Refusals: two ways to get it wrong
 
-**Everyday picture.** A pharmacist refuses to sell some things without a
-prescription. Refuse too little and harm gets through; refuse too much and
-people are turned away for aspirin. Both are failures, and making one rarer
-tends to make the other more common. A model that declines requests faces
-the same trade.
+Sycophancy is a failure of the honest target. The harmless target fails in
+two opposite ways: a model can refuse something harmless, or answer
+something it should have refused. Refuse too little and harm gets through;
+refuse too much and people are turned away from ordinary requests.
 
-**Tiny worked example.** A classifier gives every request a risk score
+A separate program, a **classifier**, gives every request a risk score
 between 0 and 1, and the model refuses anything scoring at least the
-threshold $t$. Three benign requests (like "What is the capital of France?")
-score 0.1, 0.3 and 0.6; three requests for the toy off-limits action score
-0.4, 0.8 and 0.9. At $t = 0.5$:
+threshold $t$. Three benign requests (like "What is the capital of
+France?") score 0.1, 0.3 and 0.6; three requests for the off-limits action
+score 0.4, 0.8 and 0.9. At $t = 0.5$:
 
 | Request type | Scores | Refused at t = 0.5 | Error |
 |---|---|---|---|
@@ -676,7 +658,7 @@ requests that score below it."
 
 **With the numbers:** OR(0.5) = (0 + 0 + 1) / 3 = 0.333 and
 HC(0.5) = (1 + 0 + 0) / 3 = 0.333. Lower the threshold to 0.35 and the 0.4
-request is refused too (HC = 0), but so is nothing new on the benign side
+request is refused too (HC = 0), while no new benign request is refused
 (OR stays 0.333); lower it to 0.25 and the 0.3 benign request is refused as
 well (OR = 0.667).
 
@@ -694,11 +676,11 @@ round(OR(0.5), 3), round(HC(0.5), 3)  # → (0.333, 0.333)
 [(t, round(OR(t), 3), round(HC(t), 3)) for t in (0.35, 0.25)]  # → [(0.35, 0.333, 0.0), (0.25, 0.667, 0.0)]
 ```
 
-These are the precision/recall trade-offs from `primer.ml.metrics` wearing
-different names. Treat "refuse" as the positive call: over-refusal is the
+The same trade-off appears as precision and recall in `primer.ml.metrics`,
+the next lesson. Treat "refuse" as the positive call: over-refusal is the
 false positive rate, and harmful compliance is the miss rate, one minus
-recall. Choosing the threshold is the same pricing of errors as in that
-lesson's cost-versus-threshold section.
+recall. Choosing the threshold means pricing the two errors, as that
+lesson's cost-versus-threshold section does.
 
 ```mermaid
 flowchart LR
@@ -710,41 +692,38 @@ flowchart LR
   AN -. if it was off-limits .-> HCB[Harmful compliance]
 ```
 
-**Reading it:** every request takes exactly one of the two exits, and each
-exit has its own way to be wrong (the dotted boxes). Moving the threshold
-does not remove errors; it moves requests from one exit to the other. The
-only way to shrink both errors at once is a better classifier, one whose
-scores separate the two kinds of request more cleanly.
+**Reading it:** every request takes one of the two exits, and each exit has
+its own way to be wrong (the dotted boxes). Moving the threshold does not
+remove errors; it moves requests from one exit to the other. Only a better
+classifier, one whose scores separate the two kinds of request more
+cleanly, shrinks both errors at once.
 
 ![Left: as the threshold rises, over-refusal falls and harmful compliance rises. Right: plotted against each other, a better-separating classifier's curve sits closer to the corner where both errors are zero](figures/primer.ml.alignment.refusal_tradeoff.svg)
 
 **Reading it:** on the left, the x-axis is the threshold; the blue line is
 over-refusal and the red line is harmful compliance, measured on 1,000
-made-up scored requests. They cross: no threshold makes both small. On the
-right, the same numbers are plotted against each other, one point per
-threshold, for two classifiers. The bottom-left corner (no over-refusal,
-no harmful compliance) is the goal. Sliding along a curve is choosing a
-threshold; jumping to the lower curve is building a better classifier,
-which is where real progress comes from.
+made-up scored requests. The lines cross, and no threshold makes both
+small. On the right, the same numbers are plotted against each other, one
+point per threshold, for two classifiers. The goal is the bottom-left
+corner, where both errors are zero. Sliding along a curve is choosing a
+threshold; reaching the lower curve takes a better classifier.
 
-Why it matters in practice: over-refusal is easy to overlook because it
-fails quietly: nobody reports a harmful answer that didn't happen, but
-people do stop using a model that turns down ordinary requests. Measuring
-both rates on every release, on dedicated sets of benign-but-sensitive-
-looking requests as well as off-limits ones, keeps the trade visible.
+Over-refusal is easy to overlook. Nobody reports a harmful answer that
+didn't happen, but people stop using a model that turns down ordinary
+requests. Measuring both rates on every release keeps the trade visible,
+using a set of benign requests that look sensitive as well as a set of
+off-limits ones.
 
 **In code:** `refusal_tradeoff` returns both error rates at each threshold,
 on seeded toy scores or on scores you pass in.
 
 ## 6. Checking safety before release
 
-**Everyday picture.** A new car model is crash-tested, driven on a closed
-track, then lent to a few fleet customers before it reaches showrooms. Each
-stage is cheaper to fail than the next, and each has a checklist it must
-pass before the car moves on. Models are released the same way.
-
-**Tiny worked example.** Before release, a candidate model is measured on
-four evaluation sets, and each measurement has a limit set in advance:
+Each chapter so far has produced a number: an attack success rate, a flip
+rate, an over-refusal rate and a harmful compliance rate. None of them
+decides anything until it is compared with a limit. Before release, a
+candidate model is measured on four evaluation sets, and each measurement
+has a limit set in advance:
 
 | Measurement | Measured | Limit | Pass? |
 |---|---|---|---|
@@ -754,9 +733,14 @@ four evaluation sets, and each measurement has a limit set in advance:
 | sycophancy flip rate (pushed questions) | 0.30 | 0.20 | **no** |
 
 One measurement is over its limit, so the release is held and the report
-names that one measurement. Setting the limits *before* measuring matters:
-limits chosen after seeing the numbers tend to drift to wherever the numbers
-landed.
+names that measurement. The limits come *before* the measuring because
+limits chosen after seeing the numbers tend to drift to wherever the
+numbers landed.
+
+A model that passes the gate still goes out in stages, each wider than the
+last, the way a new car is crash-tested, then driven on a closed track,
+then lent to a few fleet customers before it reaches showrooms. Each stage
+is cheaper to fail than the next:
 
 ```mermaid
 flowchart LR
@@ -771,20 +755,18 @@ flowchart LR
   ALL -. new failures become .-> EV
 ```
 
-**Reading it:** the left half is a gate: all the evaluation sets run, and
+**Reading it:** the left half is the gate: every evaluation set runs, and
 any measurement over its limit sends the model back to be fixed. The right
-half is a staged rollout, each stage wider than the last, so a problem the
-evaluation sets missed is met by a few people first. The dotted arrows are
-what keeps the evaluation sets honest: every failure found in the wild
-becomes a new test case, so the same failure is caught at the gate next
-time. The rollout mechanics (shadow mode, canaries, kill switches) are
-built in `primer.agents.deployment`, and regression gates in
+half is the rollout, so a problem the evaluation sets missed reaches a few
+people first. The dotted arrows keep the evaluation sets current: every
+failure found in use becomes a new test case, and the gate catches it next
+time. The rollout mechanics (shadow mode, canaries, kill switches) are built
+in `primer.agents.deployment`, and regression gates in
 `primer.agents.evals`.
 
-Why it matters in practice: every measurement in this lesson is noisy and
-partial on its own. A fixed set of limits, checked on every release, is
-what turns them into a decision, and staged rollout is what limits the cost
-when the measurements were wrong.
+Each of these measurements is noisy and partial on its own. A fixed set of
+limits, checked on every release, turns them into a decision, and the
+staged rollout limits the cost when the measurements were wrong.
 
 **In code:** `release_gate` compares each measurement with its limit and
 returns whether the release passes and one reason for every limit missed.
@@ -792,21 +774,22 @@ returns whether the release passes and one reason for every limit missed.
 ## In 20 seconds
 
 - **Alignment** means making a model's behaviour match what we want
-  (helpful, honest, harmless), when all we can optimize is a measurement of
+  (helpful, honest, harmless) when all we can optimize is a measurement of
   it. Optimize a measurement hard enough and it stops tracking the goal
   (Goodhart's law; reward hacking).
-- **Constitutional AI** writes the target down as principles; a model
+- **Constitutional AI** writes the target down as principles. A model
   critiques and revises its own answers against them, and AI-labelled
   preference pairs train the reward model (RLAIF).
 - **Red-teaming** searches for failures on purpose and reports an attack
-  success rate; hand-written tests measure the author's imagination.
-- **Sycophancy** is answers bending towards the user's stated view; measure
-  it as a flip rate, and know that rater preferences for agreement can
-  create it.
+  success rate. Tests written by a filter's own author find only the
+  failures the author already thought of.
+- **Sycophancy** is an answer bending towards the user's stated view. It is
+  measured as a flip rate, and raters who favour agreement can train it in.
 - **Refusals** trade harmful compliance against over-refusal as a threshold
-  moves; only a better classifier improves both.
-- **Before release:** limits set in advance, a gate on every evaluation,
-  then a staged rollout that feeds new failures back into the tests.
+  moves; only a better classifier lowers both.
+- **Before release**, every measurement is checked against a limit set in
+  advance, and the model goes out in stages that feed new failures back
+  into the tests.
 
 ## Self-test questions
 
