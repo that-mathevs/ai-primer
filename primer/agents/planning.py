@@ -120,22 +120,15 @@ leap-year function. If you only needed to choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-What follows measures the arithmetic, then builds the three remedies one
-mechanism at a time.
-
-An agent that does one thing is easy. An agent that does twenty things in a
-row mostly fails, for a reason that is pure arithmetic. This lesson measures
-that arithmetic, then builds the three remedies: **decompose** the task into
-steps you can check, **verify** each step with something outside the model,
-and **checkpoint** so a failure costs one step instead of the whole run.
+An agent that does one thing is easy to get right. An agent that has to do
+twenty things in a row fails far more often, for a reason that is plain
+arithmetic.
 
 ## 1. Compounding error: why long tasks fail
 
-**Everyday picture.** A relay race with ten runners. Each runner drops the
-baton only 1 time in 20 during their leg. That sounds safe, but the team
-needs *all ten* legs to go cleanly, and it loses about 4 races in 10.
-
-**Tiny worked example.** Each step of an agent succeeds 95% of the time.
+Suppose each step of an agent succeeds 95% of the time, and the task needs
+every step to succeed. Two steps in a row both succeed with a chance of
+0.95 × 0.95, and each further step multiplies the chance by 0.95 again:
 
 | steps | chance all succeed |
 |---|---|
@@ -172,29 +165,40 @@ round(p ** 20, 2)  # → 0.36
 ![At 95% per step a 10-step task succeeds only about 60% of the time, and every curve keeps sliding toward zero as steps are added](figures/primer.agents.planning.compounding.svg)
 
 **Reading it:** the x-axis is the number of steps in the task, and the y-axis is the
-chance the whole task succeeds. Every curve starts near the top and slides
-down, and the lower the per-step rate, the faster it falls. Find 10 steps on the
-x-axis and read up to the 95% curve: about 0.6. That's why a demo of a
-three-step task looks great and the same agent on a real twenty-step job
-disappoints.
+chance the whole task succeeds. The three curves are three per-step rates,
+and the lower the rate, the faster its curve falls. Follow the dotted line
+at 10 steps up to the 95% curve: about 0.6. On the same curve a three-step
+demo sits at 0.86 and a twenty-step job at 0.36.
 
 **In code:** `end_to_end_success` multiplies the per-step rate by itself once
-per step, which is the whole formula above.
+per step.
 
-**Why it matters.** The remedies all attack $p$ or $n$: fewer steps
-(higher-level tools, see `primer.agents.tools`), checks that catch failures,
-retries of just the failed step, and human review at critical points.
+Every fix works on one of the formula's two numbers. Fewer steps lower
+$n$: a higher-level tool (see `primer.agents.tools`) can do in one call what took
+several. A check that catches a failed step, followed by a retry of only
+that step, raises $p$, and so does a person reviewing the work at the points
+where a mistake is expensive.
 
 ## 2. Plan-and-execute, with replanning
 
-**Everyday picture.** Cooking from a recipe. You read the whole recipe first
-(the *plan*), then do the steps. Halfway through you discover you're out of
-eggs. You don't start over, and you don't pretend you have eggs. You revise
-the rest of the recipe with what you've got, keeping everything you've
-already chopped.
+Before anything can be checked or retried, the agent needs an order of
+work. An agent that decides one step at a time (a pure ReAct loop, see
+`primer.agents.agent_loop`) drifts on a long task. **Plan-and-execute**
+splits the job in two: a **planner** writes the whole list of steps first,
+and the agent then runs them in order. The plan keeps the agent on track,
+and a person can read it before anything happens.
 
-**Tiny worked example.** Goal "Reconcile Q3 invoices". The planner's first
-plan uses an old API. Here's the actual run:
+The risk is following a plan that has stopped being true, like a cook who
+reads the whole recipe, finds halfway through that there are no eggs, and
+carries on as if there were. A sensible cook rewrites the rest of the
+recipe around what is in the cupboard and keeps what is already chopped.
+**Replanning** does the same. When a step fails, the planner is
+told what is done and why the step failed, and it writes a new plan for the
+rest.
+
+Here the goal is to reconcile the third quarter's invoices against the
+payments received, and the planner's first plan calls an invoices API that
+has been retired:
 
 ```text
 planner  -> {"steps": ["fetch_payments", "fetch_invoices_v1", "match", "draft_summary"]}
@@ -221,32 +225,22 @@ flowchart TD
   R -->|no| S[Stop: report the failure]
 ```
 
-**Reading it:** the inner loop (execute → check → next) is the plan being
-followed. The outer loop back to *Planner* only happens on a failed check,
-and it carries two facts: what's already done (so work is kept) and why the
-step failed (so the new plan can route around it). The *Replans left?*
-diamond stops a planner that can't adapt from looping forever.
+**Reading it:** the inner loop (execute, check, next) is the plan being
+followed. The outer loop back to *Planner* runs only when a check fails, and
+it carries what is already done, so that work is kept, and why the step
+failed, so the new plan can route around it. The *Replans left?* diamond
+stops a planner that cannot adapt from looping forever.
 
-**The code.** `plan_and_execute(planner, goal)` asks for a JSON plan, runs
-each action, records outputs in `state`, and on `StepFailed` asks for a
-revised plan. Steps already in `state` are skipped.
-
-**In code:** `PlanRun` is what `plan_and_execute` returns: every plan the
-planner wrote, each executed step with "ok" or its failure, and the replan count.
-
-**Why it matters.** Deciding one step at a time (a pure ReAct loop, see
-`primer.agents.agent_loop`) drifts on long tasks. An upfront plan keeps the
-agent on track and lets a person see its intent before it acts. The risk is
-following a plan that reality has invalidated, which is why replanning exists.
+**In code:** `plan_and_execute` asks the planner for a plan, runs each step,
+skips steps already done, and asks for a new plan when a step fails. It
+returns a `PlanRun`: every plan, each step's result and the replan count.
 
 ## 3. Decomposition into verifiable subtasks
 
-**Everyday picture.** Moving house. "Move house" isn't something you can check off,
-but "every box labelled", "van booked for Saturday" and "keys handed back"
-are. Each has a clear definition of done.
-
-**Tiny worked example.** "Reconcile Q3 invoices" becomes five subtasks, each
-with a check:
+Replanning starts when a step's result fails a check, so every step needs a
+check. "Reconcile Q3 invoices" cannot be ticked off as a whole; "fetch the
+invoices" can, once you say what done means. **Decomposition** splits a task into subtasks that each come with a
+check, written in code, that defines when the subtask is done:
 
 | subtask | output | check (definition of done) |
 |---|---|---|
@@ -256,6 +250,8 @@ with a check:
 | list_mismatches | INV-102 (1200 vs 1100), INV-104 (450 vs 0) | none |
 | draft_summary | "Q3 reconciliation: 4 invoices, 3 payments, 2 mismatches (INV-102 short by 100, INV-104 unpaid)." | mentions the mismatches |
 
+Each subtask's output is saved once its check passes. A saved output is a
+**checkpoint**, and it means a failure costs only the step that failed.
 When the payments API times out once, **only `fetch_payments` runs again**:
 attempts are `{fetch_invoices: 1, fetch_payments: 2, match: 1, ...}`.
 
@@ -268,19 +264,19 @@ flowchart LR
   B -. timeout .-> B
 ```
 
-**Reading it:** arrows show which outputs feed which step. The dotted
-self-loop on `fetch_payments` is a retry. Because every step's output is
-kept (a *checkpoint*), the retry doesn't redo `fetch_invoices`.
+**Reading it:** arrows show which outputs feed which step. The dotted loop
+on `fetch_payments` is the retry after the timeout. `fetch_invoices` has
+already been saved, so the retry does not redo it.
 
-**In code:** `Subtask` pairs a step's work with its check (the definition of
-done); `run_subtasks` runs them in order, retries only the step whose check
-failed, and returns a `RunReport` of outputs and attempts. `reconcile_q3`
-builds the five subtasks in the table.
+**In code:** `Subtask` pairs a step's work with its check; `run_subtasks`
+runs them in order, retries only the step whose check failed, and returns a
+`RunReport` of outputs and attempts. `reconcile_q3` builds the five
+subtasks in the table.
 
 ### Checkpoints: how much work a failure costs
 
-Without checkpoints, a failure anywhere means starting again from step one.
-With them, you retry just the failed step. The expected number of step
+Without checkpoints, a failure anywhere sends the run back to step one.
+With them, only the failed step is retried. The expected number of step
 executions to finish an $n$-step task:
 
 $$
@@ -319,39 +315,43 @@ round(with_checkpoints(50, 0.95), 1), round(restart_from_scratch(50, 0.95))  # �
 
 ![On the log scale, restarting from scratch climbs as a straight line (exponential growth) while checkpoints stay close to one run per step](figures/primer.agents.planning.checkpoints.svg)
 
-**Reading it:** the x-axis is task length, and the y-axis (log scale) is how
-many step executions you should expect to pay for. On a log scale each
-gridline is ten times the one below, so exponential growth draws a
-*straight* line. The restart line is that straight line: every extra step
-multiplies its cost by about $1/0.95 \approx 1.05$. The checkpoint line
-($n/p$, just proportional to $n$) bends over and flattens, because on a log
-scale going from 10 to 20 steps rises no more than going from 5 to 10. The
-widening gap between them is the cost of having no checkpoints, and at 50
-steps it's already about 240 step runs against 53. Long tasks without
-checkpoints aren't just unreliable; they're expensive. **Durable execution** is the engineering name
-for this: a workflow engine that saves each step's result so a crashed run
-resumes where it stopped.
+**Reading it:** the x-axis is task length, and the y-axis is the number of
+step executions to expect, on a log scale where each gridline is ten times
+the one below. On that scale exponential growth draws a *straight* line, and
+the restart line is straight: each extra step multiplies its cost by about
+$1/0.95 \approx 1.05$. The checkpoint line ($n/p$) grows in proportion to
+$n$, so on a log scale it flattens: going from 10 to 20 steps rises no more
+than going from 5 to 10. At 50 steps the gap is about 240 step runs
+against 53.
+
+So a long task without checkpoints is expensive as well as unreliable.
+Workflow engines that save each step's result, so that a crashed run
+resumes where it stopped, call this **durable execution**.
 
 **In code:** `expected_step_runs` evaluates both formulas: $n/p$ with
 checkpoints, the restart formula without.
 
 ## 4. Reflection vs. external verification
 
-**Everyday picture.** Proofreading your own essay versus having someone run the
-numbers in it. You read what you *meant* to write, so your own blind spots
-stay blind. A calculator doesn't share them.
+Every check in the invoice task is code, such as "each invoice appears
+exactly once". The tempting shortcut is to ask the model whether its own
+step was right, which is called **reflection**. It fails the way
+proofreading your own essay fails: you read what you *meant* to write, so
+your blind spots stay blind. **External verification** hands the work to
+something that does not share them, such as a test, a schema validator or a
+database query.
 
-**Tiny worked example.** The model writes a leap-year function:
+Say the model writes a leap-year function:
 
 ```python
 def is_leap(year):
     return year % 4 == 0        # forgets that 1900 was not a leap year
 ```
 
-*Reflection* (asking a model to review it) replies "Looks correct: years
-divisible by 4 are leap years." *External verification* (running it against
-known answers) replies `is_leap(1900) returned True, expected False`. Fed
-that failure, the model's second draft passes every case.
+Asked to review it, the model replies "Looks correct: years divisible by 4
+are leap years." Run against known answers, the function produces
+`is_leap(1900) returned True, expected False`. Given that failure, the
+model's second draft passes every case.
 
 ```mermaid
 flowchart LR
@@ -363,17 +363,19 @@ flowchart LR
   G2 --> V2[Checks pass]
 ```
 
-**Reading it:** two paths leave the same first draft. The top path stays inside
-the model and ends at "approved, still wrong". The bottom path goes through
-something outside the model (tests, a schema validator, a database query),
-and that something produces a concrete, checkable failure the model can fix.
+**Reading it:** two paths leave the same first draft. The top path stays
+inside the model and ends at "approved, still wrong". The bottom path goes
+through something outside the model, and what comes back is a concrete
+failure the model can fix.
 
 **In code:** `self_review` is the top path (a model reads the code and
 approves or not); `run_checks` is the bottom path (it runs the code against
 known answers); `generate_until_checks_pass` loops the bottom path, feeding
 each failure back to the model until the checks pass.
 
-With verification and retries, the per-step success rate rises:
+A check is also what sets off a retry, and a failure it misses gets none.
+With a check that catches a share $d$ of failed attempts and up to $r$
+retries, the chance that a step succeeds becomes:
 
 $$
 p_{\text{step}} = p \sum_{i=0}^{r} \big((1-p)\,d\big)^{i}
@@ -412,21 +414,23 @@ round(p_step(0.95, 0.5, 1) ** 10, 2)  # → 0.77
 
 ![With the same 95% step, a ten-step task succeeds 97.5% of the time when a check catches every failure and allows one retry, 77% when the check catches half, and 60% with no checks](figures/primer.agents.planning.verification.svg)
 
-**Reading it:** all curves use the same 95%-reliable step. The bottom curve has
-no checks. The middle ones add a retry after a failure is caught, with a
-check that catches half or all failures. The top curve allows two retries.
-The gap between "half" and "all" is the lesson: retries are only as good
-as the check that triggers them. Invest in the check.
+**Reading it:** every curve uses the same 95%-reliable step. The bottom one
+has no checks. The two middle ones allow one retry, with a check that
+catches half or all of the failures. The top one catches all and allows two
+retries. At 10 steps, going from a check that catches half to one that
+catches all lifts the task from 77% to 97.5%; a second retry adds only
+about two points more. A retry is only as good as the check that triggers
+it.
 
 **In code:** `step_success` computes $p_{\text{step}}$ from $p$, $d$ and $r$;
 feed its result into `end_to_end_success` to get the ten-step curves.
 
 ## In 20 seconds
-- Success compounds: $p^n$. 95% per step is 60% over ten steps.
-- Plan first, execute step by step, replan from the point of failure, and keep finished work.
-- Decompose into subtasks with explicit checks; retry only the failed step (checkpoints).
-- Self-review shares the model's blind spots; tests, schemas and database checks don't.
-- Retries help only for failures you detect, so the check matters more than the retry.
+- Success compounds: $p^n$. At 95% per step, a ten-step task finishes 60% of the time.
+- Plan first, run the plan step by step, and when a step fails, replan from that step and keep the work already done.
+- Split the task into subtasks that each have a check, and save each result, so a failure costs one retry and not the whole run.
+- A model reviewing its own work shares its blind spots; a test, a schema or a database query does not.
+- A retry happens only after a failure is detected, so the check matters more than the number of retries.
 
 ## Self-test questions
 
