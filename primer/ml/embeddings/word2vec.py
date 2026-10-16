@@ -115,20 +115,20 @@ done.
 
 ## Level 2: How it works, from scratch
 
-You can learn a lot about a stranger from their friends. If two people keep
-turning up with the same crowd, they probably have something in common.
-Linguists put it the same way: *"You shall know a word by the company it
-keeps"* (J. R. Firth, 1957). "Coffee" and "tea" both show up next to "cup",
-"hot" and "morning", so they must be related.
+In 1957 the linguist J. R. Firth wrote, *"You shall know a word by the
+company it keeps"*. "Coffee" and "tea" both turn up next to "cup", "hot" and
+"morning", and a reader who knew nothing else about the two words could
+guess from that alone that they are related.
 
-word2vec turns that idea into a game. Every word gets a spot on a map of
-meaning (a short list of numbers, its **vector**). The game: looking only at
-a word's spot, guess which words sit near it in real sentences. Every wrong
-guess nudges the spots a little. After millions of nudges, words that keep
-the same company end up in the same neighbourhood, because that's the only
-way to guess well for all of them.
+word2vec turns Firth's line into a training task. Every word starts as a
+**vector**, a short list of random numbers. The program reads through the
+text, and for each word it uses that word's vector to guess which words sit
+near it. Every wrong guess nudges the vectors a little. The only way to guess
+well for both "coffee" and "tea" is to give them similar vectors, so after
+many passes over the text, words that keep the same company end up close
+together.
 
-## A tiny worked example: one sentence, one nudge
+## One sentence, one nudge
 
 **Step 1, make guessing pairs.** Take the sentence "river bank fish" and a
 **window** of 1 (look one word left and right). Each word, the **center**,
@@ -136,28 +136,30 @@ is paired with each neighbour, its **context**:
 
 (river, bank), (bank, river), (bank, fish), (fish, bank)
 
-No human labels anything: the text itself says which words appeared together.
+These pairs are the training data, read straight off the text.
 
-**Step 2, score a pair.** Put everything in 2 dimensions. The center word has
-vector v = (1, 0), its true context word has u = (0, 1), and one random
-"noise" word (a word we pretend is a context, to have something to push away)
-has uₙ = (0, −1). The score of a pair is their **dot product** (multiply
-matching positions, add): v·u = 1·0 + 0·1 = 0, and v·uₙ = 0. Zero means "no
-opinion".
+**Step 2, score a pair.** Take the pair (bank, river) and put everything in 2
+dimensions. The center, bank, has vector v = (1, 0), and its context, river,
+has u = (0, 1). The program also needs a **noise word**: a word drawn at
+random and treated as a wrong context, so it has something to push away.
+Say it is throne, with uₙ = (0, −1). The score of a pair is the **dot
+product** of its two vectors (multiply matching positions, add):
+v·u = 1·0 + 0·1 = 0, and v·uₙ = 0. A score of zero is no opinion either way.
 
 **Step 3, turn scores into probabilities** with the **sigmoid** σ(x), which
 squashes any number into 0 to 1 (σ(0) = 0.5, big positive → near 1, big
-negative → near 0). The model says the true pair is 50% likely and the noise
-pair is 50% likely. That's bad: we want ~100% and ~0%.
+negative → near 0). Both scores are 0, so the model gives the true pair a 50%
+chance and the noise pair a 50% chance. We want close to 100% for the first
+and close to 0% for the second.
 
-**Step 4, measure the mistake** as a **loss** (a single number that's big
-when the guesses are bad): −ln σ(0) − ln σ(−0) = 0.693 + 0.693 = **1.386**.
+**Step 4, measure the mistake** as a **loss**, a single number that is large
+when the guesses are bad: −ln σ(0) − ln σ(−0) = 0.693 + 0.693 = 1.386.
 
 **Step 5, nudge.** Move v a little toward u and away from uₙ, and move u and
 uₙ a little toward or away from v. With a step size (**learning rate**) of
-0.1 we get v = (1, 0.1), u = (0.05, 1), uₙ = (−0.05, −1). Now v·u = **0.15** and
-v·uₙ = **−0.15**: the true pair scores higher, the noise pair lower, and the
-loss drops to **1.242**. Word2vec is this nudge, repeated millions of times.
+0.1 we get v = (1, 0.1), u = (0.05, 1), uₙ = (−0.05, −1). Now v·u = 0.15 and
+v·uₙ = −0.15. The true pair scores higher, the noise pair lower, and the loss
+drops to 1.242.
 
 ```mermaid
 flowchart LR
@@ -170,20 +172,24 @@ flowchart LR
   U -->|next pair| P
 ```
 
-**Reading it:** the sentence becomes (center, context) pairs by a sliding
-window. Each true pair is a positive example; alongside it we draw a few
-random words as negatives ("bank" should *not* predict "throne"). The update
-pulls true pairs together and pushes noise pairs apart, then moves on to the
-next pair. The loop at the right is the whole training process.
+**Reading it:** follow the arrows from the left. A window slides over the
+sentence and turns it into (center, context) pairs. Each true pair comes with
+a few noise words drawn at random ("bank" should *not* predict "throne"). The
+nudge raises the score of the true pair and lowers the score of each noise
+pair. The arrow back from the nudge to the pairs makes it a loop: the next
+pair gets the same treatment, and so on through the whole text.
 
-**In code:** `skipgram_pairs` slides the window over a sentence and returns
-every (center, context) pair; `build_corpus` writes the lesson's synthetic
-sentences for it to slide over.
+**In code:** `skipgram_pairs` makes the pairs, and `build_corpus` writes the
+made-up sentences the later chapters train on.
 
 ## The math: skip-gram with negative sampling (SGNS)
 
-Every word has two vectors: vᵥ when it's the center and uᵥ when it's a
-context. For a center c, its true context o and k noise words n₁ … nₖ:
+The worked example gave bank a vector v as the center and river a vector u as
+the context. In word2vec every word has both: a center vector v and a
+context vector u. This setup, where the center word predicts the words
+around it, is called **skip-gram**. Drawing noise words to push away instead
+of scoring every word is called **negative sampling**. For a center c, its
+true context o and k noise words n₁ … nₖ, the loss is:
 
 $$
 L = -\log \sigma(u_o \cdot v_c) - \sum_{i=1}^{k} \log \sigma(-u_{n_i} \cdot v_c),
@@ -231,10 +237,18 @@ round(L((1, 0), (0, 1), [(0, -1)]), 3)  # → 1.386
 round(L((1, 0.1), (0.05, 1), [(-0.05, -1)]), 3)  # → 1.242
 ```
 
+This loss scores k + 1 words for each training pair: the true context and
+the k noise words. Predicting the context word outright would need a softmax
+over the whole vocabulary (`primer.ml.attention` explains softmax), a score
+for every word, 100,000 or more, for every pair. With k = 5, negative
+sampling needs 6 scores instead. The same shape,
+pulling true pairs together and pushing random ones apart, returns in
+`primer.ml.embeddings.contrastive`.
+
 The nudge follows the **gradient**: for each vector, the direction in which
 a small change would increase the loss fastest. We step the opposite way.
-For this loss the gradients are short enough to derive by hand
-(`sgns_grads`), using the fact that the slope of −log σ(x) is σ(x) − 1:
+For this loss the gradients are short enough to derive by hand, using the
+fact that the slope of −log σ(x) is σ(x) − 1:
 
 $$
 g_o = \sigma(u_o \cdot v_c) - 1, \quad g_i = \sigma(u_{n_i} \cdot v_c), \quad
@@ -276,7 +290,10 @@ grad  # → [0.0, -1.0]
 [v - 0.1 * g for v, g in zip(v_c, grad)]  # → [1.0, 0.1]
 ```
 
-Noise words are drawn in proportion to their count raised to the 3/4 power:
+That leaves the question of which words serve as noise. word2vec draws each
+word in proportion to its count in the text raised to the 3/4 power, which
+Mikolov and colleagues found worked better than either raw counts or drawing
+every word equally often:
 
 $$
 P(w) = \frac{\text{count}(w)^{0.75}}{\sum_{w'} \text{count}(w')^{0.75}}
@@ -312,29 +329,25 @@ weights  # → [1.0, 8.0]
 [round(c / sum(counts), 3) for c in counts]  # → [0.059, 0.941]
 ```
 
-**In code:** `sgns_loss` computes L for one center, one context and k noise
-words, `sgns_update` takes one step against the gradient, and
-`noise_distribution` builds P(w). `train_sgns` runs the whole loop in
-mini-batches and returns a `WordVectors` table; `gradient_check` confirms the
+**In code:** `sgns_loss`, `sgns_grads` and `noise_distribution` are the three
+formulas, `train_sgns` runs the training loop, and `gradient_check` tests the
 hand-derived gradients against a numerical estimate.
 
-**Why it matters:** a full softmax over the vocabulary (`primer.ml.attention`
-explains softmax) would score every word, 100,000 or more, for every
-training pair. Negative sampling scores k + 1. That trick is what made
-training on billions of words practical in 2013, and the same pull-together,
-push-apart shape reappears in every modern embedding model
-(`primer.ml.embeddings.contrastive`).
+## Vector arithmetic: king − man + woman
 
-## The famous result: vector arithmetic
+Trained on enough text, the vectors do more than put similar words near each
+other. The differences between them line up. On a street map, "walk two
+blocks east" is the same walk wherever you start. In word2vec's space, the
+walk from "man" to "woman" is roughly the same walk as the one from "king" to
+"queen", because in both pairs the contexts change the same way, from he and
+his to she and her. So start at king, take the man-to-woman walk, and you
+should arrive near queen.
 
-**Everyday picture:** on a street map, "walk two blocks east" is the same
-walk wherever you start. word2vec's map works the same way: the walk from
-"man" to "woman" is roughly the same walk as from "king" to "queen", because
-in both cases the contexts change from he/his to she/her.
-
-**Tiny example** with made-up 2-D vectors: man = (1, 0), woman = (1, 1),
-king = (3, 0). Then king − man + woman = (3 − 1 + 1, 0 − 0 + 1) = (3, 1), exactly
-where queen = (3, 1) would be.
+With made-up 2-D vectors man = (1, 0), woman = (1, 1) and king = (3, 0),
+king − man + woman = (3 − 1 + 1, 0 − 0 + 1) = (3, 1), which is where
+queen = (3, 1) sits. Trained vectors rarely land precisely on a word, so the
+answer is the word nearest the result by cosine, leaving out the three words
+in the question:
 
 $$
 \hat{w} = \operatorname*{arg\,max}_{w \notin \{a, b, c\}} \cos(v_w,\; v_a - v_b + v_c)
@@ -376,42 +389,41 @@ w_hat = max(candidates, key=lambda w: cos(v[w], target))
 w_hat, round(cos(v[w_hat], target), 2)  # → ('queen', 1.0)
 ```
 
-This lesson trains on a small synthetic corpus built from three independent
-attributes (male/female, royal/common, adult/child), so the effect appears
-in seconds on a laptop.
+Mikolov and colleagues reported in 2013 that, on vectors trained from real
+text, king − man + woman lands closest to queen. The vectors in the chart below come
+from a much smaller made-up corpus, in which eight people-words differ along
+three independent attributes (male or female, royal or common, adult or
+child), so training takes seconds on a laptop.
 
 ![In a 2-D PCA view, the arrows king to queen, man to woman, prince to princess and boy to girl all point the same way with nearly equal length](figures/primer.ml.embeddings.word2vec.space.svg)
 
-**Reading it:** these are the learned 16-dimensional vectors, squashed to 2-D
+**Reading it:** these are the trained 16-dimensional vectors, squashed to 2-D
 with **PCA** (a way to find the two directions along which the points are
 most spread out, and draw the points along those; `primer.notation` explains
-it). Arrows join male-female pairs: king→queen, man→woman, prince→princess,
-boy→girl. The arrows are roughly parallel and about the same length. That
-parallelism *is* the analogy: add the man→woman arrow to king and you land
-near queen. The squashing loses some structure, so treat the picture as
-intuition, not measurement.
+it). Each arrow joins a male word to its female partner: king→queen,
+man→woman, prince→princess, boy→girl. Look at their directions and lengths:
+the arrows are roughly parallel and about the same length, which is what the
+arithmetic needs. Lay the man→woman arrow at king and it ends near queen.
+Squashing 16 numbers into two loses some structure, so the arrows are a
+guide, not a measurement.
 
-**In code:** `analogy` returns the word nearest v_a − v_b + v_c, skipping the
-three inputs; `nearest` lists a word's closest neighbours by cosine, and
-`nearest_to_vector` does the same for any vector.
-
-**Why it matters:** this was the first clear evidence that learned vectors
-capture meaning as geometry. It's why "embedding" became the default way to
-represent text, and why vector arithmetic (averaging, subtracting, finding
-nearest neighbours) works on meaning.
+**In code:** `analogy` answers the question, and `nearest` lists a word's
+closest neighbours by cosine.
 
 ## Counting instead of predicting: PPMI and GloVe
 
-**Everyday picture:** instead of playing the guessing game, keep a tally
-sheet: for every pair of words, count how often they appear near each other.
-Then ask which pairs turn up together *more than chance would predict*.
+word2vec gets its vectors by guessing, one pair at a time. A second family of
+methods gets them by counting. Keep a tally sheet: for every pair of words,
+count how often they appear near each other. Then ask which pairs turn up
+together *more often than chance would predict*.
 
-**Tiny example:** two words that each appear only with themselves:
-counts [[2, 0], [0, 2]]. Out of 4 sightings, each word appears half the time
+Take two words that each appear only with themselves: counts
+[[2, 0], [0, 2]]. Out of 4 sightings, each word appears half the time
 (P = 0.5), and each diagonal pair also appears half the time. Chance would
 predict 0.5 · 0.5 = 0.25, but we see 0.5, twice as often, so the score is
-log(0.5 / 0.25) = log 2 = **0.693**. The off-diagonal pairs never co-occur, and
-their score is clipped to **0**.
+log(0.5 / 0.25) = log 2 = 0.693. The off-diagonal pairs never co-occur, and
+their score is clipped to 0. This score is called **PMI**, and the clipped
+version **PPMI**:
 
 $$
 \text{PMI}(w, c) = \log \frac{P(w, c)}{P(w)\,P(c)}, \qquad \text{PPMI} = \max(\text{PMI}, 0)
@@ -470,18 +482,26 @@ flowchart LR
   S --> E[Word vectors]
 ```
 
-**Reading it:** the same text goes in as for word2vec, but instead of a
-training loop there are three bulk steps: count, rescale by chance, compress.
-Levy and Goldberg (2014) showed that word2vec's guessing game is secretly
-doing the same thing: its vectors factorize a shifted PMI table.
+**Reading it:** the same text goes in as for word2vec, but there is no
+training loop. Three steps run once, over all of the text: count, rescale
+by chance, compress.
 
-**In code:** `cooccurrence` counts the pairs in a window, `ppmi` rescales the
-table by chance and clips negatives to 0, and `ppmi_svd_embeddings` runs all
-three steps and keeps d columns of the SVD.
+![A block pattern: male words light up under he and his, female under she and her, royals under crown and throne, children under young and school](figures/primer.ml.embeddings.word2vec.ppmi.svg)
 
-**GloVe** (Pennington et al., 2014) is the best-known counting method. It
-fits vectors so that each dot product predicts the log of the co-occurrence
-count:
+**Reading it:** this is the PPMI table for the made-up corpus. Rows are the
+eight people-words, columns are the context words, and a brighter cell means
+the pair meets more often than chance. Read the attributes straight off it:
+the royal words light up under "crown" and "throne", the female words under
+"she" and "her", the children under "young" and "school". SVD compresses
+these blocks into a few directions, and the vectors it makes answer
+king − man + woman with queen, as word2vec's do.
+
+**In code:** `cooccurrence` counts the pairs, `ppmi` rescales them, and
+`ppmi_svd_embeddings` runs all three steps.
+
+**GloVe** (Pennington et al., 2014) starts from the same counts but fits
+vectors to them directly: each pair's dot product, plus two offsets, should
+match the log of how often the pair occurs:
 
 $$
 w_i \cdot \tilde w_j + b_i + \tilde b_j \approx \log X_{ij}
@@ -522,35 +542,24 @@ left = sum(a * b for a, b in zip(w_ice, w_cold_tilde)) + b_ice + b_cold_tilde
 left, round(math.log(20) - left, 1)  # → (2.0, 1.0)
 ```
 
-![A block pattern: male words light up under he and his, female under she and her, royals under crown and throne, children under young and school](figures/primer.ml.embeddings.word2vec.ppmi.svg)
-
-**Reading it:** rows are the eight target words, columns are the context
-words, and brighter cells mean higher PPMI (they meet more than chance). You
-can read the attributes straight off the table: the royal words light up
-under "crown" and "throne", the female words under "she" and "her", the
-children under "young" and "school". SVD compresses exactly these block
-patterns into a few directions, and `ppmi_svd_embeddings` then solves
-king − man + woman = queen just like word2vec.
-
-**Why it matters:** counting and predicting are two routes to the same
-geometry. That's reassuring: embeddings aren't magic, they're compressed
-co-occurrence statistics.
+Counting and guessing are closer than they look. Levy and Goldberg (2014)
+proved that skip-gram with negative sampling implicitly factorizes a PMI
+table shifted by a constant: it never builds the table, but its vectors fit
+one. Both families end up compressing the same statistics, how much more
+often than chance each pair of words meets.
 
 ## The limit: one vector per word
 
-**Everyday picture:** a phone book lists one address per name. If two
-different people are called "Bank", the book can only print one address,
-somewhere between the two. A static embedding table has the same problem:
-"bank" gets one vector for both the riverbank and the bank account.
+Counted or guessed, each of these methods gives a word one vector, and that
+is their limit. "Bank" gets a single vector for both the riverbank and the
+bank account. In the made-up corpus "bank" appears with river words and with
+money words, and its one trained vector has cosine about 0.52 with the river
+words and 0.50 with the money words. It sits halfway between the two senses.
 
-**Tiny example:** after training on this lesson's corpus, the single "bank"
-vector has cosine about 0.52 with river words and 0.50 with money words: it
-sits halfway between.
-
-**The fix is context.** A transformer doesn't look words up once and stop.
-It computes a fresh vector for every word *in every sentence* by attending
-over the neighbours (`primer.ml.attention`): the new vector is a weighted
-average of the sentence's vectors,
+A transformer fixes this with context. It still starts from a table of word
+vectors, but then computes a fresh vector for every word *in every sentence*
+by attending over the other words (`primer.ml.attention`). The new vector is a
+weighted average of the sentence's vectors:
 
 $$
 \text{bank}' = \sum_{j} \alpha_j\, x_j, \qquad \sum_j \alpha_j = 1
@@ -604,32 +613,31 @@ flowchart LR
   end
 ```
 
-**Reading it:** on the left a lookup table has one row for "bank", so every
-sentence gets the same vector. On the right the same input goes through
-attention, which blends in the surrounding words, so the output depends on
-the sentence. `contextual_bank_demo` runs exactly this with the learned
-vectors and one attention step.
+**Reading it:** on the left, a lookup table has one row for "bank", so every
+sentence gets the same vector. On the right, each sentence goes through
+attention, which blends in the surrounding words, so "bank" comes out
+different in each.
 
 ![Static bank is about equally close to the river and money senses (0.52 vs 0.50); in context it tilts to 0.83 river or 0.85 money](figures/primer.ml.embeddings.word2vec.bank.svg)
 
-**Reading it:** bars show cosine similarity to the river sense (probe words
-water, shore, boat) and to the money sense (money, deposit, account). The
-static vector is about equally similar to both. After one attention step
-over "river bank fish" it tilts to the river sense, and over "bank loan
-cash" it tilts to money. Same word, different vector, decided by context.
+**Reading it:** the same move on the trained vectors, with one attention
+step. Each pair of bars shows the cosine of "bank" with the river sense
+(probe words water, shore, boat) and with the money sense (money, deposit,
+account). The table's vector, on the left, is about equally close to both.
+In "river bank fish" it tilts to the river sense, and in "bank loan cash" to
+money.
 
-**Why it matters:** this is why BERT (2018) and every embedding model since
-are built on transformers. Search, RAG and classification all need
-"Python the language" and "python the snake" to be different points on the
-map.
+BERT (2018) made these contextual vectors mainstream. Search needs them: a
+query about Python the language should not sit at the same point as one about
+the snake.
 
 ## In 20 seconds
 - word2vec learns a vector per word by guessing nearby words; words that
   keep the same company get similar vectors.
 - Negative sampling makes it cheap: raise the score of the true pair, lower
   the score of k random pairs, instead of scoring the whole vocabulary.
-- Consistent differences in context become consistent directions, hence
-  king − man + woman ≈ queen.
+- Pairs of words whose contexts differ in the same way end up separated by
+  the same direction, so king − man + woman lands near queen.
 - GloVe and PPMI + SVD count co-occurrences and compress them, and reach the
   same geometry.
 - Static vectors can't separate word senses; contextual (transformer)
