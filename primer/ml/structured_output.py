@@ -99,32 +99,25 @@ can rerun. If you only needed to choose, you are done.
 ## Level 2: How it works, from scratch
 
 A language model writes one token at a time, and each token is a draw from a
-probability distribution (see `primer.ml.inference`). Most of the time you
-want free text. Sometimes a program is going to read the answer: a tool call's
-arguments, a row for a database, a label from a fixed list. Then the answer
-must have an exact **shape**, such as a JSON object with an integer field
-called `age`, and one stray character breaks it.
+probability distribution (see `primer.ml.inference`). When a program is going
+to read the answer (a tool call's arguments, a row for a database, a label
+from a fixed list), the answer must have an exact **shape**, such as a JSON
+object with an integer field called `age`.
 
 **Structured output** is the family of techniques that make the shape
-certain. The main one, **constrained decoding**, is surprisingly small: before
-each token is drawn, find every token that could not possibly continue a valid
-answer, and forbid it. This lesson builds that from scratch: first for simple
-patterns, with a finite-state machine, then for nested JSON, with a stack.
+certain. The main one, **constrained decoding**, forbids every token that
+could not continue a valid answer, before each token is drawn. Working out
+which tokens those are takes a finite-state machine for a simple pattern, and
+a stack as well for nested JSON.
 
 ## 1. Asking nicely is not enough
 
-**Everyday picture.** You read a form aloud over the phone to a friend and ask
-them to type it in exactly. They are careful and mostly right. But now and
-then they add "Sure, here you go!" before the form, or they forget the last
-bracket, or a finger slips. A person reading the result shrugs it off. A
-program reading it stops dead: one wrong character and the whole thing is
-rejected.
-
-**Tiny worked example.** This lesson's toy model, `ToyModel`, has mostly
-learned to answer `{"age": 42}`. It is a pretend model, a few lines of NumPy,
-that copies that answer with some noise on every choice and a habit of
-opening with "Sure". Asked 200 times, with nothing but the request to guide
-it, it writes the exact answer 133 times (66.5%). The other 67 look like this:
+The first thing to try is asking for the shape in the prompt. A toy model
+shows what happens. It is a pretend model, a few lines of NumPy, that has
+mostly learned to answer `{"age": 42}`: it copies that answer with some noise
+on every choice and a habit of opening with "Sure". Asked 200 times, with
+nothing but the request to guide it, it writes the exact answer 133 times
+(66.5%). Among the other 67 are these:
 
 | What it wrote | What went wrong |
 |---|---|
@@ -134,7 +127,8 @@ it, it writes the exact answer 133 times (66.5%). The other 67 look like this:
 | `{"age"6 42}` | a digit where the colon belongs |
 | `Sure{"age": 42}EUR` | chatter at both ends |
 
-Nothing here is a big mistake. Each one is a single bad token.
+None of these is a big mistake: each is one or two bad tokens in an answer
+that is otherwise right, and a parser rejects every one of them.
 
 ```mermaid
 flowchart LR
@@ -146,12 +140,13 @@ flowchart LR
   J -->|one token wrong| ERR[Parse error:<br/>the whole answer is lost]
 ```
 
-**Reading it:** follow the loop on the left: the model adds one token at a
-time and nothing checks the answer until it is finished. Only then does the
-parser look at it, and it has two exits. One bad token anywhere in the loop
-sends the whole answer to the error exit, however good the rest was.
+**Reading it:** start at the prompt and follow the loop: the model draws a
+token, appends it and draws again, and nothing checks the answer on the way.
+The parser sees the answer only when it is finished, and has two exits. One
+wrong token anywhere in the loop sends the answer to the error exit.
 
-That is why failures pile up with length. If each token is right with chance
+Every pass round the loop is another chance to slip, so failures pile up
+with length. If each token is right with chance
 $p$, and the chances are roughly independent, the whole answer is right only
 when every token is:
 
@@ -193,27 +188,27 @@ round(p ** 100, 3)  # → 0.133
 the share of answers that come out valid. Each curve is one per-token
 accuracy. Even the top curve, 99.9% per token, sags over a long answer, and
 the 95% curve is near zero by 100 tokens. The dot marks the worked example.
-Better prompting moves you to a higher curve, but no curve stays at 100%.
+A better prompt moves you to a higher curve, but no curve stays at 100%.
 
 **In code:** `ToyModel` is the pretend model, `sample_answer` draws one answer token by token, and `chance_all_valid` is the formula.
 
-**Why it matters in practice.** A program that calls a model a million times
-a day and fails 1% of the time fails ten thousand times a day. Long answers,
-nested objects and small models make it worse. Prompting and examples help,
-but they only move you to a better curve. To get to 100% you have to change
-how tokens are chosen.
+The losses add up at scale. A program that calls a model a million times a
+day and fails 1% of the time fails ten thousand times a day, and long
+answers, nested objects and small models fail more often than that. Prompts
+and examples cannot reach 100%. Getting there means changing how each token
+is chosen.
 
 ## 2. Constrained decoding: mask, then sample
 
-**Everyday picture.** Picture a keyboard whose keys lock and unlock as you
-type. You still decide what to write. But at every keystroke, any key that
-would make the text break the form is locked for that one keystroke. You
-cannot make the mistake, because the key isn't there.
+Picture a keyboard whose keys lock and unlock as you type. You still decide
+what to write, but at every keystroke any key that would break the form is
+locked for that keystroke, so the mistake cannot be typed. Constrained
+decoding does the same to the model's choice of the next token.
 
-**Tiny worked example.** At the very first step the model scores four tokens
-(these scores are **logits**: raw preferences, before softmax turns them
-into probabilities; see `primer.ml.attention` for softmax from zero). Only
-`{` and `[` can start a JSON value, so the other two are locked:
+Take the first step. Say the model scores four tokens (these scores are
+**logits**: raw preferences, before softmax turns them into probabilities;
+see `primer.ml.attention` for softmax from zero). Only `{` and `[` can start
+a JSON value, so the other two are locked:
 
 | Token | Logit $z$ | Allowed? $m$ | Share before the mask | Share after the mask |
 |---|---|---|---|---|
@@ -223,7 +218,7 @@ into probabilities; see `primer.ml.attention` for softmax from zero). Only
 | `[` | 0.0 | 1 | 0.078 | **0.378** |
 
 Before the mask the model put 79% of its belief on chatter. After the mask,
-the chatter has a chance of exactly zero, and the two allowed tokens share
+the chatter has a chance of zero, and the two allowed tokens share
 everything. They keep their odds against each other: `{` was 1.65 times as
 likely as `[` before, and it still is.
 
@@ -243,7 +238,7 @@ flowchart LR
 ordinary model, which scores every token as it always does. The bottom path
 is the new part: a checker that knows the shape and says which tokens are
 still possible. They meet in the mask box, and from there it is ordinary
-sampling again. The end token is itself just a token, so it is allowed only
+sampling again. The end token is masked like any other: it is allowed only
 when the answer is complete.
 
 The mask as a formula is softmax with a 0-or-1 switch on every term:
@@ -294,53 +289,52 @@ e = [math.exp(z_i) for z_i in z]
 Setting a logit to minus infinity does the same thing, because
 $e^{-\infty} = 0$: it is the trick the causal mask uses in
 `primer.ml.attention`. After masking, temperature, top-k and top-p from
-`primer.ml.inference` work exactly as before, on the tokens that are left.
+`primer.ml.inference` work as before, on the tokens that are left.
 
 ![At the toy model's first step, 19% of its belief sits on Sure; after the mask, the brace gets all of it](figures/primer.ml.structured_output.masked_step.svg)
 
-**Reading it:** these are the toy model's real first-step probabilities for
-the `{"age": 42}` task, top four tokens only. Grey bars are what the model
-wanted; blue bars are what it may choose from after the mask. "Sure" had
-nearly a fifth of the belief and drops to zero. The brace, the only legal way
-to begin, takes everything.
+**Reading it:** these are the toy model's own first-step probabilities for
+`{"age": 42}`, its top four tokens, in place of the table's round numbers.
+Grey is what the model wanted, blue what it may choose from after the mask.
+"Sure" had nearly a fifth of the belief and drops to zero. The brace, the
+only legal first character here, takes everything.
 
-**Why 100% by construction.** The checker keeps one promise: *every answer so
-far can still be finished validly*. It holds at the start (the empty answer
-can be finished). Each step only allows a token that keeps it. The end token
-is allowed only when the answer is already complete. So every answer that
-ends is valid. No luck is involved.
+The answer comes out valid every time, not just more often, because the
+checker keeps one promise: *every answer so far can still be finished
+validly*. The promise holds at the start, since the empty answer can be
+finished. Each step allows only tokens that keep it, and the end token is
+allowed only when the answer is complete. So every answer that ends is valid.
 
 ![Unconstrained, the age answer is valid 66.5% of the time and the person object 18%; constrained, every finished answer is valid](figures/primer.ml.structured_output.validity_bars.svg)
 
 **Reading it:** each bar is 200 answers from the toy model, split by what
-happened. Green is valid. The unconstrained bars show all three failures:
-chatter before the JSON, a broken character inside, and (rarely) running out
-of token budget. The person object is longer, so it breaks far more often,
-just as $p^n$ predicts. The constrained bars have no chatter and nothing
-broken. The one sliver left, 5 of the 200 person answers, is **cut off**: the
-40-token budget ran out mid-object. The guarantee covers every prefix, but
-only finishing makes a whole answer, so leave room in the budget.
+happened; green is valid. The unconstrained bars show two failures: chatter
+before the JSON, and a wrong character inside. The person object is longer,
+so it breaks far more often, as $p^n$ predicts. The constrained bars have no
+chatter and nothing broken. The one sliver left, 5 of the 200 person answers,
+is **cut off**: the 40-token budget ran out mid-object. The guarantee covers
+every prefix, but only finishing makes a whole answer, so leave room in the
+budget.
 
 **In code:** `masked_softmax` applies the mask, `sample_answer` takes an optional constraint and masks every step, and `validity_experiment` produces the bars above.
 
-**Why it matters in practice.** Constrained decoding changes nothing about the
-model: no retraining, same weights. It only changes which tokens may be
-drawn, which is why it can be added to any open model at serving time. The
-hard part is the checker: answering "which of 100,000 tokens could still lead
-to a valid answer?" fast, at every step. The next two sections build it.
+Constrained decoding leaves the model alone: no retraining, same weights. It
+changes only which tokens may be drawn, so it can be added to any open model
+at serving time. The work is in the checker, which has to answer "which of
+100,000 tokens could still lead to a valid answer?" at every step, and fast.
 
 ## 3. From a pattern to a state machine
 
-**Everyday picture.** A subway map. You stand at a station. Each line leaving
-it is labelled with one character. To write a character, you ride the line
-with that label; if no line from your station has it, that character is
-impossible here. Some stations are marked "you may stop here". That map is a
-**finite-state machine**: a fixed set of states (stations) and one move per
-character. A **regular expression**, the pattern language behind
-`[0-9]+` and `cat|car|dog`, can always be drawn as one.
+The checker is simplest for a pattern, such as a whole number or one word
+from a fixed list. Picture a subway map. You stand at a station, and each
+line leaving it is labelled with one character. To write a character, you
+ride the line with that label; if no line from your station has it, that
+character is impossible here. Some stations are marked "you may stop here".
+That map is a **finite-state machine**: a fixed set of states (the stations)
+and one move per character. A **regular expression**, the pattern language
+behind `[0-9]+` and `cat|car|dog`, can always be drawn as one.
 
-**Tiny worked example.** The pattern `cat|car|dog` (one of three words)
-becomes this machine:
+The pattern `cat|car|dog` (one of three words) becomes this machine:
 
 ```mermaid
 stateDiagram-v2
@@ -363,10 +357,10 @@ gets stuck at S1, which has no "o" line. After "ca" (state S3) only "r" and
 "t" are possible: the machine has turned "what may come next?" into "which
 lines leave this station?".
 
-**Tokens are not characters.** A model writes tokens, and one token can hold
-several characters. The rule: **a token is allowed if the machine can swallow
-all of its characters, one after another, without getting stuck.** With a
-vocabulary of 13 tokens:
+A model writes tokens, not characters, and one token can hold several
+characters. So the rule for a token is: it is allowed if the machine can
+swallow all of its characters, one after another, without getting stuck.
+With a vocabulary of 13 tokens:
 
 | Token | From S0 | From S3 (after "ca") |
 |---|---|---|
@@ -429,7 +423,7 @@ V = ["c", "a", "t", "r", "d", "o", "g", "ca", "cat", "do", "dog", "at", "og"]
 walk(0, "cat") in accepting  # → True
 ```
 
-**How a pattern becomes a machine.** Two classic steps, both in the code:
+Turning a pattern into a machine takes two classic steps:
 
 ```mermaid
 flowchart LR
@@ -447,13 +441,13 @@ together they make an **NFA** (a non-deterministic machine), which can be in
 several states at once: after "c" it is both "inside cat" and "inside car".
 The subset construction turns each *set* of NFA states into one state of a
 **DFA** (a deterministic machine), which is always in exactly one state, so
-following it is a dictionary lookup. The last box is the payoff: since the
-DFA has a fixed number of states, the allowed tokens can be worked out for
+following it is a dictionary lookup. The last box is why the DFA matters:
+it has a fixed number of states, so the allowed tokens can be worked out for
 every state before generation starts.
 
-The pattern `-?[0-9]+` (an optional minus sign, then digits) compiles to just
+The pattern `-?[0-9]+` (an optional minus sign, then digits) compiles to
 three states: the start, "saw a minus", and "saw at least one digit", the only
-accepting one. The lesson's running example, `\{"age": [0-9]+\}`, compiles to
+accepting one. The age answer's pattern, `\{"age": [0-9]+\}`, compiles to
 11.
 
 ![Each row is one state of the age machine, each column a token; only a handful of cells are lit, and the digit states allow many tokens at once](figures/primer.ml.structured_output.mask_table.svg)
@@ -467,30 +461,30 @@ where the model has real choice: any digit, a two-digit token such as `42`,
 or, once one digit is down, the closing brace. The last row allows only the
 end token. This whole table is computed once, before the first token.
 
-**In code:** `compile_pattern` runs both constructions and returns a `DFA`; `DFA.walk` follows text through it; `allowed_tokens` is $A(s)$, and `mask_table` precomputes it for every state. `RegexConstraint` plugs the table into `sample_answer`.
+**In code:** `compile_pattern` runs both constructions, and `mask_table` precomputes $A(s)$ for every state.
 
-**Why it matters in practice.** Integers, dates, enums, phone numbers and
-fixed-key objects are all patterns. Reframing generation as moving between
-the states of a machine, with the allowed tokens indexed per state, is the
-idea of Willard and Louf (2023) behind the open-source Outlines library, and
-it makes each step's mask a single lookup.
+Integers, dates, enums, phone numbers and objects with fixed keys are all
+patterns. Treating generation as moving between the states of a machine, with
+the allowed tokens indexed per state, is the idea of Willard and Louf (2023)
+behind the open-source Outlines library, and it makes each step's mask a
+single lookup.
 
 ## 4. JSON Schema: nesting needs a stack
 
-**Everyday picture.** A stack of plates. Each time you open something, a
-bracket, a brace or a quote, you put a plate on the stack with a note: "an
-array is open", "an object is open". To close something, you may only take the
-**top** plate: close the most recent thing first. When the stack is empty,
-you're done.
+A pattern is enough for a flat answer, but JSON can nest as deep as you like:
+`[[[[...]]]]`. A machine with, say, 50 states can't tell 50 open brackets
+from 51, so it can't know how many closers it still owes. Counting without
+limit needs memory without limit, and the memory that fits is a stack.
 
-A subway map can't do this job. JSON can nest as deep as you like: `[[[[...]]]]`.
-A machine with, say, 50 states can't tell 50 open brackets from 51, so it
-can't know how many closers it still owes. Counting without limit needs
-memory without limit. A finite-state machine plus a stack is called a
-**pushdown automaton**, and it is exactly enough for nested formats such as
-JSON, SQL and most programming languages.
+Think of a stack of plates. Each time you open something (a bracket, a brace
+or a quote), you put a plate on the stack with a note: "an array is open",
+"an object is open". Each plate is called a **frame**. To close something,
+you may take only the top plate, so the most recent thing is closed first.
+When the stack is empty, the value is complete. A finite-state machine plus a
+stack is called a **pushdown automaton**, and it is enough for nested formats
+such as JSON, SQL and most programming languages.
 
-**Tiny worked example.** Read `{"a": [1, {"b": ` one character at a time.
+Here is `{"a": [1, {"b": 2}]}` read one character at a time:
 
 ```mermaid
 flowchart LR
@@ -515,9 +509,9 @@ The checker answers one question about any prefix: can it still be finished?
 | `{"a": [1}` | dead | the array is on top, so `}` can't close it |
 | `{"a": [1, {"b": 2}]}` | complete | the stack is empty |
 
-**The schema steers every character.** A **JSON Schema** (see
-`primer.agents.tools`) names the fields and their types. This lesson's person
-schema allows `name` (a string), `age` (an integer) and `pets` (an array of
+A **JSON Schema** (see `primer.agents.tools`) adds rules on top of the
+nesting: it names the fields and their types. The person schema used from
+here on allows `name` (a string), `age` (an integer) and `pets` (an array of
 "cat" or "dog"); `name` and `age` are required and nothing else is allowed.
 The checker enforces each rule at the first character that breaks it:
 
@@ -531,7 +525,8 @@ The checker enforces each rule at the first character that breaks it:
 | `{"pets": ["x` | dead | only "cat" and "dog" are listed |
 | `{"name": "Ada", "age": 36}` | complete | every required field is present |
 
-Inside one frame, a small state machine does the work. Here is an object's:
+Inside each frame, a small state machine tracks where the reading has got
+to. Here is the one for an object:
 
 ```mermaid
 stateDiagram-v2
@@ -554,24 +549,25 @@ nesting happens: the value gets its own frame pushed on top of the stack, and
 this frame waits in "value" until that frame is popped.
 
 The leaves of JSON (numbers, `true`, `false`, `null`) are regular patterns,
-so the checker reads numbers with the machines from section 3. Real engines
-split the work the same way: patterns for the small pieces, a stack for the
-nesting.
+so the checker reads numbers with the same kind of state machine as the
+patterns above. Real engines split the work the same way: patterns for the
+small pieces, a stack for the nesting.
 
 One rule here is deliberate: at most one space after `:` and `,`. JSON allows
 any amount of whitespace, and a constrained model that has lost its way can
 pad with spaces until the budget runs out. Real engines limit whitespace for
 the same reason.
 
-**In code:** `SchemaChecker.step` reads one character and returns the new stack (a tuple of `Frame` entries), or nothing when the prefix is dead; `SchemaChecker.status` answers open, dead or complete for a prefix; `SchemaChecker.open_containers` shows the stack; `SchemaConstraint` tries every token against the stack at each step.
+**In code:** `SchemaChecker` reads a prefix one character at a time and keeps the stack, and `SchemaConstraint` tries every token against it at each step.
 
-**Why it matters in practice.** This is how a schema becomes a guarantee:
-compile the schema into grammar rules, run them as a pushdown automaton, and
-mask every token that would kill it. Geng et al. (2023) showed the approach
-works for structured tasks without any fine-tuning, and PICARD (Scholak et
-al., 2021) did the same for SQL by parsing incrementally. The stack has a
-cost: it can grow without limit, so the masks can't all be tabled in advance
-as they were for a pattern. Section 5 comes back to that.
+So a schema becomes a guarantee in three steps: compile it into a
+**grammar**, a set of rules for which strings are valid; run the grammar as a
+pushdown automaton; and mask every token that would kill the prefix. Geng et
+al. (2023) showed that this works for structured tasks without any
+fine-tuning, and PICARD (Scholak et al., 2021) did the same for SQL by
+parsing as the query was written. The stack has a cost: it can grow without
+limit, so the masks can't all be tabled in advance as they were for a
+pattern.
 
 ## 5. Costs and pitfalls
 
@@ -580,14 +576,8 @@ answer, and it isn't free.
 
 ### The mask changes what the model says
 
-**Everyday picture.** A satellite navigation system that only forbids illegal
-turns, one junction at a time, and never looks ahead. It happily takes the
-motorway because the motorway looks fastest right now, and only at the end
-discovers that the one legal exit is a long detour. A driver who could see the
-whole map would have taken the side road from the start.
-
-**Tiny worked example 1: forced to invent.** The model is asked for a
-person's age, but the text never says it. The model's honest belief for the
+It does so in two ways. The first is a forced guess. Say the model is asked
+for a person's age, but the text never says it. Its honest belief for the
 next token:
 
 | Token | Model's belief | Allowed by `"type": "integer"`? | After the mask |
@@ -601,12 +591,15 @@ age, delivered as confidently as a real one. The toy model does this too:
 told to write the person schema while it "wants" to write only a name, it is
 forced to add an age, and invents numbers such as `9700`. The fix is in the
 schema, not the decoder: allow `null` (`"type": ["integer", "null"]`), or add
-a field for "not stated". A related finding (Tam et al., 2024): forcing a strict
-format from the first token can hurt a model's reasoning, so let the model
-reason in free text first, or put a reasoning field before the answer field.
+a field for "not stated". Tam et al. (2024) found a related cost: forcing a
+strict format from the first token can hurt a model's reasoning. So let the
+model reason in free text first, or put a reasoning field before the answer
+field.
 
-**Tiny worked example 2: locally tempting, globally wrong.** A two-token
-model. Valid answers must end in "y".
+The second way is harder to see. The mask decides one token at a time, so a
+first token that looks fine can lead to an answer the model itself thought
+unlikely. Take a model that writes two tokens, where valid answers must end
+in "y":
 
 ```mermaid
 flowchart LR
@@ -623,8 +616,8 @@ and each leaf is a whole answer with the product of the probabilities along
 its path. Of the two valid answers, the model much prefers By (0.09 against
 0.009). But masking decides one token at a time. At the first step both A
 and B can still end in "y", so nothing is masked, and A wins 90% of the time.
-At the second step the mask forces "y". The result: Ay, the answer the model
-itself thought ten times less likely, comes out 90% of the time.
+At the second step the mask forces "y". So Ay, the answer the model itself
+thought ten times less likely, comes out 90% of the time.
 
 $$
 P(y \mid \text{valid}) = \frac{P(y)}{\sum_{y' \in \mathcal{L}} P(y')}
@@ -677,8 +670,8 @@ total = sum(P.values())
 preference among valid answers; blue is what masked decoding actually
 produces. The bars point in opposite directions. Nothing invalid comes out,
 yet the distribution is badly bent. Park et al. (2024) name this problem and
-propose a correction; in practice it is milder when the model already writes
-the format well, because then the mask rarely has to overrule it.
+propose a correction. It is milder when the model already writes the format
+well, because then the mask rarely has to overrule it.
 
 The toy model shows the everyday version: once noise knocks it off its answer,
 the mask keeps it legal but not sensible, and it writes digits until the
@@ -688,14 +681,12 @@ closing brace happens to win, as in `{"age": 4174209}`.
 
 ### Token boundaries
 
-**Everyday picture.** You can say "forty-two", or spell it "four, two". Both
-arrive at the same text, but only one is how you would naturally say it.
-
-**Tiny worked example.** The toy vocabulary has a `42` token and single
-digits, so "42" can be written two ways: `42`, or `4` then `2`. The whole
-answer `{"age": 42}` can be spelled 16 ways, and the person answer 1,536
-ways. The mask allows every one of them, but a trained model has almost only
-ever seen the first, its tokenizer's usual spelling (see
+The checker reads characters, but the model writes tokens, and the same text
+can be split into tokens in more than one way. The toy vocabulary has a `42`
+token and single digits, so "42" can be written as `42`, or as `4` then `2`.
+The whole answer `{"age": 42}` can be spelled 16 ways, and the person answer
+1,536 ways. The mask allows every one of them, but a trained model has almost
+only ever seen one, its tokenizer's usual spelling (see
 `primer.ml.tokenization`). When the mask forces it onto an unusual spelling,
 it is in unfamiliar territory and its next choices get worse.
 
@@ -713,7 +704,7 @@ characters, so it cannot tell them apart; only the model can.
 
 Two more boundary effects follow from the same fact. A single token can cross
 several structural boundaries at once, such as `"}` closing a string and an
-object together; walking the token character by character, as `allowed_tokens`
+object together; walking the token character by character, as the checker
 does, handles that. And if the prompt ends in the middle of what would
 normally be one token (a prompt ending in `{"age":` when the model would
 usually write `": ` as one token), the natural token is no longer available.
@@ -724,12 +715,10 @@ Some engines back up one token and let the model rewrite it, which is called
 
 ### The speed of computing masks
 
-**Everyday picture.** Before every keystroke, a proofreader checks every word
-in the dictionary against the rules: slow. Or: a card for every station,
-printed once, listing which words fit there: fast, once the cards exist.
-
-**Tiny worked example.** A real vocabulary has around 128,000 tokens. Say
-they average 4 characters, the answer is 200 tokens long, and the pattern's
+The mask is needed before every token, and it covers the whole vocabulary.
+It can be worked out fresh at every step, or looked up in a table built once
+per state. A real vocabulary has around 128,000 tokens. Say they average 4
+characters, the answer is 200 tokens long, and the pattern's
 machine has 50 states. Checking every token at every step walks
 200 × 128,000 × 4 = 102.4 million characters for one answer. Building the
 table walks 50 × 128,000 × 4 = 25.6 million characters once; after that,
@@ -776,9 +765,9 @@ S * V * L_bar + n * V  # → 51200000
 
 **Reading it:** the x-axis counts answers generated with one schema, the
 y-axis the total work so far. The naive line climbs steeply and steadily. The
-table line starts above zero (the build) and then climbs gently (one
-row read per step). They cross partway through the very first answer. That is why hosted
-APIs compile a schema once and cache it: the first request with a new schema
+table line starts above zero (the build) and then climbs gently (one row
+read per step). They cross partway through the first answer. That is why
+hosted APIs compile a schema once and cache it: the first request with a new schema
 is slower, and the ones after are fast.
 
 For a schema with nesting, the stack can grow without limit, so no table can
@@ -792,16 +781,13 @@ against the stack at run time.
 
 ### When validating and retrying is enough
 
-**Everyday picture.** Instead of a form that can't be filled in wrong, you
-let people fill in a blank sheet, check it, and hand it back with a note when
-it is wrong. Fine if most people get it right first time; miserable if most
-don't.
-
-**Tiny worked example.** The toy model writes a valid age answer 66.5% of the
-time. Retrying until it succeeds takes 1 / 0.665 = 1.50 attempts on average,
-and three tries in a row all fail only 0.335³ = 3.8% of the time. For the
-longer person object, valid 18% of the time, it takes 5.56 attempts on
-average: slow and expensive.
+The alternative to constraining is to let the model write freely, check the
+answer, and ask again when it fails. That is cheap when the model is usually
+right and expensive when it is not. The toy model writes a valid age answer
+66.5% of the time. Retrying until it succeeds takes 1 / 0.665 = 1.50
+attempts on average, and three tries in a row all fail only 0.335³ = 3.8% of
+the time. The longer person object, valid 18% of the time, takes 5.56
+attempts on average.
 
 ```mermaid
 flowchart LR
@@ -813,9 +799,9 @@ flowchart LR
 
 **Reading it:** the happy path goes straight through. Every failure costs a
 full extra model call, round the loop. Sending back the validator's exact
-message (as `primer.agents.tools.validate` produces) makes the second try
-much more likely to succeed. The dotted exit is the budget: a loop needs a
-limit.
+message (such as the ones the validator in `primer.agents.tools` writes)
+makes the second try much more likely to succeed. The dotted exit is the
+budget: a loop needs a limit.
 
 $$
 \mathbb{E}[\text{attempts}] = \frac{1}{p}
@@ -873,24 +859,24 @@ truth.
 
 ## 6. JSON mode, strict schemas and tool calls
 
-**Everyday picture.** Two paper forms. One only insists that you write in
-block capitals: whatever you write is readable, but nothing says what goes
-where. The other has a labelled box for each field, and tick boxes where
-only certain answers are allowed. The first is **JSON mode**; the second is
-a **strict schema**.
+The mask comes in two strengths. Think of two paper forms. One
+insists only that you write in block capitals: whatever you write is
+readable, but nothing says what goes where. The other has a labelled box for
+each field, and tick boxes where only certain answers are allowed. The first
+is **JSON mode**; the second is a **strict schema**.
 
-**Tiny worked example.** Give the toy model a reference answer that leaves
-out the age, `{"name": "Ada"}`, and ask 50 times. With JSON mode (the empty
+To see the difference, give the toy model a reference answer that leaves out
+the age, `{"name": "Ada"}`, and ask 50 times. With JSON mode (the empty
 schema `{}`, which allows any JSON value) every finished answer parses: 44
-copies of `{"name": "Ada"}` with the required age missing, one
-`{"name": 42628}` whose name is a number, and one bare `false`. All valid
-JSON; not one valid person. (The other 3 ran out of budget.) With the person
-schema, every one of the 37 answers that finish has an age, because the
-closing brace stays locked until one is written. Since the model had no age
-to give, it invents one, such as `{"name": "Ada","age": 9700,"pets": []}`:
-section 5's warning in action. The other 13 show a second cost of forcing a
-model off its path: it loses its way and wanders, legally, until the token
-budget runs out.
+copies of `{"name": "Ada"}` with the required age missing, one bare `false`,
+and one `{"name":242,"USD":"USD"}` with a number for a name and a field the
+schema does not have. All are valid JSON; not one is a valid person. (The
+other 3 ran out of budget.) With the person schema, every one of the 37
+answers that finish has an age, because the closing brace stays locked until
+one is written. Since the model had no age to give, it invents one, such as
+`{"name": "Ada","age": 9700,"pets": []}`: the forced guess from the costs
+above. The other 13 show a second cost of forcing a model off its path: it
+loses its way and wanders, legally, until the token budget runs out.
 
 A tool call is the same thing with a name attached: the model's arguments are
 a JSON object that must fit the tool's `input_schema` (see
@@ -912,44 +898,42 @@ sequenceDiagram
 ```
 
 **Reading it:** the grammar engine lives inside the model server, next to
-sampling. It compiles the schema once (the slow first request from section
-5) and then hands a mask to every step of the loop. What reaches your code is
-guaranteed to have the right shape. The last arrow is the part no grammar
-covers: whether the values are true and allowed. The payment tool in
-`primer.agents.tools` makes this concrete: `{"amount": 0, "currency": "USD"}`
-fits the schema's shape exactly, and `primer.agents.tools.validate` still
-rejects it, because `"minimum": 0.01` is a rule about the value, not the
-shape.
+sampling. It compiles the schema once (which is why the first request with a
+new schema is the slow one) and then hands a mask to every step of the
+loop. What reaches your code is guaranteed to have the right shape. The last
+arrow is the part no grammar covers: whether the values are true and allowed.
+The payment tool in `primer.agents.tools` makes this concrete:
+`{"amount": 0, "currency": "USD"}` fits the schema's shape, and the tool's
+validator still rejects it, because `"minimum": 0.01` is a rule about the
+value, not the shape.
 
 **In code:** `SchemaConstraint` with the schema `{}` is JSON mode, and with `PERSON_SCHEMA` it is a strict schema; `primer.agents.tools.ToolRegistry.definitions` shows how a strict tool definition is sent.
 
-**Why it matters in practice.** You now have three tools and know what each
-buys. JSON mode guarantees something parseable. A strict schema guarantees
-the shape your code expects, so the parsing and type-checking code
-disappears. Validation after the fact still catches what only your program
-knows. Hosted APIs (for example Claude's structured outputs and strict tool
-use) and open engines (Outlines, llama.cpp grammars, XGrammar) all run the
-mechanism built in this lesson: a checker that masks the logits before every
-draw.
+Each layer buys something different. JSON mode guarantees something
+parseable. A strict schema guarantees the shape your code expects, so the
+code that parses and type-checks the answer can go. Validation afterwards
+catches what only your program knows. Hosted APIs (for example Claude's
+structured outputs and strict tool use) and open engines (Outlines,
+llama.cpp grammars, XGrammar) all run the same mechanism: a checker that
+masks the logits before every draw.
 
 ## In 20 seconds
 
-- **The problem:** every token is a chance to break the format, so an
-  answer of n tokens is valid about $p^n$ of the time. Prompting raises p
-  but never to 1.
-- **Constrained decoding:** before each draw, set the logit of every token
-  that can't lead to a valid answer to minus infinity, then sample as usual.
-  Allow the end token only when the answer is complete. Valid by
-  construction, if the answer is allowed to finish.
-- **Patterns:** compile to a finite-state machine; a token is allowed if the
-  machine can read all its characters; precompute the allowed tokens for
-  every state, so each step is a lookup.
-- **JSON Schema:** nesting needs a stack (a pushdown automaton); the schema
-  decides which keys, types and closers are legal at each character.
-- **Pitfalls:** the mask can force a made-up value or bend the model's
-  preferences; tokens don't align with grammar pieces; nested grammars cost
-  more to check. Retrying is fine when the model is usually right. Always
-  validate business rules afterwards.
+- Every token is a chance to break the format, so an answer of n tokens,
+  each right with chance p, is valid about $p^n$ of the time. A better prompt
+  raises p but never to 1.
+- **Constrained decoding** sets the logit of every token that can't lead to
+  a valid answer to minus infinity before each draw, and allows the end token
+  only when the answer is complete. Every answer that finishes is valid.
+- A pattern compiles to a **finite-state machine**. A token is allowed if the
+  machine can read all its characters, and the allowed tokens can be worked
+  out for every state in advance, so each step is a lookup.
+- Nested JSON needs a stack as well (a **pushdown automaton**), and a JSON
+  Schema decides which keys, types and closers are legal at each character.
+- The mask can force a made-up value or bend the model's preferences, it
+  ignores how the model would spell the text in tokens, and nested grammars
+  cost more to check. Retrying instead is fine when the model is usually
+  right. Either way, validate the values afterwards.
 
 ## Self-test questions
 
