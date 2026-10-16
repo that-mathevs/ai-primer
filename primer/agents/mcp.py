@@ -347,7 +347,9 @@ server is a **confused deputy**, acting for someone else with its own
 authority. The fix is to act with *the user's* delegated permissions,
 usually an **OAuth** access token (a standard way for a user to grant an
 app limited, revocable permissions without sharing their password), so the
-ticket system checks the real user.
+ticket system checks the real user. Where a tool deletes or sends something
+that cannot be taken back, the host can also ask the user to approve each call
+before it runs, so even a permitted mistake needs a person to say yes.
 
 ```mermaid
 sequenceDiagram
