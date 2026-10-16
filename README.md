@@ -200,7 +200,7 @@ The machinery inside a language model: a neural network, the loss and the optimi
 | 6 | [Attention](primer/ml/attention.py) | How each word looks at the others, and why the cost grows with the square of the length | [page](https://rumblr.com/learn/attention) · [tests](tests/test_attention.py) |
 | 7 | [Positional information](primer/ml/positional.py) | Why order must be added, sinusoids and RoPE | [page](https://rumblr.com/learn/positional) · [tests](tests/test_positional.py) |
 | 8 | [The transformer](primer/ml/transformer.py) | The block every language model stacks, and how to turn a config file into gigabytes | [page](https://rumblr.com/learn/transformer) · [tests](tests/test_transformer.py) |
-| 9 | [Tokenization](primer/ml/tokenization.py) | How text becomes the pieces a model reads, and why models miscount letters | [page](https://rumblr.com/learn/tokenization) · [tests](tests/test_tokenization.py) |
+| 9 | [Tokenization](primer/ml/tokenization.py) | How text becomes the pieces a language model reads, and why language models miscount letters | [page](https://rumblr.com/learn/tokenization) · [tests](tests/test_tokenization.py) |
 
 ### Part 2: how it is trained and judged
 
@@ -210,12 +210,12 @@ How a language model gets its weights: pretraining on a large share of the web, 
 |---|---|---|---|
 | 10 | [Training stages](primer/ml/training_stages.py) | The stages that turn a random neural network into a chat assistant, and when to fine-tune instead of prompt | [page](https://rumblr.com/learn/training-stages) · [tests](tests/test_training_stages.py) |
 | 11 | [Pretraining at scale](primer/ml/pretraining.py) | What it takes to train on the internet: the data belt, parallelism across GPUs, mixed precision | [page](https://rumblr.com/learn/pretraining) · [tests](tests/test_pretraining.py) |
-| 12 | [Fine-tuning in practice](primer/ml/fine_tuning.py) | What a fine-tune costs and risks, and how to prepare data so the model keeps its old skills | [page](https://rumblr.com/learn/fine-tuning) · [tests](tests/test_fine_tuning.py) |
-| 13 | [Overfitting and regularization](primer/ml/regularization.py) | Why a model memorises instead of learning, and the checks that catch it | [page](https://rumblr.com/learn/regularization) · [tests](tests/test_regularization.py) |
-| 14 | [Reinforcement learning](primer/ml/reinforcement.py) | How a model learns from a score instead of an answer, and how it games the score | [page](https://rumblr.com/learn/reinforcement) · [tests](tests/test_reinforcement.py) |
-| 15 | [Reasoning models](primer/ml/reasoning.py) | Why letting a model think before it answers helps, and when the extra tokens are worth it | [page](https://rumblr.com/learn/reasoning) · [tests](tests/test_reasoning.py) |
-| 16 | [Alignment and safety](primer/ml/alignment.py) | How a model is taught to behave, and why a score that keeps rising can hide a worse model | [page](https://rumblr.com/learn/alignment) · [tests](tests/test_alignment.py) |
-| 17 | [Metrics](primer/ml/metrics.py) | The numbers that decide whether a model ships, and the one that fools you on rare events | [page](https://rumblr.com/learn/metrics) · [tests](tests/test_metrics.py) |
+| 12 | [Fine-tuning in practice](primer/ml/fine_tuning.py) | What a fine-tune costs and risks, and how to prepare data so the language model keeps its old skills | [page](https://rumblr.com/learn/fine-tuning) · [tests](tests/test_fine_tuning.py) |
+| 13 | [Overfitting and regularization](primer/ml/regularization.py) | Why an AI model memorises instead of learning, and the checks that catch it | [page](https://rumblr.com/learn/regularization) · [tests](tests/test_regularization.py) |
+| 14 | [Reinforcement learning](primer/ml/reinforcement.py) | How an AI model learns from a score instead of an answer, and how it games the score | [page](https://rumblr.com/learn/reinforcement) · [tests](tests/test_reinforcement.py) |
+| 15 | [Reasoning models](primer/ml/reasoning.py) | Why letting a language model think before it answers helps, and when the extra tokens are worth it | [page](https://rumblr.com/learn/reasoning) · [tests](tests/test_reasoning.py) |
+| 16 | [Alignment and safety](primer/ml/alignment.py) | How a language model is taught to behave, and why a score that keeps rising can hide a worse one | [page](https://rumblr.com/learn/alignment) · [tests](tests/test_alignment.py) |
+| 17 | [Metrics](primer/ml/metrics.py) | The numbers that decide whether an AI model ships, and the one that fools you on rare events | [page](https://rumblr.com/learn/metrics) · [tests](tests/test_metrics.py) |
 | 18 | [Reading benchmarks](primer/ml/benchmarks.py) | What a benchmark score can and cannot tell you, and how wide its error bar is | [page](https://rumblr.com/learn/benchmarks) · [tests](tests/test_benchmarks.py) |
 
 ### Part 3: how it is run
@@ -226,9 +226,9 @@ What it takes, in time and memory, to turn a trained model into answers: the chi
 |---|---|---|---|
 | 19 | [The hardware underneath](primer/ml/hardware.py) | Why a GPU is fast at some work and slow at the rest, and how to read a spec sheet | [page](https://rumblr.com/learn/hardware) · [tests](tests/test_hardware.py) |
 | 20 | [Inference](primer/ml/inference.py) | Why the first token is slow and the rest are cheap, and what memory a conversation costs | [page](https://rumblr.com/learn/inference) · [tests](tests/test_inference.py) |
-| 21 | [Structured output](primer/ml/structured_output.py) | How to guarantee valid JSON by controlling which tokens a model may pick | [page](https://rumblr.com/learn/structured-output) · [tests](tests/test_structured_output.py) |
-| 22 | [Long context and efficient architectures](primer/ml/efficient_architectures.py) | How a model handles a million tokens without a million-squared attention | [page](https://rumblr.com/learn/efficient-architectures) · [tests](tests/test_efficient_architectures.py) |
-| 23 | [Looking inside the model](primer/ml/interpretability.py) | How to read the numbers inside a trained model and find what a layer represents | [page](https://rumblr.com/learn/interpretability) · [tests](tests/test_interpretability.py) |
+| 21 | [Structured output](primer/ml/structured_output.py) | How to guarantee valid JSON by controlling which tokens a language model may pick | [page](https://rumblr.com/learn/structured-output) · [tests](tests/test_structured_output.py) |
+| 22 | [Long context and efficient architectures](primer/ml/efficient_architectures.py) | How a language model reads a million tokens without paying for a million squared | [page](https://rumblr.com/learn/efficient-architectures) · [tests](tests/test_efficient_architectures.py) |
+| 23 | [Looking inside the model](primer/ml/interpretability.py) | How to read the numbers inside a trained AI model and find what a layer represents | [page](https://rumblr.com/learn/interpretability) · [tests](tests/test_interpretability.py) |
 
 ### Part 4: embeddings and search
 
@@ -265,17 +265,17 @@ How to build on a language model: the message exchange, the agent loop, tools, r
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
 | 38 | [Talking to a model](primer/agents/llm.py) | The message format a language model reads, and how tool calling works | [page](https://rumblr.com/learn/llm) · [tests](tests/test_agents_llm.py) |
-| 39 | [Orchestration](primer/agents/orchestration.py) | When to script the steps and when to let the model choose them, and the named patterns in between | [page](https://rumblr.com/learn/orchestration) · [tests](tests/test_agents_orchestration.py) |
-| 40 | [The agent loop](primer/agents/agent_loop.py) | The loop that runs a model's errands, with the limits that let it stop | [page](https://rumblr.com/learn/agent-loop) · [tests](tests/test_agents_agent_loop.py) |
+| 39 | [Orchestration](primer/agents/orchestration.py) | When to script the steps and when to let the language model choose them, and the named patterns in between | [page](https://rumblr.com/learn/orchestration) · [tests](tests/test_agents_orchestration.py) |
+| 40 | [The agent loop](primer/agents/agent_loop.py) | The loop that runs a language model's errands, with the limits that let it stop | [page](https://rumblr.com/learn/agent-loop) · [tests](tests/test_agents_agent_loop.py) |
 | 41 | [Tools](primer/agents/tools.py) | How to design a tool so a wrong call is caught before it costs money | [page](https://rumblr.com/learn/tools) · [tests](tests/test_agents_tools.py) |
 | 42 | [Coding and computer-use agents](primer/agents/coding_agents.py) | Why agents became dependable on code first, and how one drives a repository or a screen | [page](https://rumblr.com/learn/coding-agents) · [tests](tests/test_agents_coding_agents.py) |
 | 43 | [Model Context Protocol](primer/agents/mcp.py) | How one tool can serve every application, what goes over the wire, and the risks of a stranger's tools | [page](https://rumblr.com/learn/mcp) · [tests](tests/test_agents_mcp.py) |
-| 44 | [Retrieval-augmented generation](primer/agents/rag.py) | How a model answers from your documents, with citations and access control | [page](https://rumblr.com/learn/rag) · [tests](tests/test_agents_rag.py) |
+| 44 | [Retrieval-augmented generation](primer/agents/rag.py) | How a language model answers from your documents, with citations and access control | [page](https://rumblr.com/learn/rag) · [tests](tests/test_agents_rag.py) |
 | 45 | [Context engineering](primer/agents/context.py) | What goes in the prompt when code assembles it, and why an agent gets worse as a session runs | [page](https://rumblr.com/learn/context) · [tests](tests/test_agents_context.py) |
 | 46 | [Memory](primer/agents/memory.py) | How an agent carries what it learned across conversations, and keeps one user's memory from another's | [page](https://rumblr.com/learn/memory) · [tests](tests/test_agents_memory.py) |
 | 47 | [Planning](primer/agents/planning.py) | Why a twenty-step task fails when a three-step demo worked, and how a plan survives it | [page](https://rumblr.com/learn/planning) · [tests](tests/test_agents_planning.py) |
 | 48 | [Evaluation](primer/agents/evals.py) | How to know a change helped before a customer finds out that it did not | [page](https://rumblr.com/learn/evals) · [tests](tests/test_agents_evals.py) |
-| 49 | [Guardrails](primer/agents/guardrails.py) | How to keep text a model reads from becoming commands it follows, and check what it sends out | [page](https://rumblr.com/learn/guardrails) · [tests](tests/test_agents_guardrails.py) |
+| 49 | [Guardrails](primer/agents/guardrails.py) | How to keep text a language model reads from becoming commands it follows, and check what it sends out | [page](https://rumblr.com/learn/guardrails) · [tests](tests/test_agents_guardrails.py) |
 | 50 | [Cost and latency](primer/agents/cost.py) | The one number that decides cost, and the levers that move it | [page](https://rumblr.com/learn/cost) · [tests](tests/test_agents_cost.py) |
 | 51 | [Observability](primer/agents/observability.py) | How to find out what an agent did yesterday, and turn that record into the next improvement | [page](https://rumblr.com/learn/observability) · [tests](tests/test_agents_observability.py) |
 | 52 | [Safe deployment](primer/agents/deployment.py) | How an agent earns the right to act, one step of trust at a time | [page](https://rumblr.com/learn/deployment) · [tests](tests/test_agents_deployment.py) |
