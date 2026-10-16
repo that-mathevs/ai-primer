@@ -123,26 +123,21 @@ choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-An **embedding** gives every piece of text a set of coordinates on a map of
-meaning. Texts about similar things live on the same street; unrelated ones
-are across town. Draw an arrow from the centre of the map to each text's
-spot, and "how similar are these two texts?" becomes "how alike are these two
-arrows?".
-
-There are three natural ways to compare two arrows:
+Draw an arrow from the centre of the map of meaning to each text's spot.
+"How similar are these two texts?" then becomes "how alike are these two
+arrows?", and there are three ways to compare two arrows:
 
 - **Cosine similarity** compares the *direction* they point and ignores how
-  long they are, like two people pointing at the same mountain, one with a
-  longer arm.
-- **Euclidean distance** is the straight-line distance between the two arrow
-  tips, like measuring with a ruler.
+  long they are, as two people pointing at the same mountain agree however
+  long their arms are.
+- **Euclidean distance** is the straight-line gap between the two arrow tips.
 - **Dot product** mixes both: pointing the same way *and* being long both
   make it bigger.
 
-## A tiny worked example
+## Three measures, worked by hand
 
-Three texts, each placed in a 3-dimensional space (real models use 384 to
-3,072 **dimensions**, meaning numbers per vector; the arithmetic is the same):
+Take three texts placed in three dimensions. Real models use 384 to 3,072
+**dimensions** (numbers per vector), but the arithmetic is the same:
 
 a = (1, 2, 2), b = (2, 1, 2), c = (2, −1, −2)
 
@@ -177,17 +172,17 @@ flowchart LR
   SUB --> L2["distance = √2 = 1.41"]
 ```
 
-**Reading it:** the two input vectors feed three calculations. The top path
-is the dot product. The middle paths measure each vector's length, and
-cosine is simply the dot product divided by those lengths, which is how it
-comes to "ignore length". The bottom path subtracts the vectors and measures
-what's left: that's distance. Everything later in this lesson is these three
-boxes.
+**Reading it:** follow a and b from the left. The top path multiplies and
+adds them into the dot product. The middle paths measure each vector's
+length, and dividing the dot product by both lengths gives the cosine, which
+is why the cosine does not care how long the arrows are. The bottom path
+subtracts one vector from the other and measures the length of what is left,
+which is the distance.
 
-**In code:** `worked_example` computes every number in the table above from
-a, b and c, so you can check your hand arithmetic against it.
+**In code:** `worked_example` computes every number in the table, so you can
+check your arithmetic against it.
 
-## The math
+## The three formulas
 
 $$
 \cos(a, b) = \frac{a \cdot b}{\lVert a \rVert \, \lVert b \rVert}
@@ -239,26 +234,22 @@ round(dot / (norm_a * norm_b), 2)  # → 0.89
 round(math.sqrt(sum((a_i - b_i) ** 2 for a_i, b_i in zip(a, b))), 2)  # → 1.41
 ```
 
-The code is `cosine`, `dot` and `euclidean`, each a line of NumPy.
-
-**In code:** `rank` sorts a whole collection of documents from best to worst
-match under whichever of the three metrics you name.
-
-**Why it matters:** every vector database, semantic search box and RAG
-system does exactly this comparison, millions of times per second. Knowing
-which of the three a system uses, and why, is the difference between
-correct and silently wrong rankings.
+**In code:** `cosine`, `dot` and `euclidean` are one line of NumPy each, and
+`rank` sorts a collection of documents from best match to worst under any
+of the three.
 
 ## Normalize, and the three agree
 
-**Everyday picture:** trim every arrow to the same length, one unit. Now the
-only thing that can differ is direction, so "tips are close together" and
-"arrows point the same way" become the same statement.
+The three measures disagree because the dot product and the distance see
+length and the cosine does not. Take length away and the disagreement goes
+with it. **L2-normalizing** a vector means dividing it by its own length, so
+that every arrow is trimmed to length 1. Then the only thing two arrows can
+differ in is direction, and "the tips are close together" says the same as
+"the arrows point the same way".
 
-**Tiny example:** a = (1, 0) and b = (0.6, 0.8) both have length 1 (check:
-0.6² + 0.8² = 0.36 + 0.64 = 1). Their cosine is 1·0.6 + 0·0.8 = 0.6. The squared
-distance is (1 − 0.6)² + (0 − 0.8)² = 0.16 + 0.64 = 0.8, and 2 − 2·0.6 = 0.8.
-Same number.
+For example, a = (1, 0) and b = (0.6, 0.8) both have length 1 (0.6² + 0.8² =
+0.36 + 0.64 = 1). Their cosine is 1·0.6 + 0·0.8 = 0.6. The squared distance is
+(1 − 0.6)² + (0 − 0.8)² = 0.16 + 0.64 = 0.8, and 2 − 2·0.6 is also 0.8.
 
 $$
 \lVert a - b \rVert^2 = \lVert a \rVert^2 + \lVert b \rVert^2 - 2\,a\cdot b = 2 - 2\cos(a, b)
@@ -292,10 +283,9 @@ dist_sq = sum((a_i - b_i) ** 2 for a_i, b_i in zip(a, b))
 round(dist_sq, 2), round(2 - 2 * cos, 2)  # → (0.8, 0.8)
 ```
 
-**L2-normalizing** (dividing a vector by its own length) is what trims every
-arrow to length 1. After it, the dot product *is* the cosine, and distance is
-a decreasing function of the cosine. So **once vectors are L2-normalized,
-cosine, dot product and Euclidean distance give the same ranking.**
+After normalizing, the dot product *is* the cosine, and the distance only
+ever falls as the cosine rises. So **once vectors are L2-normalized, cosine,
+dot product and Euclidean distance give the same ranking.**
 
 **Try it:** pick "Same direction, different lengths", then drag B's length.
 The dot product and the distance change, but the cosine stays at 1, because
@@ -323,32 +313,33 @@ flowchart TD
   N --> FAST[Rank by dot product:<br/>same order as cosine and L2,<br/>and the cheapest to compute]
 ```
 
-**Reading it:** start at the top with the question that matters, which is
-how the model was trained, not which metric sounds best. Most text
-embedding models are trained with cosine, so you normalize once when you
-write vectors, then use the plain dot product at query time. It gives the
-same order as cosine and costs less. Only when length is deliberate signal
-do you skip normalizing.
+**Reading it:** start at the top, with how the model was trained, not with
+which metric sounds best. Most text embedding models are trained with
+cosine, so you normalize every vector once, when you store it, and rank by the
+plain dot product when a query comes in. That gives the same order as cosine
+and skips the division. You keep the raw vectors only when their length
+carries something the model put there on purpose.
 
 **In code:** `l2_normalize` trims every row to length 1;
-`rankings_agree_after_normalizing` ranks random documents by all three metrics
-before and after normalizing and reports which rankings match, and
-`l2_identity_check` returns both sides of the identity for two random vectors.
+`rankings_agree_after_normalizing` ranks random documents by all three
+metrics before and after normalizing; `l2_identity_check` returns both sides
+of the identity for two random vectors.
 
-**Why it matters:** vector databases typically normalize on insert and
-then use the dot product, the cheapest of the three. If you mix normalized
-and unnormalized vectors, rankings quietly change. **Use the metric the
-embedding model was trained with.**
+Normalize in one place, when vectors are written. An index that holds some
+normalized vectors and some raw ones ranks them in the wrong order, and
+nothing reports an error. **Use the metric the embedding model was trained
+with.**
 
 ## When length carries signal
 
-**Everyday picture:** on the map of meaning, some shops are big and popular.
-A recommender may deliberately make popular items' arrows longer, so they
-win ties. Cosine throws that away; the dot product keeps it.
+Normalizing throws length away, which costs nothing when length means
+nothing. Some models give it a meaning on purpose. A recommender can be
+trained so that popular items get longer arrows, which lets them win close
+contests. Cosine ignores that length; the dot product keeps it.
 
-**Tiny example** (`popularity_in_the_norm`): the query points along
-(1, 0). A niche item (0.99, 0.10) is almost perfectly aligned. A popular item
-(0.95, 0.30) × 3 = (2.85, 0.90) is slightly off but three times longer.
+Take a query that points along (1, 0). A niche item, (0.99, 0.10), is almost
+perfectly aligned with it. A popular item, (0.95, 0.30) × 3 = (2.85, 0.90), is
+slightly off the query's direction but three times longer.
 
 | Item | Cosine with query | Dot with query |
 |---|---|---|
@@ -359,28 +350,27 @@ Cosine prefers the niche item; the dot product prefers the popular one.
 
 ![The short item points almost along the query and wins on cosine (0.99 vs 0.95); the item three times longer wins on dot product (2.85 vs 0.99)](figures/primer.ml.embeddings.similarity.arrows.svg)
 
-**Reading it:** the black arrow is the query. The blue arrow (niche item)
-points almost exactly the same way but is short. The orange arrow (popular
-item) leans a little away but is three times longer. Cosine only looks at
-the angle between each arrow and the query, so blue wins. The dot product
-also rewards length, so orange wins. Neither is wrong: it depends on what
-the model was trained to encode.
+**Reading it:** the query is the arrow lying flat along the horizontal axis.
+The short blue arrow, the niche item, points nearly along it. The long arrow,
+the popular item, leans a little away but is three times longer. Cosine looks
+only at each arrow's angle to the query, so the niche item wins. The dot
+product also rewards length, so the popular item wins. Which answer is right
+depends on what the model was trained to put in the length.
 
-**Why it matters:** some retrieval and recommender models are trained with
-the raw dot product and put useful signal in the length. Normalizing their
-vectors "to be safe" throws that signal away.
+Some retrieval and recommender models are trained with the raw dot product
+and store useful signal in the length. Normalizing their vectors "to be safe"
+throws that signal away.
 
 ## The curse of dimensionality
 
-**Everyday picture:** in a small village some neighbours live next door and
-some live across the valley. Now imagine a city with thousands of streets
-running in thousands of directions: pick random strangers and they all turn
-out to live about equally far from you. "Nearest" stops meaning much.
-
-**Tiny example:** scatter 1,000 random points in a cube and measure from a
-random spot. In 2 dimensions the nearest point is about 1/100th as far away
-as the farthest. In 1,000 dimensions it's about 90% as far: everyone is
-nearly equidistant.
+Every example so far had two or three dimensions, where the nearest point is
+clearly nearer than the rest. Embeddings have hundreds or thousands of
+dimensions, and there, for points scattered at random, that stops being
+true. Scatter 1,000 random points in a cube and measure their distances from
+a random spot. In 2 dimensions the nearest point is about 1/100th as far away
+as the farthest. In 1,000 dimensions it is about 90% as far, so every point
+is nearly the same distance away. This is the **curse of dimensionality**,
+and it is measured by the ratio of the nearest distance to the farthest:
 
 $$
 \text{ratio} = \frac{\min_j \lVert q - x_j \rVert}{\max_j \lVert q - x_j \rVert}
@@ -399,11 +389,11 @@ $$
 **In words:** the ratio is the distance to the closest point divided by the
 distance to the farthest point.
 
-**On the example:** by hand first: a query at (0, 0) and three points at
-(1, 0), (0, 2) and (3, 4) are 1, 2 and 5 away, so the ratio is 1 / 5 = 0.2.
-With 1,000 random points the demo table shows about 0.01 at d = 2 and about
-0.9 at d = 1,000. The Python below draws its own random points, so it lands
-close by rather than on the same digits: 0.02 and 0.9.
+**On the example:** a query at (0, 0) and three points at (1, 0), (0, 2) and
+(3, 4) are 1, 2 and 5 away, so the ratio is 1 / 5 = 0.2. With 1,000 random
+points the ratio is about 0.01 at d = 2 and about 0.9 at d = 1,000. The Python
+below draws its own random points, so it lands close to those numbers rather
+than on them: 0.02 and 0.9.
 
 **In Python:**
 
@@ -425,38 +415,42 @@ for d in (2, 1000):
 
 ![The nearest-to-farthest distance ratio rises from about 0 in 2 dimensions to 0.8 at 200 and 0.92 at 2,000: random points become almost equidistant](figures/primer.ml.embeddings.similarity.curse.svg)
 
-**Reading it:** the horizontal axis is the number of dimensions (log scale);
-the vertical axis is the nearest-to-farthest ratio above. In 2-D the ratio is
-near 0: the nearest point really is much nearer. By a few hundred dimensions
-the curve flattens toward 1, so every random point is roughly equally far
-away, and "nearest" tells you almost nothing about random data.
+**Reading it:** the horizontal axis is the number of dimensions, on a log
+scale; the vertical axis is the nearest-to-farthest ratio. In 2 dimensions
+the ratio is near 0, and the nearest point is much nearer than the rest. By a
+few hundred dimensions the curve flattens toward 1: every random point is
+roughly as far away as every other, and "nearest" says almost nothing about
+random data.
 
 **In code:** `curse_of_dimensionality` scatters the random points, measures
 from a random query, and returns the nearest, farthest and ratio for each
 dimension.
 
-**Why it matters:** exact nearest-neighbour search in high dimensions gets
-slow and fragile, which is one reason vector search uses approximate indexes
-(`primer.ml.embeddings.ann`). Real embeddings aren't random: meaning puts
-them on a much lower-dimensional structure, so nearest-neighbour search still
-works well in practice.
+Exact nearest-neighbour search in high dimensions is slow and fragile, which
+is one reason vector search uses approximate indexes
+(`primer.ml.embeddings.ann`). Real embeddings are not random: meaning puts
+them on a structure with far fewer dimensions, so nearest-neighbour search
+still works on them.
 
 ## Anisotropy: why every score looks like 0.8
 
-**Everyday picture:** a stadium crowd all facing the stage. Ask "are these
-two people facing the same way?" and the answer is "roughly yes" for
-everyone, so the question tells you little. Many embedding models behave
-like that crowd: their vectors bunch in a narrow cone, so even unrelated
-texts get cosines of 0.7 or more. This lopsidedness is called
+### Every vector leans the same way
+
+Random points crowd together in distance. Real embeddings have a crowding
+problem of their own, in angle. Picture a stadium crowd all facing the
+stage. Ask whether two people in it face the same way and the answer is
+"roughly yes" for everyone, so the question tells you little. Many embedding
+models behave like that crowd: their vectors bunch into a narrow cone, so
+even unrelated texts get cosines of 0.7 or more. This lopsidedness is called
 **anisotropy** ("not the same in every direction").
 
-**Tiny example:** build each vector as √3·m + n, where m is one direction
-everybody shares (the stage) and n is a unit-length direction of each
-text's own. For two unrelated texts the n parts are at right angles, so
-their dot product is (√3)² = 3 and each length is √(3 + 1) = 2, and the
-cosine is 3 / (2 · 2) = **0.75**. For paraphrases, whose own parts agree with
-cosine ρ, the cosine becomes 0.75 + 0.25·ρ: about 0.79 to 0.86. All the signal
-is squeezed into a few hundredths.
+To see what it does to the scores, build each vector as √3·m + n, where m is
+one direction every vector shares (the stage) and n is a unit-length
+direction of the text's own. For two unrelated texts the n parts are at right
+angles, so their dot product is (√3)² = 3, each length is √(3 + 1) = 2, and
+the cosine is 3 / (2 · 2) = **0.75**. For paraphrases, whose own parts agree
+with cosine ρ, the cosine becomes 0.75 + 0.25·ρ: about 0.79 to 0.86. The whole
+difference between a stranger and a paraphrase lies between 0.75 and 0.86.
 
 $$
 v = \alpha\, m + \beta\, n, \qquad
@@ -508,20 +502,23 @@ between 0.7 and 0.9, so a score of "0.8" alone says little. The right panel
 shows the same pairs after **mean-centering**, which means subtracting the
 average vector of the whole collection (that removes the shared "stage"
 direction). Unrelated pairs drop to about 0, paraphrases sit clearly above,
-and the gap is easy to see. The information was there all along, squeezed
-into a narrow band.
+and the gap is easy to see.
 
 **In code:** `anisotropic_embeddings` builds the pairs as α·m + β·n,
 `pair_cosines` scores each pair, and `mean_center` subtracts the average
 vector to remove the shared direction.
 
-### Picking a threshold from data, not folklore
+### Picking a threshold from labelled pairs
 
-Sometimes you need a yes/no cut-off: "are these duplicates?", "is this
-cached answer close enough?". Pick it by measuring. Label some pairs,
-score them, and choose the threshold with the best **F1**, the balance of
-**precision** (of the pairs I called similar, how many were?) and **recall**
-(of the truly similar pairs, how many did I catch?):
+Ranking survives anisotropy: a shift shared by every score does not change
+which document is on top, so rank whenever you can. Some jobs need a yes/no
+cut-off instead: are these two texts duplicates, is this cached answer close
+enough, is there no good answer at all? When every score sits in one narrow
+band, a cut-off that is off by a few hundredths gives very different
+answers, so measure it. Label some pairs, score them, and choose the
+threshold with the best **F1**, the balance of **precision** (of the pairs
+called similar, how many were?) and **recall** (of the truly similar pairs,
+how many were caught?):
 
 $$
 F_1 = \frac{2PR}{P + R}
@@ -540,7 +537,7 @@ their sum.
 
 **On a hand example:** scores 0.9, 0.8, 0.7, 0.6 where the first two are true
 matches. Threshold 0.8 calls exactly those two matches: P = 2/2 = 1,
-R = 2/2 = 1, F₁ = 2·1·1 / 2 = 1. `best_threshold` finds 0.8.
+R = 2/2 = 1, F₁ = 2·1·1 / 2 = 1.
 
 **In Python:**
 
@@ -569,41 +566,33 @@ flowchart LR
   V -->|model upgraded| E
 ```
 
-**Reading it:** a threshold is a property of one model on one kind of data,
-so it is *measured*, not guessed. Label pairs, score them, sweep, and pick.
-The loop back from "model upgraded" is the step people forget: a new model
-has a different score distribution, so the old threshold is meaningless.
+**Reading it:** follow the steps from the left: sample pairs from your own
+data, label them, score them with the model you will use, sweep the
+threshold and keep the one whose mistakes you can best afford. The arrow back
+from "model upgraded" says to do it again with every new model, because a new
+model spreads its scores differently and the old threshold no longer
+applies.
 
 ![F1 on raw scores swings within a few hundredths: the calibrated threshold 0.776 reaches F1 0.99, while the guessed 0.80 drops to 0.87](figures/primer.ml.embeddings.similarity.threshold.svg)
 
 **Reading it:** the curve is F1 at each candidate threshold on the raw
-anisotropic scores. The dashed line is the "obvious" guess of 0.8; the
-solid line is the calibrated threshold. F1 changes sharply over a few
-hundredths of cosine, which is exactly why a threshold carried over from a
-different model (or a blog post) can be badly wrong.
+anisotropic scores. The dashed line is the guess of 0.8; the solid line is
+the calibrated threshold. F1 changes sharply over a few hundredths of
+cosine, so a threshold carried over from a different model, or from a blog
+post, can be badly wrong.
 
 **In code:** `f1_curve` computes F1 at every candidate threshold for this
-plot; `best_threshold` returns the single best one with its precision and
-recall.
-
-**Why it matters:**
-
-* Absolute scores mean different things for different models. "0.8" is
-  not a universal "similar".
-* **Rank, don't threshold, whenever you can.** A shared offset doesn't change
-  which document is on top.
-* When you *must* threshold (dedup, semantic caching, "no good answer
-  found"), calibrate on labeled pairs for that model, and redo it when the
-  model changes.
+plot; `best_threshold` returns the best one with its precision and recall.
 
 ## In 20 seconds
-- Cosine compares direction, the dot product compares direction and length,
-  Euclidean distance measures the gap between the tips.
+- Cosine compares direction only, the dot product compares direction and
+  length together, and Euclidean distance measures the gap between the tips.
 - On L2-normalized vectors all three give the same ranking, because
   ‖a − b‖² = 2 − 2cos.
-- Use the metric the model was trained with.
-- Scores aren't comparable across models (anisotropy). Rank when you can;
-  calibrate thresholds on labeled pairs when you can't.
+- Use the metric the embedding model was trained with.
+- A score means different things under different models, and many models
+  crowd every score into a narrow band. Rank when you can; when you need a
+  yes/no cut-off, measure it on labelled pairs for that model.
 
 ## Self-test questions
 
