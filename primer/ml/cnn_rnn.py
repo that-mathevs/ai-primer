@@ -128,32 +128,31 @@ a family, you are done.
 
 ## Level 2: How it works, from scratch
 
-Before transformers, two designs dominated deep learning, and both still
-matter. **Convolutional networks (CNNs)** see images by sliding small
-pattern detectors across them. **Recurrent networks (RNNs)** read sequences
-one item at a time, carrying a running memory. Each builds in an assumption
-about its data (patterns in images are local; sequences unfold in order),
-and each has a limit that the transformer removed. Knowing both stories
-explains why modern models look the way they do.
+Each design repeats one small operation many times. A CNN repeats a
+multiply-and-add at every position of an image; an RNN repeats one update of
+a running summary at every word of a sentence. Both are worked by hand
+below, on numbers small enough to check, each as far as the point where the
+transformer took over.
 
 # Part A: convolutional networks
 
-## A1. A convolution is a flashlight looking for one pattern
+## A1. Convolution: sliding one filter across an image
 
-**Everyday picture.** You are in a dark room with a large photograph and a
-small flashlight. You're looking for one thing, say a place where dark turns
-to bright from left to right. You sweep the flashlight across the photo, one
-step at a time, and at every spot you jot down a score: high if the lit
-patch matches what you're looking for, near zero if it doesn't. When you
-finish, your notes form a new, smaller picture: a map of *where* the pattern
-appears. That map is called a **feature map**, and the pattern you were
-looking for, written as a small grid of numbers, is the **filter** (or
-kernel).
+Picture a dark room, a large photograph and a small flashlight. You are
+looking for one thing, say a place where dark turns to bright from left to
+right. You sweep the flashlight across the photo one step at a time, and at
+every spot you write down a score: high if the lit patch matches what you
+are looking for, near zero if it does not. Your scores form a new, smaller
+picture, a map of *where* the pattern appears. That map is a **feature
+map**, and the pattern, written as a small grid of numbers, is the
+**filter** (or kernel). Sliding a filter over an image and scoring every
+position is a **convolution**.
 
-**Tiny worked example.** A 5×5 image: two dark columns (0) then three bright
+Now with numbers. A 5×5 image has two dark columns (0) then three bright
 columns (1), so there is a vertical edge between columns 2 and 3. The filter
-is a 3×3 "vertical edge" detector: −1 on the left column, 0 in the middle,
-+1 on the right. It rewards "bright on the right, dark on the left".
+is a 3×3 vertical-edge detector: −1 on the left column, 0 in the middle,
++1 on the right, so it scores high where the left is dark and the right is
+bright.
 
 ```
 image X                 filter K
@@ -186,9 +185,10 @@ same for every row gives the full 3×3 feature map:
 3 3 0
 ```
 
-The high numbers sit exactly where the edge is. Run a *horizontal* edge
-filter over the same image and every cell is 0: this image has no
-top-to-bottom change. Each filter answers one question.
+The 3s sit on the edge and the 0s on the flat bright area. A *horizontal*
+edge filter scores 0 in every cell of the same image, because nothing in it
+changes from top to bottom. To find both kinds of edge, a layer needs both
+filters.
 
 ```mermaid
 flowchart LR
@@ -200,11 +200,12 @@ flowchart LR
   N -->|no| F[Feature map complete]
 ```
 
-**Reading it:** this loop *is* a convolution. The only arithmetic is
-multiply-and-add, repeated at every position. The stride is how far the
-flashlight jumps each time (1 pixel, or 2 to shrink the output faster).
-Padding adds a border of zeros so the filter can also centre on edge pixels
-and the output keeps the input's size.
+**Reading it:** go round the loop once per position: take a patch,
+multiply, add, write one number, slide. That multiply-and-add is all the
+arithmetic a convolution does. The **stride** is how far the flashlight
+moves each time (1 pixel, or 2 to shrink the output faster). **Padding**
+adds a border of zeros so the filter can also centre on the edge pixels, and
+the output keeps the input's size.
 
 $$
 Y[i, j] = \sum_{c}\sum_{u=0}^{k-1}\sum_{v=0}^{k-1} K[c, u, v]\; X[c,\; i\,s + u,\; j\,s + v]
@@ -256,17 +257,14 @@ Y  # → [[3, 3, 0], [3, 3, 0], [3, 3, 0]]
 (224 + 2 * 3 - 7) // 2 + 1  # → 112
 ```
 
-**In code:** `conv2d` is the loop in the diagram, one multiply-and-add per
-position, and `conv_output_size` is the output-size formula.
+**In code:** `conv2d` is the loop in the diagram, and `conv_output_size`
+is the output-size formula.
 
-## A2. Pooling: summarise each neighbourhood by its loudest voice
+## A2. Pooling: keeping the strongest response in each block
 
-**Everyday picture.** A manager asks each of four teams for one number: the
-strongest signal anyone on the team saw. The report is four times shorter
-and still says where something important happened.
-
-**Tiny worked example.** 2×2 max pooling on a 4×4 map keeps the largest
-value in each quarter:
+A feature map has one number for every place the filter stood, so with
+padding it is as large as the image. **Max pooling** shrinks it by keeping only the
+largest value in each small block. With 2×2 blocks, a 4×4 map becomes 2×2:
 
 ```
 1 3 | 0 0
@@ -276,41 +274,45 @@ value in each quarter:
 1 0 | 1 6
 ```
 
+The pooled map has a quarter of the numbers, and each one still says how
+strongly the pattern appeared somewhere in its block.
+
 ![One CNN layer on an 8×8 bright square: the vertical-edge feature map is positive down the left side and negative down the right, and 2×2 max pooling keeps the left edge while the negative right edge becomes 0](figures/primer.ml.cnn_rnn.cnn_pipeline.svg)
 
-**Reading it:** left to right, one pass of a CNN layer. The input is an 8×8
-image of a bright square on a dark background. The filter is the vertical
-edge detector from the worked example. The feature map (with padding, so
-still 8×8) is bright red down the square's left side (dark to bright, the
-pattern it looks for) and blue down the right side (bright to dark, the
-opposite pattern); everywhere flat is zero. After 2×2 max pooling the map
-is 4×4: a quarter of the numbers, but the left edge is still clearly marked.
-The right edge's negative responses become 0, because max pooling keeps the
-*largest* value in each block. Real networks pass maps through ReLU (which
-zeroes negatives) before pooling anyway, and detect the bright-to-dark edge
-with a second, mirror-image filter. Numbers in the cells are the actual
-values.
+**Reading it:** read left to right: one convolution, then one pooling
+step. The input is an 8×8 bright square on a dark background, and the filter
+is the vertical-edge detector from the 5×5 example. The feature map (padded,
+so still 8×8) is red down the square's left side, where dark turns to
+bright, and blue down its right side, where bright turns to dark; everywhere
+flat is 0. After 2×2 max pooling the map is 4×4 and the left edge is still
+marked. The right edge's negative values become 0, because max pooling
+keeps the *largest* value in each block. Real networks pass maps through
+ReLU (which zeroes negatives) before pooling anyway, and find the
+bright-to-dark edge with a second, mirror-image filter. The numbers in the
+cells are the computed values.
 
 **In code:** `max_pool2d` keeps the largest value in each non-overlapping
 block.
 
 ## A3. Weight sharing and the receptive field
 
-**Everyday picture.** A rubber stamp: you carve the pattern once and use it
-everywhere on the page. A CNN uses the *same* filter at every position,
-so a cat detector works in any corner of the photo and costs the same
-number of weights however large the photo is.
+A CNN uses the *same* filter at every position of the image. This is
+**weight sharing**, and it does two things. A filter that has learned to
+find a cat finds it in any corner of the photo, and the layer's size does
+not grow with the photo's. 64 filters of size 3×3 over a colour image need
+3·3·3·64 + 64 = **1,792** parameters (a 3×3 slice per colour channel, plus
+one bias per filter), for any image size. A fully connected layer mapping a
+224×224×3 image to an output the size of those 64 feature maps would need
+150,528 × 3,211,264 ≈ **483 billion** weights.
 
-**Tiny worked example.** 64 filters of size 3×3 over a colour image need
-3·3·3·64 + 64 = **1,792** parameters, for any image size. A fully connected
-layer mapping a 224×224×3 image to an output of the same size as those 64
-feature maps would need 150,528 × 3,211,264 ≈ **483 billion** weights.
-
-As layers stack, each neuron sees more of the original image: its
-**receptive field**. One 3×3 layer sees 3×3 pixels; two see 5×5; three see
-7×7. Pooling between layers speeds this up: conv 3×3, pool 2×2, conv 3×3
-already sees 8×8. That's why two stacked 3×3 filters (18 weights, and two
-nonlinearities) replaced single 5×5 filters (25 weights) in VGG.
+One 3×3 filter sees only a 3×3 patch. Stacking layers widens the view,
+because each neuron in a later layer sees a patch of the layer below, which
+saw a patch of the image. The part of the original image one neuron sees is
+its **receptive field**. One 3×3 layer sees 3×3 pixels; two see 5×5; three
+see 7×7. Pooling between layers widens it faster: conv 3×3, pool 2×2,
+conv 3×3 already sees 8×8. Two stacked 3×3 layers see the same 5×5 patch as
+one 5×5 filter, with 18 weights instead of 25 and a second nonlinearity,
+which is why VGG replaced single 5×5 filters with stacks of 3×3 ones.
 
 $$
 r_{\ell} = r_{\ell-1} + (k_\ell - 1)\, j_{\ell-1} \qquad j_\ell = j_{\ell-1}\, s_\ell \qquad r_0 = j_0 = 1
@@ -350,23 +352,25 @@ for k_l, s_l in layers:
 
 ![Receptive field against depth: plain 3×3 layers widen the view by 2 pixels per layer, while pooling after every second layer makes the jumps double](figures/primer.ml.cnn_rnn.receptive_field.svg)
 
-**Reading it:** the x-axis is the number of 3×3 convolution layers; the
-y-axis is how many input pixels (along one side) one neuron at that depth
-can see. Without pooling (lower line) the view grows by 2 pixels per layer,
-slowly. With a 2×2 pool after every second layer (upper line) the jumps
-double each time, so a dozen layers already see most of a 224-pixel image.
-That growth is what lets deep layers recognise whole objects.
+**Reading it:** the x-axis counts 3×3 convolution layers; the y-axis is how
+many input pixels, along one side, one neuron at that depth sees. Without
+pooling (lower line) the view grows by 2 pixels per layer, to 25 after
+twelve layers. With a 2×2 pool after every second layer (upper line) the
+step doubles at every pool, and eleven layers see 220 pixels, nearly all of
+a 224-pixel image.
 
 **In code:** `conv_params` and `dense_params` count the two layers'
 parameters, and `receptive_field` applies the recurrence to a stack of
-(kernel, stride) layers.
+layers.
 
 ## A4. From edges to parts to objects
 
-**Everyday picture.** Reading starts with strokes, then letters, then words,
-then sentences. A CNN's first layer learns strokes (edges and colour
-blobs), the next combines them into textures and corners, deeper layers
-into parts (eyes, wheels), and the last into whole objects.
+A neuron that sees more of the image can respond to bigger things. Each
+conv layer applies many filters to the feature maps below it, so its
+patterns are combinations of the patterns below. The first layer finds
+edges and colour blobs, the next combines them into textures and corners,
+deeper layers into parts such as eyes and wheels, and the last into whole
+objects.
 
 ```mermaid
 flowchart LR
@@ -379,54 +383,49 @@ flowchart LR
   FC --> O[Prediction<br/>cat 94%]
 ```
 
-**Reading it:** each conv layer applies many filters to the feature maps
-below it, so its patterns are combinations of the patterns below. Each pool
-halves the resolution, which widens what the next layer sees (section A3).
-By the end, a small grid of very abstract features feeds an ordinary dense
-layer that outputs class probabilities. Nobody hand-designs these filters;
-training discovers them, and first-layer filters in trained networks look
-remarkably like the edge detectors in this lesson.
+**Reading it:** follow the image from pixels to prediction. Each pool halves
+the resolution, which widens what the next layer sees. At the end, a small
+grid of abstract features feeds an ordinary dense layer that outputs class
+probabilities. The filters are not designed by hand: training finds them,
+and the first layer of a trained network learns filters much like the edge
+detectors above.
 
 ![Four first-layer filters on an L-shaped block: the edge filters fire on their own sides, the diagonal filter fires on every side, and a second-layer product of the two edge maps lights up only at the L's corners](figures/primer.ml.cnn_rnn.filter_hierarchy.svg)
 
 **Reading it:** the top row shows four 3×3 filters of the kind a first
-layer learns (red = positive weight, blue = negative): vertical edge,
-horizontal edge, diagonal, and a centre-surround "spot". The middle row
-shows each one's response to the same small image of an L-shaped block.
-The vertical-edge filter fires only on the L's left and right sides (red
-where dark turns bright, blue where bright turns dark) and the
-horizontal-edge filter only on its top and bottom. The diagonal filter is
-not so choosy: its weights lean both ways at once, so it answers about ±2 on
-*every* straight side of the L (two thirds of an edge filter's 3) and ±3 at
-some corners. The spot filter answers faintly (at most about 0.6) all around
-the outline. One first-layer filter is a weak witness on its own, which is
-why the next layer combines several. The last panel is a second-layer
-detector built from first-layer outputs: the vertical-edge strength times
-the horizontal-edge strength, which is large only where a vertical *and* a
-horizontal edge meet, at the L's corners. Combining simple detectors into
-more specific ones is the whole hierarchy in miniature.
+layer learns (red for a positive weight, blue for a negative one): vertical
+edge, horizontal edge, diagonal, and a centre-surround spot. The middle row
+shows each filter's response to the same image, an L-shaped block. The
+vertical-edge filter fires only on the L's left and right sides, and the
+horizontal-edge filter only on its top and bottom. The diagonal filter's
+weights lean both ways at once, so it answers about ±2 on *every* straight
+side (two thirds of an edge filter's 3) and ±3 at some corners. The spot
+filter answers faintly, at most about 0.6, all around the outline. No
+first-layer filter on its own says where the corners are. The last panel is
+a second-layer detector that does: the vertical-edge response times the
+horizontal-edge response, large only where both edges meet, at the L's
+corners.
 
-**In code:** the figure runs each first-layer filter over the L with
-`conv2d`, and the corner detector multiplies two of those feature maps
-entry by entry.
+**In code:** the figure runs each filter over the L with `conv2d`, and the
+corner detector multiplies two of the maps entry by entry.
 
-## A5. Landmarks, and patches as tokens
+## A5. Landmark CNNs, and images as patch tokens
 
-- **AlexNet (2012)** won the ImageNet competition by a wide margin by training
-  a deep CNN on GPUs, which started the deep-learning boom.
+Four results take CNNs from their breakthrough to their replacement:
+
+- **AlexNet (2012)** won the ImageNet competition by a wide margin with a
+  deep CNN trained on GPUs, and set off the deep-learning boom.
 - **VGG (2014)** showed that deep stacks of small 3×3 filters work well.
-- **ResNet (2015)** added residual (skip) connections, letting gradients
-  bypass layers, and made networks of 100+ layers trainable. The same idea
-  sits inside every transformer (see `primer.ml.deep_nets`).
-- **Vision Transformers (2020)** cut an image into patches and treat each
-  patch as a token, then apply ordinary attention.
+- **ResNet (2015)** added residual (skip) connections, which let gradients
+  bypass layers, and made networks of 100+ layers trainable. The same
+  connections sit inside every transformer (see `primer.ml.deep_nets`).
+- **Vision Transformers (2020)** cut an image into patches, treat each patch
+  as a token, and use ordinary attention in place of convolution layers.
 
-**Everyday picture for patches.** Cut a photo into a grid of jigsaw pieces,
-lay them out in a row, and read them like the words of a sentence.
-
-**Tiny worked example.** A 224×224 colour image cut into 16×16 patches gives
-(224/16)² = **196** patches, each flattened to 16·16·3 = **768** numbers:
-196 tokens of 768 values.
+A Vision Transformer reads an image the way a language model reads a
+sentence. A 224×224 colour image cut into 16×16 patches gives
+(224/16)² = **196** patches, each flattened to 16·16·3 = **768** numbers: a
+sequence of 196 tokens of 768 values each.
 
 ```mermaid
 flowchart LR
@@ -437,29 +436,29 @@ flowchart LR
   POS --> TF[Transformer blocks<br/>attention across patches]
 ```
 
-**Reading it:** after the cut-and-flatten step, an image is just a sequence
-of 196 tokens, and everything downstream is the same transformer used for
-text. Multimodal language models read images mostly this way.
+**Reading it:** follow the image left to right. Once it is cut and
+flattened it is a sequence of 196 tokens, and from the projection on, the
+model is the same transformer that reads text. Multimodal language models
+read images mostly this way.
 
-**In code:** `patchify` does the cut-and-flatten step, turning an image into
-one row of numbers per patch.
+**In code:** `patchify` does the cut-and-flatten step.
 
-**Why it matters in practice.** CNNs remain efficient and strong for small
-vision tasks, on-device models and limited data, because their built-in
-assumptions (locality, weight sharing) mean they learn from less. At large
-scale, Vision Transformers dominate.
+CNNs are still efficient and strong for small vision tasks, on-device models
+and limited data, because their built-in assumptions (locality, weight
+sharing) let them learn from fewer examples. At large scale, Vision
+Transformers are the usual choice.
 
 # Part B: recurrent networks
 
-## B1. An RNN reads with a one-page summary
+## B1. An RNN reads one word at a time
 
-**Everyday picture.** You read a book one word at a time, and you are
-allowed to keep only a single page of notes. After every word you rewrite
-the page: blend what the page said with the new word. At the end, the page
-is all you have. That page is the **hidden state**.
+A sentence has no grid, but it has an order. A **recurrent neural network
+(RNN)** reads it one word at a time. Picture reading a book while keeping a
+single page of notes: after every word you rewrite the page, blending what
+it said with the new word, and at the end the page is all you have. That
+page is the **hidden state**.
 
-**Tiny worked example.** The sentence "not very good", with each word turned
-into one number: not = −1, very = 0.5, good = 1. The summary is a single
+Take the sentence "not very good", with each word turned into one number: not = −1, very = 0.5, good = 1. The summary is a single
 number h, starting at 0. The rule: new h = tanh(0.5 × old h + 1 × word).
 (tanh squashes any number into the range −1 to 1: tanh(0) = 0,
 tanh(1) = 0.76, tanh(−1) = −0.76.)
@@ -470,9 +469,15 @@ tanh(1) = 0.76, tanh(−1) = −0.76.)
 | 2 | very (0.5) | 0.5 × (−0.762) + 0.5 = 0.119 | **0.119** |
 | 3 | good (1) | 0.5 × 0.119 + 1 = 1.059 | **0.785** |
 
-The final summary is strongly positive: the "not" at the start has been
-almost washed out, because the page was rewritten twice since. This is the
-central weakness of RNNs, in three lines of arithmetic.
+The sentence is negative, but the final summary is strongly positive. Each
+rewrite keeps only half of the old page (the 0.5), so the "not" shrank
+twice, while "very" and "good" were added in full.
+
+![The one-number summary after each word of "not very good": negative after "not", near zero after "very", strongly positive after "good", so the negation is lost](figures/primer.ml.cnn_rnn.rnn_trace.svg)
+
+**Reading it:** each bar is the summary after one word. "not" drives it
+negative, "very" pulls it back near zero, and "good" pushes it strongly
+positive. Read as sentiment, the last bar says positive, which is wrong.
 
 ```mermaid
 flowchart LR
@@ -490,8 +495,8 @@ flowchart LR
 **Reading it:** this is one RNN "unrolled in time": the three cells are the
 *same* cell with the *same* weights, drawn once per step. Each step takes the
 previous summary (arrow from the left) and the next word (arrow from below)
-and produces the new summary. Everything the network knows about "not" must
-survive two more rewrites to reach the end.
+and produces the new summary. To reach the end, anything about "not" has to
+pass through two more cells.
 
 $$
 h_t = \tanh\big(W_h\, h_{t-1} + W_x\, x_t + b\big)
@@ -532,23 +537,19 @@ for x_t in x:
     print(round(h, 3))  # → -0.762 0.119 0.785
 ```
 
-**In code:** `RNNCell` holds W_h, W_x and b; `RNNCell.step` is the formula
-once, `RNNCell.run` applies it along a sequence, and `RNNCell.scalar` builds
-the one-number cell of the worked example.
+**In code:** `RNNCell.step` is the formula once, and `RNNCell.run` applies
+it along a sequence.
 
 ## B2. Why RNNs forget: the vanishing gradient
 
-**Everyday picture.** A photocopy of a photocopy of a photocopy. Each copy
-loses a little; after twenty copies the original is unreadable. Training an
-RNN sends a correction signal *backwards* through every step, and each step
-multiplies it by a factor. Factors below 1 fade the signal to nothing
-(**vanishing gradient**); factors above 1 blow it up (**exploding
-gradient**).
-
-**Tiny worked example.** With a recurrent weight of 0.5 and zero inputs, each
-step back multiplies the signal by exactly 0.5. Ten steps back: 0.5¹⁰ =
-**0.00098**, about a thousandth. With a weight of 1.5 instead: 1.5¹⁰ =
-**57.7**, and training diverges.
+The "not" faded on the way forward, and training has the same problem on
+the way back. To learn, an RNN sends a correction signal (the gradient)
+*backwards* through every step, and each step multiplies it by a factor.
+Factors below 1 shrink the signal toward nothing, a **vanishing gradient**;
+factors above 1 blow it up, an **exploding gradient**. With a recurrent
+weight of 0.5 and zero inputs, each step back multiplies the signal by 0.5.
+Ten steps back it is 0.5¹⁰ = **0.00098**, about a thousandth. With a weight
+of 1.5 it is 1.5¹⁰ = **57.7**, and training diverges.
 
 $$
 \frac{\partial h_T}{\partial h_0} = \prod_{t=1}^{T} \operatorname{diag}\!\big(1 - h_t^2\big)\, W_h
@@ -586,35 +587,24 @@ round(influence, 5)  # → 0.00098
 round(1.5 ** 10, 1)  # → 57.7
 ```
 
-![Gradient reaching back through time on a log scale: the plain RNN's plunges to about 10⁻¹⁶ after 50 steps while the LSTM's stays near 1](figures/primer.ml.cnn_rnn.rnn_gradient.svg)
-
-**Reading it:** the x-axis is how many steps separate the start of the
-sequence from the current step; the y-axis (log scale) is how strongly the
-current memory still responds to a nudge in the starting memory. The plain
-RNN's line plunges: after 20 steps the start has almost no influence, and by
-50 it's around 10⁻¹⁶, which means it cannot learn anything about the start.
-The LSTM's line stays near 1 across all 50 steps. That flat line is the
-reason LSTMs replaced plain RNNs.
-
 **In code:** `RNNCell.influence_of_start` multiplies out the product above
-for one sequence, and `gradient_through_time` measures both lines of the
-figure.
+for one sequence.
 
-## B3. LSTM: a notebook with an eraser, a pen and a highlighter
+## B3. LSTM: a cell state that gates edit
 
-**Everyday picture.** Instead of rewriting the whole page after every word,
-keep a notebook (the **cell state**) and three tools, each controlled by a
-dial from 0 to 1 that the network sets for itself at every step:
+An **LSTM** (long short-term memory) stops rewriting the whole page after
+every word. It keeps a notebook, the **cell state**, and edits it with three
+tools, each set by a dial from 0 to 1 that the network chooses for itself at
+every step:
 
 - the **eraser** (forget gate f): how much of each line to keep;
 - the **pen** (input gate i): how much of the new note to write in;
-- the **highlighter** (output gate o): how much of the notebook to show the
-  outside world right now.
+- the **highlighter** (output gate o): how much of the notebook to show as
+  the hidden state right now.
 
-Because the notebook is *edited* rather than rewritten, information can pass
-through many steps untouched: eraser off, pen off, and the line survives.
-
-**Tiny worked example.** One-line notebook holding 0.8.
+With the eraser set to keep and the pen off, a line passes through any
+number of steps untouched. Here is a one-line notebook holding 0.8, under
+four settings of the dials:
 
 | eraser keeps f | pen writes i | new note g | highlighter o | new notebook c = f·0.8 + i·g | shown h = o·tanh(c) |
 |---|---|---|---|---|---|
@@ -643,6 +633,16 @@ so when the eraser is near 1 the notebook (and the training signal flowing
 back along it) passes through almost unchanged. The dotted arrows show that
 all four dials are computed from the current input and the previous shown
 state, so the network decides at each step what to forget, write and show.
+
+![Gradient reaching back through time on a log scale: the plain RNN's plunges to about 10⁻¹⁶ after 50 steps while the LSTM's stays near 1](figures/primer.ml.cnn_rnn.rnn_gradient.svg)
+
+**Reading it:** the x-axis is how many steps separate the start of the
+sequence from the current step; the y-axis, on a log scale, is how strongly
+the current memory still responds to a nudge in the starting memory. The
+plain RNN's line plunges: after 20 steps the start has almost no influence,
+and by 50 it is around 10⁻¹⁶, too small to learn anything from. The LSTM's
+notebook, with its forget gate set to keep (bias 3), stays near 1 across all
+50 steps.
 
 $$
 \begin{aligned}
@@ -692,29 +692,24 @@ for f, i, g, o in [(1, 0, 0, 1), (0, 0, 0, 1), (0, 1, 0.5, 1), (1, 0, 0, 0)]:
     print(c, round(h, 3))  # → 0.8 0.664 0.0 0.0 0.5 0.462 0.8 0.0
 ```
 
-**GRUs** simplify this to two dials and no separate notebook: an *update*
-gate z chooses between keeping the old state (z = 1) and taking a new
-candidate (z = 0), and a *reset* gate decides how much old state feeds that
-candidate: h = (1 − z) ⊙ n + z ⊙ h_prev, where n is the candidate.
-Similar performance, fewer parameters.
+A **GRU** (gated recurrent unit) has two dials and no separate notebook: an
+*update* gate z chooses between keeping the old state (z = 1) and taking a
+new candidate (z = 0), and a *reset* gate decides how much old state feeds
+that candidate: h = (1 − z) ⊙ n + z ⊙ h_prev, where n is the candidate. It
+performs about as well as an LSTM with fewer parameters.
 
-**In code:** `LSTMCell` holds the four gates' stacked weights;
-`LSTMCell.step` computes the dials and updates the notebook,
-`LSTMCell.run` carries it along a sequence, and
-`LSTMCell.fixed_gates` pins the dials to replay the table above;
-`GRUCell.step` is the two-dial version.
+**In code:** `LSTMCell.step` computes the dials and updates the notebook,
+`GRUCell.step` is the two-dial version, and `gradient_through_time` measures
+both lines of the chart.
 
 ## B4. Why transformers won
 
-**Everyday picture.** An RNN is a line of people passing a note: the last
-person hears about the first only through everyone in between, and nobody
-can start until the person before them finishes. A transformer is a meeting
-where everyone can speak to everyone directly, all at once.
-
-**Tiny worked example.** 1,000 tokens. An RNN needs **1,000** steps one after
-another, and information from token 1 reaches token 1,000 through **999**
-hand-offs. A transformer layer processes all 1,000 in **1** parallel step,
-and any token reaches any other in **1** hop of attention.
+Gates let an RNN carry information across many steps, but it still reads
+one token at a time, and everything it has read must fit in one fixed-size
+state. A sequence of 1,000 tokens takes **1,000** steps, one
+after another, and information from token 1 reaches token 1,000 through
+**999** hand-offs. A transformer layer processes all 1,000 tokens in **1**
+parallel step, and attention connects any token to any other in **1** hop.
 
 ```mermaid
 flowchart LR
@@ -728,38 +723,31 @@ flowchart LR
 
 **Reading it:** in the RNN, information about "The" must survive three
 hand-offs to reach "down", and the four steps cannot run at the same time. In
-the transformer, all four positions go into attention together and every
-pair is compared directly. Parallel training is what made it practical to
-train on vastly more data, and that is what led to modern language models.
-The price is attention's cost growing with the square of the sequence length
-(see `primer.ml.attention`).
+the transformer, all four tokens go into attention together and every pair
+is compared directly. Training every position at once made it practical to
+train on far more data, which led to today's language models. The price is
+that attention's cost grows with the square of the sequence length (see
+`primer.ml.attention`).
 
-**In code:** `sequential_steps` and `path_length` return the two counts in
-the worked example for an RNN or a transformer.
+**In code:** `sequential_steps` and `path_length` return the two counts
+above, for an RNN or a transformer.
 
-**State-space models** such as Mamba revisit recurrence with a design that
-trains in parallel and runs in time linear in sequence length. They carry a
-compressed state like an RNN but avoid its training bottleneck, and some
-hybrid models mix them with attention.
-
-![The one-number summary after each word of "not very good": negative after "not", near zero after "very", strongly positive after "good", so the negation is lost](figures/primer.ml.cnn_rnn.rnn_trace.svg)
-
-**Reading it:** the worked example as a picture. Each bar is the one-number
-summary after reading a word. "not" drives it negative; "very" pulls it back
-near zero; "good" pushes it strongly positive. The final summary would read
-as positive sentiment, which is wrong: the negation had to survive two
-rewrites and didn't. Gates (LSTM) and direct connections (attention) are the
-two historical fixes.
+Recurrence has come back in a new form. **State-space models** such as Mamba
+carry a compressed state like an RNN, but they train in parallel and run in
+time linear in the sequence length. Some hybrid models mix them with
+attention.
 
 ## In 20 seconds
 - A convolution slides a small filter across an image, multiplying and adding
-  at each position; the output map shows where the filter's pattern appears.
-- Weight sharing (one filter everywhere) and local receptive fields make CNNs
-  efficient; pooling downsamples; depth builds edges → parts → objects.
-- An RNN reads one step at a time, carrying a hidden state; backpropagating
-  through many steps multiplies gradients until they vanish or explode.
-- LSTMs add a cell state edited by forget, input and output gates, so
-  information and gradients survive many steps.
+  at each position; the output, a feature map, shows where the filter's
+  pattern appears.
+- One filter reused at every position (weight sharing) keeps a CNN's size
+  independent of the image's; pooling shrinks the maps, and stacked layers
+  combine edges into parts and objects.
+- An RNN reads one step at a time, carrying a hidden state; training through
+  many steps multiplies the gradient until it vanishes or explodes.
+- An LSTM adds a cell state that forget, input and output gates edit instead
+  of rewriting, so information and gradients survive many steps.
 - Transformers won through parallel training and one-hop paths between any
   two tokens; Vision Transformers treat image patches as tokens.
 
