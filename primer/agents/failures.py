@@ -120,14 +120,10 @@ name the failure and find its fix, you are done.
 
 ## Level 2: How it works, from scratch
 
-Pilots learn from a catalogue of accidents: each entry names what went
-wrong, how it showed up in the cockpit, and the checklist item that now
-prevents it. This lesson is that catalogue for agents: ten failures that
-keep recurring in production systems, each with its symptom, its fix, and a
-pointer to the lesson that builds the fix. Three of them get their fix
-built right here: compounding error (arithmetic), brittle integrations
-(retries with backoff, and circuit breakers) and runaway loops (loop
-detection).
+The catalogue below lists ten ways an agent fails in production, each with
+its symptom, its fix and the lesson that builds the fix. The chapters after
+it take three rows further: compounding error, brittle integrations and
+loops.
 
 | Failure | Symptom | Fix | Lesson |
 |---|---|---|---|
@@ -146,12 +142,9 @@ detection).
 
 ## Compounding error
 
-**Everyday picture.** A relay race where each baton pass succeeds 95% of
-the time. One pass is nearly safe; ten passes in a row drop the baton more
-often than you'd think.
-
-**Worked example.** If each step of an agent's task succeeds 95% of the
-time, independently:
+An agent's task is a chain of steps, and the task succeeds only if every
+step does. If each step succeeds 95% of the time, independently of the
+others, the chances multiply:
 
 | Steps | Chance every step succeeds |
 |---|---|
@@ -188,42 +181,45 @@ round(p ** n, 3)  # → 0.599
 round(1 - p ** n, 1)  # → 0.4
 ```
 
+There are two ways out: fewer steps, or more reliable ones. Checking a
+step's result where it happens, and retrying just that step when the check
+fails, keeps an error from travelling down the chain. Checkpoints let a
+failed task resume from the middle, and a person can review the steps where
+a mistake would cost most.
+
 ```mermaid
 flowchart LR
   S1[Step 1<br/>95%] --> S2[Step 2<br/>95%] --> S3[...] --> S10[Step 10<br/>95%] --> D[Done:<br/>60% of the time]
   S2 -.->|verify, retry<br/>just this step| S2
 ```
 
-**Reading it:** every arrow is another chance to drop the baton, so success
-shrinks with each step. The dotted loop is the remedy: check a step's
-result where it happens and retry only that step, so an error doesn't
-travel down the chain. Fewer steps, verification after key steps,
-checkpoints to resume from the middle, and human review at critical points
-all attack the same exponent.
+**Reading it:** ten steps at 95% each finish the task 60% of the time. The
+dotted loop is the check and retry: step 2's result is checked before step
+3 starts, and only step 2 runs again.
 
 ![Twenty steps succeed 82% of the time at 99% per step but only 36% at 95% and 12% at 90%](figures/primer.agents.failures.compounding.svg)
 
-**Reading it:** the x-axis is the number of steps; each curve is a per-step
-reliability. At 99% per step a 20-step task still succeeds 82% of the time;
-at 95% it's 36%; at 90%, 12%. Small gains in per-step reliability are worth
-far more than they look, and demos with three steps say little about tasks
-with twenty.
+**Reading it:** find 20 on the x-axis and read up. The 99% curve is at 82%,
+the 95% curve at 36% and the 90% curve at 12%. Raising each step from 95% to
+99% more than doubles the chance that a twenty-step task succeeds.
 
 **In code:** `chain_success` is $p^{\,n}$; `max_steps_for` runs it backwards,
 returning the most steps you can chain and still reach a target success rate.
 
 ## Brittle integrations: retries with backoff
 
-**Everyday picture.** Calling a busy phone line: you don't redial every
-second. You wait a little, then longer, then longer still, and if everyone
-redials on the same schedule the line stays jammed, so you add a random
-pause (**jitter**).
+Many of an agent's steps call an outside service, such as a search API or a
+database. When the call times out or the connection drops, the failure is
+often **transient**: the same call a moment later may work, so retrying it
+makes the step more reliable. Wait between attempts, twice as long each
+time (**exponential backoff**), so an overloaded service has room to
+recover. Add a random part to each wait (**jitter**), so that clients that
+failed together do not all retry together.
 
-**Worked example.** A service times out twice and then answers. With a base
-delay of 0.1 s the waits are 0.1 s, then 0.2 s, and the third attempt
-succeeds. With a cap of 10 s, the waits never exceed 10 s however many
-attempts there are. A request that's *invalid* (a `ValueError` here) fails
-the same way every time, so it's raised immediately: retrying only adds
+Say a service times out twice and then answers. With a base delay of 0.1 s
+the waits are 0.1 s, then 0.2 s, and the third attempt succeeds. A cap of
+10 s keeps any wait from growing past 10 s. An invalid request fails the
+same way every time, so it is raised at once: retrying would only add
 load.
 
 $$
@@ -268,43 +264,45 @@ sequenceDiagram
   S-->>A: 200 OK
 ```
 
-**Reading it:** time runs downward. Each failure is followed by a longer
-pause, which gives an overloaded service room to recover instead of being
-hammered. Writes must be **idempotent** (safe to repeat: sending the same
-request twice has the same effect as once, usually via an idempotency key)
-before you retry them, or a retried "create order" makes two orders.
+**Reading it:** time runs downward. Each timeout is followed by a longer
+wait, 0.1 s and then 0.2 s, and the second retry gets 200 OK, the web's code
+for success.
 
 ![The delay doubles each attempt until it hits the 10-second cap, and jitter scatters five clients' retries across the whole range below it](figures/primer.agents.failures.backoff.svg)
 
-**Reading it:** the x-axis is the attempt number; the black line is the
-capped exponential delay. The dots are five clients using *full jitter*
-(each waits a random time between zero and the capped delay): instead of
-all retrying at the same moment, their retries spread out, which is what
-lets a recovering service actually recover.
+**Reading it:** the black line is the wait before each retry, from a base of
+0.5 s: it doubles until the cap holds it at 10 s. The blue dots are five
+clients using **full jitter**, each waiting a random time between zero and
+the line. Without jitter all five would sit on the line and retry together.
 
-**In code:** `backoff_delays` lists the capped waits $d_k$;
-`retry_with_backoff` calls a function, retries only the exceptions in
-`RETRYABLE` with those waits (optionally with full jitter), and raises
-anything else at once.
+A retried write must be **idempotent**, meaning that sending it twice has
+the same effect as sending it once, or a retried "create order" makes two
+orders. A unique **idempotency key** sent with each request lets the service
+recognise a repeat and skip it.
+
+**In code:** `retry_with_backoff` retries only timeouts and dropped
+connections, waiting `backoff_delays` between attempts (with full jitter if
+asked), and raises any other error at once.
 
 ## Brittle integrations: circuit breakers
 
-**Everyday picture.** The breaker in your home's fuse box. When a circuit
-keeps shorting, it trips and cuts the power, instead of letting the wire
-overheat. After a while you flip it back on to test; if it trips again, it
-stays off.
+Retries handle a blip in one request. During an outage that lasts minutes,
+every request retries and fails in turn, the agent hangs on timeouts, and
+the retries load a service that is trying to recover. A **circuit
+breaker** stops the calls instead. The name comes from the breaker in a fuse
+box, which cuts the power to a circuit that keeps shorting.
 
-A **circuit breaker** wraps calls to a dependency. After several
-consecutive failures it **opens**: calls fail immediately without touching
-the struggling service (fail fast), so the agent can fall back (use a cache,
-tell the user, hand off to a person) instead of hanging on timeouts. After a
-cool-down it goes **half-open** and lets one trial call through: success
-closes it, failure opens it again.
+A breaker wraps every call to one outside service. While **closed**, it lets
+calls through and counts failures in a row. After a set number it
+**opens**: calls fail at once without touching the service (**fail
+fast**), so the agent can fall back to a cached answer, tell the user or
+hand off to a person. After a cool-down it goes **half-open** and lets one
+trial call through: success closes it, failure opens it again.
 
-**Worked example.** Threshold 3, cool-down 30 s. Three timeouts in a row:
-open. A fourth call at 5 s fails instantly with `CircuitOpen` and the
-service isn't called at all. At 31 s, one trial call goes through; it
-succeeds, so the breaker closes.
+With a threshold of 3 and a cool-down of 30 s, three timeouts in a row open
+the breaker. A call 5 s later fails at once without reaching the service.
+A call 31 s after the breaker opened goes through as the trial, succeeds,
+and closes the breaker.
 
 ```mermaid
 stateDiagram-v2
@@ -317,58 +315,52 @@ stateDiagram-v2
   HalfOpen --> Open: trial call fails
 ```
 
-**Reading it:** in the normal state (Closed) calls flow through and failures
-are counted. Open is the protective state: nothing reaches the dependency.
-Half-open is a single, cautious test. The breaker turns a slow, cascading
-failure (every request waiting 30 s on a dead service) into a fast,
-contained one.
+**Reading it:** calls flow through Closed until three failures in a row
+lead to Open, which rejects every call. After the cool-down, HalfOpen lets
+one trial call decide between Closed and Open.
 
 ![Through a 50-second outage the failing service is called only 5 times, while 21 requests fail fast at the open breaker instead](figures/primer.agents.failures.breaker.svg)
 
-**Reading it:** the shaded band is when the upstream service is down;
-each marker is one request. Before the outage, calls succeed (green). The
-first three failures (red) open the breaker; after that, requests fail fast
-(grey) without reaching the service, apart from one trial call per
-cool-down. Once the service is back, the next trial succeeds and traffic
-resumes. The service received a handful of calls during the outage instead
-of all of them.
+**Reading it:** each dot is a request, one every 2 s; the shaded band is
+the outage. This breaker opens after 3 failures and cools down for 15 s.
+Three red failures open it, grey requests then fail fast, and two red trial
+calls, at 30 s and 46 s, fail again. The service is reached 5 times while
+21 requests fail fast, and the first trial after it recovers succeeds.
 
-**In code:** `CircuitBreaker.call` is the state diagram: it raises
-`CircuitOpen` while open, lets one trial call through after the cool-down,
-and closes on success. `simulate_outage` replays the outage in the figure.
+Retries and breakers handle a service that is slow or down, not one whose
+API has changed. **Contract tests**, automated checks that an external API
+still accepts and returns what your tool expects, catch that change before
+users do.
 
-**Contract tests** (automated checks that an external API still accepts
-and returns what your tool expects) catch the third kind of brittleness,
-upstream API changes, before users do.
+**In code:** `CircuitBreaker.call` follows the state diagram, and
+`simulate_outage` replays the outage in the figure.
 
 ## Loops and runaway
 
-**Everyday picture.** A satnav that keeps rerouting you around the same
-block. The fix isn't a better map; it's noticing that you've passed the same
-corner three times.
-
-**Worked example.** `search("vpn")`, `search("vpn")`, `search("vpn")`: the
-same tool with the same arguments three times in a row. Nothing new can
-come back, so the agent is looping. `search("vpn")`, `search("vpn error")`,
-`search("ERR-4012")` is the same tool refining its query: progress.
-Combine loop detection with hard step and token budgets
-(`primer.agents.cost.TaskBudget`) so a confused agent stops and hands off
-instead of burning money.
+The failures so far come from the services an agent calls. A loop is the
+agent's own failure: it calls the same tool with the same arguments,
+gets the same result and calls it again. `search("vpn")` three times in a
+row is a loop, since nothing new can come back. `search("vpn")`,
+`search("vpn error")`, `search("ERR-4012")` is the same tool refining its
+query, which is progress. A loop detector flags the first pattern. Pair it
+with hard limits on steps and tokens (see `primer.agents.cost`), so a
+confused agent stops and hands the task to a person.
 
 **In code:** `is_looping` reports whether the last few calls were the same
 tool with identical arguments.
 
 ## In 20 seconds
-- Long tasks fail multiplicatively: at 95% per step, 10 steps succeed 60%
-  of the time. Shorten chains and verify at key steps.
-- Retry transient failures with capped exponential backoff and jitter; never
-  retry invalid requests; make writes idempotent first.
-- Put circuit breakers around dependencies so outages fail fast instead of
-  cascading.
-- Detect loops (same call, same arguments) and enforce step and token
-  budgets.
-- Most failures are system failures (retrieval, tools, data, evals,
-  adoption), not model failures, and each has a known fix.
+- Agents fail in production in ten recognisable ways, each with a known
+  fix, and most fixes change the system around the language model.
+- Steps multiply: at 95% per step, 10 steps succeed 60% of the time. Use
+  fewer steps and check the key ones.
+- Retry a transient failure after a wait that doubles up to a cap, plus
+  random jitter. Never retry an invalid request; make a write idempotent
+  first.
+- Put a circuit breaker around each outside service, so an outage makes
+  requests fail at once instead of piling up behind timeouts.
+- Detect loops (same tool, same arguments) and set hard limits on steps and
+  tokens.
 
 ## Self-test questions
 
@@ -397,9 +389,10 @@ so callers can fall back, and probes for recovery.
 
 ## The papers behind this lesson
 
-No single founding paper; these are engineering patterns. The canonical
-write-ups are Michael Nygard's *Release It!* (which named the circuit
-breaker) and the AWS Builders' Library article on backoff and jitter, both
+No single founding paper; these are engineering patterns. The standard
+write-ups are Michael Nygard's book *Release It!*, which popularized the
+circuit breaker, and the AWS Builders' Library article on backoff and
+jitter. Martin Fowler's summary of the breaker and the AWS article are
 linked below.
 
 ## Further reading
