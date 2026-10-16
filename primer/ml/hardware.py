@@ -130,39 +130,24 @@ done.
 ## Level 2: How it works, from scratch
 
 Every lesson so far has counted operations: so many multiplies per token,
-so many parameters. This lesson looks at the machine that performs them,
-because the machine explains things the maths alone never will: why a model
-that "needs" a tenth of a millisecond of arithmetic takes five milliseconds
-per token, why training runs are spread across thousands of chips in a
-particular way, and why everyone is shrinking numbers from 32 bits to 8.
+so many parameters. A count says how much work there is, not how long it
+takes. How long depends on the machine: how much of the work it can do at
+once, and how quickly it can bring each number to the place where the
+arithmetic happens. Both questions start with the matrix multiply, because
+that is nearly all a neural network does.
 
-Three facts carry the whole lesson:
+## 1. Why GPUs
 
-1. **A GPU is thousands of simple arithmetic units** doing the same step on
-   different numbers. Neural networks are mostly matrix multiplies, which
-   are exactly that kind of work.
-2. **Arithmetic is cheap; moving data is expensive.** The chip can multiply
-   far faster than its memory can feed it, so speed is usually decided by
-   how many bytes move, not how many operations run.
-3. **Fewer bits per number helps everywhere at once**: more numbers per
-   byte moved, more numbers in memory, and smaller, more numerous
-   multipliers on the chip.
+A CPU is like a few master chefs. Each can cook anything, improvise, and
+follow a recipe full of "if the sauce splits, do this instead". A GPU is
+like a kitchen of thousands of line cooks who all do the same step at the
+same moment on different ingredients: "everyone, chop your carrot now."
+That kitchen cannot invent a menu, but it can make ten thousand identical
+salads at once. Nearly all of a neural network's work is of the salad kind:
+**matrix multiplication**, the same multiply-and-add done billions of times
+on different numbers.
 
-Sections 5 and 6 then apply those facts to many GPUs working together, and
-to the question every deployment starts with: will the model fit?
-
-## 1. Why GPUs: thousands of simple cooks
-
-**Everyday picture.** A CPU is a few master chefs. Each can cook anything,
-improvise, and follow a recipe full of "if the sauce splits, do this
-instead". A GPU is a kitchen of thousands of line cooks who all do the same
-step at the same moment on different ingredients: "everyone, chop your
-carrot now." That kitchen is useless for inventing a menu and unbeatable at
-ten thousand identical salads. A neural network is ten thousand identical
-salads: nearly all of its work is **matrix multiplication**, the same
-multiply-and-add done billions of times on different numbers.
-
-**Tiny worked example.** Multiply a 2 × 3 matrix by a 3 × 2 matrix:
+Take a 2 × 3 matrix times a 3 × 2 matrix:
 
 $$
 A = \begin{pmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \end{pmatrix}, \quad
@@ -186,8 +171,8 @@ B, multiplied position by position and added up."
 **58**; the bottom-right is 4·8 + 5·10 + 6·12 = 32 + 50 + 72 = **154**. Each
 cell took 3 multiplies and 3 additions (each product added to a running
 total that starts at 0), so the 4 cells took 12 multiplies and 12 additions.
-The crucial detail: **no cell needs any other cell's answer.** Four cooks
-could take one cell each and finish at the same moment.
+**No cell needs any other cell's answer**, so four cooks could take one
+cell each and finish at the same moment.
 
 **In Python:**
 
@@ -199,9 +184,9 @@ m, k, n = len(A), len(B), len(B[0])
 [[sum(A[i][p] * B[p][j] for p in range(k)) for j in range(n)] for i in range(m)]  # → [[58, 64], [139, 154]]
 ```
 
-That count generalises into the most useful formula in this lesson. A
-**FLOP** (floating-point operation) is one multiply or one add, and
-multiplying an m × k matrix by a k × n matrix costs:
+The same count works at any size. A **FLOP** (floating-point operation) is
+one multiply or one add, and multiplying an m × k matrix by a k × n matrix
+costs:
 
 $$
 \text{FLOPs} = 2\,m\,n\,k
@@ -239,8 +224,8 @@ flops  # → 137438953472
 round(flops / 1e15 * 1000, 2)  # → 0.14
 ```
 
-Hardware usually does "multiply, then add to a running total" as a single
-instruction, the **fused multiply-add**, which is why FLOPs come in pairs.
+Most chips do "multiply, then add to a running total" as one instruction,
+the **fused multiply-add**, which is why FLOPs are counted in pairs.
 
 ```mermaid
 flowchart LR
@@ -261,16 +246,17 @@ flowchart LR
   BR["branchy code:<br/>if this then that"] --> CPU
 ```
 
-**Reading it:** the two boxes spend their silicon differently. The CPU
-spends it on a few cores that each handle any instruction stream quickly,
-including code full of decisions. The GPU spends it on arithmetic: groups
-of cores that all execute the *same* instruction on *different* numbers,
-plus (on most modern accelerators) **matrix units** that multiply a small
-tile of numbers in one instruction. A matrix multiply is a perfect fit for
-the GPU, because its m × n cells are independent and identical in shape.
+**Reading it:** compare what the two boxes spend their silicon on. The
+CPU's few cores each run any instruction stream quickly, including code
+full of decisions. The GPU's groups of cores all execute the *same*
+instruction on *different* numbers, and on most modern accelerators its
+**matrix units** multiply a small tile of numbers in one instruction. The
+matrix multiply goes to the GPU because its m × n cells are independent and
+all the same shape.
 
-How far does the independence go? Suppose each core takes whole cells and
-performs one multiply-add per round:
+Independence lets the cells be shared out, but only as far as there are
+cells. Suppose each core takes whole cells and does one multiply-add per
+round:
 
 $$
 \text{rounds} = \left\lceil \frac{m\,n}{\text{cores}} \right\rceil \times k
@@ -315,44 +301,42 @@ matrix leaves a big GPU mostly idle.
 
 **In code:** `counted_matmul` multiplies with plain loops and counts every multiply and add; `matmul_flops` is the 2·m·n·k formula; `parallel_rounds` is the rounds formula above.
 
-**Why it matters in practice.** A GPU is fast only when it is given a lot of
-independent work at once: large matrices, and many sequences processed
-together. That is why serving systems batch requests together
-(`primer.ml.inference`) and why a small model answering one user at a time
-uses a sliver of the chip. It is also why neural networks look the way they
-do: architectures that turn into a few big matrix multiplies (the
-transformer, `primer.ml.transformer`) won partly because they suit this
-hardware, while step-by-step recurrences (`primer.ml.cnn_rnn`) do not.
+A GPU is fast only when it has a lot of independent work at once: large
+matrices, and many sequences processed together. That is why serving
+systems batch requests together (`primer.ml.inference`), and why a small
+model answering one user at a time uses a sliver of the chip. It is also
+part of why the transformer won (see `primer.ml.transformer`): it turns into
+a few big matrix multiplies, while a recurrent network must finish one step
+before it starts the next (see `primer.ml.cnn_rnn`).
 
-## 2. The memory hierarchy: near is small, far is big
+## 2. The memory hierarchy
 
-**Everyday picture.** Back in the kitchen. A cook's hands hold one or two
-things (the **registers**). The cutting board holds a few more (the
-**on-chip SRAM**, fast memory built into the chip itself). The fridge in
-the kitchen holds the day's ingredients (**HBM**, "high-bandwidth memory",
-the GPU's main memory). The storeroom down the hall is the CPU's memory
-(**host memory**). The warehouse across town is the **disk**. And other
+A core can only work on numbers it holds, so every number a multiply uses
+has to be brought to it first. Back in the kitchen, a cook's hands hold one
+or two things (the **registers**). The cutting board holds a few more (the
+**on-chip SRAM**, fast memory built into the chip itself). The fridge holds
+the day's ingredients (**HBM**, "high-bandwidth memory", the GPU's main
+memory). The storeroom down the hall is the CPU's memory (**host
+memory**), the warehouse across town is the **disk**, and other
 restaurants' pantries, reached by courier, are other machines over the
-**network**. Every step further out holds more and takes longer to reach.
-The cooks are fast; what slows the kitchen down is fetching.
+**network**. Each step further out holds more and takes longer to reach.
 
-**Tiny worked example.** Round, illustrative numbers for one datacenter GPU
-and the machine around it (orders of magnitude, not any product's
-specification):
+Here are round, illustrative numbers for one datacenter GPU and the machine
+around it (orders of magnitude, not any product's specification):
 
 | Level | Holds about | Moves about | Streaming 1 GB takes | What lives there |
 |---|---|---|---|---|
 | registers | 20 MB (across the chip) | 100 TB/s | 0.01 ms | the numbers being multiplied this instant |
-| on-chip SRAM | 50 MB | 20 TB/s | 0.05 ms | tiles of the current multiply (section 3) |
+| on-chip SRAM | 50 MB | 20 TB/s | 0.05 ms | tiles of the current multiply (tiling, below) |
 | HBM | 80 GB | 3.35 TB/s | 0.30 ms | weights, activations, the KV cache |
 | host memory | 1 TB | 50 GB/s (over the link to the GPU) | 20 ms | data waiting to be loaded, offloaded state |
 | local disk | 10 TB | 10 GB/s | 100 ms | datasets, checkpoints |
 | network | the whole cluster | 50 GB/s per GPU | 20 ms | other GPUs' gradients, remote storage |
 
 Registers and SRAM never hold a whole gigabyte; the column shows their
-*rate*. Notice the jump from HBM to host memory: about **67 times** slower.
-A GPU that has to reach past its own HBM is a cook walking to the storeroom
-for every carrot.
+*rate*. The biggest jump is from HBM to host memory, about 67 times slower:
+a GPU that has to reach past its own HBM is a cook walking to the storeroom
+for every carrot. Each row's time is one division:
 
 $$
 t = \frac{\text{bytes}}{\text{bandwidth}}
@@ -371,7 +355,7 @@ the pipe it moves through."
 
 **With the numbers:** an 8-billion-parameter model at 2 bytes per
 parameter is 16 GB. Reading it once from HBM takes 16 × 10⁹ / 3.35 × 10¹² =
-**4.78 ms**: exactly the lower bound on time per generated token in
+**4.78 ms**. That is the lower bound on time per generated token in
 `primer.ml.inference`, because generating one token reads every weight once.
 From host memory it would take **320 ms**.
 
@@ -398,9 +382,9 @@ flowchart LR
 ```
 
 **Reading it:** start at the arithmetic units on the left and walk outward.
-Every box to the right is bigger and slower. The arithmetic units can only
-work on numbers in registers, so every number used must travel the whole
-way in from wherever it lives. The network hangs off HBM because fast
+Every box to the right is bigger and slower, and every number the
+arithmetic uses travels the whole way in, from wherever it lives to the
+registers. The network hangs off HBM because fast
 clusters let a GPU send and receive data straight from its own memory
 without a detour through the CPU.
 
@@ -409,37 +393,40 @@ without a detour through the CPU.
 **Reading it:** the same six levels, top to bottom, on logarithmic axes.
 On the left, capacity climbs from megabytes to a petabyte. On the right,
 bandwidth falls from a hundred terabytes per second to ten gigabytes per
-second. The one place the order bends is the last two rows: a datacenter
-network is built to rival a local disk, so fetching from a nearby machine
-can be as fast as reading your own drive. Both are still around a hundred
-times slower than HBM.
+second. Look at the last two rows, the one place the order breaks: the
+network bar is longer than the disk's, because a datacenter network is
+built to rival a local disk, so fetching from a nearby machine can be as
+fast as reading your own drive. Both are still around a hundred times
+slower than HBM.
 
 **In code:** `MEMORY_HIERARCHY` lists the six levels with their capacity and bandwidth; `transfer_seconds` is the formula above.
 
-**Why it matters in practice.** A model runs at full speed only if
-everything it touches every step (weights, activations, KV cache) lives in
-HBM. Spilling to host memory ("offloading") makes a model fit, at the price
-of each step waiting tens of times longer. And because HBM itself is slow
-compared with the arithmetic, the fastest code is the code that makes each
-trip to HBM count, which is the next section.
+A model runs at full speed only if everything it touches every step
+(weights, activations, KV cache) lives in HBM. Spilling to host memory
+("offloading") makes a model fit, but each step then waits tens of times
+longer.
 
 ## 3. Arithmetic intensity: why data movement dominates
 
-**Everyday picture.** A sandwich shop. If the cook walks to the storeroom
-for each slice of bread for each sandwich, the cook spends the day walking.
-If the cook carries a tray of bread and a tray of fillings to the bench and
-makes a batch of sandwiches from them, every trip feeds many sandwiches.
-Same sandwiches (FLOPs), far fewer trips (bytes). The ratio of the two is
-the **arithmetic intensity**: operations done per byte fetched.
+HBM is fast next to every level further out, and slow next to the
+arithmetic.
+The imaginary GPU does 10¹⁵ FLOPs per second but reads only 3.35 × 10¹²
+bytes per second from HBM, so it can do about 299 FLOPs in the time one
+byte arrives.
 
-Our imaginary GPU does 10¹⁵ FLOPs per second but reads only 3.35 × 10¹²
-bytes per second from HBM, so it breaks even at about **299 FLOPs per
-byte** (the ridge point of the roofline in `primer.ml.inference`). Any work
-doing fewer operations than that for each byte it fetches leaves the
-arithmetic units waiting on memory.
+What decides whether the arithmetic units wait is how much work each
+fetched byte feeds. A cook who walks to the fridge for each slice of bread
+spends the day walking. A cook who carries a tray of bread and fillings to
+the cutting board and makes a batch of sandwiches from it feeds many
+sandwiches from each trip: the same sandwiches (FLOPs), far fewer trips
+(bytes). The ratio of the two is the **arithmetic intensity**: operations
+done per byte fetched. The imaginary GPU breaks even at about 299 FLOPs per
+byte (the ridge point of the roofline in `primer.ml.inference`). Work with
+a lower intensity leaves the arithmetic units waiting on memory.
 
-**Tiny worked example.** Multiply two 4 × 4 matrices: 2 × 4³ = 128 FLOPs.
-Count the numbers fetched from slow memory (HBM) into fast memory (SRAM):
+Take two 4 × 4 matrices: multiplying them is 2 × 4³ = 128 FLOPs. Count the
+numbers fetched from slow memory (HBM) into fast memory (SRAM) under three
+strategies:
 
 | Strategy | Numbers read | Numbers written | FLOPs per number moved |
 |---|---|---|---|
@@ -447,10 +434,10 @@ Count the numbers fetched from slow memory (HBM) into fast memory (SRAM):
 | 2 × 2 tiles: load a tile of A and a tile of B, use each number twice | **64** | 16 | 128 / 80 = 1.6 |
 | one 4 × 4 tile: load everything once | **32** | 16 | 128 / 48 = 2.7 |
 
-The arithmetic is identical in all three rows. Only the traffic changes.
-This trick is **tiling**: bring a small block of each matrix into fast
-memory and do every multiplication that block takes part in before
-throwing it away.
+The arithmetic is the same in all three rows; only the traffic changes. The
+second and third rows use **tiling**: bring a small block of each matrix
+into fast memory, and do every multiplication that block takes part in
+before throwing it away.
 
 $$
 \text{reads} = \frac{2\,n^3}{T}
@@ -464,7 +451,7 @@ $$
 |---|---|---|
 | $n$ | both matrices are $n \times n$ | 4, then 4,096 |
 | $T$ | tile width: fast memory works on $T \times T$ blocks | 1, 2, 4, then 128 |
-| $2\,n^3$ | the FLOPs of the whole multiply (section 1, with $m = n = k$) | 128 |
+| $2\,n^3$ | the FLOPs of the whole multiply (the 2·m·n·k count, with $m = n = k$) | 128 |
 | reads | numbers fetched from slow memory | 128, 64, 32 |
 | $n^2$ | numbers written back: each answer cell once | 16 |
 | $b$ | bytes per number: 2 at 16-bit, 1 at 8-bit | 2 |
@@ -533,17 +520,18 @@ and the dashed line is the chip's break-even point of 299. In 16-bit the
 tiles need to be about 650 wide to cross it. Three 650 × 650 tiles in 16-bit
 take about 2.5 MB, more fast memory than one group of cores has to itself,
 which is why real kernels tile at several levels at once (tiles in
-registers inside tiles in SRAM) and why lower-precision numbers, which
-shift the whole curve up, are so attractive.
+registers inside tiles in SRAM), and why lower-precision numbers, which
+shift the whole curve up, help.
 
-The same idea runs through the rest of this primer:
+Reuse of what has already been fetched is behind several other speed-ups:
 
 - **FlashAttention** (`primer.ml.attention`) tiles attention: blocks of
   queries, keys and values are loaded into SRAM, and the n × n score matrix
-  is never written to HBM at all. Same answer, a fraction of the traffic.
+  is never written to HBM at all. The answer is the same, for a fraction of
+  the traffic.
 - **Kernel fusion**: adding a bias or applying an activation does about one
-  FLOP per number it reads, hopelessly below 299, so these steps are done
-  inside the matrix-multiply kernel while the tile is still on chip.
+  FLOP per number it reads, far below 299, so these steps are done inside
+  the matrix-multiply kernel while the tile is still on chip.
 - **Decode** (`primer.ml.inference`): generating one token for one user
   reads every weight to do just 2 FLOPs with it, an intensity of about 1.
   Batching users together is tiling across requests: one read of a weight
@@ -551,24 +539,26 @@ The same idea runs through the rest of this primer:
 
 **In code:** `tiled_matmul` runs the tiled multiply and returns a `Traffic` count of reads, writes, FLOPs and peak fast-memory use; `matmul_reads` and `matmul_intensity` are the formulas; `primer.ml.inference.ridge_point` is the break-even.
 
-**Why it matters in practice.** Before asking how many FLOPs a piece of
-work needs, ask how many bytes it moves and how often each byte is reused.
-Most large speed-ups in modern AI systems (FlashAttention, fused kernels,
-batching, quantization) change the bytes, not the FLOPs.
+Before asking how many FLOPs a piece of work needs, ask how many bytes
+it moves and how often each byte is reused. Most large speed-ups in AI
+systems (FlashAttention, fused kernels, batching, quantization) change the
+bytes, not the FLOPs.
 
 ## 4. Number formats: how many bits each number gets
 
-**Everyday picture.** Scientific notation on a form with a fixed number of
-boxes: 6.02 × 10²³. One box holds the sign. A few boxes hold the power of
-ten, which sets how big or small the number can be: its **range**. The
-rest hold the digits, which set how finely it is measured: its
-**precision**. With a fixed number of boxes, moving a box from the digits
+Quantization, the last of those speed-ups, changes the bytes another way:
+it stores each number in fewer bits. What a number loses when it shrinks
+depends on how its bits are spent, and scientific notation shows the
+choice. Write 6.02 × 10²³ on a form with a fixed number of boxes. One box
+holds the sign. A few boxes hold the power of ten, which sets how big or
+small the number can be: its **range**. The rest hold the digits, which set
+how finely it is measured: its **precision**. Moving a box from the digits
 to the power buys range and costs precision. Computers do the same with
 bits and powers of two, and call the parts the **sign**, the **exponent**
 and the **mantissa** (the stored digits).
 
-**Tiny worked example.** Store −6.5 in **bf16** ("brain float 16": 1 sign
-bit, 8 exponent bits, 7 mantissa bits).
+Here is −6.5 stored in **bf16** ("brain float 16": 1 sign bit, 8 exponent
+bits, 7 mantissa bits).
 
 1. **Sign:** negative, so the sign bit is 1.
 2. **Power of two:** the largest power of two not above 6.5 is 4 = 2², so
@@ -580,8 +570,8 @@ bit, 8 exponent bits, 7 mantissa bits).
    bits: 1010000.
 5. **The 16 bits:** 1 10000001 1010000.
 
-Most numbers are not so lucky. 0.1 has no finite binary expansion, so it is
-rounded to the nearest value each format can hold: 0.10000000149 in fp32,
+−6.5 fits exactly. Most numbers do not: 0.1 has no finite binary
+expansion, so it is rounded to the nearest value each format can hold: 0.10000000149 in fp32,
 0.1000977 in bf16, 0.0999756 in fp16 and 0.1015625 in 8-bit E4M3.
 
 $$
@@ -627,9 +617,9 @@ f, format(f, "07b")  # → (80, '1010000')
 (-1)**s * 2**(e - bias) * (1 + f / 2**M)  # → -6.5
 ```
 
-Two corners of the formula matter in practice. When the stored exponent is
-0, the hidden 1 is dropped and the number is a **subnormal**: it lets values
-fade gradually towards zero instead of dropping off a cliff, at the cost of
+The formula has two special cases. When the stored exponent is 0, the
+hidden 1 is dropped and the number is a **subnormal**: it lets values fade
+gradually towards zero instead of jumping straight to it, at the cost of
 fewer significant bits. And IEEE-style formats reserve the all-ones
 exponent for **infinity** and **NaN** ("not a number"), which is where
 overflowing values go.
@@ -649,19 +639,19 @@ flowchart LR
 **Reading it:** a number enters on the left and splits three ways. The sign
 is read off directly. The exponent comes from finding which pair of powers
 of two the number sits between. The mantissa is where the number sits
-within that pair, rounded to however many bits the format allows: this
-rounding box is the only place information is lost, and it is where every
-format differs.
+within that pair, rounded to however many bits the format allows. The
+rounding box is the only place information is lost, and how much is lost
+depends on how many mantissa bits the format has.
 
 ![Bit layouts drawn to scale: fp32 has 1 sign, 8 exponent and 23 mantissa bits; bf16 keeps the 8 exponent bits and cuts the mantissa to 7; fp16 has 5 and 10; the two fp8 formats have 5 and 2, or 4 and 3; int8 and int4 are plain integers](figures/primer.ml.hardware.format_layouts.svg)
 
-**Reading it:** each row is one format drawn to scale, one cell per bit,
-with the sign in grey, the exponent in orange and the mantissa in blue.
-Compare bf16 and fp16: the same 16 bits, split differently. bf16 is
-literally the top half of fp32, keeping all 8 exponent bits (fp32's whole
-range) and giving up precision; fp16 keeps more precision and gives up
-range. The integer formats at the bottom have no exponent at all: every
-value is a whole number, turned into a weight by one shared scale
+**Reading it:** each row is one format, its length drawn to scale in bits:
+the sign in grey, the exponent in orange, the mantissa in blue and a plain
+integer in green. Compare bf16 and fp16: the same 16 bits, split
+differently. bf16 is the top half of fp32, keeping all 8 exponent bits
+(fp32's whole range) and giving up precision; fp16 keeps more precision and
+gives up range. The integer formats at the bottom have no exponent at all:
+every value is a whole number, turned into a weight by one shared scale
 (`primer.ml.inference` builds int8 and int4 quantization from scratch).
 
 | Format | Bits (sign, exponent, mantissa) | Largest | Smallest at full precision | Gap just above 1 | Typical use |
@@ -683,44 +673,47 @@ ordinary numbers instead, which is how 8 bits reach 448 rather than 240.
 y-axis is the gap to the next storable value, as a fraction of the number
 (lower is more precise); both are logarithmic. Each float format is a flat
 band: its relative precision is the same for tiny and huge numbers, which
-is the whole point of an exponent. The band's width is the range: it stops
-on the right at the largest value (65,504 for fp16, 448 for E4M3) and rises
-on the left where subnormals run out of bits. fp32 and bf16 are flat across
-the whole plot and far beyond it. The integer formats, here with a scale
-that maps 1.0 to the top code, are straight rising lines: their step is the
-same size everywhere, so small numbers get coarse, which is why quantized
-models use one scale per row or block of weights.
+is what an exponent is for. The band's width is the range: it stops on the
+right at the largest value (65,504 for fp16, 448 for E4M3) and rises on the
+left where subnormals run out of bits. fp32 and bf16 are flat across the
+whole plot and far beyond it. The integer formats, here with a scale that
+maps 1.0 to the top code, are straight lines that climb as the numbers
+shrink: their step is the same size everywhere, so small numbers get
+coarse, which is why quantized models use one scale per row or block of
+weights.
 
-What the picture means for training (`primer.ml.pretraining` covers mixed
+Both limits show up in training (`primer.ml.pretraining` covers mixed
 precision in full):
 
 - **Range failures.** A gradient of 10⁻⁸ becomes exactly 0 in fp16 (below
   its smallest subnormal) but survives in bf16 as 1.0012 × 10⁻⁸. fp16
   training therefore multiplies the loss by a large constant (**loss
   scaling**) to lift gradients into range; bf16 training does not need to.
-- **Precision failures.** In bf16, 1 + 0.001 rounds back to exactly 1: a
-  small weight update simply vanishes. So training keeps a **master copy**
+- **Precision failures.** In bf16, 1 + 0.001 rounds back to exactly 1, so a
+  small weight update is lost. Training therefore keeps a **master copy**
   of the weights in fp32, adds its sums up in fp32, and uses 16-bit (or
   8-bit) only for the big multiplies. That split is **mixed precision**.
 
 ### Why smaller formats multiply throughput
 
-Fewer bits per number pays three times:
+Fewer bits per number pays off in three places:
 
 1. **Bytes.** Half the bytes per number moves twice the numbers per second
-   through every level of section 2, and fits twice the parameters in HBM.
+   through every level of the memory hierarchy, and fits twice the
+   parameters in HBM.
    Memory-bound work speeds up directly: the lower bound on time per token
    for a 70-billion-parameter model (`primer.ml.inference`) is 41.8 ms at
    16-bit, 20.9 ms at 8-bit and 10.4 ms at 4-bit.
-2. **Intensity.** The same tile does twice the FLOPs per byte (section 3:
-   63 becomes 126), pushing more work past the break-even point.
+2. **Intensity.** The same tile does twice the FLOPs per byte (63 becomes
+   126 for the 128-wide tiles above), pushing more work past the break-even
+   point.
 3. **Silicon.** A multiplier is the expensive part of the chip, and its
    size grows with the square of the number of significand bits.
 
-**Everyday picture.** Long multiplication by hand: multiplying two 3-digit
-numbers means writing a 3 × 3 grid of single-digit products; two 6-digit
-numbers need a 6 × 6 grid, four times the work. A chip's multiplier is that
-grid built in wires.
+Long multiplication by hand shows why. Multiplying two 3-digit numbers
+means writing a 3 × 3 grid of single-digit products; two 6-digit numbers
+need a 6 × 6 grid, four times the work. A chip's multiplier is that grid
+built in wires.
 
 $$
 \text{cells} = p^{2}, \qquad p = M + 1
@@ -740,7 +733,7 @@ which is cheap."
 
 **With the numbers:** fp32 needs 24² = **576** cells, fp16 11² = 121, bf16
 8² = 64, and fp8 E4M3 4² = **16**: one fp32 multiplier's worth of silicon
-holds many 8-bit ones. Accelerators typically list roughly double the peak
+holds many 8-bit ones. Accelerator spec sheets list roughly double the peak
 operations per second each time the format halves.
 
 **In Python:**
@@ -752,32 +745,25 @@ mantissa_bits = [23, 10, 7, 3]
 [(M + 1) ** 2 for M in mantissa_bits]  # → [576, 121, 64, 16]
 ```
 
-**In code:** `FloatFormat` describes a format by its exponent and mantissa bits, with `FloatFormat.max_value`, `FloatFormat.min_normal`, `FloatFormat.min_subnormal` and `FloatFormat.epsilon` derived from them; `FP32`, `BF16`, `FP16`, `FP8_E5M2` and `FP8_E4M3` are the five formats; `encode` rounds a number into its three fields with plain arithmetic, `decode` turns fields back into a number, `round_to` does both, and `bit_string` prints the bits; `multiplier_cells` is the p² formula. The tests check `round_to` against NumPy's own float16 and float32.
+**In code:** `FloatFormat` describes a format by its exponent and mantissa bits; `encode`, `decode` and `round_to` store a number and read it back; `multiplier_cells` is the p² formula.
 
-**Why it matters in practice.** Picking a number format is picking a point
-on the range-versus-precision curve for each kind of number in a model.
-Weights and activations tolerate coarse formats; gradients need range; the
-running sums of long dot products need precision. Modern training and
-serving use a different format for each, and the savings are among the
-largest in the field.
+A number format, then, is a choice between range and precision for each
+kind of number in a model. Weights and activations tolerate coarse
+formats; gradients need range; the running sums of long dot products need
+precision. Training and serving use a different format for each.
 
-## 5. Many GPUs: the cost of talking
+## 5. Many GPUs: the cost of communication
 
-**Everyday picture.** A group project. Four people each work through a
-quarter of the exercises, and then must agree on one combined answer
-sheet. Sitting at the same table they can compare notes in seconds; living
-in different cities they must post letters. The more often a team must
-compare notes, the more it matters who sits at the same table.
+However small its numbers, one GPU has neither the memory nor the speed to
+train a large model, so training is spread across many. The simplest split
+is **data parallelism**: every GPU holds a copy of the model and works on
+different examples. After each step their gradients must be added up, so
+that every copy takes the same step. That "add up, and give everyone the
+total" operation is an **all-reduce**.
 
-Large models are trained on many GPUs because no single one has the memory
-or the speed. The simplest split is **data parallelism**: every GPU holds a
-copy of the model and works on different examples, and after each step
-their gradients must be added up, so every copy takes the same step. That
-"add up, and give everyone the total" operation is an **all-reduce**.
-
-**Tiny worked example: a ring all-reduce.** Four GPUs each hold a gradient
-of 8 numbers. Each splits its gradient into 4 chunks of 2 numbers and they
-sit in a ring, each passing to its right-hand neighbour.
+A **ring all-reduce** shares the adding out evenly. Four GPUs each hold a
+gradient of 8 numbers. Each splits its gradient into 4 chunks of 2 numbers,
+and they sit in a ring, each passing to the next GPU along.
 
 1. **Reduce-scatter, 3 steps:** each GPU sends one chunk to its neighbour,
    which adds it to its own copy of that chunk. After 3 steps, each GPU
@@ -786,8 +772,8 @@ sit in a ring, each passing to its right-hand neighbour.
    overwriting the stale copies.
 
 Each GPU sent 6 chunks of 2 numbers, **12 numbers**, which is
-2 × 3/4 × 8. The remarkable part: with 400 GPUs instead of 4, each would
-still send just under twice its gradient. The work per GPU barely grows.
+2 × 3/4 × 8. With 400 GPUs instead of 4, each would still send just under
+twice its gradient, so the traffic per GPU barely grows with the ring.
 
 ```mermaid
 flowchart LR
@@ -797,11 +783,14 @@ flowchart LR
   G3 -- "one chunk per step" --> G0
 ```
 
-**Reading it:** four GPUs in a ring, each only ever talking to its
-right-hand neighbour. Every link is busy at every step, each carrying a
+**Reading it:** follow the arrows round the ring: each GPU only ever sends
+to the next one. Every link is busy at every step, each carrying a
 different chunk, so no link sits idle and no single GPU becomes a
 bottleneck. After 2 × (4 − 1) = 6 steps, every GPU has every chunk summed
 over all four.
+
+Whether that traffic matters depends on how long it takes next to the
+step's arithmetic:
 
 $$
 t_{\text{all-reduce}} = \frac{2\,(N-1)}{N} \cdot \frac{S}{B}
@@ -849,12 +838,22 @@ round(6 * P * D / F, 2)  # → 0.69
 **Reading it:** the x-axis is the number of GPUs (log scale); the y-axis
 is seconds per training step. The flat grey line is the arithmetic every
 GPU does per step. The two rising curves are the all-reduce over each kind
-of link, and both flatten out almost at once: that is the ring's
-2(N − 1)/N approaching 2. The gap between the curves is the whole story:
-the same gradient costs ten times more over the network than over in-machine
-links, bringing communication close to the cost of the arithmetic itself.
+of link, and both level off within a few dozen GPUs: that is the ring's
+2(N − 1)/N approaching 2. Then look at the gap between the two curves: the
+same gradient costs ten times more over the network than over in-machine
+links, which brings communication close to the cost of the arithmetic.
 Real systems hide part of it by sending the gradients of later layers while
 earlier layers are still computing theirs.
+
+Data parallelism is not the only way to split the work, and the others
+talk at different rates. **Tensor parallelism** cuts each matrix multiply
+across GPUs, which must then swap partial results inside every layer.
+**Pipeline parallelism** gives each GPU a stage of neighbouring layers and
+passes activations only from one stage to the next, so, like data
+parallelism, it talks rarely. At this scale a cluster's network
+matters as much as its chips, because each kind of parallelism is placed by
+matching how often it talks to how fast each link is
+(`primer.ml.pretraining` builds these strategies in full).
 
 ```mermaid
 flowchart TB
@@ -870,33 +869,25 @@ flowchart TB
 ```
 
 **Reading it:** two machines, each with a few GPUs joined by fast links, and
-a slower network between them. The chattiest kind of splitting, **tensor
-parallelism** (cutting each matrix multiply across GPUs, which must swap
-partial results inside every layer), is kept within one machine's fast
-links. Kinds that talk rarely, like data parallelism (one all-reduce per
-step) and **pipeline parallelism** (passing activations only between
-neighbouring stages of layers), span the slower network. The layout of the
-wires decides the layout of the work. `primer.ml.pretraining` builds these
-strategies in full.
+a slower network between them. Tensor parallelism, the chattiest kind,
+is kept within one machine's fast links. Data parallelism, one all-reduce
+per step, spans the slower network, and so can pipeline parallelism.
 
-**In code:** `ring_all_reduce` simulates the ring step by step and counts the numbers each GPU sends; `all_reduce_seconds` and `training_step_seconds` are the two formulas; `IN_MACHINE_LINK` and `BETWEEN_MACHINES_LINK` are the illustrative link speeds.
-
-**Why it matters in practice.** At scale, a cluster's network matters as
-much as its chips. Parallelism strategies are chosen by matching how often
-each kind talks to how fast each link is, and a training run that ignores
-the map spends its budget waiting.
+**In code:** `ring_all_reduce` simulates the ring and counts the numbers each GPU sends; `all_reduce_seconds` and `training_step_seconds` are the two formulas.
 
 ## 6. Will it fit? Memory math for serving
 
-**Everyday picture.** A bookshelf of fixed width. The encyclopedia (the
-model's weights) must go on it, whole. Whatever space is left holds one
-notebook per customer being served (their KV cache), and a notebook grows
-with every word of the conversation. Thinner volumes, printed in a smaller
+Training spreads one model over many GPUs. Serving a trained model starts
+from the other end, by asking whether it fits on one. Think of the GPU's
+memory as a bookshelf of fixed width. The encyclopedia (the model's
+weights) must go on it, whole. Whatever space is left holds one notebook
+per customer being served (their KV cache), and a notebook grows with
+every word of the conversation. Thinner volumes, printed in a smaller
 number format, leave room for more notebooks.
 
-**Tiny worked example.** A model shaped like Llama 3 70B (80 layers, 8
-key/value heads of 128 dimensions each) on one 80 GB GPU. Its KV cache
-costs 2 × 80 × 8 × 128 × 2 = 327,680 bytes per token at 16-bit
+Take a model shaped like Llama 3 70B (80 layers, 8 key/value heads of 128
+dimensions each) on one 80 GB GPU. Its KV cache costs
+2 × 80 × 8 × 128 × 2 = 327,680 bytes per token at 16-bit
 (`primer.ml.inference` derives this).
 
 | Weights | Weight memory | Left for the cache | Tokens of 16-bit cache | Tokens of 8-bit cache |
@@ -905,8 +896,8 @@ costs 2 × 80 × 8 × 128 × 2 = 327,680 bytes per token at 16-bit
 | 8-bit (fp8) | 70 GB | 10 GB | 30,517 | 61,035 |
 | 4-bit | 35 GB | 45 GB | 137,329 | 274,658 |
 
-This ignores activations and the serving software's own working memory,
-which take several more gigabytes in practice.
+These counts leave out activations and the serving software's own working
+memory, which take several more gigabytes. As one inequality:
 
 $$
 P \, b_w + C \times 2\,L\,H_{kv}\,d_h\,b_{kv} \le M_{\text{GPU}}
@@ -964,7 +955,7 @@ set by the parameter count and the number format. The cache grows with
 every token of every active conversation. If they fit together, whatever is
 left over becomes capacity: more concurrent users, longer contexts. If
 they don't, every lever on the right shrinks one of the two inputs, or
-splits the model across GPUs joined by the fast links of section 5.
+splits the model across GPUs joined by fast in-machine links.
 
 ![Stacked bars against an 80 GB line: 16-bit weights alone reach 140 GB and overflow; fp8 weights take 70 GB and leave 10 GB, about 30,000 tokens of cache; 4-bit weights take 35 GB and leave 45 GB, about 137,000 tokens](figures/primer.ml.hardware.serving_fit.svg)
 
@@ -973,37 +964,41 @@ splits the model across GPUs joined by the fast links of section 5.
 is the room left for the KV cache, labelled with how many 16-bit tokens fit
 in it. The dashed line is the GPU's 80 GB. At 16-bit the weights alone
 break through the line. Each halving of the weight format frees memory that
-turns directly into tokens of cache, which is to say into users.
+becomes tokens of cache, and so room for more users at once.
 
-**In code:** `max_cache_tokens` subtracts the weights and divides what is left by the per-token cache, using `primer.ml.inference.weight_bytes` and `primer.ml.inference.kv_cache_bytes_per_token`; `LLAMA3_70B_SHAPE` holds the example model's shape.
+**In code:** `max_cache_tokens` subtracts the weights and divides what is left by the per-token cache; `LLAMA3_70B_SHAPE` holds the example model's shape.
 
-**Why it matters in practice.** This arithmetic comes first in every
-deployment: the number format sets whether a model fits, how many users
-share a GPU, and (because decode reads every weight per token) how fast
-each of them sees words appear. `primer.ml.inference` carries it on into
-batching, speculative decoding and prompt caching.
+This arithmetic comes first when deploying a model. The number format sets
+whether the model fits, how many users share a GPU, and (because decode
+reads every weight per token) how fast each of them sees words appear.
+`primer.ml.inference` carries it on into batching, speculative decoding and
+prompt caching.
 
 ## In 20 seconds
 
-- **GPUs** are thousands of simple cores doing the same step on different
-  numbers. Matrix multiplies (2·m·n·k FLOPs, every cell independent) are
-  the perfect workload, as long as there is enough independent work.
-- **Memory hierarchy:** registers, on-chip SRAM, HBM, host memory, disk,
-  network. Each step out is bigger and slower; the GPU runs at full speed
-  only on data in HBM or closer.
-- **Arithmetic intensity:** the chip does hundreds of operations in the
-  time it fetches one byte, so speed is set by bytes moved. Tiling reuses
-  each fetched number T times and cuts traffic T-fold; FlashAttention,
-  kernel fusion and batching are the same idea.
-- **Number formats:** sign, exponent (range) and mantissa (precision).
-  bf16 keeps fp32's range with less precision; fp16 the reverse; fp8 and
-  int8/int4 trade more. Fewer bits means fewer bytes, higher intensity and
-  smaller multipliers, so throughput roughly doubles per halving.
-- **Many GPUs:** a ring all-reduce costs about 2 × gradient size ÷ link
-  speed, whatever the GPU count. Chatty parallelism stays on fast
-  in-machine links; the rest crosses the network.
-- **Serving:** weights plus KV cache must fit; the number format decides
-  both what fits and how fast each token comes.
+- A **GPU** is thousands of simple cores doing the same step on different
+  numbers. A matrix multiply (2·m·n·k FLOPs) suits it, because every cell
+  of the answer can be computed on its own, as long as there are enough
+  cells to go round.
+- Memory comes in levels: registers, on-chip SRAM, HBM, host memory, disk
+  and the network. Each level out holds more and delivers it more slowly,
+  and a GPU runs at full speed only on data in HBM or closer.
+- The chip does hundreds of operations in the time it fetches one byte, so
+  speed is set by the bytes moved. **Tiling** uses each fetched number T
+  times and cuts the traffic T-fold; FlashAttention, kernel fusion and
+  batching use the same reuse.
+- A number format splits its bits into a sign, an exponent (the range) and
+  a mantissa (the precision). bf16 keeps fp32's range with less precision,
+  and fp16 does the reverse. Halving the bits halves the bytes, doubles the
+  intensity and shrinks the multipliers, so peak throughput roughly
+  doubles.
+- When GPUs train together, a ring all-reduce costs about twice the
+  gradient's size divided by the link speed, whatever the number of GPUs.
+  Parallelism that talks often stays on the fast links inside a machine;
+  the rest crosses the network.
+- To serve a language model, its weights and its KV cache must fit in the
+  GPU's memory together. The number format decides both what fits and how
+  fast each token comes.
 
 ## Self-test questions
 
@@ -1088,7 +1083,7 @@ software.
 - **Shoeybi et al., *Megatron-LM: Training Multi-Billion Parameter Language
   Models Using Model Parallelism* (2019)**: https://arxiv.org/abs/1909.08053.
   Split each transformer layer's matrix multiplies across the GPUs of one
-  machine, the tensor parallelism of section 5.
+  machine: tensor parallelism.
   [Annotated companion](../../papers/megatron-lm.html)
 - **Sergeev and Del Balso, *Horovod: fast and easy distributed deep
   learning in TensorFlow* (2018)**: https://arxiv.org/abs/1802.05799.
