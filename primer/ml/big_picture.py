@@ -114,10 +114,10 @@ only needed to set the knobs, you are done.
 
 ## Level 2: How it works, from scratch
 
-This lesson wires the real pieces from the other lessons into one working
-pipeline: the tokenizer from `primer.ml.tokenization`, the transformer from
-`primer.ml.transformer`, and a sampling loop. Keep this one picture in your
-head; every other lesson zooms into one box of it.
+Follow one prompt, "Reset your password", through a small language model
+whose weights are still random. It has learned nothing, so what it writes is
+gibberish, but it takes the same steps as a trained model, with the same
+shapes. This is the whole trip:
 
 ```mermaid
 flowchart LR
@@ -131,26 +131,28 @@ flowchart LR
   H -->|append and repeat| E
 ```
 
-**Reading it:** read left to right, then follow the loop back. The prompt is
-cut into token ids, each id picks a vector from a table, and position
-information is mixed in so order counts. The vectors pass through the
-transformer blocks, where tokens exchange information. The output layer turns
-the *last* token's final vector into a score for every token in the
-vocabulary; softmax makes those scores probabilities and one token is
-drawn. That token is appended and the loop runs again, until the model emits
-a stop token or hits a length limit. Training uses the same boxes with one
-addition, a loss, at the end (section 6).
+**Reading it:** read left to right, then follow the arrow back. The prompt
+is cut into tokens, and each token's number fetches a list of numbers from a
+table, with its position added so that order counts. The lists pass through
+the transformer blocks, where the tokens share information. Then the *last*
+token's list becomes a score for every token the model knows, the scores
+become probabilities, and one token is drawn. It is appended, and the loop
+runs again until the model draws a stop token or reaches a length limit.
+Training runs the same boxes and adds a loss at the end.
 
 ## 1. Text to ids: the coat check
 
-**Everyday picture.** A coat check. You hand over a coat (a piece of text)
-and get back a numbered ticket (a token id). The model only ever handles the
-tickets.
+A coat check takes your coat and hands you a numbered ticket. A
+**tokenizer** does the same to text: it cuts the prompt into pieces called
+**tokens** and hands back one number for each, its **token id**. From then
+on the model only ever handles the tickets.
 
-**Tiny worked example.** With this module's toy tokenizer, "Reset your
-password" becomes 5 tickets: `Re` `set` ` y` `our` ` password` →
-**[346, 377, 309, 328, 291]**. The common word " password" got a single
-ticket; the rarer pieces got several.
+The toy tokenizer here has a kit of 400 pieces, and it turns "Reset your
+password" into 5 tickets: `Re` `set` ` y` `our` ` password` →
+**[346, 377, 309, 328, 291]**. It learned its kit from text, so a word it saw
+often gets a ticket of its own: "password", with the space in front of it, is
+one piece. Words it saw less often are split, and "Reset" and "your" take two
+tickets each.
 
 ```mermaid
 flowchart LR
@@ -158,26 +160,24 @@ flowchart LR
   TK --> I["[346, 377, 309, 328, 291]"]
 ```
 
-**Reading it:** one box, text in and integers out. Everything to the right
-of this box works only with integers and vectors.
+**Reading it:** one box: text goes in, whole numbers come out.
 
-**The code.** `tok.encode(prompt)`; how the kit is learned is the whole of
-`primer.ml.tokenization`.
+Prompt length, price and context limits are all counted in these tickets, not
+in words. How a tokenizer learns its kit is the subject of the tokenization
+lesson (`primer.ml.tokenization`).
 
-**In code:** `build_pipeline` trains the toy tokenizer (`primer.ml.tokenization.ByteBPE`) and builds an untrained `primer.ml.transformer.TinyGPT` sized to its vocabulary.
-
-**Why it matters.** Prompt length, price and context limits are all counted
-in these tickets.
+**In code:** `tok.encode(prompt)` makes the tickets; `build_pipeline` trains the toy tokenizer and builds an untrained `primer.ml.transformer.TinyGPT` sized to its vocabulary.
 
 ## 2. Ids to vectors: a lookup, not a computation
 
-**Everyday picture.** A dictionary where ticket number 291 opens to page 291,
-and each page holds a list of numbers describing that token. A second
-dictionary, indexed by seat number, describes *where* the token sits.
+A ticket number such as 291 is only a label: token 291 is not more of
+anything than token 290. So each id fetches a row of numbers, a **vector**,
+from the **token embedding table**. Here the table has 400 rows of 32
+numbers, and the 5 ids fetch a 5 × 32 grid.
 
-**Tiny worked example.** The table has 400 rows (one per token) of 32
-numbers. Id 291 fetches row 291. The 5 ids fetch 5 rows: a 5 × 32 grid. Row
-i of the position table (i = 0 to 4) is added to row i of that grid.
+That grid says what each token is but not where it sits. A second table, the
+**position table**, has a row for each seat in the prompt, and row i of it
+(i = 0 to 4) is added to row i of the grid.
 
 ```mermaid
 flowchart LR
@@ -190,12 +190,12 @@ flowchart LR
   ADD --> OUT["5 × 32 input to the blocks"]
 ```
 
-**Reading it:** two lookups, one add. Nothing is multiplied here, rows are
-simply fetched, which is why this step is nearly free. The tables themselves
-are learned during training, so similar tokens end up with similar rows (see
-`primer.ml.embeddings`).
+**Reading it:** two lookups and one add. Rows are fetched, not multiplied,
+which is why this step costs almost nothing. Both tables are learned in
+training, and similar tokens end up with similar rows
+(`primer.ml.embeddings`).
 
-**The math and the code.**
+For the token in seat *i*:
 
 $$
 x_i = E_{t_i} + P_i
@@ -216,9 +216,8 @@ $$
 position's row."
 
 **With the numbers:** $x_4 = E_{291} + P_4$, one 32-number list plus
-another. The code is `model.wte[ids] + model.wpe[:len(ids)]`. In miniature,
-with 3-number rows instead of 32: $E_{291}$ = (0.2, −0.1, 0.5) and $P_4$ =
-(0.1, 0.3, −0.2) give $x_4$ = (0.3, 0.2, 0.3).
+another. In miniature, with 3-number rows instead of 32: $E_{291}$ =
+(0.2, −0.1, 0.5) and $P_4$ = (0.1, 0.3, −0.2) give $x_4$ = (0.3, 0.2, 0.3).
 
 **In Python:**
 
@@ -232,31 +231,31 @@ x_4 = [round(e + p, 2) for e, p in zip(E_291, P_4)]
 x_4  # → [0.3, 0.2, 0.3]
 ```
 
-**In code:** `trace` does both lookups and the add, and keeps every stage's result so you can inspect the grid before and after positions are mixed in.
+**In code:** `trace` does both lookups and the add (`model.wte[ids] + model.wpe[:len(ids)]`), keeping every stage's result.
 
-**Why it matters.** This is the only place a token's identity enters the
-model; every later step works on these vectors.
+This is the only point where the tokens themselves enter the model. Every
+step after it works on these vectors.
 
 ## 3. The transformer blocks: rounds of meeting and desk work
 
-**Everyday picture.** The team from `primer.ml.transformer`: each round is a
-meeting where every token listens to the others (attention), then desk work
-where each token thinks alone (feed-forward). This toy runs 2 rounds; large
-models run dozens.
+So far each row knows only its own token and its seat. In the **transformer
+blocks** the rows learn from each other. Each block works like a meeting
+followed by desk work. In the meeting, called **attention**, each token takes
+in the tokens before it and adds what it hears to its own row. At the desk,
+the **feed-forward** layer works on each row alone. The toy model has 2
+blocks; large models stack dozens.
 
-**Tiny worked example.** The 5 × 32 grid goes into block 1 and comes out
-5 × 32; the same through block 2. By the end, the vector at the last position
-("password") has absorbed information from "Re", "set", "y" and "our".
+The grid leaves each block with the same shape, 5 × 32, and new contents. By
+the end, the last row, " password", also carries something of "Re", "set",
+" y" and "our", and that row will choose the next token.
 
 ```mermaid
 flowchart LR
   X["5 × 32"] --> B1["block 1<br/>meeting + desk work"] --> B2["block 2"] --> LN["final norm"] --> H["5 × 32<br/>context-aware vectors"]
 ```
 
-**Reading it:** the shape never changes, only the contents. Each block
-edits every token's vector by adding what it learned from the others.
-
-**The math and the code.**
+**Reading it:** the grid passes through two blocks, then a final norm that
+rescales each row on its own.
 
 $$
 h = \text{LN}\big(\text{Block}_N(\cdots\text{Block}_2(\text{Block}_1(x))\cdots)\big)
@@ -274,12 +273,11 @@ $$
 
 **In words:** "run the input through every block in turn, then normalize."
 
-**With the numbers:** here N = 2, so h = LN(Block₂(Block₁(x))). The code is
-the `for block in model.blocks` loop in `trace`. In miniature, with one
-3-number vector and two stand-in blocks that each add an edit: x = (1, 2, 3),
-Block₁ adds (0, 1, 0) and Block₂ adds (0, 0, 2), giving (1, 3, 5). The final
-norm subtracts the mean (3) and divides by the spread (1.63), so
-h = (−1.22, 0, 1.22).
+**With the numbers:** here N = 2, so h = LN(Block₂(Block₁(x))). In
+miniature, with one 3-number vector and two stand-in blocks that each add an
+edit: x = (1, 2, 3), Block₁ adds (0, 1, 0) and Block₂ adds (0, 0, 2), giving
+(1, 3, 5). The final norm subtracts the mean (3) and divides by the spread
+(1.63), so h = (−1.22, 0, 1.22).
 
 **In Python:**
 
@@ -301,17 +299,18 @@ h  # → [1.0, 3.0, 5.0]
 LN(h)  # → [-1.22, 0.0, 1.22]
 ```
 
-**Why it matters.** This is where nearly all the compute and all the
-"understanding" happen.
+The transformer lesson (`primer.ml.transformer`) opens a block up.
 
 ## 4. Scores, softmax and temperature
 
-**Everyday picture.** A scoreboard with one line for every token in the
-vocabulary. Softmax turns the scores into shares of a pie. **Temperature**
-sets how adventurous the pick is: low temperature almost always takes the
-biggest slice; high temperature gives the small slices a real chance.
-
-**Tiny worked example.** Three candidate tokens scored 2.0, 1.0 and 0.5.
+Only the last row has taken in the whole prompt, so only it chooses the next
+token. It is compared with every row of the token table, which gives a score
+for each of the 400 tokens. **Softmax** turns the scores into probabilities
+that add up to 1, and one token is drawn at random in proportion to them.
+First, every score is divided by the **temperature**. Below 1 the gaps between
+scores widen and the top token wins more often; above 1 they narrow; at 0 the
+model always takes the top token (greedy decoding). For three candidates
+scored 2.0, 1.0 and 0.5:
 
 | temperature | p(A) | p(B) | p(C) |
 |---|---|---|---|
@@ -328,14 +327,12 @@ flowchart LR
   SM --> PICK["draw one token"]
 ```
 
-**Reading it:** only the last position's vector is used to choose the next
-token. It is scored against every token's embedding, the scores are divided
-by the temperature, softmax turns them into probabilities that sum to 1, and
-one token is drawn at random in proportion to them.
+**Reading it:** follow one row of 32 numbers to one drawn token: 400 scores,
+divided by the temperature, turned into 400 probabilities.
 
-**The math and the code.** **Softmax** raises *e* (≈ 2.718) to the power of
-each score, so bigger scores get disproportionately bigger shares, then
-divides by the total so the shares add up to 1:
+Softmax raises *e* (≈ 2.718) to the power of each score, so a bigger score
+gets a disproportionately bigger share, then divides by the total so the
+shares add up to 1:
 
 $$
 p_i = \frac{e^{z_i / T}}{\sum_{j=1}^{V} e^{z_j / T}}
@@ -356,9 +353,8 @@ $$
 the temperature, divided by the same quantity summed over all tokens."
 
 **With the numbers:** T = 0.5 doubles every score to (4, 2, 1): e⁴ = 54.6,
-e² = 7.39, e¹ = 2.72, total 64.7, so p(A) = 54.6 / 64.7 = **0.844**
-(`next_token_probs`). Temperature 0 is the limit case: all probability on the
-top score.
+e² = 7.39, e¹ = 2.72, total 64.7, so p(A) = 54.6 / 64.7 = **0.844**.
+Temperature 0 is the limit case: all probability on the top score.
 
 **In Python:**
 
@@ -376,6 +372,8 @@ round(total, 1)  # → 64.7
 [round(e / total, 3) for e in exps]  # → [0.844, 0.114, 0.042]
 ```
 
+The same three scores, across more temperatures:
+
 ![At T = 0.25 token A takes 98% of the probability; at T = 2 the three tokens share it 48%, 29% and 23%](figures/primer.ml.big_picture.temperature.svg)
 
 **Reading it:** three groups of bars, one per candidate token; within each
@@ -383,32 +381,28 @@ group the bars run from low temperature (left) to high (right). For token A
 the bars fall as temperature rises, and for tokens B and C they rise. At
 T = 0.25, A takes almost everything; at T = 2 the three are much closer.
 
+The untrained model's own scores show what random weights give:
+
 ![The untrained model's 12 favourites are random byte fragments, each only 1.25 to 1.4 times the uniform 1-in-400 share](figures/primer.ml.big_picture.untrained_next_token.svg)
 
-**Reading it:** the bars are the 12 most probable next tokens after "The cat
-sat on the", according to our untrained model; the dashed line is a uniform
-guess, 1 in 400 (0.25%). Even these favourites clear the line only
-modestly: the top one gets about 0.35%, 1.4 times the uniform share, and the
-twelfth about 1.25 times. Across all 400 tokens every probability stays
-between 0.74 and 1.39 times uniform, and the "favourites" are random byte
-fragments. That is exactly what random weights should give: a nearly flat
-guess with small random bumps. The machinery works, but nothing has been
-learned yet.
+**Reading it:** the bars are the untrained model's 12 likeliest next tokens
+after "The cat sat on the"; the dashed line is a uniform guess, 1 in 400
+(0.25%). The top one gets about 0.35%, 1.4 times uniform, and the twelfth
+about 1.25 times; across all 400 tokens every probability stays between 0.74
+and 1.39 times uniform. The favourites are random byte fragments: every step
+works, but nothing has been learned yet.
 
-**Why it matters.** Use low temperature for extraction and tool calls,
-where you want the most likely answer, and higher temperature for creative
-writing. Temperature 0 reduces randomness but doesn't guarantee identical
-outputs on real serving hardware.
+For extraction and tool calls, where you want the most likely answer, use a
+low temperature; for creative writing, a higher one. Temperature 0 makes the
+output less random, but on real serving hardware it does not guarantee the
+same output twice.
 
 ## 5. The loop: append and repeat
 
-**Everyday picture.** Writing a sentence one word at a time, and re-reading
-everything you've written before choosing each new word.
-
-**Tiny worked example.** A 2-token prompt, 4 new tokens. Step 1 reads 2
-tokens, step 2 reads 3, step 3 reads 4, step 4 reads 5: **14** token
-positions to produce 4 tokens. With a 20-token prompt and 200 new tokens, the
-naive loop reads 23,900 positions; a KV cache reads 219.
+The drawn token is appended and the whole trip runs again, until the model
+draws a stop token or the reply reaches a length limit. Done simply, each trip
+re-reads the whole text so far. With a 2-token prompt and 4 new tokens, the
+four steps read 2, 3, 4 and 5 tokens: **14** positions to produce 4 tokens.
 
 ```mermaid
 flowchart LR
@@ -420,13 +414,16 @@ flowchart LR
   A -->|"stop token or length limit"| OUT["decode ids to text"]
 ```
 
-**Reading it:** the loop box is the whole of generation. The expensive
-arrow is "full forward pass over ALL ids": every step re-reads text that
-hasn't changed. Because of the causal mask, earlier tokens' internal vectors
-can't change when new tokens arrive, so that repeated work is pure waste.
-The KV cache (`primer.ml.inference`) stores it once.
+**Reading it:** the expensive arrow is "full forward pass over ALL ids":
+every step re-reads text that has not changed.
 
-**The math.** Total positions processed without a cache:
+That work is wasted. Each token takes in only the tokens before it (the
+**causal mask**), so an earlier token's vectors cannot change when new tokens
+arrive. A **KV cache**, named after the keys and values it keeps from
+attention, stores that work and reuses it, so each later step runs only the
+new token (`primer.ml.inference`).
+
+Without a cache, the work adds up over the steps:
 
 $$
 W = \sum_{t=0}^{n-1} (p + t) = n\,p + \frac{n(n-1)}{2}
@@ -445,8 +442,7 @@ $$
 **In words:** "each step re-reads the prompt plus everything generated so
 far; add that up over all steps."
 
-**With the numbers:** 4 × 2 + (4 × 3) / 2 = 8 + 6 = **14**, the count
-`generate` reports as `positions_processed`.
+**With the numbers:** 4 × 2 + (4 × 3) / 2 = 8 + 6 = **14**.
 
 **In Python:**
 
@@ -458,28 +454,39 @@ sum(p + t for t in range(n))  # → 14
 n * p + n * (n - 1) // 2  # → 14
 ```
 
+The square in that formula is what makes long replies expensive:
+
 ![Without a cache work grows with the square of output length, 23,900 positions at 200 tokens against 219 with a KV cache](figures/primer.ml.big_picture.loop_cost.svg)
 
 **Reading it:** the x-axis is how many tokens have been generated after a
 20-token prompt; the y-axis is total work in token positions. The red curve
 bends upward: it grows with the square of the output length. The blue line
-(with a KV cache) grows by exactly one per token. At 200 tokens the gap is
-more than a hundredfold.
+(with a KV cache) grows by one per token. At 200 tokens the gap is more than a
+hundredfold.
 
-**In code:** `Generation` holds the generated ids, the decoded text and the positions count; `naive_vs_cached_work` counts the positions processed with and without a KV cache for the figure.
+**In code:** `generate` runs the loop without a cache, and the `Generation` it returns counts the positions read; `naive_vs_cached_work` counts both ways for the chart.
 
-**Why it matters.** Output length drives latency and cost; this is why
-every serving system caches keys and values.
+Even with a cache, each new token costs a trip through the model, while the
+prompt is read in one pass, so the length of the reply drives both the wait
+and the bill.
 
 ## 6. Training: the same forward pass, plus a loss
 
-**Everyday picture.** A guessing game with instant feedback. Cover the next
-word, guess it, uncover it, and note how surprised you were. Training nudges
-every weight to make the surprise smaller next time.
+So far the untrained model has picked only random byte fragments, because
+its weights are random. Training sets the weights, using the same pipeline.
+Run a real sentence through it: at every position the model gives some
+probability to the token that really comes next, and the lower that
+probability, the more surprised it was. The **loss** is the average surprise,
+and training nudges every weight to make it smaller, one batch of text after
+another.
 
-**Tiny worked example.** If the model gives the right next token probability
-0.5, the loss is −ln 0.5 = **0.693**. Our untrained model averages **5.97** on
-a real sentence, close to ln 400 = 5.99, the score of a blind uniform guess.
+Surprise is −ln p, minus the **logarithm** of the probability. A logarithm
+answers "to what power must I raise *e* to get this number?" For a
+probability, between 0 and 1, it is negative, so the minus sign makes the
+surprise positive: 0 when p = 1, and huge when p is tiny. A guess that gives
+the right token 0.5 costs −ln 0.5 = **0.693**. The untrained model averages
+**5.97** on a real sentence, close to ln 400 = 5.99, the loss of a blind guess
+among 400 tokens.
 
 ```mermaid
 flowchart LR
@@ -491,17 +498,11 @@ flowchart LR
   U -->|next batch| F
 ```
 
-**Reading it:** the first two boxes are the forward pass you just traced.
-Training adds the loss (how surprised the model was by the real next
-tokens), then backpropagation (`primer.ml.neural_net`) works out how each
-weight contributed, and the optimizer (`primer.ml.optimizers`) adjusts them.
-One pass over n tokens gives n − 1 guesses at once, in parallel, which is a
-big reason transformers train fast.
-
-**The math and the code.** A **logarithm** answers "to what power must I
-raise *e* to get this number?" For probabilities between 0 and 1 it is
-negative, so we flip the sign; ln 1 = 0 (no surprise) and ln of a tiny
-number is very negative (huge surprise).
+**Reading it:** the first two boxes are the trip a prompt takes. Training adds
+the loss; backpropagation (`primer.ml.neural_net`) works out each weight's
+share of it, and the optimizer (`primer.ml.optimizers`) adjusts the
+weights. One pass over n tokens gives n − 1 guesses at once, in
+parallel, which is a large part of why transformers train fast.
 
 $$
 \mathcal{L} = -\frac{1}{n-1}\sum_{i=1}^{n-1} \ln p\big(t_{i+1} \mid t_1, \ldots, t_i\big)
@@ -522,10 +523,9 @@ $$
 gave the true next token, average them, and flip the sign."
 
 **With the numbers:** a uniform guess over 400 tokens gives every true token
-p = 1/400, so each term is −ln(1/400) = ln 400 = **5.99**. Our untrained model
-scores 5.97, so it is still essentially guessing. **Perplexity**, e raised to
-the loss, is 393: "as unsure as choosing among 393 equally likely tokens"
-(`next_token_loss`, `cross_entropy`).
+p = 1/400, so each term is −ln(1/400) = ln 400 = **5.99**. The untrained model
+scores 5.97, so it is still guessing. **Perplexity**, e raised to the loss, is
+393: "as unsure as choosing among 393 equally likely tokens".
 
 **In Python:**
 
@@ -541,19 +541,23 @@ L = -sum(math.log(p_i) for p_i in p) / (n - 1)
 round(L, 2)  # → 5.99
 ```
 
-**Why it matters.** Pretraining is exactly this, over trillions of tokens:
-predicting the next token well forces the model to absorb grammar, facts and
-reasoning patterns. Random weights produce gibberish, and training is what
-turns the same machinery into a useful model.
+**In code:** `next_token_loss` averages `cross_entropy` over every position of a text.
+
+**Pretraining** is this, run over trillions of tokens. To predict the next
+token well, a model has to pick up grammar, facts and patterns of reasoning,
+and that is how the machinery that produced byte fragments here becomes a
+useful model.
 
 ## In 20 seconds
-- Tokenize the prompt, look up a vector per token, add position, run the
-  transformer blocks, score every vocabulary entry from the last position,
-  softmax, sample, append, repeat.
-- Temperature divides the scores before softmax: low is predictable, high is
-  varied.
-- The naive loop re-reads everything each step; the KV cache makes each step
-  cost one token. Training is the same forward pass plus a next-token loss.
+- A language model reads your prompt as tokens, turns each token into a
+  vector, and passes the vectors through a stack of transformer blocks.
+- Only the last token's vector chooses the next token. It scores every token
+  in the vocabulary, and temperature divides those scores before softmax: low
+  is predictable, high is varied.
+- The reply is written one token per trip round the loop. Without a KV cache,
+  every trip re-reads the whole text so far.
+- Training is the same forward pass plus a loss: how surprised the model was
+  by each real next token.
 
 ## Self-test questions
 
