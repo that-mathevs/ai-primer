@@ -132,23 +132,22 @@ size a machine, you are done.
 
 ## Level 2: How it works, from scratch
 
-Level 2 assembles the block one piece at a time, starting with the picture
-of a team that meets, then works alone.
+A language model holds one vector per token, a list of numbers, and passes
+those vectors through a stack of identical **transformer blocks** before it
+scores the next token (`primer.ml.big_picture`). Each block works like a
+team's meeting followed by desk work. The **meeting** is attention: each
+token takes in what the other tokens hold. The **desk work** is a
+feed-forward network, which works on each token alone. GPT-2 small stacks
+12 blocks; big models stack 80 or more.
 
 ## 1. The block: a meeting, then desk work
 
-**Everyday picture.** A team works in rounds. Each round starts with a
-**meeting**, where everyone listens to everyone else and takes notes on what's
-relevant to them (that's attention). Then comes **desk work**: each person
-goes back to their own desk and thinks through their notes alone, without
-talking to anyone (that's the feed-forward network). Nobody throws away their
-old notes; they only add to them (the *residual connection*). A large model
-runs dozens of these rounds: GPT-2 small has 12, big models have 80 or more.
-
-**Tiny worked example.** Take one token whose vector is x = (1, 2). The
-meeting produces a correction (0.1, −0.3); adding it gives (1.1, 1.7). Desk
-work then adds (−0.2, 0.4), giving (0.9, 2.1). The token's vector has been
-*edited twice*, never replaced.
+Neither step replaces a token's vector. Each one adds a correction to it,
+the **residual connection** from `primer.ml.deep_nets`, so whatever the vector
+held is kept. Take one token whose vector is x = (1, 2). The meeting
+produces a correction (0.1, −0.3), and adding it gives (1.1, 1.7). Desk work
+then adds (−0.2, 0.4), giving (0.9, 2.1). The vector has been edited twice
+and never replaced.
 
 ```mermaid
 flowchart TD
@@ -163,18 +162,16 @@ flowchart TD
   R2 --> OUT[To the next block]
 ```
 
-**Reading it:** follow the main line straight down the left. The input is
-first normalized (rescaled, section 2) and fed to attention. Attention's
-output does *not* replace the input: the "Add" circle adds it to the original,
-which arrives by the side arrow that skips the whole step. The same pattern
-repeats for the feed-forward network. Those two skip arrows are the
-**residual connections**. Because every step only adds a correction, the
-signal (and during training, the gradient) has an unobstructed highway
-through a hundred blocks. This layout, with the norm *before* each sub-layer,
-is called **pre-norm**; it trains more stably than the 2017 original, which
-normalized after.
+**Reading it:** follow the main line down the left. The input is first
+normalized, put on a common scale, and fed to attention. The "Add" circle
+adds attention's output to the original input, which arrives by the side
+arrow that skips the step. The feed-forward network repeats the pattern.
+Those two side arrows are the residual connections, and they give the
+signal, and in training the gradient, a clear path through a hundred
+blocks. Putting the norm *before* each step is called **pre-norm**; it trains
+more stably than the 2017 original, which normalized after.
 
-**The math and the code.**
+In symbols, the whole block is two lines:
 
 $$
 x \leftarrow x + \text{Attn}(\text{LN}(x)), \qquad x \leftarrow x + \text{FFN}(\text{LN}(x))
@@ -195,8 +192,7 @@ $$
 what each token worked out alone."
 
 **With the numbers:** (1, 2) + (0.1, −0.3) = (1.1, 1.7); then (1.1, 1.7) +
-(−0.2, 0.4) = **(0.9, 2.1)**. `TransformerBlock.__call__` is exactly these
-two lines.
+(−0.2, 0.4) = **(0.9, 2.1)**.
 
 **In Python:**
 
@@ -214,26 +210,27 @@ x = [x_j + f_j for x_j, f_j in zip(x, ffn)]
 [round(x_j, 1) for x_j in x]  # → [0.9, 2.1]
 ```
 
-**In code:** `TransformerBlock` holds one `primer.ml.attention.MultiHeadAttention`, one `FeedForward` and the two norms' learned gains and biases.
+**In code:** `TransformerBlock` runs these two lines, with one `primer.ml.attention.MultiHeadAttention` and one `FeedForward`.
 
-**Why it matters.** The block's output has the same shape as its input, so
-blocks stack like Lego. And because the input is never overwritten, switching
-both sub-layers off gives back the input unchanged (a scenario in the spec),
-which is why very deep stacks train at all.
+A block gives back vectors of the same shape as the ones it was given, so
+the output of one block is a valid input to the next, and blocks stack. With
+both steps switched off, a block passes its input through unchanged.
 
-## 2. Layer normalization: grading each token on its own curve
+## 2. Layer normalization
 
-**Everyday picture.** A teacher grading on a curve: subtract the class
-average from each score, then divide by how spread out the scores are. After
-that, "2 above average" means the same thing in every class. LayerNorm does
-this to the numbers *inside one token's vector*, so no token's numbers can
-drift huge or tiny as they pass through dozens of blocks.
+Before each step, the block puts every token's numbers on a common scale.
+**Layer normalization** is the grading on a curve from `primer.ml.deep_nets`,
+applied to one token at a time: subtract the average of the token's numbers
+from each of them, then divide by how spread out they are. However far a
+token's numbers have drifted, attention and the feed-forward network always
+read them at the same scale, through dozens of blocks.
 
-**Tiny worked example.** Normalize (1, 2, 3, 4). The **mean** (average) is
-2.5. The **variance** (average squared distance from the mean) is
-(2.25 + 0.25 + 0.25 + 2.25) / 4 = 1.25, so the spread (**standard
-deviation**, its square root) is 1.118. Result: (−1.342, −0.447, 0.447,
-1.342). Multiply the input by 100 and the result is identical.
+Take the token (1, 2, 3, 4). Its **mean** (average) is 2.5. Its
+**variance** (the average squared distance from the mean) is
+(2.25 + 0.25 + 0.25 + 2.25) / 4 = 1.25, so its spread, the **standard
+deviation** (the variance's square root), is 1.118. The result is
+(−1.342, −0.447, 0.447, 1.342). Multiply the input by 100 and the result is
+identical.
 
 ```mermaid
 flowchart LR
@@ -243,12 +240,10 @@ flowchart LR
 ```
 
 **Reading it:** two fixed steps, then one learned step. Centring and
-dividing force every token's numbers to average 0 with spread 1; the learned
-gain and bias then let the model pick whatever scale each feature actually
-needs. RMSNorm (used by Llama and most recent models) skips the centring box
-and divides by the root-mean-square instead: cheaper, and it works as well.
-
-**The math and the code.**
+dividing bring every token's numbers to average 0 and spread 1; the learned
+gain and bias then let the model give each feature the scale it needs.
+RMSNorm (used by Llama and most recent models) skips the centring box and
+divides by the root-mean-square instead, which is cheaper and works as well.
 
 $$
 \text{LN}(x)_j = \gamma_j \,\frac{x_j - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta_j,
@@ -275,8 +270,7 @@ by the token's spread, then rescale and shift each feature by learned
 amounts."
 
 **With the numbers:** $x_1$: (1 − 2.5) / √(1.25 + 0.00001) = −1.5 / 1.118 =
-**−1.342**, then × 1 + 0 = −1.342. `layer_norm` and `rms_norm` implement
-both variants.
+**−1.342**, then × 1 + 0 = −1.342.
 
 **In Python:**
 
@@ -294,21 +288,28 @@ eps, gamma, beta = 1e-5, 1.0, 0.0
 [round(gamma * (x_j - mu) / math.sqrt(sigma2 + eps) + beta, 3) for x_j in x]  # → [-1.342, -0.447, 0.447, 1.342]
 ```
 
-**Why it matters.** Without normalization, activations drift layer after
-layer until training blows up or stalls. It normalizes per token (not per
-batch, unlike the BatchNorm used in image networks), so it works for any
-batch size and sequence length.
+**In code:** `layer_norm` and `rms_norm` are the two variants.
 
-## 3. The feed-forward network: desk work
+Because each token is normalized on its own, not across the batch like the
+BatchNorm used in image networks, the result is the same for any batch size
+and any sequence length.
 
-**Everyday picture.** Back at their desk, each person spreads their notes
-out over a desk four times wider than the notebook, underlines what matters,
-and writes a short summary back into the notebook. Nobody talks to anyone.
+## 3. The feed-forward network
 
-**Tiny worked example.** With model width 8, the network widens each token
-to 32 numbers, applies GELU to each, and narrows back to 8. Parameters:
-8·32 + 32 + 32·8 + 8 = **552**. GELU on single numbers: GELU(1) = 0.841,
-GELU(10) = 10.0, GELU(−3) = −0.004, GELU(0) = 0.
+After the meeting and a second layer norm, the token goes to its desk. The
+**feed-forward network** works on one token's vector at a time, with the
+same weights for every token, so it never mixes tokens: it works on what
+attention has already gathered into each one.
+
+It first widens the vector with a **matrix multiply**: each output number is
+the dot product of the vector with one column of a weight matrix, so a
+matrix with 4d columns turns d numbers into 4d. Each of those numbers then
+passes through GELU, a smooth on/off switch, and a second matrix multiply
+narrows them back to d. Without the switch, the two matrix multiplies would
+collapse into one, and stacking them would add nothing. At model width 8,
+the token goes from 8 numbers to 32 and back to 8, through
+8·32 + 32 + 32·8 + 8 = **552** parameters. On single numbers,
+GELU(1) = 0.841, GELU(10) = 10.0, GELU(−3) = −0.004 and GELU(0) = 0.
 
 ```mermaid
 flowchart LR
@@ -318,18 +319,12 @@ flowchart LR
   W2 --> Y["correction for this token"]
 ```
 
-**Reading it:** a token's vector goes in on the left, alone. It is widened
-by a matrix multiply, passed through a smooth on/off switch (GELU) number by
-number, and narrowed back. The same weights are applied to every token
-separately, so this step never mixes tokens; it transforms each one using
-what attention already gathered. Two thirds of each block's parameters
-live here (8d² of every 12d²); counting the embedding table too, that is 45%
-of GPT-2 small and 63% of GPT-2 XL (chapter 6). Much of a model's factual
-knowledge is thought to be stored in these weights.
-
-**The math and the code.** A **matrix multiply** $xW$ turns a list of $d$
-numbers into a list of $4d$ numbers: each output number is the dot product of
-$x$ with one column of $W$ (multiply matching numbers, add them up).
+**Reading it:** one token's vector goes in on the left, alone, and its
+correction comes out on the right. The two weight matrices are where the
+parameters are: two thirds of each block's (8d² of every 12d²), and, with
+the embedding table counted too, 45% of GPT-2 small and 63% of GPT-2 XL.
+Much of a model's factual knowledge is thought to be stored in these
+weights.
 
 $$
 \text{FFN}(x) = \text{GELU}(x W_1 + b_1)\, W_2 + b_2,
@@ -354,8 +349,7 @@ $$
 negative numbers, then narrow it back with another matrix multiply."
 
 **With the numbers:** GELU(1) = ½ · 1 · (1 + tanh(0.798 · 1.045)) = ½ · (1 +
-tanh(0.834)) = ½ · (1 + 0.683) = **0.841**. `FeedForward` and `gelu` are the
-code.
+tanh(0.834)) = ½ · (1 + 0.683) = **0.841**.
 
 **In Python:**
 
@@ -376,24 +370,21 @@ y-axis is what comes out. ReLU (grey) is a hard hinge: zero for every
 negative input, the identity for positives. GELU (blue) follows the same
 shape far from zero but bends smoothly around it and dips slightly below
 zero for small negatives. The smooth bend means the gradient never jumps,
-which is part of why transformers train well with it. (Many newer models use
-SwiGLU, a gated cousin of the same idea.)
+which is part of why transformers train well with it. Many newer models use
+SwiGLU, a gated variant of the same idea.
 
-**Why it matters.** Without a nonlinearity like GELU, the two matrix
-multiplies would collapse into one, and stacking layers would add nothing.
+**In code:** `FeedForward` is the network and `gelu` the switch.
 
 ## 4. A tiny GPT, end to end
 
-**Everyday picture.** An assembly line. Token ids go in one end, get turned
-into vectors, pass through a row of identical workstations (the blocks), get
-a final polish (the last norm), and come out the far end as a score for every
-word in the dictionary.
-
-**Tiny worked example.** A model with a 50-token vocabulary, width 32, 2
-blocks and 16 positions. The ids [3, 1, 4, 1, 5] become a 5 × 32 grid, pass
-through both blocks as 5 × 32, and come out as a 5 × 50 grid of **logits**
-(raw scores): row 5 scores every possible 6th token. It has **27,328**
-parameters.
+That completes the block. A language model wraps a stack of blocks with two
+more pieces: a table lookup that turns token ids into vectors at the start,
+and a scoring step that turns the last vectors into a score for every token
+in the vocabulary at the end. Take a model with a 50-token vocabulary,
+width 32, 2 blocks and 16 positions. The ids [3, 1, 4, 1, 5] become a 5 × 32
+grid, pass through both blocks as 5 × 32, and come out as a 5 × 50 grid of
+**logits** (raw scores): row 5 scores every possible 6th token. The model
+has **27,328** parameters.
 
 ```mermaid
 flowchart LR
@@ -408,13 +399,13 @@ flowchart LR
 
 **Reading it:** the top-left path says *what* each token is, the bottom-left
 path *where* it is (see `primer.ml.positional`); their sum enters the blocks.
-Every block keeps the 5 × 32 shape. At the end, each token's final vector is
-dot-producted with every row of the token table, giving one score per
-vocabulary entry. The dotted line marks **weight tying**: the table that
-turned ids into vectors on the way in is reused to score them on the way out,
-saving vocab × width parameters.
+Every block keeps the 5 × 32 shape. At the end, each token's final vector
+takes a dot product with every row of the token table, which gives one score
+per vocabulary entry. The dotted line marks **weight tying**: the table that
+turned ids into vectors on the way in is reused to score them on the way
+out, which saves vocab × width parameters.
 
-**The math and the code.**
+In symbols, the scoring step is one matrix multiply:
 
 $$
 \text{logits} = \text{LN}(h)\, E^{\top}
@@ -435,7 +426,7 @@ lines up with the model's final vector."
 
 **With the numbers:** row 5 of the logits holds 50 scores, one per token id;
 softmax turns them into next-token probabilities (see
-`primer.ml.big_picture`). `TinyGPT.__call__` is this pipeline. Shrink it to
+`primer.ml.big_picture`). Shrink the model to
 a width of 2 and a vocabulary of 3 to check by hand: a last position whose
 normalized vector is LN(h) = (1, −1), against table rows (1, 0), (0, 1) and
 (−1, 1), scores 1·1 + (−1)·0 = **1**, then **−1** and **−2**: token 0 lines
@@ -452,23 +443,23 @@ E = [[1.0, 0.0], [0.0, 1.0], [-1.0, 1.0]]
 [sum(h_k * e_k for h_k, e_k in zip(ln_h, row)) for row in E]  # → [1.0, -1.0, -2.0]
 ```
 
-**In code:** `TinyGPT.hidden` runs everything up to the final norm, and `TinyGPT.n_params` counts the 27,328 weights.
+**In code:** `TinyGPT` runs this pipeline, and `TinyGPT.n_params` counts the 27,328 weights.
 
-**Why it matters.** This is the whole forward pass of GPT-2, Llama and
-Claude-style models in miniature. Real models differ in size, not in kind.
+GPT-2 runs the same pipeline, with 12 blocks of width 768 in place of 2
+blocks of width 32.
 
 ## 5. Three families: encoder, decoder, encoder-decoder
 
-**Everyday picture.** An **editor** reads the whole page before commenting
-on any sentence (encoder). A **storyteller** tells the story word by word
-and can't peek at words they haven't said yet (decoder). A **translator**
-reads the whole source sentence, then writes the translation word by word
-(encoder-decoder).
-
-**Tiny worked example.** With 3 tokens, an encoder's attention may use all 9
-(query, key) pairs; a decoder only the 6 on or below the diagonal. In the
-spec, changing token 5 changes token 1's output in an encoder block, and
-leaves it untouched in a decoder block.
+The tiny GPT's blocks let each token look only at itself and the tokens
+before it, the causal mask from `primer.ml.attention`. That makes it a
+**decoder**. Take the mask away, so that every token looks at every token,
+and the same blocks make an **encoder**. An **encoder-decoder** uses both:
+an encoder reads a source text, and a decoder writes the output while
+looking at the encoder's vectors as well as its own past. With 3 tokens, an
+encoder's attention may use all 9 (query, key) pairs and a decoder only the
+6 on or below the diagonal. In a decoder block, then, changing a later token
+never changes an earlier token's output. In an encoder block, changing the
+last of five tokens changes the first token's output too.
 
 ```mermaid
 flowchart TB
@@ -483,10 +474,9 @@ flowchart TB
   end
 ```
 
-**Reading it:** the three boxes differ only in *who may attend to whom*.
-The blocks inside are the same. That one choice of mask decides what the
-model is good at: seeing everything suits understanding tasks, and seeing
-only the past is what makes generation possible.
+**Reading it:** each box is one family, with models that use it and the
+jobs it does. Seeing everything suits understanding a text, and seeing only
+the past is what makes generation possible.
 
 | Type            | Example                  | Attention     | Best for                        |
 |-----------------|--------------------------|---------------|---------------------------------|
@@ -506,18 +496,14 @@ it. Every other decoder row differs, because its weights are shared out over
 only the tokens it may see: the first token, seeing only itself, puts all
 of its weight (1.0) there.
 
-**In code:** `TransformerBlock` with its causal flag on is a decoder block and with it off an encoder block; `mask_patterns` runs one of each on the same input to draw the figure.
-
-**Why it matters.** Embedding models (`primer.ml.embeddings`) are usually
-encoders; chat models and agents are decoders.
+**In code:** one flag makes a `TransformerBlock` a decoder or an encoder block, and `mask_patterns` draws the figure.
 
 ## 6. Counting parameters
 
-**Everyday picture.** Counting the bricks in a Lego model from its
-blueprint, without opening the box.
-
-**Tiny worked example.** For width d, one block holds: attention 4·d²
-(W_q, W_k, W_v, W_o), feed-forward 8·d² (two d × 4d matrices), plus small
+Whatever its mask, a block holds the same weights, so a model's size follows
+from a few numbers in its configuration: the width, the number of blocks and
+the vocabulary. For width d, one block holds attention's 4·d² (W_q, W_k,
+W_v, W_o), the feed-forward network's 8·d² (two d × 4d matrices), and small
 bias and norm terms. With d = 32: 12 · 1,024 = 12,288, plus 160 (biases) plus
 128 (norms) = 12,576 per block. Two blocks, plus tables of 50 × 32 and 16 × 32
 and a final norm of 64, gives **27,328**. The same recipe on GPT-2 small
@@ -536,11 +522,9 @@ flowchart LR
 ```
 
 **Reading it:** almost all of a block's weight sits in two places,
-attention's four square matrices and the feed-forward's two wide ones.
-Everything else is a rounding error at large width, which is where the
-famous 12·L·d² rule comes from. Embeddings are added once, not per block.
-
-**The math.**
+attention's four square matrices and the feed-forward network's two wide
+ones. Everything else is small at large width, which is where the 12·L·d²
+rule comes from. The embeddings are added once, not per block.
 
 $$
 N \approx 12\, L\, d^2 + V d
@@ -562,7 +546,7 @@ table."
 
 **With the numbers:** 12 · 12 · 589,824 = 84,934,656, plus 38,597,376 =
 123,532,032, about 0.7% under the exact 124,439,808 (which also counts positions,
-biases and norms; see `gpt_param_count`).
+biases and norms).
 
 **In Python:**
 
@@ -584,23 +568,23 @@ small model, embeddings (grey) are almost a third of everything, because a
 embeddings stay fixed while layers multiply, so their share shrinks to about
 5% in XL, and the 12·L·d² term dominates.
 
-**In code:** `param_breakdown` splits a GPT-2-shaped model's count into embeddings, attention, feed-forward and norms for the figure, and `TransformerBlock.n_params` counts one real block's weights.
+Multiply the count by the bytes each parameter takes and you have the
+memory a model needs just to load (`primer.ml.inference` does the
+arithmetic).
 
-**Why it matters.** Parameters × bytes per parameter is the memory a model
-needs just to load (see `primer.ml.inference` for the arithmetic).
+**In code:** `gpt_param_count` gives the exact count, and `param_breakdown` splits it for the figure.
 
-## 7. Mixture of Experts (MoE): a triage desk
+## 7. Mixture of experts
 
-**Everyday picture.** A hospital triage desk. Instead of one general
-practitioner seeing every patient, the desk sends each patient to the two
-most relevant specialists out of eight. The hospital employs eight doctors'
-worth of expertise, but each patient only takes up two doctors' time.
-
-**Tiny worked example.** A router scores one token against 4 experts: (2.0,
-1.0, 0.5, −1.0). Keep the top 2 (experts 0 and 1) and softmax just those
-two: e² / (e² + e¹) = 7.39 / 10.11 = **0.731**, and 0.269. The token's output is
-0.731 × expert 0's output + 0.269 × expert 1's output; experts 2 and 3 never
-run for this token.
+The feed-forward network holds the largest share of every block. A
+**mixture of experts** (MoE) replaces it with several feed-forward networks,
+the **experts**, and a small **router** that scores each token against every
+expert. Only the k best-scoring experts run for that token. Take a router
+that scores one token against 4 experts as (2.0, 1.0, 0.5, −1.0). Keep the
+top 2 (experts 0 and 1) and take the softmax of just those two scores:
+e² / (e² + e¹) = 7.39 / 10.11 = **0.731**, and 0.269. The token's output is
+0.731 × expert 0's output + 0.269 × expert 1's output, and experts 2 and 3
+never run for this token.
 
 ```mermaid
 flowchart LR
@@ -618,10 +602,8 @@ flowchart LR
 **Reading it:** the router is a tiny linear layer that scores the token
 against every expert. Only the two best-scoring experts run, and their
 outputs are blended by the renormalized scores (solid arrows); the others
-are skipped entirely (dotted). An MoE layer replaces the feed-forward network
-inside a block; attention is unchanged.
-
-**The math and the code.**
+are skipped (dotted). Attention is unchanged; only the feed-forward network
+is replaced.
 
 $$
 y = \sum_{i \in \text{TopK}(r)} g_i \, E_i(x), \qquad g = \text{softmax}\big(r_{\text{TopK}}\big), \qquad r = x W_r
@@ -645,8 +627,7 @@ outputs by their softmaxed scores."
 
 **With the numbers:** y = 0.731 · E₀(x) + 0.269 · E₁(x). With 8 experts of
 width 16, the layer holds 8 × 2,128 + 128 = **17,152** parameters, but one token
-touches only 2 × 2,128 + 128 = **4,384**. `MixtureOfExperts` and `top_k_gates`
-are the code. Mixtral 8x7B works the same way: about 47B parameters in total,
+touches only 2 × 2,128 + 128 = **4,384**. Mixtral 8x7B works the same way: about 47B parameters in total,
 about 13B active per token.
 
 **In Python:**
@@ -669,9 +650,9 @@ router = d * n_experts
 expert, n_experts * expert + router, k * expert + router  # → (2128, 17152, 4384)
 ```
 
-A router left alone tends to play favourites, overloading some experts
-while others starve. Training adds a small **load-balancing loss** (Switch
-Transformer):
+A router left alone sends more tokens to some experts than to others.
+Training therefore adds a small **load-balancing loss** (from the Switch
+Transformer) that is lowest when the traffic is even:
 
 $$
 \mathcal{L}_{\text{balance}} = n \sum_{i=1}^{n} f_i \, P_i
@@ -690,8 +671,7 @@ $$
 share times average router probability."
 
 **With the numbers:** balanced: 4 · (4 · ¼ · ¼) = **1.0**, the minimum.
-Collapsed onto one expert: 4 · (1 · 1) = **4.0**, the maximum
-(`load_balancing_loss`).
+Collapsed onto one expert: 4 · (1 · 1) = **4.0**, the maximum.
 
 **In Python:**
 
@@ -715,21 +695,20 @@ only 51: even random routing is lopsided, and in training the imbalance compound
 favoured experts improve and attract more traffic. The balancing loss pushes
 the bars back towards the line.
 
-**In code:** `MixtureOfExperts.n_params` and `MixtureOfExperts.active_params` give the 17,152 and 4,384 above, and `MixtureOfExperts.tokens_per_expert` counts the bars in the figure.
+So a mixture of experts grows the parameters a model holds without growing
+the work each token does. The cost is memory: every expert must be loaded,
+though only k of them run for each token.
 
-**Why it matters.** MoE lets a model hold far more knowledge (parameters)
-for the same compute per token, which is why many frontier models use it. The
-price is memory: every expert must be loaded even though few run per token.
+**In code:** `MixtureOfExperts` with `top_k_gates` routes the tokens, and `load_balancing_loss` is the penalty.
 
 ## 8. Compute arithmetic: 2N to generate, 6N to train
 
-**Everyday picture.** Every parameter does one multiply and one add for
-every token that passes through it, like a toll booth that charges two coins
-per car.
-
-**Tiny worked example.** A 7B-parameter model generating one token: 2 × 7e9
-= **1.4e10** operations (14 GFLOPs). Training a 70B model on a trillion tokens:
-6 × 70e9 × 1e12 = **4.2e23** operations.
+That work per token can be counted. Each parameter does one multiply and one
+add for every token that passes through it, so generating one token with a
+model of N parameters costs about 2N **FLOPs** (floating-point operations).
+Training costs about 6N per token. A 7B-parameter model generating one
+token costs 2 × 7e9 = **1.4e10** operations (14 GFLOPs). Training a 70B model
+on a trillion tokens costs 6 × 70e9 × 1e12 = **4.2e23** operations.
 
 ```mermaid
 flowchart LR
@@ -743,8 +722,6 @@ flowchart LR
 parameter per token. Training runs the same forward pass, then a backward
 pass (`primer.ml.neural_net`) that costs about twice as much, because it
 computes gradients both for the weights and for the activations. 2 + 4 = 6.
-
-**The math.**
 
 $$
 C_{\text{infer}} \approx 2N \text{ per token}, \qquad C_{\text{train}} \approx 6ND
@@ -763,8 +740,7 @@ $$
 training costs six per parameter per training token."
 
 **With the numbers:** GPT-3: 6 × 175e9 × 300e9 = **3.15e23** FLOPs, matching
-the roughly 3.14e23 its paper reports (`training_flops`,
-`inference_flops_per_token`).
+the roughly 3.14e23 its paper reports.
 
 **In Python:**
 
@@ -778,15 +754,19 @@ def C_train(N, D):
 print(f"{C_infer(7e9):.2g}  {C_train(70e9, 1e12):.2g}  {C_train(175e9, 300e9):.3g}")  # → 1.4e+10 4.2e+23 3.15e+23
 ```
 
-**Why it matters.** These two lines let you estimate GPU-hours, serving cost
-and training budgets on the back of an envelope.
+**In code:** `inference_flops_per_token` and `training_flops` are the two rules.
+
+With these two rules and the parameter count, a model's configuration
+becomes an estimate of what it costs to serve and to train.
 
 ## In 20 seconds
-- A block is attention (tokens exchange information) then a feed-forward
-  network (each token processes alone), each wrapped in a residual add and a
-  layer norm (pre-norm).
-- A GPT is: embed tokens and positions, run N blocks, normalize, and score
-  every vocabulary entry with the (tied) embedding table.
+- A block is attention, where tokens exchange information, then a
+  feed-forward network, where each token is worked on alone. Each step reads
+  a layer-normalized copy of the vectors and adds its result back (pre-norm,
+  with a residual connection).
+- A GPT looks up a vector for each token and its position, runs them through
+  a stack of blocks, normalizes, and scores every vocabulary entry against
+  the same embedding table it started from.
 - Parameters ≈ 12·L·d² + vocab·d; compute ≈ 2N per generated token and 6ND
   to train. MoE adds experts to grow parameters without growing per-token
   compute.
