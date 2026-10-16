@@ -122,16 +122,9 @@ are done.
 
 ## Level 2: How it works, from scratch
 
-What follows builds the four pieces, each small enough to read in one
-sitting, and shows what each one prevents.
-
-A language model remembers nothing between calls. Every call starts from a
-blank page plus whatever you put in the prompt. "Memory" is therefore
-entirely *your* system: what you keep, where you keep it, what you put back
-into the prompt, and who is allowed to see it. This lesson builds four
-pieces: short-term memory, long-term memory with three kinds of record, the
-safety rules around it (write policy, conflicts, isolation, deletion), and
-task state kept in a database instead of in the conversation.
+Every call to a language model starts from a blank page plus the prompt you
+send, so your code rebuilds that prompt on each call from stores it keeps in
+between.
 
 ```mermaid
 flowchart LR
@@ -149,23 +142,28 @@ flowchart LR
   Code -->|validated writes| DB
 ```
 
-**Reading it:** the box on the left is the only thing the model ever sees,
-and it's rebuilt from scratch on every call. The three stores on the right
-feed it. Arrows *into* the stores come from your code, never directly from
-the model. The model proposes and your code decides what gets written.
+**Reading it:** the box titled "What the model sees on this call" is all the
+model ever sees, rebuilt on every call from the three stores. Every arrow
+into a store comes from your code, none from the model: the model proposes
+what to remember, and your code decides what is written.
 
 ## 1. Short-term memory: the conversation, inside a budget
 
-**Everyday picture.** A flip chart in a long meeting. When the page fills up,
-you don't find a bigger pad. You tear off the old pages and start a fresh one
-with one line at the top: "Earlier: agreed on the budget, rejected vendor B."
+The first store is the conversation itself. Each call resends the history,
+so a long chat costs more and runs slower with every turn, and the model
+gets worse at using details buried in the middle, a decline called
+**context rot**. **Short-term memory** keeps the history inside a fixed
+token budget. The latest messages stay word for word, since they hold what
+the user means right now, such as the order number they just typed. Older
+ones are folded into a summary that gets only the room the recent messages
+leave.
 
-**Tiny worked example.** Six question-and-answer exchanges about invoices,
-17 or 18 tokens per message (210 tokens in all), and a budget of 110 tokens.
-The last four messages stay word for word: 18 + 17 + 18 + 17 = 70 tokens,
-which leaves 110 - 70 = 40 tokens for the summary. The summary keeps the
-first sentence of each older message, but all eight of those would take 65
-tokens, so the oldest drop out, one at a time, until the rest fit in 40:
+Take six question-and-answer exchanges about invoices, 17 or 18 tokens per
+message (210 tokens in all), and a budget of 110 tokens. The last four
+messages stay word for word: 18 + 17 + 18 + 17 = 70 tokens, which leaves
+110 - 70 = 40 tokens for the summary. The summary keeps the first sentence
+of each older message. All eight of those would take 65 tokens, so the
+oldest drop out, one at a time, until the rest fit in 40:
 
 ```text
 summary  : Earlier in this conversation: Question 3 is about invoices; Answer 3 lists the invoice;
@@ -173,51 +171,38 @@ summary  : Earlier in this conversation: Question 3 is about invoices; Answer 3 
 messages : Question 5 ..., Answer 5 ..., Question 6 ..., Answer 6 ...   (verbatim, 70 tokens)
 ```
 
-Total sent: 36 + 70 = 106 tokens, under the 110 budget. Exchanges 1 and 2
-are gone from the prompt entirely. That's the price of a fixed budget, and
-it's why anything worth keeping forever belongs in long-term memory
-(section 2), not in the conversation.
+The prompt carries 36 + 70 = 106 tokens of history, under the budget, and
+exchanges 1 and 2 are gone from it. The summary goes into the system
+prompt, not into a message of its own, so user and assistant turns still
+alternate as the API requires. A production system often has a language
+model write the summary instead: an extra call, but less is lost.
 
 ![Sending the whole history climbs without end, while the managed history levels off just under its 300-token budget](figures/primer.agents.memory.context_tokens.svg)
 
-**Reading it:** the x-axis is the turn number in a long conversation and the
-y-axis is how many tokens of history are sent on that turn. Unmanaged, the
-line climbs forever, and so do cost and latency. The model also gets worse at
-using details buried in the middle. Managed, it climbs until the history
-first passes the 300-token budget (turn 9), drops as the older turns fold
-into a summary, then climbs back and stays flat just under 300 from about
-turn 17 on. It stays flat because the summary only gets the room the recent
-messages leave: each new turn folds one more exchange in, and the oldest
-one drops out of the summary to make space.
+**Reading it:** the x-axis is the turn number and the y-axis the tokens of
+history sent on that turn. The unmanaged line never stops climbing. The
+managed line first passes the 300-token budget at turn 9, drops as older
+turns fold into the summary, then climbs back and stays just under 300 from
+about turn 17: each new turn folds one more exchange in, and the oldest
+drops out of the summary to make room.
 
-**The code.** `ShortTermMemory.context()` returns `(summary, messages)`. The
-summary goes in the system prompt rather than as a message, so user and
-assistant turns still alternate as the API requires.
+When a session has run too long even for that, reset it: write a short
+hand-off note and start a fresh conversation from it. Either way something
+is dropped, so a fact that must outlast the conversation needs a store of
+its own.
 
-**In code:** `ShortTermMemory.add` appends a message and
-`ShortTermMemory.tokens` totals the history; `first_sentences` is the
-default summarizer, keeping the first sentence of each folded message.
-`ShortTermMemory.context` gives the summary only the budget the recent messages leave
-and drops the oldest folded messages until it fits. A production system
-often re-summarizes the summary with an LLM call instead, trading an
-extra call for losing less.
-
-**Why it matters.** Context rot, where quality drops as a session grows, is
-one of the most common agent failures. Summarize, trim, or reset with a
-written hand-off.
+**In code:** `ShortTermMemory.context` returns the summary and the recent
+messages, and `first_sentences` is the default summarizer.
 
 ## 2. Long-term memory: three kinds of record
 
-**Everyday picture.** Three notebooks: a **diary** of what happened
-(*episodic*: "on 18 Sept Alice rejected Globex"), an **encyclopedia** of
-facts (*semantic*: "Alice's fiscal year starts in April"), and a **habit**,
-the way you've learned to do something (*procedural*: "to reconcile,
-match each invoice to its payment, then list mismatches").
-
-**Tiny worked example.** Alice has one memory of each kind. The question "what
-happened with Globex?" is embedded and compared with each memory (cosine
-similarity, see `primer.ml.embeddings.similarity`), and the diary entry
-comes back first. Asking with `kinds=("procedural",)` searches only habits.
+That store is **long-term memory**, kept outside any one conversation and
+recalled into later ones. Its records come in three kinds: **episodic**, a
+dated event ("on 18 Sept Alice rejected Globex"); **semantic**, a fact
+stored under a key ("Alice's fiscal year starts in April", under
+`fiscal_year_start`); and **procedural**, a way of doing something ("to
+reconcile, match each invoice to its payment, then list mismatches"). Each
+kind answers its own sort of question:
 
 | kind | stored as | typical recall trigger |
 |---|---|---|
@@ -225,39 +210,44 @@ comes back first. Asking with `kinds=("procedural",)` searches only habits.
 | semantic | keyed fact (`fiscal_year_start`) | any question the fact answers |
 | procedural | how-to steps | "how do I...", before starting a known task |
 
-![Each question recalls the right kind: the Globex question scores the diary entry highest, the how-to question the procedure](figures/primer.agents.memory.recall_scores.svg)
+Each record is stored with its embedding. Recall embeds the question and
+returns the records closest to it by cosine similarity, optionally of some
+kinds only: procedures, say, before the agent starts a task it knows.
 
-**Reading it:** each group of bars is one question, and each bar is one of
-Alice's memories, coloured by kind. The tallest bar in each group is what
-gets recalled. "What happened with Globex?" lights up the diary entry,
-because only it mentions Globex. "How do I reconcile invoices?" lights up
-the procedure. This is RAG (retrieval-augmented generation, see
-`primer.agents.rag`) over the agent's own history.
+![Each question recalls the right kind: the Globex question scores the event highest, the how-to question the procedure](figures/primer.agents.memory.recall_scores.svg)
 
-**In code:** `LongTermMemory.remember` stores a `MemoryRecord` of one kind
-with its embedding and reports back in a `WriteResult`.
-`LongTermMemory.recall` returns the current records in a scope most similar
-to the query, optionally limited to some kinds.
+**Reading it:** each group of bars is one question. Each bar is one of
+Alice's memories, coloured by kind, and the tallest is the one
+recalled. The Globex question picks the event, the only memory that names
+Globex; the how-to question picks the procedure. This is RAG
+(retrieval-augmented generation) over the agent's own history.
+
+**In code:** `LongTermMemory.remember` stores a `MemoryRecord` with its
+embedding, and `LongTermMemory.recall` returns the closest current records
+in a scope.
 
 ## 3. The hard parts: what to write, conflicts, isolation, deletion
 
-**What to write.** *Everyday picture:* a good assistant's notebook has
-"prefers morning meetings", not "said thanks at 3:02pm", and never your
-bank PIN. `worth_remembering` skips small talk and refuses anything that
-looks like a secret, since memory is read back into prompts and shown in
-exports.
+A store that lasts for months needs rules that a conversation never did.
 
-**Conflicts.** *Worked example:* Alice said her fiscal year starts in April,
-then corrected it to July. Both are stored under the key `fiscal_year_start`.
-The April record is marked *superseded by* the July one, recall returns only
-July, and `history()` still shows both with their source, so "why did the agent
-think April?" has an answer.
+**What to write.** Everything stored is read back into future prompts and
+shown in exports, so a good store holds what the user would be annoyed to
+repeat: "prefers morning meetings", not "said thanks at 3:02pm", and never a
+bank PIN. The **write policy** skips small talk and refuses anything that
+looks like a secret.
 
-**Isolation.** *Everyday picture:* separate locked filing cabinets per
-company, not one cabinet with a "please only read your own folder" sign.
-**Multi-tenant** means one system serves many customers (tenants). Every
-memory call names a `Scope` (tenant + user), and storage is *partitioned*
-by it, so a lookup starts inside the caller's own cabinet and can't reach
+**Conflicts.** Alice said her fiscal year starts in April, then corrected it
+to July. Both values are stored under the key `fiscal_year_start`. The April
+record is marked as **superseded** by the July one, so recall returns only
+July, while the key's history keeps both with their sources. That history
+explains why the agent once said April.
+
+**Isolation.** A **multi-tenant** system serves many customers (tenants)
+whose memories must never mix. Think of one locked filing cabinet per
+company, not a shared cabinet with a sign asking people to read only their
+own folder. Every memory call names a scope (a tenant and a user) taken from
+your authentication layer, never from the query. Storage is **partitioned**
+by scope, so a lookup opens the caller's own cabinet and has no way into
 another.
 
 ```mermaid
@@ -268,41 +258,43 @@ flowchart TD
   A[(acme/alice partition)] -.-x S
 ```
 
-**Reading it:** the query never runs against the whole store. It first opens
-exactly one partition, chosen from the scope that your authentication layer
-supplies, never from the query text. The crossed dotted line is the point:
-there is no path from Carol's search to Acme's records, so no clever query
-can create one.
+**Reading it:** Carol's request opens her own partition and searches only
+there. The dotted line from Acme's partition ends in a cross: no path leads
+from her search to Acme's records, whatever the query says.
 
 ![Acme's secret scores a perfect match to Carol's quoted query, yet it sits outside her partition and is never searched](figures/primer.agents.memory.isolation.svg)
 
-**Reading it:** Carol (tenant Globex) asks a question that quotes Acme's
-confidential memory word for word. Each bar is that question's similarity to
-one memory in the *whole* system. Acme's record scores highest, so a
-store that searched globally and filtered afterwards is one bug away from
-leaking it. Hatched bars are outside Carol's partition and are never scored
-in the real code path.
+**Reading it:** Carol, at Globex, asks a question that quotes Acme's
+confidential memory word for word. Each bar is that question's similarity
+to one memory in the whole system. Acme's record scores highest, so a store
+that searched everything and filtered the results afterwards would be one
+bug away from leaking it. The hatched bars lie outside Carol's partition,
+and the real search never scores them.
 
-**Deletion.** Users may need to see, correct or delete what's remembered,
+**Deletion.** Users may need to see, correct or delete what is remembered,
 and privacy law such as the GDPR (the EU's General Data Protection
-Regulation) can require it. `export(scope)` shows everything including
-superseded facts, and `delete_user(scope)` erases one user without touching
-colleagues.
+Regulation) can require it. An export of a user's scope shows everything,
+superseded facts included, and deleting a user erases their records without
+touching their colleagues'.
 
-**In code:** `LongTermMemory.remember` applies the write policy and marks
-an older record with the same key as superseded; `LongTermMemory.history`
-lists every value a key has had. `LongTermMemory` keeps one partition per
-`Scope`, and `LongTermMemory.export`, `LongTermMemory.forget` and
-`LongTermMemory.delete_user` show, remove one record, and erase a user.
+**In code:** `LongTermMemory.remember` applies the write policy and
+supersedes an older record with the same key; `LongTermMemory.export` and
+`LongTermMemory.delete_user` show and erase one user's records.
 
 ## 4. Task state outside the model
 
-**Everyday picture.** A checklist on a clipboard. The assistant can *suggest*
-ticking a box, but only the supervisor holds the pen. If the assistant goes
-home sick, the next person picks up the clipboard and starts at the first
-unticked box.
+The stores so far hold what the agent knows. A job of several steps also
+has a state: which steps are done and which comes next. Kept in the
+conversation, that state is lost when the process crashes, and a summary
+can trim or garble it.
 
-**Tiny worked example.**
+Picture a checklist on a clipboard. The assistant may suggest ticking a
+box, but only the supervisor holds the pen, and if the assistant goes home
+sick, the next person starts at the first unticked box. Here the clipboard
+is a database, the supervisor is your code and the assistant is the model.
+The model proposes an update; your code checks it against the stored state
+and writes it in a **transaction**, which completes entirely or not at all.
+A job with three steps runs like this:
 
 ```text
 steps                  : fetch_invoices, fetch_payments, match
@@ -328,29 +320,26 @@ sequenceDiagram
   D-->>C: match
 ```
 
-**Reading it:** the model never talks to the database. Every proposal goes
-through your code, which checks it against the stored truth before writing
-it inside a transaction (all or nothing). After the crash, the new process
-learns where to resume from the database, not from a conversation that no
-longer exists.
+**Reading it:** time runs downward. No arrow joins the model to SQLite:
+each proposal stops at your code, which reads the current step before it
+writes. After the restart, the answer to "where do we resume?" comes from
+the database, not from a conversation that no longer exists.
 
-**In code:** `TaskStateStore` keeps tasks and steps in SQLite.
-`TaskStateStore.create_task` writes a task and its steps in one transaction,
-`TaskStateStore.next_step` finds the first unfinished step, and
-`TaskStateStore.apply` validates a proposal, raising `InvalidUpdate` for a
-bad status or a skipped step, before writing it.
+Because the state sits in a database, people and monitoring can query a run
+while it is going, and code enforces rules, such as no skipped steps, that a
+prompt could only ask for.
 
-**Why it matters.** Authoritative state in a database makes runs
-inspectable, resumable and auditable. That's much of the difference between a
-demo and a production system.
+**In code:** `TaskStateStore.apply` validates a proposal before writing it,
+raising `InvalidUpdate` for a bad status or a skipped step, and
+`TaskStateStore.next_step` finds the first unfinished step.
 
 ## In 20 seconds
-- The model is stateless; memory is what your code puts back into the prompt.
-- Short-term: keep recent turns verbatim and fold older ones into a summary, within a token budget.
-- Long-term: episodic (events), semantic (facts), procedural (how-to), recalled by similarity.
-- Write selectively, never store secrets, supersede rather than overwrite, and keep provenance.
-- Isolate by partitioning on tenant and user, supplied by authentication, never by the query.
-- Keep task state in a database; the model proposes, code validates and writes.
+- A language model remembers nothing between calls; memory is what your code puts back into the prompt.
+- Short-term memory keeps the recent turns word for word and folds older ones into a summary, inside a token budget.
+- Long-term memory stores events (episodic), facts (semantic) and how-to steps (procedural), and recalls them by similarity.
+- Write selectively, never store secrets, and supersede a changed fact instead of overwriting it, keeping each value's source.
+- Partition storage by tenant and user, taken from authentication, never from the query.
+- Keep a job's progress in a database: the model proposes updates, and code checks and writes them.
 
 ## Self-test questions
 
