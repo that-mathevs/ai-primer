@@ -121,20 +121,20 @@ machine that survives a crash. If you only needed to choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-"Agent" covers everything from one model call inside ordinary code to a
-team of models steering each other. This lesson lays out that range, builds
-each named pattern in a few dozen lines, and measures what each step up
-costs. The rule that falls out is simple: **use the least autonomy that
-solves the problem, and say so out loud.**
+The examples come from one setting: an assistant that answers staff
+questions from company policy documents, such as how many days of paid time
+off (PTO) they get, or the meal allowance per day of travel (the
+per-diem).
 
 ## 1. The autonomy spectrum
 
-**Everyday picture.** Four ways to run an office. An **assembly line**
-(fixed workflow): the steps never change and people do one task at each
-station. A **receptionist** (router) decides which department you go to. A
-**personal assistant** (agent loop) decides which errands to run and when
-the job's done. A **team with a manager** (multi-agent) splits the work
-among specialists.
+The simplest design is a **fixed workflow**: ordinary code that calls the
+model at set points, here once to rewrite the question as a search and once
+to answer from what the search found. A **router** gives the model one
+decision: which of several fixed paths handles the request. An **agent
+loop** hands over the rest: the model chooses which tools to call, reads
+their results and decides when it is done. A **multi-agent** system puts
+several agents on one job, one of them splitting the work among the others.
 
 ```mermaid
 flowchart LR
@@ -143,15 +143,13 @@ flowchart LR
   A --> M[Multi-agent<br/>agents coordinate]
 ```
 
-**Reading it:** left to right, the model decides more and your code
-decides less. Each arrow buys flexibility (the system can handle requests
-you didn't anticipate) and costs predictability, tokens and debuggability.
-The skill is stopping at the leftmost box that handles your real
-requests.
+**Reading it:** each box to the right moves one more decision from your
+code to the model. A box further right handles more requests you did not
+plan for, and is harder to predict, dearer in tokens and harder to debug. Stop at the
+leftmost box that handles the requests you actually get.
 
-**Tiny worked example.** One question, "How many PTO days do I get, and
-what is the meal per-diem when travelling?", answered by each design
-(`autonomy_costs()`):
+One question, "How many PTO days do I get, and what is the meal per-diem
+when travelling?", sent to each design, shows the cost:
 
 | design | model calls | why |
 |---|---|---|
@@ -162,29 +160,31 @@ what is the meal per-diem when travelling?", answered by each design
 
 ![Workflow, router and agent loop each make 2 calls and multi-agent 4, but the agent loop uses about 990 tokens, ten times the workflow's 93](figures/primer.agents.orchestration.autonomy_costs.svg)
 
-**Reading it:** the left panel counts model calls and the right counts tokens.
-Calls barely move until multi-agent doubles them. Tokens tell a sharper story.
-The agent loop re-sends its tool definitions and tool results on every call,
-so it uses many times the tokens of the fixed workflow for the same answer. The
-supervisor pays for planning and hand-offs. None of that is waste *if* you
-need the flexibility, and all of it is waste if you don't.
+**Reading it:** the left panel counts model calls and the right panel
+tokens. Calls stay at 2 until multi-agent doubles them, but tokens climb
+sooner. The agent loop sends about ten times the fixed workflow's, because
+every call re-sends the tool definitions and tool results, and multi-agent
+adds a planning call and the messages between agents. Those tokens pay for
+handling requests the workflow was not written for, and are wasted on
+requests it already answers.
 
 ## 2. The named patterns
 
-These names (from Anthropic's *Building effective agents*) let you describe
-a design in one word.
+Between the fixed workflow and the agent loop sit five designs common
+enough to have names, from Anthropic's guide *Building effective agents*.
+All five are workflows: code owns the flow and calls the model at set
+points. They differ in what the model is trusted to decide.
 
 **In code:** every pattern below is built from `ask`, one model call with
 one user message that returns the reply's text.
 
 ### Prompt chaining
 
-**Everyday picture.** A relay race with an inspector at each hand-off: if
-the baton is dropped, the next runner doesn't start.
-
-**Tiny worked example.** Step 1 writes an outline, and a code *gate* checks it has at
-least three points. The outline `"- scope"` fails the gate, so the chain stops after one
-call and the draft step never runs.
+**Prompt chaining** splits a task into a fixed sequence of model calls,
+each output feeding the next prompt. Between calls, a code check called a
+**gate** can stop the chain. Here, step 1 writes an outline, and a gate checks that it has at
+least three points. The outline `"- scope"` has one, so the chain stops after
+one call and the draft step never runs.
 
 ```mermaid
 flowchart LR
@@ -193,23 +193,21 @@ flowchart LR
   G -->|no| X[Stop with the reason]
 ```
 
-**Reading it:** two model calls in a fixed order, with plain code in the
-middle. The gate is where you catch a bad intermediate result before
-paying for, and being misled by, the next step.
+**Reading it:** two model calls run in a fixed order, with plain code (the
+diamond) between them. An outline that fails takes the "no" arrow and ends
+the run with the reason, before a draft is paid for or built on it.
 
-**In code:** `run_chain` runs a list of `ChainStep`s in order, feeding each
-output into the next prompt and stopping at the first gate that reports a
-problem; `ChainResult` records the outputs and where and why it stopped.
+**In code:** `run_chain` runs the steps in order and stops at the first
+gate that reports a problem.
 
 ### Routing
 
-**Everyday picture.** The receptionist listens for five seconds and sends you
-to billing, tech support or the front desk.
-
-**Tiny worked example.** The classifier replies `"  Technical\n"`, which is
-normalized to `technical` and routed. It replies `"Billing-ish, maybe refunds?"`,
-which is not a known label, so the request goes to the `general` fallback
-instead of crashing.
+A chain gives the model no say in which steps run. **Routing** gives it
+one: a model call classifies the request, and code sends it to that class's
+handler, such as billing or technical support. The label comes back as free
+text, so code checks it. `"  Technical\n"` is normalized to `technical` and
+routed. `"Billing-ish, maybe refunds?"` is not a known label, so the request
+goes to the `general` fallback instead of crashing.
 
 ```mermaid
 flowchart LR
@@ -219,21 +217,20 @@ flowchart LR
   C -->|anything else| F[Fallback]
 ```
 
-**Reading it:** one cheap model call decides the path, then specialised
-handling takes over. The "anything else" arrow is essential, because the label is free
-text from a model and code must never assume it's one of the keys.
+**Reading it:** the classifier is the only model call that chooses
+anything. The "anything else" arrow catches every label not on the list,
+since a model's free text can be anything.
 
-**In code:** `route` makes the one classifier call, normalizes the label,
-swaps anything unknown for the fallback, and hands the request to that
-label's handler.
+**In code:** `route` makes the classifier call, normalizes the label and
+swaps anything unknown for the fallback.
 
 ### Parallelization: sectioning and voting
 
-**Everyday picture.** *Sectioning:* several cooks each make one dish at the
-same time. *Voting:* a panel of judges, where the majority decides.
-
-**Tiny worked example.** Three reviewers judge a SQL snippet: two say
-"vulnerable" and one says "safe", so the verdict is `("vulnerable", {"vulnerable": 2, "safe": 1})`.
+Chaining and routing make one call at a time. **Parallelization** makes
+several at once. In **sectioning**, each call gets a different piece of the
+work, such as a safety check running beside the answer. In **voting**,
+every call gets the same prompt and code takes the majority. Three reviewers judge a SQL snippet: two
+say "vulnerable" and one says "safe", so the verdict is `("vulnerable", {"vulnerable": 2, "safe": 1})`.
 
 ```mermaid
 flowchart LR
@@ -245,12 +242,12 @@ flowchart LR
   R3 --> V
 ```
 
-**Reading it:** the three calls run at the same time (wall-clock time is the
-slowest one), and plain code counts the answers. Sectioning looks the same
-except each branch gets a *different* sub-task, such as a guardrail check
-running beside the answer.
+**Reading it:** the three calls run at once, so the wait is the slowest
+one's, and plain code counts the answers. Sectioning has the same shape,
+with a different sub-task on each branch.
 
-Why voting helps, when voters err independently:
+A vote helps when the voters make their mistakes independently. The chance
+that the majority is right is then:
 
 $$
 P(\text{majority right}) = \sum_{k=\lfloor n/2 \rfloor + 1}^{n} \binom{n}{k}\, p^{k} (1-p)^{n-k}
@@ -269,7 +266,8 @@ $$
 voters are right.
 
 **On the example:** $n = 3$, $p = 0.8$: $0.8^3 + 3 \times 0.8^2 \times 0.2 = 0.512 + 0.384 = 0.896$.
-Three 80% judges make an 89.6% panel.
+Three reviewers each right 80% of the time make a panel right 89.6% of the
+time.
 
 **In Python:**
 
@@ -285,27 +283,26 @@ round(P, 3)  # → 0.896
 
 ![Majority accuracy rises with more independent voters: at 70% per voter, 5 voters reach 84% and 15 reach 95%; at 60% per voter the climb is slow](figures/primer.agents.orchestration.voting.svg)
 
-**Reading it:** each curve is a per-voter accuracy, and the x-axis adds voters.
-Every curve rises: more independent judges, better majority. The catch is
-the word *independent*. Five copies of the same model with the same prompt
-tend to make the *same* mistake, and then voting buys little. Vary the
-prompt, the model or the evidence.
+**Reading it:** each curve is one voter's accuracy, from 60% to 90%, and
+the x-axis adds voters. Every curve rises, slowly at 60%. All of them
+assume independent mistakes. Five copies of one model given one prompt tend
+to make the same mistake, and then a vote adds little, so vary the prompt,
+the model or the evidence.
 
-**In code:** `run_sections` is sectioning: it runs independent pieces of
-work on a thread pool and collects every result. `vote` is voting: it asks
-each reviewer the same prompt through `run_sections` and returns the
-majority label with its tally, and `majority_accuracy` evaluates the formula
-above.
+**In code:** `run_sections` runs independent pieces of work at once; `vote`
+sends every reviewer the same prompt and returns the majority with its
+tally; `majority_accuracy` computes the formula.
 
 ### Orchestrator-workers
 
-**Everyday picture.** A project lead reads the brief, splits it into
-sections, hands each to a writer, then edits the pieces into one report.
-
-**Tiny worked example.** "What's the meal per-diem, when are receipts due,
-and does PTO roll over?" The orchestrator returns three subtasks. Three workers each
-find one document (`fin-002`, `fin-004`, `hr-001`), and the synthesizer
-writes one answer citing all three.
+In sectioning, you decide how to split the work when you write the code.
+**Orchestrator-workers** lets the model split it, request by request. An
+orchestrator call reads the request and lists the subtasks, a worker
+handles each one, and a synthesizer call combines their results into one
+answer. Asked "What's the meal per-diem, when are receipts due, and does
+PTO roll over?", the orchestrator returns three subtasks. Each worker finds
+one policy document (`fin-002`, `fin-004`, `hr-001`), and the synthesizer
+writes one answer that cites all three.
 
 ```mermaid
 flowchart TD
@@ -318,23 +315,21 @@ flowchart TD
   W3 --> S
 ```
 
-**Reading it:** it looks like sectioning, but the subtasks aren't known in
-advance. The orchestrator *decides* them from the request, which is what makes it
-suited to open-ended requests.
+**Reading it:** the shape is sectioning's, but the worker boxes did not
+exist until the orchestrator call wrote them, so the split fits each
+request, including ones you could not list in advance.
 
-**In code:** `orchestrate` asks the orchestrator for subtasks, runs the
-workers on them in parallel with `run_sections`, and asks the synthesizer for
-one answer, returning an `OrchestratorResult`. `policy_worker` is the worker
-in the example: it finds the one current policy document for a subtask.
+**In code:** `orchestrate` asks the orchestrator for the subtasks, runs a
+worker on each in parallel and asks the synthesizer for one answer.
 
 ### Evaluator-optimizer
 
-**Everyday picture.** A writer and an editor. The draft goes back and forth
-until the editor signs off, or the deadline hits.
-
-**Tiny worked example.** Draft 1, "PTO rolls over.", gets the feedback "Missing a citation".
-Draft 2, "Up to 5 unused PTO days roll over [hr-001].", passes. Result: 2 rounds,
-passed.
+Each pattern so far runs once and stops. **Evaluator-optimizer** loops. A
+generator call writes a draft, and an evaluator call checks it against
+stated criteria and either passes it or sends back feedback for the next
+draft. Draft 1, "PTO rolls over.", gets the feedback "Missing a citation".
+Draft 2, "Up to 5 unused PTO days roll over [hr-001].", passes, after 2
+rounds.
 
 ```mermaid
 flowchart LR
@@ -345,23 +340,26 @@ flowchart LR
   E -->|max rounds| B[Stop: best effort, flagged]
 ```
 
-**Reading it:** the loop only exits on PASS or on the round limit. Without
-the limit, a critic that's never satisfied loops forever. Clear, checkable
-criteria make this pattern work.
+**Reading it:** the loop has two ways out, PASS and the round limit.
+Without the limit, an evaluator that is never satisfied would keep it
+running forever. The pattern works when the criteria can be checked, as
+"cites a policy document" can.
 
-**In code:** `evaluate_optimize` alternates generator drafts and evaluator
-verdicts, feeding each critique back, and returns the last draft, the rounds
-used and whether it passed.
+**In code:** `evaluate_optimize` alternates drafts and verdicts, feeding
+each critique back, and returns the last draft, the rounds used and whether
+it passed.
 
 ## 3. Multi-agent: a supervisor and specialists
 
-**Everyday picture.** A manager who never does the work, only assigns it and
-assembles the results. Each specialist gets a short, focused brief.
-
-**Tiny worked example.** The supervisor sends "PTO days per year?" to `hr` and
-"Meal per-diem?" to `finance`. The HR specialist never sees the finance question,
-and vice versa (tested). A delegation to a non-existent `legal` specialist
-is reported, not crashed on.
+The agent loop, the third box on the spectrum, is the first design in
+which the model owns the flow, and it has a lesson of its own (see
+`primer.agents.agent_loop`). The last box puts several agents on one job.
+In the form built here, a **supervisor** agent does none of the work
+itself: it splits the job, writes each specialist agent a short brief, and
+assembles their answers. The supervisor sends "PTO days per year?" to the
+`hr` specialist and "Meal per-diem?" to `finance`, and neither specialist
+sees the other's question. A task for a `legal` specialist that does not
+exist is reported back instead of crashing the run.
 
 ```mermaid
 sequenceDiagram
@@ -377,33 +375,32 @@ sequenceDiagram
   S-->>U: combined answer
 ```
 
-**Reading it:** the supervisor's messages to each specialist are the
-**hand-off**, and they're *all* each specialist knows. That's both the
-benefit (small, focused context) and the risk (whatever the supervisor
-forgets to write down is lost). Peer designs, where agents hand control
-directly to each other, have the same hand-off problem without a central
-coordinator.
+**Reading it:** time runs downward. The two messages from the supervisor
+are the **hand-offs**, and each is all its specialist knows. That keeps each
+specialist's context small and focused, and anything the supervisor leaves
+out is lost. Peer designs, where agents hand control to one another, lose
+context at hand-offs the same way.
 
-**When it's worth it.** Use several agents when subtasks are genuinely
-separable, such as independent research threads or per-document work that would
-overflow one context. The costs are real: more tokens, context lost at every
-hand-off, and much harder debugging.
+Several agents pay off when the subtasks are truly separate, such as
+independent research threads, or documents that together would overflow one
+context. They cost more tokens, lose context at every hand-off, and are much
+harder to debug.
 
 **In code:** `supervise` gets a delegation plan from the supervisor, sends
-each specialist only its own task (reporting unknown names instead of
-crashing), then asks the supervisor for the final answer; `SupervisorResult`
-keeps the delegations and every specialist's answer.
+each specialist only its own task, then asks the supervisor for the final
+answer.
 
 ## 4. An explicit state machine, with the model at specific nodes
 
-**Everyday picture.** A board game. The squares and the rules for moving
-between them are fixed. On a few special squares you draw a card (ask the
-model). Everywhere else, the rules decide.
-
-**Tiny worked example.** Invoice intake. The model is asked twice: "is
-this an invoice?" and "extract the number, vendor and amount". Code does
-everything else: validation, the approval rule (over 5,000 waits for a person),
-and posting. The runs:
+A job whose steps are known in advance belongs at the other end of the
+spectrum, in a fixed workflow. One way to build that workflow so every move
+can be tested and audited is an explicit **state machine**: a fixed set of
+states, a rule for each move between them, and the model asked only at the
+states that need judgement. Take invoice intake. The model is asked twice:
+"is this an invoice?" and "extract the number, vendor and amount". Code does
+the rest. It validates the fields, holds any invoice over 5,000 for a person
+to approve, and posts the others to the ledger. Three documents go through
+it:
 
 ```text
 INVOICE INV-2041 ... 1200.00   -> RECEIVED > CLASSIFIED > EXTRACTED > VALIDATED > POSTED > DONE
@@ -425,50 +422,52 @@ stateDiagram-v2
   POSTED --> DONE
 ```
 
-**Reading it:** every box is a state and every arrow a transition, and only
-two arrows are labelled "LLM". The rest are rules you can read, test and
-audit. When something goes wrong, you know exactly which state it was in and
-why it moved.
+**Reading it:** every box is a state and every arrow a transition. Only two
+arrows are labelled "LLM"; the rest are rules you can read, test and audit.
+When a run goes wrong, its history shows which state it was in and which
+rule moved it on.
 
 **In code:** `InvoiceWorkflow.run` walks the states, calling the model only
-at RECEIVED and CLASSIFIED; `validate_invoice` is the code check between
-EXTRACTED and VALIDATED; `InvoiceWorkflow.approve` is the human step that
-releases a paused invoice. `WorkflowRun` holds the current state, its history
-and the extracted data.
+at RECEIVED and CLASSIFIED, and `InvoiceWorkflow.approve` is the human step
+that releases a held invoice.
 
-**Checkpoints and durable execution.** After every transition the run is
-saved to disk. **Durable execution** means a workflow whose progress
-survives crashes, because each completed step's result is stored and the
-run resumes from there. Engines like Temporal do this at scale.
+### Checkpoints and durable execution
+
+A state machine always knows which state a run is in, so after every
+transition it can save the run to disk as a **checkpoint**. After a crash,
+the rerun loads the checkpoint and resumes after the last completed step.
+A workflow whose progress survives crashes this way has **durable
+execution**. Engines such as Temporal provide it at scale.
 
 ![After one crash while posting, resuming from the checkpoint finishes in 2 model calls, while restarting from scratch takes 4](figures/primer.agents.orchestration.resume_cost.svg)
 
-**Reading it:** the same crash happens in both bars. Resuming from the checkpoint
-finishes with the 2 model calls already made. Restarting from scratch asks
-the model both questions again, doubling cost, and, worse, risks a
-*different* answer the second time.
+**Reading it:** both bars meet the same crash, while posting. The resumed
+run finishes with the 2 model calls it had already made. The restarted run
+asks the model both questions again, doubling the cost, and the model may
+give a different answer the second time.
 
-**In code:** `InvoiceWorkflow` saves a checkpoint file after every
-transition and loads it at the start of `InvoiceWorkflow.run`, so a rerun
-resumes. `resume_comparison` crashes the ledger once and counts the model
-calls each way.
+**In code:** `InvoiceWorkflow` saves a checkpoint after every transition
+and loads it at the start of `InvoiceWorkflow.run`. `resume_comparison`
+crashes the ledger once and counts the model calls each way.
 
 ## 5. Frameworks vs. plain code
 
-**LangGraph** models agents as graphs with explicit state and checkpoints.
-The **Claude Agent SDK** and **OpenAI Agents SDK** give you vendor-built agent
-loops, tools and hand-offs. **CrewAI** and **AutoGen** focus on multi-agent
-teams. **Temporal** provides durable execution for any code. A framework
-earns its place with standard patterns, built-in tracing, persistence and
-human-in-the-loop hooks. Plain code wins for simple flows, full control
-and fewer dependencies. Everything in this lesson is under 100 lines of
-plain Python, and knowing that is what lets you judge a framework.
+Every design above can be written by hand or taken from a framework.
+LangGraph models agents as graphs with explicit state and checkpoints. The
+Claude Agent SDK and the OpenAI Agents SDK give you vendor-built agent
+loops, tools and hand-offs. CrewAI and AutoGen focus on teams of agents.
+Temporal provides durable execution for any code. A framework earns its
+place when you want its standard patterns, built-in tracing, saved state
+and hooks for a person to step in. Plain code suits simple flows, and
+gives full control with fewer dependencies. Each design in this lesson is under 100
+lines of plain Python, and having seen them you can judge what a framework
+would add.
 
 ## In 20 seconds
-- Autonomy spectrum: fixed workflow → router → agent loop → multi-agent. Use the least that works.
-- Named patterns: chaining (with gates), routing (with a fallback), parallelization (sectioning, voting), orchestrator-workers, evaluator-optimizer.
-- Multi-agent buys focused context and parallelism, and costs tokens, hand-off losses and debuggability.
-- Production shape: an explicit state machine, the model consulted only at specific nodes, checkpoints after each step.
+- Designs run from a fixed workflow, where code decides every step, to several agents. Use the least autonomy that solves the problem.
+- The named workflow patterns: prompt chaining with gates, routing with a fallback, sectioning and voting, orchestrator-workers, evaluator-optimizer.
+- Several agents buy focused context and parallelism, and cost tokens, context lost at hand-offs and debuggability.
+- Production shape: an explicit state machine that asks the model only at chosen states and saves a checkpoint after every step.
 
 ## Self-test questions
 
