@@ -121,27 +121,28 @@ needs no classifier. If you only needed to choose, you are done.
 ## Level 2: How it works, from scratch
 
 A teacher has a stack of question cards and a stack of answer cards. She
-lays out a few questions, deals out all the answers face up, and asks the
-student to pair each question with its answer. Every wrong pairing, she
-corrects. Over many rounds the student learns what makes an answer fit a
-question.
+lays out a few questions, deals all the answers face up, and asks a student
+to pair each question with its answer, correcting every wrong pairing. Over
+many rounds the student learns what makes an answer fit a question.
 
-Then she gets sneaky. Alongside each right answer she slips in a
-**look-alike wrong card**: same subject, wrong answer. "How do I reset my
-password?" now faces both *the reset steps* and *the password policy*. A
-student who only ever saw easy wrong cards (answers about printers or
-holidays) would happily pick the policy card because it says "password". The
-look-alikes force the student to learn the difference that actually matters.
+What the student learns depends on the wrong cards. If they are about
+printers or holidays, the right answer is always the one on the question's
+subject, and the student can get by on the subject alone. So the teacher
+slips in a **look-alike wrong card**: same subject, wrong answer. "How do I
+reset my password?" now faces both *the reset steps* and *the password
+policy*, and a student who matches on the word "password" can only guess.
 
-That's **contrastive training**, and it's how nearly every modern embedding
-model is taught. The student is the model; "pairing" means making a
-question's vector point the same way as its answer's vector (see
-`primer.ml.embeddings.similarity`); the wrong cards are **negatives**; the
-look-alikes are **hard negatives**.
+This game is **contrastive training**, and it is the usual way to train an
+embedding model. The student is the model. Pairing a question with its answer
+means making the question's vector point the same way as the answer's vector
+(see `primer.ml.embeddings.similarity`). The wrong cards are **negatives**,
+and the look-alikes are **hard negatives**.
 
 ## A tiny worked example: one question, two answer cards
 
-A question's vector is q = (1, 0). The right answer is p₊ = (1, 0) and a wrong
+To learn, the model needs a number that says how badly it paired a
+question: the **loss**. Here it is for one question and two cards. The
+question's vector is q = (1, 0). The right answer is p₊ = (1, 0) and a wrong
 one is p₋ = (0, 1). All three have length 1, so a dot product is a cosine.
 
 1. **Score each card** with the dot product: q·p₊ = 1, q·p₋ = 0.
@@ -152,8 +153,11 @@ one is p₋ = (0, 1). All three have length 1, so a dot product is a cosine.
 4. **Loss** = −ln 0.731 = **0.313**. It would be 0 if the right card got 100%.
 
 At τ = 0.1 the scores become (10, 0), the right card gets 99.995%, and the
-loss is **0.0000454**. Same vectors, far more confident: that's what the
-temperature does.
+loss is **0.0000454**. No vector moved; the smaller τ alone made the model
+far more confident.
+
+Training lowers the loss by moving vectors: the question's vector turns
+toward the right card and away from the wrong one.
 
 ```mermaid
 flowchart LR
@@ -166,18 +170,19 @@ flowchart LR
   E3 --> PUSH
 ```
 
-**Reading it:** three texts go through the *same* encoder (the model that
-turns text into a vector). The question and its right answer are pulled
-together; the question and the look-alike are pushed apart. The look-alike
-is about the same topic but doesn't answer the question. Learning to
-separate it from the right answer is what makes a model good at *retrieval*
-(finding the answer) rather than just *topic matching* (finding the subject).
+**Reading it:** follow the three texts from the left. All three go through
+the *same* encoder, the model that turns text into a vector. On the right,
+the question's vector and the right answer's are pulled together, while the
+question's and the look-alike's are pushed apart. Telling the look-alike from
+the right answer is what separates *retrieval* (finding the answer) from
+*topic matching* (finding the subject).
 
 ## The math: InfoNCE, the loss behind it
 
-In practice the teacher deals a whole batch. B questions sit in rows, all the
-answer cards in the batch sit in columns, and every card that isn't a
-question's own answer is a free negative for it: **in-batch negatives**.
+Training does not score one question at a time. Like the teacher, it deals
+a whole batch. B questions sit in rows and all the answer cards in the batch
+sit in columns. Every card that is not a question's own answer is a negative
+for it, at no extra cost: these are **in-batch negatives**.
 
 ```mermaid
 flowchart LR
@@ -193,9 +198,9 @@ flowchart LR
 **Reading it:** each row is one question scored against every answer card in
 the batch. The ✔ on the diagonal is its own answer; every ✗ is a negative
 that costs nothing extra because those answers are already in the batch.
-Extra columns to the right of the bar (|) are hard negatives added on purpose,
-which belong to no question. Softmax runs along each row, and the loss asks
-each row to put its share on the ✔.
+Columns to the right of the bar (|) are hard negatives added on purpose;
+they answer no question in the batch. Softmax runs along each row, and the
+loss asks each row to put its share on the ✔.
 
 $$
 L = -\frac{1}{B}\sum_{i=1}^{B} \log
@@ -251,37 +256,32 @@ print(f"{info_nce(q, p, tau=0.1):.7f}")  # → 0.0000454
 ```
 
 The name InfoNCE comes from "noise-contrastive estimation": telling the true
-pair apart from noise. It's the softmax cross-entropy loss from
+pair apart from noise. It is the softmax cross-entropy loss from
 `primer.ml.losses`, where the "classes" are the answer cards in the batch.
+Real retrieval models are trained with it: Dense Passage Retrieval (DPR) and
+E5 both use this loss with in-batch negatives, E5 at τ = 0.01.
 
-The model trained here is a deliberately tiny **bi-encoder** (the same
-encoder applied separately to questions and answers): count the words in a
-text (a **bag of words**), multiply by one learned matrix W, and scale the
-result to length 1. `_contrastive_grads` and `_normalize_backward` derive the
-**gradient** (the direction in which each number in W should move to lower
-the loss) by hand, and `encoder_gradient_check` confirms it against a
-brute-force numerical estimate.
+The experiments below train a deliberately tiny **bi-encoder**, one encoder
+applied separately to questions and to answers. It counts the words in a
+text (a **bag of words**), multiplies the counts by one learned matrix W, and
+scales the result to length 1. Each training step moves W a little along the
+**gradient**, the direction in which each number in W should change to lower
+the loss.
 
 **In code:** `info_nce_loss` computes L for a batch, treating any rows of P
-beyond B as extra hard negatives. `BagOfWords` turns text into word counts,
-`BiEncoder` holds the learned matrix W, and `BiEncoder.encode` maps texts to
-unit vectors.
-
-**Why it matters:** the embedding models behind search and RAG (Sentence-BERT,
-DPR, E5 and their successors) are trained with exactly this loss on millions
-of (question, answer) pairs. When a retrieval system confuses "reset my
-password" with "password policy", this is the training signal that was
-missing.
+beyond B as extra hard negatives; `BiEncoder.encode` maps texts to unit
+vectors, and `encoder_gradient_check` checks the hand-derived gradient
+against a numerical estimate.
 
 ## Temperature: the sharpness dial
 
-**Everyday picture:** grading on a curve. With a gentle curve (high τ), a
-slightly better answer gets slightly more credit. With a steep curve (low τ),
-the best answer takes nearly all the credit, so small differences in score
-become big differences in outcome.
+In the worked example, dividing by τ = 0.1 instead of 1 took the right
+card's share from 0.731 to 99.995% without moving a vector. Embedding models
+need that sharpening. Cosines only run from −1 to 1, so a right answer often
+leads its wrong ones by a small margin, and at τ = 1 a small lead earns only
+a small share. Embedding models commonly train at τ between 0.01 and 0.1.
 
-**Tiny example:** the right card has cosine 0.8 and three wrong cards have
-0.6 each.
+Take a right card with cosine 0.8 and three wrong cards at 0.6 each.
 
 $$
 \text{share}_+ = \frac{e^{0.8/\tau}}{e^{0.8/\tau} + 3\,e^{0.6/\tau}}
@@ -320,28 +320,24 @@ round(share_plus(1), 3), round(share_plus(0.05), 3)  # → (0.289, 0.948)
 
 **Reading it:** the horizontal axis is τ (log scale), the vertical axis is
 the right card's softmax share when it beats three wrong cards by 0.2 in
-cosine. At τ = 1 a 0.2 lead earns under a third of the share, so the loss
-keeps complaining about pairs that are already ranked correctly. Around
-τ = 0.05 the same lead earns about 95%. Cosines live in a narrow range (−1 to
-1), so embedding models use small temperatures (commonly 0.01 to 0.1) to
-make those small differences count.
+cosine. Read from the right. At τ = 1 the 0.2 lead earns under a third of
+the share, so the loss keeps complaining about pairs that are already ranked
+correctly. Around τ = 0.05 the same lead earns about 95%.
 
 **In code:** `positive_probability` computes share₊ for given cosines and τ;
 this curve is that function swept across τ.
 
-**Why it matters:** too high a temperature and the model can't become
-confident; too low and a few hard pairs dominate training and it becomes
-unstable. It's one of the handful of settings that really matters when
-fine-tuning an embedding model.
+The dial cuts both ways. Set τ too high and the model never becomes
+confident. Set it too low and the few hardest pairs take nearly all of the
+training signal, and training becomes unstable. When you fine-tune an
+embedding model, τ is one of the settings to tune.
 
 ## Hard negatives: the experiment
 
-**Everyday picture:** a driving test on an empty road teaches you to steer.
-It teaches nothing about merging, because merging never came up. Negatives
-only teach the distinctions they contain.
+The teacher's look-alike cards rest on a claim: a model learns only the
+distinctions its negatives contain. A small experiment tests it.
 
-**The setup** (`train_bi_encoder`): questions come in two *intents* for each
-topic: "how do I fix it?" (answered by a how-to card: "restart, reinstall
+Questions come in two *intents* for each topic: "how do I fix it?" (answered by a how-to card: "restart, reinstall
 and follow the setup guide") and "what are the rules?" (answered by a policy
 card: "approval, compliance and usage limits"). The question and answer
 cards share almost no words, so matching intent must be *learned* ("fix"
@@ -362,7 +358,7 @@ flowchart TD
   M2 --> T
 ```
 
-**Reading it:** both models see exactly the same questions and answers in
+**Reading it:** both models see the same questions and answers in
 the same order. The branch on the right adds one extra wrong card per
 question, a card that has the right topic but the wrong intent. Both models
 then take the same exam: for a question about an unseen topic, does the
@@ -396,19 +392,28 @@ to the kind of card that actually answers it.
 policy), columns are the two password cards, and brighter means a higher
 cosine. On the left the two columns are nearly the same colour: the model
 sees "password" and can't tell the cards apart. On the right, the how-to
-rows light up the reset card and the policy rows light up the policy card:
-the diagonal blocks are exactly the right answers.
+rows light up the reset card and the policy rows light up the policy card,
+so the bright blocks are the right answers.
 
 **In code:** `make_pairs` builds the (question, right card, look-alike)
 triples; `look_alike_accuracy` runs the exam on unseen topics, and
 `training_curve` records that score at checkpoints during training.
 
-**Why it matters:** hard negatives are the biggest single driver of
-retrieval quality. In practice you **mine** them: search your corpus with
-BM25 or the current model, and take high-ranking results that are *not*
-the right answer.
+Real data does not come with look-alikes labelled, so you **mine** them:
+search your corpus with keyword search (BM25) or the current model, and take
+high-ranking results that are *not* the right answer. DPR trained this way,
+with one BM25-mined hard negative per question.
 
 ## Fine-tuning on your own domain
+
+Mining is one step in adapting a general embedding model to your own
+documents. Start from pairs you already have: search logs, support tickets
+and the article that closed each one, questions and their FAQ entries. Mine
+hard negatives from your current search results and fine-tune. Then measure
+**recall@k**, the share of held-out questions whose right document is in the
+top k, and ship only if the new model beats the base model. Shipping means
+re-embedding the whole corpus, because a fine-tuned model has a new vector
+space (`primer.ml.embeddings.operations`).
 
 ```mermaid
 flowchart LR
@@ -420,28 +425,26 @@ flowchart LR
   E -->|not better| P
 ```
 
-**Reading it:** start from pairs you already have: search logs, support
-tickets and the article that closed them, questions and their FAQ entries.
-Mine hard negatives from your current search results. Train, then evaluate
-recall@k (the share of questions whose right document is in the top k) on
-held-out pairs, and only ship if it beats the base model. Shipping means
-re-embedding the whole corpus, because a fine-tuned model has a new vector
-space (`primer.ml.embeddings.operations`).
+**Reading it:** follow the arrows from your logs on the left to a deployed
+model on the right. The arrow back from evaluation is the case where the
+fine-tuned model loses to the base model: it goes back for better pairs
+instead of into production.
 
 A few thousand good pairs is usually enough to adapt a general model to
-legal, medical or internal jargon. Libraries such as sentence-transformers
-implement this loss as `MultipleNegativesRankingLoss`.
+legal, medical or internal jargon. The sentence-transformers library
+implements this loss as `MultipleNegativesRankingLoss`.
 
 ## CLIP: two encoders, one shared space
 
-**Everyday picture:** two people describing the same holiday, one through
-photos and one through postcards. CLIP teaches a photo reader and a text
-reader to put matching photos and captions at the same spot on one shared
-map, so a photo of a dog and the words "a photo of a dog" land together.
+Nothing in InfoNCE needs the question and the answer to be the same kind of
+thing. **CLIP** trains two encoders, one for images and one for text, so that
+a photo of a dog and the words "a photo of a dog" land at the same spot in
+one shared space. Its batches are pairs of an image and its caption, and its
+loss is InfoNCE run both ways.
 
-**Tiny example:** two images and two captions, each a unit vector.
-Correctly paired, image 1 scores (1, 0) against the captions and caption 1
-scores (1, 0) against the images: each direction's loss is ln(1 + 1/e) =
+Take two images and two captions, each a unit vector. Correctly paired,
+image 1 scores (1, 0) against the captions and caption 1 scores (1, 0)
+against the images: each direction's loss is ln(1 + 1/e) =
 **0.313**. Swap the captions and every right pair scores 0 against a wrong
 pair's 1: the loss rises to ln(1 + e) = **1.313**.
 
@@ -486,6 +489,11 @@ round(clip_loss([[0, 1], [1, 0]]), 3)  # → 1.313
 **In code:** `clip_loss` computes L_CLIP by averaging `info_nce_loss` over the
 rows (images pick captions) and the columns (captions pick images).
 
+Once trained, the shared space labels images with no classifier. Write a
+caption for each label ("a photo of a cat", "a photo of a dog"), embed the
+captions, and give an image the label whose caption is closest. This is
+**zero-shot classification**.
+
 ```mermaid
 flowchart LR
   I[Images] --> IE[Image encoder] --> IV[Image vectors]
@@ -496,41 +504,38 @@ flowchart LR
   Z["'a photo of a {label}'"] --> TE
 ```
 
-**Reading it:** two different encoders, one per modality, each end in
-vectors of the same length. The similarity table compares every image with
-every caption in the batch, and the loss runs along the rows and down the
-columns. The extra input at the bottom left is the zero-shot trick: to
-classify an image with no extra training, write a caption for each label,
-embed it, and pick the label whose caption is closest.
+**Reading it:** each modality has its own encoder, and both end in vectors
+of the same length. The similarity table compares every image with every
+caption in the batch, and the loss runs along its rows and down its columns.
+The extra input at the bottom left is a label caption on its way through the
+text encoder, for zero-shot classification.
 
-`train_clip_toy` trains two small linear encoders on toy "images" and
-"captions" that describe the same hidden meaning through different, unrelated
-feature spaces. Before training, zero-shot labeling is near chance (20% for
-five classes); after training it's above 90%.
+A toy version shows it working. Two small linear encoders are trained on
+made-up "images" and "captions" that describe the same hidden meaning
+through different, unrelated features. Before training, zero-shot labelling
+is near chance (20% for five classes); after training it is above 90%.
 
 ![After training, 36 of the 40 test images are most similar to their own label's caption, forming a diagonal staircase; the 4 misses are mostly classes 0 and 4 mistaken for each other](figures/primer.ml.embeddings.contrastive.clip.svg)
 
 **Reading it:** rows are 40 test images sorted by their true class, columns
 are the five label captions, and brighter means more similar. Each block of
-rows lights up brightest in its own label's column, and that diagonal
-staircase is zero-shot classification working: no classifier was trained,
-just two encoders that agree on where meanings live. It isn't perfect. Look
-for the rows whose brightest cell sits in the wrong column: 4 of these 40
-images are closest to another class's caption, three of them classes 0 and 4
-mistaken for each other. Over all 500 held-out test images the accuracy is
-92%, the number in the figure's title.
+rows lights up brightest in its own label's column, a diagonal staircase:
+the two encoders agree on where each meaning lives. Then look for the rows
+whose brightest cell sits in the wrong column: 4 of these 40 images are
+closest to another class's caption, three of them classes 0 and 4 mistaken
+for each other. Over all 500 held-out test images the accuracy is 92%, the
+number in the figure's title.
 
-**Why it matters:** the shared space enables search across modalities
-(find images with text, or text with images), zero-shot classification,
-and mixing scanned document images with text in one retrieval index.
-Multimodal models use the same recipe.
+The same shared space lets text search images and images search text, and
+lets scanned document images and typed text share one retrieval index.
 
 ## In 20 seconds
 - Contrastive training pulls matching pairs together and pushes non-matches
-  apart; the loss (InfoNCE) is softmax cross-entropy over the batch.
-- In-batch negatives are free: every other answer in the batch.
-- Negatives only teach the distinctions they contain. Hard negatives (same
-  topic, wrong answer) are what teach retrieval rather than topic matching.
+  apart. Its loss, InfoNCE, is softmax cross-entropy over a batch.
+- Every other answer in a batch is a wrong answer for each question, at no
+  extra cost: these are in-batch negatives.
+- A model learns only the distinctions its negatives contain. Hard negatives
+  (same topic, wrong answer) teach it to find the answer, not just the topic.
 - Temperature sharpens the softmax so small cosine gaps count; typical τ is
   0.01 to 0.1.
 - CLIP applies the same loss in both directions between an image encoder and
