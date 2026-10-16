@@ -188,7 +188,7 @@ PARTS: list[Part] = [
     Part("serving", "Part 3: how it is run",
          "What it takes, in time and memory, to turn a trained model into answers: the chip, the cache, the sampling "
          "step and the designs that make long inputs affordable. Latency and GPU bills follow from arithmetic you can "
-         "do by hand. The last lesson looks inside a trained model at what it learned."),
+         "do by hand. The part ends inside a trained model, with what it learned."),
     Part("embeddings", "Part 4: embeddings and search",
          "Embeddings are lists of numbers that place similar meanings close together. This part builds them, then "
          "the search systems that use them to find, among millions of passages, the few that answer a question. "
@@ -200,7 +200,7 @@ PARTS: list[Part] = [
     Part("agents", "Part 6: building systems people rely on",
          "How to build on a language model: the message exchange, the agent loop, tools, retrieval, context and "
          "memory. Then how to know it works and keep it safe: evaluation, guardrails, cost, observability and "
-         "deployment. The last lesson is about why hard tasks still fail."),
+         "deployment. The part ends with why hard tasks still fail."),
 ]
 
 CURRICULUM: list[Lesson] = [
