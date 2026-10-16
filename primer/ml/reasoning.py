@@ -128,35 +128,24 @@ set a budget and a check, you are done.
 
 Ask someone to multiply 37 by 48 in their head, instantly, and they will
 probably guess. Hand them a pencil and a minute and they will get it right.
-They didn't get smarter in that minute. They got room: somewhere to write
-37 × 8 = 296 and 37 × 40 = 1,480, so each small step could lean on the last.
+Nothing about them changed in that minute except that they had somewhere to
+write 37 × 8 = 296 and 37 × 40 = 1,480, so each small step could lean on the
+last.
 
-A language model is in the same position. It can do a fixed amount of work
+A language model is in the same position. It does a fixed amount of work
 for each token it writes: one pass through all of its layers. A **reasoning
 model** is a model that has learned to use the pencil. Before it answers, it
 writes out intermediate steps, checks them, backs up when one is wrong, and
-only then commits to an answer. This lesson builds each piece from scratch:
-
-1. why writing steps helps at all (**chain of thought**);
-2. why more thinking can buy more accuracy (**test-time compute**);
-3. sampling several attempts and voting on the answer (**self-consistency**);
-4. checking attempts, either the final answer or every step (**verifiers**);
-5. how reinforcement learning teaches a model to think this way;
-6. what thinking costs, and where it still fails.
+only then commits to an answer.
 
 ## 1. Why thinking out loud helps
 
-**Everyday picture.** Picture a clerk who, each time they glance at a page,
-can do exactly one addition and write down one number. Hand them a column of
-four numbers and allow one glance, and they have to guess. Allow three
-glances and a margin to write in, and they get it right every time. The
-margin is the whole trick: what they write on one glance is there to read on
-the next.
-
-**Tiny example.** Our toy model is that clerk. Every token it writes costs
-one **forward pass** (one run of the whole model to produce one token), and
-each forward pass can do one addition. Ask it for 3 + 5 + 8 + 2, which needs
-three additions.
+To see why the pencil helps a model, shrink the model to a clerk that can do
+one addition each time it looks at the page. In model terms, every token
+the clerk writes costs one **forward pass** (one run of the whole model to
+produce one token), and each forward pass can do one addition. Ask it for
+3 + 5 + 8 + 2, which needs three additions, and let it either answer at once
+or write its running totals first.
 
 | Pass | Answer at once (1 token) | Think first, then answer |
 |---|---|---|
@@ -188,8 +177,8 @@ step and leaves its result in the text. Nothing inside the model carries a
 running total from one token to the next except what has been written, so
 the written steps *are* the model's working memory.
 
-The rule behind the table: the number of steps a model can do one after
-another grows with the number of tokens it writes.
+As a rule, the number of steps a model can do one after another grows with
+the number of tokens it writes:
 
 $$
 S = L \times T
@@ -247,51 +236,28 @@ and the y-axis is how often the toy gets it right. Answering in one token
 (red), it is perfect on one-addition sums and then collapses to the few
 percent of lucky estimates. Writing steps (blue), it is right every time. On
 the right is the price: the blue line climbs one token per addition, while
-the red line stays at one. Chain of thought doesn't make the model smarter
-per token; it lets the model buy more tokens.
+the red line stays at one.
 
-That price is real: each token costs roughly $2N$ floating-point operations
-for a model with $N$ parameters (see `primer.ml.inference`), so a
-1,000-token chain costs a thousand answers' worth of compute. In practice
-this is why simply asking a model to "think step by step" (Kojima et al.,
-2022) or showing it worked examples with steps (Wei et al., 2022) improved
-accuracy on arithmetic and logic puzzles, and why every reasoning model
-writes a long chain before its answer.
+The price is compute. Each token costs roughly $2N$ floating-point
+operations for a model with $N$ parameters (see `primer.ml.inference`), so a
+1,000-token chain costs a thousand answers' worth. On real models the trade
+has paid: asking a model to "think step by step" (Kojima et al.,
+2022), or showing it worked examples with steps (Wei et al., 2022), improved
+accuracy on arithmetic and logic puzzles, and reasoning models are built to
+write a long chain before they answer.
 
-**In code:** `solve` is the toy model: it spends one forward pass per written step, one on the answer, and estimates anything it never reached. It returns an `Attempt` holding the steps, the answer and the tokens used.
+**In code:** `solve` is the clerk: one forward pass per written step, one for the answer, and an estimate for anything it never reached.
 
 ## 2. Test-time compute: buying accuracy with tokens
 
-**Everyday picture.** An exam has questions of very different difficulty.
-Give yourself one minute per question and you finish only the easiest. Two
-minutes, and the next tier falls. Each doubling of time unlocks one more
-tier, until you can finish everything and extra time buys nothing.
-
-**Tiny example.** **Test-time compute** is computation spent while
-answering, as opposed to while training. The simplest dial is a **thinking
-budget**: the most tokens the model may write before it must answer. Take
-six problems that need 1, 2, 4, 8, 16 and 32 additions, and a budget of
-8 tokens. Four of them fit (1, 2, 4, 8). The other two must be guessed, and
-say a guess is right 10% of the time. Accuracy is 4/6 + 2/6 × 0.1 = **0.70**.
-
-There are two ways to spend test-time compute, and the rest of this lesson
-uses both.
-
-```mermaid
-flowchart LR
-  P[Problem] --> LONG["Think longer<br/>one chain, bigger budget"]
-  P --> WIDE["Think wider<br/>n chains side by side"]
-  LONG --> A1[Answer]
-  WIDE --> PICK["Pick one:<br/>vote or verifier"] --> A2[Answer]
-```
-
-**Reading it:** the top path spends compute **sequentially**: one chain,
-allowed to run longer. It helps when the problem needs many steps in a row.
-The bottom path spends it **in parallel**: several independent chains, then
-a rule that picks one answer. It helps when the model is right sometimes
-but not reliably. The top path costs waiting time; the bottom path costs
-money but, run side by side, no extra waiting. Sections 3 and 4 are about
-the "Pick one" box.
+If tokens buy steps, a trained model can be made more accurate without
+changing its weights, by letting it write more. Computation spent while
+answering, as opposed to while training, is called **test-time compute**.
+The simplest dial is a **thinking budget**: the most tokens the model may
+write before it must answer. Take six problems that need 1, 2, 4, 8, 16 and
+32 additions, and a budget of 8 tokens. Four of them fit (1, 2, 4, 8). The
+other two must be guessed, and say a guess is right 10% of the time.
+Accuracy is 4/6 + 2/6 × 0.1 = **0.70**. In general:
 
 $$
 \text{acc}(B) = F(B) + \big(1 - F(B)\big)\, g
@@ -333,8 +299,8 @@ round((1 / len(needs)) * (1 - g), 3)  # → 0.15
 ![Accuracy climbs 0.15 per doubling of the budget, from 0.25 at 1 token to 1.0 at 32, and the simulated sums land on the formula; tokens actually spent level off at about 10](figures/primer.ml.reasoning.budget_scaling.svg)
 
 **Reading it:** on the left, the x-axis is the budget on a doubling (log)
-scale. The grey line is the formula; the blue dots are the toy model from
-section 1 solving real random sums. On a log axis a straight line means
+scale. The grey line is the formula; the blue dots are the clerk solving
+real random sums. On a log axis a straight line means
 "each doubling adds the same amount", and that is what both show until
 $B = 32$, where every problem fits and the line goes flat. The dots sit a
 little below the line at small budgets because a guess about many
@@ -349,22 +315,35 @@ shape over a useful range: accuracy rising roughly in proportion to the
 logarithm of thinking tokens, then leveling off. Snell et al. (2024) found
 that spending test-time compute adaptively (more on harder prompts) beats
 spending it evenly, and that on problems a small model can sometimes solve,
-extra test-time compute can stand in for a much larger model. In practice,
-model APIs expose this dial as a "reasoning effort" setting or a maximum
-number of thinking tokens.
+extra test-time compute can stand in for a much larger model. Model APIs
+expose the budget as a "reasoning effort" setting or a maximum number of
+thinking tokens.
 
-**In code:** `budget_accuracy` is the formula, and `budget_sweep` runs `solve` on random sums at each budget and reports accuracy and tokens actually spent.
+**In code:** `budget_accuracy` is the formula, and `budget_sweep` runs the clerk on random sums at each budget.
+
+A bigger budget is one of two ways to spend test-time compute.
+
+```mermaid
+flowchart LR
+  P[Problem] --> LONG["Think longer<br/>one chain, bigger budget"]
+  P --> WIDE["Think wider<br/>n chains side by side"]
+  LONG --> A1[Answer]
+  WIDE --> PICK["Pick one:<br/>vote or verifier"] --> A2[Answer]
+```
+
+**Reading it:** the top path spends compute **sequentially**: one chain,
+allowed to run longer. It helps when the problem needs many steps in a row.
+The bottom path spends it **in parallel**: several independent chains, then
+a rule that picks one answer. It helps when the model is right sometimes
+but not reliably. The top path costs waiting time; the bottom path costs
+money but, run side by side, no extra waiting.
 
 ## 3. Sampling many and voting: self-consistency
 
-**Everyday picture.** Unsure of an answer, you ask five friends separately.
-If four of them say the same thing, you trust it. Each friend can be wrong,
-but it is unlikely that most of them are wrong *in the same way*, unless
-they all read the same wrong article.
-
-**Tiny example.** A model that samples its tokens (see `primer.ml.inference`)
-writes a different chain each time. Ask the toy's noisy cousin for
-3 + 5 + 8 + 2 three times and it answers 18, 17, 18. Keep only the final
+Thinking wider needs a rule that picks one answer from several chains, and
+the simplest rule is a vote. A model that samples its tokens (see
+`primer.ml.inference`) writes a different chain each time. Ask a clerk that
+sometimes slips for 3 + 5 + 8 + 2 three times and it answers 18, 17, 18. Keep only the final
 answers and take the most common one: 18. Sampling several chains of thought
 and returning the most common final answer is **self-consistency** (Wang et
 al., 2022), also called **majority voting**.
@@ -381,7 +360,7 @@ last lines meet in the counting box. That is why voting needs answers that
 can be compared exactly (a number, a multiple-choice letter): two essays are
 never identical, so there would be nothing to count.
 
-How much does voting help? Take the simplest case, a yes/no question: every
+To see how much voting helps, take the simplest case, a yes/no question: every
 wrong vote lands on the same wrong answer, and each vote is right with the
 same chance $p$, independently of the others.
 
@@ -435,9 +414,9 @@ more votes push accuracy towards 1; below 0.5 (solid red) they push it
 towards 0. The dashed red line is the same 40% solver on a question with a
 numeric answer, where its mistakes scatter over ten different wrong values.
 No wrong value gets more than a few percent of the votes, so 40% is the
-biggest pile and the vote climbs past 0.9. That is the situation
-self-consistency relies on in math problems: the right answer only needs to
-be the most common one, not a majority.
+biggest pile and the vote climbs past 0.9. Self-consistency relies on this
+in math problems, where the right answer only needs to be the most common
+one, not a majority.
 
 **When voting fails: shared mistakes.** Everything above assumed the votes
 were independent. Samples from one model are not: they share its training,
@@ -453,27 +432,24 @@ one sample. Independent samples (blue) climb to nearly 1. At $\rho = 0.6$
 (amber) and $\rho = 0.9$ (red) the lines go flat at 0.6: whenever the shared
 answer is wrong, the 60% or 90% of votes that copy it outnumber the at most
 40% × 0.6 = 24% (or 6%) that can independently land on the right answer.
-Thirty-one correlated votes are one opinion, repeated. At $\rho = 0.3$
+At $\rho = 0.3$
 (green) the right answer's share, 0.7 × 0.6 = 42%, still beats the shared
 wrong answer's 0.3 + 0.7 × 0.4 / 5 = 35.6%, so the vote does win in the
 long run, just slowly.
 
-In practice, self-consistency gives a solid gain for a few samples and then
-flattens, because a model's mistakes on a question are correlated. Diversity
-helps (different prompts, different models, a tool that computes instead of
-guessing), and voting only works where answers can be compared exactly.
+On real models, self-consistency gains most from the first few samples and
+then flattens, because a model's mistakes on a question are correlated.
+Diversity in the samples helps: different prompts, different models, or a
+tool that computes instead of guessing.
 
-**In code:** `majority_vote` picks the most common answer, `majority_accuracy` is the formula (with ties on even $n$ counted as a coin flip), and `correlated_vote_accuracy` simulates votes with scattered wrong answers and a shared-mistake rate.
+**In code:** `majority_accuracy` is the formula, and `correlated_vote_accuracy` simulates votes with scattered wrong answers and shared mistakes.
 
 ## 4. Verifiers: checking the answer, or checking every step
 
-**Everyday picture.** One teacher looks only at the boxed answer at the
-bottom of the page. Another marks every line of working. The first can't
-tell a lucky guess from understanding, and when the answer is wrong, can't
-tell you where you went wrong. The second can do both.
-
-**Tiny example.** A **verifier** is anything that scores a candidate
-solution. Here are two chains the toy wrote for 3 + 5 + 8 + 2 (true answer
+A vote counts answers without judging any of them. A **verifier** judges: it
+is anything that scores a candidate solution. Like a teacher, it can mark
+only the boxed answer at the bottom of the page, or every line of the
+working. Here are two chains the clerk wrote for 3 + 5 + 8 + 2 (true answer
 18), each with slips:
 
 | Chain | Final answer | Outcome check: is it 18? | Step check: first line that is false |
@@ -486,7 +462,7 @@ An **outcome verifier** looks only at the final answer: either a learned
 against a known answer. It gives the second chain full marks, although two
 slips just happened to cancel. A **process verifier**, or **process reward
 model (PRM)**, scores every step. It catches the second chain's slip and
-points at exactly where the first one went wrong.
+points at the step where the first one went wrong.
 
 ```mermaid
 flowchart LR
@@ -504,10 +480,10 @@ flowchart LR
 straight to the diamond at the end and returns one bit. The process
 verifier stamps every box. Notice that step 3, 17 + 2 = 19, is marked ok: it
 is correct arithmetic on a wrong input. A step checker judges each step on
-its own terms, and the first bad step is where the chain left the rails.
+its own terms, so the first bad step marks where the chain went wrong.
 
-Verifiers power **best-of-n**: sample $n$ chains, keep the one the verifier
-scores highest. With a perfect verifier, best-of-n is right whenever *any*
+A verifier can also pick among attempts. **Best-of-n** samples $n$ chains
+and keeps the one the verifier scores highest. With a perfect verifier, best-of-n is right whenever *any*
 of the $n$ samples is right, a number called **pass@n**.
 
 $$
@@ -553,10 +529,9 @@ slowly, because wrong answers bunch on near misses one or two away from
 the truth. Best-of-n with the step
 checker (green) hugs the dotted pass@n ceiling: at 8 chains, 0.96 against
 0.99. The small gap is the lucky chains: their slips cancelled, so pass@n
-counts them as right, but the checker refuses them. That is the checker
-doing its job.
+counts them as right, but the checker rightly refuses them.
 
-In practice, the best verifiers are programs: unit tests for code, an exact
+The most reliable verifiers are programs: unit tests for code, an exact
 match for a math answer, a proof checker. Where no program can check, a
 learned verifier stands in. Lightman et al. (2023) trained a process reward
 model on 800,000 human labels of individual steps and found it picked
@@ -565,31 +540,26 @@ verifier can be fooled, though, and more samples mean more chances to find
 a wrong answer it likes: Cobbe et al. (2021) saw best-of-n accuracy start to
 fall again after a few hundred samples.
 
-**In code:** `check_step` is the toy's process verifier for one line, `first_bad_step` runs it over a chain, and `outcome_reward` compares only the final answer with a reference. `noisy_chain` writes chains whose slips carry forward, `pass_at_n` is the formula, and `verifier_experiment` compares one sample, voting, best-of-n with the step checker, and the pass@n ceiling.
+**In code:** `first_bad_step` is the step checker, `outcome_reward` the answer check, and `verifier_experiment` runs the comparison in the chart.
 
 ## 5. Learning to reason with reinforcement learning
 
-**Everyday picture.** A workbook with the answers printed in the back.
-Nobody shows you how to solve anything. You try each problem several ways,
-check the back, and do more of whatever worked. Over hundreds of problems
-you discover good habits on your own: write things down, double-check the
-tricky step, don't stop too early.
-
-**Tiny example.** Prompting a model to "think step by step" gets it to
+A verifier can do more than pick among attempts: it can train the model
+that writes them. Prompting a model to "think step by step" gets it to
 write steps; a reasoning model is *trained* to write good ones. The recipe
 behind models such as DeepSeek-R1 is reinforcement learning (see
 `primer.ml.reinforcement`) with two ingredients:
 
 - **Verifiable rewards.** Train on problems whose answers a program can
   check: math with a known final answer, code with unit tests. The reward is
-  1 if the final answer is right and 0 if not. Nobody grades the chain
-  itself.
+  1 if the final answer is right and 0 if not. The chain itself is never
+  graded.
 - **Group comparisons.** For each problem, sample a group of $G$ attempts
   and judge each one against its own group. With $G = 4$ and rewards
   1, 0, 0, 1, the group averages 0.5, so the two right attempts are above
   average (+1) and the two wrong ones below (−1). The model is nudged
   towards whatever the right ones did, including how they reasoned.
-  This is the heart of **GRPO** (group relative policy optimization).
+  **GRPO** (group relative policy optimization) works this way.
 
 ```mermaid
 flowchart LR
@@ -600,12 +570,12 @@ flowchart LR
   U -->|next batch| P
 ```
 
-**Reading it:** follow the loop clockwise. Nothing in it ever says "think
-longer" or "check your work"; the only signal is whether the last line was
-right. Whatever habits the chains of right attempts share get reinforced,
-batch after batch. The group is what makes this work without a separate
-model estimating how good an attempt "should" be: the other attempts at the
-same problem are the baseline.
+**Reading it:** follow the arrows from the problem round to the next batch.
+Nothing in the loop says "think longer" or "check your work"; the only
+signal is whether the last line was right. Whatever habits the chains of
+right attempts share get reinforced, batch after batch. Because the other
+attempts at the same problem are the baseline, no separate model is needed
+to estimate how good an attempt "should" be.
 
 $$
 A_i = \frac{r_i - \operatorname{mean}(r_1, \ldots, r_G)}{\operatorname{std}(r_1, \ldots, r_G)}
@@ -654,19 +624,20 @@ the time it answers in 1 token. A chain shorter than the steps needed must
 guess (right 10% of the time). Otherwise each step gets as many tries as the
 length allows, and a try slips 10% of the time: one pass through the steps,
 or two (the first attempt and a recheck that catches a slip), or more. The
-reward is 1 for a right answer and 0 for a wrong one. That is all.
+reward is 1 for a right answer and 0 for a wrong one, and nothing else is
+rewarded.
 
 ![Rewarded only for correct answers, mean thinking length rises from 2 to about 7.6 tokens and accuracy from 0.41 to 0.96; with a length penalty the length and accuracy settle a little lower](figures/primer.ml.reasoning.rl_training.svg)
 
 **Reading it:** the x-axis is training time. On the left, the blue line
 (reward for correctness only) shows the average thinking length rising from
 2 tokens to about 7.6; on the right, accuracy rising from 0.41 to 0.96.
-Nobody asked for longer answers: longer answers were simply right more
-often, so they were reinforced. This is the toy version of what DeepSeek-R1
-reported at scale: the length of its chains grew steadily through
-reinforcement learning, and behaviours like re-checking and backing up
-appeared without being taught. The red and green lines add a price per
-token; they come next.
+The reward never asks for longer answers. Longer answers were right more
+often, so they were reinforced. DeepSeek-R1 reported the same at scale: the
+length of its chains grew steadily through reinforcement learning, and
+behaviours like re-checking and backing up appeared without being taught.
+The red and green lines charge for each token of thinking, which "The price
+of thinking" below explains.
 
 ![Trained on correctness alone, the model spends about 2.5, 4, 8 and 16 tokens on problems needing 1, 2, 4 and 8 steps: at or just past twice the steps needed](figures/primer.ml.reasoning.rl_lengths.svg)
 
@@ -675,15 +646,15 @@ tokens the trained model spends on it. The black tick is the steps the
 problem needs, the grey tick twice that. The blue bars (correctness only)
 sit on the grey ticks: the model learned to spend *more on harder
 problems*, and to leave room for one recheck of every step, which lifts the
-hardest problems from 0.43 to 0.92. That extra room is self-correction in
-miniature: the chain gets longer because checking pays.
+hardest problems from 0.43 to 0.92. The extra length is spent on checking:
+the toy's version of self-correction.
 
-**In code:** `group_advantages` is the formula, `success_probability` is the toy's chance of solving a problem at a given length, and `train_reasoner` runs the whole loop: sample a group of lengths per difficulty, reward, compute advantages, and nudge the policy.
+**In code:** `group_advantages` is the formula, `success_probability` the toy's chance of solving a problem at a given length, and `train_reasoner` the training loop.
 
 ### The price of thinking
 
-Rewarded for correctness alone, nothing ever tells the model to *stop*:
-any extra length that helps even slightly gets reinforced. Real reasoning
+A reward for correctness alone never tells the model to *stop*: any extra
+length that helps even slightly gets reinforced. Real reasoning
 models show this as **overthinking**: hundreds of tokens spent on "what is
 2 + 3?". The usual remedy is to charge for length: subtract a small penalty
 per token from the reward. The expected reward for a chain of length $L$ on
@@ -713,8 +684,8 @@ right, given the tries it allows, minus a small charge for every token."
 **With the numbers:** for an 8-step problem, 8 tokens give
 $0.9^8 - 0.08 = 0.43 - 0.08 = 0.35$; 16 tokens give
 $0.99^8 - 0.16 = 0.923 - 0.16 = 0.763$; 32 tokens give
-$0.999 - 0.32 = 0.679$. Sixteen wins: one recheck is worth paying for, a
-third is not. For a 1-step problem, 1 token gives $0.9 - 0.01 = 0.89$, 2
+$0.999 - 0.32 = 0.679$. Sixteen wins: one recheck of every step is worth
+paying for, three are not. For a 1-step problem, 1 token gives $0.9 - 0.01 = 0.89$, 2
 tokens $0.99 - 0.02 = 0.97$, 4 tokens $0.96$. Two wins.
 
 **In Python:**
@@ -729,29 +700,27 @@ eps, lam = 0.1, 0.01
 [round((1 - eps ** (L // 1)) ** 1 - lam * L, 3) for L in (1, 2, 4)]  # → [0.89, 0.97, 0.96]
 ```
 
-Now look back at the two figures. With the penalty and no division by the
-spread (green), training finds exactly those best lengths, 2 tokens for the
-easiest problems and 16 for the hardest. With GRPO's division by the spread
-(red), the easiest problems shrink to **1** token, and accuracy settles at
-0.92, below the 0.96 of correctness alone. Why? In a group where every attempt succeeded,
-rewards differ only by the penalty: 0.99 for 1 token, 0.98 for 2. Their
-spread is tiny, so dividing by it inflates that 0.01 difference into
-advantages of +1 and −1, as loud as the difference between solved and
-failed. The penalty ends up far stronger than its size. Liu et al. (2025)
-analyse biases like this in GRPO; the lesson for anyone training or
-budgeting a reasoning model is that the exact shape of the reward decides
-how long the model thinks.
+The green and red lines in the two training charts add this penalty.
+Without GRPO's division by the spread (green), training finds those best
+lengths, 2 tokens for the easiest problems and 16 for the hardest. With the
+division (red), the easiest problems shrink to **1** token, and accuracy
+settles at 0.92, below the 0.96 of correctness alone. The division is the
+cause. In a group where every attempt succeeded, rewards differ only by the
+penalty: 0.99 for 1 token, 0.98 for 2. Their spread is tiny, so dividing by
+it inflates that 0.01 difference into advantages of +1 and −1, as large as
+the difference between solved and failed, and the penalty acts far more
+strongly than its size. Liu et al. (2025) analyse biases like this in GRPO:
+the exact shape of the reward decides how long the model thinks.
 
 ## 6. Where reasoning still fails, and how to budget it
 
-**Everyday picture.** A long line of dominoes falls all the way only if
-every single one is placed right. Add more dominoes and the chance that one
-is misplaced grows, however careful you are with each.
+Training made the toy's chains longer because checking paid. Length without
+checking does not pay: every added step is another chance to slip.
 
 ### Slips compound
 
-**Tiny example.** If each step of a chain slips 2% of the time, a 10-step
-chain is clean 82% of the time, and a 50-step chain only 36% of the time.
+If each step of a chain slips 2% of the time, a 10-step chain is clean 82%
+of the time, and a 50-step chain only 36% of the time.
 
 $$
 P(\text{no slip}) = (1 - \varepsilon)^{k}
@@ -785,17 +754,17 @@ round((1 - eps) ** 200, 3)  # → 0.018
 
 **Reading it:** the x-axis is the length of the chain; the y-axis is the
 chance it contains no slip at all. Every curve falls, and the only thing
-that flattens one is a lower slip rate per step. That is why length alone
-is not reasoning: the trained model in section 5 got better by spending
-its extra tokens on *rechecking*, which lowers the effective slip rate, and
-why verifiers that check each step matter. The same law governs agents
-taking many actions; see `primer.agents.planning`.
+that flattens one is a lower slip rate per step. The model trained with
+reinforcement learning improved by spending its extra tokens on
+*rechecking*, which lowers the effective slip rate, and verifiers that
+check each step matter for the same reason. An agent taking many actions in
+a row faces the same arithmetic (see `primer.agents.planning`).
 
 **In code:** `steps_all_right` is the formula.
 
 ### What thinking costs
 
-**Tiny example.** Eight sampled chains of 2,000 tokens each, at an
+Every token is also paid for, in money and in waiting time. Eight sampled chains of 2,000 tokens each, at an
 illustrative \$10 per million output tokens, cost 16 cents per question. Run
 side by side at 50 tokens per second, the user waits 40 seconds whether you
 sample one chain or eight.
@@ -856,10 +825,8 @@ task.
 
 ### Budgeting it
 
-**Everyday picture.** You wouldn't convene a committee to decide what to
-have for lunch, and you wouldn't let one person sign off a bridge design
-alone. Match the effort to the stakes and to whether the result can be
-checked.
+How much thinking to pay for depends on the task: how hard and how urgent
+it is, and whether a program can check the answer.
 
 ```mermaid
 flowchart TD
@@ -875,10 +842,10 @@ flowchart TD
 question routes easy or time-critical work away from thinking entirely,
 because that is where overthinking wastes the most. The second asks whether
 a program can check the answer: if so, sampling several chains and keeping
-the one that passes turns spare compute into accuracy almost for free
-(section 4). If not, cap the budget and vote only when answers can be
-compared. Everything ends in the same box: measure, because the right
-budget is an empirical question per task, not a constant. See
+the one that passes turns spare compute into accuracy, as best-of-n did
+with the step checker. If not, cap the budget and vote only when answers
+can be compared. Every path ends in the same box, because the right budget
+for a task is found by measuring it. See
 `primer.agents.planning` for decomposing long tasks into checkable steps.
 
 ## In 20 seconds
