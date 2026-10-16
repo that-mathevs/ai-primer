@@ -124,22 +124,22 @@ with and without a key. If you only needed to choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-A language model can only produce text. A **tool** is how that text turns
-into an action: looking up a record, refunding a payment, sending an email.
-This lesson builds a tool registry from scratch and shows the six things
-that decide whether tools work in production: how a call really happens,
-validation, descriptions, granularity, how many tools you expose, and safety.
+A language model can only produce text, so anything it does in the world
+goes through code you own. Here that code is a **tool registry**: it holds
+the tools, shows them to the model, and checks every request the model
+makes before carrying it out.
 
-## 1. What a tool call really is
+## 1. What a tool call is
 
-**Everyday picture.** You hire a new assistant who is brilliant but may not
-touch anything. When they need something done, they fill in a *request
-form* ("refund customer C-100, $20") and hand it to you. **You** decide
-whether to carry it out, and you hand back a note saying what happened. The
-assistant is the model. The form is a *tool call*. You are your code.
-
-**Tiny worked example.** Here's the whole exchange for "what's 2 + 3?" with
-one tool, written as the actual messages:
+Picture a new assistant who may not touch anything. When they need
+something done, they fill in a request form ("refund customer C-100, $20")
+and hand it to you. You decide whether to carry it out, and hand back a note
+saying what happened. A language model works with tools the same way. You
+send it a list of tools, each with a name, a description and the shape of
+its arguments. When it wants one, it stops and writes a **tool call**: the
+tool's name with the arguments filled in, like the form. Here is the whole
+exchange for "what's 2 + 3?" with one tool, written as the actual messages
+in the format of `primer.agents.llm`:
 
 ```text
 you -> model   tools: [{"name": "add", "description": "Add two integers.",
@@ -154,9 +154,9 @@ you -> model   user: tool_result {"tool_use_id": "toolu_1", "content": "5"}
 model -> you   "2 + 3 = 5."   stop_reason: "end_turn"
 ```
 
-`input_schema` is a **JSON Schema**, a JSON document that describes the
+The `input_schema` is a **JSON Schema**, a JSON document that describes the
 shape other JSON must have: which fields exist, what type each is, and
-which are required. It's the "form template" the model fills in.
+which are required. It is the blank form the model fills in.
 
 ```mermaid
 sequenceDiagram
@@ -172,30 +172,29 @@ sequenceDiagram
   M-->>C: answer in words
 ```
 
-**Reading it:** follow the arrows top to bottom. The model's only arrow
-towards the real system goes *through your code*. Nothing the model writes
-can touch the real system unless your code decides to act on it. That
-middle box, "check the form", is where the rest of this lesson lives.
+**Reading it:** follow the arrows from top to bottom. The model never talks
+to the real system; everything it writes goes to your code first. The arrow
+that loops back on your code, "check the form", is where every safeguard
+runs. That split is what keeps
+the system safe: a model can be wrong or tricked, and your code is where you
+enforce what is allowed.
 
-**The code.** `ToolRegistry.register` stores a Python function with its
-name, description and schema; `ToolRegistry.definitions()` produces the
-list you send to the model; `ToolRegistry.call()` runs a call through every
-check.
-
-**Why it matters.** The separation is the security model. A model can be
-wrong or tricked. Your code is where you enforce what's allowed.
+**In code:** `ToolRegistry.register` adds a tool, `ToolRegistry.definitions`
+lists them for the model, and `ToolRegistry.call` runs a call through the
+checks.
 
 ## 2. Validate every call before running it
 
-**Everyday picture.** A bank clerk checks a withdrawal slip twice. Is it
-filled in properly: every box, a real date, a positive amount? Then does it
-make sense: does this account exist, does it have the money? Only then do
-they open the drawer.
+The first thing your code does with a call is check it, the way a bank
+clerk checks a withdrawal slip twice. First, is it filled in properly:
+every box, a real date, a positive amount? Then, does it make sense: does
+the account exist, and does it have the money? For a tool call, the first
+check is the JSON Schema and the second is your **business rules**.
 
-**Tiny worked example.** A payment tool takes an `amount`, a `currency`
-(EUR, GBP or USD) and an optional `pay_on` date. The model sends
+Take a payment tool with an `amount`, a `currency` (EUR, GBP or USD) and an
+optional `pay_on` date. The model sends
 `{"ammount": 5, "currency": "usd", "pay_on": "next friday"}`. The validator
-returns *every* problem at once, each one saying what a correct value looks
+returns *every* problem at once, each saying what a correct value looks
 like:
 
 ```text
@@ -205,8 +204,19 @@ $.currency: must be one of ['EUR', 'GBP', 'USD'], got 'usd'
 $.pay_on: 'next friday' does not match the required format. Expected: date as YYYY-MM-DD
 ```
 
-Compare that to `invalid input`. With the first, the model fixes all four
-mistakes in one retry. With the second, it guesses.
+Given these four lines, the model can fix all four mistakes in one retry.
+Given only `invalid input`, it has to guess.
+
+Passing the schema is not enough. `"C-999"` matches the pattern `^C-\d+$`
+and still names a customer that doesn't exist. With the Claude API you can
+mark a tool definition `"strict": true`, and the API then guarantees that
+the model's arguments match the schema (`primer.ml.structured_output`
+explains how such guarantees work). That settles the shape, not the truth,
+so the business-rule check stays.
+
+A full registry runs these two checks among others, in the order below. The
+last three (dry run, approval and the idempotency key) guard calls that
+change something, and are explained with the other safeguards at the end.
 
 ```mermaid
 flowchart TD
@@ -228,64 +238,56 @@ flowchart TD
   I -->|no| X[run the tool: ok]
 ```
 
-**Reading it:** a call enters at the top and must pass every diamond to reach
-*run the tool* at the bottom. Each exit on the side is a named `status` in
-`ToolOutcome`, and each returns text the model can act on. The order is
-deliberate: permissions come before anything that reveals how the tool works, and
-cheap checks come before expensive ones. Approval and idempotency sit last,
-right next to the action they protect.
+**Reading it:** a call enters at the top and must pass every diamond to
+reach *run the tool* at the bottom. Each exit from a diamond ends in a named
+status, and each returns text the model can act on. Permissions come before
+anything that reveals how the tool works, and cheap checks come before
+expensive ones. Approval and idempotency sit last, next to the action they
+protect.
 
-**Why it matters.** "Structured output" and strict mode guarantee the
-*shape* of the arguments, not that they're *true*. `"C-999"` matches the
-pattern `^C-\d+$` perfectly and is still a customer that doesn't exist.
-Schema checks and business-rule checks are both required.
-
-With the Claude API you can add `"strict": true` to a tool definition
-(`definitions(strict=True)` here). The API then guarantees the model's
-arguments validate against the schema. You still need the business-rule
-checks.
-
-**In code:** `validate` checks a value against a JSON Schema subset and
-returns every problem with its path. `ToolRegistry.call` walks the diamonds
-above in order and wraps the result in a `ToolOutcome`, whose
-`ToolOutcome.is_error` says whether the model should treat it as a failure.
+**In code:** `validate` checks a value against a subset of JSON Schema and
+returns every problem with its path. `ToolRegistry.call` runs the checks in
+the order shown and returns a `ToolOutcome`, and `definitions(strict=True)`
+adds the strict flag.
 
 ## 3. Descriptions are prompts
 
-**Everyday picture.** A wall of drawers labelled "stuff", "things" and
-"items". Even a careful person opens the wrong one. Relabel them "Policies
-(PTO, travel, VPN). Not customers", and nobody hesitates.
+A call can pass every check and still be to the wrong tool. The model
+chooses a tool by reading its name and description, so the description is a
+prompt. Label a wall of drawers "stuff", "things" and "items", and even a
+careful person opens the wrong one; label them "Policies (PTO, travel, VPN).
+Not customers", and nobody hesitates.
 
-**Tiny worked example.** A stand-in model (`pick_tool`) chooses the tool
-whose name and description share the most words with the request. For
-"billing status for customer 1042", the vague descriptions share zero words
-with every tool (a three-way tie, so it guesses the first). The precise
-`lookup_record` description shares "billing", "status" and "customer" and
-wins.
+To measure this without a real model, a stand-in picks the tool whose name
+and description share the most words with the request. For "billing status
+for customer 1042", the vague descriptions share no words with any tool, a
+three-way tie, so the stand-in takes the first. The precise description of
+`lookup_record` shares "billing", "status" and "customer", and wins.
 
 ![Vague descriptions pick the right tool for 2 of 6 requests; precise descriptions of the same tools get all 6 right](figures/primer.agents.tools.selection_accuracy.svg)
 
-**Reading it:** two bars, one per set of descriptions, each out of the same six
-labelled requests. With vague descriptions the model gets 2 of 6, and only
-the two that happen to belong to the first tool, which it picks every time it
-can't tell them apart. With descriptions that say *what* each tool is for,
-*when* to use it and *when not to*, it gets 6 of 6. Only the descriptions
-changed.
+**Reading it:** two bars, one per set of descriptions, each scored on the
+same six labelled requests. The vague set gets 2 of 6, and those two are
+the requests that belong to the first tool, which the stand-in picks
+whenever it can't tell the tools apart. The precise set says *what* each
+tool is for, *when* to use it and *when not to*, and gets 6 of 6. Only the
+descriptions changed.
 
-**Why it matters.** Real models are far better readers than word overlap,
-but they choose from exactly the same text. Precise descriptions, a few
-parameters, `enum`s instead of free text, and error messages that explain
-the fix remove a large share of agent errors.
+A real model reads far better than a word count, but it chooses from the
+same text, so the same fixes help it: precise descriptions, few parameters,
+an `enum` wherever the values form a closed set, and error messages that say
+how to fix the call.
 
-**In code:** `selection_accuracy` runs `pick_tool` over the labelled
-requests and counts the correct picks, which is what the figure plots for
-`VAGUE_TOOLS` and `PRECISE_TOOLS`.
+**In code:** `pick_tool` is the stand-in, and `selection_accuracy` scores it
+on `VAGUE_TOOLS` and `PRECISE_TOOLS`.
 
 ## 4. Fewer, higher-level tools
 
-**Everyday picture.** Asking an assistant to "book my trip to Denver" versus
-dictating five separate forms (find flight, hold seat, find hotel, reserve
-room, add to calendar). Every hand-off is another chance to drop something.
+Every choice the model makes is a chance to choose wrong, so the number of
+calls a job takes matters too. Asking an assistant
+to "book my trip to Denver" is safer than dictating five separate forms
+(find a flight, hold a seat, find a hotel, reserve a room, add it to the
+calendar), because every hand-off is another chance to drop something.
 
 ```mermaid
 flowchart LR
@@ -297,11 +299,13 @@ flowchart LR
   end
 ```
 
-**Reading it:** on the left the model has to pick five tools in the right
-order and carry each output into the next input by hand. On the right the
-same work is one call, and the sequencing lives in ordinary tested code.
+**Reading it:** with five low-level tools, the model has to pick each one in
+the right order and carry each output into the next input itself. With one
+high-level tool, the same work is a single call, and the sequencing lives in
+ordinary tested code.
 
-The chance that a chain of calls all succeed:
+If each call is right with probability $p$, independently of the others, a
+chain of $n$ calls all succeed with probability:
 
 $$
 P(\text{all succeed}) = p^{\,n}
@@ -333,24 +337,25 @@ p ** 1  # → 0.97
 
 ![Success falls with every extra call: at 99% per call twenty calls succeed about 82% of the time, at 90% ten calls barely a third](figures/primer.agents.tools.compounding.svg)
 
-**Reading it:** the x-axis is how many calls the job takes, and the y-axis is the chance
-the whole job succeeds. Each curve is a different per-call reliability.
-Even at 99% per call, twenty calls succeed only about 82% of the time, and at
-90% per call, ten calls succeed barely a third of the time. Fewer calls is
-the cheapest reliability you can buy.
+**Reading it:** the x-axis is how many calls the job takes, and the y-axis
+is the chance the whole job succeeds. Each curve is one per-call
+reliability. Even at 99% per call, twenty calls succeed only about 82% of
+the time; at 90% per call, ten calls succeed barely a third of the time.
 
 **In code:** `chain_success` evaluates $p^{\,n}$.
 
 ## 5. Too many tools: load only the relevant ones
 
-**Everyday picture.** A warehouse versus a toolbox. You don't send a
-plumber into a warehouse of 500 tools; you hand them the five they need for
-today's job.
+Merging tools shortens the chains, but a real product still collects many
+tools, and a long list makes each choice harder. Selection accuracy drops as
+the list grows past a few dozen tools, and every definition costs input
+tokens on every call. So send only the tools a request needs, the way you
+would hand a plumber the five tools for today's job rather than send them
+into a warehouse of 500.
 
-**Tiny worked example.** A catalogue of 30 tools. For "I forgot my password and I'm
-locked out", `select_tools` embeds the request, compares it to every tool
-description, and sends the model only the top 5, with `reset_password`
-first.
+Take a catalogue of 30 tools and the request "I forgot my password and I'm
+locked out". The request is embedded, compared with every tool description,
+and only the top 5 tools go to the model, with `reset_password` first.
 
 ```mermaid
 flowchart LR
@@ -361,29 +366,37 @@ flowchart LR
   K --> M[Model sees<br/>only these 5]
 ```
 
-**Reading it:** this is retrieval, the same machinery as RAG, but the
-"documents" are tool descriptions. The catalogue is embedded ahead of time;
-per request you embed one string and take the top matches.
+**Reading it:** this is the same search as in
+`primer.ml.embeddings.retrieval`, with tool descriptions as the documents. The catalogue is embedded once, ahead
+of time; each request costs one embedding and a lookup of the top matches.
 
 ![Each request is similar to only a small cluster of related tools and dim against the rest of the catalogue](figures/primer.agents.tools.tool_similarity.svg)
 
 **Reading it:** each row is a user request and each column a tool from the
-catalogue. Brighter cells mean more similar. Each request lights up a small
-cluster of related tools and stays dark everywhere else. Sending only
-that cluster keeps the model's choice small, which is why accuracy holds
-up as the catalogue grows.
+catalogue, and brighter cells are more similar. Each request lights up a
+small cluster of related tools and stays dark everywhere else. Sending only
+that cluster keeps the model's choice small however large the catalogue
+grows.
 
-**Why it matters.** Selection accuracy drops as the tool list grows past a
-few dozen, and every definition costs input tokens on every call. The
-alternatives are routing the request to a sub-agent that holds only the
-relevant tools, or using a provider's built-in tool search.
+Two other designs do the same job: route the request to a sub-agent that
+holds only the relevant tools, or use a provider's built-in tool search.
+
+**In code:** `select_tools` ranks the catalogue against the request and
+returns the top matches.
 
 ## 6. Safety: idempotency, dry runs, approval, least privilege
 
-**Idempotency.** *Everyday picture:* pressing a lift button twice still
-takes you to the floor once. An operation is **idempotent** when doing it
-twice has the same effect as doing it once. *Worked example:* a refund call
-times out *after* the bank processed it, so the agent retries.
+With the right tool and valid arguments, a call can still do harm. It can
+run twice, it can be impossible to undo, or it can come from a model that
+was tricked. Four safeguards deal with these.
+
+**Idempotency.** An operation is **idempotent** when doing it twice has the
+same effect as doing it once, like pressing a lift button twice. A refund
+is not, and agents retry. Suppose a refund call times out *after* the bank
+has processed it: the agent cannot tell, so it retries. The fix is an
+**idempotency key**, a unique id the caller sends with each write. The
+registry stores the result under that key, and a call that repeats the key
+gets the stored result back.
 
 ```mermaid
 sequenceDiagram
@@ -398,18 +411,19 @@ sequenceDiagram
   R-->>A: duplicate: "refunded 20.00 to C-100" (no second refund)
 ```
 
-**Reading it:** the first reply is lost on the way back (the crossed
-arrow), so the agent can't know the refund happened and sensibly retries.
-Because the retry carries the same key, the registry returns the stored
-result instead of refunding again. Without the key, the customer gets $40.
+**Reading it:** the first reply is lost on its way back (the crossed
+arrow), so the agent cannot know the refund happened, and it retries. The
+retry carries the same key, so the registry returns the stored result
+instead of refunding again. Without the key, the customer gets $40.
 
-**Dry run.** A rehearsal: run every check, then *describe* the action
-instead of doing it. Useful for previews and for shadow-mode rollouts
+**Dry run.** A dry run passes every check, then describes the action
+instead of doing it. It serves previews and shadow-mode rollouts
 (`primer.agents.deployment`).
 
-**Human approval.** *Everyday picture:* a manager signs off on spending over
-a limit. Irreversible actions, or ones over a threshold such as refunds over
-$500, park as `awaiting_approval` until a person decides.
+**Human approval.** Some actions should wait for a person, as spending over
+a limit waits for a manager's signature. Irreversible actions, or ones over
+a threshold such as refunds over $500, park as `awaiting_approval` until a
+person decides.
 
 ```mermaid
 sequenceDiagram
@@ -428,28 +442,28 @@ sequenceDiagram
 ```
 
 **Reading it:** the approval gate sits between the model's request and the
-action. Both branches return text the model can act on. "Do not retry" in
-the declined message matters, because otherwise a persistent model asks again.
+action, and both branches return text the model can act on. The declined
+message says "do not retry" because otherwise a persistent model asks
+again.
 
-**Least privilege.** *Everyday picture:* a valet key starts the car but
-won't open the boot. Give each agent credentials (**scopes**, named
-permissions such as `payments:write`) for its job only. An agent that reads
+**Least privilege.** Give each agent credentials for its own job only, the
+way a valet key starts the car but won't open the boot. Credentials come as
+**scopes**, named permissions such as `payments:write`. An agent that reads
 tickets holds `tickets:read`, so even if a malicious email tricks it, it
 *cannot* issue refunds.
 
-**In code:** a `Tool` carries its safety settings: the scopes it needs,
-whether it reads, writes or acts irreversibly, and an optional approval
-rule, which `Tool.requires_approval` combines. `ToolRegistry.call` enforces
-them, given the caller's credentials, an idempotency key, a dry-run flag and
-an approver.
+**In code:** a `Tool` carries the scopes it needs, whether it reads, writes
+or acts irreversibly, and an optional approval rule. `ToolRegistry.call`
+enforces them, given the caller's credentials, an idempotency key, a
+dry-run flag and an approver.
 
 ## In 20 seconds
-- The model writes a request (`tool_use`). Your code validates it, runs it, and returns a `tool_result`.
-- Validate shape (JSON Schema) *and* meaning (business rules). Return every problem, each with its fix.
-- Descriptions are prompts: say what the tool does, when to use it, and when not to.
-- Prefer fewer, higher-level tools: $p^n$ punishes long chains of calls.
-- Past a few dozen tools, load only the relevant ones per request.
-- Writes get idempotency keys; irreversible or high-value actions get human approval; credentials get the narrowest scopes.
+- The model only writes a request (`tool_use`). Your code checks it, runs it and returns a `tool_result`.
+- Check both shape (JSON Schema) and meaning (business rules), and return every problem with its fix.
+- The model picks a tool by its description: say what the tool does, when to use it, and when not to.
+- A job of $n$ calls, each right with probability $p$, succeeds with probability $p^n$, so fewer, higher-level tools are more reliable.
+- With a large catalogue, send the model only the tools relevant to each request.
+- Writes carry idempotency keys, irreversible or high-value actions wait for human approval, and each agent's credentials allow only its job.
 
 ## Self-test questions
 
@@ -491,7 +505,7 @@ approval.
 - Claude tool use overview: https://docs.claude.com/en/docs/agents-and-tools/tool-use/overview
 - Implementing tool use: https://docs.claude.com/en/docs/agents-and-tools/tool-use/implement-tool-use
 - *Understanding JSON Schema*: https://json-schema.org/understanding-json-schema
-- Stripe, idempotent requests (the canonical explanation): https://docs.stripe.com/api/idempotent_requests
+- Stripe, idempotent requests: https://docs.stripe.com/api/idempotent_requests
 """
 
 from __future__ import annotations
