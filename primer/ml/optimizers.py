@@ -117,32 +117,31 @@ only needed to fill in a config, you are done.
 
 ## Level 2: How it works, from scratch
 
-Every optimizer runs the same loop: feel the slope, turn it into a step,
-take it, repeat. This level builds each rule on a one-number valley you
-can check by hand, then lets them race across a valley that is not round.
+Every optimizer runs the same loop: measure the slope of the loss at the
+current weights, turn it into a step, take the step, and repeat. Optimizers
+differ only in the middle part, the rule that turns a slope into a step.
 
-## The idea: walking downhill in fog
+## Gradient descent
 
-You're on a hillside in thick fog and want to reach the lowest point in the
-valley. You can't see the valley; you can only feel the slope under your
-feet. So you feel which way is downhill, take a step that way, and repeat.
-That is **gradient descent**. The hillside is the loss (how wrong the model
-is, for every possible setting of its weights), your position is the
-current weights, and the slope under your feet is the **gradient**: the list
-of slopes of the loss, one per weight. (See `primer.ml.neural_net` for how
-backprop measures it, and `primer.notation` for the symbols.) An
-**optimizer** is your rule for turning "the slope here" into "the step I
-take".
+You're on a hillside in thick fog, trying to reach the bottom of the
+valley. You can't see the valley, only feel the slope under your feet, so
+you feel which way is downhill, take a step that way, and repeat. That is
+**gradient descent**. The hillside is the loss (how wrong the model is, for
+every possible setting of its weights), your position is the current
+weights, and the slope under your feet is the **gradient**: the slope of the
+loss along each weight, one number per weight. (`primer.ml.neural_net` shows
+how backpropagation measures it.) The step is the gradient times a small
+number, the **learning rate**, taken against the slope.
 
-Worked example on the simplest possible valley, the bowl f(w) = w², whose
-slope at w is 2w. Start at w = 1 with step size 0.1:
+The simplest valley there is has one weight: the bowl f(w) = w², whose
+slope at w is 2w. Start at w = 1 with a learning rate of 0.1:
 
 | step | w | slope 2w | step taken 0.1 × slope | new w |
 |---|---|---|---|---|
 | 0 | 1.0 | 2.0 | 0.2 | 0.8 |
 | 1 | 0.8 | 1.6 | 0.16 | 0.64 |
 
-Each step keeps 80% of w, sliding smoothly toward the bottom at 0.
+Each step keeps 80% of w, so w slides toward the bottom at 0.
 
 ```mermaid
 flowchart LR
@@ -154,10 +153,11 @@ flowchart LR
   R -.uses.-> H[Its own memory:<br/>velocity, averages]
 ```
 
-**Reading it:** every optimizer runs this loop; they differ only in the
-diamond. Plain gradient descent's rule looks only at the current slope.
-Momentum and Adam also keep a small memory of past slopes (the dotted box)
-and use it to choose a better step.
+**Reading it:** follow the arrows round from the current weights to the
+new ones. Only the diamond changes from one optimizer to the next. Plain
+gradient descent's rule looks at the current slope alone; momentum and
+Adam, later in this lesson, also read the dotted box, a memory of past
+slopes.
 
 $$
 w_{t+1} = w_t - \eta \, \nabla \mathcal{L}(w_t)
@@ -191,23 +191,20 @@ for t in range(2):
     print(round(w, 2))  # → 0.8 0.64
 ```
 
-"Stochastic" gradient descent (SGD) means the slope is estimated from a
-small random batch of examples instead of the whole dataset: noisier, but
-thousands of times cheaper per step. `descend_bowl` runs the table above;
-`SGD` is the general version.
+A real model's loss is an average over its training examples. **Stochastic
+gradient descent** (SGD) estimates the slope from a small random batch of
+examples instead of the whole dataset, so each step is noisier but reads
+only the batch.
 
-**Why it matters:** every model you've heard of was trained by a descendant
-of this one line. The variants below exist because real loss landscapes are
-not round bowls.
+**In code:** `descend_bowl` runs the table; `SGD` is the general version.
 
-## The learning rate: how long a stride?
+## The learning rate
 
-In the fog, stride length is everything. Tiny shuffling steps are safe but
-you'll be walking all night. Giant leaps overshoot the valley floor and land
-you higher up the opposite slope; keep leaping and you climb out of the
-valley altogether.
-
-Worked example on the bowl w², where each step multiplies w by (1 − 2η):
+The walk down the bowl used a learning rate of 0.1. In the fog, a short
+stride is safe but slow, and a long one can carry you past the valley floor
+and higher up the other side. On the bowl w² the slope is 2w, so a step
+multiplies w by the same number every time, 1 − 2η, and that number
+decides the walk:
 
 | learning rate η | multiplier 1 − 2η | w after 1, 2, 3 steps | what happens |
 |---|---|---|---|
@@ -219,12 +216,11 @@ Worked example on the bowl w², where each step multiplies w by (1 − 2η):
 ![Over 30 steps, rate 0.001 barely lowers the loss, 0.1 falls steadily, 0.45 plunges below the chart within six steps, and 1.1 climbs as every step overshoots](figures/primer.ml.optimizers.learning_rates.svg)
 
 **Reading it:** each line is the loss (log scale) over 30 steps for one
-learning rate. The flat line near the top is 0.001: technically improving,
-practically stuck. 0.1 falls steadily. 0.45 falls fastest: its line ends at
-step 5, because one step later the loss is down to 10⁻¹², the floor of the chart.
-1.1 climbs the whole way: every step makes things worse. On a real model you
-can't compute the perfect rate, so you look for the fastest one that doesn't
-blow up.
+learning rate. The flat line near the top is 0.001, falling too slowly to
+see. 0.1 falls steadily. 0.45 falls fastest: its line ends at step 5,
+because one step later the loss is down to 10⁻¹², the floor of the chart.
+1.1 climbs the whole way, because every step overshoots further than the
+last.
 
 $$
 w_{t+1} = w_t - \eta \cdot 2 w_t = (1 - 2\eta)\, w_t
@@ -260,24 +256,32 @@ three_steps(0.1)  # → [0.8, 0.64, 0.512]
 round(0.998 ** 10, 3)  # → 0.98
 ```
 
-**In code:** `descend_bowl` is the same loop with the learning rate as an argument; call it with each rate in the table to reproduce every row.
+A real model shows the same two failures in its loss curve. With too high
+a learning rate the loss bounces, spikes or turns to NaN ("not a number",
+what the arithmetic returns once values overflow); with too low a rate it
+barely moves, or settles somewhere poor. You cannot compute the right rate
+for a real model, so you look for the fastest one that does not blow up,
+and it is the first setting to get right. The steepest direction sets the
+ceiling: on the bowl, whose slope is 2w, any η above 1 diverges.
 
-**Why it matters:** the learning rate is the single most important
-hyperparameter. Too high and training diverges or bounces (loss spikes,
-NaNs); too low and it takes forever or settles somewhere poor. The steepest
-direction of the landscape sets the ceiling: on a bowl with slope 2w, any η
-above 1 diverges.
+**In code:** `descend_bowl` takes the learning rate as an argument and reproduces every row of the table.
 
-## Momentum: a heavy ball instead of a cautious hiker
+## Momentum
 
-Now imagine a long, narrow valley: steep walls on both sides, a gentle slope
-along the floor. A cautious hiker who only reads the local slope zig-zags
-from wall to wall and barely moves along the floor. A heavy ball rolling
-down the same valley behaves differently: its sideways bouncing cancels out,
-while the gentle downhill pull along the floor keeps adding up, so it builds
-speed exactly where you want it. That accumulated speed is **momentum**.
+The bowl is equally steep in every direction, so one learning rate suits
+every step. A real loss is steeper in some directions than in others.
+Picture a long, narrow valley with steep walls on both sides and a gentle
+slope along the floor. The walls set the ceiling on the learning rate, and
+at that rate the steps along the floor are tiny: plain gradient descent
+zig-zags from wall to wall and creeps along the floor. A heavy ball rolling
+down the same valley does better. Its sideways swings cancel out, while the
+steady pull along the floor keeps adding up, so it gathers speed along the
+floor. **Momentum** gives the optimizer that speed. It keeps a
+**velocity**, a running sum of past slopes in which older slopes fade, and
+steps along the velocity instead of the slope.
 
-Worked example on the bowl w², learning rate 0.1, momentum β = 0.9:
+On the bowl w², with a learning rate of 0.1 and momentum β = 0.9, the first
+two steps are:
 
 | step | slope g = 2w | velocity v = 0.9·v + g | new w = w − 0.1·v |
 |---|---|---|---|
@@ -295,10 +299,10 @@ flowchart LR
 ```
 
 **Reading it:** the velocity box mixes the new slope with 90% of the old
-velocity, and that velocity (not the raw slope) sets the step. Follow the
-loop back: next time, this velocity becomes the "old velocity". Slopes that
-keep pointing the same way pile up; slopes that flip sign every step (the
-walls) mostly cancel.
+velocity, and the velocity, not the raw slope, sets the step. Follow the
+arrow back: on the next step this velocity becomes the old velocity. Slopes
+that keep pointing the same way pile up; slopes that flip sign every step,
+as they do between the walls, mostly cancel.
 
 ![After 100 steps from (-8, 1), plain SGD has only crept to x = -1.8 along the valley floor, while momentum and Adam reach the minimum after some overshoot](figures/primer.ml.optimizers.trajectories.svg)
 
@@ -309,8 +313,8 @@ after 100 steps is still far from the star. Momentum swings hard: across
 the valley to y = −1.1 (further out than it started) and past the star to
 x ≈ 1.9, before the swings die down and it settles 0.003 from the minimum.
 Adam, which rescales each direction separately, takes a steadier line: it
-dips to y ≈ −0.5, overshoots to x ≈ 0.6, and ends 0.02 away. Both beat
-plain SGD by far; momentum's overshoot is the price of the speed it builds.
+dips to y ≈ −0.5, overshoots to x ≈ 0.6, and ends 0.02 away. Both end far
+closer than plain SGD; momentum overshoots further on the way.
 
 $$
 v_t = \beta\, v_{t-1} + g_t, \qquad w_{t+1} = w_t - \eta\, v_t
@@ -345,27 +349,28 @@ for t in range(2):
     print(round(v, 2), round(w, 2))  # → 2.0 0.8 3.4 0.46
 ```
 
-**In code:** `momentum_on_bowl` runs the two-row table; `SGD` with a nonzero momentum keeps its velocity between calls to `SGD.step`. `narrow_valley` is the valley in the figure (`rosenbrock` is a harder, banana-shaped one), and `run` walks any optimizer across a landscape and records its path.
+On the narrow valley, after 100 steps at the same learning rate,
+momentum's loss is more than 10,000 times lower than plain SGD's. SGD with
+momentum is still the usual optimizer for convolutional networks, the
+neural networks behind most image recognition (see `primer.ml.cnn_rnn`).
 
-**Why it matters:** real loss surfaces are full of narrow valleys. On the
-valley above, 100 steps of momentum reach a loss over 10,000× lower than 100
-steps of plain SGD at the same learning rate. Momentum is still the default
-for training CNNs.
+**In code:** `momentum_on_bowl` runs the table, and `run` walks any optimizer across `narrow_valley`.
 
-## Adam: a separate stride for every direction
+## Adam: a step size for every weight
 
-Back in the narrow valley, what you'd really like is short steps across the
-steep walls and long strides along the gentle floor. Adam does exactly that:
-it keeps, for every single weight, a running average of the slope (the
-direction, like momentum) and a running average of the *squared* slope (how
-big that weight's slopes typically are), then divides the first by the
-square root of the second. Every weight ends up taking steps of roughly the
-same size, the learning rate, whatever the scale of its gradient.
+Momentum speeds up travel along the floor, but every weight still moves
+with the same learning rate, and the steep walls still cap it. The narrow
+valley needs short steps across the walls and long ones along the floor.
+**Adam** gives every weight its own step size. For each weight it keeps a
+running average of the slope (the direction, as momentum does) and a
+running average of the *squared* slope (how big that weight's slopes
+typically are), and divides the first by the square root of the second. A
+weight with steep slopes and a weight with gentle ones then take steps of
+about the same size, the learning rate.
 
-Worked example: on its very first step, Adam moves a weight by exactly the
-learning rate (0.01 here), no matter whether that weight's gradient is 1000,
-1 or 0.001. (With bias correction, m̂ = g and v̂ = g², so the step is
-0.01 × g / |g| = 0.01.)
+The first step shows it most plainly. Adam moves a weight by the learning
+rate (0.01 here) whether that weight's gradient is 1000, 1 or 0.001. (With
+bias correction, m̂ = g and v̂ = g², so the step is 0.01 × g / |g| = 0.01.)
 
 ```mermaid
 flowchart LR
@@ -379,10 +384,10 @@ flowchart LR
 ```
 
 **Reading it:** the gradient feeds two running averages. The top path
-remembers direction; the bottom path remembers magnitude. Both start at
-zero, so for the first few steps they're too small, and the "hat" boxes
-correct for that. The final box divides direction by typical size, which
-turns every weight's step into roughly η in the right direction.
+keeps its direction, the bottom path its typical size. Both start at zero,
+so for the first few steps they are too small, and the "hat" boxes correct
+for that. The last box divides direction by size, which makes each weight's
+step about η long, pointing the way its slope says.
 
 $$
 m_t = \beta_1 m_{t-1} + (1-\beta_1)\, g_t,\quad
@@ -433,34 +438,37 @@ round((1 - beta_1) * 1000, 6), round((1 - beta_2) * 1000 ** 2, 6)  # → (100.0,
 [round(first_step(g), 6) for g in (1000, 1, 0.001)]  # → [0.01, 0.01, 0.01]
 ```
 
-**In code:** `Adam` keeps the two running averages and the step count for every weight and applies the five formulas in `Adam.step`; `adam_first_step` shows the first step is always the learning rate.
+So one learning rate serves weights whose gradients differ by orders of
+magnitude, as they do in a transformer, where embeddings, attention and
+layer norms all behave differently. On the narrow valley Adam reaches a
+loss below 10⁻¹⁰ in 300 steps, while plain SGD is still near 10⁻³.
 
-**Why it matters:** Adam is forgiving: one learning rate works across
-weights whose gradients differ by orders of magnitude, which is the norm in
-transformers (embeddings, attention, layer norms all behave differently).
-On the valley above it reaches a loss below 10⁻¹⁰ in 300 steps while plain
-SGD is still around 10⁻³.
+**In code:** `Adam` applies the five formulas in `Adam.step`, and `adam_first_step` takes the first step alone.
 
 ## Weight decay, and why AdamW exists
 
-Weight decay is a gentle leash that pulls every weight a little toward zero
-each step, so the model prefers small, smooth weights over large, spiky ones
-(a form of regularization; see `primer.ml.regularization`). The classic way
-to add it was an **L2 penalty**: add λw to the gradient. With plain SGD that
-is the same as shrinking the weight. With Adam it isn't, because Adam
-divides the whole gradient, penalty included, by its typical size. The
-leash's strength gets rescaled away.
+Adam's division has a side effect, and it shows up in weight decay.
+**Weight decay** is a leash on every weight: at each step it pulls the
+weight a little toward zero, so the model prefers small weights to large
+ones (a form of regularization;
+see `primer.ml.regularization`). The classic way to add it is an **L2
+penalty**: add λw to the gradient. With plain SGD that is the same as
+shrinking each weight by ηλw. With Adam it is not, because Adam divides the
+whole gradient, penalty included, by its typical size, and the strength λ
+is divided away with it. **AdamW** (Loshchilov and Hutter, 2017) decouples
+the two: it takes Adam's step on the loss gradient alone, then shrinks each
+weight by ηλw directly.
 
-Worked example: one step with zero loss-gradient, so only the decay acts.
-w = 1, learning rate 0.1.
+Take one step with no loss gradient, so only the decay acts, from w = 1 at
+a learning rate of 0.1:
 
 | method | decay λ = 0.1 | decay λ = 0.001 |
 |---|---|---|
 | AdamW (decoupled) | 1 − 0.1 × 0.1 = **0.99** | 1 − 0.1 × 0.001 = **0.9999** |
-| Adam with L2 in the gradient | **0.9** | **0.9** (the same!) |
+| Adam with L2 in the gradient | **0.9** | **0.9** |
 
-With L2 inside Adam, a 100× weaker penalty shrinks the weight exactly as
-much: λ has stopped meaning what it says.
+With L2 inside Adam, a penalty 100 times weaker shrinks the weight just as
+much.
 
 ```mermaid
 flowchart TB
@@ -474,10 +482,10 @@ flowchart TB
 ```
 
 **Reading it:** on the left, the decay term joins the gradient *before*
-Adam's rescaling, so it gets divided by √v̂ like everything else and its
-strength is distorted. On the right (AdamW), the decay bypasses the
-rescaling and shrinks the weights directly, so λ means exactly "shrink by
-η·λ per step".
+Adam's rescaling, so it is divided by √v̂ like everything else and its
+strength is lost. On the right (AdamW), the decay goes round the rescaling
+and shrinks the weights directly, so each step shrinks every weight by the
+fraction η·λ.
 
 $$
 \text{AdamW:}\quad w_{t+1} = w_t - \eta\,\frac{\hat{m}_t}{\sqrt{\hat{v}_t}+\epsilon} - \eta\,\lambda\, w_t
@@ -509,22 +517,23 @@ for lam in (0.1, 0.001):
     print(round(w - eta * g / abs(g), 4))  # → 0.9 0.9
 ```
 
-**In code:** `Adam` implements both recipes: with decoupled decay it is AdamW, otherwise it adds the L2 penalty to the gradient. `one_decay_step` runs the table.
+AdamW is the default optimizer for training transformers: Llama 2 was
+trained with it, and Hugging Face's trainer uses it unless told otherwise.
 
-**Why it matters:** AdamW is the default optimizer for transformers. The
-fix was a one-line change that made weight decay behave predictably and
-improved generalization.
+**In code:** `Adam` runs either recipe, and `one_decay_step` runs the table.
 
-## Warmup and cosine decay: easing on and off the gas
+## Warmup and cosine decay
 
-Think of driving an unfamiliar car. You ease onto the accelerator at first,
-because you don't yet know how it responds. You cruise at speed for most of
-the trip. Near the destination you slow gradually and glide into the
-parking spot. Transformers are trained the same way: the learning rate
-**warms up** linearly from 0 to its peak, then **decays** along a cosine
-curve toward a small floor.
+So far the learning rate has been one number for the whole run. Large runs
+change it as they go. They **warm up**: the rate climbs in a straight line
+from 0 to its peak over the first steps, because at the start the weights
+are random and Adam's averages rest on a handful of slopes, so a full-size
+step can throw the weights somewhere bad. Then the rate **decays** along
+half a cosine curve toward a small floor, so the last steps are small and
+the weights settle into a minimum instead of bouncing around it. Llama 2,
+for one, warmed up for 2,000 steps and decayed to 10% of its peak.
 
-Worked example with peak 0.001, 100 warmup steps, 1,000 steps total:
+With a peak of 0.001, 100 warmup steps and 1,000 steps in all:
 
 | step | phase | learning rate |
 |---|---|---|
@@ -538,7 +547,7 @@ Worked example with peak 0.001, 100 warmup steps, 1,000 steps total:
 **Reading it:** the horizontal axis is the training step and the vertical
 axis the learning rate. The short straight ramp on the left is warmup. Then
 the curve rolls over the top, falls fastest in the middle and flattens as it
-approaches the floor, like half a cosine wave. The dots are the table above.
+approaches the floor. The four dots are the rows of the table.
 
 $$
 \eta(t) =
@@ -582,23 +591,20 @@ def eta(t):
 [round(eta(t), 6) for t in (50, 100, 550, 1000)]  # → [0.0005, 0.001, 0.0005, 0.0]
 ```
 
-**In code:** `warmup_cosine` returns the learning rate for any step: the straight ramp during warmup, then the half cosine down to the floor.
+**In code:** `warmup_cosine` returns the learning rate for any step.
 
-**Why it matters:** at the very start, Adam's averages are unreliable and
-the weights are random, so a full-size step can wreck them; warmup avoids
-early divergence. The slow finish lets the model settle into a good minimum
-instead of bouncing around it.
+## Gradient clipping
 
-## Gradient clipping: a speed limiter
+A schedule plans for the start and the end of a run. It cannot plan for
+the rare batch that produces an enormous gradient, a sudden cliff in the
+fog, where a full step could throw the weights far from anywhere useful.
+**Gradient clipping** puts a limit on the gradient's length: a gradient
+longer than the limit is scaled down to it, keeping its direction, and a
+shorter one is left alone.
 
-Occasionally one bad batch produces an enormous gradient, a sudden cliff in
-the fog. Taking a full step along it could throw the weights far from
-anywhere useful. Clipping is a speed limiter: if the step would be longer
-than a set limit, shorten it to the limit, keeping its direction.
-
-Worked example: the gradient (3, 4) has length √(3² + 4²) = 5. With a limit
-of 1, scale it by 1/5 to get (0.6, 0.8), length 1, same direction. A gradient
-of (0.3, 0.4) has length 0.5, under the limit, so it's left alone.
+The gradient (3, 4) has length √(3² + 4²) = 5. With a limit of 1, scale it
+by 1/5 to get (0.6, 0.8): length 1, same direction. The gradient
+(0.3, 0.4) has length 0.5, under the limit, so it is left alone.
 
 ```mermaid
 flowchart LR
@@ -610,9 +616,9 @@ flowchart LR
 ```
 
 **Reading it:** first measure the length of *all* the gradients together,
-as if they were one long list. If it's within the limit, nothing happens.
-If not, every gradient is multiplied by the same factor, which shortens the
-step without changing its direction.
+as if they were one long list. Within the limit, nothing happens. Past it,
+every gradient is multiplied by the same factor, which shortens the step
+without turning it.
 
 $$
 g \leftarrow g \cdot \min\left(1, \frac{c}{\lVert g \rVert}\right), \qquad
@@ -649,28 +655,28 @@ clip([3, 4], c=1)  # → [0.6, 0.8]
 clip([0.3, 0.4], c=1)  # → [0.3, 0.4]
 ```
 
-**In code:** `clip_by_global_norm` measures the length of all gradients together and scales every one by the same factor when it exceeds the limit.
+Llama 2 clipped at 1.0, and Hugging Face's trainer clips at 1.0 by
+default. Gradients that grow out of control as they pass back through many
+layers are a separate problem, taken up in `primer.ml.deep_nets`.
 
-**Why it matters:** large-model training runs almost always clip (a limit of
-1.0 is common). It turns rare loss spikes from run-ending disasters into
-harmless blips. It's measured globally, across all layers together, so the
-update's direction is preserved (see `primer.ml.deep_nets` for exploding
-gradients).
+**In code:** `clip_by_global_norm` clips a list of gradients together.
 
 ## In 20 seconds
-- Gradient descent: step against the slope, scaled by the learning rate.
-- The learning rate is the most important knob: too high diverges, too low
-  stalls.
-- Momentum accumulates a velocity so consistent directions speed up and
-  zig-zags cancel.
+- Gradient descent steps against the slope of the loss, scaled by the
+  learning rate.
+- The learning rate is the first setting to get right: too high diverges,
+  too low stalls.
+- Momentum keeps a velocity, so steady directions speed up and zig-zags
+  cancel.
 - Adam gives every weight its own step size (average gradient ÷ its typical
-  size); AdamW decouples weight decay from that rescaling and is the
-  transformer default.
-- Transformers use warmup then cosine decay, and clip gradients by global norm.
+  size); AdamW keeps weight decay out of that division, so its strength
+  means what it says.
+- Large training runs warm the learning rate up, decay it along a cosine,
+  and clip the gradient's total length.
 
 ## Self-test questions
 
-**What's the single most important hyperparameter, and what happens at each extreme?**
+**Which setting should you get right first, and what happens at each extreme?**
 The learning rate. Too high: steps overshoot and training diverges or
 oscillates (loss spikes, NaNs). Too low: progress is so slow that training
 stalls or settles in a poor spot.

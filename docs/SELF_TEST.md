@@ -131,7 +131,7 @@ model to separate "on topic" from "actually answers the question".
 
 From [`primer.ml.optimizers`](../primer/ml/optimizers.py).
 
-**What's the single most important hyperparameter, and what happens at each extreme?**
+**Which setting should you get right first, and what happens at each extreme?**
 The learning rate. Too high: steps overshoot and training diverges or
 oscillates (loss spikes, NaNs). Too low: progress is so slow that training
 stalls or settles in a poor spot.
