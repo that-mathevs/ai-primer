@@ -134,56 +134,44 @@ its dial, you are done.
 
 ## Level 2: How it works, from scratch
 
-Level 2 builds every index above from nothing, starting with a picture and
-eight points on a map.
+Say you have just moved to a new country and want the house nearest to a
+landmark. You could walk to every house in the country and measure the
+distance. That is always right, and it takes forever. What people do
+instead is take the **highway** to the right region, **main roads** to the
+right town and **side streets** to the door. They look at a handful of
+places and nearly always reach the right house.
 
-**The everyday picture.** You've just moved to a new country and want the house nearest to a landmark.
-You could walk up to every house in the country and measure the distance.
-That's always right, but it takes forever. Or you could do what everyone
-actually does: take the **highway** to the right region, switch to **main
-roads** to the right town, then walk the **side streets** to the house. You
-check only a handful of places and still end up at (almost always) the right
-door.
+A search engine that works on meaning has the same problem. It stores every
+document as a **vector** (a list of numbers, see
+`primer.ml.embeddings.similarity`), turns the question into a vector too,
+and returns the documents whose vectors are *nearest* the question's. With
+ten million documents, walking to every house is too slow, so the engine
+builds a map with highways: an **approximate nearest neighbor (ANN)
+index**. It is *approximate* because, like the traveller, it now and then
+stops at the second-nearest house.
 
-That is the whole problem of this lesson. A search engine that works on
-meaning stores every document as a **vector** (a list of numbers, see
-`primer.ml.embeddings.similarity`) and turns the question into a vector too.
-The best documents are the vectors *nearest* the question. With ten million
-documents, "walk to every house" is too slow, so we build a map with
-highways. Structures like that are called **approximate nearest neighbor
-(ANN) indexes**. *Approximate* because, like the traveller, they very
-occasionally stop at the second-nearest house instead of the nearest.
+Four ideas sit behind most vector databases. Each saves work in its own way
+and gives something up for it:
 
-Four ideas cover almost every vector database in use:
-
-| Index | Everyday picture | What you give up |
+| Index | How it saves work | What you give up |
 |---|---|---|
-| **Flat** | Visit every house | Nothing; it's exact. Just slow at scale |
-| **IVF** | A library sorts books into sections; you search only the few nearest sections | Books shelved in the section next door |
-| **PQ** | Describe a face by picking the closest nose, eyes and mouth from a small catalogue | Fine detail: the description is lossy |
-| **HNSW** | Highway, then main roads, then side streets | Memory for all the roads, and the occasional near-miss |
+| **Flat** | It doesn't: it compares the query with every vector | Nothing, since it is exact; it is just slow at scale |
+| **IVF** | Sorts the vectors into sections ahead of time and searches only the nearest few | A neighbor filed in a section next door |
+| **PQ** | Stores each vector as a few short codes from a catalogue | Fine detail: its scores are approximate |
+| **HNSW** | Links the vectors into layers of roads, with highways on top | Memory for all the roads, and the occasional near-miss |
 
-A few words used throughout, in plain terms:
+Two terms come up in every chapter. An index returns the **top k**: the k
+stored vectors most similar to the query, the top 10 for instance. Its
+accuracy is measured by **recall@k**, the share of the true top k (found
+by checking every vector) that it actually returned. Recall@10 = 0.9 means
+it found 9 of the true 10.
 
-- **Similarity score.** How alike two vectors are. Here we use the **dot
-  product** (multiply the two lists position by position and add up). All
-  vectors are rescaled to length 1 first (**normalized**), so the dot
-  product equals the **cosine similarity**, which runs from −1 (opposite) to
-  1 (identical). Higher means closer.
-- **Top k.** The k best matches, e.g. the top 10.
-- **Recall@k.** Of the true top k (found by exhaustive search), the fraction
-  the index actually returned. Recall@10 = 0.9 means it found 9 of the true
-  10. It's the standard measure of an ANN index's accuracy.
-- **Big-O, e.g. O(N).** How the work grows with the data. O(N) means doubling
-  the number of vectors N doubles the work; O(log N) means doubling N adds
-  only one more step.
+## Eight houses on a map
 
-## A tiny worked example: eight houses on a map
-
-Every index in this lesson is shown first on the same eight points, drawn on
-a flat map so you can check each step with a pencil. The question (the
-**query**) sits at (5, 4). On a flat map "near" is ordinary distance; we keep
-it **squared** (dx² + dy²) so every number stays whole. Squaring doesn't
+Each index is easiest to follow on a handful of points you can check with a
+pencil. Take eight houses on a flat map, and put the question (the
+**query**) at (5, 4). On a flat map, "near" means ordinary distance. We keep
+it **squared** (dx² + dy²) so every number stays whole; squaring doesn't
 change which point is nearest.
 
 | Point | Position | Squared distance to the query (5, 4) |
@@ -197,19 +185,28 @@ change which point is nearest.
 | G | (2, 5) | 3² + 1² = **10** |
 | H | (5, 5) | 0² + 1² = **1** ← the true nearest |
 
-Checking all eight rows is **flat search**. It's exact, and it costs one
+Checking all eight rows is **flat search**. It is exact, and it costs one
 distance per stored point.
 
 ![On the eight-point map, HNSW reaches the query's nearest point in two hops, one along the highway from A to E and one along a street from E to H](figures/primer.ml.embeddings.ann.toy_map.svg)
 
-**Reading it:** the eight dots are the stored points and the yellow star is
-the query at (5, 4). Thin grey lines are the "streets" (layer 0: every point,
-linked to its neighbors); the thick blue lines are the "highway" (layer 1:
-only A, E and G). The red arrows are the HNSW search worked through below:
-one highway hop from A to E, then one street hop from E to H. It checked a
-few points near its route instead of reading the whole table.
+**Reading it:** the eight dots are the houses and the yellow star is the
+query at (5, 4). The thin grey lines are side streets, linking every house
+to its neighbors. The thick blue lines are a highway that joins only A, E
+and G. The red arrows are the traveller's route: one highway hop from A to
+E, then one street hop from E to H. At each stop the route looks only at
+that house's neighbors, never at the whole table. HNSW, the last of the four
+indexes, builds this kind of map and walks this route.
 
 ## 1. Flat search: the exact baseline
+
+Real embeddings are not points on a flat map, and "near" is measured by a
+**similarity score**. Here it is the **dot product**: multiply the two
+vectors number by number and add up the results. Every vector is first
+rescaled to length 1 (**normalized**), so the dot product equals the
+**cosine similarity**, which runs from −1 (opposite) to 1 (identical).
+Higher means closer. A flat search scores the query against every stored
+vector and keeps the k highest.
 
 ```mermaid
 flowchart LR
@@ -261,40 +258,41 @@ def sq_dist(p):
 min(points, key=lambda name: sq_dist(points[name]))  # → 'H'
 ```
 
-**In code:** `FlatIndex.search` scores the query against every stored vector
-and keeps the best k with `top_k`; `normalize` rescales vectors to length 1
-first, so the dot product is the cosine.
-
-**Why it matters:** flat search costs N·d multiply-adds per query. At 10
-million vectors of 1,536 dimensions that's about 15 billion, far too many
-for an interactive search, and the raw vectors alone take
+Each score takes d multiply-adds, so a flat search costs N·d of them per
+query. At 10 million vectors of 1,536 dimensions that is about 15 billion,
+far too many for an interactive search, and the raw vectors alone take
 10,000,000 × 1,536 × 4 bytes ≈ **61 GB** of memory. Below about a million
-vectors, flat search is often the right answer: simple, exact, and fast
+vectors, flat search is often the right answer: simple, exact and fast
 enough.
 
-**In code:** `storage_estimate` does that memory sum for any n and d.
+**In code:** `FlatIndex.search` scores every stored vector and keeps the
+best k; `storage_estimate` does the memory sum for any n and d.
 
-## 2. IVF: search only the nearest sections of the library
+## 2. IVF: search only the nearest sections
 
-**The everyday picture.** A library doesn't search every shelf for a book
-about sailing. It sorts books into sections ahead of time, and you go to
-"Sports" and maybe "Travel", the one or two most promising sections, and
-search only there. A sailing book shelved in the wrong section is missed
-unless you check that section too.
+A flat search reads every vector because nothing tells it where to look.
+A library solves the same problem by sorting its books into sections ahead
+of time. To find a book about sailing you go to "Sports" and perhaps
+"Travel", the one or two most promising sections, and search only there. A
+sailing book shelved somewhere else is missed unless you open its section
+too. **IVF** (the *inverted file* index) does this with vectors: it files
+every vector on a list, one list per section, and a query opens only a few
+lists.
 
-**On the eight points.** Split them into two groups (**clusters**) ahead of
-time: *left* = {A, B, C, D} and *right* = {E, F, G, H}. Each cluster is
-summarized by its **centroid**, the average position of its members:
-left = (1.75, 1), right = (3.75, 3.75). For the query (5, 4):
+On the eight houses, split the points ahead of time into two groups
+(**clusters**): *left* = {A, B, C, D} and *right* = {E, F, G, H}. Each
+cluster is summarized by its **centroid**, the average position of its
+members: left = (1.75, 1), right = (3.75, 3.75). The query (5, 4) is
+compared with the two centroids first:
 
 | Cluster | Centroid | Squared distance to (5, 4) |
 |---|---|---|
 | left | (1.75, 1) | 3.25² + 3² = 19.5625 |
 | right | (3.75, 3.75) | 1.25² + 0.25² = **1.625** ← probe this one |
 
-Scan only E, F, G, H: the nearest is H (distance 1). That's 2 centroid
-checks + 4 point checks = 6 instead of 8. With a million points in 1,000
-clusters the saving is enormous.
+The right cluster is nearer, so only E, F, G and H are scanned, and the
+nearest of them is H (distance 1). That is 2 centroid checks and 4 point
+checks: 6 instead of 8.
 
 ```mermaid
 flowchart TB
@@ -318,17 +316,18 @@ vectors into `nlist` lists. The bottom box runs per query and never touches
 lists it didn't pick. The only dial is `nprobe`: how many lists to open.
 
 The set of all points closer to one centroid than to any other is called that
-centroid's **Voronoi cell**: the "section" of the library. IVF's blind spot
-is a true neighbor sitting just across a cell boundary.
+centroid's **Voronoi cell**: it is the library's section. IVF misses a true
+neighbor that sits just across a cell boundary, in a cell the query did not
+open.
 
 ![IVF compares the query with 12 centroids and scans only the two nearest cells, so every point in the other ten cells is never looked at](figures/primer.ml.embeddings.ann.ivf_cells.svg)
 
 **Reading it:** 600 points, colored by which of 12 centroids (black X) they
-belong to; each color patch is a Voronoi cell. The query (yellow star)
-compares itself with the 12 centroids, then scans only the two nearest cells
-(red X, bright points). The faded points are never looked at. A true neighbor
-sitting just across a boundary, in a faded cell, would be missed, which is
-exactly why raising `nprobe` raises recall.
+belong to; each color patch is a Voronoi cell. The query (yellow star) is
+compared with the 12 centroids, then only the two nearest cells (red X,
+bright points) are scanned. The faded points are never looked at. A near
+neighbor among them would be missed, and raising `nprobe` opens more cells
+to catch it.
 
 $$
 \text{comparisons per query} \approx n_{\text{list}} + N \cdot \frac{n_{\text{probe}}}{n_{\text{list}}}
@@ -367,26 +366,27 @@ comparisons(8, 2, 1)  # → 6
 comparisons(1_000_000, 1_000, 10)  # → 11000
 ```
 
-**In code:** `IVFIndex.train` finds the centroids with `kmeans`,
-`IVFIndex.add` files each vector on its nearest centroid's list, and
-`IVFIndex.search` scans only the nprobe nearest lists. `tiny_ivf_search`
-replays the eight-point example.
+IVF is cheap to build and light on memory. Setting `nprobe = nlist` opens
+every list and gives back an exact flat search, which is a useful check that
+the index works. Its accuracy depends on how well the clusters fit the data,
+so retrain the centroids when the data changes a lot.
 
-**Why it matters:** IVF is cheap to build and light on memory, and
-`nprobe = nlist` gives you back an exact flat search, which is a handy
-sanity check. Its accuracy depends on how well the clusters fit the data, so
-retrain the centroids when the data changes a lot.
+**In code:** `IVFIndex` trains the centroids with `kmeans`, files each
+vector on its nearest centroid's list and scans only the nprobe nearest
+lists; `tiny_ivf_search` replays the eight-house example.
 
 ## 3. PQ: store each vector as a few catalogue numbers
 
-**The everyday picture.** A police sketch artist doesn't record every pixel
-of a face. They pick the closest nose from a catalogue of 256 noses, the
-closest eyes from 256 eyes, the closest mouth, and so on. The whole face
-becomes a handful of catalogue numbers: tiny to store, close enough to
-recognize someone. That's **product quantization (PQ)**. To **quantize**
-means to round a value to the nearest entry of a fixed set.
+IVF cuts how many vectors a query reads, but each vector is still stored in
+full, at 4 bytes a number. **Product quantization (PQ)** shrinks the vectors
+themselves. To **quantize** means to round a value to the nearest entry of a
+fixed set. A police sketch artist works this way: instead of drawing every
+detail of a face, they pick the closest nose from a catalogue of 256 noses,
+the closest eyes from 256 eyes, the closest mouth, and so on. The face
+becomes a handful of catalogue numbers, small to store and close enough to
+recognize someone. PQ does the same to a vector, one piece at a time.
 
-**On a 4-number vector.** Split x = (0.9, 0.1, −0.2, 0.8) into two halves.
+Take a 4-number vector, x = (0.9, 0.1, −0.2, 0.8), and split it into two halves.
 Each half is matched against a four-entry catalogue (a **codebook**), here
 the four compass directions: 0 = (1, 0), 1 = (0, 1), 2 = (−1, 0),
 3 = (0, −1).
@@ -406,8 +406,8 @@ per half: the query's half dotted with each catalogue entry.
 | T₂ (q's half 2 = (0, 1)) | 0 | 1 | 0 | −1 |
 
 The approximate score of codes [0, 1] is T₁[0] + T₂[1] = 1 + 1 = **2**. The
-exact score is 0.9 + 0.8 = **1.7**: close, not identical. That's the price of
-compression.
+exact score is 0.9 + 0.8 = **1.7**. The gap is the detail lost when each
+half was rounded to its catalogue entry.
 
 ```mermaid
 flowchart LR
@@ -424,11 +424,11 @@ flowchart LR
 ```
 
 **Reading it:** the left box shrinks every stored vector to m bytes, once.
-The right box is the trick: the query is *not* compressed. We precompute m
-tables of 256 numbers, and then scoring any stored vector is just m lookups
-and additions, with no multiplication at all. Keeping the query exact while
-the stored side is compressed is called **asymmetric distance computation
-(ADC)**.
+The right box runs per query, and the query itself is *not* compressed. Its
+m tables of 256 numbers are worked out once, and then scoring any stored
+vector takes m lookups and additions, with no multiplication at all. Keeping
+the query exact while the stored side is compressed is called **asymmetric
+distance computation (ADC)**.
 
 $$
 \hat{s}(q, x) = \sum_{j=1}^{m} T_j\big[c_j(x)\big], \qquad T_j[c] = q^{(j)} \cdot C_j[c]
@@ -478,17 +478,11 @@ sum(T[j][codes[j]] for j in range(2))  # → 2
 round(dot(q, x), 2)  # → 1.7
 ```
 
-**In code:** `ProductQuantizer` learns the codebooks (`ProductQuantizer.train`),
-rounds vectors to codes (`ProductQuantizer.encode`), builds the Tⱼ tables
-(`ProductQuantizer.lookup_table`) and sums the lookups
-(`ProductQuantizer.adc_scores`). `tiny_pq_example` replays the 4-number
-example by hand-setting the compass codebooks.
-
-**Why it matters:** a 768-dimension float32 vector is 3,072 bytes; with
-m = 96 it's 96 bytes, 32× smaller, so a billion vectors fit in about 100 GB
+At full size, a 768-dimension float32 vector is 3,072 bytes. With m = 96
+it is 96 bytes, 32× smaller, so a billion vectors fit in about 100 GB
 instead of 3 TB. The lost accuracy is recovered by **re-scoring**: take the
 top few hundred by PQ score and recompute their exact scores from the full
-vectors kept on disk. Real systems combine PQ with IVF (**IVF-PQ**) and
+vectors, kept on disk. Large systems combine PQ with IVF (**IVF-PQ**) and
 encode each vector's *residual* (its offset from its cluster centroid),
 which is smaller and so rounds more precisely.
 
@@ -498,26 +492,28 @@ which is smaller and so rounds more precisely.
 compression). The orange line uses PQ scores alone: at 8 bytes per vector
 (32× smaller than the raw 256 bytes) it finds under half of the true top 10.
 The blue line re-scores PQ's top 100 with the exact vectors and is near
-perfect from 8 bytes up. The lesson: PQ is excellent at *shortlisting* and
-poor at *final ranking*, so production systems always re-score.
+perfect from 8 bytes up. PQ scores are good for *shortlisting* and poor for
+*final ranking*, which is why the shortlist is re-scored.
 
-**In code:** `PQIndex` scans every PQ code and can re-score its top
-candidates with the exact vectors; `IVFPQIndex` combines IVF lists with
+**In code:** `ProductQuantizer` learns the codebooks, encodes vectors and
+scores them by lookup (`tiny_pq_example` replays the 4-number example);
+`PQIndex` adds re-scoring, and `IVFPQIndex` combines IVF lists with
 PQ-encoded residuals.
 
-## 4. HNSW: highway, main roads, side streets
+## 4. HNSW: a graph in layers
 
-**The everyday picture.** Back to the traveller: highways to get close fast,
-main roads to get closer, side streets to find the door. **HNSW**
-(*Hierarchical Navigable Small World*) builds exactly that as a **graph**: a
-set of points (**nodes**) joined by links (**edges**). Every vector is a node
-on the bottom layer (the side streets). A random few are also placed on
-layer 1 (main roads), fewer still on layer 2 (highways), and so on.
+IVF narrows a search to a few sections, and PQ makes each vector small.
+**HNSW** (*Hierarchical Navigable Small World*) goes back to the
+traveller's map. It is a **graph**: a set of points (**nodes**) joined by
+links (**edges**). Every vector is a node on the bottom layer, the side
+streets. A random few are also placed on layer 1, the main roads, fewer
+still on layer 2, the highways, and so on. A search uses the upper layers to
+get close fast and the bottom layer to find the door.
 
-**On the eight points.** Layer 1 holds only A, E and G. Layer 0 holds all
-eight, linked to nearby points (the thin lines in the figure above). A
-**greedy search** means "always move to whichever neighbor is closest to the
-target; stop when none is closer". Start at A:
+On the eight houses, layer 1 holds only A, E and G, joined by the highway.
+Layer 0 holds all eight, linked by the side streets on the eight-house map.
+The search is **greedy**: always move to whichever neighbor is closest to
+the query, and stop when none is closer. Start at A:
 
 | Step | Layer | At | Neighbors checked (squared distance) | Move? |
 |---|---|---|---|---|
@@ -541,16 +537,15 @@ flowchart TD
   E1 -.-> E0
 ```
 
-**Reading it:** three layers of the same kind of map, fewer nodes the higher
-you go. Solid lines are links within a layer; dotted arrows are "the same
-node, one layer down". A search enters at the top, crosses a lot of ground
-in a few long jumps (A to D), then follows a dotted arrow down and continues
-from the same node with finer steps, until the bottom layer, where every
-vector lives.
+**Reading it:** a small graph in general form (its letters are not the
+eight houses), with fewer nodes the higher you go. Solid lines are links
+within a layer; dotted arrows are "the same node, one layer down". A search
+enters at the top, crosses a lot of ground in one long jump (A to D), then
+follows a dotted arrow down and continues from the same node with finer
+steps, until it reaches the bottom layer, where every vector lives.
 
-**In code:** `tiny_hnsw_search` replays the greedy walk from the table above
-on the eight-point map and returns every stop; `HNSWIndex` is the full index
-used on real vectors.
+**In code:** `tiny_hnsw_search` replays the walk in the table on the
+eight-house map; `HNSWIndex` is the full index used on real vectors.
 
 ### The search, step by step
 
@@ -568,9 +563,9 @@ flowchart TD
 closer exists, else drop a layer. On the upper layers it keeps a single best
 node. On the bottom layer it switches to a **beam search**, which keeps a
 shortlist of the best `efSearch` nodes found so far, not just one, and keeps
-exploring from the most promising. That wider net is what protects against
-getting stuck at a point that is only *locally* the best. `efSearch` is the
-dial you tune at query time.
+exploring from the most promising. The wider net protects against getting
+stuck at a point that is only *locally* the best. `efSearch` is the dial you
+tune at query time.
 
 ![One HNSW query takes a couple of long hops on the 14-node layer, a few on the 64-node layer, then a small local search among all 300 points, comparing only 51 vectors in all](figures/primer.ml.embeddings.ann.hnsw_search_path.svg)
 
@@ -578,11 +573,11 @@ dial you tune at query time.
 64, then 14, and a single node on top, which is the entry point. The top
 layer has nothing to hop to, so the figure leaves it out and draws the other
 three, left to right: 14 nodes, 64, and the bottom with all 300. Grey lines
-are the graph's links. The red path is one real query (yellow star) run by
-the code below; the red circle marks where the search entered each layer. On
-the left it covers most of the map in a couple of long hops. By the bottom
-layer it is already next to the star, and it only explores a small
-neighborhood. Out of 300 points, it compared the query with 51, a few dozen.
+are the graph's links. The red path is one real query (yellow star), and the
+red circle marks where the search entered each layer. On the left it covers
+most of the map in a couple of long hops. By the bottom layer it is already
+next to the star, and it explores only a small neighborhood. In all, it
+compared the query with 51 of the 300 points.
 
 **Try it:** the map below has 60 points on four layers. Pick a query and
 drag Step: watch the walk cross the map in long hops on the sparse upper
@@ -593,10 +588,9 @@ closer one. Widen the beam to 4 and step through again.
 
 <div class="viz" data-viz="hnsw-search" aria-label="HNSW search, step by step, on a 60-point map"></div>
 
-**In code:** `HNSWIndex.search` runs the greedy descent and the bottom-layer
-beam search; `HNSWIndex.search_trace` does the same and returns every node it
-expanded, which is what this figure draws. `small_hnsw_map` builds the
-60-point graph the widget searches, and `viz_data` hands it to the page.
+**In code:** `HNSWIndex.search` runs the greedy descent and the beam
+search; `HNSWIndex.search_trace` also returns every node it expanded, which
+is what the map draws.
 
 ### How the layers are built
 
@@ -614,20 +608,20 @@ flowchart TD
 ```
 
 **Reading it:** inserting a vector is a search followed by wiring. The random
-draw at the top decides how many layers the node lives on. The search part
-is the same as a query, just with a wider beam (`efConstruction`) for a
-better-quality result. The wiring part keeps each node's links to a fixed
-budget, so the graph never gets too dense to walk quickly.
+draw at the top decides how many layers the node lives on. The search is the
+same as a query's, with a wider beam (`efConstruction`) for a better result.
+The wiring keeps each node's links within a fixed budget, so the graph never
+gets too dense to walk quickly.
 
-**The diversity heuristic.** When choosing a new node's M neighbors, go
-through the candidates from nearest to farthest and keep one only if it is
-closer to the new node than to every neighbor already kept. Otherwise a kept
-neighbor already "covers" that direction. Without this rule, in clustered
-data all M links would point into the same clump, and the graph could split
-into islands a greedy walk can't cross. With it, links fan out in different
-directions and long "bridges" between clusters survive.
+The **diversity heuristic** decides which M neighbors a new node keeps. Go
+through the candidates from nearest to farthest, and keep one only if it is
+closer to the new node than to every neighbor already kept; otherwise a kept
+neighbor already covers that direction. Without this rule, in clustered data
+all M links would point into the same clump, and the graph could split into
+islands a greedy walk can't cross. With it, links fan out in different
+directions, and long bridges between clusters survive.
 
-The random layer draw is where the math comes in:
+The random draw that decides a node's top layer is a formula:
 
 $$
 \ell = \left\lfloor -\ln(U) \cdot m_L \right\rfloor, \qquad m_L = \frac{1}{\ln M}, \qquad P(\ell \ge l) = M^{-l}
@@ -681,18 +675,22 @@ for U in (0.5, 0.05):
 | `efConstruction` | build | a better-quality graph, a slower build |
 | `efSearch` | **query time** | a wider beam: better recall, slower queries |
 
-**In code:** `HNSWIndex.add` inserts each vector this way: draw its layer,
-beam-search each layer with efConstruction, keep up to M diverse neighbors
-and link both ways. `HNSWIndex.layer_sizes` counts the nodes on each layer,
-and `HNSWIndex.memory_bytes` adds up the vectors plus their links.
+HNSW is the default index in most vector databases because it gives high
+recall at low latency with no training step. It pays in memory, since every
+vector *plus* its links must sit in RAM, and in slow builds for very large
+collections. At billions of vectors, teams switch to IVF-PQ, shard HNSW
+across machines, or use disk-based graphs (DiskANN).
 
-**Why it matters:** HNSW is the default index in most vector databases
-because it gives high recall at low latency with no training step. Its costs
-are memory (every vector *plus* its links must sit in RAM) and slow builds
-for very large collections. At billions of vectors, teams switch to IVF-PQ,
-shard HNSW across machines, or use disk-based graphs (DiskANN).
+**In code:** `HNSWIndex.add` inserts each vector as the flowchart shows;
+`HNSWIndex.layer_sizes` counts the nodes on each layer, and
+`HNSWIndex.memory_bytes` adds up the vectors and their links.
 
 ## Turning the dial: recall vs. work
+
+IVF and HNSW each have a dial that buys recall with work: `nprobe` opens
+more IVF lists, and `efSearch` widens the HNSW beam. To compare them, run
+both on the same collection at several settings, and score each run's
+results against a flat search.
 
 ![Both HNSW and IVF rise steeply and then flatten as their dial widens, and HNSW reaches about 0.95 recall while comparing around a fifth of the 2,000 vectors](figures/primer.ml.embeddings.ann.recall_vs_work.svg)
 
@@ -700,12 +698,11 @@ shard HNSW across machines, or use disk-based graphs (DiskANN).
 efSearch for HNSW and nprobe for IVF). The x-axis is the share of the whole
 collection compared per query, on a log scale (each tick is 10× more work),
 and the dashed line at 100% is a flat scan. The y-axis is recall@10. Read it
-as a menu: the further up and to the left, the better. HNSW reaches about 0.95
-recall while comparing around a fifth of these 2,000 vectors. On real
+as a menu: the further up and to the left, the better. HNSW reaches about
+0.95 recall while comparing around a fifth of these 2,000 vectors. On
 collections of millions the share is far smaller, because the number of
-hops grows only slowly with N. Both curves rise steeply and
-then flatten, which is why the last few points of recall are the expensive
-ones.
+hops grows only slowly with N. Both curves rise steeply and then flatten,
+so the last few points of recall cost the most work.
 
 $$
 \text{recall@}k = \frac{\lvert \text{returned top } k \;\cap\; \text{true top } k \rvert}{k}
@@ -739,26 +736,31 @@ k = 10
 len(returned & true_top) / k  # → 0.9
 ```
 
-**In code:** `recall_at_k` computes this share; `ground_truth` runs the exact
-flat search that supplies the true top k, and `evaluate` reports recall,
-latency and distance computations per query for any index.
+Every index trades recall against latency, and where its curve flattens
+depends on the data. So pick a setting by measuring recall@k against a flat
+search *on your own vectors* while you turn the dial, then check the
+95th-percentile latency.
 
-**Why it matters:** recall and latency are traded against each other on
-every index. The only reliable way to pick a setting is to measure recall@k
-against a flat index *on your own vectors* while you turn the dial, then
-check the 95th-percentile latency.
+**In code:** `recall_at_k` computes the share, `ground_truth` runs the flat
+search that supplies the true top k, and `evaluate` reports recall, latency
+and distance computations per query for any index.
 
 ## In 20 seconds
-- **Flat** compares the query with everything: exact, O(N). It's the ground
-  truth, and fine for small collections.
-- **IVF** clusters ahead of time and searches the `nprobe` nearest clusters.
-- **PQ** compresses each vector to a few bytes and scores by table lookup;
-  re-score a shortlist with exact vectors.
-- **HNSW** is a layered graph: long jumps on top, a careful beam search at
-  the bottom. `efSearch` trades recall for latency; `M` and `efConstruction`
-  set graph quality at build time. It's fast and accurate, but memory-hungry.
-- Always measure **recall@k against a flat index** on your own data while you
-  turn the dial.
+- **Flat** search compares the query with every stored vector. It is exact,
+  its cost grows in step with the collection, and every index is measured
+  against it.
+- **IVF** sorts the vectors into clusters ahead of time, and a query
+  searches only the `nprobe` clusters nearest to it.
+- **PQ** stores each vector as a few one-byte codes and scores it by table
+  lookup. Its scores are good enough for a shortlist, which is then
+  re-scored with the exact vectors.
+- **HNSW** links the vectors into a layered graph: a query makes long hops
+  on the sparse upper layers and a beam search on the bottom one. `efSearch`
+  trades recall for speed at query time; `M` and `efConstruction` set the
+  graph's quality when it is built. It is fast and accurate, and holds every
+  vector and link in memory.
+- Choose a setting by measuring **recall@k against a flat search** on your
+  own vectors while you turn the dial.
 
 ## Self-test questions
 
@@ -823,8 +825,8 @@ dimension or size predicts little. Always measure on your own vectors.
   search using Hierarchical Navigable Small World graphs* (2016).**
   https://arxiv.org/abs/1603.09320. Introduced HNSW: the layered graph, the
   exponential layer draw with m_L = 1/ln M, and the diversity heuristic for
-  choosing neighbors, which together gave logarithmic-feeling search with
-  state-of-the-art recall. [annotated companion](../../../papers/hnsw.html)
+  choosing neighbors. The paper reports search cost that grows with the
+  logarithm of the collection's size. [annotated companion](../../../papers/hnsw.html)
 - **Jégou, Douze & Schmid, *Product Quantization for Nearest Neighbor
   Search* (IEEE TPAMI, 2011).** https://ieeexplore.ieee.org/document/5432202.
   Introduced product quantization, asymmetric distance computation and the
