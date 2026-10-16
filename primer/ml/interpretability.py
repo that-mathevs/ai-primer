@@ -131,32 +131,20 @@ production, you are done.
 
 ## Level 2: How it works, from scratch
 
-**Everyday picture.** A car makes a strange noise. You can take it for a
-test drive and note when the noise happens: that is testing the car's
-*behaviour*. Or you can open the hood, put a stethoscope on the engine,
-and swap parts until the noise stops: that is looking at the *mechanism*.
-Test drives tell you *what* the car does. Only the open hood tells you
-*why*.
+Testing a model's outputs (see `primer.agents.evals`) shows what it says.
+**Interpretability** asks what its internal numbers represent, and which
+of them cause the answer. Those numbers are the **hidden states**: the
+list of numbers each layer outputs as the model runs. The output alone
+cannot always tell you what you need. A model can be right for the wrong reason: an image classifier that
+"detects" wolves by looking for snow in the background scores well until
+it meets a wolf on grass. When a model gets something wrong, you want to
+know which step failed, the way a stack trace tells you more than the
+error message. And some questions (is it relying on a stereotype? does it
+know more than it says?) can only be answered by reading the computation
+itself.
 
-Every other lesson in this primer treats a trained model as something to
-build, train or call. Evaluations (`primer.agents.evals`) are test drives:
-they measure what the model says. **Interpretability** opens the hood. It
-asks what the model's billions of internal numbers represent, and which of
-them cause the answer. Three reasons to care:
-
-- **Debugging.** When a model gets something wrong, you want to know which
-  step failed, the same way you read a stack trace rather than just the
-  error message.
-- **Trust.** A model can be right for the wrong reason. An image classifier
-  that "detects" wolves by looking for snow in the background scores well
-  until it meets a wolf on grass.
-- **Safety.** The output is only part of what a model computes. Some
-  questions (is it relying on a stereotype? does it know more than it
-  says?) can only be answered by reading the computation itself.
-
-**A tiny worked example.** This lesson asks four questions of one kind of
-sentence, "the Eiffel Tower is in …" → "Paris", each with its own tool, on
-toy models small enough to check by hand:
+There are four questions to ask of a model's hidden states, each with its
+own tool:
 
 | Question | Tool | What our toy shows |
 |---|---|---|
@@ -182,28 +170,29 @@ model computes inside itself while it runs. The top two tools only *read*
 those numbers, so what they find is a correlation. Patching *changes* them
 and watches the output, so what it finds is a cause. Sparse autoencoders
 answer an earlier question: before you can read or change "a feature", you
-need to know what the features are. Keep the reading/intervening split in
-mind; it is the most important distinction in this lesson.
+need to know what the features are. Reading shows what is there; only
+intervening shows what the model uses.
 
 ## A feature is a direction
 
-**Everyday picture.** A band with two instruments plays through two
-speakers. The sound engineer pans the guitar mostly to the right speaker
-and the piano mostly to the left, but each speaker plays a *mix* of both.
-If you unplug one speaker you don't lose "the guitar"; you lose part of
-everything. The instruments are not the speakers. Each instrument is a
-*setting across all speakers*, a direction, and the sound in the room is
-the sum of every instrument times how loudly it plays.
+Every one of these tools works on hidden states, so the first thing to
+know is how a hidden state holds what the model has learned.
 
-A model's hidden state works the same way. The speakers are **neurons**:
-the individual numbers in a layer's output vector. The instruments are
-**features**: the things the model has learned to track, such as "this
-review is positive" or "this verb is in the past tense". Each feature is
-stored as a **direction** in the space of neurons, and the hidden state is
-the sum of every active feature's direction, scaled by how strongly it is
-present.
+Picture a band with two instruments playing through two speakers. The
+sound engineer pans the guitar mostly to the right speaker and the piano
+mostly to the left, but each speaker plays a *mix* of both. Unplug one
+speaker and you lose part of everything, not "the guitar". Each
+instrument is a *setting across all speakers*, a direction, and the sound
+in the room is the sum of every instrument times how loudly it plays.
 
-**A tiny worked example.** Take a hidden layer with two neurons and two
+A hidden state works the same way. The speakers are **neurons**: the
+individual numbers in the hidden state. The instruments are **features**:
+the things the model has learned to track, such as "this review is
+positive" or "this verb is in the past tense". Each feature is stored as
+a **direction** in the space of neurons, and the hidden state is the sum
+of every active feature's direction, scaled by how strongly it is present.
+
+Take a hidden layer with two neurons and two
 features whose directions are "positive" = (0.6, 0.8) and "past tense" =
 (0.8, −0.6). A sentence that is quite positive (0.9) and a little
 past-tense (0.4) has the hidden state
@@ -246,8 +235,8 @@ feature's direction."
 (0.86, 0.48)$, and $\hat{f}_1 = (0.6, 0.8) \cdot (0.86, 0.48) = 0.9$. The
 read-back is exact here because the two directions are **perpendicular**
 (their dot product is 0.6 · 0.8 + 0.8 · (−0.6) = 0) and each has length 1.
-Hold on to that condition: the section on superposition is about what
-happens when it fails.
+Superposition, later in this lesson, is what happens when that condition
+fails.
 
 **In Python:**
 
@@ -270,28 +259,28 @@ round(sum(p * q for p, q in zip(positive, past)), 2)  # → 0.0
 the two feature directions; the red arrow is the hidden state. The dotted
 lines drop from the hidden state onto each feature arrow, and where they
 land (0.9 of the way along blue, 0.4 along green) is the dot product: the
-amount of that feature. Notice that the red arrow's coordinates on the
-*neuron* axes, 0.86 and 0.48, are neither amount. To read a model you have
-to look along the right directions, not along the neurons.
+amount of that feature. The red arrow's coordinates on the *neuron* axes,
+0.86 and 0.48, are neither amount: the features show up only along their
+own directions.
 
-That features are directions, and that most of what a model tracks can be
-read with a dot product, is called the **linear representation
-hypothesis**. It is a hypothesis, not a law, but it holds often enough to
-power everything below. You have met it before: word-vector arithmetic
-such as king − man + woman ≈ queen (`primer.ml.embeddings.word2vec`) works
-because "royalty" and "gender" are directions.
+The idea that features are directions, so that most of what a model
+tracks can be read with a dot product, is called the **linear
+representation hypothesis**. It is a working assumption, not a proven
+law, and every tool in this lesson rests on it. Word-vector arithmetic
+such as king − man + woman ≈ queen (`primer.ml.embeddings.word2vec`) rests
+on the same idea: "royalty" and "gender" are directions.
 
 **In code:** `compose_features` builds a hidden state from feature amounts and `read_features` reads them back with dot products.
 
-## Probes: can a straight line read it out?
+## Probes: reading a property with a straight line
 
-**Everyday picture.** A doctor can't ask your liver how it is doing, but a
-blood test can measure a marker that tells them. A **probe** is a blood
-test for a hidden state: a tiny classifier, trained by you, that looks at a
-layer's activations and answers one yes/no question, such as "is this
-review positive?". The model itself is frozen; only the probe learns.
+A dot product reads a feature only if you know its direction, and a real
+model does not label its directions. A **probe** learns one from
+examples. It is a tiny classifier, trained by you, that looks at a layer's
+activations and answers one yes/no question, such as "is this review positive?". The
+model itself is frozen; only the probe learns.
 
-**A tiny worked example.** A probe for "positive" on a two-neuron layer
+A probe for "positive" on a two-neuron layer
 has weights w = (1, 0.5) and bias b = 0. On the hidden state h = (2, −1):
 
 1. Score it: 1 · 2 + 0.5 · (−1) + 0 = 1.5.
@@ -341,10 +330,10 @@ round(1 / (1 + math.exp(-z)), 3)  # → 0.818
 round(1 / (1 + math.exp(-(-1 * 1.0 + 1 * 0.5))), 3)  # → 0.378
 ```
 
-This is exactly **logistic regression** (`primer.ml.neural_net`), trained
-the usual way: show it examples whose answer you know, measure its
-binary cross-entropy (`primer.ml.losses`), and nudge w and b downhill. The
-gradient of that loss with respect to the score is simply (p − y), the gap
+A probe is **logistic regression** (`primer.ml.neural_net`), trained the
+usual way: show it examples whose answer you know, measure its binary
+cross-entropy (`primer.ml.losses`), and nudge w and b downhill. The
+gradient of that loss with respect to the score is (p − y), the gap
 between the probe's probability and the true 0/1 label, which makes each
 update one line of code.
 
@@ -360,37 +349,32 @@ flowchart LR
 
 **Reading it:** the solid arrows are one forward pass; the dotted arrow is
 learning. The gradient stops at the probe: the model under study never
-changes, so whatever the probe finds was already in the hidden state. That
-is the point of a probe. It measures the model, not a new model trained on
-top of it.
+changes, so whatever the probe finds was already in the hidden state.
 
-**On our toy model.** `PlantedModel` stores two known features in a
-32-neuron hidden layer: sentiment and tense, each as ±1 along its own
+**On a toy model.** The toy stores two known features in a 32-neuron
+hidden layer: sentiment and tense, each as ±1 along its own
 random direction, plus random noise of size 0.4 on every neuron. No single
 neuron holds either feature. A probe trained on just 100 examples reads
 sentiment correctly on **99%** of 1,000 examples it never saw.
 
-**Why keep probes simple, and check them against a control.** A probe can
-succeed for the wrong reason. Give a probe **random labels**, a *control
-task* with nothing real to find, and it still fits **73%** of its 100
-training examples, because 33 adjustable numbers can memorize a lot of
-noise. On unseen examples it scores **50%**, a coin flip. Two habits
-follow: always score a probe on examples it never saw, and compare it with
-a control task, so that "the probe works" means "the hidden state encodes
-this" rather than "the probe is clever". This is also why probes are kept
-*linear*: a powerful probe (a deep network) could compute the property
-from raw ingredients by itself, and then its success would tell you about
-the probe, not the model.
+**Checking a probe against a control.** A probe can succeed for the
+wrong reason. Give a probe **random labels**, a *control task* with
+nothing real to find, and it still fits **73%** of its 100 training
+examples, because 33 adjustable numbers can memorize a lot of noise. On
+unseen examples it scores **50%**, a coin flip. So score a probe on
+examples it never saw, and compare it with a control task. Then a probe
+that works means the hidden state encodes the property, and not that the
+probe memorized its examples. The same worry keeps probes *linear*: a
+powerful probe (a deep network) could compute the property from raw
+ingredients by itself, and its success would then describe the probe, not
+the model.
 
 ### Decodable is not the same as used
 
-**Everyday picture.** A library holds a book nobody ever borrows. Finding
-it on the shelf proves the library *has* it, not that it shaped anything
-any reader did.
-
-**A tiny worked example.** Our toy model's output reads sentiment and, by
-construction, gives tense a weight of exactly zero. A probe still reads
-tense at **98%** on unseen examples. Now intervene: take 200 examples, flip
+A probe shows that a hidden state holds a property. It does not show that
+the model uses it. The toy model makes the gap plain: its output reads
+sentiment and, by construction, gives tense a weight of zero. A probe
+still reads tense at **98%** on unseen examples. Now intervene: take 200 examples, flip
 only one feature's label, keep everything else fixed, and measure how much
 the model's output moves.
 
@@ -405,34 +389,33 @@ the model's output moves.
 accuracy on the probe's own training examples, blue bars on unseen ones,
 and the red dashed line is chance. Sentiment and tense are both clearly
 readable; random labels look readable on the training set and collapse to
-chance on unseen data, which is exactly what the control is for. The right
+chance on unseen data, which is what the control is for. The right
 panel is what the model *uses*: the change in its output when one feature
 is flipped. Tense is as readable as sentiment and has no effect at all.
 The two panels answer different questions, and only the right one is about
 cause.
 
-A probe finding information does not mean the model uses it. To find out
-what the model uses you have to change something and watch the output,
-which is what the rest of this lesson does.
+To find out what the model uses, you have to change something inside it
+and watch the output. Activation patching, below, does that.
 
 **In code:** `train_probe` fits a `Probe` by gradient descent on frozen hidden states from `PlantedModel`; `probe_report` trains the three probes, and `flip_effect` performs the intervention.
 
-## The logit lens: reading the model's mind mid-thought
+## The logit lens: what each layer would predict
 
-**Everyday picture.** A writer keeps every draft of an article. Draft 1
-says the landmark is "in a European capital", draft 2 says "probably
-Paris", the final says "Paris". Reading the drafts shows *when* the writer
-made up their mind. The **logit lens** reads a language model's drafts.
+A probe needs labelled examples, and it answers one yes/no question at a
+time. The **logit lens** needs no training at all. It reads a language
+model's hidden state as a draft of the answer: what would the model
+predict if it stopped at this layer? Reading the drafts layer by layer
+shows *when* the model settles on its answer.
 
 It works because of how a transformer is built (`primer.ml.transformer`).
 Each word has a running vector, the **residual stream**. Every layer reads
-it and *adds* a correction to it, rather than replacing it. At the very
-end, the output layer (the **unembedding**) turns the final vector into
+it and *adds* a correction to it, rather than replacing it. At the end,
+the output layer (the **unembedding**) turns the final vector into
 one score per word in the vocabulary. Because every layer writes into the
-same stream, you can apply that final step early, after any layer, and ask
-"what would the model predict if it stopped here?"
+same stream, you can apply that final step early, after any layer.
 
-**A tiny worked example.** A vocabulary of three words, Paris, London and
+Take a vocabulary of three words, Paris, London and
 Rome, a residual stream of two numbers, and an unembedding that scores
 Paris = first number, London = second number, Rome = minus the first:
 
@@ -442,8 +425,8 @@ Paris = first number, London = second number, Rome = minus the first:
 | layer 1, which adds (0.6, 0) | (0.8, 0.3) | (0.8, 0.3, −0.8) | (0.55, 0.34, 0.11) | Paris |
 | layer 2, which adds (1.2, −0.3) | (2.0, 0.0) | (2.0, 0.0, −2.0) | (0.87, 0.12, 0.02) | Paris |
 
-The first draft is a vague "some capital" that happens to lean London;
-layer 1 tips it to Paris; layer 2 commits.
+The first draft leans slightly towards London. Layer 1 tips it to Paris,
+and layer 2 makes Paris a clear winner.
 
 $$
 \text{lens}_\ell = \text{softmax}\big(W_U \, \text{LN}(h_\ell)\big)
@@ -504,10 +487,11 @@ The dotted taps hang the model's own output layer off the stream after
 every layer. Nothing is trained; the lens borrows weights the model
 already has. At the top layer the tap and the real output are the same
 computation, so they must agree exactly, which is a good test that the
-lens is wired correctly (on `primer.ml.transformer.TinyGPT`, they do).
+lens is wired correctly. They do agree on TinyGPT, the small model built
+in `primer.ml.transformer`.
 
-**On a model where we know the answer.** `LandmarkModel` is a two-layer,
-one-head transformer built by hand to complete "Eiffel is in" with
+**On a model where we know the answer.** The **landmark model** is a
+two-layer, one-head transformer built by hand to complete "Eiffel is in" with
 "Paris". Layer 1 is an MLP that looks up a fact at every word (landmark
 in, city out); layer 2 is an attention head that lets the last word, "in",
 find the landmark and copy its city.
@@ -534,27 +518,29 @@ The right panel runs the lens over the landmark model: rows are layers,
 columns are words, and each cell is the lens's probability of "Paris"
 (1/3 = 0.33 means no opinion among three cities). The Eiffel column goes
 dark after layer 1, when the MLP looks up the fact. The "in" column only
-goes dark after layer 2, when attention copies the city over. The lens has
-shown *where* and *when* the answer appears, without being told.
+goes dark after layer 2, when attention copies the city over. The lens
+found both *where* and *when* the answer appears, using nothing but the
+model's own output layer.
 
-The logit lens was first described for GPT-2 in 2020, where middle layers
-already "guess" the next word surprisingly well. In some models the early
-layers read as nonsense through the final output layer, because they do
-not yet speak its "language"; the **tuned lens** fixes this by training a
-small translator for each layer before applying the output layer.
+The logit lens was first described for GPT-2 in 2020, where the middle
+layers already guess the next word well. In some models the early layers
+read as nonsense through the final output layer, because their states are
+not yet in the form that layer expects. The **tuned lens** fixes this by
+training a small translator for each layer before applying the output
+layer.
 
 **In code:** `logit_lens` applies an output layer to any residual states, `worked_lens` runs the table above, `residual_stream` and `tinygpt_logit_lens` do the same for `primer.ml.transformer.TinyGPT`, and `lens_map` builds the grid for `LandmarkModel`.
 
 ## Activation patching: which activations cause the answer?
 
-**Everyday picture.** Two cars of the same model sit side by side: one
-starts, one doesn't. You move parts from the good car into the bad one,
-one part at a time, and try the ignition after each swap. The part whose
-swap makes the bad car start is the part that mattered. **Activation
-patching** (also called **causal tracing**) does this with a model's
-internal activations.
+The probe and the lens only read. The probe already showed what reading
+misses: tense was readable, and the model ignored it. To learn what the
+model uses, change one activation and watch the output. **Activation
+patching** (also called **causal tracing**) does this the way a mechanic
+finds a fault: move one part at a time from a car that starts into one
+that doesn't, and try the ignition after each swap.
 
-**A tiny worked example.** Run the landmark model twice:
+Run the landmark model twice:
 
 - the **clean** prompt "Eiffel is in": scores Paris 3, Rome 0, so the
   **logit difference** Paris − Rome is **+3**;
@@ -608,10 +594,10 @@ restored(-3.0)  # → 0.0
 restored(0.0)  # → 0.5
 ```
 
-Why a *difference* of two scores, rather than the probability of Paris?
-Because the corrupted prompt differs from the clean one in exactly one
-fact, the difference measures exactly that fact, and it moves smoothly,
-where a probability can saturate near 0 or 1 and hide a change.
+The measure is a *difference* of two scores, not the probability of
+Paris, for two reasons. The two prompts differ in one fact, so the
+difference measures that fact. And it moves smoothly, where a probability
+can saturate near 0 or 1 and hide a change.
 
 ```mermaid
 flowchart TB
@@ -646,16 +632,16 @@ and after the MLP) and at the last word late (the "in" column is 1 after
 attention). The diagonal hand-off between them is the two-step circuit we
 built, found by intervention alone.
 
-Compare with the lens grid above. After layer 2, the lens reads "Paris"
-at the Eiffel position with probability 0.995, yet patching that state
-restores **0.00**: after the last layer nothing reads that position any
-more. The information is there, and it no longer matters. Readable is not
-the same as used, again.
+Compare this map with the lens grid. After layer 2, the lens reads
+"Paris" at the Eiffel position with probability 0.995, yet patching that
+state restores **0.00**, because after the last layer nothing reads that
+position. The lens has found information the model no longer uses, the
+same gap the probe showed with tense.
 
-**Why it matters in practice.** This is how researchers located where
-GPT-style models store facts: causal tracing on prompts like ours found
-factual recall concentrated in middle-layer MLPs at the subject's last
-token, and then used that to edit single facts. The same method, one site
+Researchers used this method to locate where GPT-style models store
+facts. Causal tracing on prompts like ours found factual recall
+concentrated in middle-layer MLPs at the subject's last token, and the
+same researchers then used that to edit single facts. The same method, one site
 at a time, has traced whole circuits, such as the one GPT-2 small uses to
 fill in "When Mary and John went to the store, John gave a drink to" →
 "Mary".
@@ -664,21 +650,24 @@ fill in "When Mary and John went to the store, John gave a drink to" →
 
 ## Superposition: more features than neurons
 
-**Everyday picture.** Back to the band, but now five instruments play
-through two speakers. The engineer pans each instrument to its own
-position around the room: hard left, front right, back left, and so on.
-When one instrument plays alone, you can tell which one by where the sound
-comes from. When two play at once, the positions blur together and you
-might mistake the pair for a third instrument. The trick works because in
-this band, most of the time, only one instrument is playing.
+The dot product read the positive and past-tense features back exactly
+because their directions were perpendicular. A layer of two neurons has room for two perpendicular
+directions; a layer of a thousand has room for a thousand. There are far
+more concepts in the world than that.
 
-Models face the same squeeze. There are far more concepts in the world
-than neurons in a layer, but in any one sentence almost all of them are
-absent: features are **sparse**. So models store more features than they
-have dimensions, as directions that are *nearly* perpendicular rather than
-exactly. That is **superposition**.
+Go back to the band, now with five instruments and two speakers. The
+engineer pans each instrument to its own position around the room. When
+one instrument plays alone, you can tell which one by where the sound
+comes from. When two play at once, the positions blur, and the pair can
+sound like a third instrument. The arrangement works because, most of
+the time, only one instrument is playing.
 
-**A tiny worked example.** Put five features in two neurons, spread 72°
+Models rely on the same fact. In any one sentence almost every concept is
+absent: features are **sparse**. So a model can store more features than
+it has dimensions, as directions that are *nearly* perpendicular rather
+than exactly. This is called **superposition**.
+
+Put five features in two neurons, spread 72°
 apart like the points of a pentagon. Feature $k$'s direction is
 (cos 72k°, sin 72k°): feature 0 is (1, 0), feature 1 is (0.309, 0.951),
 and so on. Switch on feature 0 alone, at strength 1. The hidden state is
@@ -698,7 +687,7 @@ small negative bias and a **ReLU** (which turns negatives into zero): the
 leak of 0.309 falls below the bias of 0.31 and is filtered to 0, and the
 real feature survives at 0.69. The cost comes when two neighbours are on
 at once: each then reads 1 + 0.309 − 0.31 = 0.999 instead of 0.69, too
-high. Sparsity is a bet that such collisions are rare.
+high. Superposition works only while such collisions are rare.
 
 $$
 \hat{x} = \text{ReLU}\big(W^\top W x + b\big),
@@ -776,7 +765,7 @@ less (feature $i$ is weighted $0.8^i$). Compare two worlds:
 
 - **Dense**: every feature is on in every example. The model keeps the two
   most important features, perpendicular, at length 1.00, and gives the
-  other three length 0: it simply drops them.
+  other three length 0: it drops them.
 - **Sparse**: each feature is on only 5% of the time. The model keeps
   **all five**, 72° apart, at length about 1.1, and learns a negative bias
   of about −0.23 to filter the leaks.
@@ -793,23 +782,23 @@ ideal pentagon by *neuron*: neuron 1 moves for feature 0 (by 1.0), feature
 1 and feature 4 (by 0.309 each), and moves the other way for features 2
 and 3. No neuron belongs to one feature.
 
-That last point is why looking at single neurons so often fails. A neuron
+That is why looking at single neurons is so often confusing. A neuron
 that responds to several unrelated features is **polysemantic**. Vision
 researchers found neurons that respond to cat faces and to the fronts of
-cars; language models are full of neurons like that. Superposition
-explains why: when features outnumber neurons, the features cannot line up
+cars, and language models have them too. Superposition explains why: when features outnumber neurons, the features cannot line up
 with the neurons, so every neuron is a mixture.
 
 **In code:** `pentagon` builds the five directions, `superposition_readout` is the formula, `train_superposition` learns W and b with gradients from `superposition_loss_and_grads` (checked against `finite_difference_gradient`), and `features_a_neuron_responds_to` lists a neuron's features.
 
 ## Sparse autoencoders: getting the features back
 
-**Everyday picture.** A sound engineer receives the two-speaker recording
-of the five-instrument band, with no notes on who played when. She knows
-one thing about this band: usually only one instrument plays at a time.
-Many different scores could produce the same sound, but she writes down
-the one that uses the *fewest instruments*. That preference is what lets
-her recover the real parts rather than some arbitrary mixture.
+If every neuron is a mixture, a model has to be read along its feature
+directions, and in a real model no one knows what those are. Think of a sound engineer handed the two-speaker recording of the
+five-instrument band, with no notes on who played when. Many different
+scores could produce the same sound. She knows that usually only one
+instrument plays at a time, so she writes down the score that uses the
+*fewest instruments*, and that preference recovers the real parts rather
+than an arbitrary mixture.
 
 A **sparse autoencoder** (SAE) does this for a model's hidden states. It
 learns a **dictionary**: many more directions than the layer has neurons
@@ -817,9 +806,8 @@ learns a **dictionary**: many more directions than the layer has neurons
 from just a few of them. Each learned direction is a candidate feature,
 and each one's strength on an input is its **latent** activation.
 
-**A tiny worked example.** The hidden state is h = (0.8, 0.6) and the
-dictionary has three directions, (1, 0), (0, 1) and (0.8, 0.6). Two codes
-rebuild h perfectly:
+Take the hidden state h = (0.8, 0.6) and a dictionary of three
+directions, (1, 0), (0, 1) and (0.8, 0.6). Two codes rebuild h perfectly:
 
 | Code (strength of each direction) | Rebuilt | Error | Penalty with λ = 0.1 | Loss |
 |---|---|---|---|---|
@@ -828,10 +816,11 @@ rebuild h perfectly:
 
 Rebuilding alone can't choose between them. The penalty on the total
 strength, the **L1 penalty** (`primer.ml.regularization`), prefers the code
-that uses one direction. One side effect: the best strength for direction
-3 is not quite 1. With strength $a$, the loss is $(1 - a)^2 + 0.1a$, which
-is lowest at $a = 0.95$ (loss 0.0975): the penalty always pulls strengths
-a little toward zero, known as **shrinkage**.
+that uses one direction. It has a side effect: the best strength for
+direction 3 is not quite 1. With strength $a$, the loss is
+$(1 - a)^2 + 0.1a$, which is lowest at $a = 0.95$ (loss 0.0975). The
+penalty always pulls strengths a little toward zero, which is called
+**shrinkage**.
 
 $$
 f = \text{ReLU}\big(W_e (h - b_d) + b_e\big),
@@ -930,34 +919,30 @@ crushing the codes and the match falls again. Choosing λ is a trade: too
 small and the latents are not the features, too large and too much of the
 model's activity is lost.
 
-**Why it matters in practice.** This is the tool that turned
-interpretability from "a few hand-picked neurons" into something that
-scales. Anthropic's *Towards Monosemanticity* (2023) trained SAEs on a
+Sparse autoencoders work on real models too. Anthropic's *Towards
+Monosemanticity* (2023) trained SAEs on a
 small transformer and found thousands of features that each fire for one
 recognizable thing. *Scaling Monosemanticity* (2024) did the same inside a
 production model, Claude 3 Sonnet, and found features for concepts such as
 the Golden Gate Bridge. Turning that one feature up made the model bring
-up the bridge in almost every answer, which is the causal check that the
-feature means what it seems to mean.
+up the bridge in almost every answer. That intervention is the check that
+the feature means what its label says.
 
 **In code:** `sae_objective` computes the loss for one proposed code, `SparseAutoencoder` holds the encoder and decoder with its hand-derived `SparseAutoencoder.loss_and_grads`, `train_sae` fits it, and `match_features` compares learned directions with planted ones.
 
 ## What these tools cannot (yet) show
 
-**Everyday picture.** A brain scan shows which regions light up while a
-person reads, but not the sentence they are thinking. Every tool in this
-lesson is like that: a real instrument that measures something true and
-partial.
-
-**A tiny worked example.** Each of our own toys already showed a limit:
+Every tool in this lesson worked on its toy, and on a toy the right
+answer is known in advance. The same toys also showed where each tool
+stops:
 
 | What we saw | The limit it shows |
 |---|---|
 | A probe read tense at 98%, and the output ignored tense completely | Probes find information, not use |
 | The lens read "Paris" at a position where patching restored 0% | Reading an activation doesn't mean anything downstream reads it |
-| The weak SAE rebuilt everything perfectly and still found the wrong directions | A good rebuild score doesn't mean the features are real |
-| The strong SAE left 11% of the variance unexplained | Some of the model's activity is in no feature the dictionary found |
-| We knew the landmark model's circuit because we built it | In a real model, nobody has the answer key |
+| The SAE with a tiny penalty rebuilt everything perfectly and still found the wrong directions | A good rebuild score doesn't mean the features are real |
+| The SAE with λ = 0.3 left 11% of the variance unexplained | Some of the model's activity is in no feature the dictionary found |
+| We knew the landmark model's circuit because we built it | A real model comes with no answer key |
 
 ```mermaid
 flowchart LR
@@ -965,13 +950,12 @@ flowchart LR
   B --> C["Mechanism<br/>a circuit explained end to end:<br/>'this is how the output is computed'"]
 ```
 
-**Reading it:** the arrow is the direction of stronger evidence. Most
-claims about real models sit on the left or in the middle. A complete
-mechanism, every step from input to output accounted for, exists only for
+**Reading it:** the arrow is the direction of stronger evidence. A
+complete mechanism, every step from input to output accounted for, exists only for
 narrow behaviours in small or carefully chosen settings. When you read an
 interpretability result, ask which box it reached.
 
-The main open problems, in plain words:
+Five problems are still open:
 
 - **Choices shape answers.** Patching results depend on how the corrupted
   prompt is built (swap one word? add noise?). SAE features depend on the
@@ -981,8 +965,9 @@ The main open problems, in plain words:
   parts that back each other up. Models have been observed to partly
   repair themselves when one component is knocked out, so "patching this
   restores 0%" does not always mean "this plays no role".
-- **Coverage.** The unexplained part of an SAE's rebuild is not noise to
-  ignore: it is model behaviour no feature describes yet.
+- **Coverage.** The part of a hidden state that an SAE fails to rebuild
+  is model behaviour that no feature describes yet, so it cannot be
+  dismissed as noise.
 - **Scale and labour.** A circuit that explains one behaviour of a small
   model can take researchers weeks. No one has a complete account of how a
   frontier model produces any long answer.
@@ -990,12 +975,11 @@ The main open problems, in plain words:
   summarizes the inputs that make it fire; checking that the name is right
   needs interventions like the one above.
 
-**Why it matters in practice.** Treat these tools as evidence, stacked
-next to behavioural evaluations (`primer.agents.evals`), never as a
-certificate. A probe or a lens is a cheap first look; a patching or
-steering experiment is the minimum for a causal claim; and a clean result
-on a toy, like every result in this lesson, is where understanding starts,
-not where it ends.
+So treat these tools as evidence to set beside behavioural evaluations
+(`primer.agents.evals`), not as a certificate. A probe or a lens is a
+cheap first look. A patching or steering experiment is the minimum for a
+causal claim. A clean result on a toy, like every result in this lesson,
+shows that a tool works; it does not show how a real model works.
 
 ## In 20 seconds
 
