@@ -216,7 +216,7 @@ How a language model gets its weights: pretraining on a large share of the web, 
 | 15 | [Reasoning models](primer/ml/reasoning.py) | Why letting a model think before it answers helps, and when the extra tokens are worth it | [page](https://rumblr.com/learn/reasoning) · [tests](tests/test_reasoning.py) |
 | 16 | [Alignment and safety](primer/ml/alignment.py) | How a model is taught to behave, and why a score that keeps rising can hide a worse model | [page](https://rumblr.com/learn/alignment) · [tests](tests/test_alignment.py) |
 | 17 | [Metrics](primer/ml/metrics.py) | The numbers that decide whether a model ships, and the one that fools you on rare events | [page](https://rumblr.com/learn/metrics) · [tests](tests/test_metrics.py) |
-| 18 | [Reading benchmarks](primer/ml/benchmarks.py) | What a benchmark score can and cannot tell you, and how wide its error bar really is | [page](https://rumblr.com/learn/benchmarks) · [tests](tests/test_benchmarks.py) |
+| 18 | [Reading benchmarks](primer/ml/benchmarks.py) | What a benchmark score can and cannot tell you, and how wide its error bar is | [page](https://rumblr.com/learn/benchmarks) · [tests](tests/test_benchmarks.py) |
 
 ### Part 3: how it is run
 
@@ -264,7 +264,7 @@ How to build on a language model: the message exchange, the agent loop, tools, r
 
 | # | Lesson | What you'll be able to explain | Read |
 |---|---|---|---|
-| 38 | [Talking to a model](primer/agents/llm.py) | The message format, and what tool calling really is | [page](https://rumblr.com/learn/llm) · [tests](tests/test_agents_llm.py) |
+| 38 | [Talking to a model](primer/agents/llm.py) | The message format a language model reads, and how tool calling works | [page](https://rumblr.com/learn/llm) · [tests](tests/test_agents_llm.py) |
 | 39 | [Orchestration](primer/agents/orchestration.py) | When to script the steps and when to let the model choose them, and the named patterns in between | [page](https://rumblr.com/learn/orchestration) · [tests](tests/test_agents_orchestration.py) |
 | 40 | [The agent loop](primer/agents/agent_loop.py) | The loop that runs a model's errands, with the limits that let it stop | [page](https://rumblr.com/learn/agent-loop) · [tests](tests/test_agents_agent_loop.py) |
 | 41 | [Tools](primer/agents/tools.py) | How to design a tool so a wrong call is caught before it costs money | [page](https://rumblr.com/learn/tools) · [tests](tests/test_agents_tools.py) |
