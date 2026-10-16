@@ -125,32 +125,20 @@ only needed to pick the metric and read it honestly, you are done.
 
 ## Level 2: How it works, from scratch
 
-A loss function is what the model *optimizes* during training; a metric is
-what *you* use to decide whether it's working. Picking the wrong metric is
-one of the most common ways a project looks great offline and fails in
-production. This lesson builds every metric from scratch in three families:
-
-1. **Classification:** precision, recall, F1, accuracy, the confusion
-   matrix, ROC-AUC, precision-recall curves, and choosing a threshold by the
-   *cost* of each kind of error.
-2. **Retrieval:** recall@k, precision@k, MRR and nDCG, the metrics for search
-   and retrieval-augmented generation (RAG).
-3. **Generation:** BLEU and ROUGE-L (word overlap), why they fail on
-   language-model output, and how to check an automated judge against people
-   with Cohen's kappa.
+Which metric to use depends on what the model produces. A classifier makes
+a yes-or-no decision about each item, a search system returns a ranked list,
+and a language model writes text. Each needs its own metrics. The classifier
+comes first, because search borrows its precision and recall.
 
 ## 1. Classification: precision, recall and the confusion matrix
 
-**Everyday picture.** You're fishing for trout in a lake that also holds old
-boots. **Precision** asks: of everything in your net, how much is trout?
-**Recall** asks: of all the trout in the lake, how many did you catch? A tiny
-net held in one good spot has high precision and low recall; dragging a huge
-net across the whole lake has high recall and a lot of boots.
-
-**Tiny worked example: fraud detection.** Of 100 transactions, 10 are fraud.
-The model flags 8, and 6 of those are truly fraud. So 6 hits (true
-positives, TP), 2 false alarms (false positives, FP), 4 misses (false
-negatives, FN) and 88 correct passes (true negatives, TN).
+Take a fraud detector checking 100 transactions, 10 of which are fraud. It
+flags 8, and 6 of those are fraud. Every transaction lands in one of four
+boxes: 6 hits (**true positives**, TP), 2 false alarms (**false
+positives**, FP), 4 misses (**false negatives**, FN) and 88 correct passes
+(**true negatives**, TN). **Precision** asks how much of what was flagged is
+fraud. **Recall** asks how much of the fraud was flagged. **F1** combines
+the two into one number, and **accuracy** counts every right decision.
 
 | Metric    | Calculation                     | Result |
 |-----------|---------------------------------|--------|
@@ -159,7 +147,13 @@ negatives, FN) and 88 correct passes (true negatives, TN).
 | F1        | 2 × 0.75 × 0.60 ÷ (0.75 + 0.60) | 67%    |
 | Accuracy  | (6 + 88 correct) ÷ 100          | 94%    |
 
-Accuracy looks great at 94% while the model misses 4 in 10 frauds.
+Accuracy reads 94% while the model misses 4 frauds in 10.
+
+The detector never outputs "fraud" directly. It outputs a **score**, and a
+**threshold** you choose turns the score into a flag. Comparing each flag
+with the truth puts the transaction in one of the four boxes, so moving the
+threshold changes every count and every metric. An accuracy figure is
+incomplete without the threshold it was measured at.
 
 ```mermaid
 flowchart LR
@@ -174,13 +168,12 @@ flowchart LR
   CM --> MET[Precision, recall,<br/>F1, accuracy]
 ```
 
-**Reading it:** a classifier never outputs "fraud" directly; it outputs a
-*score*, and a threshold that *you* choose turns scores into decisions.
-Comparing each decision with the true label drops the item into one of four
-cells of the confusion matrix, and every classification metric is just a
-ratio of those four counts. Change the threshold and every metric changes,
-which is why "what's the accuracy?" is incomplete without "at what
-threshold?".
+**Reading it:** follow one transaction from left to right. The model gives
+it a score, the threshold decides whether it is flagged, and the true label
+joins it at the confusion matrix, which drops it into one of four boxes.
+Every metric on the right is a ratio of those four counts.
+
+Laid out as a grid, the four counts are the **confusion matrix**:
 
 |                 | predicted positive | predicted negative |
 |-----------------|--------------------|--------------------|
@@ -227,27 +220,33 @@ round(2 * P * R / (P + R), 3), (TP + TN) / N  # → (0.667, 0.94)
 round(2 * 1.0 * 0.1 / (1.0 + 0.1), 2)  # → 0.18
 ```
 
-**In code:** `confusion` sorts labels and decisions into a `Confusion`,
-whose `Confusion.precision`, `Confusion.recall`, `Confusion.f1` and
-`Confusion.accuracy` are the four formulas. `fraud_example` rebuilds the
-100 transactions above, and `flag_nothing_trap` builds the model below that
-never flags anything.
+**In code:** `confusion` counts the four boxes, `Confusion` computes the
+four metrics, and `flag_nothing_trap` is the model below.
 
-**Why it matters in practice: the accuracy trap.** If 1% of transactions are
-fraud, a model that flags *nothing* is 99% accurate and completely useless
-(recall 0). On imbalanced data, never lead with accuracy.
+Accuracy is the metric that misleads. If 1% of transactions are fraud, a
+model that flags *nothing* is 99% accurate and catches no fraud at all
+(recall 0). When one class is rare, report precision and recall, not
+accuracy.
 
 ## 2. ROC-AUC: how well does the model *rank*?
 
-**Everyday picture.** A smoke alarm has a sensitivity dial. Turn it up and
-it catches every fire but also shrieks at toast; turn it down and it stays
-quiet but might miss a real fire. The ROC curve draws *every* dial setting
-at once, and AUC scores the alarm across all of them.
+Every count in the confusion matrix depends on the threshold. To compare
+two models before anyone has chosen one, ask how well each *ranks*: does it
+give frauds higher scores than legitimate transactions?
 
-**Tiny worked example.** Two frauds scored 0.9 and 0.4, two legitimate
-transactions scored 0.6 and 0.1. Compare every (fraud, legitimate) pair:
-0.9 > 0.6 ✓, 0.9 > 0.1 ✓, 0.4 > 0.6 ✗, 0.4 > 0.1 ✓. Three of four pairs are
-ranked correctly, so **AUC = 0.75**.
+Take two frauds scored 0.9 and 0.4, and two legitimate transactions scored
+0.6 and 0.1. Compare every (fraud, legitimate) pair: 0.9 > 0.6 ✓,
+0.9 > 0.1 ✓, 0.4 > 0.6 ✗, 0.4 > 0.1 ✓. Three of the four pairs are in the
+right order: a share of **0.75**. That share is the model's **ROC-AUC**, or
+AUC for short.
+
+The name comes from a curve. Call the frauds the **positives** and the
+legitimate transactions the **negatives**, and lower the threshold from
+above every score, one score at a time. Each positive that becomes flagged
+raises the **true-positive rate** (TPR, the same thing as recall), and each
+negative that becomes flagged raises the **false-positive rate** (FPR).
+Plotting TPR against FPR traces the **ROC curve**, and the AUC is the area
+under it.
 
 ```mermaid
 flowchart TD
@@ -264,15 +263,15 @@ flowchart TD
   H -->|yes| I[End at point 1,1<br/>AUC = area under the path]
 ```
 
-**Reading it:** the ROC curve is a walk. Starting from "flag nothing"
-(bottom-left) you lower the threshold one score at a time; each positive you
-pick up moves you up, each negative moves you right. A perfect ranker goes
-straight up then straight right (area 1.0); a random one wanders along the
-diagonal (area 0.5). Because the walk moves *up* exactly when a positive
-outranks the remaining negatives, the area counts correctly ordered
-(positive, negative) pairs, which is why AUC equals the pairwise win rate.
-The code computes AUC both ways (trapezoids under the curve, and counting
-pairs) and they agree exactly.
+**Reading it:** the ROC curve is a walk. It starts at "flag nothing", the
+bottom-left corner of the plot, and each pass round the loop lowers the
+threshold past one more score: a positive steps the walk up, a negative
+steps it right. A perfect ranker goes straight up, then straight right
+(area 1.0); a random one wanders along the diagonal (area 0.5). Each step
+right adds a strip of area as tall as the share of positives already
+flagged, which is the share of positives that outrank that negative. So
+the area counts correctly ordered (positive, negative) pairs, and AUC
+equals the pairwise win rate.
 
 $$
 \text{TPR} = \frac{TP}{TP + FN} \qquad
@@ -319,44 +318,47 @@ pairs / (len(s_P) * len(s_N))  # → 0.75
 
 ![ROC curve bowing well above the coin-flip diagonal: the classifier ranks a random positive above a random negative 89% of the time (AUC 0.89)](figures/primer.ml.metrics.roc.svg)
 
-**Reading it:** the solid line is the ROC curve of `synthetic_scores()`
-(positives shifted 1.5 standard deviations above negatives); the dashed
-diagonal is a coin flip. The shaded area is the AUC, about 0.89: pick one
-fraud and one legitimate transaction at random and the model scores the
-fraud higher 89% of the time. Where the curve bends is where a sensible
-threshold lives.
+**Reading it:** the solid line is the ROC curve for 500 made-up
+transactions, 50 of them fraud, with frauds scoring 1.5 standard
+deviations higher than legitimate ones on average. The dashed diagonal is a
+coin flip. The shaded area is the AUC, about 0.89: pick one fraud and one
+legitimate transaction at random, and the model scores the fraud higher 89%
+of the time.
+
+AUC needs no threshold, which is what makes it good for comparing models.
+When positives are rare it can flatter, though. With nine legitimate
+transactions for every fraud, a pile of false alarms is still a small
+false-positive *rate*. The **precision-recall curve** plots the same scores
+in a way that shows the false alarms:
 
 ![Precision-recall curve falling as recall rises: at 80% recall only about a third of the flags are real, against a 10% base rate](figures/primer.ml.metrics.pr.svg)
 
-**Reading it:** the same scores, viewed as precision (y) against recall (x).
-Moving right means lowering the threshold: you find more of the positives,
-but precision falls as false alarms pile in. The dotted line is the base
-rate (10% positives), i.e. what flagging at random achieves. On rare-event
-problems this plot tells the truth that ROC's tiny false-positive *rates*
-hide: at 80% recall only about a third of the flags are real.
+**Reading it:** recall runs along the bottom and precision up the side.
+Moving right means lowering the threshold: you find more frauds, but
+precision falls as false alarms pile in. The dotted line is the base rate
+(10% fraud), what flagging at random achieves. At 80% recall only about a
+third of the flags are real, which the ROC curve's small false-positive
+rates hide.
 
-**In code:** `roc_curve` takes the walk, `roc_auc` measures the area under
-it with `auc_trapezoid`, and `roc_auc_rank` counts correctly ordered pairs
-instead; `Confusion.fpr` is FPR, and `pr_curve` gives the precision-recall
-points.
+**In code:** `roc_auc` measures the area under the walk and `roc_auc_rank`
+counts the pairs, and the two give the same number.
 
-**Why it matters in practice.** AUC compares models independently of any
-threshold. On heavily imbalanced data, look at the precision-recall curve
-too, because FPR stays tiny even when false alarms swamp the true positives.
+## 3. Picking the threshold by what errors cost
 
-## 3. Picking the threshold: price your errors
+A detector in use must flag each transaction or not, so someone has to
+choose the threshold. The right choice depends on what each kind of mistake
+costs. A disease screen flags generously,
+because a missed disease is far worse than a second test. A spam filter
+flags cautiously, because losing an important email is worse than reading
+some spam. Put a price on a miss and on a false alarm, and pick the
+threshold where the total is lowest.
 
-**Everyday picture.** A hospital screening test and a spam filter want
-opposite things. Missing a disease is terrible, so the screen flags
-generously; losing an important email is annoying, so the spam filter flags
-cautiously. Same maths, different prices.
-
-**Tiny worked example.** With the four scores above (frauds 0.9 and 0.4,
-legitimate 0.6 and 0.1): if a miss costs 10 and a false alarm costs 1, the
-cheapest rule is "flag at 0.4 or above", catching both frauds and wrongly
-flagging one legitimate transaction (total cost **1**). If a false alarm
-costs 10 and a miss 1, the cheapest rule is "flag only 0.9", missing one
-fraud but raising no false alarms (total cost **1**).
+Take the four scores from the ROC example: frauds 0.9 and 0.4, legitimate
+0.6 and 0.1. If a miss costs 10 and a false alarm costs 1, the cheapest rule
+is "flag at 0.4 or above". It catches both frauds and wrongly flags one
+legitimate transaction, for a total cost of **1**. Swap the prices, and the
+cheapest rule is "flag only 0.9". It misses one fraud and raises no false
+alarms, again for a total of **1**.
 
 $$
 \text{cost}(t) = c_{\text{FN}} \cdot FN(t) + c_{\text{FP}} \cdot FP(t) \qquad t^* = \arg\min_t \text{cost}(t)
@@ -399,31 +401,37 @@ min((0.9, 0.6, 0.4, 0.1), key=cost)  # → 0.4
 
 ![Total cost against threshold for three error prices: the cheapest threshold moves left when misses cost more and right when false alarms cost more](figures/primer.ml.metrics.cost_vs_threshold.svg)
 
-**Reading it:** each line is the total cost (misses × their price + false
-alarms × their price) at every threshold, and each dot marks that line's
-minimum. When a miss costs 10× a false alarm, the best threshold slides left
-(flag more, higher recall); when a false alarm costs 10×, it slides right
-(flag less, higher precision). The model is the same in all three lines;
-only the business decides where to cut.
+**Reading it:** each line is the total cost at every threshold for one pair
+of prices, on the same 500 made-up transactions, and each dot marks that
+line's lowest point. When a miss costs 10 times a false alarm, the lowest
+point moves left (flag more, higher recall). When a false alarm costs 10
+times a miss, it moves right (flag less, higher precision). The model is
+the same in all three lines; only the business decides where to cut.
 
-**In code:** `best_threshold_by_cost` tries every distinct score as t
-(plus "flag nothing") and keeps the cheapest.
+**In code:** `best_threshold_by_cost` tries every score as the threshold
+and keeps the cheapest.
 
 ## 4. Retrieval metrics: judging a search result list
 
-**Everyday picture.** You ask a librarian for books on a topic and get a
-stack of five. Did the stack include the books that matter (recall)? How
-much of the stack is useful (precision)? Is a good book on top, or do you
-dig for it (reciprocal rank)? Are the *best* books nearest the top (nDCG)?
+A search system makes a different kind of output: not a yes or no for each
+item, but a ranked list of results for a query. Precision and recall carry
+over, measured on the top k results. Two more metrics reward putting the
+best results near the top.
 
-**Tiny worked example.** One query. The system returns d7, d3, d9, d1, d4 in
-that order. The relevant documents are d3 (very relevant, grade 3), d4
-(grade 2) and d8 (grade 1, never returned).
+Take one query. The system returns five documents in the order d7, d3, d9,
+d1, d4. Three documents are relevant, each graded by how relevant it is: d3
+(grade 3, very relevant), d4 (grade 2) and d8 (grade 1, never returned).
 
-* recall@5 = 2 found of 3 relevant = **0.667**
-* precision@5 = 2 relevant of 5 returned = **0.4**
-* reciprocal rank = first relevant result at rank 2, so 1/2 = **0.5**
-* nDCG@5 = **0.560** (worked below)
+* **recall@5**, the share of the relevant documents found in the top 5:
+  2 of 3 = **0.667**
+* **precision@5**, the share of the top 5 that is relevant: 2 of 5 =
+  **0.4**
+* **reciprocal rank**, one over the rank of the first relevant result: it
+  is at rank 2, so 1/2 = **0.5**. Averaged over many queries, this is the
+  **mean reciprocal rank** (MRR).
+* **nDCG@5** (normalized discounted cumulative gain), which adds up the
+  grades, counting each less the lower it sits, and divides by the best
+  total any order could get: **0.560**, worked below.
 
 ```mermaid
 flowchart LR
@@ -436,12 +444,11 @@ flowchart LR
   G --> RK & PK & RR & ND
 ```
 
-**Reading it:** retrieval is evaluated *separately* from generation. A
-golden set pairs real queries with the ids of the documents that answer
-them; the retriever produces a ranked list for each query; four metrics ask
-four different questions of the same list. Averaging them over the golden
-set gives numbers you can track every time you change chunking, the
-embedding model or the reranker.
+**Reading it:** start at the golden set on the left: real queries, each
+paired with the ids of the documents that answer it. The retriever returns
+a ranked list for each query, and the four metrics on the right ask four
+different questions of that list. Averaged over the golden set, they give
+numbers you can track each time you change any part of the search.
 
 $$
 \text{recall@}k = \frac{|\text{relevant} \cap \text{top-}k|}{|\text{relevant}|} \qquad
@@ -495,40 +502,41 @@ print(f"{DCG:.4f} {IDCG:.4f} {DCG / IDCG:.3f}")  # → 2.6665 4.7619 0.560
 
 ![DCG weight by rank: rank 1 counts fully, rank 2 counts 63% and rank 10 still counts 29%](figures/primer.ml.metrics.ndcg_discount.svg)
 
-**Reading it:** the bars are the weight 1/log2(rank + 1) that DCG gives a
-result at each position. Rank 1 counts fully, rank 2 counts 63%, rank 10
-only 29%. That gentle logarithmic decay says "position matters, but a good
-result at rank 5 is still worth a lot", which matches how people and
-language models actually use a result list.
+**Reading it:** each bar is the weight DCG gives a result at that rank,
+1/log2(rank + 1). Rank 1 counts fully, rank 2 counts 63% and rank 10 still
+counts 29%. Position matters, but a good result at rank 5 still earns a lot
+of credit.
 
-**In code:** `recall_at_k` and `precision_at_k` score one ranked list,
-`reciprocal_rank` finds its first hit and `mean_reciprocal_rank` averages
-that over queries; `dcg_at_k` adds the discounted grades and `ndcg_at_k`
-divides by the ideal ordering's DCG.
+**In code:** `recall_at_k`, `precision_at_k`, `mean_reciprocal_rank` and
+`ndcg_at_k` are the four metrics.
 
-**Why it matters in practice.** For RAG, recall@k (with k = the number of
-chunks you pass to the model) usually matters most: the model can't use a
-passage that wasn't retrieved, and no prompt fixes that.
+In **retrieval-augmented generation** (RAG), a search step finds passages
+and a language model answers from them. There, measure recall@k first, with
+k set to the number of passages the language model is given. It cannot use
+a passage that was never retrieved, and no prompt fixes that.
 
 ## 5. Generation metrics: why word overlap misleads
 
-**Everyday picture.** Grading essays by counting how many words each one
-shares with the answer key. A student who copies the key's phrasing but gets
-the key fact wrong scores well; a student who explains it correctly in their
-own words scores badly.
+A language model's answer is neither a decision nor a ranked list, so none
+of the metrics so far apply. The oldest automatic check compares the
+generated text, the **candidate**, with a **reference** answer written by a
+person, and counts the words they share. **BLEU**, from machine
+translation, multiplies together how many of the candidate's 1-, 2-, 3- and
+4-word sequences appear in the reference, with a penalty for being too
+short. **ROUGE-L**, from summarisation, measures the longest sequence of
+words the two share in the same order, gaps allowed.
 
-**Tiny worked example.** Reference: "The meeting was moved to Friday because
-the manager is sick."
+Neither checks whether the candidate is true. Here are two candidates,
+scored against the reference "The meeting was moved to Friday because the
+manager is sick."
 
 | candidate | BLEU | ROUGE-L |
 |---|---|---|
 | "Since the boss is ill, the team rescheduled the meeting for Friday." (correct) | 0.16 | 0.26 |
 | "The meeting was moved to *Monday* because the manager is sick." (wrong) | 0.73 | 0.91 |
 
-**BLEU** (from machine translation) multiplies together how many of the
-candidate's 1-, 2-, 3- and 4-word sequences appear in the reference, with a
-penalty for being too short. **ROUGE-L** (from summarisation) measures the
-longest sequence of words the two share in the same order, gaps allowed.
+The wrong answer scores far higher on both, because it copies the
+reference's wording.
 
 $$
 \text{BLEU} = \text{BP}\cdot\exp\!\Big(\tfrac{1}{4}\sum_{n=1}^{4}\ln p_n\Big) \qquad
@@ -557,7 +565,7 @@ only as often as the reference contains it.
 **With the numbers:** the *Monday* answer and the reference are both 11
 words (full stop and capitals dropped), so BP = 1. It matches 10 of its 11
 words, 8 of its 10 word pairs, 6 of its 9 triples and 4 of its 8 four-word
-runs. `bleu` adds 1 to the top and bottom for n ≥ 2 (smoothing, so one
+runs. This BLEU adds 1 to the top and bottom for n ≥ 2 (smoothing, so one
 missing four-word run can't zero the score), giving p = 10/11, 9/11, 7/10,
 5/9, and BLEU = exp(¼(ln 0.909 + ln 0.818 + ln 0.7 + ln 0.556)) = **0.73**.
 Its longest shared in-order run is 10 words, so ROUGE-L = 2 · (10/11) ·
@@ -594,34 +602,37 @@ P_LCS, R_LCS = 3 / 4, 3 / 4
 
 ![BLEU and ROUGE-L bars: the correct paraphrase scores lowest while the wrong answer that copies the wording scores almost as high as an exact copy](figures/primer.ml.metrics.overlap_scores.svg)
 
-**Reading it:** three candidate answers to the same reference ("the meeting
-was moved to Friday because the manager is sick"). The correct paraphrase
-(left) scores lowest on both metrics; the answer that says *Monday* (middle)
-scores nearly as high as an exact copy (right). Overlap metrics reward
-wording, not truth.
+**Reading it:** three candidates scored against the same reference. The
+correct paraphrase on the left scores lowest on both metrics, and the
+*Monday* answer in the middle scores nearly as high as the exact copy on
+the right.
 
-**In code:** `bleu` clips each n-gram count, takes the geometric mean and
-applies the brevity penalty; `rouge_l` finds the longest common subsequence
-and returns its F1.
+**In code:** `bleu` and `rouge_l` score one candidate against one
+reference.
 
-**Why it matters in practice.** Teams grade open-ended output with an **LLM
-as a judge**, a model following an explicit rubric, and embedding-based
-scores like BERTScore do somewhat better than overlap. But a judge must earn
-trust first (next section).
+Overlap metrics still suit tasks where a right answer is nearly word for
+word, such as translation. For open-ended answers, teams use a large
+language model as a judge (an **LLM judge**): it grades each answer against
+a written **rubric**, a list of what a good answer must do. Scores that
+compare meaning through embeddings, such as BERTScore, do somewhat better
+than overlap. A judge, though, has to be checked before it is trusted.
 
 ## 6. Calibrating a judge: Cohen's kappa
 
-**Everyday picture.** Two teachers grade the same 20 essays pass/fail and
-agree on 18. Impressive? Not if 18 of the essays were obvious passes: a
-careful teacher who reads every essay (and passes those 18) and a lazy one
-who stamps "pass" on everything without reading would also agree on 18.
-**Cohen's kappa** subtracts the agreement you'd expect from luck.
+An LLM judge is checked the way a new human grader would be: it grades a
+sample that people have already graded, and you compare. How often the two
+agree is the wrong measure, for the same reason accuracy was for rare
+fraud.
 
-**Tiny worked example.** Human labels: 18 pass, 2 fail. A lazy judge says
-"pass" to everything. Raw agreement is 90%, and chance agreement (both say
-pass at their own rates) is also 0.9 × 1.0 + 0.1 × 0 = 90%, so **kappa = 0**.
-A second example: labels (y, y, n, n) vs. (y, n, n, n) agree 3/4 of the
-time; chance predicts 0.5 × 0.25 + 0.5 × 0.75 = 0.5; **kappa = 0.5**.
+Say people graded 20 essays and passed 18 of them. A lazy judge that stamps
+"pass" on everything without reading agrees with them on 18 of 20, or 90%.
+It gets that by luck, because people passed nearly everything. **Cohen's
+kappa** takes away the agreement expected by chance. Chance agreement is
+the chance both say pass plus the chance both say fail, each at its own
+rate: 0.9 × 1.0 + 0.1 × 0 = 90%. That equals the agreement observed, so
+**kappa = 0**. A second example: labels (y, y, n, n) and (y, n, n, n) agree
+on 3 of 4 items; chance predicts 0.5 × 0.25 + 0.5 × 0.75 = 0.5, so
+**kappa = 0.5**.
 
 $$
 \kappa = \frac{p_o - p_e}{1 - p_e} \qquad p_e = \sum_{\ell} p_A(\ell)\, p_B(\ell)
@@ -669,29 +680,30 @@ flowchart LR
   F --> J
 ```
 
-**Reading it:** the judge earns trust the same way a new human reviewer
-would: grade a sample that people have already graded and compare. Kappa,
-not raw agreement, is the gate, because on a sample that is mostly "pass" a
-lazy judge agrees by accident. Only once the judge clears the bar do you let
-it grade thousands of outputs, and you repeat the check whenever the judge
-model or rubric changes.
+**Reading it:** a sample of real outputs is graded twice, by people and by
+the judge, and kappa compares the two sets of labels. If kappa is high
+enough, the judge grades the rest at scale. If not, fix the rubric, its
+examples or the judge model, and measure again.
 
-**In code:** `cohens_kappa` computes p_o and p_e from two lists of labels
-and returns κ.
+**In code:** `cohens_kappa` takes two lists of labels and returns κ.
 
-**Why it matters in practice.** Kappa above about 0.6 is usually considered
-substantial agreement. Re-check it whenever the judge model or rubric
-changes.
+Kappa above about 0.6 is commonly read as substantial agreement. A new
+judge model or an edited rubric makes a new judge, so measure kappa again
+whenever either changes.
 
 ## In 20 seconds
-- Precision: of what I flagged, how much was right. Recall: of what
-  mattered, how much I found. F1 balances them.
-- Accuracy lies on imbalanced data. Flagging nothing on 1% fraud scores 99%.
-- ROC-AUC is the probability a random positive outranks a random negative.
+- Precision is how much of what was flagged was right. Recall is how much
+  of what mattered was found. F1 combines the two.
+- Accuracy misleads when one class is rare: flagging nothing when 1% of
+  transactions are fraud scores 99%.
+- ROC-AUC is the probability that a random positive scores above a random
+  negative.
 - Choose the threshold by what each kind of error costs.
-- For RAG, measure recall@k first. What isn't retrieved can't be used.
-- BLEU/ROUGE punish correct paraphrases; use an LLM judge and calibrate it
-  against humans with Cohen's kappa.
+- When a search step feeds a language model, measure recall@k first: a
+  passage that is not retrieved cannot be used.
+- BLEU and ROUGE score shared wording, so they punish correct paraphrases.
+  For open-ended answers, use an LLM judge, checked against people with
+  Cohen's kappa.
 
 ## Self-test questions
 
