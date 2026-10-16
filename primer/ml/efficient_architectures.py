@@ -132,16 +132,15 @@ model and size its cache, you are done.
 ## Level 2: How it works, from scratch
 
 Attention (see `primer.ml.attention`) lets every token look at every earlier
-token. That is where its power comes from, and it is also where its bill comes
-from. The bill has two lines:
+token, and a long context pays for that in two ways:
 
-- **Compute.** Every token is scored against every other token, so the work
-  grows with the *square* of the context length n.
-- **Memory.** During generation the model keeps every earlier token's keys
-  and values (the KV cache, see `primer.ml.inference`), so memory grows with
-  n, per layer, per conversation.
+- **Compute.** Every token is scored against every earlier token, so the
+  work grows with the *square* of the context length n.
+- **Memory.** While it generates, the model keeps every earlier token's keys
+  and values (the **KV cache**, see `primer.ml.inference`), so memory grows
+  with n, in every layer, for every conversation.
 
-Everything in this lesson attacks one of those two lines, in one of three ways:
+The efficient designs cut one of those two costs in one of three ways:
 
 1. **Look at fewer tokens**: sliding-window and sparse attention.
 2. **Summarize the past into a fixed-size state**: linear attention and
@@ -161,24 +160,22 @@ flowchart TB
   F1 --> H
 ```
 
-**Reading it:** start at the top box, the problem. The three arrows below it
-are the three strategies, and the leaves are the techniques this lesson
-builds from scratch, section by section. The bottom box is where real
-models often land: a mix, keeping a little full attention for exact lookups
-and using cheap layers for everything else.
+**Reading it:** the top box is the problem and the three boxes below it are
+the three strategies, each with its techniques beneath it. The bottom box
+is a hybrid: a few full-attention layers kept for exact lookups, with cheap
+layers everywhere else.
 
 ## 1. Why long context is expensive
 
-**Everyday picture.** A dinner party where every new guest must shake hands
-with every guest already there. Ten guests make 45 handshakes; a thousand
-guests make half a million. On top of that, the coat check keeps one coat per
-guest on every floor of the building, so the coat racks grow with every
-arrival. Attention pays both bills: the handshakes are the query-key scores,
-and the coats are the KV cache.
+Before cutting either cost, measure both. A dinner party where each new
+guest shakes hands with every guest already there shows the first: ten
+guests make 45 handshakes, a thousand make half a million. The handshakes
+are attention's query-key scores. The second cost is the cache, which adds
+one entry per token, in every layer.
 
-**Tiny worked example.** Take a Llama-3-8B-shaped model: 32 layers, 8
-key/value heads, 128 numbers per head, 16-bit numbers (2 bytes). One token
-costs 2 × 32 × 8 × 128 × 2 = 131,072 bytes of cache, about 128 KB.
+Take a model shaped like Llama 3 8B: 32 layers, 8 key/value heads, 128
+numbers per head, 16-bit numbers (2 bytes). One token costs
+2 × 32 × 8 × 128 × 2 = 131,072 bytes of cache, about 128 KB.
 
 | Context n | Pairs scored per head per layer (n²) | KV cache for one conversation |
 |---|---|---|
@@ -186,8 +183,8 @@ costs 2 × 32 × 8 × 128 × 2 = 131,072 bytes of cache, about 128 KB.
 | 131,072 (128k) | 17 billion | 17.2 GB |
 | 1,048,576 (1M) | 1.1 trillion | 137.4 GB |
 
-Going from 8k to 1M is 128 times more tokens, 16,384 times more pairs, and a
-cache that no longer fits on one 80 GB GPU.
+From 8k to 1M is 128 times the tokens, 16,384 times the pairs, and a cache
+that no longer fits on one 80 GB GPU.
 
 ```mermaid
 flowchart LR
@@ -201,7 +198,7 @@ flowchart LR
 already in the cache, so the work for this one token grows with n, and the
 work for all n tokens grows with n². Then its own key and value are appended,
 so the cache grows by one entry, in every layer, for every token. The two
-arrows into the cache are the two bills.
+arrows into the cache are the two costs.
 
 $$
 \text{pairs} = n^2 \qquad\qquad \text{KV bytes} = 2 \, L \, H_{kv} \, d_h \, b \, n
@@ -247,28 +244,28 @@ a logarithmic axis where each gridline is ten times the last: every step to
 the right multiplies the bar by 256 and then by 64. The right panel is the KV
 cache for one conversation on an ordinary axis, with the dashed line at 80 GB,
 the memory of one large GPU. The 1M bar crosses it before any weights are
-loaded. The left panel is the compute bill; the right panel is the memory
-bill.
+loaded.
 
-**Why it matters in practice.** The compute bill is paid once per prompt
-(prefill), and exact tricks such as FlashAttention make it faster without
-changing it. The memory bill is paid for as long as a conversation is open,
-and it decides how many users one GPU can serve. That is why most of the
-techniques below target the cache.
+The two costs are paid differently. Compute is paid once per prompt, when
+the model reads it (prefill), and exact methods such as FlashAttention make
+it faster without changing the count. Memory is held for as long as a
+conversation stays open, and it decides how many users one GPU can serve.
+That is why most of the techniques that follow target the cache.
 
-**In code:** `context_cost` returns both lines of the bill for any context length, using `primer.ml.inference.kv_cache_bytes` for the cache.
+**In code:** `context_cost` returns both costs for any context length.
 
-## 2. Sliding-window attention: reading through a letterbox
+## 2. Sliding-window attention
 
-**Everyday picture.** You read a long scroll through a letterbox slot that
-shows only the last w words. On your own you would lose the beginning. But
-suppose a row of readers sits one above the other, each reading the notes of
-the reader below through a slot of the same width. Each reader passes things
-along a little further, like a bucket brigade, so a stack of readers can
-carry a fact much further back than any one slot shows.
+### One window, and the reach of a stack
 
-**Tiny worked example.** Eight tokens, window w = 3: each token reads itself
-and the two tokens before it.
+The simplest way to cut both costs is to let each token read only the last
+w tokens, a **sliding window**. One layer then cannot see past w. But a
+transformer stacks layers, and each layer reads the outputs of the layer
+below, which have already gathered from their own windows. So information is
+relayed a further w − 1 positions back at every layer.
+
+Take eight tokens and a window w = 3: each token reads itself and the two
+tokens before it.
 
 ```text
             key:  0 1 2 3 4 5 6 7
@@ -282,7 +279,7 @@ query 6           · · · · ✓ ✓ ✓ ·
 query 7           · · · · · ✓ ✓ ✓
 ```
 
-That is 1 + 2 + 3 × 6 = **21** scores instead of the 36 a full causal mask
+That is 1 + 2 + 3 × 6 = 21 scores instead of the 36 a full causal mask
 needs. Now stack three such layers. Token 7 reads token 5 in the top layer;
 token 5 had read token 3 in the layer below; token 3 had read token 1 in the
 layer below that. So after three layers, token 1 can influence token 7, six
@@ -310,7 +307,7 @@ flowchart RL
 input. Each arrow is one layer's window: it can reach at most w − 1 = 2
 positions back. Three layers chain three arrows, so the furthest input token 7
 can hear from is 3 × 2 = 6 positions back, token 1. Token 0 would need a
-fourth hop. Information still travels far, but only in stages.
+fourth hop.
 
 $$
 M_{ij} = \begin{cases} 1 & \text{if } 0 \le i - j < w \\ 0 & \text{otherwise} \end{cases}
@@ -363,21 +360,21 @@ heatmap in `primer.ml.attention`. Dark means "can reach". On the left, one
 layer with w = 4 is a thin band along the diagonal: 4 cells per row at most.
 On the right, the same mask applied three times: the band has widened to
 3 × 3 + 1 = 10 cells, because each layer extends the reach by w − 1 = 3.
-Neither panel ever touches the upper-right triangle: the window is still
-causal.
+Neither panel touches the upper-right triangle: the window is still causal.
 
-**In code:** `sliding_window_mask` builds the band, `pairs_computed` counts its cells, `receptive_field` applies the mask layer after layer to find who can reach whom, and `reach` is the L(w − 1) formula.
+**In code:** `sliding_window_mask` builds the band, and `receptive_field` stacks it layer by layer.
 
 ### The rolling buffer: a cache that stops growing
 
-**Everyday picture.** A whiteboard with room for exactly w notes. When it is
-full, the next note goes over the oldest one. You never need a bigger board,
-however long the meeting runs.
+The window cuts compute. It also caps memory, because a token that has left
+the window will never be read again, so its keys and values can be thrown
+away. The cache becomes a buffer of w slots, and each new token overwrites
+the oldest.
 
-**Tiny worked example.** With w = 4, after token 9 the buffer holds the keys
-and values of tokens 6, 7, 8 and 9. Token 10 overwrites token 6's slot. On
-the running 8B example at 128k tokens, a 4,096-token window holds 4,096 × 128
-KB = 0.54 GB instead of 17.2 GB: **32 times less**, and the same at 1M tokens.
+With w = 4, after token 9 the buffer holds the keys and values of tokens 6,
+7, 8 and 9. Token 10 overwrites token 6's slot. On the 8B example at 128k
+tokens, a 4,096-token window holds 4,096 × 128 KB = 0.54 GB instead of
+17.2 GB, 32 times less, and the same 0.54 GB at 1M tokens.
 
 ```mermaid
 flowchart LR
@@ -393,35 +390,33 @@ flowchart LR
 
 **Reading it:** the four slots are all the memory there is. Slot number is
 token number modulo 4 (the remainder after dividing by 4), so token 10 lands
-in slot 2, where token 6 sat. Token 6 was about to leave the window anyway,
-so nothing the window needs is lost.
+in slot 2, where token 6 sat. Token 6 was leaving the window anyway, so
+nothing the window needs is lost.
 
-**Why it matters in practice.** Mistral 7B combined the window with this
-rolling buffer. Several later model families interleave sliding-window layers
-with a few full-attention layers: the local layers are cheap, and the full
-layers keep long-range lookups exact. The weakness is plain from the diagram:
-a fact beyond the reach is invisible, and a fact inside the reach has to
-survive several hops.
+Mistral 7B combined the window with this rolling buffer. Several later model
+families interleave sliding-window layers with a few full-attention layers:
+the window layers are cheap, and the full layers keep long-range lookups
+exact. The weakness of a window alone is in the reach diagram: a fact beyond
+the reach cannot be seen, and a fact inside it has to survive several hops.
 
-**In code:** `sliding_window_decode` generates token by token with a buffer that never holds more than w keys, and returns the same outputs as masked attention with `sliding_window_mask`.
+**In code:** `sliding_window_decode` generates with a buffer of w slots and matches masked attention.
 
-## 3. Sparse attention: a few long-distance lines
+## 3. Sparse attention: a few long-range links
 
-**Everyday picture.** An open-plan office. You mostly talk to the people at
-the desks next to yours (local). Anyone can phone the front desk, and the
-front desk hears from everyone (a *global* token): any two people are at
-most two calls apart. Another design is the express train: you talk to your
-neighbours and also to every fourth desk down the row (*strided*), so a
-message can travel far in a few big jumps.
+A window loses whatever lies beyond its reach. **Sparse attention** keeps the
+window and adds a few long-range links, chosen by a fixed pattern. Two
+patterns are common. A **global** token is one that every token reads. A
+**strided** pattern also reads every s-th token further back, so a message
+can travel far in a few long jumps.
 
-**Tiny worked example.** Sixteen tokens, window 4.
+Take sixteen tokens and a window of 4.
 
-- The window alone: 1 + 2 + 3 + 4 × 13 = **58** pairs.
+- The window alone: 1 + 2 + 3 + 4 × 13 = 58 pairs.
 - Make token 0 global: the 12 rows past the window (tokens 4 to 15) add a
-  pair each: **70** pairs, against **136** for full causal attention.
+  pair each: 70 pairs, against 136 for full causal attention.
 - Strided with stride 4: the last 4 tokens, plus every 4th token before them.
   Token 13 reads 10, 11, 12, 13 and then 9, 5, 1. Over all rows that is
-  58 + 24 = **82** pairs.
+  58 + 24 = 82 pairs.
 
 ```mermaid
 flowchart LR
@@ -434,10 +429,13 @@ flowchart LR
   t13["token 13"] --- t14
 ```
 
-**Reading it:** the circle is the global token. Every token has a line to
-it, so token 15 can reach token 3 in two hops, through token 0, however long
-the sequence. The short lines at the bottom are the ordinary local window.
-The picture is sparse (few lines), yet no two tokens are far apart.
+**Reading it:** the circle is the global token, and every token has a line to
+it. The short lines at the bottom are the ordinary window. Where attention
+runs both ways, as in Longformer and BigBird reading a document, the global
+token also reads every token, so token 15 reaches token 3 in two hops through
+token 0, however long the sequence. In a causal language model no token
+reads ahead, so token 0 reads only itself: a global first token gives every
+token a view of the beginning, not a shortcut between any two.
 
 $$
 M_{ij} = 1 \quad\text{when}\quad i - j \ge 0 \;\text{ and }\; \big(\, i - j < s \;\text{ or }\; (i - j) \bmod s = 0 \,\big)
@@ -477,54 +475,54 @@ sum(1 for i in range(16) for j in range(i + 1) if i - j < 4 or j == 0)  # → 70
 dark where a score is computed; the title gives the count. The first panel
 is full causal attention, a solid triangle. The window is a diagonal band.
 Adding a global token fills in the first column: everyone reads token 0. The
-strided pattern adds dotted diagonals every 4 columns: the express stops. At
-16 tokens the savings look modest; with a fixed window they grow with n,
-because the band stays w wide while the triangle keeps growing.
+strided pattern adds dotted diagonals every 4 columns. At 16 tokens the
+savings look modest. With a fixed window they grow with n, because the band
+stays w wide while the triangle keeps growing.
 
-**Why it matters in practice.** The Sparse Transformer introduced strided
-patterns; Longformer and BigBird combined windows with global tokens (BigBird
-added a few random links too) to read documents of thousands of tokens.
-StreamingLLM found that trained models park a lot of attention on the very
-first tokens (*attention sinks*); a plain window drops them and falls apart,
-while keeping the first few tokens plus a window lets a model stream
-indefinitely. One caution: a sparse pattern only saves time if the GPU
-kernel skips whole blocks of the score matrix, which is why real patterns
-are built from blocks.
+The Sparse Transformer introduced strided patterns; Longformer and BigBird
+combined windows with global tokens (BigBird added a few random links too)
+to read documents of thousands of tokens. StreamingLLM found that trained
+language models put a large share of their attention on the first few
+tokens, which it calls **attention sinks**. A plain window drops those
+tokens and the output degrades sharply, while keeping the first few tokens
+plus a window lets a model stream indefinitely. A sparse pattern saves time
+only if the GPU kernel skips whole blocks of the score matrix, so real
+patterns are built from blocks.
 
-**In code:** `global_local_mask` adds global rows and columns to a window, `strided_mask` builds the express-stop pattern, and `pairs_computed` counts what each one scores. Any of them can be passed as the mask to `primer.ml.attention.scaled_dot_product_attention`, and every skipped pair gets a weight of exactly 0.
+**In code:** `global_local_mask` and `strided_mask` build the two patterns, and `pairs_computed` counts their pairs.
 
-## 4. Linear attention: a pot instead of a guest list
+## 4. Linear attention: a running sum instead of a cache
 
-**Everyday picture.** A potluck soup. In softmax attention every new guest
-tastes every dish on the table, one by one, and then mixes a bowl: the more
-dishes, the longer it takes. In linear attention every guest pours their dish
-into one shared pot as they arrive, and a new guest takes a single ladle,
-seasoned to their own taste. The pot never grows, and the ladle costs the
-same for guest 3 as for guest 3 million.
+Windows and sparse patterns save work by reading fewer tokens. **Linear
+attention** lets every token count but keeps none of them. Each token's key
+and value are poured into one fixed-size pot as the token arrives, and each
+new query takes a single ladle from the pot. The pot never grows, and the
+ladle costs the same for token 3 as for token 3 million.
 
-The trick that makes the pot possible: softmax's score $e^{q \cdot k}$ cannot
-be split into "a part that depends on q" times "a part that depends on k".
-Replace it with $\phi(q) \cdot \phi(k)$, a dot product of transformed
-vectors, and it can. Then the order of the matrix multiplies can be swapped:
+Softmax attention cannot work this way. Its score $e^{q \cdot k}$ cannot be
+split into a part that depends only on q times a part that depends only on
+k, so every query must meet every key. Replace the score with
+$\phi(q) \cdot \phi(k)$, a dot product of transformed vectors, and it
+splits. Then the matrix multiplies can be regrouped:
 $(\phi(Q)\phi(K)^\top)\,V = \phi(Q)\,(\phi(K)^\top V)$. The left side builds an
-n × n matrix; the right side builds a small d × d one (the pot) and never
-builds the big one. Matrix multiplication allows regrouping like this
+n × n matrix. The right side builds a small d × d one, the pot, and never
+builds the big one. Matrix multiplication allows this regrouping
 (*associativity*), which `primer.notation` covers under matrix multiply.
 
-**Tiny worked example.** Three tokens with 2-number keys (1, 0), (0, 1),
-(1, 1) and one-number values 2, 4, 6. The third token's query is (1, 0). Use
-the feature map φ(x) = elu(x) + 1, which for a positive number is simply
-x + 1 and for zero or a negative number is $e^x$ (always above zero).
+Take three tokens with 2-number keys (1, 0), (0, 1), (1, 1) and one-number
+values 2, 4, 6. The third token's query is (1, 0). Use the feature map
+φ(x) = elu(x) + 1, which for a positive number is x + 1 and for zero or a
+negative number is $e^x$ (always above zero).
 
 1. φ of the keys: (2, 1), (1, 2), (2, 2).
 2. Pour into the pot: S = (2, 1)·2 + (1, 2)·4 + (2, 2)·6 = (20, 22), and the
    running total of keys z = (5, 5).
-3. Ladle with φ(q) = (2, 1): (2·20 + 1·22) / (2·5 + 1·5) = 62 / 15 = **4.13**.
+3. Ladle with φ(q) = (2, 1): (2·20 + 1·22) / (2·5 + 1·5) = 62 / 15 = 4.13.
 
-The slow way agrees: the weights φ(q)·φ(k) are 5, 4 and 6, so the output is
-(5·2 + 4·6 + 6·6) / 15 = 62/15. Softmax attention on the same numbers gives
-**4.00**: linear attention is a *different* attention, not a faster copy of
-the same one.
+The long way, weight by weight, agrees: the weights φ(q)·φ(k) are 5, 4 and
+6, so the output is (5·2 + 4·6 + 6·6) / 15 = 62/15. Softmax attention on the
+same numbers gives 4.00. Linear attention is a different attention, not a
+faster route to the same answer.
 
 ```mermaid
 flowchart LR
@@ -541,10 +539,10 @@ flowchart LR
 ```
 
 **Reading it:** each token does two things. Its key and value go into the
-pot S (and its key into the running total z, used to normalize). Its query
-reads the pot once. S and z have a fixed size set by the head width, not by
-the number of tokens, so this is a recurrent network: a state updated once
-per token, with no cache that grows.
+pot S, and its key into the running total z that normalizes the output. Its
+query reads the pot once. S and z have a fixed size set by the head width,
+not by the number of tokens, so this is a recurrent network: a state updated
+once per token, with no cache that grows.
 
 $$
 o_i = \frac{\sum_{j \le i} \big(\phi(q_i) \cdot \phi(k_j)\big)\, v_j}{\sum_{j \le i} \phi(q_i) \cdot \phi(k_j)}
@@ -609,39 +607,37 @@ round(dot(e, values) / sum(e), 3)  # → 4.0
 
 **Reading it:** the two heatmaps use the same ten queries and keys; rows are
 queries, columns are keys, and darker means more weight. Both are causal
-triangles and every row sums to 1. On the left, softmax picks favourites:
-the exponential stretches gaps between scores (see `primer.ml.attention`), so
-in the last five rows the largest weight averages 0.46. On the right, linear
-attention spreads the same rows thinly: its largest weight averages 0.21. The
-queries here are twice the usual size, and that is the telling part: at the
-usual size the two numbers are 0.28 and 0.20, so making a query more decisive
-sharpens softmax a lot and linear attention hardly at all, because φ(q)·φ(k)
-never stretches a gap the way $e^x$ does. That bluntness is the price of the
-pot: a fixed-size summary cannot pick out one exact token as sharply.
+triangles and every row sums to 1. On the left, softmax concentrates: the
+exponential stretches gaps between scores (see `primer.ml.attention`), so in
+the last five rows the largest weight averages 0.46. On the right, linear
+attention spreads the same rows thinly, and its largest weight averages
+0.21. The queries here are twice the usual size. At the usual size the two
+numbers are 0.28 and 0.20, so a larger query sharpens softmax a lot and
+linear attention hardly at all, because φ(q)·φ(k) never stretches a gap the
+way $e^x$ does.
 
-**Why it matters in practice.** The work drops from n² × d to n × d², and
-generation needs only the pot, not a cache. The catch is recall: asked to
-copy back a specific token from far away, a fixed-size pot does worse than a
-full cache. Later work added forgetting (decay) to the pot, which turns out
-to be exactly the state-space models of the next section; the Mamba-2 paper
-shows the two views describe the same computation.
+That bluntness is what the pot costs. The work drops from n² × d to n × d²,
+and generation needs only the pot, not a cache. But asked to copy back one
+specific token from far away, a fixed-size pot does worse than a full cache.
+Later work let the pot forget, shrinking it a little at every step, and that
+version is a state-space model; the Mamba-2 paper shows the two describe the
+same computation.
 
-**In code:** `feature_map` is φ, `linear_attention_quadratic` builds all n × n weights (from `linear_attention_weights`) and blends the values, and `linear_attention_recurrent` gets the same outputs from the two running sums, returning the fixed-size S and z.
+**In code:** `linear_attention_quadratic` computes every weight, and `linear_attention_recurrent` gets the same outputs from the two running sums.
 
-## 5. State-space models: a summary with a fixed update rule
+## 5. State-space models
 
 ### A recurrence that is also a convolution
 
-**Everyday picture.** A cup of tea cooling on a desk. Every minute it keeps
-some fraction of its heat and gains whatever hot water you pour in. Its
-temperature right now is a summary of everything you ever poured, with older
-pours counting less. That is a recurrent network's one-page summary (see
-`primer.ml.cnn_rnn`), with one difference: the rewrite rule is *linear*
-(multiply and add, nothing more), and linearity buys a second way to compute
-the same thing.
+A **state-space model** (SSM) also keeps a fixed-size state, but one that
+forgets. At every step the state keeps a fraction of itself and adds the new
+input, so older inputs count for less and less. That is a recurrent
+network's summary (see `primer.ml.cnn_rnn`), with one difference: the update
+is *linear* (multiply and add, nothing more), and linearity gives a second
+way to compute the same outputs.
 
-**Tiny worked example.** The state keeps half of itself each step: A = 0.5,
-B = 1, C = 1. Inputs x = (1, 0, 0, 2).
+Let the state keep half of itself each step: A = 0.5, B = 1, C = 1. The
+inputs are x = (1, 0, 0, 2).
 
 | step t | x_t | h_t = 0.5 · h_(t−1) + x_t | y_t |
 |---|---|---|---|
@@ -650,9 +646,10 @@ B = 1, C = 1. Inputs x = (1, 0, 0, 2).
 | 3 | 0 | 0.5 · 0.5 + 0 = 0.25 | 0.25 |
 | 4 | 2 | 0.5 · 0.25 + 2 = 2.125 | 2.125 |
 
-Unroll the loop and each output is a weighted sum of all past inputs with
+Unroll the loop and each output is a weighted sum of all past inputs, with
 weights 1, 0.5, 0.25, 0.125 for "now, 1 step ago, 2 steps ago, 3 steps ago":
-y₄ = 1·2 + 0.5·0 + 0.25·0 + 0.125·1 = 2.125. The same answer, with no loop.
+y₄ = 1·2 + 0.5·0 + 0.25·0 + 0.125·1 = 2.125, the same answer without the
+loop.
 
 ```mermaid
 flowchart LR
@@ -666,8 +663,8 @@ flowchart LR
 road is how the model *generates*: one token at a time, carrying a small
 state h, with constant memory. The bottom road is how it *trains*: the
 kernel is computed once, and every output is a weighted sum that can be done
-in parallel, like a convolution in `primer.ml.cnn_rnn`. Classic RNNs only had
-the top road, which is why they trained slowly.
+in parallel, like a convolution in `primer.ml.cnn_rnn`. Classic RNNs had
+only the top road, which is why they trained slowly.
 
 $$
 h_t = A\,h_{t-1} + B\,x_t, \qquad y_t = C\,h_t
@@ -719,44 +716,47 @@ sum(kernel[k] * x[3 - k] for k in range(4))  # → 2.125
 
 **Reading it:** the x-axis is how many steps ago an input arrived; the
 y-axis is how much it still counts (the kernel C A^k B). Each curve is one
-value of A. With A = 0.5 the curve collapses almost at once: short memory.
-With A = 0.99 it is still well above zero after 150 steps: long memory. A
+value of A. With A = 0.5 the curve drops almost at once, a short memory.
+With A = 0.99 it is still well above zero after 150 steps, a long one. A
 real SSM layer has thousands of channels, each with its own A, so it
-remembers at many time scales at once. S4 was the first to make this work on
-very long sequences, by choosing and computing these kernels carefully.
+remembers at many time scales at once. S4 was the first SSM to work on very
+long sequences, by choosing and computing these kernels carefully.
 
-**In code:** `ssm_recurrent` runs the loop, `ssm_kernel` builds C A^k B, and `ssm_convolution` gets the same outputs from the kernel with a single NumPy convolution.
+**In code:** `ssm_recurrent` runs the loop, and `ssm_convolution` gets the same outputs from the kernel.
 
-### Selective: letting each token decide what to keep (Mamba)
+### Selective state-space models (Mamba)
 
-**Everyday picture.** A note-taker with a dial. For filler words ("um", "so",
-"anyway") they barely touch their notes. For a name or a number they wipe the
-relevant line and write the new fact. A fixed SSM uses the same dial setting
-for every word, so it must either write everything (and forget quickly) or
-write little (and never take in the important word properly). Mamba reads the
-dial setting off each token itself: that is what *selective* means.
+In the SSM so far, A and B are the same at every step, so every token is
+written and forgotten at the same rate. Text does not work that way. A
+filler word such as "um" should barely touch the state, while a name or a
+number should overwrite part of it. A fixed SSM must choose one rate for
+both: write a lot and forget quickly, or write little and never take in the
+important token properly. Mamba computes the rate from each token. That is
+what *selective* means.
 
-The dial is a step size Δ. The parameters of the state update are derived
-from it at every step (this is called *discretization*: turning a continuous
-rate of change into one step's keep and write amounts):
+The rate is set by a step size Δ, computed from the token. The keep and
+write amounts of the update follow from Δ at every step (turning a
+continuous rate of change into one step's amounts is called
+*discretization*):
 
 - keep factor $\bar{A} = e^{\Delta a}$, with $a$ negative, so a big Δ makes
   it nearly 0 (forget) and a tiny Δ nearly 1 (keep);
 - write factor $\bar{B}$, which goes the opposite way.
 
-**Tiny worked example.** One channel, a = −1, b = 1. A token that carries a
-marker gets Δ ≈ 5; an ordinary token gets Δ ≈ 0.0067.
+Take one channel with a = −1 and b = 1. A token that carries a marker gets
+Δ ≈ 5; an ordinary token gets Δ ≈ 0.0067.
 
 | token | Δ | keep Ā = e^(−Δ) | write B̄ = 1 − e^(−Δ) | effect |
 |---|---|---|---|---|
 | marked | 5.007 | 0.0067 | 0.9933 | replace the state with this token |
 | ordinary | 0.0067 | 0.9933 | 0.0067 | leave the state almost untouched |
 
-The recall task: a sequence of small noise values with one marked 7 in third
-place, then nine more noise values. The selective SSM writes the 7 almost
-fully and then keeps it: at the end its state is **6.55**. With one fixed Δ
-for every token, the best any setting manages is **0.26**: a Δ big enough to
-write the 7 also lets the nine later tokens overwrite it.
+Now a recall task: a sequence of small noise values with one marked 7 in
+third place, then nine more noise values, and the state should still hold
+the 7 at the end. The selective SSM writes the 7 almost whole and then keeps
+it, ending at 6.55. With one fixed Δ for every token, the best any setting
+manages is 0.26, because a Δ big enough to write the 7 also lets the nine
+later tokens overwrite it.
 
 ```mermaid
 flowchart LR
@@ -769,11 +769,11 @@ flowchart LR
   H --> Y["y_t = C h_t"]
 ```
 
-**Reading it:** the new part is the top path. The token itself feeds a small
+**Reading it:** the new part is the top path. The token feeds a small
 function that produces its step size Δ, which sets how much of the old state
 to keep and how much of this token to write. In Mamba the matrices B and C
-are also computed from the token, by the same kind of path. Everything below
-is the recurrence from before, except that Ā and B̄ now change at every step.
+are also computed from the token in the same way. The rest is the recurrence
+from before, except that Ā and B̄ now change at every step.
 
 $$
 \Delta_t = \operatorname{softplus}(w\,u_t + \beta), \qquad
@@ -832,27 +832,28 @@ the input values, with the marked 7 at position 2. The blue line is the
 selective SSM's state: it jumps to the 7 and then barely moves, because
 every later token has a tiny Δ. The red line is the best fixed Δ: it can
 only write a small fraction of each input, so the 7 lifts it to about 0.6 at
-most and it ends at 0.26. The
-orange line is a large fixed Δ: it writes every token fully, so it tracks
-whatever arrived last and the 7 is gone by the next step. Only the selective
-model can both write the important token and ignore the rest.
+most and it ends at 0.26. The orange line is a large fixed Δ: it writes
+every token fully, so it tracks whatever arrived last and the 7 is gone by
+the next step.
 
-**In code:** `discretize` turns Δ into Ā and B̄, `softplus` and `step_sizes` compute each token's Δ, `selective_ssm` runs the per-token recurrence, and `selective_recall` and `time_invariant_recall` run the recall task.
+**In code:** `selective_ssm` runs the per-token recurrence, and `selective_recall` and `time_invariant_recall` run the recall task.
 
-### Training in parallel when the kernel keeps changing: the scan
+### Training a selective model in parallel: the scan
 
-**Everyday picture.** A relay race where each runner must know the total
-time so far. Done one after another it takes as long as the whole race. But
-"multiply by a, then add b" steps can be *merged*: two consecutive steps are
-themselves one step of the same shape. So pairs of runners merge their legs,
-then pairs of pairs, like a knockout tournament: log₂ n rounds instead of n (log₂ n is how many
-times n can be halved before reaching 1: 10 for 1,024).
+Selectivity rules out the convolution road. The kernel C A^k B assumed the
+same A at every step, and a selective model's Ā changes with every token. Run as a
+plain loop, training would take one step after another, as slowly as a
+classic RNN. The way out is that steps can be *merged*. Each step is
+"multiply the state by a, then add b", and two consecutive steps are again
+one step of that shape. So neighbouring steps merge in pairs, then the pairs
+merge, like the rounds of a knockout tournament: log₂ n rounds instead of n.
+(log₂ n is how many times n can be halved before reaching 1: 10 for 1,024.)
 
-**Tiny worked example.** The four steps of the tea example are
-(a, b) = (0.5, 1), (0.5, 0), (0.5, 0), (0.5, 2), meaning "h becomes a·h + b".
-Round 1: every step merges with the one before it. Round 2: every step merges
-with the result two places before it. After 2 rounds (log₂ 4 = 2), the b
-parts are 1, 0.5, 0.25, 2.125: every state from the loop.
+Write the four steps of the loop above as (a, b) = (0.5, 1), (0.5, 0),
+(0.5, 0), (0.5, 2), meaning "h becomes a·h + b". In round 1 every step
+merges with the one before it. In round 2 every step merges with the result
+two places before it. After 2 rounds (log₂ 4 = 2), the b parts are 1, 0.5,
+0.25, 2.125: every state the loop produced.
 
 ```mermaid
 flowchart TB
@@ -874,10 +875,10 @@ flowchart TB
 
 **Reading it:** the top row holds the four steps. Each arrow pair is one
 merge; every merge in a row happens at the same time. The middle row is
-round 1, the bottom row round 2. Read the second number in each final box
-(and in s1 and r2, which were already complete): 1, 0.5, 0.25, 2.125, the
-states from the table above. A selective SSM cannot use the convolution road,
-because its Ā changes every step, but it can use this one.
+round 1, the bottom row round 2. The states are the second numbers of
+(0.5, 1), which has nothing before it to merge with, of (0.25, 0.5) from
+round 1, and of the two boxes of round 2: 1, 0.5, 0.25 and 2.125, the
+states from the table above.
 
 $$
 (a_1, b_1) \circ (a_2, b_2) = \big(a_1 a_2,\; a_2 b_1 + b_2\big)
@@ -914,26 +915,24 @@ r2 = r1[:2] + [merge(r1[t - 2], r1[t]) for t in range(2, 4)]
 [b for a, b in r2]  # → [1.0, 0.5, 0.25, 2.125]
 ```
 
-**Why it matters in practice.** This is how Mamba trains on long sequences
-at GPU speed despite being recurrent: a parallel scan, written so the state
-stays in fast on-chip memory. At generation time it switches back to the
-plain loop, one token at a time, with a state that never grows.
+Mamba trains this way, with a parallel scan written so that the state
+stays in the GPU's fast on-chip memory. When it generates, it switches back
+to the plain loop, one token at a time, with a state that never grows.
 
-**In code:** `parallel_scan` runs the rounds for any length and returns the states and the number of rounds: 10 for 1,024 steps.
+**In code:** `parallel_scan` runs the rounds for any length.
 
-### Constant memory, and hybrids
+### Hybrids of state-space and attention layers
 
-**Everyday picture.** An SSM travels with a backpack of fixed size; the KV
-cache is a suitcase that grows with every token. A *hybrid* model mostly uses
-backpacks but brings one suitcase for every few layers, so it can still look
-up an exact earlier token when it needs to.
+An SSM layer's memory is its state, a fixed size however long the context.
+An attention layer's memory is its KV cache, which grows with every token.
+A **hybrid** model is mostly SSM layers, with an attention layer every few
+layers so that it can still look up an exact earlier token.
 
-**Tiny worked example.** One SSM layer with 4,096 channels and a 16-number
-state per channel holds 4,096 × 16 × 2 bytes = **128 KB**, at 10 tokens or at
-10 million. One attention layer of the running 8B example holds **537 MB** at
-128k tokens. Build 32 layers as 4 attention layers and 28 SSM layers (one in
-eight, the ratio Jamba uses) and the cache at 128k drops from 17.2 GB to
-**2.15 GB**.
+One SSM layer with 4,096 channels and a 16-number state per channel holds
+4,096 × 16 × 2 bytes = 128 KB, at 10 tokens or at 10 million. One attention
+layer of the 8B example holds 537 MB at 128k tokens. Build 32 layers as 4
+attention layers and 28 SSM layers (one in eight, the ratio Jamba uses) and
+the cache at 128k drops from 17.2 GB to 2.15 GB.
 
 ```mermaid
 flowchart TB
@@ -943,9 +942,9 @@ flowchart TB
 
 **Reading it:** most boxes are SSM layers, each carrying a fixed-size state.
 Every so often an attention layer sits in the stack; only those keep a KV
-cache. The memory bill therefore scales with the number of attention layers,
-not with the total depth, while the attention layers are still there for
-exact copying and lookup.
+cache. The memory cost therefore scales with the number of attention
+layers, not with the total depth, and those layers are still there for exact
+copying and lookup.
 
 $$
 \text{bytes} = L_{\text{att}} \cdot n \cdot 2\,H_{kv}\,d_h\,b \;+\; (L - L_{\text{att}}) \cdot D \cdot N \cdot b
@@ -958,7 +957,7 @@ $$
 | $L$ | total layers | 32 |
 | $L_{\text{att}}$ | how many of them are attention layers | 4 |
 | $n$ | context length | 131,072 |
-| $2\,H_{kv}\,d_h\,b$ | one attention layer's cache per token (from section 1) | 4,096 bytes |
+| $2\,H_{kv}\,d_h\,b$ | one attention layer's cache per token, from the KV-cache formula above | 4,096 bytes |
 | $D$ | channels in an SSM layer | 4,096 |
 | $N$ | state numbers per channel | 16 |
 | $b$ | bytes per number | 2 |
@@ -983,24 +982,28 @@ round(32 * n * 2 * H_kv * d_h * b / 1e9, 2)  # → 17.18
 round((4 * n * 2 * H_kv * d_h * b + 28 * D * N * b) / 1e9, 2)  # → 2.15
 ```
 
-**Why it matters in practice.** Pure SSMs are strong at language modelling
-but weaker than attention at copying and exact recall over long contexts,
-for the same reason as linear attention: a fixed-size state is a summary.
-Hybrids such as Jamba keep a few attention layers for those jobs and get most
-of the SSM's memory savings.
+Pure SSMs are strong at language modelling but weaker than attention at
+copying and exact recall over long contexts, for the same reason as linear
+attention: a fixed-size state is a summary. Hybrids such as Jamba keep a few
+attention layers for those jobs and still get most of the SSM's memory
+savings.
 
-**In code:** `ssm_state_bytes` is the fixed backpack, and `hybrid_cache_bytes` adds up a mixed stack.
+**In code:** `hybrid_cache_bytes` adds up a mixed stack.
 
 ## 6. Compressing the KV cache
 
-### Fewer key/value heads: GQA and MQA, a recap
+### Fewer key/value heads: GQA and MQA
 
-**Everyday picture.** Colleagues sharing one reference binder instead of each
-keeping a personal copy: everyone still asks their own questions, but the
-shelf holds fewer binders.
+Every design so far changes which tokens a model reads, or folds them into a
+summary. The last family keeps full attention, with every token exact, and
+stores the cache in fewer bytes. The first way to do that is already
+familiar: let several query heads share one key/value head, so there are
+fewer keys and values to store. Each query head still asks its own question.
+Sharing among groups is **grouped-query attention** (GQA); one key/value head
+for all is **multi-query attention** (MQA).
 
-**Tiny worked example.** On the running example (32 layers, 128 numbers per
-head, 16-bit), the cache per token for different numbers of KV heads:
+On the 8B example (32 layers, 128 numbers per head, 16-bit), the cache per
+token for different numbers of KV heads:
 
 | Design | KV heads | Cache per token |
 |---|---|---|
@@ -1008,32 +1011,32 @@ head, 16-bit), the cache per token for different numbers of KV heads:
 | grouped-query attention | 8 | 128 KB |
 | multi-query attention | 1 | 16 KB |
 
-The diagram of shared heads and the full memory arithmetic live in
-`primer.ml.attention` and `primer.ml.inference`; everything below stacks on
-top of whichever of these a model uses.
+The shared heads are drawn in `primer.ml.attention`, and the memory
+arithmetic is in `primer.ml.inference`. The two methods below work on top of
+whichever head count a model uses.
 
-### Latent KV: cache the ingredients, cook on demand
+### Latent KV: cache one short vector per token
 
-**Everyday picture.** A restaurant that stores ingredients, not finished
-dishes. Every head's keys and values can be cooked from a short list of
-ingredients (the *latent* vector) with a fixed recipe shared by every token.
-Store the ingredients, keep the recipe once, and cook when a query needs it.
-Better still, the recipe can be folded into the query itself, so nothing is
-ever cooked at all.
+Every head's keys and values are computed from the same token, so they
+overlap heavily. **Latent KV** caching squeezes each token into one short
+vector, the **latent**, and caches only that. The keys and values are
+rebuilt from the latent when a query needs them, by fixed up-projection
+matrices shared by every token. Better still, the up-projection for keys can
+be folded into the query (**absorbed**), so the keys are never rebuilt at
+all.
 
-**Tiny worked example.** A token x = (1, 0, 2, 1), two heads of width 2.
-Ordinary attention would cache 2 heads × 2 numbers × (key and value) = 8
-numbers. Instead:
+Take a token x = (1, 0, 2, 1) and two heads of width 2. Ordinary attention
+would cache 2 heads × 2 numbers × (key and value) = 8 numbers. Instead:
 
-1. Squeeze: c = x W_down = (1 + 2, 0 + 1) = **(3, 1)**. Only these 2 numbers
-   are cached: 4 times smaller.
-2. When needed, expand: k = c W_uk = **(3, 1, 3, 1)**, both heads' keys.
+1. Squeeze: c = x W_down = (1 + 2, 0 + 1) = (3, 1). Only these 2 numbers
+   are cached, 4 times fewer.
+2. When needed, expand: k = c W_uk = (3, 1, 3, 1), both heads' keys.
 3. Or fold the expansion into the query: for q = (1, 2, 0, 1), q · k = 6, and
    (q W_ukᵀ) · c = (1, 3) · (3, 1) = 6. Same score, and k was never built.
 
-DeepSeek-V2 uses this at scale: its 128 heads of width 128 would cache 32,768
+DeepSeek-V2 uses this at scale. Its 128 heads of width 128 would cache 32,768
 numbers per token per layer; its latent caches 512, plus 64 for a small key
-that carries position information: **576, about 57 times less**.
+that carries position information: 576, about 57 times fewer.
 
 ```mermaid
 flowchart LR
@@ -1101,37 +1104,36 @@ q_latent, sum(a * b for a, b in zip(q_latent, c))  # → ([1, 3], 6)
 2 * 128 * 128, 512 + 64, round(2 * 128 * 128 / (512 + 64), 1)  # → (32768, 576, 56.9)
 ```
 
-Why can so few numbers stand in for so many? Because every head's keys and
-values are built from the same token, they are highly redundant. In the
-language of `primer.notation`, the key projection W^D W^UK has **low rank**:
-however many numbers it outputs, they all vary along only d_c independent
-directions. Storing those d_c coordinates loses nothing that projection can
-produce. One wrinkle: rotary position embeddings (see `primer.ml.positional`)
-rotate each key by its position, which breaks the absorption trick, so
-DeepSeek-V2 carries position in that separate small 64-number key.
+So few numbers can stand in for so many because the key projection
+W^D W^UK has **low rank** (see `primer.notation`): however many numbers it
+outputs, they all vary along only d_c independent directions. Storing those
+d_c coordinates loses nothing that projection can produce. Rotary position
+embeddings (see `primer.ml.positional`) rotate each key by its position,
+which breaks the absorption, so DeepSeek-V2 carries position in that
+separate 64-number key.
 
 ![Cache per token on the 32-layer example: 512 KB for 32 KV heads, 128 KB for 8, 36 KB for a 576-number latent, 33 KB for 8 heads at 4 bits, 16 KB for one head](figures/primer.ml.efficient_architectures.kv_per_token.svg)
 
 **Reading it:** each bar is the cache one token costs across all 32 layers
-of the running example, for one design. The top bar is classic multi-head
-attention; every bar below it is a way of shrinking it. Sharing heads (GQA,
-MQA), squeezing into a latent, and cutting bits land in the same range, tens
-of kilobytes instead of hundreds, by different routes that can be combined.
+of the 8B example, for one design. The top bar is plain multi-head
+attention, and every bar below it shrinks it. Sharing heads (GQA, MQA),
+squeezing into a latent, and cutting bits all land in tens of kilobytes
+instead of hundreds, by different routes that can be combined.
 
-**In code:** `LatentKVAttention` holds the four projections; `LatentKVAttention.compress` produces the cache, `LatentKVAttention.attend` expands it into keys and values, and `LatentKVAttention.attend_absorbed` gets the identical output without expanding. `latent_kv_worked_example` is the (3, 1) example and `latent_kv_bytes_per_token` the memory arithmetic.
+**In code:** `LatentKVAttention.attend` rebuilds the keys and values, and `LatentKVAttention.attend_absorbed` gets the same output without them.
 
 ### Quantizing the cache
 
-**Everyday picture.** The same move as for weights in `primer.ml.inference`:
-write each number to the nearest tenth instead of the nearest thousandth,
-with one ruler per stored vector so one big number does not coarsen all the
-others.
+The last saving reuses weight quantization (see `primer.ml.inference`):
+store each number with fewer bits, rounded to the nearest of a few evenly
+spaced values. Each stored vector gets its own scale, so one large number does not
+coarsen the rounding of every other vector.
 
-**Tiny worked example.** A cached key (0.7, −0.3, 0.2, 0.04) at 4 bits (codes
-−7 to 7). The step size is 0.7 / 7 = 0.1, the codes are **(7, −3, 2, 0)**, and
-reading back gives (0.7, −0.3, 0.2, 0): the tiny 0.04 is lost. A 128-number
-head vector drops from 256 bytes to 64 bytes of codes plus a 2-byte scale:
-66 bytes, **3.9 times smaller**.
+Take a cached key (0.7, −0.3, 0.2, 0.04) at 4 bits (codes −7 to 7). The step
+size is 0.7 / 7 = 0.1, the codes are (7, −3, 2, 0), and reading back gives
+(0.7, −0.3, 0.2, 0): the small 0.04 is lost. A 128-number head vector drops
+from 256 bytes to 64 bytes of codes plus a 2-byte scale, 66 bytes, 3.9 times
+smaller.
 
 ```mermaid
 flowchart LR
@@ -1140,9 +1142,9 @@ flowchart LR
   R --> A["attention as usual"]
 ```
 
-**Reading it:** writing to the cache quantizes once per token; reading from
-it multiplies back. Attention itself is unchanged; it just sees slightly
-rounded keys and values. The saving is on the cylinder, the part that grows
+**Reading it:** writing to the cache quantizes once per token, and reading
+from it multiplies back. Attention itself is unchanged and sees slightly
+rounded keys and values. The saving is in the cylinder, the part that grows
 with every token.
 
 $$
@@ -1179,17 +1181,19 @@ L, H_kv, d_h = 32, 8, 128
 2 * L * H_kv * d_h * 16 / 8, 2 * L * H_kv * (d_h * 4 / 8 + 16 / 8)  # → (131072.0, 33792.0)
 ```
 
-**Why it matters in practice.** On random test data, an 8-bit cache moves
-the attention output by under 1% and a 4-bit cache by about 12%; trained
-models tolerate this far better than random data suggests, and careful
-schemes go lower. Keys tend to have a few channels with consistently large
-values, so KIVI quantizes keys per channel and values per token and reaches
-2 bits. Quantization stacks with everything above: a GQA model with a sliding
-window and a 4-bit cache enjoys all three savings.
+On random test data, an 8-bit cache moves the attention output by under 1%
+and a 4-bit cache by about 12%. Trained models tolerate this better than
+random data suggests, and careful schemes go lower. Keys tend to have a few
+channels with consistently large values, so KIVI quantizes keys per channel
+and values per token, and reaches 2 bits. Quantization stacks with the other
+savings: a GQA model with a sliding window and a 4-bit cache gets all three.
 
-**In code:** `quantize_kv` quantizes each cached vector with its own scale via `primer.ml.inference.quantize`, `quantized_kv_bytes_per_token` is the formula, and `quantized_cache_error` measures how far attention's output moves.
+**In code:** `quantize_kv` quantizes the cache, and `quantized_cache_error` measures how far attention's output moves.
 
 ## Putting it together
+
+On the 8B example, the techniques differ most in how the cache grows as
+the context gets longer.
 
 ![On log axes from 1k to 1M tokens, multi-head and grouped-query caches climb past 80 GB, latent and 4-bit caches climb 4 times lower, the hybrid 8 times lower, while the sliding window flattens at 0.5 GB and the SSM state stays at 4 MB](figures/primer.ml.efficient_architectures.memory_vs_context.svg)
 
@@ -1197,9 +1201,9 @@ window and a 4-bit cache enjoys all three savings.
 for one conversation, both logarithmic, with the dashed line at 80 GB. Lines
 with the same slope grow the same way (in proportion to n); compression moves
 a line down without changing its slope. The sliding window bends flat at
-4,096 tokens, and the SSM is flat from the start. Flat lines are what make
-million-token contexts affordable; the price is that they no longer keep
-every token exactly.
+4,096 tokens, and the SSM is flat from the start. The flat lines make
+million-token contexts affordable, at the price of no longer keeping every
+token exactly. The table lists what each technique cuts and what it gives up.
 
 | Technique | What it cuts | What it gives up |
 |---|---|---|
@@ -1212,19 +1216,20 @@ every token exactly.
 | Latent KV | cache by d_c / (2·H·d_h) | extra matrix work, care with positions |
 | Quantized KV | cache by 16 / bits | a little precision |
 
-**In code:** `cache_bytes_by_method` computes every line in the figure for a given context length.
+**In code:** `cache_bytes_by_method` computes every line in the chart.
 
 ## In 20 seconds
 
-- Long context has two bills: attention scores grow with n², and the KV
-  cache grows with n (per layer, per conversation). At 1M tokens the cache
-  of an 8B-class model alone is about 137 GB.
+- Long context costs twice: attention scores grow with n², and the KV cache
+  grows with n (per layer, per conversation). At 1M tokens the cache of an
+  8B-class model alone is about 137 GB.
 - **Sliding window:** each token reads the last w; stacked layers still reach
   L·(w − 1) back, and a rolling buffer caps the cache at w tokens.
-  **Sparse patterns** add a few global or strided links so any two tokens are
-  a hop or two apart.
+  **Sparse patterns** add a few global or strided links, so distant tokens
+  are a few hops apart.
 - **Linear attention** replaces e^(q·k) with φ(q)·φ(k), which turns attention
-  into a running sum: O(n) work and a fixed-size state, but blurrier recall.
+  into a running sum: work that grows with n and a fixed-size state, but
+  blurrier recall.
 - **State-space models** update a fixed state linearly; fixed ones train as a
   convolution, **selective** ones (Mamba) let each token set how much to keep
   and write, and train with a parallel scan. **Hybrids** keep a few attention
