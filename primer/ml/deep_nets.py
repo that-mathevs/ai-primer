@@ -128,26 +128,27 @@ done.
 
 ## Level 2: How it works, from scratch
 
-A deep network's gradient is a product with one factor per layer, and
-every fix in this lesson is a way of holding that factor near 1. This
-level builds the problem in a chain of ten numbers, watches it in a
-30-layer network, then adds each fix and measures what it restores.
+The problem shows up in the smallest deep network there is, a chain of
+ten layers that each hold one number, so it is worked there first, by
+hand. The fixes are then measured on a network of realistic shape: 30
+layers of 64 neurons.
 
-## The idea: a gradient is a product of slopes
+## The gradient is a product of slopes
 
-Picture a game of telephone along a line of 30 people. Each person repeats
-the message to the next, but everyone speaks at a quarter of the volume they
-heard. By the end of the line the message is silence. If instead everyone
-speaks 1.5× louder, the end of the line is a deafening roar. Training a deep
-network has exactly this problem, run backwards: the learning signal (the
-**gradient**, how much each weight should change; see `primer.ml.neural_net`)
-starts at the output and is passed back layer by layer, and each layer
-multiplies it by its own **slope** (derivative). Thirty multiplications by
-something below 1 is almost zero: the **vanishing gradient**. Thirty by
-something above 1 is enormous: the **exploding gradient**.
+Training sends a learning signal backward from the loss to every weight:
+the **gradient**, how much each weight should change (see
+`primer.ml.neural_net`). It travels one layer at a time, and each layer
+multiplies it by a number of its own, the layer's weight times its
+activation's **slope** (derivative). Think of a message passed down a line
+of ten people, each repeating it at a quarter of the volume they heard.
+After ten people it is down to about a millionth of its first volume. If
+each speaks 1.5 times louder instead, it ends up 58 times louder. A factor
+below 1 at every layer drives the gradient toward zero, the **vanishing
+gradient**, and a factor above 1 drives it up without limit, the
+**exploding gradient**.
 
-Worked example: a chain of ten one-number layers, each sitting at its
-steepest point.
+Here are three chains of ten one-number layers, each unit at its steepest
+point.
 
 | chain | slope per layer | gradient after 10 layers |
 |---|---|---|
@@ -164,11 +165,11 @@ flowchart RL
   H2 -- "× 0.25" --> H1["layer 1<br/>receives 0.25¹⁰ ≈ 1e-6"]
 ```
 
-**Reading it:** read right to left, the direction backprop travels. The loss
-hands the last layer a gradient of 1. Every hop multiplies by that layer's
-slope (0.25 for a sigmoid at its steepest). After ten hops the first layer
-receives about one millionth of the signal, so its weights barely change: it
-effectively stops learning while the later layers carry on.
+**Reading it:** read right to left, the direction the gradient travels. The
+loss hands layer 10 a gradient of 1, and every arrow multiplies it by 0.25,
+a sigmoid's slope at its steepest. Layer 1 receives about a millionth of it,
+so its weights barely move: the first layers stop learning while the later
+ones carry on.
 
 $$
 \frac{\partial \mathcal{L}}{\partial h_0} = \frac{\partial \mathcal{L}}{\partial h_L}\prod_{l=1}^{L} w_l\,\phi'(z_l)
@@ -211,22 +212,20 @@ gradient_at_input(1, 1)  # → 1.0
 round(gradient_at_input(1.5, 1), 1)  # → 57.7
 ```
 
-`chain_gradient` builds that chain and backprops through it.
+**In code:** `chain_gradient` builds the chain and passes the gradient back through it.
 
-**Why it matters:** this is why networks deeper than a handful of layers
-were considered untrainable for decades. Every fix below (better
-activations, careful initialization, residual connections, normalization)
-is a way of keeping the per-layer factor close to 1.
+Every fix that follows works the same way: it holds the per-layer factor
+near 1.
 
-## In a real network: watching the gradient layer by layer
+## The gradient in a 30-layer network
 
-In a real layer, each neuron sums 64 inputs, so the multiplier per layer
-depends on three things together: the size of the weights, how many inputs
-each neuron adds up, and the activation's slope. Same telephone game, but
-now everyone in the line hears 64 people at once.
-
-Worked example: a 30-layer network, 64 neurons per layer. The ratio of the
-gradient at the first layer to the gradient at the last:
+In the chain each layer had one weight. In a real layer each neuron adds up
+many inputs, here 64, so the factor per layer depends on three things
+together: the size of the weights, how many inputs each neuron adds up, and
+the activation's slope. A 30-layer network with 64 neurons per layer shows
+what that does. The table gives the gradient at the first layer divided by
+the gradient at the last, for ReLU with weights of three sizes (the right
+size is the He rule, which the next chapter derives) and for sigmoid:
 
 | setup | ratio first / last |
 |---|---|
@@ -238,17 +237,17 @@ gradient at the first layer to the gradient at the last:
 ![Gradient size at every layer, relative to layer 30: ReLU with He stays near 1, too-small weights dive 36 orders of magnitude, sigmoid dives 18, too-large weights climb 22, and sigmoid with skip connections stays flat](figures/primer.ml.deep_nets.gradient_flow.svg)
 
 **Reading it:** the horizontal axis is the layer (1 is next to the input, 30
-next to the loss). The vertical axis is the size of the gradient reaching
-that layer divided by its size at layer 30, on a log scale where each
-gridline is a factor of 10⁶. So every line starts at 1 on the right; read it
-from right to left, following backprop, and its height at layer 1 is the
-ratio in the table. The healthy ReLU + He line stays within a factor of
-about 5 of 1. The too-small line dives about 36 orders of magnitude. The
-sigmoid line dives too, but only about half as far, 18 orders: Xavier keeps
-the weights' own gain near 1, so what shrinks the gradient is sigmoid's
-slope, at most 0.25, about 4× per layer. The too-large line climbs about 22
-orders. The dashed line is the same sigmoid network with skip connections,
-and it stays flat (see residual connections below).
+next to the loss). The vertical axis is the gradient reaching that layer
+divided by the gradient at layer 30, on a log scale where each gridline is a
+factor of 10⁶. Every line starts at 1 on the right; read it right to left,
+the way the gradient travels, and its height at layer 1 is the ratio in the
+table. The ReLU + He line stays within a factor of about 5 of 1. The
+too-small line dives about 36 orders of magnitude and the too-large line
+climbs about 22. The sigmoid line dives 18 orders: Xavier keeps the
+weights' own gain near 1, so what shrinks the gradient is sigmoid's slope,
+at most 0.25, about 4× per layer. The dashed line is the same sigmoid
+network with skip connections, which stays flat; residual connections
+explain why.
 
 $$
 \text{gain per layer} \approx \sigma_w \sqrt{n_{\text{in}}}\;\cdot\;\text{typical }\phi'
@@ -283,23 +282,21 @@ for sigma_w in (0.01, 1.0):
     print(round(gain, 3), f"{gain ** 30:.0e}")  # → 0.056 3e-38 5.6 3e+22
 ```
 
-**In code:** `gradient_norms` runs a 30-layer, 64-wide network forward and backward and returns the gradient size reaching every layer; `first_to_last_gradient_ratio` divides the first by the last to fill the table.
+**In code:** `gradient_norms` measures the gradient at every layer, and `first_to_last_gradient_ratio` fills the table.
 
-**Why it matters:** you can't see this from the loss curve alone. A network
-whose early layers get no gradient still trains a little (the late layers
-learn), just badly. Plotting per-layer gradient norms is a standard
-diagnostic.
+The loss curve does not show any of this. A network whose early layers get
+no gradient still trains a little, because its late layers learn, so its
+loss falls slowly instead of stopping. A plot of the gradient's size at
+each layer shows the problem at once.
 
-## Initialization: setting every amplifier's volume
+## Initialization
 
-Think of a chain of 30 audio amplifiers. If each is set a little too quiet,
-the sound fades to nothing; a little too loud, and it distorts into noise.
-Set each so that what comes out is exactly as loud as what went in, and the
-music survives the whole chain. **Initialization** picks the random
-starting weights' size so that each layer passes on a signal of the same
-size, forward and backward.
-
-Worked example:
+With ReLU and nothing else changed, the size of the starting weights alone
+took the ratio in that table from 10⁻³⁶ to 10²². **Initialization** is the
+rule that picks the size: the random starting weights are drawn at a scale
+where each layer passes on a signal of the same size, forward and backward.
+Two rules cover the common activations. Each works from the layer's fan-in
+and, for Xavier, its fan-out (how many outputs the layer has):
 
 | scheme | rule for the weight standard deviation | example |
 |---|---|---|
@@ -316,24 +313,25 @@ flowchart LR
   He & X --> S[Signal keeps its size<br/>layer after layer]
 ```
 
-**Reading it:** the choice of starting weights follows the activation. Both
-rules have the same goal, shown in the last box: a layer should neither
-shrink nor grow what passes through it.
+**Reading it:** start from the activation on the left. ReLU and GELU take the
+He rule; tanh, sigmoid and linear units take Xavier. Both arrows end in the
+same box, because both rules aim at a layer that neither shrinks nor grows
+what passes through it.
 
 ![Forward signal size at every layer: ReLU with He stays near 1, too-small weights fade to 10⁻³⁸, too-large weights grow to 10²², and sigmoid holds flat near 0.5 even though its gradient vanishes](figures/primer.ml.deep_nets.signal.svg)
 
-**Reading it:** this is the forward direction: the typical size of the
-activations entering each layer, log scale. With He initialization the ReLU
-network's signal stays near 1 for all 30 layers. Too small, it fades to
-nothing within a few layers; too large, it grows by about 5.6× per layer.
-For the three ReLU lines the backward picture above mirrors this one,
-because the same weights scale both directions. The sigmoid line is where
-the mirror breaks: its signal holds steady near 0.5 for all 30 layers
-(sigmoid's outputs sit around 0.5 whatever comes in), yet its gradient
-above lost 18 orders of magnitude. The forward pass only sends values
-through sigmoid; the backward pass multiplies by sigmoid's slope, at most
-0.25, at every layer. A healthy forward signal does not prove a healthy
-gradient, so check both.
+**Reading it:** this chart shows the forward direction: the typical size of
+the values entering each layer, on a log scale. With He initialization the
+ReLU network's signal stays near 1 for all 30 layers. With weights too
+small it fades to nothing within a few layers, and with weights too large
+it grows by about 5.6× per layer. For the three ReLU lines the gradient
+chart mirrors this one, because the same weights scale both directions.
+The sigmoid line breaks the mirror. Its signal holds steady near 0.5 for
+all 30 layers, since sigmoid's outputs sit around 0.5 whatever comes in,
+yet its gradient lost 18 orders of magnitude. The forward pass only sends
+values through sigmoid, while the backward pass multiplies by sigmoid's
+slope, at most 0.25, at every layer. A healthy forward signal does not
+prove a healthy gradient, so check both.
 
 $$
 \operatorname{Var}(z) = n_{\text{in}}\,\operatorname{Var}(w)\,\mathbb{E}[h^2]
@@ -374,22 +372,26 @@ var_w, round(math.sqrt(var_w), 3)  # → (0.04, 0.2)
 round(math.sqrt(2 / (100 + 100)), 3)  # → 0.1
 ```
 
-**In code:** `init_std` returns the starting weight standard deviation for Xavier, He and two deliberately bad choices; `forward_signal_rms` measures the forward signal plotted above.
+**In code:** `init_std` gives each rule's standard deviation, and `forward_signal_rms` measures the forward signal.
 
-**Why it matters:** every framework initializes this way by default
-(PyTorch's `nn.Linear` uses a Kaiming-style uniform init). Custom layers or
-deep stacks built without it can silently fail to train.
+Frameworks apply a rule like this to their own layers: PyTorch's
+`nn.Linear` draws its starting weights from a range scaled by the fan-in (a
+Kaiming-style uniform init). A layer you write yourself gets no such rule
+unless you add it, and without it a deep stack can fail to train with no
+error to say why.
 
-## Residual connections: an express lane for the gradient
+## Residual connections
 
-Picture a building where messages go up by stairs, one floor at a time, and
-at every landing someone might mumble. Add an express lift that runs the
-whole height, and the message always arrives intact; each floor adds its
-own notes to what the lift carries. A **residual** (or skip) connection is
-that express lift: each block computes a correction and *adds* it to its
-input, instead of replacing the input.
+Initialization sets the weights' size, but it cannot change the
+activation's slope: the sigmoid network with Xavier weights still lost 18
+orders of magnitude. A **residual connection** (or skip connection) gets
+around the slope. A block of layers computes a correction and *adds* it to
+its input, instead of replacing the input. On the way back, the gradient
+then has a path around every block that multiplies it by 1, whatever the
+block's own slope. That path is what keeps the dashed sigmoid line in the
+gradient chart flat.
 
-Worked example: ten blocks, each with slope 0.025 of its own.
+Take ten blocks, each with a slope of 0.025 of its own:
 
 | | per-block factor | after 10 blocks |
 |---|---|---|
@@ -404,12 +406,12 @@ flowchart TD
   ADD --> OUT["h + F(h)"]
 ```
 
-**Reading it:** the input splits. One copy goes through the block, the
-other goes straight around it, and the two are added. Going backwards, the
-gradient also splits: one part flows back through the block (and may
-shrink), the other flows through the "+" untouched. That untouched path is
-the "1" in 1 + 0.025, and it guarantees that some gradient reaches the
-early layers no matter how deep the stack is.
+**Reading it:** follow the input from the top. One copy goes through the
+block, the other goes straight around it, and the two are added. Going
+backwards, the gradient splits the same way: one part flows back through
+the block and may shrink, the other passes through the "+" untouched. The
+untouched part is the "1" in 1 + 0.025, and it means some gradient reaches
+the early layers however deep the stack is.
 
 $$
 h_{l+1} = h_l + F(h_l), \qquad
@@ -448,34 +450,39 @@ f"{plain:.1e}", round(residual, 2)  # → ('9.5e-17', 1.28)
 
 ![Gradient reaching the input as blocks are stacked: without skip connections it falls 40× per block to 10⁻¹⁶ after 10 blocks, with them it stays near 1](figures/primer.ml.deep_nets.residual.svg)
 
-**Reading it:** the x-axis counts stacked blocks and the y-axis, on a log
-scale, is how much gradient survives the trip back to the input (1 means
-all of it). The plain line drops by a factor of 40 with every block, a
-straight plunge on a log scale, and after 10 blocks it is at 10⁻¹⁶: early
-layers receive essentially nothing. The residual line stays near 1 at every
-depth, because each block's "1 +" passes the gradient through intact. That
-flat line is why networks with hundreds of layers can be trained at all.
+**Reading it:** the horizontal axis counts stacked blocks, and the vertical
+axis, on a log scale, is how much gradient survives the trip back to the
+input (1 means all of it). The plain line drops by a factor of 40 with
+every block, a straight line down on a log scale, and after 10 blocks it is
+at 10⁻¹⁶, so the early layers receive almost nothing. The residual line
+stays near 1 at every depth, because each block's "1 +" passes the gradient
+through.
 
-**In code:** `residual_chain_gradient` multiplies the per-block factors from the table, with or without the skip path.
+**In code:** `residual_chain_gradient` multiplies the per-block factors, with or without the skip path.
 
-**Why it matters:** residual connections (ResNet, 2015) made 100+ layer
-networks trainable, and every transformer wraps both its attention and its
-feed-forward sub-layers in one (see `primer.ml.transformer`). One caveat
-the code shows: adding corrections forever makes the signal grow (a 30-layer
-residual ReLU stack here grows its gradient about 7 million×), which is why
-residuals are always paired with normalization.
+ResNet (2015) used residual connections to train networks over 100 layers
+deep, and every transformer wraps both its attention and its feed-forward
+sub-layers in one (see `primer.ml.transformer`). The skip path has a cost.
+Each block adds its correction on top of what it received, so the signal
+grows with depth: a 30-layer residual ReLU stack here grows its gradient
+about 7 million times.
 
-## Normalization: grading on a curve
+## Normalization
 
-A teacher can "grade on a curve" in two ways. **Batch normalization** curves
-each question across the whole class: your score on question 3 is compared
-with everyone else's score on question 3, so your grade depends on who else
-sat the exam. **Layer normalization** curves each student across their own
-answers: your scores are rescaled relative to your own average, whoever
-else is in the room. Both re-centre and re-scale numbers into a steady range
-so no layer is swamped by huge or tiny values.
+That growth is why residual connections come paired with
+**normalization**. A normalization layer re-centres and rescales the
+numbers passing through it into a steady range, so no layer is swamped by
+huge or tiny values, however many corrections have piled up. The kinds
+differ in which
+numbers each value is compared with, the way a teacher can grade on a curve
+in two ways. **Batch normalization** (BatchNorm) curves each question across
+the whole class: your score on question 3 is compared with everyone else's
+score on question 3, so your grade depends on who else sat the exam.
+**Layer normalization** (LayerNorm) curves each student across their own
+answers, so your grade depends only on you. **RMSNorm** is LayerNorm without
+the step that subtracts the average.
 
-Worked examples:
+All three, on numbers small enough to check:
 
 - **BatchNorm**, batch [[1, 2], [3, 6]]: column means (2, 4), standard
   deviations (1, 2), so the output is [[−1, −1], [1, 1]]. The value 1 becomes
@@ -552,26 +559,30 @@ round(rms, 3)  # → 2.739
 [round(gamma * x_i / rms, 3) for x_i in x]  # → [0.365, 0.73, 1.095, 1.461]
 ```
 
-**In code:** `batch_norm` normalizes each column across the batch, `layer_norm` each row across its own features, and `rms_norm` divides each row by its root-mean-square.
+**In code:** `batch_norm`, `layer_norm` and `rms_norm` compute the three examples.
 
-**Why it matters:** transformers use LayerNorm or RMSNorm, never BatchNorm:
-sequences have different lengths, batches at inference are often size 1, and
-an example's output must not depend on its batch-mates. Modern LLMs
-(Llama and others) use RMSNorm because it's cheaper and works as well, and
-they place it *before* each sub-layer ("pre-norm"), which keeps the residual
-path clean and trains more stably. CNNs are where BatchNorm lives on:
-ResNet puts it after every convolution.
+Transformers use LayerNorm or RMSNorm rather than BatchNorm. Their
+sequences have different lengths, a batch at inference is often a single
+example, and an example's output must not depend on its batch-mates.
+Llama and other recent language models use RMSNorm, which is cheaper and
+works as well, and place it *before* each sub-layer ("pre-norm"), which
+keeps the residual path clean and trains more stably. BatchNorm is used in
+convolutional networks trained on large batches: ResNet puts one after
+every convolution.
 
-## Gradient clipping: a circuit breaker
+## Gradient clipping
 
-Even with all of the above, one unlucky batch can produce a gradient spike.
-A circuit breaker doesn't stop the current; it caps it. Clipping by global
-norm does the same to the update: if the gradient's total length exceeds a
-limit, it's scaled down to the limit, direction unchanged.
+Initialization, residual connections and normalization keep the per-layer
+factor near 1, but one unusual batch can still produce a spike: a gradient
+far larger than usual, and a weight update to match. **Gradient clipping**
+caps the update. It measures all the gradients in the network together as
+one length (their **global norm**), and when that length is over a set
+limit it scales every gradient down by the same factor, so the update keeps
+its direction and loses only its size.
 
-Worked example: in the exploding (too-large) 30-layer network above, the
-gradients' combined length is astronomically large. Clipped with a limit of
-1, the update has length exactly 1 and points the same way.
+The network with weights too large, from the 30-layer chart, has gradients
+whose combined length is about 8 × 10⁴⁶. Clipped at a limit of 1, the
+update has length 1 and points the same way.
 
 ```mermaid
 flowchart LR
@@ -581,8 +592,10 @@ flowchart LR
   C -->|no| K[leave unchanged]
 ```
 
-**Reading it:** measure all layers' gradients together as one long list; if
-that list is longer than the limit, shrink every entry by the same factor.
+**Reading it:** follow the arrows from the left. All the layers' gradients
+are measured together as one long list; if the list is longer than the
+limit, every entry is scaled by the same factor, and otherwise nothing
+changes.
 
 $$
 g \leftarrow g \cdot \min\!\left(1, \frac{c}{\lVert g \rVert}\right)
@@ -601,9 +614,8 @@ limit."
 
 **With the numbers:** in the too-large network $\lVert g \rVert \approx 8 \times 10^{46}$;
 with $c = 1$ every entry is multiplied by about $10^{-47}$ and the new length
-is exactly 1. (The
-optimizers lesson traces (3, 4) → (0.6, 0.8); see
-`primer.ml.optimizers.clip_by_global_norm`, which this lesson reuses.)
+is exactly 1. For a case small enough to check by hand, see
+`primer.ml.optimizers`, where (3, 4) is clipped to (0.6, 0.8).
 
 **In Python:**
 
@@ -622,23 +634,25 @@ f"{scale:.0e}"  # → '1e-47'
 round(math.sqrt(sum((g_i * scale) ** 2 for g_i in g)), 6)  # → 1.0
 ```
 
-**In code:** `layer_gradients` collects every layer's weight gradient from a 30-layer network, and `global_norm_after_clipping` reports their combined length after clipping.
+**In code:** `layer_gradients` collects the too-large network's gradients, and `global_norm_after_clipping` clips them.
 
-**Why it matters:** clipping treats the symptom, not the cause: it makes a
-rare spike harmless, but a network that explodes on every step needs better
-initialization or normalization. Almost every large training run clips at a
-norm of about 1.
+Clipping makes a rare spike harmless. It does not fix a network that
+explodes on every step: that needs better initialization or normalization,
+and clipping would only hide it. GPT-3 and Llama 2 both trained with a
+clipping limit of 1.0.
 
 ## In 20 seconds
-- Backprop multiplies one slope per layer, so gradients shrink (vanish) or
-  grow (explode) exponentially with depth.
-- Initialization sets weight sizes so each layer preserves signal size:
-  Xavier for tanh/sigmoid, He (2 / fan-in) for ReLU.
-- Residual connections add the input back, giving the gradient a path
-  multiplied by 1; they're why very deep nets and transformers train.
-- Normalization keeps activations in a steady range: BatchNorm across the
-  batch (CNNs), LayerNorm/RMSNorm within each example (transformers).
-- Gradient clipping caps rare spikes.
+- Passing the gradient back multiplies it by one factor per layer, so with
+  depth it shrinks (vanishes) or grows (explodes) exponentially.
+- Initialization sizes the starting weights so each layer passes the signal
+  on at the same size: Xavier for tanh and sigmoid, He (2 / fan-in) for ReLU.
+- Residual connections add each block's input to its output, which gives
+  the gradient a path back that is multiplied by 1.
+- Normalization rescales each layer's values into a steady range: BatchNorm
+  across the batch, in convolutional networks, and LayerNorm or RMSNorm
+  within each example, in transformers.
+- Gradient clipping scales a rare oversized gradient down to a set length
+  without changing its direction.
 
 ## Self-test questions
 
