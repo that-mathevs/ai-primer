@@ -131,50 +131,33 @@ each fix. If you only needed to choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-A forger wants to print banknotes that pass as real. A detective wants to
-catch every fake. At first the forger is hopeless: smudged ink, the wrong
-colour, and the detective spots every note. But every time the detective
-rejects a note, the forger learns *what gave it away* and fixes that. Every
-time the forger improves, the detective has to look more closely. Neither
-is ever told what a real banknote should look like. They only push against
-each other, and both keep getting better.
+A forger prints banknotes and a detective inspects them. At first the forger
+is hopeless, and the detective spots every note. Each rejected note shows the
+forger *what gave it away*, and each better note makes the detective look
+more closely. Neither is ever told what a real banknote looks like. The
+contest ends when the detective can do no better than guess, "real" half the
+time and "fake" the other half. By then the forger has learned to make
+banknotes without ever being given a rule for what a banknote is.
 
-The contest ends when the forger's notes are so good that the detective can
-do no better than guess: "real" half the time, "fake" the other half. At
-that point the forger has learned to make banknotes, and nobody ever wrote
-down a rule for what a banknote is.
-
-That is a **generative adversarial network**, a **GAN**. The forger is a
-neural network called the **generator**; the detective is a second network
-called the **discriminator**. Train them against each other on photos of
-faces and the generator learns to produce new faces that never existed.
-
-This lesson builds both players from scratch in NumPy, trains them on a toy
-picture you can see at a glance, and then shows the three ways the contest
-goes wrong: the players chase each other in circles, the forger settles for
-copying a few examples (**mode collapse**), and the detective wins so
-completely that the forger stops learning. Each failure gets a fix you can
-run. The same goal, making new samples, is reached differently by
-`primer.ml.generative.autoencoders` (squeeze and rebuild) and
-`primer.ml.generative.diffusion` (remove noise a little at a time).
+A **generative adversarial network**, or **GAN**, is that contest between two
+neural networks. The forger is called the **generator**, and the detective
+is called the **discriminator**. Trained against each other on photos of
+faces, the generator learns to produce new faces of people who never
+existed.
 
 ## The two players
 
-**Everyday picture.** The forger is a recipe that turns a few dice rolls
-into a banknote: different rolls, a different note. The detective is a
-machine you feed a note into, and out comes a single number, how sure it is
-that the note is real.
+To watch the two at work, make the banknotes small enough to see: points on
+a flat page. The real data is a **ring of eight little clouds**: eight
+centres evenly spaced on a circle of radius 2, each real point scattered a
+tiny amount (a spread of 0.05) around one centre, chosen at random.
+Researchers studying GAN failures use this picture because a glance shows
+whether the forger has found all eight clouds.
 
-**Tiny worked example.** Our "banknotes" are points on a flat page. The real
-data is a **ring of eight little clouds**: eight centres evenly spaced on a
-circle of radius 2, each real point scattered a tiny amount (a spread of
-0.05) around one centre, chosen at random. This toy picture comes from the
-research literature on GAN failures because you can *see* whether a forger
-has found all eight clouds.
-
-- The **generator** G takes two random numbers z (the dice rolls, drawn from
-  a bell curve) and returns one point on the page. It is a small neural
-  network: 2 numbers in, two layers of 32 tanh units, 2 numbers out.
+- The **generator** G takes two random numbers z, drawn from a bell curve,
+  and returns one point on the page. Different random numbers give a
+  different point. It is a small neural network: 2 numbers in, two layers
+  of 32 tanh units, 2 numbers out.
 - The **discriminator** D takes a point and returns a probability that it is
   real. It is another small network: 2 numbers in, 64 tanh units, one
   **score** out, then squashed into the range 0 to 1.
@@ -236,29 +219,28 @@ point go through the same detective, which gives each one a probability.
 The two dotted arrows are the learning signals, and they pull in opposite
 directions: the detective adjusts itself to score real points high and fakes
 low, and the generator adjusts itself to make the detective score *its*
-points high. Notice that the generator never sees a real point. Everything
-it learns about the data arrives through the detective's verdicts.
+points high. The generator never sees a real point. Everything it learns
+about the data arrives through the detective's verdicts.
 
-**Why it matters:** that last point is the whole trick. Nobody writes down
-what a face, a voice or a banknote is. The detective discovers what separates
-real from fake, and its gradient (the direction that would make it less
-sure a fake is fake; see `primer.ml.neural_net` for gradients) tells the
-forger how to improve.
+So a GAN never needs a description of what a face, a voice or a banknote
+is. The detective works out what separates real from fake, and its gradient
+(the direction that would make it less sure a fake is fake; see
+`primer.ml.neural_net` for gradients) tells the forger how to improve.
 
-**In code:** `ring_of_gaussians` draws real points around `ring_modes`, `MLP` is both players (its `MLP.backward` also returns the gradient with respect to the input, the channel through which the forger learns), with shapes `GENERATOR_SIZES` and `DISCRIMINATOR_SIZES`, and `sigmoid` turns the detective's score into a probability.
+**In code:** `ring_of_gaussians` draws the real points, `MLP` is both players, and `sigmoid` turns a score into a verdict.
 
 ## The game: one number both players fight over
 
-**Everyday picture.** Picture a scoreboard. The detective earns points for
-confident, correct calls and loses points, heavily, for confident mistakes.
-The detective wants the score as high as possible. The forger wants it as
-low as possible. One number, two players pulling it in opposite directions:
-that is a **minimax** game.
+Both players learn from a single score of how well the detective is doing.
+The detective earns points for confident, correct calls and loses points,
+heavily, for confident mistakes. It pushes the score up, and the forger
+pushes it down. A game in which two players pull one number in opposite
+directions is called a **minimax** game.
 
-**Tiny worked example.** The detective looks at two real notes and two
-fakes. The score uses the **logarithm** (log): log 1 = 0, and the log of a
-small number is a large negative number, so a confident mistake costs far
-more than a hesitant one (see `primer.notation` for logs from scratch).
+Say the detective looks at two real notes and two fakes. The score uses the
+**logarithm** (log): log 1 = 0, and the log of a small number is a large
+negative number, so a confident mistake costs far more than a hesitant one
+(see `primer.notation` for logs from scratch).
 
 | Note | Real? | Verdict D | What is scored | Value |
 |---|---|---|---|---|
@@ -268,7 +250,7 @@ more than a hesitant one (see `primer.notation` for logs from scratch).
 | 4 | fake | 0.4 | log (1 − D) = log 0.6 | −0.511 |
 
 The average over the real notes is −0.164, over the fakes −0.367, and the
-total is **−0.53**. A perfect detective (1 on every real note, 0 on every
+total is −0.53. A perfect detective (1 on every real note, 0 on every
 fake) would score log 1 + log 1 = 0, the ceiling. A detective reduced to a
 coin flip (0.5 on everything) scores log 0.5 + log 0.5 = −1.386.
 
@@ -280,12 +262,12 @@ $$
 
 | Symbol | Meaning here | In the example |
 |---|---|---|
-| $V(D, G)$ | the **value**: the scoreboard number | −0.53 |
+| $V(D, G)$ | the **value**: the score both players fight over | −0.53 |
 | $\max_D$ | "the detective chooses its weights to make what follows as large as possible" | |
 | $\min_G$ | "the forger chooses its weights to make that best-case value as small as possible" | |
 | $\mathbb{E}$ | **expectation**: the average over many draws (see `primer.notation`, probability notation) | an average over 2 notes |
 | $x \sim p_{\text{data}}$ | "$x$ drawn from the real data" | notes 1 and 2 |
-| $z \sim p_z$ | "$z$ drawn from the noise the forger starts from" | the dice rolls behind notes 3 and 4 |
+| $z \sim p_z$ | "$z$ drawn from the noise the forger starts from" | the random numbers behind notes 3 and 4 |
 | $D(x)$ | the verdict on a real point | 0.9, 0.8 |
 | $G(z)$ | a fake point made from noise $z$ | notes 3 and 4 |
 | $D(G(z))$ | the verdict on a fake | 0.2, 0.4 |
@@ -315,13 +297,13 @@ round(real_term + fake_term, 2)  # → -0.53
 round(math.log(0.5) + math.log(0.5), 3)  # → -1.386
 ```
 
-If this looks familiar, it should: −V is exactly the **binary
-cross-entropy** of a classifier that labels real points 1 and fakes 0 (see
-`primer.ml.losses`). The detective is an ordinary classifier. What is new
-is that its second class, the fakes, keeps changing underneath it.
+−V is the **binary cross-entropy** of a classifier that labels real points
+1 and fakes 0 (see `primer.ml.losses`), so the detective is an ordinary
+classifier. What is new is that its second class, the fakes, keeps changing
+underneath it.
 
-Training alternates. Nobody can solve "min over G of max over D" directly,
-so each round takes one small step for each player:
+There is no way to solve "min over G of max over D" in one go, so training
+alternates, with one small step for each player per round:
 
 ```mermaid
 flowchart TB
@@ -338,26 +320,27 @@ and noise comes in, the forger turns the noise into fakes, and then the two
 players move in turn: first the detective takes one step of gradient
 **ascent** on V (it wants V higher), then the forger takes one step of
 gradient **descent** (it wants V lower), judged by the detective as it is
-*after* its step. The loop repeats thousands of times. At the bottom, only
-the generator is kept. The detective was scaffolding: its whole job was to
-teach.
+*after* its step. The loop repeats thousands of times. When it stops, only
+the generator is kept, and the detective is thrown away.
 
-**Why it matters:** each player is trained with an ordinary optimizer on an
-ordinary loss, but the loss surface moves every time the other player steps.
-That is the root of everything that goes wrong later in this lesson.
+Each step on its own is ordinary training: an ordinary optimizer on an
+ordinary loss. The difference is that each player's loss changes every time
+the other player steps, and that moving target is where the instability of
+GAN training comes from.
 
-**In code:** `value_function` computes V from a batch of verdicts, and `train_gan` runs the loop above on the ring, one detective step then one forger step, each with Adam (`primer.ml.optimizers.Adam`).
+**In code:** `value_function` computes V from a batch of verdicts, and `train_gan` runs the loop on the ring with Adam (`primer.ml.optimizers.Adam`).
 
 ## The best possible detective, and where the game ends
 
-**Everyday picture.** Suppose that, at one spot on the page, real points
-turn up three times as often as fakes. However clever the detective is, it
-cannot tell two identical-looking points apart, so the best it can do there
-is to say "75% real". It should match the local mix, no more and no less.
+Before asking how training goes wrong, it helps to know where it should
+end. Start with the detective, and hold the forger fixed. Suppose that at
+one spot on the page real points turn up three times as often as fakes. The
+detective cannot tell two identical points apart, so the best it can do
+there is say "75% real", the local mix.
 
-**Tiny worked example.** At a point where the real data's **density** (how
-thickly its points cover that spot) is 0.3 and the forger's is 0.1, the
-best verdict is 0.3 / (0.3 + 0.1) = 0.75. Try its neighbours: the
+In numbers: at a point where the real data's **density** (how thickly its
+points cover that spot) is 0.3 and the forger's is 0.1, the best verdict is
+0.3 / (0.3 + 0.1) = 0.75. Try its neighbours: the
 detective's expected score at that spot is
 0.3 · log D + 0.1 · log(1 − D), which is −0.2274 at D = 0.7, −0.2249 at
 D = 0.75 and −0.2279 at D = 0.8. The middle one is the highest.
@@ -395,19 +378,19 @@ def score(D):
 round(0.3 / (0.3 + 0.3), 2)  # → 0.5
 ```
 
-Where does the formula come from? At each point the detective is choosing
-one number D to maximise $p_{\text{data}} \log D + p_g \log(1 - D)$. The
-slope of that with respect to D is $p_{\text{data}}/D - p_g/(1 - D)$, and
-setting the slope to zero gives $D^*$. This is the central result of the
-original GAN paper, and it tells you where the game ends. **At the
+The formula comes from the detective's choice at each point: one number D
+that maximises $p_{\text{data}} \log D + p_g \log(1 - D)$. The slope of
+that with respect to D is $p_{\text{data}}/D - p_g/(1 - D)$, and setting
+the slope to zero gives $D^*$. Goodfellow and colleagues derived it in the
+original GAN paper, and it says where the game ends. **At the
 equilibrium the forger's distribution equals the data's, and the best
 detective says 1/2 everywhere**, scoring V = −log 4 ≈ −1.386, the
 coin-flip score from the table above. Plug $D^*$ back into V and what
 remains is −log 4 plus twice the **Jensen-Shannon divergence** between the
 real and forged distributions, a measure of how different two piles of
 probability are that is zero only when they are identical. So a forger
-facing a perfect detective is really minimising that divergence. Keep that
-in mind: it returns as a problem in the fixes section.
+facing a perfect detective is really minimising that divergence, which
+comes back as a problem among the fixes, below.
 
 ![Top: the real data has two bumps and the forger one wide bump; bottom: the best detective's verdict rises to about 0.8 on the real bumps, drops towards 0 where only fakes live, and would be flat at one half if the forger matched](figures/primer.ml.generative.gans.optimal_detective.svg)
 
@@ -419,8 +402,8 @@ because most points found there are real (the forger's wide bump still
 reaches them). In the middle and at the far edges it falls towards 0,
 because only fakes live there. The grey dashed line at 0.5 is what $D^*$
 becomes once the forger matches the data: the detective has nothing left to
-go on. The shape of the bottom curve is exactly the information the forger
-needs, which way to move its mass.
+go on. The bottom curve is what the forger learns from: it shows which way
+to move its mass.
 
 ![After training with balanced learning rates, the forger's green points sit on all eight clouds, and the detective's verdict on the ring is close to one half](figures/primer.ml.generative.gans.detective_view.svg)
 
@@ -429,36 +412,31 @@ background colour is the trained detective's verdict at every spot: blue for
 "real", red for "fake", white for 0.5. Black dots are real points, green
 dots are the forger's. The green points sit on all eight clouds, and the
 background there is pale, close to white: at the eight centres the verdict
-is between 0.46 and 0.58. That is the equilibrium made visible, the detective
-reduced to guessing where the forgery is good. Away from the ring, where
-neither real nor fake points ever appear, the formula says nothing, and the
-detective's colouring there is arbitrary (deep red in the empty middle).
+is between 0.46 and 0.58: where the forgery is good, the detective is
+reduced to guessing. Away from the ring, where neither real nor fake points
+ever appear, the formula says nothing, and the detective's colouring there
+is arbitrary (deep red in the empty middle).
 
-**Why it matters:** the detective never needs to model what real data looks
-like; it only estimates a *ratio* between two densities. That is why GANs
-could learn sharp images long before anyone could write down a probability
-for an image.
+The detective never has to model what real data looks like. It only
+estimates a *ratio* between two densities, so a GAN never has to write
+down how probable an image is.
 
-**In code:** `optimal_discriminator` is the formula, `fit_discriminator_table` trains the most flexible detective possible (one free score per point) against a fixed forger and arrives at the same verdicts without being told the formula, and `detective_verdicts` evaluates a trained detective anywhere on the page.
+**In code:** `optimal_discriminator` is the formula, `fit_discriminator_table` trains a detective with one free score per point and reaches the same verdicts, and `detective_verdicts` reads a trained detective's verdict anywhere on the page.
 
 ## Why the forger uses a different loss
 
-**Everyday picture.** Early in training, the forger is terrible and the
-detective is sure every fake is fake. Now picture a game of "hotter,
-colder" where the helper stops talking once you are far enough away: the
-further off you are, the quieter the hints. That is the original forger
-loss. The fix is a helper who shouts louder the further off you are.
-
-**Tiny worked example.** The detective looks at a fake and is 99% sure it
-is fake: D(G(z)) = 0.01. How hard does each loss push the forger?
+The game ends with the forger matching the data, but it starts with a
+terrible forger and a detective that is sure every fake is fake. Take a fake
+the detective is 99% sure of: D(G(z)) = 0.01. Compare how hard each of two
+losses pushes the forger:
 
 - The original loss, log(1 − D(G(z))), which the forger minimises: its slope
-  with respect to the detective's score is −D = **−0.01**. Almost nothing.
+  with respect to the detective's score is −D = −0.01, almost nothing.
 - The **non-saturating** loss, −log D(G(z)), which the forger also
-  minimises: its slope is −(1 − D) = **−0.99**. Ninety-nine times more.
+  minimises: its slope is −(1 − D) = −0.99, ninety-nine times as much.
 
-When the detective is undecided, D = 0.5, both slopes are −0.5. The two
-losses agree when it doesn't matter and differ exactly when it does.
+When the detective is undecided, D = 0.5, both slopes are −0.5. So the two
+losses agree while the detective is unsure and differ once it is confident.
 
 $$
 \frac{\partial}{\partial a}\,\log\big(1 - \sigma(a)\big) = -\sigma(a) = -D
@@ -478,7 +456,7 @@ $$
 
 **In words:** "the original loss changes by only D when the detective's
 score moves, so it goes quiet when D is near 0; the non-saturating loss
-changes by 1 − D, so it is loudest exactly when the forger is doing worst."
+changes by 1 − D, so it is loudest when the forger is doing worst."
 
 **With the numbers:** at D = 0.01, the slopes are −0.01 and −0.99.
 
@@ -505,8 +483,8 @@ round(slope(non_saturating), 3)  # → -0.99
 
 Both losses want the same thing, a higher verdict on the fakes, and they
 share the same equilibrium. Only the strength of the push differs. The
-original GAN paper already recommended the switch, and essentially every
-GAN since uses the non-saturating loss or a Wasserstein-style loss (below).
+original GAN paper already recommended the switch, and the GANs that
+followed use the non-saturating loss or a Wasserstein-style loss (below).
 
 ![Left: as the detective grows sure a fake is fake, the original loss flattens out while the non-saturating loss keeps a steady slope; right: giving the detective an 800-step head start shrinks the original loss's gradient to 0.09 while the non-saturating one grows to 15](figures/primer.ml.generative.gans.forger_losses.svg)
 
@@ -521,23 +499,21 @@ At the start both are about 0.5 to 0.6. After 800 detective steps its
 verdict on fakes is 0.003, the original loss's gradient has shrunk to 0.09,
 and the non-saturating one has grown to 15: over a hundred times larger.
 
-**Why it matters:** a forger that gets no gradient does not learn, and the
-detective's lead only widens. Early in training the detective *always* has
-the easy job, so this failure is the default, not an edge case.
+A forger that gets no gradient does not learn, so the detective's lead only
+widens. Early in training the detective *always* has the easier job, so with
+the original loss this stall is what happens by default.
 
-**In code:** `generator_logit_gradient` returns both slopes, and `head_start_experiment` gives the detective a head start and measures the forger's gradient under each loss.
+**In code:** `generator_logit_gradient` returns both slopes, and `head_start_experiment` measures them after a head start.
 
 ## Why training is unstable, part 1: the players chase each other in circles
 
-**Everyday picture.** Two people share an office thermostat. One turns the
-heat up whenever it feels cold; the other opens a window whenever it feels
-hot. Each reacts to where the room *was*, so the temperature overshoots one
-way, then the other, and never settles. A GAN's players do the same: the
-forger moves to where the detective currently says "real", and by the time
-it arrives, the detective has moved.
+The non-saturating loss gives the forger a gradient. Following it still
+does not lead to the equilibrium, because the detective moves too: the
+forger heads for where the detective says "real" today, and by the time it
+arrives, the detective has changed its mind.
 
-**Tiny worked example.** The smallest GAN there is, the **Dirac GAN**, has
-one number per player. The real data is a single point at x = 0. The forger
+The smallest GAN there is, the **Dirac GAN**, shows this with one number per
+player. The real data is a single point at x = 0. The forger
 has one number θ and always outputs x = θ. The detective has one number ψ
 and scores a point as ψ · x, so D(x) = σ(ψx). Start with the forger at
 θ = 1 and a detective with ψ = 0 (it cannot tell anything apart), and let
@@ -627,35 +603,35 @@ paths start at the dot, (1, 0), and take 300 steps of size 0.2. The red
 path, where both players step at once, spirals *outwards*: after 300 steps
 it is 2.6 away from the equilibrium, where it started 1 away. The blue path,
 where the forger waits to see the detective's new ψ before it moves, stays
-on a closed loop about 1 away forever. Neither ever arrives. Plain gradient
-steps do not solve this game even in two dimensions.
+on a closed loop about 1 away forever. Neither path arrives: plain gradient
+steps fail to solve this game even with one number per player.
 
-**Why it matters:** a real GAN has millions of numbers per player, and this
-rotation happens in many directions at once. It shows up as losses that
-swing up and down without trending, and samples that keep changing
-character instead of steadily improving.
+In a real GAN, with millions of numbers per player, the same rotation
+happens in many directions at once. You see it as losses that swing up and
+down without trending, and samples that keep changing character instead of
+steadily improving.
 
 **In code:** `dirac_gan` runs this two-number game with simultaneous or alternating steps.
 
 ## Why training is unstable, part 2: mode collapse
 
-**Everyday picture.** The forger discovers that one particular note, say
-the twenty, always fools the detective. So it prints nothing but twenties.
-The detective eventually learns that twenties are suspicious, so the forger
-switches to printing only fifties, and so on. Each forgery is good, but the
-forger never produces the full *variety* of real money. Each distinct kind
-of real example is a **mode**, and settling on a few of them is **mode
-collapse**.
+When the data comes in several distinct kinds, the same chase takes a form
+of its own. Say the forger finds that one particular note, the twenty,
+always fools the detective, so it prints nothing but twenties. The detective
+eventually learns that twenties are suspicious, and the forger switches to
+fifties, and so on. Each forgery is good, but the forger never produces the
+full *variety* of real money. Each distinct kind of real example is a
+**mode**, and settling on a few of them is **mode collapse**.
 
-**Tiny worked example.** To measure variety on the ring, generate 1,000
-points and count, for each of the eight clouds, how many land within 0.15
-of its centre (3 spreads). A cloud is **covered** if it gets at least 20
-of the 1,000 (2%; a perfect forger gives each about 125). A point that lands
-near any centre counts as **high quality**. After 2,500 rounds with equal
-learning rates for both players, the counts for the eight clouds are
-(0, 68, 0, 20, 0, 51, 0, 17). Clouds 2, 4 and 6 are covered, cloud 8's 17
-falls short, so **3 of 8** modes are covered, and only 156 of the 1,000
-points are high quality: the rest are strung between clouds.
+To measure variety on the ring, generate 1,000 points and count, for each
+of the eight clouds, how many land within 0.15 of its centre (3 spreads). A
+cloud is **covered** if it gets at least 20 of the 1,000 (2%; a perfect
+forger gives each about 125). A point that lands near any centre counts as
+**high quality**. After 2,500 rounds with equal learning rates for both
+players, the counts for the eight clouds are (0, 68, 0, 20, 0, 51, 0, 17).
+Clouds 2, 4 and 6 are covered, and cloud 8's 17 falls short, so 3 of 8
+modes are covered. Only 156 of the 1,000 points are high quality; the rest
+are strung between clouds.
 
 ```mermaid
 stateDiagram-v2
@@ -676,8 +652,8 @@ detective *today*; it only has to put its points where the detective
 currently says "real". The detective then learns those spots are
 over-supplied with fakes, the verdict there drops, and the forger's
 gradient pushes the whole pile somewhere else. It is the chase from part 1,
-now played out across the clouds of the data. The alternation between odd
-and even clouds is what our run actually does, pictured next.
+played out across the clouds. The run on the ring does alternate between
+odd and even clouds, as the next figure shows.
 
 ![Three rows of four snapshots between steps 1,750 and 2,500: with equal learning rates the green points hop between alternate clouds; with a detective three times faster they cover all eight; with a detective ten times faster they sit on six and never reach the other two](figures/primer.ml.generative.gans.ring_snapshots.svg)
 
@@ -704,30 +680,29 @@ only thing that changed is how fast the detective learns.
 
 These runs use one fixed seed. With other seeds the equal-speed run
 sometimes finds all eight clouds late on, and the ten-times run sometimes
-escapes after a while; the pattern, not the exact counts, is the lesson.
+escapes after a while, so trust the pattern rather than the exact counts.
 
-**Why it matters:** mode collapse is the classic GAN failure on real data. A
-face generator that has collapsed produces beautiful faces that all look
-like the same few people. Quality metrics that look at one sample at a time
-can't see it; you have to measure *coverage*, as we did here.
+On real data, a face generator that has collapsed produces convincing faces
+that all look like the same few people. A quality score that judges one
+sample at a time cannot see this. You have to measure *coverage*, as the
+cloud counts do here.
 
 **In code:** `mode_coverage` counts covered clouds and high-quality points, and `train_gan` records it every 250 steps.
 
 ## Why training is unstable, part 3: a detective that wins too fast
 
-**Everyday picture.** A detective who learns much faster than the forger
-soon rejects everything outside the few spots the forger has already
-mastered, with total confidence. Every small experiment the forger tries in
-a new direction comes back "more fake", so it retreats to what already works
-and stops exploring.
+The bottom row of the ring figure shows a third failure. A detective that
+learns much faster than the forger soon rejects, with total confidence,
+everything outside the few spots the forger has already mastered. Every
+small move the forger tries in a new direction comes back "more fake", so it
+retreats to what already works and stops exploring.
 
-**Tiny worked example.** The bottom row above: with the detective's learning
-rate ten times the forger's, after 2,500 steps the counts per cloud are
-(199, 181, 117, 0, 132, 160, 72, 0). The six covered clouds are served well:
-86% of points are high quality, *more* than the balanced run's 81%. But
-clouds 4 and 8 get nothing, from step 500 until the end. Better-looking
-samples, less variety: a trade-off you will meet again with real image
-generators.
+With the detective's learning rate ten times the forger's, after 2,500 steps
+the counts per cloud are (199, 181, 117, 0, 132, 160, 72, 0). The six
+covered clouds are served well: 86% of points are high quality, *more* than
+the 81% of the run with a detective three times faster. But clouds 4 and 8
+get nothing, from step 500 until the end. Better-looking samples with less
+variety is a trade-off real image generators face too.
 
 ```mermaid
 flowchart LR
@@ -746,18 +721,19 @@ pushes the points back onto the clouds they already occupy. The forger
 spends its effort sharpening those, and the missing ones are never
 discovered.
 
-**Why it matters:** "just train the detective harder" sounds like it should
-give the forger a better teacher. Past a point it gives it a worse one. The
-detective needs to be good enough to point the way, not so good that it only
-says no.
+Training the detective harder sounds as if it should give the forger a
+better teacher, but past a point it gives a worse one. The detective has to
+be good enough to point the way, but not so far ahead that all it can say is
+no.
 
 **In code:** `train_gan` takes both learning rates as arguments; this run gives the detective ten times the forger's.
 
 ## Fixes that make the game trainable
 
-**Everyday picture.** A good sparring partner matters more than a strong
-one. Every stabiliser below is a way of keeping the detective useful: fast
-enough to teach, smooth enough that its verdicts point somewhere.
+In each failure so far, the detective has stopped being useful to the
+forger: it moves on while the forger chases it, or it wins so fast that it
+only says no. Each fix below changes the detective, or what it measures, so
+that it keeps pace with the forger and its verdicts point somewhere.
 
 ```mermaid
 flowchart LR
@@ -777,16 +753,13 @@ practice needs one of the steepness fixes to compute, hence the last arrow.
 
 ### Careful learning rates
 
-**Everyday picture.** Pace the two sparring partners so that neither runs
-away with the match.
-
-**Tiny worked example.** The three rows of the ring figure differ only in
-the detective's learning rate, with the forger's fixed at 0.001:
+The three rows of the ring figure differ only in the detective's learning
+rate, with the forger's fixed at 0.001:
 
 | Detective's rate | Clouds covered at step 2,500 | High-quality points |
 |---|---|---|
 | 0.001 (equal) | 3, and hopping | 16% |
-| 0.003 (three times) | **8**, steady | 81% |
+| 0.003 (three times) | 8, steady | 81% |
 | 0.01 (ten times) | 6, stuck | 86% |
 
 A modestly faster detective keeps its verdicts close to the best-detective
@@ -794,18 +767,18 @@ formula for the forger it is facing *now*, so the forger follows a gradient
 that points at the data rather than at yesterday's detective. Heusel and
 colleagues called this the **two time-scale update rule** and proved it
 reaches an equilibrium under reasonable conditions. The right ratio depends
-on the problem; the lesson is that it is a dial worth turning.
+on the problem, so it is worth tuning.
 
 **In code:** `train_gan` with a detective learning rate of 0.003 is the balanced run; the other two rows are the same call with 0.001 and 0.01.
 
 ### Gradient penalty: fine the detective for steep cliffs
 
-**Everyday picture.** Charge the detective a fee for how sharply its score
+A gradient penalty charges the detective a fee for how sharply its score
 changes right on top of the real data. A detective with gentle slopes still
-ranks real above fake, but it can no longer swing wildly, and the swinging is
-what fed the spiral in part 1.
+ranks real above fake, but it can no longer swing wildly, and the swinging
+is what fed the spiral in part 1.
 
-**Tiny worked example.** In the Dirac GAN the detective's score is ψ · x,
+In the Dirac GAN the detective's score is ψ · x,
 whose slope with respect to x is just ψ. The **R1 gradient penalty** adds
 (γ / 2) · ψ² to what the detective minimises. With γ = 1 and ψ = −0.5 the
 fee is 0.125, and its gradient, γψ = −0.5, pulls ψ back towards 0 on every
@@ -852,9 +825,9 @@ from the equilibrium (0, 0). The red line (plain simultaneous steps) climbs
 in steps, one per lap: the outward spiral. The blue line (alternating steps) hovers near
 1 forever: the endless orbit. The green line adds the R1 penalty with γ = 1
 to the simultaneous steps and dives: 0.08 after 50 steps, essentially 0 by
-100. The friction turns the rotation into a spiral *inwards*. That is the
-Mescheder, Geiger and Nowozin result in two numbers, and it is why StyleGAN
-and many later GANs train with an R1 penalty. The Wasserstein GAN with
+100. The friction turns the rotation into a spiral *inwards*. This is the
+result of Mescheder, Geiger and Nowozin, shown with two numbers. StyleGAN and
+many later GANs train with an R1 penalty. The Wasserstein GAN with
 gradient penalty (WGAN-GP) uses the same idea with a different target: it
 keeps the slope near 1 at points between real and fake.
 
@@ -862,19 +835,19 @@ keeps the slope near 1 at points between real and fake.
 
 ### Wasserstein distance: a yardstick that knows near from far
 
-**Everyday picture.** Picture the real data and the fakes as two piles of
-sand. The **Wasserstein distance**, also called the **earth mover's
+Facing the best detective, the forger minimises the Jensen-Shannon
+divergence, as the best-detective section showed. Picture the real data and
+the fakes as two piles of sand. That divergence asks only how much the piles
+*overlap*. The **Wasserstein distance**, also called the **earth mover's
 distance**, is the least work needed to reshape one pile into the other:
-the amount of sand moved times how far it travels. The Jensen-Shannon
-divergence from the best-detective section only asks how much the piles
-*overlap*.
+the amount of sand moved times how far it travels.
 
-**Tiny worked example.** Put all the real sand at x = 0 and all the fake sand
-at x = θ. If θ = 1, the piles don't overlap, and the Jensen-Shannon
-divergence is log 2 = 0.693. If θ = 5, they still don't overlap, and it is
-still 0.693. It cannot tell a near miss from a far one, so it gives the
-forger no direction. The Wasserstein distance is 1 for θ = 1 and 5 for
-θ = 5: it shrinks as the forger approaches, so it always points home.
+Put all the real sand at x = 0 and all the fake sand at x = θ. If θ = 1, the
+piles don't overlap, and the Jensen-Shannon divergence is log 2 = 0.693. If
+θ = 5, they still don't overlap, and it is still 0.693. It cannot tell a
+near miss from a far one, so it gives the forger no direction. The
+Wasserstein distance is 1 for θ = 1 and 5 for θ = 5: it shrinks as the
+forger approaches, so it always points towards the data.
 
 For two equally sized samples on a line, the cheapest way to move the sand
 is to pair the smallest with the smallest, the next with the next, and so
@@ -898,7 +871,7 @@ $$
 each grain has to travel."
 
 **With the numbers:** pairs (0, 3), (1, 4), (2, 5), gaps 3, 3, 3, average
-**3**.
+3.
 
 **In Python:**
 
@@ -918,27 +891,28 @@ is at 0. The red line (Jensen-Shannon) is flat at 0.693 everywhere except
 the single point θ = 0, where it drops to 0: a flat line has no slope, so
 nothing tells the forger which way to move. The blue V (Wasserstein) slopes
 down towards 0 from both sides: wherever the forger is, the slope points at
-the data. On images, where real photos and early fakes barely overlap, this
-difference is the difference between learning and not.
+the data. That matters for images, where real photos and early fakes barely
+overlap.
 
 The **Wasserstein GAN** replaces the detective with a **critic** that
 outputs an unbounded score instead of a probability, and trains it so that
 the gap between its average score on real and on fake points estimates this
-distance. The catch: the estimate is only valid if the critic's slope is at
-most 1 everywhere. The original WGAN enforced that crudely by clipping every
+distance. The estimate is only valid if the critic's slope is at most 1
+everywhere. The original WGAN enforced that crudely by clipping every
 weight; WGAN-GP does it with a gradient penalty; spectral normalization,
 next, does it by capping each layer.
 
-**In code:** `wasserstein_1d` is the sort-and-pair formula, and `js_divergence` computes the Jensen-Shannon divergence between two histograms, flat at log 2 whenever they don't overlap.
+**In code:** `wasserstein_1d` is the sort-and-pair formula, and `js_divergence` computes the Jensen-Shannon divergence between two histograms.
 
 ### Spectral normalization: a speed limit on every layer
 
-**Everyday picture.** A layer of a network is a matrix, and a matrix
-stretches some directions more than others. If no layer can stretch
-anything by more than 1, the whole detective can't change its score faster
-than the input changes: its cliffs have a speed limit.
+Spectral normalization caps the detective's steepness layer by layer. A
+layer of a neural network is a matrix, and a matrix stretches some
+directions more than others. If no layer can stretch anything by more than
+1, the whole detective can't change its score faster than the input
+changes: its cliffs have a speed limit.
 
-**Tiny worked example.** The matrix W = [[3, 0], [0, 1]] stretches the
+The matrix W = [[3, 0], [0, 1]] stretches the
 horizontal direction by 3 and the vertical by 1. Its **largest stretch** is
 3. Divide W by 3 and no direction is stretched by more than 1.
 
@@ -1004,31 +978,28 @@ Spectral normalization keeps one arrow per layer and runs a single round
 trip per training step: the weights change slowly, so the arrow stays
 nearly right, and the cost is a couple of extra matrix-vector products.
 
-**Why it matters:** spectral normalization (Miyato and colleagues, 2018) is a
-one-line change to the detective that made GAN training far less sensitive
-to learning rates and architecture, and it became a default in large image
-GANs such as BigGAN.
+Miyato and colleagues introduced spectral normalization in 2018. It changes
+only the detective's layers. It made GAN training less sensitive to the
+choice of learning rates and architecture, and large image GANs such as
+BigGAN use it.
 
 **In code:** `largest_stretch` is power iteration, and `spectrally_normalize` divides a matrix by it.
 
 ## Where GANs stand today
 
-**Everyday picture.** The forger-and-detective idea started as the whole
-machine. Today it is more often a picky critic *inside* another machine,
-brought in for the one thing it does best: making outputs look sharp and
-real.
+Stabilised this way, GANs had one clear advantage over what came next:
+speed. A GAN makes an image in one pass through the generator, while a
+diffusion model typically runs its
+network tens of times per image, removing a little noise each time (see
+`primer.ml.generative.diffusion`). For a while that speed, and very sharp
+samples such as StyleGAN's faces from 2018, made GANs the best image
+generators. Then diffusion models overtook them on image quality and, above
+all, on *coverage*: they don't mode-collapse, and they train stably. Since
+around 2021 most new image and video generators have been diffusion or flow
+models.
 
-**Tiny worked example.** A GAN makes an image in **one** pass through the
-generator. A diffusion model typically runs its network tens of times per
-image, removing a little noise each time (see
-`primer.ml.generative.diffusion`). For a while, that speed plus very sharp
-samples (StyleGAN's faces, from 2018, are still striking) made GANs the best
-image generators. Then diffusion models overtook them on image quality and,
-above all, on *coverage*: they don't mode-collapse and they train stably,
-which is everything this lesson has been fighting. Since around 2021 most
-new image and video generators are diffusion or flow models.
-
-GANs didn't disappear. Their loss did the moving:
+GANs did not disappear. The adversarial loss lives on inside other systems,
+such as an autoencoder with a detective attached:
 
 ```mermaid
 flowchart LR
@@ -1057,11 +1028,11 @@ audio decoders such as HiFi-GAN produce clean waveforms. GAN-style losses
 are also used to distil a slow many-step diffusion model into a fast one-
 or few-step generator.
 
-**Why it matters:** when you meet a modern image, audio or video system,
-expect a GAN loss somewhere in its decoder or its fast sampling path, even
-when the headline method is diffusion. Everything in this lesson, the
-non-saturating loss, gradient penalties, spectral normalization and careful
-learning rates, is still how those critics are kept stable.
+So a modern image, audio or video system often has a GAN loss in its
+decoder or its fast sampling path, even when its headline method is
+diffusion. The non-saturating loss, gradient penalties, spectral
+normalization and careful learning rates are still how those detectives are
+kept stable.
 
 ## In 20 seconds
 
@@ -1072,11 +1043,12 @@ learning rates, is still how those critics are kept stable.
   The best detective says p_data / (p_data + p_g); at the equilibrium the
   forger matches the data and the detective says 1/2 everywhere.
 - **The non-saturating loss** (maximise log D(G(z))) keeps the forger's
-  gradient strong when the detective is confident, exactly when the
+  gradient strong when the detective is confident, which is when the
   original loss goes quiet.
 - **Unstable because** each player's target moves: plain gradient steps
   circle or spiral around the equilibrium, the forger hops between a few
-  modes (mode collapse), and a detective that wins too fast freezes it.
+  modes (mode collapse), and a detective that wins too fast freezes the
+  forger in place.
 - **Fixes:** balanced learning rates, gradient penalties (R1, WGAN-GP),
   spectral normalization, and the Wasserstein distance, which still points
   the way when real and fake don't overlap.
