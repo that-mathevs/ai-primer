@@ -128,21 +128,13 @@ needed to choose, you are done.
 
 ## Level 2: How it works, from scratch
 
-What follows builds every box of the pipeline from scratch, in the order a
-question travels through them, then the upgrades, then how to tell a
-retrieval failure from a generation failure.
-
-An open-book exam with a librarian. Before you answer, the librarian fetches
-the few pages most likely to contain the answer; you answer from those
-pages and write down which page each fact came from. If the pages don't
-contain the answer, you say so instead of guessing.
-
-**Retrieval-augmented generation** is that arrangement for a language
-model. The model's training knowledge is frozen and doesn't include your
-company's documents, so before each answer the system *retrieves* relevant
-passages from your documents and puts them in the prompt, and the model
-*generates* an answer from them, with citations. It's how you give a model
-knowledge that changes, or that must be cited, without retraining it.
+A language model knows only what was in its training data, and your
+company's documents were not in it. **Retrieval-augmented generation** works
+in two stages. Ahead of time, the documents are parsed, cut into passages
+and indexed. Then, for every question, the system *retrieves* the passages
+the asker may read that best match the question, keeps the best few, puts
+them in the prompt, and the model *generates* an answer from them, citing
+the passage behind each claim.
 
 ```mermaid
 flowchart LR
@@ -157,30 +149,21 @@ flowchart LR
 ```
 
 **Reading it:** the top row runs once per document, whenever documents
-change; the bottom row runs for every question. Everything the answer can
-contain has to survive every box, left to right: a table mangled at *Parse*
-or a passage missing at *Retrieve* can't be fixed by a better prompt at
-*Generate*. That's why most RAG quality work happens in the first boxes, not
-the last.
+change; the bottom row runs for every question. An answer can contain only
+what survives every box, left to right. A table mangled at *Parse*, or a
+passage missing at *Retrieve*, cannot be fixed by a better prompt at
+*Generate*, which is why most of the work on a RAG system's quality goes
+into the early boxes.
 
-**In code:** `RAGIndex` is the top row: it chunks every document and builds
-the keyword and dense indexes. `answer` is the bottom row, from filtered
-retrieval to verified citations, and returns a `RAGResult`.
-
-The rest of this lesson walks the boxes in order, then covers the upgrades
-and how to debug a wrong answer.
+**In code:** `RAGIndex` builds the top row's indexes, and `answer` runs the
+bottom row and returns a `RAGResult`.
 
 ## Parsing: where quality dies first
 
-**Everyday picture.** Photocopy a newspaper page and read it straight
-across: you get the first line of one column, then the first line of the
-next story, and nothing makes sense. Text extracted from PDFs has the same
-problems: running headers and page numbers mixed into the text, words
-broken across lines, and tables flattened into a row of numbers with no
-columns.
-
-**Worked example.** `MESSY_PDF` is two pages of a travel policy as a naive
-extractor returns it. `clean_extracted_text` repairs it in four steps:
+Before a document can be searched, its text has to be pulled out of the
+file, and text pulled out of a PDF comes out damaged. Here is what a naive
+extractor does to two pages of a travel policy, and what four repairs make
+of it:
 
 | Damage | Before | After |
 |---|---|---|
@@ -189,10 +172,10 @@ extractor returns it. `clean_extracted_text` repairs it in four steps:
 | Word hyphenated across a line break | `all em-` / `ployees travelling` | `all employees travelling` |
 | Table flattened | `L1-L3 150 60 L4-L6 200 75` | kept as rows, then one sentence per row |
 
-The table is the dangerous one. Flattened, "200" floats free of its grade.
-`table_rows_as_sentences` turns each row into a self-contained sentence,
-`Grade L4-L6: hotel cap 200, meal cap 75.`, so any row can be retrieved on
-its own and still says what its numbers mean.
+The table is the dangerous one. Flattened, "200" no longer says which grade
+it belongs to. The last repair writes each row as a sentence that stands on
+its own, `Grade L4-L6: hotel cap 200, meal cap 75.`, so any row can be
+retrieved by itself and still say what its numbers mean.
 
 ```mermaid
 flowchart LR
@@ -207,61 +190,64 @@ flowchart LR
 ```
 
 **Reading it:** each box removes one kind of extraction damage. The diamond
-is the important decision: prose and tables need different handling, because
-a table's meaning lives in its columns. Real pipelines add layout-aware
-parsers and **OCR** (optical character recognition: reading text from an
-image of a page) for scanned documents, with a quality check on the output.
+is the decision that matters: prose and tables need different handling,
+because a table's meaning lives in its columns. Real pipelines add
+layout-aware parsers and **OCR** (optical character recognition: reading
+text from an image of a page) for scanned documents, with a quality check
+on the output.
 
-**Why it matters.** Enterprise documents are scanned, multi-column, full of
-tables that span pages. If parsing garbles the numbers, no retriever or
-model can recover them, and the failure looks like a *model* error.
+Company documents are scanned, laid out in columns and full of tables that
+span pages. If parsing garbles a number, no retriever or model later in the
+pipeline can recover it, and the failure looks like a *model* error.
 
-**In code:** `extract_table` finds a table by its header row in the cleaned
-text and returns each row as a dict, ready for `table_rows_as_sentences`.
+**In code:** `clean_extracted_text` makes the first three repairs and keeps
+table rows on their own lines; `extract_table` reads the rows and
+`table_rows_as_sentences` writes each one as a sentence.
 
 ## Chunking, with metadata that travels
 
-**Everyday picture.** Index cards. Each card holds one idea, small enough to
-match a question precisely, and in its corner a label: which document,
-which date, who may read it.
-
-**Worked example.** With a 15-word limit, `it-004` splits into two passages:
+Clean text is still too long to search as one piece. A passage that holds
+one idea can match a question precisely, so each document is cut into small
+passages called **chunks**. Every chunk carries a label copied from its
+document: the title, the date it was last updated and who may read it. With
+a 15-word limit, the VPN error guide `it-004` splits into two chunks:
 
 | Passage id | Text | Updated | Readers |
 |---|---|---|---|
 | `it-004#0` | ERR-4012 means the VPN tunnel could not be established, usually because the client is out of date. | 2026-04-10 | everyone |
 | `it-004#1` | Update AnyConnect to version 5.1 or later and reboot. | 2026-04-10 | everyone |
 
-(The limit is tiny because the toy documents are tiny; real systems use a few
-hundred tokens.) Split on the document's structure (sentences, paragraphs,
-sections), not at fixed character counts that cut a sentence in half.
-`primer.ml.embeddings.retrieval` compares chunking strategies in depth.
+The limit is tiny because these documents are tiny; real systems use chunks
+of a few hundred tokens. Cut on the document's own structure (sentences,
+paragraphs, sections), not every so many characters, which cuts sentences
+in half. `primer.ml.embeddings.retrieval` compares chunking strategies in
+depth.
 
-**Why it matters.** Small chunks match precisely but can lose context (the
-second card doesn't say *which* error it fixes; see contextual retrieval
-below). The metadata is what makes permission and date filters possible
-later.
+Small chunks match precisely but can lose their context: the second chunk
+never says *which* error it fixes, a problem contextual retrieval solves
+under the retrieval upgrades below. The label is what makes the permission
+and date filters possible later.
 
 **In code:** `chunk_document` splits a document on sentence boundaries into
-`Passage`s, and each `Passage` carries its id, title, department, date and
-readers.
+`Passage`s, each carrying its id, title, department, date and readers.
 
 ## Retrieval: keyword and meaning, fused
 
-**Everyday picture.** Two librarians: one searches the catalogue for your
-exact words, the other understands what you *mean* even when you use
-different words. You take the books both of them rank highly.
+A question now has to find its chunks, and there are two ways to search
+them.
 
 * **Keyword search (BM25)** scores passages by the question's words,
-  giving more weight to rare words and less to long passages. It nails
+  giving more weight to rare words and less to long passages. It finds
   exact identifiers like `ERR-4012` and misses synonyms.
 * **Dense search** compares **embeddings** (vectors where closeness means
-  similar meaning; see `primer.ml.embeddings`). It finds "scam message in my
-  inbox" → the phishing guide with no shared words, but blurs exact codes.
-* **Hybrid search** runs both and merges the two rankings with **reciprocal
-  rank fusion (RRF)**, which only needs the ranks, never the scores. BM25
-  scores and cosine similarities live on different scales, so adding them
-  would be meaningless.
+  similar meaning; see `primer.ml.embeddings`). It matches "scam message in
+  my inbox" to the phishing guide with no word in common, but blurs exact
+  codes.
+
+**Hybrid search** runs both and merges the two rankings with **reciprocal
+rank fusion (RRF)**, which uses only each passage's rank, never its score.
+BM25 scores and cosine similarities are on different scales, so adding them
+would mean nothing.
 
 $$
 \text{RRF}(d) = \sum_{i} \frac{1}{k + \text{rank}_i(d)}
@@ -295,15 +281,22 @@ round(1 / (k + 1) + 1 / (k + 3), 4)  # → 0.0323
 round(1 / (k + 1), 4)  # → 0.0164
 ```
 
+### Measuring retrieval
+
+Which search to use is settled by measuring it. Take a set of questions
+whose right document you know, here 12, and count how often that document
+is among the top k passages a method returns. That share is
+**recall@k**.
+
 ![Dense search plateaus at 92% recall because it never finds the error code, while hybrid reaches 100% by k = 2 and reranking lifts its top-1 from 75% to 92%](figures/primer.agents.rag.recall.svg)
 
-**Reading it:** the x-axis is how many passages you keep (k); the y-axis is
-**recall@k**, the share of the 12 labelled questions whose correct document
-is among those k. On this small set many questions reuse the documents'
-own words, so keyword search is already strong. Dense search plateaus at
-92% because it never finds `ERR-4012`. Hybrid reaches 100% by k = 2 but only
-75% at k = 1. Reranking the hybrid shortlist lifts the top-1 result to 92%.
-Run this measurement on *your* questions before choosing a method.
+**Reading it:** the x-axis is how many passages you keep (k), and the y-axis
+is recall@k over the 12 labelled questions. On this small set many
+questions reuse the documents' own words, so keyword search is already
+strong. Dense search levels off at 92% because it never finds `ERR-4012`.
+Hybrid reaches 100% by k = 2 but only 75% at k = 1, and reranking the
+hybrid shortlist (the next step) lifts the top-1 result to 92%. Run this
+measurement on *your* questions before choosing a method.
 
 $$
 \text{recall@}k = \frac{1}{|Q|} \sum_{q \in Q} \mathbb{1}\bigl[\text{a relevant document is in the top } k \text{ for } q\bigr]
@@ -332,31 +325,32 @@ found = [1] * 11 + [0]
 round(sum(found) / len(found), 2)  # → 0.92
 ```
 
-**In code:** `RAGIndex.retrieve` ranks the allowed passages with
-`primer.ml.embeddings.retrieval.BM25`, with dense similarity, or with both
-fused by `primer.ml.embeddings.retrieval.reciprocal_rank_fusion`, depending
-on the mode you ask for. `recall_curve` measures recall@k for each method.
+**In code:** `RAGIndex.retrieve` runs keyword, dense or hybrid search over
+the passages the asker may read, and `recall_curve` measures recall@k for
+each.
 
 ## Reranking: read the question and each passage together
 
-**Everyday picture.** The librarians bring back twenty books quickly; an
-expert then reads your question next to each book and picks the best three.
-
-A **reranker** (usually a **cross-encoder**: a model that reads the question
-and one passage *together* and outputs a relevance score) is far more
-precise than comparing precomputed vectors, and far too slow to run over
-every passage. So retrieval casts a wide, cheap net (here 8 candidates) and
-the reranker keeps the best few (here 3). This module reuses the toy
-cross-encoder from `primer.ml.embeddings.retrieval`.
+Both searches are fast because their indexes are built ahead of time: a
+question is compared with what is stored, never read alongside a passage.
+A **reranker** does read them together. It is usually a **cross-encoder**,
+a model that takes the question and one passage at once and outputs a
+relevance score. That is far more precise than comparing stored vectors,
+and far too slow to run over every passage. So retrieval casts a wide,
+cheap net (8 candidates here) and the reranker keeps the best few (3 here),
+using the small cross-encoder built in `primer.ml.embeddings.retrieval`.
 
 **In code:** `RAGIndex.rerank` scores each (question, passage) pair with
 `primer.ml.embeddings.retrieval.CrossEncoder` and keeps the best few.
 
 ## Assemble, generate, cite, verify
 
-**Worked example.** "What does ERR-4012 mean?" becomes this context (each
-source escaped and tagged with its id; the question last; see
-`primer.agents.context`):
+The passages the reranker keeps go into the prompt. Each sits in its own
+tag with its id, title and date, its text escaped so it cannot break out of
+the tag, and the question comes last (see `primer.agents.context`). The
+instructions tell the model to answer only from the sources, to cite the id
+of each source it uses, and to say it doesn't know when the sources don't
+hold the answer. For "What does ERR-4012 mean?" the prompt reads:
 
 ```text
 <sources>
@@ -367,11 +361,11 @@ source escaped and tagged with its id; the question last; see
 <question>What does ERR-4012 mean?</question>
 ```
 
-and the answer is *"ERR-4012 means the VPN tunnel could not be established,
-usually because the client is out of date. [it-004#0]"*. `verify_citations`
-then checks that every cited id was really in the context and that the
-cited passage supports the claim before it; a question the sources don't
-cover gets "I don't know based on the provided sources."
+The answer is *"ERR-4012 means the VPN tunnel could not be established,
+usually because the client is out of date. [it-004#0]"*. A final check
+then reads every citation: the cited id must have been in the context, and
+the cited passage must support the claim before it. A question the sources
+don't cover gets "I don't know based on the provided sources."
 
 ```mermaid
 sequenceDiagram
@@ -389,31 +383,29 @@ sequenceDiagram
   A-->>U: answer + clickable citation
 ```
 
-**Reading it:** time runs downward. Note the order: the permission filter
-runs at the index, before any passage is fetched; the model only ever sees
-three passages; and nothing reaches the user until the citations check out.
-Citations are what let a person verify an answer in seconds, which is most
-of what makes people trust the system.
+**Reading it:** time runs downward. The permission filter runs at the index,
+before any passage is fetched; the model sees only three passages; and
+nothing reaches the user until the citations check out. A checked citation
+lets a person confirm the answer in seconds by reading the passage it
+points to.
 
-**In code:** `assemble_context` builds the tagged sources and the question.
-`generate` sends them to the model with the answer-from-sources rules, and
-`grounded_policy` is the offline stand-in model that honours them. `answer`
-chains retrieve, rerank, assemble, generate and `verify_citations`.
+**In code:** `answer` chains `RAGIndex.retrieve`, `RAGIndex.rerank`,
+`assemble_context`, `generate` and `verify_citations`; `grounded_policy` is
+the offline model that stands in for a real one.
 
 ## Permission-aware retrieval: filter before, never after
 
-**Everyday picture.** A librarian checks your library card *before*
-fetching from the restricted archive. Checking it after you've read the
-document is pointless.
-
-Each passage carries its **access-control list** (ACL: the groups allowed to
-read it), copied from the source system (SharePoint, Google Drive, a wiki).
-`RAGIndex.retrieve` drops every passage the user can't read *before*
-ranking, so restricted text can't reach the context, the model, or the
-answer.
-
-**Worked example.** "What is the Q3 revenue forecast?" (the forecast
-document is readable only by `finance` and `exec`):
+The diagram above filters at the index, before anything is ranked. In a
+company not everyone may read every document: the revenue forecast is for
+finance and executives only. So each passage carries its document's **access-control list** (ACL:
+the groups allowed to read it), copied from the system the document came
+from (SharePoint, Google Drive, a wiki). The question is when to check it.
+Retrieval checks it *before* ranking and drops every passage the asker
+cannot read, so restricted text never reaches the context, the model or
+the answer. The alternative, deleting restricted citations after the answer
+is written, leaves the fact behind. Here is "What is the Q3 revenue
+forecast?", where the forecast document is readable only by `finance` and
+`exec`:
 
 | Who asks | How it's filtered | Answer |
 |---|---|---|
@@ -445,30 +437,41 @@ sequenceDiagram
 **Reading it:** in the red box the model saw the restricted passage, so the
 number is already in its words, and deleting the citation marker afterwards
 leaves the fact behind. In the green box the passage never left the index.
-Permission changes in the source system must also sync to the index
-quickly, or a revoked user keeps access until the next re-index.
+Permission changes in the source system must also reach the index quickly,
+or a user whose access was revoked keeps it until the next re-index.
 
-**In code:** `post_generation_filter_answer` is the wrong way, kept so the
-leak can be shown: it retrieves for every group, generates, then strips the
+**In code:** `post_generation_filter_answer` is the wrong way, kept to show
+the leak: it retrieves for every group, generates, then strips the
 restricted citation markers.
 
 ## Retrieval upgrades
 
-Each upgrade below is a working function, and each fixes a failure you can
-reproduce in `demo()`:
+Even filtered hybrid search with a reranker fails in a few recognizable
+ways: a follow-up question that says "it", a question worded nothing like
+its answer, an out-of-date document that still matches, a passage that never
+names its subject. Each upgrade fixes one failure. The last column shows the
+top three passages without it and with it, on a question that has that
+failure:
 
-| Upgrade | Everyday picture | Before → after (top 3) |
+| Upgrade | What it does | Before → after (top 3) |
 |---|---|---|
-| **Query rewriting** (`rewrite_query`) | Repeating the earlier topic when you ask a follow-up | "what if it fails?" after a VPN question: printer guide → VPN setup and ERR-4012 |
-| **HyDE** (`hyde_search`) | Telling the librarian "I'm looking for a page that says something like…" | "a weird message asking for my bank details": nothing relevant → phishing guide first |
-| **Multi-query** (`multi_query_search`) | Asking three librarians in three different phrasings | "two step login setup": no MFA guide → MFA guide in top 3 |
-| **Metadata filter** (`updated_after`) | Ignoring the out-of-date binder on the shelf | superseded 2023 travel policy first → gone |
-| **Contextual retrieval** (`RAGIndex(contextual=True)`) | Writing the chapter title on every index card | "how do I fix ERR-4012": fix sentence missing → found |
-| **Parent-child** (`retrieve_parents`) | Find the sentence, hand over the whole page | a matching sentence → its full document |
+| **Query rewriting** | Fills in a follow-up's subject from earlier in the conversation | "what if it fails?" after a VPN question: printer guide → VPN setup and ERR-4012 |
+| **HyDE** | Searches with a drafted answer instead of the question | "a weird message asking for my bank details": nothing relevant → phishing guide first |
+| **Multi-query** | Searches several phrasings of the question and fuses the results | "two step login setup": no MFA guide → MFA guide in top 3 |
+| **Metadata filter** | Drops documents updated before a given date | superseded 2023 travel policy first → gone |
+| **Contextual retrieval** | Writes where each passage comes from into it before indexing | "how do I fix ERR-4012": fix sentence missing → found |
+| **Parent-child** | Matches a small passage, hands the model its whole document | a matching sentence → its full document |
 
-**HyDE** (Hypothetical Document Embeddings) deserves a picture, because it
-sounds backwards: you ask a model to *invent* an answer, then search with
-it.
+**In code:** `rewrite_query`, `hyde_search`, `multi_query_search` and
+`RAGIndex.retrieve_parents` are four of the upgrades. The date filter is an
+option of `RAGIndex.retrieve`, contextual chunks are an option of
+`RAGIndex`, and `demo` runs each upgrade on its question.
+
+### HyDE
+
+**HyDE** (Hypothetical Document Embeddings) sounds backwards: it asks a
+model to *invent* an answer, then searches with the invented answer instead
+of the question.
 
 ```mermaid
 flowchart LR
@@ -481,43 +484,43 @@ flowchart LR
 
 **Reading it:** questions and answers are written differently. The user's
 words ("weird", "bank details") appear nowhere in the phishing guide, but
-the drafted answer uses the vocabulary answers use ("phishing", "report",
+the drafted answer uses the words answers use ("phishing", "report",
 "suspicious"), so its embedding lands next to the real passage. The draft
-may be wrong in its details; that's fine, because it's only used to search
-and is never shown to the user.
+may be wrong in its details. That does not matter, because it is used only
+to search and is never shown to the user.
 
-**Contextual retrieval** fixes the "second index card" problem from the
-chunking section: before indexing, each passage gets a short line saying
-where it comes from. Here that's just the title and department; Anthropic's
-version asks a model to write one sentence situating the chunk in its
-document.
+### Contextual retrieval
+
+**Contextual retrieval** fixes the second `it-004` chunk from the chunking
+step, the one that never says which error it fixes. Before indexing, each
+passage gets a short line saying where it comes from. Here that line is
+just the document's title and department; Anthropic's version asks a model
+to write one sentence placing the chunk in its document.
 
 ![Without a context line the fix passage misses the top 20 for all three phrasings; with the title prefixed it ranks 2nd, 2nd and 4th](figures/primer.agents.rag.contextual.svg)
 
-**Reading it:** three ways of asking how to fix ERR-4012; each pair of bars
+**Reading it:** three ways of asking how to fix ERR-4012. Each pair of bars
 is the rank of the passage "Update AnyConnect to version 5.1 or later and
-reboot." (shorter is better, and 21 means not in the top 20). Without
-context the passage never mentions ERR-4012, and for all three phrasings it
-doesn't make the top 20 at all. With the title prefixed it ranks 2nd, 2nd
-and 4th: in the top five every time, though "resolve ERR-4012 on my
-laptop" still ranks three passages from the laptop guide above it. A context line turns
-"never found" into "found", and ranking the right passage first is then
-the reranker's job.
+reboot." (shorter is better, and 21 means not in the top 20). Without a
+context line the passage never mentions ERR-4012, and for all three
+phrasings it misses the top 20. With the title prefixed it ranks 2nd, 2nd
+and 4th. That is in the top five every time, though "resolve ERR-4012 on my
+laptop" still ranks three passages from the laptop guide above it. The
+context line gets the passage found; putting it first is the reranker's
+job.
 
 ## Agentic RAG: let the model decide when and what to search
 
-**Everyday picture.** A researcher rather than a librarian: reads the
-question, decides what to look up, reads the results, and searches again if
-something's missing.
-
-Plain RAG searches exactly once, with the user's words. In **agentic RAG**
-search is a tool the model calls: zero times for small talk, several times
-for a multi-part question, with its own reformulated queries.
-
-**Worked example.** "What is the per-diem for meals and how do I upload
-expense receipts?" produces two searches ("What is the per-diem for meals",
-"how do I upload expense receipts") and an answer citing both `fin-002#2`
-and `fin-004#0`. "thanks, that's all!" produces no search at all.
+Every pipeline so far runs the same steps for every question, whatever it
+asks. Some questions need several searches, and some need none. In
+**agentic RAG** search is a tool the model calls inside the agent loop (see
+`primer.agents.agent_loop`): the model reads the question, decides whether
+to search and with which words, reads the results, and searches again if
+something is missing. Asked "What is the per-diem for meals and how do I
+upload expense receipts?", it runs two searches ("What is the per-diem for
+meals", "how do I upload expense receipts") and answers citing both
+`fin-002#2` and `fin-004#0`. Told "thanks, that's all!", it does not search
+at all.
 
 ```mermaid
 sequenceDiagram
@@ -532,11 +535,11 @@ sequenceDiagram
   M-->>U: both answers, each with its citation
 ```
 
-**Reading it:** the model, not a fixed pipeline, decides how many searches
-to run and with which words. That handles multi-part and vague questions
-better, at the cost of more model calls, more latency, and a loop that needs
-the usual step budget (`primer.agents.agent_loop`). The search tool here also
-applies the freshness filter itself, so the agent can't forget it.
+**Reading it:** time runs downward: one search for each part of the
+question, then one answer with a citation for each part. Each search costs
+a model call, so agentic RAG is slower and dearer than one search, and like
+any agent loop it needs a limit on its steps. The search tool applies the
+date filter itself, so the model cannot forget it.
 
 **In code:** `agentic_answer` offers the model one search tool and runs the
 loop: each search retrieves, reranks and returns tagged passages, until the
@@ -544,15 +547,13 @@ model answers or the step limit is hit.
 
 ## GraphRAG: questions about connections
 
-**Everyday picture.** A detective's corkboard: photos of people and places
-joined by string, each string labelled with the note that established it.
-
-Some questions aren't answered by any single passage: "what depends on
-two-factor authentication?" or "what are the main themes across these
-contracts?". **GraphRAG** first extracts **entities** (named things:
-systems, people, products) and the relationships between them into a graph,
-then answers by walking it, or by summarizing groups of connected entities.
-`build_graph` does the smallest honest version: two entities are linked when
+Some questions are not answered by any passage, however many searches run:
+"what depends on two-factor authentication?" or "what are the main themes
+across these contracts?". The answer is spread across many documents.
+**GraphRAG** first extracts **entities** (named things: systems, people,
+products) and the relationships between them into a graph, then answers by
+walking the graph or by summarizing groups of connected entities. The
+version here is the smallest one that works: two entities are linked when
 one sentence mentions both, and each link remembers which document said so.
 
 ```mermaid
@@ -568,36 +569,36 @@ flowchart LR
   AA ---|it-001| SSP((self-service portal))
 ```
 
-**Reading it:** each circle is an entity found in the knowledge base; each
-line is a sentence that mentioned both ends, labelled with its source
+**Reading it:** each circle is an entity found in the documents, and each
+line is a sentence that mentions both ends, labelled with its source
 document. "What depends on two-factor?" is answered by reading the
-neighbours of one circle, with citations for free. Real GraphRAG uses a
-model to extract typed relations ("requires", "replaces") and to write a
-summary for each cluster, which is what makes broad, whole-collection
-questions answerable.
+neighbours of one circle, and each neighbour comes with the document that
+links it. Real GraphRAG uses a model to extract typed relations
+("requires", "replaces") and to write a summary for each cluster, which is
+what makes questions about the whole collection answerable.
 
-**In code:** `communities` groups the graph from `build_graph` into
-connected clusters of entities, the "themes" a real GraphRAG system would
+**In code:** `build_graph` links the entities, and `communities` groups them
+into connected clusters, the "themes" a real GraphRAG system would
 summarize.
 
 ## Debugging a confident wrong answer
 
-**Everyday picture.** A student gets an exam question wrong. Either the
-librarian brought the wrong book, or the student misread the right one. The
-fixes are completely different, so find out which before changing anything.
+With this many steps between a question and its answer, a confident wrong
+answer could start in any of them. Either retrieval brought the wrong
+passages or the model misused the right ones. The fixes are different, so
+find out which before changing anything. Run the 12 labelled questions and
+sort each one: a **retrieval miss** when no passage from the right
+document is in the top 3 (no prompt can fix that), a **generation miss**
+when the right document was there but the answer didn't use it, or ok.
 
-**Worked example.** `debug_wrong_answers` runs the 12 labelled questions and
-classifies each: **retrieval miss** (no relevant document in the top 3: no
-prompt can fix it), **generation miss** (the right document was there but the
-answer didn't use it), or ok. With dense-only retrieval, "what does ERR-4012
-mean" is a retrieval miss and recall@3 is 0.92; switching to hybrid fixes it
-(recall@3 = 1.00). What's left are generation misses. One of them,
-"per-diem for meals when traveling", is answered from the superseded 2023
-policy: a *data* problem that a date filter fixes. The other, "enroll in
-MFA", is a limit of this lesson's stand-in model rather than of RAG: it
-matches words literally, so "enroll" misses the passage's "enrolling", and
-with only "MFA" in common it declines to answer. A real model would read
-it-006 and answer.
+With dense-only retrieval, "what does ERR-4012 mean" is a retrieval miss and
+recall@3 is 0.92; switching to hybrid fixes it (recall@3 = 1.00). What's left
+are generation misses. One of them, "per-diem for meals when traveling", is
+answered from the superseded 2023 policy: a *data* problem that a date
+filter fixes. The other, "enroll in MFA", is a limit of the simple model
+used here, not of RAG: it matches words literally, so "enroll" misses the
+passage's "enrolling", and with only "MFA" in common it declines to answer.
+A real model would read it-006 and answer.
 
 ```mermaid
 flowchart TD
@@ -611,29 +612,36 @@ flowchart TD
 ```
 
 **Reading it:** start at the top and answer each question with a
-measurement, not a guess. Most teams jump straight to the bottom-right box
-and edit the prompt; the diagram says to rule out the three earlier failure
-points first, because they're more common and a prompt can't fix them.
+measurement, not a guess. Editing the prompt is the bottom-right box. Rule
+out the three boxes before it first, because no prompt can fix a failure in
+any of them.
 
 ![Dense search has the only retrieval miss; switching to hybrid removes it, and the wrong answers left are generation misses](figures/primer.agents.rag.diagnosis.svg)
 
 **Reading it:** each bar is one retrieval method over the 12 labelled
 questions, split into ok (green), generation misses (orange) and retrieval
-misses (red). Dense search has a retrieval miss (the error code); hybrid
-removes it. The orange that remains is where to look next, and it's not
-retrieval.
+misses (red). Dense search has one retrieval miss, the error code, and
+hybrid removes it. The orange that remains is generation, and that is where
+to look next.
+
+**In code:** `debug_wrong_answers` sorts the labelled questions into the
+three kinds.
 
 ## In 20 seconds
-- RAG retrieves relevant passages at question time and has the model answer
-  from them with citations: knowledge that changes or must be cited, with no
-  retraining.
-- Quality is decided early: parsing (tables!), chunking with metadata, and
-  hybrid retrieval with reranking.
-- Filter by permissions before retrieval, never after generation.
-- Upgrades: query rewriting, HyDE, multi-query, date filters, contextual
-  retrieval, parent-child; agentic RAG for multi-part questions; GraphRAG
-  for questions about connections.
-- Debug by measuring retrieval (recall@k) first, then generation.
+- RAG searches your documents when a question arrives and has the model
+  answer from the passages it finds, citing each one, so knowledge can
+  change or be checked without retraining.
+- Quality is decided before the model runs: in parsing (tables above all),
+  in chunks that carry their document's metadata, and in hybrid search
+  followed by reranking.
+- Check permissions before retrieval, never after generation: once the
+  model has read a restricted passage, deleting its citation leaves the fact
+  in the answer.
+- Each retrieval upgrade fixes one named failure; agentic RAG handles
+  questions that need several searches, and GraphRAG handles questions about
+  connections.
+- Debug a wrong answer by measuring retrieval (recall@k) first, and look at
+  generation only after.
 
 ## Self-test questions
 
