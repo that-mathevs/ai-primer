@@ -125,27 +125,28 @@ only needed to diagnose a curve and pick a fix, you are done.
 
 ## Level 2: How it works, from scratch
 
-Two students prepare for an exam. One learns the ideas. The other memorises
-last year's paper, answer by answer, and scores 100% on it in practice. On
-the real exam, with new questions, the first student does fine and the
-second falls apart. A model that memorises its training examples, noise
-and all, instead of learning the pattern behind them is **overfitting**. It
-looks brilliant on the data it has seen and fails on data it hasn't.
-**Regularization** is everything we do to push a model toward the first
-student.
-
-Worked example: four training points (0, 0), (1, 1), (2, 0), (3, 1), a
-zig-zag that is really "about 0.5, plus noise".
+Take four training points: (0, 0), (1, 1), (2, 0) and (3, 1). They zig-zag,
+but the pattern behind them is a constant of about 0.5, and the zig-zag is
+noise. Fit two models to them and ask each one for a prediction at x = 4,
+one step past the data.
 
 | model | error on the 4 training points | prediction at x = 4 |
 |---|---|---|
 | flat line at 0.5 (the pattern) | 0.25 | 0.5 |
 | cubic through all four points (memorised) | **0** | **8** |
 
-The cubic is perfect on the training data and absurd one step beyond it.
-You can check the 8 by hand with a difference table: the values 0, 1, 0, 1
-have differences 1, −1, 1, then −2, 2, then 4; a cubic keeps that last
-difference constant, so extending the table gives 6, then 7, then 8.
+The cubic passes through every point, so its training error is zero, and it
+predicts 8, far from anything the data suggests. You can check the 8 by hand
+with a difference table: the values 0, 1, 0, 1 have differences 1, −1, 1,
+then −2, 2, then 4; a cubic keeps that last difference constant, so extending
+the table gives 6, then 7, then 8. The cubic has **overfit**: it learned the
+noise along with the pattern.
+
+How complicated a shape a model can fit is its **capacity**: a cubic has
+more than a flat line. With too little capacity a model **underfits**,
+because it cannot represent even the pattern. With too much, and nothing to
+hold it back, it overfits. **Regularization** holds a high-capacity model
+back without taking its capacity away.
 
 ```mermaid
 flowchart LR
@@ -157,22 +158,26 @@ flowchart LR
   U & O --> B[Bad on new data]
 ```
 
-**Reading it:** every dataset is a pattern plus noise. A model with too
-little capacity can't even represent the pattern; one with too much, left
-unchecked, fits the noise too. Only the middle path does well on new data.
-Regularization techniques are ways of steering a high-capacity model onto
-that middle path without giving up its capacity.
+**Reading it:** start from the data on the left, which is always pattern
+plus noise, and follow the three arrows out of the capacity box. Too little
+capacity misses the pattern and too much fits the noise as well, so only the
+middle path does well on new data.
+
+The same three outcomes appear with more data. Here 12 noisy samples of a
+sine wave are fitted by polynomials of degree 1 (a straight line), 3 (a
+cubic) and 11.
 
 ![Three polynomial fits to 12 noisy sine samples: the degree-1 line misses the curve, the cubic follows it, and the degree-11 polynomial hits every dot but swings wildly between them](figures/primer.ml.regularization.fits.svg)
 
-**Reading it:** the dots are 12 noisy samples of the grey sine curve (the
-true pattern). The straight line (degree 1) can't bend and misses the shape
-entirely: underfitting. The cubic (degree 3) follows the sine closely. The
-degree-11 polynomial passes through every dot exactly, and between and
-beyond them it swings wildly: it has memorised the noise.
+**Reading it:** the dots are the 12 samples and the grey curve is the sine
+they came from. The straight line cannot bend, so it misses the shape. The
+cubic follows the sine closely. The degree-11 polynomial passes through every
+dot and swings wildly between and beyond them, because it has fitted the
+noise.
 
-The two numbers that tell these apart are errors on two different sets of
-data:
+Training error alone always favours memorising: it ranks the zig-zag's
+cubic and the degree-11 polynomial best. What shows the difference is the same error
+measured on **validation** data, examples the model was not trained on:
 
 $$
 \text{MSE}_{\text{train}} = \frac{1}{n}\sum_{i \in \text{train}} (y_i - \hat{y}_i)^2,
@@ -210,23 +215,15 @@ n = len(y)
 sum((y_i - y_hat_i) ** 2 for y_i, y_hat_i in zip(y, y_hat)) / n  # → 0.25
 ```
 
-**In code:** `zigzag_fit_error` and `zigzag_predict` fit a polynomial of any
-degree to the four zig-zag points and report its training error and its
-prediction; `true_function` and `make_curve_data` draw the noisy sine
-samples in the figure.
+**In code:** `zigzag_fit_error` and `zigzag_predict` fit the zig-zag, and
+`make_curve_data` draws the sine samples.
 
-**Why it matters:** training error alone always rewards memorisation. The
-gap between training and validation error is the single most useful
-diagnostic in machine learning.
+## Underfitting and overfitting
 
-## Underfitting vs. overfitting: finding the middle
-
-Goldilocks tries three bowls of porridge: too cold, too hot, just right.
-Model capacity works the same way, and you find "just right" by measuring,
-not guessing: sweep the capacity and watch both errors.
-
-Worked example: 12 noisy points from a sine wave, 300 fresh points for
-validation, polynomials of increasing degree.
+To find the right capacity, fit the model at every capacity and measure
+both errors. Here that means polynomials of degree 1 to 11, fitted to 12
+noisy points from a sine wave and checked on 300 fresh points from the same
+wave.
 
 | degree | training error | validation error | diagnosis |
 |---|---|---|---|
@@ -238,34 +235,36 @@ validation, polynomials of increasing degree.
 
 ![Error against polynomial degree on a log scale: training error only falls, while validation error is lowest at degree 5 and then climbs steeply](figures/primer.ml.regularization.degree_sweep.svg)
 
-**Reading it:** the horizontal axis is model capacity (polynomial degree);
-the vertical axis is error on a log scale. The training curve (blue) only
-ever goes down: more capacity always fits the training data better. The
-validation curve (orange) falls, is nearly flat from degree 3 to 5 (lowest
-at 5), then climbs from degree 6 onward and shoots up. The left side of that valley is underfitting, the right side
-overfitting; the bottom is the model you want.
+**Reading it:** capacity (polynomial degree) runs along the bottom and error
+up the side, on a log scale. Follow the blue training curve first: it only
+goes down, because more capacity always fits the training points better.
+Then follow the orange validation curve. It falls, stays nearly flat from
+degree 3 to 5 (lowest at 5), and climbs from degree 6 on. Left of the
+valley's floor is underfitting, and right of it is overfitting.
 
-**In code:** `polynomial_errors` fits by least squares (choosing the
-coefficients that minimise training MSE) and reports both errors.
+The two sides of the valley need opposite fixes. An underfit model, with
+both errors high, needs more capacity, more features or more training. An
+overfit model, with training error low and validation error high, needs more
+data, regularization or early stopping.
 
-**Why it matters:** "both errors high" and "training low, validation high"
-need opposite fixes. Underfitting wants more capacity, more features or more
-training; overfitting wants more data, regularization or early stopping.
-Diagnosing which one you have is the point.
+**In code:** `polynomial_errors` fits each degree by least squares and
+reports both errors.
 
-## Early stopping: take the cake out before it burns
+## Early stopping
 
-A baker checks the cake with a toothpick every few minutes and takes it out
-when it comes out clean. Leave it longer and it burns, however good it was
-a minute ago. Training a flexible model is similar: validation error falls
-while the model learns the pattern, then rises once it starts memorising.
-**Early stopping** watches validation error during training, stops once it
-has failed to improve for a few checks (the **patience**), and keeps the
-weights from the best check.
+The capacity sweep picked a model's size by watching validation error.
+Training time needs the same watch. While a flexible model trains, its
+validation error falls as it learns the pattern, then rises once it starts
+fitting the noise. **Early stopping** measures validation error after every
+epoch (one pass through the training data). It stops once the error has
+failed to improve for a set number of epochs, the **patience**, and keeps
+the weights from the best epoch. The model itself does not change, only when
+its training ends.
 
-Worked example: validation losses per epoch 1.0, 0.8, 0.6, **0.55**, 0.58,
-0.65, 0.7 with patience 2. Epoch 3 is the best. Epochs 4 and 5 are both
-worse, so training stops at epoch 5 and the weights from epoch 3 are kept.
+Say the validation losses after each epoch are 1.0, 0.8, 0.6, 0.55, 0.58,
+0.65 and 0.7, and the patience is 2. Epoch 3 is the best. Epochs 4 and 5 are
+both worse, so training stops at epoch 5 and the weights from epoch 3 are
+kept.
 
 ```mermaid
 flowchart LR
@@ -279,19 +278,21 @@ flowchart LR
   S --> E2
 ```
 
-**Reading it:** after every epoch the loop asks one question: is this the
-best validation loss so far? If yes, snapshot the weights. If not, count a
-strike. Reaching the patience limit ends training and restores the
-snapshot, so you always ship the best model seen, not the last one.
+**Reading it:** start at the end of an epoch and follow the arrows. A new
+best validation loss saves the weights and resets the counter; anything else
+adds one to it. When the counter reaches the patience, training stops and the
+saved weights come back, so you keep the best model seen, not the last.
+
+A neural network with 64 hidden units, trained on only 30 noisy points,
+shows the turn.
 
 ![Loss curves for an over-sized network: training loss keeps falling while validation loss bottoms out near epoch 300 and then rises](figures/primer.ml.regularization.learning_curves.svg)
 
-**Reading it:** a 64-unit network trained on only 30 noisy points. Both
-curves fall at first. Around epoch 300 (the dashed line) the validation
-curve bottoms out and turns upward while the training curve keeps falling:
-the network has started fitting individual noisy points. Everything to the
-right of the dashed line is wasted, or worse. Early stopping keeps the
-weights at the dashed line.
+**Reading it:** both curves fall at first. Near epoch 300, at the dashed
+line, the validation curve bottoms out and turns up while the training curve
+keeps falling: from there on the network is fitting individual noisy points.
+To the right of the line the network gets worse on new data, and early
+stopping keeps the weights from the line.
 
 $$
 t^\star = \arg\min_{t} \; \mathcal{L}_{\text{val}}(t),
@@ -330,25 +331,22 @@ for t, loss in enumerate(L_val):
 t_star, t  # → (3, 5)
 ```
 
-**In code:** `early_stopping` replays a run's validation losses and returns
-the best epoch and the epoch where training stops; `train_flexible_model`
-trains the over-sized network in the figure and records both losses.
+**In code:** `early_stopping` replays a list of validation losses, and
+`train_flexible_model` trains the network in the chart.
 
-**Why it matters:** it's the cheapest regularizer there is: no change to the
-model, just a rule for when to stop. It's used almost everywhere a model is
-trained for multiple epochs, including fine-tuning language models.
+## Bias and variance
 
-## Bias and variance: two ways to miss the target
+In the capacity sweep and in the training run alike, validation error falls
+and then rises. Bias and variance explain why. The same kind of model,
+trained on a different sample of data, gives a different fit, and the fits
+can miss the truth in two ways. **Bias** is the miss that
+remains when you average the fits over many samples: a straight line misses a
+sine wave the same way whichever points it gets. **Variance** is how much the
+fit swings from one sample to the next: a degree-9 polynomial follows each
+sample's noise, so every sample gives a different curve.
 
-Picture two archers. The first groups every arrow tightly, but a hand's
-width to the left of the bullseye: consistently wrong. That's **bias**. The
-second's arrows are centred on the bullseye on average but scattered all
-over the target: inconsistent. That's **variance**. A model trained on a
-different sample of data is like another volley of arrows. Simple models
-behave like the first archer; very flexible ones like the second.
-
-Worked example: fit polynomials to 300 different random training sets of 30
-points each, and measure (averaged over the input range):
+Fitting polynomials to 300 random training sets of 30 points each, and
+averaging over the input range, gives:
 
 | degree | bias² (systematic error) | variance (swing between training sets) |
 |---|---|---|
@@ -356,14 +354,16 @@ points each, and measure (averaged over the input range):
 | 3 | 0.0035 | 0.015 |
 | 9 | 0.0038 | 4.5 |
 
+Drawing twenty of the fits for each degree shows the two kinds of miss.
+
 ![Twenty fits from different training sets: degree-1 lines agree but all miss the sine (high bias), degree-9 curves average to the sine but scatter widely (high variance)](figures/primer.ml.regularization.bias_variance.svg)
 
 **Reading it:** each thin line is the model fitted to one random training
-set; the thick grey curve is the truth. On the left (degree 1), the lines
-agree with each other but all miss the sine's shape in the same way: high
-bias, low variance. On the right (degree 9), the lines follow the sine on
-average, but each one wiggles differently, especially near the edges: low
-bias, high variance.
+set, and the thick grey curve is the truth. On the left, at degree 1, the
+lines agree with each other but all miss the sine's shape in the same way:
+high bias, low variance. On the right, at degree 9, the lines follow the sine
+on average, but each one wiggles its own way, most near the edges: low bias,
+high variance.
 
 $$
 \mathbb{E}\big[(y - \hat{f}(x))^2\big] = \underbrace{\big(\mathbb{E}[\hat{f}(x)] - f(x)\big)^2}_{\text{bias}^2}
@@ -383,8 +383,8 @@ $$
 
 **In words:** "a model's expected squared error on new data splits into how
 far its average prediction is from the truth (bias squared), plus how much
-its predictions scatter around their own average (variance), plus noise
-nobody can predict."
+its predictions scatter around their own average (variance), plus noise that
+no model can predict."
 
 **With the numbers:** degree 1: $0.174 + 0.022 + 0.09 \approx 0.29$;
 degree 3: $0.0035 + 0.015 + 0.09 \approx 0.11$; degree 9:
@@ -403,28 +403,28 @@ for degree, bias_sq, variance in [(1, 0.174, 0.022), (3, 0.0035, 0.015), (9, 0.0
     print(degree, f"{total:.2g}")  # → 1 0.29 3 0.11 9 4.6
 ```
 
+More data tames variance, so it helps a flexible model; it does nothing for
+a model too simple to bend, whose bias stays. Very large neural networks
+complicate the picture: past a point, even bigger ones do better on new data
+again, an effect called **double descent** (Belkin et al., 2018).
+
 **In code:** `bias_variance` fits one polynomial to each of many random
 training sets and splits their error into bias², variance and noise.
 
-**Why it matters:** it names the two failure modes and explains why more
-data helps flexible models (averaging tames variance) but not rigid ones
-(more data doesn't fix bias). Very large neural networks complicate the
-picture ("double descent": past a point, even bigger models generalize
-better again), but the vocabulary is universal.
+## Dropout
 
-## Dropout: nobody gets to be indispensable
+An overfit model is a flexible one with too much variance. Early stopping
+limits how long such a model trains. Dropout and weight penalties leave the
+model and the training time alone and make the noise harder to fit instead.
+**Dropout** works on the activations: on every training step, each activation is set to zero
+with probability p, so the network cannot rely on any single neuron or on a
+fragile combination of them.
 
-A coach who randomly sends half the team home before each practice forces
-every player to learn every position; no single star can carry the team.
-**Dropout** does this to neurons: during training, each activation is set
-to zero with probability p on every step, so the network can't rely on any
-single neuron or fragile combination of neurons.
-
-Worked example: four activations (1, 1, 1, 1), drop rate p = 0.5. Suppose
-the random mask keeps the last two: (0, 0, 1, 1). The survivors are scaled by
+Take four activations (1, 1, 1, 1) and a drop rate p = 0.5. Suppose the
+random mask keeps the last two: (0, 0, 1, 1). The survivors are scaled up by
 1 / (1 − 0.5) = 2, giving (0, 0, 2, 2). The average is still 1, so the next
-layer sees the same size signal on average. At evaluation time, nothing is
-dropped and nothing is scaled.
+layer sees a signal of the same size on average. At evaluation time nothing
+is dropped and nothing is scaled.
 
 ```mermaid
 flowchart LR
@@ -442,12 +442,12 @@ flowchart LR
   end
 ```
 
-**Reading it:** on the left, one training step: two of the four units were
-dropped to 0 and the two survivors were doubled, so the total (4) matches
-what the full layer would have sent. A different random pair is dropped on
-the next step. On the right, at evaluation time every unit passes through
-unchanged. Scaling during training ("inverted dropout") is what lets
-evaluation be a plain pass-through.
+**Reading it:** the left box is one training step. Two of the four units
+drop to 0 and the two survivors double, so the total, 4, matches what the
+full layer would send; the next step drops a different random pair. The
+right box is evaluation, where every unit passes through unchanged. Scaling
+during training (called inverted dropout) is what lets evaluation be a plain
+pass-through.
 
 $$
 \tilde{h} = \frac{m \odot h}{1 - p}, \qquad m_i \sim \text{Bernoulli}(1 - p)
@@ -483,26 +483,26 @@ m  # → [0, 0, 1, 1]
 [m_i * h_i / (1 - p) for m_i, h_i in zip(m, h)]  # → [0.0, 0.0, 2.0, 2.0]
 ```
 
+The drop rate is a setting you choose; the original transformer trained with
+p = 0.1. **Switch dropout off at
+evaluation** (`model.eval()` in PyTorch): left on, it makes predictions
+noisy, different from one call to the next.
+
 **In code:** `dropout` draws the mask and scales the survivors during
 training, and passes activations through unchanged at evaluation time.
 
-**Why it matters:** dropout was a key ingredient of the deep-learning
-revival and is still used in many models (the original transformer used
-p = 0.1). Forgetting to switch it off at evaluation (`model.eval()` in
-PyTorch) is a classic bug that makes predictions noisy.
+## L1 and L2 penalties
 
-## L1 and L2 penalties: a tax on large weights
+Dropout works on the activations. A penalty works on the weights: add a tax
+on the size of the weights to the loss, and each weight has to earn its keep
+by reducing the error. **L2** (also called ridge, or **weight decay**) taxes
+the *square* of each weight. Big weights pay a lot and small ones almost
+nothing, so every weight shrinks a little and none is eliminated. **L1**
+(the lasso) charges a flat rate per unit of size. A small weight cannot
+justify the fee, so it goes to exactly zero.
 
-Add a tax on the size of the weights to the loss, and the model must decide
-whether each weight earns its keep. **L2** (ridge, "weight decay") taxes the
-*square* of each weight: big weights pay a lot, small ones almost nothing,
-so everything shrinks a little but nothing is eliminated. **L1** (lasso)
-charges a flat rate per unit of size: small weights can't justify the
-fee, so they're wiped out entirely, to exactly zero.
-
-Worked example: with independent (orthonormal) features, the penalized
-weights have a closed form. Start from the unpenalized weights (3, 0.5, −2)
-and use penalty strength 1:
+With independent (orthonormal) features, the penalized weights have a closed
+form. Starting from unpenalized weights (3, 0.5, −2) with penalty strength 1:
 
 | weight | L2: divide by 1 + 1 | L1: move 1 toward zero, stop at zero |
 |---|---|---|
@@ -510,14 +510,16 @@ and use penalty strength 1:
 | 0.5 | 0.25 | **0** |
 | −2 | −1 | −1 |
 
+The difference shows when most features are useless: here, ten features of
+which only three matter.
+
 ![Fitted weights on ten features where only three matter: L2 leaves small nonzero weights on every useless feature, L1 sets most of them to exactly zero](figures/primer.ml.regularization.l1_vs_l2.svg)
 
-**Reading it:** ten features, but only the first three affect the target
-(grey bars show the true weights: 3, −2, 1.5, then zeros). The L2 fit (blue)
-shrinks everything a little and leaves small nonzero weights on all seven
-useless features. The L1 fit (orange) gets the three real weights nearly
-right and sets most of the useless ones to exactly zero: it has selected
-features for you.
+**Reading it:** the grey bars are the true weights: 3, −2 and 1.5, then
+seven zeros. The L2 fit (blue) shrinks everything a little and leaves small
+nonzero weights on all seven useless features. The L1 fit (orange) gets the
+three real weights nearly right and sets most of the useless ones to exactly
+zero, so it has picked out the features that matter.
 
 $$
 \text{L2: } \min_w \tfrac{1}{2}\lVert y - Xw \rVert^2 + \tfrac{\lambda}{2}\lVert w \rVert_2^2,
@@ -541,8 +543,8 @@ squared weights (L2) or the sum of absolute weights (L1)."
 
 **With the numbers:** with orthonormal features the solutions are
 $w_{\text{L2}} = w / (1 + \lambda) = (1.5, 0.25, -1)$ and
-$w_{\text{L1}} = \text{sign}(w)\max(\lvert w \rvert - \lambda, 0) = (2, 0, -1)$,
-the "soft threshold" in `soft_threshold`.
+$w_{\text{L1}} = \text{sign}(w)\max(\lvert w \rvert - \lambda, 0) = (2, 0, -1)$;
+the L1 rule is called a soft threshold.
 
 **In Python:**
 
@@ -559,29 +561,30 @@ sum(w_i ** 2 for w_i in w), sum(abs(w_i) for w_i in w)  # → (13.25, 5.5)
 [math.copysign(max(abs(w_i) - lam, 0), w_i) for w_i in w]  # → [2.0, 0.0, -1.0]
 ```
 
-**In code:** `penalised_weights` gives both closed forms from the table, and
-`fit_sparse_problem` fits the ten-feature problem in the figure (L1 by
-alternating gradient steps with `soft_threshold`).
+L2 is on by default when transformers are trained, as the weight decay in
+AdamW (`primer.ml.optimizers`). L1 is the choice when you want a model that
+uses only a few features, so that you can see which ones it relies on.
 
-**Why it matters:** L2 (as weight decay; see AdamW in
-`primer.ml.optimizers`) is on by default when training transformers. L1
-is the tool when you want a sparse, interpretable model that uses only a
-few features.
+**In code:** `penalised_weights` computes both rules, and
+`fit_sparse_problem` fits the ten-feature problem in the chart.
 
-## Train, validation and test: practice, mock and real exams
+## Train, validation and test sets
 
-A student has practice questions (to learn from), a mock exam (to check
-progress and decide what to revise), and the real exam, sat once. Data is
-split the same way. **Training data** fits the weights. **Validation data**
-tunes choices like model size, learning rate and when to stop. **Test data**
-is touched once, at the end, to estimate real-world performance honestly.
-If you keep tuning against the test set, it quietly becomes a second
-validation set and stops being honest.
+The degree and the stopping epoch were both chosen by watching validation
+error. Every choice made that way fits the model to the validation data a
+little, so its error is no longer an honest estimate for new data. Data is
+therefore split three ways, like a student's practice questions, mock exam
+and real exam. **Training data** fits the
+weights. **Validation data** is the mock: it makes the choices, such as model
+size, learning rate and when to stop. **Test data** is the real exam, used
+once at the end to estimate performance on new data. Tuning against the test
+set turns it into a second validation set.
 
-Worked example: 100 examples split 70 / 15 / 15, shuffled first, with no
-example in two sets. With only 10 examples, **5-fold cross-validation** cuts
-them into 5 folds of 2; each fold takes a turn as the validation set while
-the model trains on the other 8, so every example is held out exactly once.
+Split 100 examples 70 / 15 / 15, shuffling first and putting no example in
+two sets. With only 10 examples, one split leaves too few to check with, and
+**cross-validation** uses every example instead. 5-fold cross-validation cuts
+the 10 into 5 folds of 2. Each fold takes a turn as the validation set while
+a model trains on the other 8, so every example is held out exactly once.
 
 ```mermaid
 flowchart TB
@@ -595,10 +598,10 @@ flowchart TB
   K --> A[Average the 5 validation scores]
 ```
 
-**Reading it:** the data is cut into five equal folds. In each run, one fold
-is held out (VAL) and the model is trained from scratch on the other four.
-Every example is validated on exactly once, and the average of the five
-scores is a steadier estimate than any single split.
+**Reading it:** read down the five runs. The VAL fold moves one place to the
+right each run, and a fresh model trains on the other four folds. The
+average of the five validation scores is a steadier estimate than any single
+split.
 
 $$
 \text{CV score} = \frac{1}{k}\sum_{i=1}^{k} \text{score}\big(\text{model trained without fold } i,\ \text{fold } i\big)
@@ -633,33 +636,33 @@ scores = [1.0, 0.5, 1.0, 1.0, 0.5]
 sum(scores) / k  # → 0.8
 ```
 
+Cross-validation costs k training runs instead of one. With a large
+dataset, or a model that is expensive to train, one fixed validation set is
+enough.
+
 **In code:** `train_val_test_split` shuffles and cuts the indices into three
 disjoint sets, and `k_fold` yields the training and validation indices for
 each fold in turn.
 
-**Why it matters:** with small datasets a single split is noisy, and
-cross-validation gives a more reliable estimate. With large datasets (or
-expensive models) one fixed validation set is enough.
+## Data leakage
 
-## Data leakage: the model saw the answers
+A split is only honest if nothing from the held-out data reaches training. A
+student who has seen the answer key scores perfectly on the mock and learns
+nothing. **Data leakage** is the same failure in a model: information from
+the test set, or information that will not exist at prediction time, gets
+into training. The model then scores well offline and badly in production.
+Here is one example of each.
 
-A student who glimpsed the answer key scores perfectly on the practice exam
-and learns nothing. **Data leakage** is when information that won't be
-available at prediction time, or information from the test set, sneaks into
-training. Offline scores look superb; production scores collapse.
-
-Worked examples:
-
-- **Duplicates across the split.** Every row stored twice, labels 30% noisy
-  (so no honest model can beat about 70%). Split *before* removing
-  duplicates, and a model that just copies its nearest training row scores
-  **87%**: it's reading the answers off each test row's twin. Deduplicate
-  first and the same model scores about **50%**.
-- **A feature from the future.** A fraud model is given `chargeback_filed`,
-  a column filled in only after a customer disputes a charge, which is to
-  say after the outcome. Offline accuracy: **98%**. In production that column
-  is always empty at decision time, and accuracy falls to **49%**, worse
-  than an honest model using only the legitimate features (**61%**).
+- **Duplicates across the split.** Every row is stored twice, and 30% of the
+  labels are flipped at random, so no honest model can beat about 70%. Split
+  *before* removing duplicates, and a model that copies the label of its
+  nearest training row scores 87%, because it reads the answer off each test
+  row's twin. Deduplicate first and the same model scores about 50%.
+- **A feature from the future.** A fraud model is given `chargeback_filed`, a
+  column filled in only after a customer disputes a charge, that is, after
+  the outcome. Offline accuracy is 98%. In production that column is always
+  empty at decision time, and accuracy falls to 49%, worse than an honest
+  model using only the legitimate features (61%).
 
 ```mermaid
 flowchart LR
@@ -672,35 +675,32 @@ flowchart LR
   C -. "leaks backwards into<br/>the training table" .-> P
 ```
 
-**Reading it:** read the timeline left to right. The model has to decide at
-the second box. The chargeback is only recorded at the last box, after the
-outcome is known. In a historical training table every column sits side by
-side, so nothing stops the model from using a column that, in real time, it
-could never have had. The dotted arrow is the leak.
+**Reading it:** read the timeline left to right. The model decides at the
+second box, and the chargeback is recorded at the last, after the outcome is
+known. A historical training table puts every column side by side, so
+nothing stops the model from learning from a column it could never have had
+at decision time. The dotted arrow is that leak.
+
+Language-model benchmarks have their own version, **contamination**: test
+questions that appeared in the pretraining data. The defences are habits.
+Deduplicate before splitting. Split by time when the task is predicting the
+future, and by user when it is serving new users. Ask of every column
+whether you would know it at prediction time.
 
 **In code:** `duplicate_leakage_demo` and `future_feature_demo` run both
-examples; the "model" in the first is a one-nearest-neighbour lookup (copy the label
-of the closest training row), the purest memoriser there is.
-
-**Why it matters:** leakage is the most common reason a model that looked
-great in evaluation fails in production. For language-model benchmarks the
-big version is **contamination**: test questions that appeared in the
-pretraining data. The defences are procedural: deduplicate before
-splitting, split by time or by user when the real task is predicting the
-future or new users, and ask of every feature "would I actually know this
-at prediction time?"
+examples.
 
 ## In 20 seconds
-- Overfitting: training error falls while validation error rises; the model
-  memorised noise. Underfitting: both errors are high.
-- Fixes for overfitting: more data, early stopping, dropout, weight decay
-  (L2), L1 for sparsity, data augmentation.
-- Bias is systematic error (too simple); variance is sensitivity to the
-  training sample (too flexible).
-- Train fits weights, validation tunes choices, test is touched once;
-  cross-validation for small data.
-- Leakage (duplicates across splits, features from the future) gives great
-  offline scores that collapse in production.
+- Overfitting: training error keeps falling while validation error rises.
+  Underfitting: both errors stay high, and it needs the opposite fix.
+- Bias is error that stays whatever sample a model trains on (too simple);
+  variance is how much the fit swings between samples (too flexible).
+- Fixes for overfitting: more data, early stopping, dropout and weight
+  penalties (L2 shrinks every weight; L1 sets the small ones to zero).
+- Training data fits the weights, validation data makes the choices, and
+  test data is used once, at the end; with little data, cross-validate.
+- Leakage, such as duplicates across the split or a column filled in after
+  the outcome, gives offline scores that collapse in production.
 
 ## Self-test questions
 
