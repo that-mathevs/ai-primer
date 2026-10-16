@@ -117,37 +117,33 @@ that names the failing half. If you only needed the runbook, you are done.
 
 ## Level 2: How it works, from scratch
 
-Level 2 makes each of those truths concrete, starting with two mapmakers.
+Two mapmakers each draw a map of the same city on their own grid. On one
+map, square (3, 7) is the train station; on the other, (3, 7) is a park.
+Both maps are fine, but a position read off one means nothing on the other.
 
-**The everyday picture.** Two mapmakers each draw a map of the same city with their own grid. On one
-map, square (3, 7) is the train station; on the other, (3, 7) is a park. Both
-maps are fine, but you can't read a position off one map and look it up on
-the other.
-
-Every embedding model is its own mapmaker. Upgrade the model and every
-document has to be re-plotted on the new map, and until that's done, the old
-map and the new one must never be mixed. That's the first of three
-operational truths this lesson makes concrete:
-
-1. **Changing models means re-embedding everything**, and doing it without
-   downtime or a silent quality drop takes a plan.
-2. **General models don't speak your company's jargon**, so measure on your
-   own questions and adapt when needed.
-3. **When a retrieval-augmented system answers wrongly, find out which half
-   failed**: retrieval (the right page was never found) or generation (it was
-   found and misused).
+An embedding model is a mapmaker. It places every document and every
+question at a point on its own map, and search returns the documents whose
+points lie nearest the question's. That works only while the documents and
+the questions were placed by the same model.
 
 ## Every model has its own space
 
-**Tiny worked example:** the word "vpn" embedded by two versions of the toy
-model (`primer.common.embedder`) with the same 64 dimensions: their cosine
-is about 0.06, essentially unrelated, though it's the same word. Now take 12
-real questions with known answers (the "golden set" in `primer.common.corpus`)
-over 20 documents. Search v1 documents with v1 queries and the right answer
-is in the top 3 for 11 of 12 questions (**0.92**). Search the *same* v1
-documents with queries from the new v2 model and it drops to **0.25**, about
-what random ranking would give (3 of 20 documents shown, so 15%), and
-**nothing crashes**.
+Embed the word "vpn" with two versions of the same toy model, both with 64
+dimensions, and the two vectors have a cosine similarity of about 0.05, as
+if they were unrelated words.
+
+To see what that does to search, take a **golden set**: questions whose
+right answers are known, here 12 questions over 20 documents. Embed the
+documents and the questions with the v1 model, and the right document is in
+the top 3 for 11 of the 12 questions (0.92). Keep the v1 documents but embed
+the questions with v2, and it is there for 3 of the 12 (0.25). Random
+ranking would score 0.15, since 3 of the 20 documents are shown. Nothing
+crashes and nothing reports an error.
+
+A model with a different number of dimensions would at least fail loudly: a
+128-number vector cannot be compared with a 64-number one. A model of the
+same size gives no such warning. The share of golden questions that have a
+right document in the top k is called hit@k:
 
 $$
 \text{hit@}k = \frac{1}{|Q|} \sum_{q \in Q} \big[\, \text{rel}(q) \cap \text{top}_k(q) \neq \varnothing \,\big]
@@ -192,29 +188,41 @@ round(sum(hits) / len(hits), 2)  # → 0.25
 ![Recall@3 is 0.92 when documents and queries share a model, and falls to 0.25, near the 0.15 of random ranking, when v2 queries search v1 documents](figures/primer.ml.embeddings.operations.cross_model.svg)
 
 **Reading it:** each bar is recall@3 on the golden set. The first two bars
-use one model for both documents and queries, v1 then v2: both work. The
-third bar searches v1 documents with v2 queries: recall falls to 0.25 (3 of
-the 12 questions), barely above the dashed line at 0.15, which is what random
-ranking would score (3 of 20 documents shown). A model with a *different*
-number of dimensions would at least crash (you can't dot a 128-number vector
-with a 64-number one); a same-size model fails silently, which is worse.
+use one model for both documents and questions, v1 then v2, and both find 11
+of the 12 answers. The third bar searches v1 documents with v2 questions and
+falls to 0.25, just above the dashed line at 0.15 that random ranking would
+score.
+
+This mix is the usual cause behind the report "we upgraded the embedding
+model and search got weird": a pipeline embedded new documents with the new
+model and left the old ones as they were. The defence is to tie every index
+to one model version and have it refuse vectors from any other.
 
 **In code:** `golden_recall` embeds the documents with one model and the
 questions with another and returns hit@k. `VectorIndex` is a flat index tied
-to one model version: `VectorIndex.search` embeds a text query, and
-`VectorIndex.search_vector` takes a vector that is already made.
+to one model version.
 
-**Why it matters:** "we upgraded the embedding model and search got weird"
-is a classic incident. The cause is almost always documents and queries
-embedded by different models, typically because only new documents were
-re-embedded.
+## Changing the model: a blue/green migration
 
-## Migrating without a bad day: blue/green
+A new model therefore means re-embedding every document. So does a
+fine-tune, a change to how documents are split into chunks, or a bug fix in
+the text pipeline, because each one moves the points. The task is to
+re-embed a live index without taking search down and without ever serving
+documents and questions from different models.
 
-**Everyday picture:** building a new bridge next to the old one. Traffic
-keeps using the old bridge while the new one is built and inspected. When
-the new bridge passes inspection, traffic is switched over, and the old
-bridge stays standing for a while in case something turns up.
+A **blue/green migration** builds the new index beside the old one, while
+search keeps using the old one. From the first minute, every new document is
+written to both indexes (the **dual write**), so the new index never falls
+behind. A **backfill** then re-embeds the existing documents into the new
+index in batches that can restart where they stopped.
+
+Before anything switches, a **shadow comparison** scores both indexes on the
+golden set, and the new one goes live only if it is at least as good. The
+switch is a pointer: the search service asks for "the live index", an
+**alias** that names the real one, and cutover repoints it. Elasticsearch and
+Qdrant both offer aliases that switch in one atomic step. The old index stays
+for a soak period, while the new one runs under real traffic, so rolling back
+means repointing the alias rather than rebuilding for hours.
 
 ```mermaid
 stateDiagram-v2
@@ -228,27 +236,21 @@ stateDiagram-v2
   Live_v2 --> [*]: retire v1 after a soak period
 ```
 
-**Reading it:** follow the states from the top. Users are served by v1 the
-whole time until cutover. Dual-writing from the very first step means
-documents added mid-migration land in both indexes, so the new one never
-falls behind. The **shadow comparison** is the gate: the switch only happens
-if v2 is at least as good on your own golden set (`BlueGreenMigration`
-refuses to cut over without it). The old index is kept after cutover, so
-rollback is flipping one pointer, not a multi-hour rebuild.
-
-The "live alias" is a pointer: the search service asks for "the live
-index", and cutover or rollback just repoints it. Many vector databases
-support aliases for exactly this.
+**Reading it:** follow the states from the top. Users are served by v1 until
+the cutover arrow. Two arrows leave the comparison: cutover, and a refusal
+that keeps v1 live. A smaller candidate model that scores 0.58 on the golden
+set, against the live index's 0.92, takes the refusal arrow. After cutover, the arrow back to v1 is the rollback, and v1 is retired only
+when the soak period ends.
 
 **In code:** each arrow of the diagram is one method: `BlueGreenMigration.start`,
 `BlueGreenMigration.add` (the dual write), `BlueGreenMigration.backfill`,
 `BlueGreenMigration.shadow_compare`, `BlueGreenMigration.cutover` and
 `BlueGreenMigration.rollback`.
 
-**Tiny worked example: what will re-embedding cost?** 50 million documents of
-about 500 tokens each, an embedding throughput of 1 million tokens per second
-across your workers, and a price of \$0.02 per million tokens (all three are
-inputs you replace with your own numbers):
+The backfill is the slow step, and its size is simple arithmetic. Say 50
+million documents of about 500 tokens each, an embedding throughput of 1
+million tokens per second across your workers, and a price of \$0.02 per
+million tokens (replace all three with your own numbers):
 
 $$
 \text{hours} = \frac{n \cdot t}{r \cdot 3600}, \qquad
@@ -289,83 +291,93 @@ round(n * t / 10**6 * p, 2)  # → 500.0
 
 ![Re-embedding time and cost both grow in step with corpus size: ten times the documents, ten times the hours and the dollars](figures/primer.ml.embeddings.operations.reembed.svg)
 
-**Reading it:** the horizontal axis is corpus size (log scale); the left
-panel shows hours at three throughputs, the right panel shows dollars at
-three prices. Both grow in straight lines on these log axes: ten times the
-documents, ten times the time and money. The money is usually modest; the
-time, the rate limits and the double storage during the migration are what
-need planning.
+**Reading it:** corpus size runs along the bottom on a log scale. The left
+panel shows hours at three throughputs, the right panel dollars at three
+prices. Every line is straight: ten times the documents takes ten times the
+hours and the dollars. At these prices the money is small. The hours, the
+provider's rate limits and paying to store two indexes during the migration
+are what need planning.
 
 **In code:** `reembed_estimate` computes the tokens, hours and dollars for
 your own n, t, r and p.
 
-**Why it matters:** re-embedding is routine: new models, fine-tunes,
-chunking changes and bug fixes all require it. Versioned indexes, dual
-writes, a golden-set gate and a rollback path turn it from a risky event
-into a boring one.
+## Domain jargon: test on your own questions
 
-## Domain mismatch: fluent, but not in your jargon
+The shadow comparison is only as good as the golden set behind it, and the
+questions in that set should be your users' own. Public leaderboards rank
+embedding models on public data. General models are trained mostly on web
+text, so a company's acronyms and product names are new words to them: "AP"
+for accounts payable, "T&E" for travel and expenses.
 
-**Everyday picture:** a new hire who speaks perfect English but doesn't yet
-know that "AP" means accounts payable or that "T&E" means travel and
-expenses. General embedding models are trained mostly on web text; your
-acronyms and product names are new words to them.
-
-**Tiny worked example:** four real-sounding employee questions in company
-jargon: "ap aging report", "hotspot from a client site", "sso lockout",
-"t-and-e submission deadline". The general toy model puts the right
-document first for **1 of 4**. A version that has learned the four jargon
-words (`DomainTunedEmbedder`, standing in for a model fine-tuned on
-company pairs) gets **4 of 4**.
+Four employee questions in company jargon show the gap: "ap aging report",
+"hotspot from a client site", "sso lockout" and "t-and-e submission
+deadline". The general toy model puts the right document first for **1 of
+4**. A version that has learned the four jargon words, standing in for a
+model fine-tuned on company pairs, puts it first for **4 of 4**.
 
 ![On company jargon the general model buries three of the four right answers, while the tuned model ranks every one first](figures/primer.ml.embeddings.operations.jargon.svg)
 
-**Reading it:** each pair of bars is one jargon question; the height is where
-the right document ranked (1 is best, shorter is better). The general model
-buries three of the four answers; the tuned model puts every one first. The
-one the general model gets right, "sso lockout", is saved by a word it does
-know ("lockout").
+**Reading it:** each pair of bars is one jargon question, and a bar's height
+is the rank of the right document, so shorter is better and 1 is best. The
+general model ranks three of the four answers far down; the tuned model
+ranks every one first. The general model gets "sso lockout" right only
+because it knows one of its words, "lockout".
 
 **In code:** `rank_of_first_relevant` finds where the right document lands
 for one question under one model: the height of each bar.
+`DomainTunedEmbedder` stands in for the fine-tuned model.
+
+A golden set of your own questions is cheap, because search and support
+logs already hold one. A session in which someone clicked a document and the
+issue was resolved is a question paired with its answer. Keep the resolved
+sessions, merge questions that repeat, and a few hundred pairs make a golden
+set. Test candidate models on it. If none is good enough, add keyword search,
+which matches jargon by its spelling (`primer.ml.embeddings.retrieval`), and
+fine-tune on your own pairs (`primer.ml.embeddings.contrastive`). A
+fine-tuned model draws a new map, so shipping it is another migration.
 
 ```mermaid
 flowchart LR
   L["Search & support logs"] --> F["Keep resolved sessions<br/>(the clicked doc answered it)"]
   F --> N["Normalize and merge<br/>repeated questions"]
   N --> G["Golden set: question → relevant docs<br/>(a few hundred is plenty)"]
-  G --> T["Test several models on YOUR set"]
+  G --> T["Test several models on your set"]
   T --> D{Good enough?}
   D -->|no| FT["Fine-tune on domain pairs,<br/>add hybrid search"]
   D -->|yes| S[Ship, and keep the set for regressions]
   FT --> T
 ```
 
-**Reading it:** the evaluation set comes from real usage, not invention.
-Resolved sessions give you (question, answer document) pairs for free;
-`build_eval_set` keeps only resolved ones and merges repeats. Test
-candidate models on that set, and when none is good enough, fine-tune on
-domain pairs (`primer.ml.embeddings.contrastive`) and add keyword search,
-which matches jargon exactly (`primer.ml.embeddings.retrieval`).
+**Reading it:** the set comes from real usage, not invention. The loop at
+the bottom repeats until a model is good enough, and whatever ships, the set
+stays: every later change is checked against it.
 
-**Why it matters:** public leaderboards measure public data. The only
-number that predicts your system's quality is recall on your own
-questions.
+**In code:** `build_eval_set` keeps only resolved sessions and merges
+repeated questions.
 
 ## Measure retrieval separately from generation
 
-**Everyday picture:** an open-book exam. A wrong answer has one of two
-causes: the right page wasn't in the book you brought (**retrieval
-failure**), or it was, and you misread it (**generation failure**). Studying
-harder fixes the second, not the first.
+A golden set measures search on its own. Most embedding indexes, though,
+feed a **retrieval-augmented generation** (RAG) system: search retrieves the
+top k documents, and a language model writes an answer from them. When the
+answer is wrong, one of the two halves failed. Think of an open-book exam:
+either the right page was not in the book you brought (a **retrieval
+failure**), or it was there and you misread it (a **generation failure**).
+Studying harder fixes the second, not the first.
 
-**Tiny worked example:** three answered questions, checked by hand.
+Three answered questions, checked by hand, show both:
 
 | Retrieved (top 3) | Truly relevant | Answer used | Verdict |
 |---|---|---|---|
 | it-002, fin-006, fin-001 | it-004 | it-002 | retrieval failure: it-004 was never found |
 | hr-002, hr-001, hr-005 | hr-001 | hr-002 | generation failure: found but not used |
 | it-001, it-002 | it-001 | it-001 | correct |
+
+One question sorts every failure: was a right document in the retrieved top
+k? If not, no change to the prompt can help, and the fix is in retrieval:
+chunking, hybrid search, reranking or the embedding model. If it was there
+and the answer ignored it, the fix is in generation: the prompt, the order
+of the context, or fewer distracting chunks.
 
 ```mermaid
 flowchart TD
@@ -376,40 +388,47 @@ flowchart TD
   G -->|yes| OK[Check the grader:<br/>the answer may be fine]
 ```
 
-**Reading it:** one question splits every failure in two. If the right
-document wasn't retrieved, no prompt change can help, so work on retrieval.
-If it was retrieved and ignored, the problem is downstream, in the prompt or
-the context. Only the retrieval half can be measured without a model, which
-is why recall@k on a golden set is the first number to track.
+**Reading it:** start at the wrong answer and take the first question. The
+last branch matters too: if the answer did use the right document, check the
+grader before changing anything, because the answer may be fine.
+
+Only the retrieval half can be measured without a language model, which is
+why recall@k on the golden set is the first number to track. Retrieving
+more documents looks like a fix for retrieval failures, and the chart below
+shows what it does instead.
 
 ![Retrieving more documents turns some retrieval failures into generation failures, and the error-code question stays wrong at every k](figures/primer.ml.embeddings.operations.triage.svg)
 
-**Reading it:** each bar is the 12 golden questions, answered by a toy
-generator that always uses the top document, with k documents retrieved.
-Green is correct, red is a retrieval failure, orange is a generation
-failure. Retrieving more (larger k) turns some retrieval failures into
-generation failures: the right page is now in the book, but the reader still
-opened the wrong one. Watch the error-code question ("what does ERR-4012
-mean"): its answer ranks only fourth, so it's a retrieval failure until k = 5,
-and even then the top document is the wrong one. Dense vectors blur exact
-identifiers; keyword search would put that page first.
+**Reading it:** each bar is the 12 golden questions at one k (1, 3 and 5
+documents retrieved), answered by a toy generator that always uses the top
+document. Green is correct, red a retrieval failure, orange a generation
+failure. As k grows, red turns orange and green stays at 10: the right page
+is now in the book, but the reader still opens the wrong one. The
+error-code question ("what does ERR-4012 mean") is one of them. Its answer
+ranks fourth, so it is a retrieval failure until k = 5 and a generation
+failure after, because the top document is still the wrong one. Dense
+vectors blur exact identifiers like ERR-4012; keyword search puts that page
+first.
 
 **In code:** `triage` gives the verdict for one answered question, following
 the flowchart above; `triage_golden_set` runs every golden question through
-retrieval and a toy generator that answers from the top document.
-
-**Why it matters:** teams burn weeks tuning prompts for failures that were
-retrieval all along. Triage first, then fix the half that's broken.
+retrieval and the toy generator.
 
 ## In 20 seconds
-- Every embedding model has its own vector space; never mix documents and
-  queries from different models. Same-size models fail silently.
-- Migrate blue/green: new index, dual-write, backfill, compare on a golden
-  set, cut over only if better, keep the old index for rollback.
-- Re-embedding cost is n × tokens: estimate hours and dollars before you start.
-- General models miss company jargon; build an eval set from resolved logs,
-  and fine-tune or add keyword search when needed.
-- Triage RAG failures into retrieval vs. generation before fixing anything.
+- Every embedding model has its own space. Documents and questions embedded
+  by different models do not match, and if the two models have the same
+  number of dimensions, nothing crashes: recall just falls.
+- A blue/green migration changes the model without downtime: build a new
+  index beside the old one, write new documents to both, re-embed the old
+  ones, compare the two on a golden set, switch only if the new one is at
+  least as good, and keep the old index for rollback.
+- Re-embedding time and cost grow with total tokens (documents × tokens per
+  document), so estimate the hours and dollars before starting.
+- General models miss company jargon. A golden set built from resolved
+  search or support logs measures the gap; keyword search and fine-tuning
+  close it.
+- When a RAG system answers wrongly, first ask whether the right document
+  was retrieved. If not, fix retrieval; if it was, fix generation.
 
 ## Self-test questions
 
