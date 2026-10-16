@@ -130,37 +130,30 @@ done.
 
 ## Level 2: How it works, from scratch
 
-Most of this primer is about neural networks, because language models are
-neural networks. But open the models that decide whether a loan is approved,
-whether a card payment looks like fraud, which ad to show, or how many
-umbrellas a shop should stock, and very often you find no neural network at
-all. You find hundreds of small **decision trees**, added together.
+Language models are neural networks, but the models that approve loans,
+flag card fraud, pick which ad to show or forecast how many umbrellas a shop
+will sell are often not. Many of them are hundreds of small **decision
+trees**, added together.
 
 Those problems share a shape: a **table**. Each row is a customer, a payment
 or a day; each column is a fact measured in its own units (age in years,
 income in dollars, number of late payments, a region code). On tables of
-modest size, ensembles of trees have stayed the model to beat, and they
-train in seconds on a laptop. This lesson builds them from scratch, so you
-can see why they work and, just as usefully, recognise when a neural network
-is the wrong tool.
+modest size, combinations of trees remain the model to beat, and they train
+in seconds on a laptop. They start from one tree, which is simple to grow
+and easy to overfit. Random forests and gradient boosting are two ways of
+combining many trees to fix that.
 
-The plan: one tree (how it chooses its questions), why a single tree
-overfits, how a **random forest** fixes that by averaging many trees, how
-**gradient boosting** fixes it differently by adding trees one after another,
-and finally a head-to-head against a small neural network from
-`primer.ml.neural_net` on a loan table.
+## A decision tree: one question at a time
 
-## A decision tree is a game of twenty questions
+A decision tree works like the flowchart a nurse at an emergency desk
+follows: "Is the patient breathing normally? No: resuscitation room. Yes: is
+there chest pain? Yes: see a doctor now. No: take a seat." Each question
+looks at *one* fact and sends the patient left or right, and the box at the
+end gives the answer. In a decision tree, the computer chooses the questions
+from past examples.
 
-**Everyday picture.** A nurse at an emergency desk runs a flowchart: "Is the
-patient breathing normally? No: resuscitation room. Yes: is there chest
-pain? Yes: see a doctor now. No: take a seat." Each question looks at *one*
-fact and sends the patient left or right, and the last box gives the answer.
-A decision tree is exactly that flowchart, except the questions are chosen
-by the computer from past examples.
-
-**Tiny example.** Eight emails, each described by two facts: how many links
-it contains, and whether it comes from a sender you have written to before.
+Take eight emails, each described by two facts: how many links it contains,
+and whether it comes from a sender you have written to before.
 
 | email | links | known sender | spam? |
 |---|---|---|---|
@@ -173,7 +166,7 @@ it contains, and whether it comes from a sender you have written to before.
 | 7 | 6 | no | yes |
 | 8 | 1 | no | yes |
 
-The tree this lesson grows from those eight rows:
+From those eight rows, the tree grows two questions:
 
 ```mermaid
 flowchart TD
@@ -187,25 +180,24 @@ flowchart TD
 question until you land in a box. Diamonds are questions (the tree's
 **internal nodes**); boxes are answers (its **leaves**), and each leaf lists
 the training emails that ended up there. Two questions sort all eight
-correctly. Notice what the tree did *not* ask: "more than 2 links?" looks
-reasonable, but it was worse. The next two sections show how the tree
-decides that.
+correctly. The tree did *not* ask "more than 2 links?", which looks just as
+reasonable.
 
 **In code:** `spam_emails` returns the table above; `DecisionTree` grows the tree, and `DecisionTree.rules` prints it as nested if/else lines.
 
-## Measuring a mess: Gini impurity
+## Gini impurity: how mixed a pile is
 
-**Everyday picture.** You are sorting laundry into piles. A pile of only
-socks is *pure*: pull out any two items and they match. A pile that is half
-socks, half shirts is as mixed-up as two kinds of item can be. A good
-sorting question is one that leaves piles as pure as possible.
+To prefer "known sender?" over "more than 2 links?", the tree needs a score
+for how well a question sorts the emails. A question splits the emails into
+piles, and a good question leaves piles that are **pure**: all spam, or all
+not spam.
 
-**Tiny example.** Before any question, the eight emails are 4 spam and 4
-not: a 50/50 pile. Pull out two emails at random (putting the first one
-back) and they disagree half the time. The pile of unknown senders is 1
-"not spam" and 4 spam: purer, so two random picks disagree less often.
+Before any question, the eight emails are 4 spam and 4 not: a 50/50 pile.
+Pull out two emails at random (putting the first one back) and they disagree
+half the time. The pile of unknown senders is 1 "not spam" and 4 spam. It is
+purer, so two random picks disagree less often.
 
-**Gini impurity** is exactly that chance of disagreement:
+**Gini impurity** is that chance of disagreement:
 
 $$
 G = 1 - \sum_{k=1}^{K} p_k^{2}
@@ -246,21 +238,19 @@ p = [1 / 5, 4 / 5]
 round(1 - sum(p_k ** 2 for p_k in p), 2)  # → 0.32
 ```
 
-**Why it matters:** the tree needs a single number to compare questions
-with, and it must be cheap, because a real tree scores millions of candidate
-questions. Gini needs only counts, one multiply per label, and no logarithm.
+A tree grown on real data scores millions of candidate questions, so the
+score has to be cheap. Gini needs only counts and one multiplication per label.
 
 **In code:** `gini` computes $G$ for any list of labels.
 
 ### Entropy: the same idea, counted in yes/no questions
 
-**Everyday picture.** Entropy asks: if I had to guess an email's label by
-asking yes/no questions, how many would I need on average? A 50/50 pile
-needs one full question. A pure pile needs none, because you already know.
-
-**Tiny example.** For the eight emails, one question ("is it spam?")
-settles it: entropy 1 bit. For the unknown-sender pile, 4 of 5 are spam, so
-you are usually right before asking and the average cost is about 0.72 of a
+**Entropy** measures the same mess another way: it counts how many yes/no
+questions you would need, on average, to find an email's label. A 50/50
+pile needs one full question, and a pure pile needs none.
+For the eight emails, one question ("is it spam?") settles it: entropy 1
+bit. In the unknown-sender pile, 4 of 5 are spam, so a guess of "spam" is
+usually right before you ask, and the average cost is about 0.72 of a
 question.
 
 $$
@@ -295,8 +285,8 @@ p = [1 / 5, 4 / 5]
 round(-sum(p_k * math.log2(p_k) for p_k in p), 3)  # → 0.722
 ```
 
-Gini and entropy almost always pick the same question; Gini is a little
-cheaper. The drop in entropy a question produces is called **information
+Gini and entropy almost always pick the same question, and Gini is a little
+cheaper because it needs no logarithm. The drop in entropy a question produces is called **information
 gain**, the name the early ID3 algorithm used. See `primer.notation` for
 logarithms from scratch and `primer.ml.losses` for entropy's close cousin,
 cross-entropy.
@@ -305,14 +295,12 @@ cross-entropy.
 
 ## Choosing the best question
 
-**Everyday picture.** A question splits one pile into two. Judge it by how
-messy the two new piles are, but weigh each by its size: a tiny pure pile of
-one email is worth less than a big pure pile of five.
-
-**Tiny example.** "Known sender?" makes a pile of 3 (all not spam, Gini 0)
-and a pile of 5 (1 not spam, 4 spam, Gini 0.32). "More than 2 links?" makes
-a pile of 4 (3 not spam, 1 spam) and another pile of 4 (1 not spam, 3 spam),
-Gini 0.375 each.
+Gini scores one pile, but a question makes two. The question's score is the
+impurity of both new piles, each weighted by its size, since a tiny pure
+pile of one email counts for less than a big pure pile of five. "Known
+sender?" makes a pile of 3 (all not spam, Gini 0) and a pile of 5 (1 not
+spam, 4 spam, Gini 0.32). "More than 2 links?" makes a pile of 4 (3 not
+spam, 1 spam) and another pile of 4 (1 not spam, 3 spam), Gini 0.375 each.
 
 $$
 G_{\text{split}} = \frac{n_L}{n}\, G(L) + \frac{n_R}{n}\, G(R)
@@ -364,27 +352,24 @@ length is the weighted Gini impurity left afterwards. The dashed line is the
 impurity before asking anything (0.5). Every question helps a little, since
 every bar ends left of the line, but "known_sender > 0.5" (blue) leaves the
 least mess by a clear margin, so it becomes the root of the tree. Two links
-thresholds tie at 0.333: the greedy search would take the first if known
-sender did not exist.
+thresholds tie at 0.333: the search would take the first if known sender
+did not exist.
 
-**In code:** `split_impurity` is $G_{\text{split}}$; `candidate_splits` scores every question in the figure; `best_split` does the same search fast, by sorting each feature once and keeping running label counts, and returns a `Split`.
+This search is all the learning a tree does. There is no gradient and no
+learning rate: the tree tries every feature and every threshold and keeps
+the best. Since a question only compares one column with a threshold, it
+works the same whatever units the column is in.
 
-**Why it matters:** this greedy search is the whole learning algorithm. There
-is no gradient and no learning rate: the tree tries every feature and every
-threshold and takes the best. That is why trees handle columns in any units,
-as the last section shows.
+**In code:** `split_impurity` is $G_{\text{split}}$, `candidate_splits` scores every question in the figure, and `best_split` runs the same search quickly.
 
-## Growing the tree: ask, split, repeat
+## Growing the tree
 
-**Everyday picture.** Sorting a big box of photos: first by year, then each
-year's pile by who is in them, then each of those by place, until every pile
-is tidy or too small to bother with.
-
-**Tiny example.** After "known sender?", the left pile (emails 1, 2, 3) is
-already pure: it becomes a leaf. The right pile (4, 5, 6, 7, 8) is not, so
-the tree searches again *inside that pile only*. There, "more than 0 links?"
-separates email 4 from the four spam emails perfectly. Both new piles are
-pure, so growth stops at depth 2.
+One question rarely sorts everything, so the tree asks again inside each
+pile that is still mixed. After "known sender?", the left pile (emails 1, 2,
+3) is already pure: it becomes a leaf. The right pile (4, 5, 6, 7, 8) is
+not, so the tree searches again *inside that pile only*. There, "more than 0
+links?" separates email 4 from the four spam emails. Both new piles are
+pure, so growth stops at **depth** 2, two questions from the top.
 
 ```mermaid
 flowchart TD
@@ -397,22 +382,21 @@ flowchart TD
   RIGHT -.-> S
 ```
 
-**Reading it:** the same recipe runs at every node, which is why the code is
-a function that calls itself (recursion). The dotted arrows are those
-calls: each child is a fresh node holding only its share of the examples.
-The diamond is where growth stops; everything else is the search from the
-previous section. To predict, a new example simply follows the questions
-from the root down to a leaf.
+**Reading it:** follow one node from the top. The diamond is the stopping
+rule: a pure pile, a pile too small to split, or the depth limit makes a
+leaf. Otherwise the node searches for its best question and splits. The
+dotted arrows send each child back to the top, holding only its share of the
+examples, so the same recipe runs at every node. To predict, a new example
+follows the questions from the root down to a leaf.
 
-Each question looks at a single feature and compares it with a threshold,
-so every question cuts the input space with a straight line parallel to an
-axis. A tree therefore carves the plane into rectangles:
+Each question compares a single feature with a threshold, so it cuts the
+input space with a straight line parallel to an axis, and a tree carves the
+plane into rectangles:
 
 ![A tree on two-moon data at depth 1, 3 and unlimited: one horizontal cut, then a few rectangles, then a patchwork of 51 boxes with thin strips around individual noisy points](figures/primer.ml.classical.regions.svg)
 
-**Reading it:** the dots are 300 training points of two interleaved
-half-moons with noise (`primer.ml.neural_net.make_moons`); the shaded
-background is what the tree would predict at each spot. At depth 1 there is
+**Reading it:** the dots are 300 training points from two interleaved
+half-moons, with noise; the shaded background is what the tree would predict at each spot. At depth 1 there is
 one question, so one straight horizontal cut. At depth 3 there are 8 leaves, and the
 boundary is a staircase of vertical and horizontal edges that roughly
 follows the moons. With no limit, the tree keeps cutting until every leaf is
@@ -424,21 +408,18 @@ one with steps.
 A regression tree, predicting a number instead of a label, is the same
 recipe with two swaps: the impurity is the **variance** of the numbers in a
 pile (how spread out they are), and a leaf predicts their average. Gradient
-boosting, below, is built from those.
+boosting is built from regression trees.
 
-**In code:** `DecisionTree` grows by the recipe in the diagram (a depth limit and a minimum leaf size are its stopping rules, and the "squared" criterion makes it a regression tree), and `DecisionTree.predict` routes each row down to its leaf.
+**In code:** `DecisionTree` grows by the recipe in the diagram (`criterion="squared"` makes it a regression tree), and `DecisionTree.predict` routes each row down to its leaf.
 
 ## Overfitting: a question for every example
 
-**Everyday picture.** Ask a friend to write rules for which of their emails
-are spam, and forbid them from stopping until every past email is sorted
-correctly. They will end up with rules like "an email from Pat at 9:14 on a
-Tuesday with 3 links is spam": perfect on the past, useless for the future.
-
-**Tiny example.** On the noisy moons, a tree with no depth limit grows 51
-leaves and gets 100% of its 300 training points right. On 200 fresh points
-it gets 82%. A tree stopped at depth 2 has 4 leaves, gets 88% on training
-and 89.5% on the fresh points: it learned the shape rather than the noise.
+The unlimited tree in that figure kept asking questions until it had fenced
+off single noisy points. On the noisy moons, a tree with no depth limit
+grows 51 leaves and gets all 300 of its training points right, but only 82%
+of 200 fresh points. A tree stopped at depth 2 has 4 leaves and gets 88% of
+the training points and 89.5% of the fresh ones: it learned the shape rather
+than the noise.
 
 ![Training and validation accuracy against the depth limit: training rises from 78% to 100%; validation peaks at 89.5% for depth 2 and 3 and falls to 82% with no limit](figures/primer.ml.classical.depth_sweep.svg)
 
@@ -447,32 +428,28 @@ no limit at all. The blue training curve only ever rises, because every
 extra level can only fit the training points better. The orange validation
 curve peaks early, at depth 2 to 3, then slides down as the tree starts
 building boxes around individual noisy points. The widening gap between
-the two curves is overfitting, exactly as in `primer.ml.regularization`.
+the two curves is overfitting, as in `primer.ml.regularization`.
 
-A single tree is the textbook **high-variance** model: change a few training
-points and the top question can flip, and everything below it changes with
-it. There are two ways out. Keep trees small (limit the depth, require a
-minimum number of examples per leaf, or grow fully then **prune** back the
-branches that do not help on validation data). Or keep trees big and combine
-many of them, which is what the rest of this lesson does.
+A single tree is a **high-variance** model: its answers swing with the
+training data. Change a few training points and the top question can flip,
+and everything below it changes with it. There are two ways out. The first
+keeps trees small: limit the depth, require a minimum number of examples per
+leaf, or grow the tree fully and then **prune** back the branches that do
+not help on validation data. Depth is the main setting: every tree library
+has it, and it is chosen on validation data. The second way keeps trees big
+and combines many of them.
 
 **In code:** `depth_sweep` grows one tree per depth limit on `moons_split` data and measures both accuracies.
 
-**Why it matters:** depth is the tree's capacity knob. Every tree library
-exposes it (along with a minimum leaf size), and choosing it on validation
-data is the first thing to tune.
+## Random forests: averaging many deep trees
 
-## Random forests: many noisy trees, one steady vote
-
-**Everyday picture.** At a county fair, hundreds of people guess the weight
-of an ox. Individual guesses are wildly off in both directions, but the
-average of all of them lands remarkably close, because the errors point in
-different directions and cancel. A **random forest** does this with trees:
-grow many deep trees that each make *different* mistakes, then average
-them. The trick is making the mistakes different, since averaging copies of
-the same tree changes nothing.
-
-Two sources of difference, both from Leo Breiman:
+At a county fair, hundreds of people guess the weight of an ox. Single
+guesses are far off in both directions, but their average lands close,
+because the errors point in different directions and cancel. A **random
+forest** does this with trees: it grows many deep trees that each make
+*different* mistakes, then averages them. Averaging copies of the same tree
+would change nothing, so the trees have to be made different. Leo
+Breiman's forest does it in two ways:
 
 1. **Bagging** (bootstrap aggregating): each tree trains on its own
    **bootstrap sample**, a resample of the training rows drawn *with
@@ -499,16 +476,16 @@ separate machines. Diversity enters twice: once in which rows each tree
 sees (the bootstrap boxes) and once in which features each node may use
 (inside the tree boxes).
 
-### Bagging: drawing names from a hat, and putting them back
+### Bagging: drawing rows with replacement
 
-**Tiny example.** Put the eight email numbers in a hat. Draw one, write it
-down, *put it back*, and repeat eight times. One draw might give 3, 1, 3, 7,
-5, 1, 8, 2: emails 1 and 3 twice, and emails 4 and 6 not at all. Each tree
-sees a slightly different dataset, with some rows counted double and about
-a third missing.
+A bootstrap sample is drawn like names from a hat that go back in. Put the
+eight email numbers in a hat. Draw one, write it down, *put it back*, and
+repeat eight times. One draw might give 3, 1, 3, 7, 5, 1, 8, 2: emails 1 and
+3 twice, and emails 4 and 6 not at all. Each tree sees a slightly different
+dataset, with some rows counted double and about a third missing.
 
-How big is "about a third"? A particular email is missed on one draw with
-chance $1 - \frac{1}{n}$, and missed on all $n$ draws with:
+The share left out can be worked out. A particular email is missed on one
+draw with chance $1 - \frac{1}{n}$, and missed on all $n$ draws with:
 
 $$
 P(\text{left out}) = \left(1 - \frac{1}{n}\right)^{n} \;\longrightarrow\; \frac{1}{e} \approx 0.368
@@ -552,11 +529,10 @@ without holding data back.
 
 ### Why averaging helps, and what limits it
 
-**Tiny example.** Three trees give a point spam probabilities of 0.9, 0.2
-and 0.7. The forest says 0.6. If each tree's error is a coin flip that
-cancels out on average, three trees already wobble less than one; a hundred
-wobble far less. But if every tree makes the *same* mistake, averaging keeps
-it.
+Three trees give a point spam probabilities of 0.9, 0.2 and 0.7, and the
+forest says 0.6. If the trees' errors were independent, like coin flips,
+three trees would already wobble less than one, and a hundred far less. A
+mistake every tree makes, though, survives the average.
 
 $$
 \operatorname{Var}\!\left(\frac{1}{B}\sum_{b=1}^{B} T_b\right) = \rho\,\sigma^{2} + \frac{1-\rho}{B}\,\sigma^{2}
@@ -593,11 +569,11 @@ round(rho * sigma2 + (1 - rho) * sigma2 / 1000, 4)  # → 0.3007
 round(0.0 * sigma2 + (1 - 0.0) * sigma2 / 10, 4)  # → 0.1
 ```
 
-That is why a forest adds random feature subsets on top of bagging: bagging
+That is why a forest adds random feature subsets on top of bagging. Bagging
 alone leaves every tree free to pick the same strong feature at the top, so
-the trees stay correlated. Forcing each node to choose from a random subset
-pushes $\rho$ down, which is the only way to push the floor down. Each tree
-gets a little worse; the average gets better.
+the trees stay correlated. Making each node choose from a random subset
+pushes $\rho$ down, and with it $\rho\sigma^2$, the part no number of trees
+removes. Each tree gets a little worse, and the average gets better.
 
 ![Left, one fully grown tree carves a jagged patchwork with small islands around noisy points and scores 82% on validation; right, a forest of 100 trees draws a smoother boundary and scores 88.5%](figures/primer.ml.classical.forest_regions.svg)
 
@@ -621,25 +597,19 @@ part of the variance is gone, and what remains is the shared part the
 formula predicts. Unlike depth, adding trees does not overfit; past the
 plateau it only costs time.
 
+So a forest has little to tune. Its usual settings (a few hundred unpruned
+trees, the square root of the number of features at each node) work well on
+most tables, which makes it a common first model for a new table.
+
 **In code:** `averaged_variance` is the formula; `forest_curve` grows one forest and scores its first k trees for each k; `RandomForest.predict_proba` averages the trees' class shares.
 
-**Why it matters:** a random forest is the most forgiving model in machine
-learning. Its defaults (a few hundred unpruned trees, square root of the
-features per node) work well on most tables with no tuning at all, which is
-why it is the standard first model on new tabular data.
+## Gradient boosting: each tree fits what is still wrong
 
-## Gradient boosting: each tree fixes the last one's mistakes
-
-**Everyday picture.** Golf. Your first shot from the tee gets you near the
-green. Your second shot does not start over from the tee: it aims at what is
-*left*, the gap between the ball and the hole. Each shot is small and
-corrects what remains. **Gradient boosting** builds a model the same way:
-start with a crude guess, then add small trees one at a time, each trained
-only on what the model so far still gets wrong.
-
-Where a forest grows big trees side by side and averages them, boosting
-grows small trees in sequence and adds them up. The forest fights variance;
-boosting fights **bias** (being systematically off), a little at a time.
+A forest grows big trees side by side and averages them, which cuts
+variance. **Gradient boosting** grows small trees in sequence and adds them
+up, which cuts **bias**, the error of being systematically off. It starts
+with a crude guess, then adds small trees one at a time, each trained only
+on what the model so far still gets wrong.
 
 ```mermaid
 flowchart LR
@@ -650,16 +620,16 @@ flowchart LR
   U --> OUT["after M rounds:<br/>F₀ + η·(h₁ + h₂ + … + h_M)"]
 ```
 
-**Reading it:** the loop in the middle is the whole algorithm. Each round
-measures what is still wrong (the residuals), trains a small tree to predict
-*those*, and adds a shrunken copy of that tree to the model. The model is
-never retrained from scratch; it only grows by addition. The final model is
-the starting guess plus every tree's contribution, which is why a boosted
-model is literally a sum of trees.
+**Reading it:** each turn of the loop measures what is still wrong (the
+residuals), trains a small tree to predict *those*, and adds a shrunken copy
+of that tree to the model. The model is never retrained from scratch; it
+only grows by addition, so the final model is the starting guess plus every
+tree's contribution: a sum of trees.
 
-**Tiny example.** Four houses of size 1, 2, 3 and 4 sold for 1, 2, 6 and 7
-(hundreds of thousands, say). Boost with **stumps** (trees with a single
-question) and learning rate $\eta = 0.5$:
+Four houses of size 1, 2, 3 and 4 sold for 1, 2, 6 and 7 (in hundreds of
+thousands, say). Boost them with **stumps** (trees with a single question)
+and a learning rate $\eta = 0.5$, which applies half of each tree's
+correction:
 
 | size | price $y$ | $F_0$ | residual $y - F_0$ | stump $h_1$ | $F_1 = F_0 + 0.5\,h_1$ | new residual |
 |---|---|---|---|---|---|---|
@@ -677,9 +647,9 @@ falls from 6.5 to 1.8125 in one round, and a second round brings it to
 
 ### Residuals are the negative gradient
 
-Why is this called *gradient* boosting? Because "fit what is still wrong"
-is a special case of gradient descent (`primer.ml.optimizers`), taken in the
-space of predictions instead of weights.
+The name comes from gradient descent (`primer.ml.optimizers`). Fitting what
+is still wrong is a step of gradient descent, taken on the predictions
+instead of on weights.
 
 $$
 L(y, F) = \tfrac{1}{2}\,(y - F)^{2}
@@ -700,12 +670,12 @@ $$
 | $\Longrightarrow$ | "which gives" | |
 
 **In words:** "for squared error, the direction that most quickly reduces
-the loss at each example is simply the true value minus the prediction: the
+the loss at each example is the true value minus the prediction: the
 residual."
 
 **With the numbers:** house 4 has $y = 7$ and $F = 4$. Nudge $F$ up to 4.001
 and the loss falls from 4.5 to about 4.497, a slope of −3; the negative
-gradient is +3, which is exactly $7 - 4$.
+gradient is +3, which is $7 - 4$.
 
 **In Python:**
 
@@ -718,16 +688,18 @@ round(slope, 6)  # → -3.0
 round(-slope, 6), y - F  # → (3.0, 3.0)
 ```
 
-The payoff of the gradient view: swap in any loss with a slope and the same
-loop still works. For yes/no labels with the log loss (`primer.ml.losses`),
+Seen as a gradient, the same loop works for any loss with a slope. For
+yes/no labels with the log loss (`primer.ml.losses`),
 $F$ is a score in log-odds and the negative gradient is $y - \sigma(F)$, the
 label minus the predicted probability ($\sigma$ is the **sigmoid**, which
-squashes a score into 0 to 1). Each tree then fits "how surprised were we
-by each example".
+squashes a score into 0 to 1). Each tree then fits how far each predicted
+probability is from its label.
 
 **In code:** `GradientBoosting.negative_gradient` returns $y - F$ for `loss="squared"` and $y - \sigma(F)$ for `loss="log"`.
 
-### The update, and the learning rate
+### The update and the learning rate
+
+Each round adds the new tree to the model, shrunk by the learning rate:
 
 $$
 F_m(x) = F_{m-1}(x) + \eta\, h_m(x)
@@ -774,11 +746,10 @@ sum((y - F0) ** 2 for y in prices) / 4  # → 6.5
 sum((y - f) ** 2 for y, f in zip(prices, F1)) / 4  # → 1.8125
 ```
 
-Why not take the whole correction ($\eta = 1$)? Each tree is fitted to the
-training data, noise included. Taking the whole step lets the first few
-trees commit hard to whatever they saw; taking small steps means many trees
-must agree before the model moves far, which averages away some of the
-noise. The price is more rounds.
+Each tree is fitted to the training data, noise included. Taking the whole
+correction ($\eta = 1$) lets the first few trees commit hard to whatever
+they saw. With small steps, many trees must agree before the model moves
+far, which averages away some of the noise, at the cost of more rounds.
 
 ![Boosted depth-2 trees fitting noisy points around a sine curve: after 1 round two flat steps, after 5 rounds a coarse staircase, after 50 rounds a jagged staircase that tracks the sine and starts chasing individual points](figures/primer.ml.classical.boosting_steps.svg)
 
@@ -787,10 +758,9 @@ the blue line is the boosted model's prediction everywhere between 0 and 6.
 After 1 round the model is the average plus 0.3 of one small tree: a
 line with just two flat steps. After 5 rounds it has the rough shape.
 After 50 it follows the curve closely and has begun to jump for individual
-noisy points, the first sign of the overfitting the next figure measures.
-Every version is made of flat steps, because
-every tree predicts a constant in each leaf; the curve is built from many
-small staircases added together.
+noisy points, the first sign of overfitting. Every version is made of flat
+steps, because every tree predicts a constant in each leaf; the curve is
+many small staircases added together.
 
 ![Mean squared error per boosting round for learning rates 1, 0.3 and 0.1: dashed training curves fall toward zero; solid validation curves bottom out at round 4, 9 and 31 respectively, lowest for 0.1, and then climb](figures/primer.ml.classical.boosting_curves.svg)
 
@@ -805,30 +775,29 @@ steps generalize better but need more rounds, and every learning rate needs
 a stopping point chosen on validation data: early stopping, as in
 `primer.ml.regularization`.
 
-**In code:** `GradientBoosting` runs the loop and records the training loss after each round; `GradientBoosting.staged_loss` scores held-out data after each round; `boosting_worked_example` is the four-house table; `boosting_curves` sweeps the learning rate on `sine_data`.
+Libraries such as XGBoost, LightGBM and CatBoost run this same loop, with
+refinements left out here: a second-order (Newton) step for each leaf's
+value, penalties on tree size, fast histogram-based split search, and
+built-in handling of missing values. Their main settings are the ones above:
+tree depth and the learning rate, with the number of rounds chosen by early
+stopping.
 
-**Why it matters:** gradient-boosted trees (through libraries such as
-XGBoost, LightGBM and CatBoost) are the most common winning model on tabular
-data in practice. They add refinements this lesson leaves out, such as a
-second-order (Newton) step for each leaf's value, penalties on tree size,
-fast histogram-based split search, and native handling of missing values,
-but the loop is the one above. The two knobs that matter most are the ones
-you have met: tree depth and the learning rate, with the number of rounds
-chosen by early stopping.
+**In code:** `GradientBoosting` runs the loop and records the training loss after each round; `GradientBoosting.staged_loss` scores held-out data after each round; `boosting_worked_example` is the four-house table; `boosting_curves` sweeps the learning rate on `sine_data`.
 
 ## When trees win, and when neural networks do
 
-**Everyday picture.** A spreadsheet and a photograph are both grids of
-numbers, but they carry meaning differently. In a spreadsheet each column
-means something on its own: "income is under 30,000" is a sentence a loan
-officer would write. In a photo, "pixel (212, 40) is brighter than 0.7"
-means nothing; the meaning is in how thousands of pixels are arranged. A
-tree asks questions of one column at a time, which is perfect for the
-spreadsheet and hopeless for the photo. A neural network builds its own
-features out of combinations of inputs, which is what the photo needs.
+Forests and boosting are both built from trees, and a tree asks about one
+column at a time. That suits some data and not other data. A spreadsheet and
+a photograph are both grids of numbers, but they carry meaning differently.
+In a spreadsheet each column means something on its own: "income is under
+30,000" is a sentence a loan officer would write. In a photo, "pixel (212,
+40) is brighter than 0.7" means nothing; the meaning is in how thousands of
+pixels are arranged. One-column questions suit the spreadsheet and fail on
+the photo. A neural network builds its own features out of combinations of
+inputs, which is what the photo needs.
 
-**Tiny example.** A toy loan table: 800 training rows and 400 validation
-rows, five columns in their natural units: age in years, income in dollars
+To compare them on a table, take a toy loan table: 800 training rows and 400
+validation rows, five columns in their natural units: age in years, income in dollars
 (spanning a factor of 100), a count of late payments, a region code 0 to 5
 (where region 4 is not "twice region 2"), and one column of pure random
 noise. The label follows rules of the kind a lender writes (four or more
@@ -851,7 +820,7 @@ random.
 **Reading it:** blue bars are tree models, orange bars are the same small
 neural network given three versions of the same table, and the dashed line
 is the score for ignoring the inputs and always predicting "fine". The
-trees read the table exactly as it came. The net on raw inputs sits on the
+trees read the table as it came. The net on raw inputs sits on the
 dashed line: incomes around 50,000 swamp every other column and saturate
 its neurons, so it learns nothing. Rescaling rescues it partly; hand-made
 features (the logarithm of income, a yes/no column per region) rescue it
@@ -867,15 +836,14 @@ flowchart TD
   GBT --> CHECK["compare against a neural net<br/>only if the gap matters"]
 ```
 
-**Reading it:** the first question is about the *shape* of one input, not
-about fashion. Tables go down the left; perceptual and sequential data go
-right. On the left, the size of the data decides: at typical business
-scale, start with trees. The bottom-right branch is common in practice: a
-neural network turns text or images into **embeddings**
-(`primer.ml.embeddings.word2vec`), and those numbers become extra columns
-for a boosted-tree model.
+**Reading it:** the first question is about the *shape* of one input.
+Tables go down the left; perceptual and sequential data go right. On the
+left, the size of the data decides: at the size of most business tables,
+start with trees. In the bottom-right branch, a neural network turns text or
+images into **embeddings** (`primer.ml.embeddings.word2vec`), and those
+numbers become extra columns for a boosted-tree model.
 
-Why trees fit tables so well, each point visible in this lesson's code:
+Four things make trees fit tables:
 
 - **Units don't matter.** A tree only asks "is this bigger than that?", so
   any order-keeping change to a column (dollars to thousands, a logarithm,
@@ -889,7 +857,7 @@ Why trees fit tables so well, each point visible in this lesson's code:
 - **Modest data is enough.** A few hundred rows can grow a useful tree; a
   net with thousands of weights needs far more to pin them down.
 
-Where neural networks win, and trees cannot follow:
+Neural networks win where trees cannot follow:
 
 - **Perceptual and sequential data**: images, audio, text. The useful
   features are built from arrangements of raw values, which is what
@@ -905,34 +873,33 @@ Where neural networks win, and trees cannot follow:
 - **End-to-end training** with other neural parts, since a tree has no
   gradient to pass along.
 
-In a careful benchmark on 45 tabular datasets of about 10,000 rows each
+In a benchmark on 45 tabular datasets of about 10,000 rows each
 (Grinsztajn, Oyallon and Varoquaux, 2022), tuned tree-based models remained
-ahead of tuned deep learning models. Their analysis names three reasons that
-match this lesson: trees shrug off uninformative columns, they respect each
-column's own axis, and they fit irregular, step-like functions easily.
-Research on neural networks
-for tables is active and the gap may narrow; the practical rule is to start
-with boosted trees on a table and make any other model beat them on your
-validation data.
+ahead of tuned deep learning models. The authors give three reasons, the
+same as above: trees are not thrown by uninformative columns, they respect
+each column's own axis, and they fit irregular, step-like functions easily.
+Research on neural networks for tables continues, and the gap may narrow.
+Until then, start with boosted trees on a table and make any other model
+beat them on your validation data.
 
 **In code:** `make_tabular` builds the loan table; `tabular_showdown` trains every model in the table above (the net is `primer.ml.neural_net.MLP`); `engineer_features` is the hand-made preparation the net needed.
 
 ### Feature importance, and its limits
 
-**Everyday picture.** After a football season you want to know which
-players mattered. One way: count how often each player touched the ball in
-training. Another: bench each player for a real match and see how much the
-score suffers. The first is quick but credits whoever is busy; the second
-measures what the team actually depends on.
+A single shallow tree can be read in full, as a short list of if/else rules.
+A forest of hundreds of deep trees cannot, so the summary asked of it is
+narrower: which columns it leans on, its **feature importance**. There are
+two ways to measure it.
 
-Trees offer the first kind for free. **Impurity importance** adds up, for
-each feature, the impurity its splits removed (weighted by how many examples
-reached each split), measured on the training data. **Permutation
-importance** is the second kind: take held-out data, shuffle one column so
-it no longer lines up with the labels, and measure how much accuracy drops.
+**Impurity importance** comes free with the trees. It adds up, for each
+feature, the impurity its splits removed (weighted by how many examples
+reached each split), measured on the training data. It is quick, but it
+credits whichever column the trees split on most. **Permutation
+importance** measures what the model depends on for new data: take held-out
+data, shuffle one column so it no longer lines up with the labels, and
+measure how much accuracy drops.
 
-**Tiny example.** The 30-tree forest scores 96.0% on the 400 validation
-rows. Shuffle the late-payments column and it scores 77.5%: a drop of 18.5
+A forest of 30 trees scores 96.0% on the 400 validation rows. Shuffle the late-payments column and it scores 77.5%: a drop of 18.5
 points, so the model leans on that column heavily. Shuffle the noise column
 and it scores 95.75%, a drop of 0.25 points (one row in 400).
 
@@ -977,7 +944,7 @@ always find some threshold on a continuous random column that tidies up a
 few training rows. On the right, scrambling it costs almost nothing,
 because none of those splits help on new data.
 
-The limits worth remembering:
+Three limits apply:
 
 - **Impurity importance favours columns with many distinct values**
   (continuous numbers, IDs), since they offer more thresholds to overfit
@@ -986,30 +953,28 @@ The limits worth remembering:
   dollars and in thousands), each copy looks half as important, and
   shuffling one does little because the other covers for it.
 - **Importance is not cause.** It says what *this model* relies on to
-  predict, not what would change the outcome in the world.
-
-A single shallow tree is the one truly readable model here: print
-`DecisionTree.rules` and you are reading the entire model. A forest of
-hundreds of deep trees is not readable, and importances are a summary of it,
-not an explanation.
+  predict, not what would change the outcome in the world. It summarises a
+  forest; it does not explain one.
 
 **In code:** `permutation_importance` shuffles one column at a time on held-out data; `DecisionTree.feature_importances` and `RandomForest.feature_importances` are the impurity kind.
 
 ## In 20 seconds
 
 - **A decision tree** asks yes/no questions about one column at a time,
-  choosing each question greedily to leave the purest piles (lowest
+  choosing at each step the question that leaves the purest piles (lowest
   weighted Gini impurity or entropy), until a stopping rule says stop.
-- **Deep trees overfit**: a question for every example gives 100% on
-  training data and poor results on new data. Depth is the capacity knob.
+- **A tree grown without limit overfits**: on noisy two-moon data it gets
+  all 300 training points right and 82% of fresh ones. Its depth limit
+  controls this.
 - **Random forests** average many deep trees, each grown on a bootstrap
   sample with random feature subsets. Averaging removes the variance the
   trees don't share; decorrelating them lowers the part they do.
 - **Gradient boosting** adds small trees one at a time, each fit to the
   residuals (the negative gradient of the loss), shrunk by a learning rate,
   with the number of rounds set by early stopping.
-- **On tables, trees usually win**: no scaling, native thresholds, modest
-  data. Neural networks win on images, audio, text and huge datasets.
+- **On tables, trees usually win**: they need no scaling, ask threshold
+  questions directly and learn from modest data. Neural networks win on
+  images, audio, text and huge datasets.
 
 ## Self-test questions
 
@@ -1090,8 +1055,7 @@ or when the model must be trained end to end with other neural parts.
 - **Breiman, Friedman, Olshen and Stone, *Classification and Regression
   Trees* (1984)**: https://doi.org/10.1201/9781315139470. The CART book:
   binary trees split by Gini impurity, regression trees with averaged
-  leaves, and cost-complexity pruning, the recipe this lesson's tree
-  follows.
+  leaves, and cost-complexity pruning: the recipe the tree here follows.
 - **Quinlan, *Induction of Decision Trees*, Machine Learning 1 (1986)**:
   https://doi.org/10.1007/BF00116251. ID3, which grows trees by choosing
   the split with the largest information gain (drop in entropy).
