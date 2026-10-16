@@ -292,7 +292,9 @@ the same ids. Prompt caching and cost estimates rely on that.
 
 A kit whose smallest pieces are letters has a gap: a character that is not
 in it, an emoji, say, or a Chinese character the training text never
-contained, has no piece to be cut into. Byte-level BPE closes the gap by
+contained, has no id, and a real tokenizer can only replace it with an
+"unknown" token, losing it. (The toy letter tokenizer in this lesson passes such
+characters through instead, to keep the code short.) Byte-level BPE closes the gap by
 starting one layer lower. Every file on a computer, whatever it holds, is a
 sequence of **bytes**: numbers from 0 to 255. If the smallest bricks in the
 kit are those 256 byte values, no text is ever unbuildable: emoji, Chinese,
