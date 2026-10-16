@@ -119,8 +119,8 @@ rerun. If you only needed to choose a lever, you are done.
 
 ## Level 2: How it works, from scratch
 
-A chat assistant is built in layers, and each layer explains a different
-behaviour you see:
+A chat assistant is trained in stages. The model's vendor runs the first
+three, and you adapt what comes out of them:
 
 ```mermaid
 flowchart LR
@@ -131,31 +131,31 @@ flowchart LR
   A --> D[Your adaptation<br/>prompts, RAG, LoRA]
 ```
 
-**Reading it:** read left to right; each box is a training stage and each
-arrow hands a model to the next stage. The model *vendor* runs the first
-three stages: pretraining (months, millions of dollars) gives a base model
-that knows facts but just continues text; supervised fine-tuning (SFT)
-teaches it the *format* of being an assistant; preference tuning shapes tone,
-helpfulness and safety. You work in the last box. When a model knows a fact
-it learned that in pretraining; when it answers in tidy bullet points it
-learned that in SFT and preference tuning.
+**Reading it:** read left to right. Each box is a stage, and each arrow
+hands the model on to the next. Pretraining takes months and millions of
+dollars, and gives a base model that knows facts but only continues text.
+Supervised fine-tuning (SFT) teaches it the format of an answer, and
+preference tuning shapes its tone, helpfulness and safety. A fact the
+model knows therefore came from pretraining, and its habit of answering in
+tidy bullet points from SFT and preference tuning. You work in the last
+box.
 
-This lesson builds a small, real version of every stage: the pretraining
-and SFT losses, a reward model, DPO, LoRA, the "which adaptation?" decision,
-and distillation.
+## 1. Pretraining: predict the next token
 
-## 1. Pretraining: guess the next word, a trillion times
+Every later stage starts from a pretrained model. **Pretraining** gives a
+language model one task: at every position in a stretch of text, guess the
+token that comes next (a token is a word or a piece of a word). Grammar,
+facts, arithmetic and coding conventions all help with that guess, so a
+model that has practised it across web-scale text has picked them all up.
 
-**Everyday picture.** Imagine reading every book in a library with a card
-covering the next word, guessing it, then sliding the card to check. Do
-that trillions of times and you absorb grammar, facts, arithmetic habits and
-coding conventions, because every one of them helps you guess the next word.
-
-**Tiny worked example.** A 5-token sequence gives 4 guesses (token 1
-predicts token 2, and so on; the last token has nothing after it to check).
-Suppose the model gave the right next token probability 0.25, 0.25, 0.5 and
-0.5. The penalty for each guess is −ln(probability): 1.386, 1.386, 0.693,
-0.693. The pretraining loss is their average, **1.040**.
+Each guess earns a penalty of −ln p, where p is the probability the model
+gave the token that really came next. The penalty is zero when p = 1 and
+grows as p shrinks. The pretraining loss is the average penalty over every
+guess, and training adjusts the weights to push it down. A 5-token sequence
+gives 4 guesses: token 1 predicts token 2, and so on, and the last token has
+nothing after it to check. Suppose the model gave the true next tokens
+probabilities 0.25, 0.25, 0.5 and 0.5. The penalties are 1.386, 1.386, 0.693
+and 0.693, and the loss is their average, 1.040.
 
 ```mermaid
 flowchart LR
@@ -166,11 +166,11 @@ flowchart LR
   G1 & G2 & G3 & G4 --> AVG[average of −ln p<br/>= the loss]
 ```
 
-**Reading it:** every position makes one guess about the token that follows
-it, using only what came before. The model is scored on all guesses at
-once and the average penalty is the number training pushes down. One text
-sequence of n tokens therefore gives n − 1 training examples for free, which
-is why unlabeled text is such a rich training signal.
+**Reading it:** each position guesses the token after it, using only the
+tokens before it. All the guesses are scored at once, and their average
+penalty is the loss. A text of n tokens gives n − 1 guesses, and the answer
+to each is the next token of the text itself, so the text needs no
+labelling.
 
 $$
 \mathcal{L}_{\text{pretrain}} = -\frac{1}{n-1}\sum_{i=1}^{n-1} \log p_\theta(t_{i+1} \mid t_{1..i})
@@ -209,27 +209,28 @@ L_pretrain = -sum(math.log(p_i) for p_i in p) / (n - 1)
 print(f"{L_pretrain:.3f}")  # → 1.040
 ```
 
-**In code:** `per_position_losses` computes −ln p for every next-token guess
-(with a stable `log_softmax`), and `next_token_loss` averages them into the
-pretraining loss.
+**In code:** `per_position_losses` scores every guess, and
+`next_token_loss` averages them.
 
-**Why it matters in practice.** Pretraining is where knowledge comes from,
-and it is frozen at a date (the "knowledge cutoff"). A base model continues
-text instead of answering questions: ask "What is the capital of France?"
-and it may continue with "What is the capital of Spain?", because question
-lists are common on the web.
+What pretraining produces is a **base model**. Its knowledge stops at the
+date its training text was collected (the **knowledge cutoff**). And it does
+the one thing it was trained to do, continue text: ask it "What is the
+capital of France?" and it may continue with "What is the capital of
+Spain?", because lists of questions are common on the web.
 
-## 2. Supervised fine-tuning (SFT): study the answers, not the questions
+## 2. Supervised fine-tuning (SFT)
 
-**Everyday picture.** An apprentice studies a binder of worked examples:
-customer question, then the expert's reply. They read the question
-carefully, but they are graded only on writing the reply. Nobody marks them
-on reproducing the customer's typing.
+To turn a base model that continues text into one that answers,
+**supervised fine-tuning (SFT)** trains it further on examples of good
+answers, each a prompt followed by the reply wanted. The loss is the
+pretraining loss with one change. The model reads the whole example, but
+only the guesses that predict a reply token are graded, so it learns to
+write replies and not prompts.
 
-**Tiny worked example.** Same 5 tokens, but the first 3 are the prompt and
-the last 2 are the reply. Only the 2 guesses whose target is a reply token
-count: penalties 0.693 and 0.693, average **0.693**. The prompt guesses
-(1.386 each) are ignored.
+Take the same 5 tokens, and say the first 3 are the prompt and the last 2
+the reply. Only the 2 guesses that predict a reply token count, with
+penalties 0.693 and 0.693, so the SFT loss is 0.693. The two guesses that
+predict prompt tokens (1.386 each) are left out.
 
 ```mermaid
 flowchart LR
@@ -244,11 +245,11 @@ flowchart LR
   R2 -.->|loss| L
 ```
 
-**Reading it:** the whole sequence flows through the model, so the reply is
-conditioned on the prompt. The dotted arrows show which predictions reach
-the loss: only those that produce reply tokens. That mask (a list of
-true/false per position) is the whole difference between pretraining code
-and SFT code.
+**Reading it:** the whole sequence flows through the model, so each reply
+token is predicted with the prompt in view. Only the dotted arrows reach the
+loss, and they come from the predictions of reply tokens. The list of which
+positions are graded, true or false for each, is the **mask**, and it is the
+only difference between pretraining code and SFT code.
 
 $$
 \mathcal{L}_{\text{SFT}} = -\frac{\sum_{i} m_i \,\log p_\theta(t_{i+1} \mid t_{1..i})}{\sum_i m_i}
@@ -280,42 +281,45 @@ round(L_SFT, 3)  # → 0.693
 
 ![Only the two reply positions count: SFT loss 0.693 versus 1.040 averaged over every position](figures/primer.ml.training_stages.sft_mask.svg)
 
-**Reading it:** each bar is one next-token prediction from the worked
-example, and its height is the penalty −ln p. Grey bars predict prompt
-tokens and are masked out of the SFT loss; blue bars predict reply tokens
-and are the only ones that count. The dashed lines mark the two averages:
-1.040 over everything (pretraining) and 0.693 over the reply (SFT).
+**Reading it:** each bar is one guess from the example, and its height is
+the penalty −ln p. Grey bars predict prompt tokens and are masked out; blue
+bars predict reply tokens and are the only ones SFT counts. The two dashed
+lines are the averages: 1.040 over every bar (pretraining) and 0.693 over
+the blue ones (SFT).
 
-**In code:** `response_mask` builds the true/false list of graded
-predictions, and `sft_loss` averages `per_position_losses` over only the
-positions it marks.
+**In code:** `response_mask` marks the graded positions, and `sft_loss`
+averages the penalties over them.
 
-**Why it matters in practice.** SFT needs far less data than pretraining
-(thousands to hundreds of thousands of examples) and quality beats quantity:
-a few thousand excellent examples outperform a mountain of mediocre ones.
-If you fine-tune your own model and forget the mask, it learns to write
-user prompts too.
+SFT needs far less data than pretraining, thousands to hundreds of
+thousands of examples, and their quality counts for more than their number:
+a few thousand excellent examples do better than many more mediocre ones.
+If you fine-tune a model yourself and forget the mask, it learns to write
+the user's prompts as well as the replies.
 
-## 3. Preference tuning: a taste test instead of a recipe
+## 3. Preference tuning: RLHF and DPO
 
-**Everyday picture.** It is hard to write down the perfect answer, but easy
-to taste two dishes and say which is better. Preference tuning collects
-exactly those judgements: people (or a model following written principles)
-compare two responses and pick one.
+SFT shows the model what a good answer looks like, one example at a time.
+It cannot tell the model which of two acceptable answers is better: more
+helpful, better in tone, safer. Which answer is better is hard to capture
+in one written example, but easy to judge with two answers side by side. **Preference
+tuning** trains on those judgements: shown two responses to the same
+prompt, a person (or a model following written principles) picks the
+better one. There are two ways to learn from the picks.
 
-### 3a. RLHF: train a critic, then train the cook against it
+### 3a. RLHF: a reward model, then reinforcement learning
 
-A **reward model** learns to predict those judgements, giving each response
-a score. Reinforcement learning then tunes the language model to earn high
-scores. The link between scores and "which one wins" is the Bradley-Terry
-model, built on the **sigmoid** function σ(z) = 1 / (1 + e^−z), which squashes
-any number into a probability between 0 and 1 (σ(0) = 0.5, σ(2) = 0.881).
+In **reinforcement learning from human feedback (RLHF)**, a **reward
+model** first learns to predict the picks by giving each response a score.
+Reinforcement learning then tunes the language model to write responses
+that score high. Two scores become a prediction of which response wins
+through the Bradley-Terry model, built on the **sigmoid** function
+σ(z) = 1 / (1 + e^−z), which squashes any number into a probability between
+0 and 1 (σ(0) = 0.5, σ(2) = 0.881).
 
-**Tiny worked example.** The reward model scores the chosen answer 3.0 and
-the rejected one 1.0. The gap is 2, so it predicts the chosen answer wins
-with probability σ(2) = **0.881**, and its loss on this pair is
-−ln 0.881 = **0.127**. Had it scored both 1.0, it would predict a coin flip
-(0.5) and pay ln 2 = 0.693.
+Say the reward model scores the chosen answer 3.0 and the rejected one 1.0.
+The gap is 2, so it predicts that the chosen answer wins with probability
+σ(2) = 0.881, and its loss on this pair is −ln 0.881 = 0.127. Had it scored
+both 1.0, it would predict a coin flip (0.5) and pay ln 2 = 0.693.
 
 ```mermaid
 flowchart LR
@@ -327,12 +331,12 @@ flowchart LR
   RL --> LM
 ```
 
-**Reading it:** the loop has two learners. First, labelers compare pairs and
-the reward model learns to agree with them. Second, the language model
-generates new responses, the reward model scores them, and reinforcement
-learning (usually PPO) nudges the language model towards higher scores,
-with a penalty for drifting far from where it started. Two models, two
-training runs, lots of moving parts.
+**Reading it:** the loop trains two models, one after the other. First,
+labelers compare pairs and the reward model learns to agree with them.
+Then the language model writes new responses, the reward model scores
+them, and reinforcement learning (usually PPO) moves the language model
+towards higher scores, with a penalty for drifting far from where it
+started.
 
 $$
 P(y_w \succ y_l) = \sigma\big(r(y_w) - r(y_l)\big) \qquad
@@ -372,24 +376,28 @@ round(-math.log(sigma(r_w - r_l)), 3)  # → 0.127
 round(-math.log(sigma(1.0 - 1.0)), 3)  # → 0.693
 ```
 
-**In code:** `sigmoid` squashes a score gap into a probability,
-`preference_probability` applies it to two rewards (the Bradley-Terry
-model), and `reward_model_loss` is minus the log of that probability.
+**In code:** `preference_probability` turns two scores into the chance
+that the first wins (the Bradley-Terry model), and `reward_model_loss`
+scores the reward model on one pair.
 
-### 3b. DPO: skip the critic
+### 3b. DPO: preferences without a reward model
 
-**Everyday picture.** Instead of hiring a food critic and cooking to please
-them, edit the recipe book directly from the taste-test results, while
-keeping a copy of the original book so you don't drift too far from it.
+RLHF trains a reward model, then runs reinforcement learning against it.
+**Direct preference optimization (DPO)** learns from the same pairs in one
+ordinary training run, with no reward model and no reinforcement learning. It keeps a frozen copy of the model it
+starts from, the **reference** (usually the SFT model), and trains the other
+copy, the **policy**, to make the chosen answer more likely and the rejected
+one less likely. Both changes are measured against the reference, and a
+setting β (beta) holds the policy close to it.
 
-**Tiny worked example.** A **log-probability** is the log of the
-probability the model gives a whole response (a sum of per-token log
-probabilities; more negative means less likely). The frozen reference
-model gives both answers −11. After some training the policy gives the
+The likelihoods are compared as **log-probabilities**: the log of the
+probability the model gives a whole response, which is the sum of its
+tokens' log-probabilities (more negative means less likely). Say the
+reference gives both answers −11. After some training the policy gives the
 chosen answer −10 (more likely than before) and the rejected one −12 (less
 likely). With β = 0.1 the margin is 0.1 × ((−10 − −11) − (−12 − −11)) =
-0.1 × (1 + 1) = **0.2**; the loss is −ln σ(0.2) = **0.598**, down from ln 2 =
-0.693 when the policy still equalled the reference.
+0.1 × (1 + 1) = 0.2, and the loss is −ln σ(0.2) = 0.598, down from
+ln 2 = 0.693 when the policy still matched the reference.
 
 ```mermaid
 flowchart LR
@@ -401,12 +409,12 @@ flowchart LR
   LOSS -->|gradient| POL
 ```
 
-**Reading it:** each preference pair is scored twice: by the model being
-trained and by a frozen copy of where it started. The margin measures how
-much more the policy has boosted the chosen answer than the rejected one,
-*relative to the reference*. The loss is the reward-model loss again, but
-the "reward" is read straight off the policy's own probabilities, so there
-is no separate reward model and no reinforcement-learning loop.
+**Reading it:** each preference pair is scored twice, by the policy and by
+the frozen reference. The margin measures how much more the policy has
+raised the chosen answer than the rejected one, relative to the reference.
+The loss is the reward model's loss again, with the reward read straight
+off the policy's own probabilities, so there is no separate reward model
+and no reinforcement-learning loop.
 
 $$
 \mathcal{L}_{\text{DPO}} = -\log \sigma\Big(\beta\big[(\log\pi_\theta(y_w) - \log\pi_{\text{ref}}(y_w)) - (\log\pi_\theta(y_l) - \log\pi_{\text{ref}}(y_l))\big]\Big)
@@ -458,49 +466,54 @@ round(beta * (1 - sigma(margin)), 3)  # → 0.045
 
 ![DPO's push is β for pairs ranked backwards, half that at margin 0, and fades to zero once a pair is learned](figures/primer.ml.training_stages.dpo_strength.svg)
 
-**Reading it:** the x-axis is the DPO margin (how strongly the policy
-already prefers the chosen answer, relative to the reference); the y-axis is
-how hard one gradient step pushes. Far left, the policy has the pair
-backwards and gets the full push, β. At zero (no preference yet) it gets
-half. Far right, the pair is learned and updates fade to nothing, so
-training effort flows automatically to the pairs still wrong.
+**Reading it:** the x-axis is the margin, how strongly the policy already
+prefers the chosen answer relative to the reference; the y-axis is how hard
+one gradient step pushes. On the far left the policy has the pair backwards
+and gets the full push, β. At zero, with no preference yet, it gets half.
+On the right the pair is learned and the push fades towards zero, so
+training spends its effort on the pairs it still gets wrong.
 
 ![The helpful answer climbs towards 1 while rude falls fastest and rambling falls more slowly, staying above rude](figures/primer.ml.training_stages.dpo_training.svg)
 
-**Reading it:** a one-prompt toy policy starts uniform over three answers
-(1/3 each). The preference data says "helpful and correct" beats both
-others and "correct but rambling" beats "rude". As training steps pass
-(x-axis), probability (y-axis) flows to the top answer, the rude answer is
-pushed down fastest, and the rambling answer falls too but more slowly
-(0.166 at step 50, 0.005 by step 200), staying above rude the whole way:
-the ordering people expressed. Nothing here stops the top answer taking
-nearly everything, because every pair it appears in keeps pushing it up.
+**Reading it:** a toy policy for one prompt starts even across three
+answers (1/3 each). The preferences say "helpful and correct" beats both
+others, and "correct but rambling" beats "rude". As training runs (x-axis),
+probability (y-axis) flows to the helpful answer. Rude is pushed down
+fastest; rambling falls more slowly (0.166 at step 50, 0.005 by step 200)
+and stays above rude the whole way, the order people expressed. Nothing
+stops the top answer taking nearly everything, because every pair it
+appears in keeps pushing it up.
 
-**In code:** `dpo_margin` computes the gap between implicit rewards
-(β times each log-ratio), `dpo_loss` turns it into −log σ(margin), and `dpo_update_strength`
-gives the push β × (1 − σ(margin)) plotted in the first figure;
-`train_toy_dpo` trains the three-answer toy policy of the second.
+**In code:** `dpo_loss` and `dpo_update_strength` give the loss and the
+push in the first chart, and `train_toy_dpo` trains the policy in the
+second.
 
-**Why it matters in practice.** DPO is simpler and more stable than RLHF,
-which is why it is widely used in open-model fine-tuning. Constitutional
-AI and AI-feedback methods scale the labelling by having a model judge
-responses against written principles. This stage is where tone,
-helpfulness, refusals and safety behaviour mostly come from.
+The judge need not be a person. Constitutional AI and other AI-feedback
+methods scale up the labelling by having a model compare the responses
+against written principles. Whoever judges, this stage
+is where an assistant's tone, helpfulness, refusals and safety behaviour
+mostly come from.
 
-## 4. LoRA: sticky notes instead of reprinting the textbook
+## 4. LoRA: low-rank adapters
 
-**Everyday picture.** You want to adapt a 1,000-page textbook for your
-class. Reprinting it is expensive. Instead you add a small stack of sticky
-notes with corrections. The book stays untouched; the notes are cheap to
-write, store and swap, and you can photocopy them into the book when you're
-done.
+Pretraining, SFT and preference tuning are run by the model's vendor. The
+last box in the pipeline is yours: adapting a finished model to your own
+task. Retraining every weight would mean a full copy of the model for each
+task. **LoRA** (low-rank adaptation) leaves the pretrained weights frozen
+and trains a small **adapter** beside each layer it changes: two thin
+matrices, A and B. A squeezes the layer's input down to r numbers, where
+r, the **rank**, is far smaller than the layer's width; B expands them back
+into a correction that is added to the layer's output. Think of sticky
+notes on a textbook: the book stays as printed, the notes are cheap to
+write, store and swap, and when you are done you can copy them into the
+book.
 
-**Tiny worked example.** Frozen weights W = the 2×2 identity (it copies its
-input). Adapter B = (1, 0) as a column and A = (0, 1) as a row. For input
-x = (1, 2): the frozen path gives W·x = (1, 2). The adapter first squeezes x
-to one number, A·x = 2, then expands it back, B·2 = (2, 0). The output is
-(1, 2) + (2, 0) = **(3, 2)**. Two small vectors changed the layer's
-behaviour without touching W.
+Take a layer whose frozen weights W are the 2×2 identity, so W copies its
+input, and an adapter with A = (0, 1) as a row and B = (1, 0) as a column.
+For the input x = (1, 2), the frozen path gives W·x = (1, 2). The adapter
+squeezes x to one number, A·x = 2, then expands it back, B·2 = (2, 0). The
+output is (1, 2) + (2, 0) = (3, 2). Two small vectors changed what the
+layer does, and W is untouched.
 
 ```mermaid
 flowchart LR
@@ -514,11 +527,11 @@ flowchart LR
 
 **Reading it:** the input takes two paths. The top path is the pretrained
 layer, which never changes. The bottom path is the adapter: A squeezes the
-d-dimensional input down to a tiny rank r (say 8), and B expands it back.
-Because B starts at zero, the bottom path adds nothing at first and the
-model starts exactly where pretraining left it. Only A and B are trained.
-Afterwards you can add B·A into W once ("merge") and serve the model at
-exactly the original speed.
+d numbers of the input down to r (say 8), and B expands them back. B starts
+at zero, so at first the bottom path adds nothing and the model starts
+where pretraining left it. Only A and B are trained. Afterwards B·A can be
+added into W once (merging the adapter), and the model is served at its
+original speed.
 
 $$
 y = xW^\top + \frac{\alpha}{r}\, x A^\top B^\top \qquad
@@ -581,33 +594,34 @@ d_out * d_in, [r * d_in + d_out * r for r in (64, 16, 8)]  # → (16777216, [524
 
 ![A rank-1 adapter plateaus while ranks 2 and 4 drive the error to essentially zero](figures/primer.ml.training_stages.lora_ranks.svg)
 
-**Reading it:** the task needs a rank-2 change to a frozen 16 × 16 layer.
-The y-axis (log scale) is the training error; the x-axis is the training
-step. A rank-1 adapter plateaus: its bottleneck is too narrow to express
-the change. Ranks 2 and 4 drive the error to essentially zero. This is the
-LoRA bet: the *change* a fine-tune needs is low-rank even though the
-weights themselves are not.
+**Reading it:** the task is a rank-2 change to a frozen 16 × 16 layer. The
+x-axis is the training step and the y-axis (log scale) the training error.
+A rank-1 adapter levels off, because its bottleneck is too narrow to
+express the change; ranks 2 and 4 drive the error to essentially zero.
+LoRA rests on this: the change a fine-tune needs has low rank, even though
+the weights themselves do not.
 
-**In code:** `LoRALinear` holds the frozen W beside the trainable A and B,
-and `LoRALinear.merged_weight` folds the adapter into W for serving.
-`lora_trainable_params` and `full_trainable_params` count the table's
-parameters, and `train_toy_lora` trains the adapters in the figure.
+**In code:** `LoRALinear` holds the frozen W beside A and B, and
+`LoRALinear.merged_weight` merges them for serving.
 
 **QLoRA** goes further: it stores the frozen base weights in 4 bits (a
 format called NF4) and trains LoRA adapters in 16-bit on top, which lets a
 65-billion-parameter model be fine-tuned on a single 48 GB GPU.
 
-**Why it matters in practice.** LoRA adapters are megabytes, not
-gigabytes. You can keep one per customer or task and hot-swap them on one
-shared base model, and training fits on far smaller hardware.
+An adapter takes megabytes where the model takes gigabytes, so you can
+keep one per customer or task and swap them on one shared base model, and
+training fits on far smaller hardware.
 
 ## 5. Which adaptation should you use?
 
-**Everyday picture.** If a new employee doesn't know your product catalogue,
-you hand them the catalogue (retrieval); you don't send them back to
-school. If they know the facts but write emails in the wrong tone, you first
-give clearer instructions, then coach them, and only for a whole new
-profession do you retrain from scratch.
+LoRA is one way to change what a model does, and not the first to try.
+What fits depends on what is wrong. Fine-tuning changes behaviour; it is a
+poor way to add knowledge. A model that lacks facts, such as a product
+catalogue that changes every week, needs **retrieval** (RAG,
+retrieval-augmented generation): the system looks the facts up and puts
+them in the prompt when the question arrives, so they stay current and can
+be cited. A model that has the facts but gets the format or tone wrong
+needs its behaviour changed, by the cheapest option that works.
 
 | Approach | Changes weights? | Use when |
 |---|---|---|
@@ -626,33 +640,33 @@ flowchart TD
   L -->|Major domain shift,<br/>lots of data| F[Full fine-tune]
 ```
 
-**Reading it:** start at the top. Knowledge problems exit immediately to
-retrieval. Behaviour problems climb a ladder of cost and only go as far as
-they must: prompt first, a LoRA adapter if the prompt can't make the
-behaviour consistent (or the prompt is too long and costly to send every
-time), and a full fine-tune only for a genuine domain shift with lots of
-data.
+**Reading it:** start at the top. A knowledge problem goes straight to
+retrieval. A behaviour problem climbs the options in order of cost and
+stops at the first that works: a better prompt, then a LoRA adapter if the
+prompt cannot make the behaviour consistent (or is too long and costly to
+send with every call), and a full fine-tune only for a genuine domain shift
+with lots of data.
 
-**In code:** `choose_adaptation` walks this flowchart, cheapest option
-first, and returns the approach it lands on.
+**In code:** `choose_adaptation` walks this flowchart and returns where it
+lands.
 
-**The key line: fine-tuning teaches behaviour; RAG supplies knowledge.**
-Most production systems end up as retrieval plus a well-built prompt.
+## 6. Distillation: a small model learns from a big one
 
-## 6. Distillation: the apprentice learns how the master hesitates
+The options so far change what a model does; the last one changes what it
+costs to run. A big model may do a task well but be slow and expensive to
+serve. **Distillation** trains a small, cheap **student** model to imitate
+a big **teacher** model. The student learns from the teacher's whole spread
+of probabilities across the answers, not only its top pick, because the
+spread says more: which wrong answers the teacher found nearly right, and
+which it ruled out.
 
-**Everyday picture.** A master chef tastes a sauce and says "mostly thyme, a
-bit of rosemary, definitely not mint". An apprentice who only hears "thyme"
-learns less than one who hears the whole judgement. Distillation trains a
-small, cheap *student* model to match a big *teacher's* full probability
-spread, not just its top answer.
-
-**Tiny worked example.** The teacher's raw scores (logits) for three
-answers are 2, 1, 0. Softmax at temperature T = 1 gives 0.665, 0.245, 0.090.
-Dividing the logits by T = 2 first gives softmax(1, 0.5, 0) = **0.506,
-0.307, 0.186**: flatter, so the student clearly sees that answer 2 is a much
-better runner-up than answer 3. That runner-up information is sometimes
-called "dark knowledge".
+A **temperature** T brings that information out. Say the teacher's raw
+scores (logits) for three answers are 2, 1 and 0. Softmax at T = 1 turns
+them into the probabilities 0.665, 0.245 and 0.090, and the top answer
+dominates. Dividing the logits by T = 2 first gives softmax(1, 0.5, 0) =
+0.506, 0.307, 0.186. The spread is flatter, and the student can see that
+answer 2 is a much better runner-up than answer 3. What the runner-ups
+carry is sometimes called "dark knowledge".
 
 ```mermaid
 flowchart LR
@@ -665,11 +679,11 @@ flowchart LR
   KL -->|gradient| S
 ```
 
-**Reading it:** both models see the same input. Each one's scores are
-softened by the same temperature, and the **KL divergence** measures how
-far the student's spread is from the teacher's. Only the student learns; the
-teacher is fixed. Typically this runs over large volumes of the exact
-traffic your product sees, so the student becomes an expert at *your* task.
+**Reading it:** both models see the same input, and both sets of scores
+are softened by the same temperature. The **KL divergence** measures how
+far the student's spread is from the teacher's, and only the student learns
+from it; the teacher stays fixed. Run it on the requests your product
+receives, and the student learns your task.
 
 $$
 p_i^{(T)} = \frac{e^{z_i/T}}{\sum_j e^{z_j/T}} \qquad
@@ -721,35 +735,34 @@ round(alpha * T ** 2 * KL, 2)  # → 2.04
 
 ![Raising temperature from 1 to 5 flattens the teacher's 0.665, 0.245, 0.090 towards even, revealing the ranking of wrong answers](figures/primer.ml.training_stages.distill_temperature.svg)
 
-**Reading it:** the same three teacher logits (2, 1, 0) shown at three
+**Reading it:** the same three teacher logits (2, 1, 0) at three
 temperatures. At T = 1 (left group) the top answer dominates. At T = 2 and
-T = 5 the bars even out and the *ranking* of the wrong answers becomes
-visible to the student. Too high a temperature and everything flattens to
-a uniform guess, so T is tuned (2 to 5 is common).
+T = 5 the bars even out, and the order of the wrong answers shows. Raise T
+too far and every answer flattens towards an even guess, so T is tuned
+(2 to 5 is common).
 
-**In code:** `soft_targets` divides logits by T and applies softmax,
-`kl_divergence` measures how far apart two spreads are, and
-`distillation_loss` combines them with the T² scale and the optional
-cross-entropy on the true label.
+**In code:** `distillation_loss` combines `soft_targets` and
+`kl_divergence` with the T² scale.
 
-**Why it matters in practice.** Distillation is often the biggest cost
-lever in production: a small student trained on a big model's outputs for
-one narrow task can be many times cheaper and faster with little quality
-loss on that task.
+A student trained this way for one narrow task can be many times cheaper
+and faster than its teacher, with little loss of quality on that task.
 
 ## In 20 seconds
-- Pretraining predicts the next token over huge text and gives knowledge;
-  SFT teaches the assistant format; preference tuning shapes tone,
-  helpfulness and safety.
-- SFT is next-token loss with the prompt masked out.
-- RLHF trains a reward model on pairwise preferences, then optimises the LM
-  against it; DPO gets the same effect directly from preference pairs.
-- LoRA trains a tiny low-rank correction B·A beside frozen weights: 0.39% of
-  a layer's parameters at rank 8, 3.1% at rank 64, mergeable for zero added latency.
-- Fine-tuning teaches behaviour; RAG supplies knowledge. Start with
-  prompting and RAG.
-- Distillation trains a small student on a big teacher's soft targets; it's
-  a major cost lever.
+- Pretraining predicts the next token across web-scale text and gives a
+  model its knowledge; SFT teaches it the format of an answer; preference
+  tuning shapes its tone, helpfulness and safety.
+- SFT is the pretraining loss with the prompt masked out, so only the reply
+  is graded.
+- RLHF trains a reward model on pairs of answers people compared, then
+  tunes the language model to score high against it; DPO learns from the
+  same pairs directly, with no reward model.
+- LoRA trains a small low-rank correction B·A beside frozen weights: 0.39%
+  of a layer's parameters at rank 8, 3.1% at rank 64, and once merged it
+  adds no serving time.
+- Fine-tuning changes behaviour; retrieval (RAG) supplies knowledge. Try a
+  better prompt and retrieval first.
+- Distillation trains a small student on a big teacher's softened
+  probabilities, so a task costs less to run.
 
 ## Self-test questions
 
