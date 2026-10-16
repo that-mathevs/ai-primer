@@ -135,23 +135,19 @@ model card or an API reference, you are done.
 
 ## Level 2: How it works, from scratch
 
-Machine learning papers look impenetrable mostly because of **notation**:
-Greek letters, big sigmas, little superscript Ts. Almost every symbol is
-shorthand for a short loop you could write in a few lines of Python. This
-lesson writes each one out as that loop, so that when a formula appears
-elsewhere in this primer you can read it aloud.
-
-Every function below is deliberately written the slow, obvious way, with
-plain Python loops, so the code *is* the definition. The tests check each one
-against NumPy, which does the same thing fast.
+Each symbol below comes with its parts decoded, the formula read aloud as a
+sentence, a worked example with small numbers, and the same loop in Python.
+The Python uses plain loops rather than a fast library, so it can be read as
+the definition. The loops run over lists and tables of numbers, so those come
+first.
 
 ## Lists and tables of numbers: vectors and matrices
 
-**Everyday picture.** A **vector** is a list of numbers, like a shopping
-receipt: (apples 3, bread 1, milk 2). A **matrix** is a table of numbers, like
-a spreadsheet with rows and columns.
+A **vector** is a list of numbers, like a shopping receipt: (apples 3, bread 1,
+milk 2). A **matrix** is a table of numbers, like a spreadsheet with rows and
+columns.
 
-**Tiny example.** $x = (3, 1, 2)$ is a vector with 3 entries. Its entries are
+$x = (3, 1, 2)$ is a vector with 3 entries. Its entries are
 written with a small **subscript**: $x_1 = 3$, $x_2 = 1$, $x_3 = 2$. A matrix
 $A$ with 2 rows and 3 columns has **shape** $2 \times 3$, and $A_{2,3}$ means
 "row 2, column 3".
@@ -166,12 +162,12 @@ $A$ with 2 rows and 3 columns has **shape** $2 \times 3$, and $A_{2,3}$ means
 | $x \in \mathbb{R}^{768}$ | "x is a list of 768 numbers" | `len(x) == 768` |
 | $n \times d$ | shape: n rows, d columns | `np.zeros((n, d))` |
 
-In practice, a word's embedding is a vector, a batch of embeddings is a
-matrix (one row per word), and a model's weights are mostly matrices.
+In a language model, a word's embedding is a vector, a batch of embeddings is
+a matrix with one row per word, and most of the model's weights are matrices.
 
 ## Σ (capital sigma): add them all up
 
-**Everyday picture.** Totting up a receipt.
+The first loop adds a list up, the way you total a receipt:
 
 $$
 \sum_{i=1}^{n} x_i = x_1 + x_2 + \cdots + x_n
@@ -189,8 +185,7 @@ $$
 
 **In words:** "for i from 1 to n, add up x sub i."
 
-**With the numbers:** $\sum_{i=1}^{4} i = 1 + 2 + 3 + 4 = 10$. In code, Σ is a
-`for` loop with a running total (`summation` below).
+**With the numbers:** $\sum_{i=1}^{4} i = 1 + 2 + 3 + 4 = 10$.
 
 **In Python:**
 
@@ -207,11 +202,11 @@ sum(x)  # → 10
 ```
 
 **Π (capital pi)** is the same idea with multiplication:
-$\prod_{i=1}^{4} i = 1 \times 2 \times 3 \times 4 = 24$. It shows up whenever
-independent chances combine. For example, ten steps that each succeed 95%
-of the time all succeed with probability $\prod 0.95 = 0.95^{10} \approx 0.60$.
-This single fact explains why long chains of AI agent steps fail so often
-(`primer.agents.planning`).
+$\prod_{i=1}^{4} i = 1 \times 2 \times 3 \times 4 = 24$. It appears wherever
+independent chances combine: ten steps that each succeed 95% of the time all
+succeed with probability $\prod 0.95 = 0.95^{10} \approx 0.60$. Every step
+an AI agent adds to a task makes finishing it less likely in the same way (see
+`primer.agents.planning`).
 
 **In Python:**
 
@@ -230,10 +225,10 @@ round(0.95 ** 10, 2)  # → 0.6
 
 ## The dot product: how much two lists agree
 
-**Everyday picture.** A recipe needs 2 eggs, 3 cups of flour and 1 cup of
-sugar, and eggs cost \$1, flour \$0.50 and sugar \$2 per unit. The total
-cost is 2·1 + 3·0.5 + 1·2 = \$5.50: multiply matching items, then add. That
-is a dot product.
+Σ can also run over two lists at once. A recipe needs 2 eggs, 3 cups of flour
+and 1 cup of sugar, and eggs cost \$1, flour \$0.50 and sugar \$2 per unit.
+The total cost is 2·1 + 3·0.5 + 1·2 = \$5.50. Multiplying matching entries and
+adding the products is called a **dot product**.
 
 $$
 a \cdot b = \sum_{i=1}^{d} a_i \, b_i
@@ -261,10 +256,10 @@ b = [3, 0.5]
 sum(a_i * b_i for a_i, b_i in zip(a, b))  # → 4.0
 ```
 
-Geometrically, the dot product is large when two arrows point the same way,
-zero when they are at right angles, and negative when they point apart.
-That is why it is the standard similarity score for attention and for
-embeddings.
+Draw each list as an arrow and the dot product is large when the arrows point
+the same way, zero when they are at right angles, and negative when they point
+apart. Attention and embedding search both use it to score how alike two
+vectors are.
 
 ```mermaid
 flowchart LR
@@ -276,17 +271,18 @@ flowchart LR
   M2 --> S
 ```
 
-**Reading it:** each pair of matching positions meets in a multiply box,
-first entries with first entries and second with second. Every product then
-flows into one addition. A dot product is always this shape: many
-multiplications feeding one sum, however long the lists get.
+**Reading it:** follow the arrows from left to right. The first entries of a
+and b meet in one multiply box and the second entries in the other, and both
+products flow into one addition. Longer lists add more multiply boxes, all
+feeding the same sum.
 
-**In code:** `dot` pairs up matching entries, multiplies them and adds the products with `summation`, refusing lists of different lengths.
+**In code:** `dot` is this loop, and it refuses two lists of different lengths.
 
 ## ‖x‖: the length of a vector
 
-**Everyday picture.** Walk 3 blocks east and 4 blocks north. As the crow
-flies, you are 5 blocks from where you started (Pythagoras).
+An arrow has a length as well as a direction. Walk 3 blocks east and 4 blocks
+north and you are 5 blocks from where you started, as the crow flies
+(Pythagoras). A vector's length is found the same way:
 
 $$
 \lVert x \rVert = \sqrt{\sum_{i=1}^{d} x_i^2} = \sqrt{x \cdot x}
@@ -317,19 +313,20 @@ length([1, 2, 2])  # → 3.0
 ```
 
 Dividing a vector by its length gives a **unit vector** of length 1 that
-points the same way. Embedding systems do this constantly, because then the
-dot product measures only direction (see
+points the same way. Embedding systems do this to their vectors so that a dot
+product compares direction only (see
 `primer.ml.embeddings.similarity`).
 
 **In code:** `norm` is the square root of a vector's dot product with itself.
 
 ## Matrix multiply and transpose
 
+A matrix can be read as a stack of vectors: its rows, or its columns.
 **Transpose**, written $A^\top$ ("A transpose"), flips a table on its
 diagonal so rows become columns: a $2 \times 3$ matrix becomes $3 \times 2$.
 
-**Matrix multiply**, written $AB$ with nothing in between, is a whole grid of
-dot products. The cell in row $i$, column $j$ of the answer is row $i$ of $A$
+**Matrix multiply**, written $AB$ with nothing in between, is a grid of dot
+products. The cell in row $i$, column $j$ of the answer is row $i$ of $A$
 dotted with column $j$ of $B$.
 
 $$
@@ -376,28 +373,29 @@ flowchart LR
   D --> O["answer, row 1, column 1 = 19"]
 ```
 
-**Reading it:** a matrix multiply is nothing but this box, repeated for every
-(row, column) pair. The shape rule falls out: the row of A and the column of
-B must be the same length, or there is nothing to pair up. Almost all the
-computation in a neural network is this one operation, which is why GPUs,
-built to do thousands of multiply-adds at once, are the hardware of AI.
+**Reading it:** a row of A and a column of B meet in one dot product, which
+fills one cell of the answer. A matrix multiply repeats this for every
+(row, column) pair, which is why a row of A and a column of B must be the same
+length. Most of the arithmetic in a neural network is matrix multiplies, and
+GPUs are built to do thousands of these multiply-adds at once.
 
 **In code:** `transpose` turns columns into rows; `matmul` transposes B once, then fills each cell with one `dot` of a row of A and a column of B.
 
-## e and log: growth, and its undo button
+## e and log: exponentials and logarithms
 
-**Everyday picture.** Money in an account that compounds continuously at
-100% a year grows by a factor of **e ≈ 2.718** in one year. $e^x$ is that
-growth run for $x$ years. The **natural logarithm** $\ln y$ (often just
-$\log y$ in ML papers) answers the reverse question: how many years of that
-growth turn 1 into $y$?
+So far the loops add and multiply. Two functions turn up wherever a formula
+deals in probabilities: the exponential $e^x$ and the logarithm that undoes
+it. Money in an account that compounds continuously at 100% a year grows by a
+factor of **e ≈ 2.718** in one year. $e^x$ is that growth run for $x$ years.
+The **natural logarithm** $\ln y$ (often just $\log y$ in ML papers) answers
+the reverse question: how many years of that growth turn 1 into $y$?
 
 | You see | Say | Example |
 |---|---|---|
 | $e^x$ or $\exp(x)$ | "e to the x" | $e^0 = 1$, $e^1 = 2.718$, $e^2 = 7.39$, $e^{-1} = 0.37$ |
 | $\ln y$ or $\log y$ | "log of y" | $\ln 7.39 = 2$, $\ln 1 = 0$, $\ln 0.01 = -4.61$ |
 
-Two facts carry most of machine learning:
+Two facts about them matter in machine learning:
 
 1. $e^x$ is **always positive** and **grows fast**, which is why softmax
    uses it.
@@ -405,8 +403,8 @@ Two facts carry most of machine learning:
    The probability of a whole sentence is a product of thousands of small
    numbers, which would underflow to 0 on a computer. Its log is a sum of
    manageable negative numbers. This is why models work with
-   "log-probabilities", and why the standard training loss is
-   $-\log p$ (see `primer.ml.losses`).
+   "log-probabilities", and why the usual training loss for a classifier or a
+   language model is $-\log p$ (see `primer.ml.losses`).
 
 ![e to the x stays above zero and climbs steeply; ln x mirrors it across y = x and plunges near 0, so ln 0.01 = -4.61 while ln 0.9 = -0.11](figures/primer.notation.exp_log.svg)
 
@@ -414,14 +412,14 @@ Two facts carry most of machine learning:
 every step of 1 to the right multiplies its height by 2.718. The red curve
 $\ln x$ is the same curve mirrored across the dashed diagonal, because it
 undoes $e^x$. It only exists for positive inputs, and it dives towards −∞ as
-its input approaches 0. That dive is the "confidently wrong" penalty in
-cross-entropy: $-\ln(0.01) = 4.61$, far more than $-\ln(0.9) = 0.11$.
+its input approaches 0. That dive is why the training loss $-\ln p$ punishes a
+confident wrong answer: a model that gave the right answer a chance of 0.01
+pays $-\ln(0.01) = 4.61$, against $-\ln(0.9) = 0.11$ for a chance of 0.9.
 
 ## softmax and argmax
 
-**softmax** turns a list of scores into shares that are positive and sum to
-1. It is covered step by step, with its symbols decoded, in
-`primer.ml.attention`:
+**softmax** uses $e^x$ to turn a list of scores into shares that are positive
+and sum to 1 (`primer.ml.attention` takes it step by step):
 
 $$
 \text{softmax}(z)_i = \frac{e^{z_i}}{\sum_{j} e^{z_j}}
@@ -444,7 +442,7 @@ total = sum(exps)
 max(range(len(z)), key=lambda i: z[i])  # → 0
 ```
 
-**argmax** is simpler: it answers "*which position* holds the largest
+**argmax** is simpler. It answers "*which position* holds the largest
 value?", not "what is the largest value?". argmax(0.1, 7.0, 3.0) = position
 2 (index 1 in Python). "Greedy decoding" in a language model is picking the
 argmax token every step.
@@ -453,9 +451,10 @@ argmax token every step.
 
 ## Mean, variance, standard deviation: the middle and the spread
 
-**Everyday picture.** Two classes both average 70% on a test. In one,
-everyone scored 68 to 72; in the other, scores ran from 30 to 100. The
-**mean** is the same; the **spread** is not.
+A list of numbers, such as a class's test scores or the outputs of a layer,
+has a middle and a spread. Two classes can both average 70% on a test while in
+one everyone scored 68 to 72 and in the other scores ran from 30 to 100. The
+**mean** is the same, and the **spread** is not.
 
 $$
 \mu = \frac{1}{n}\sum_{i=1}^{n} x_i
@@ -498,10 +497,10 @@ variance = sum((x_i - mu) ** 2 for x_i in x) / n
 variance, math.sqrt(variance)  # → (4.0, 2.0)
 ```
 
-Spread matters constantly in neural networks. If numbers flowing through a
-network spread out layer after layer, training blows up; normalization layers
-and careful initialization exist to hold σ near 1 (see `primer.ml.deep_nets`
-and the √d_k in `primer.ml.attention`).
+In a neural network, if the numbers passing from layer to layer spread wider
+at every layer, training becomes unstable. Normalization layers and careful
+initialization keep σ near 1 to prevent it (see `primer.ml.deep_nets` and the
+√d_k in `primer.ml.attention`).
 
 ![Two histograms share the mean 0, but the sigma 1 samples pile up tall and narrow while the sigma 3 samples spread about three times as wide](figures/primer.notation.spread.svg)
 
@@ -515,10 +514,12 @@ of the mean.
 
 ## Derivatives and gradients: which way is downhill?
 
-**Everyday picture.** You're on a hillside in thick fog and want to reach
-the valley. You can't see it, but you can feel the slope under your feet.
-Take a small step in the steepest downhill direction, feel again, and
-repeat. That is how every neural network is trained (**gradient descent**).
+Training a neural network means adjusting its weights until its errors are
+small, and derivatives say which way to adjust each one. Picture standing on
+a hillside in thick fog, trying to reach the valley. You cannot see it, but
+you can feel the slope under your feet: take a small step in the steepest
+downhill direction, feel again, and repeat. Neural networks are trained this
+way, and the method is called **gradient descent**.
 
 The **derivative** of a function at a point is its slope there: how much the
 output changes per tiny nudge of the input.
@@ -611,6 +612,9 @@ backwards through every layer of a network, reusing work as it goes (see
 **In code:** `derivative` measures a slope by nudging the input a hair up and a hair down; `gradient` does that for each input in turn and collects the slopes into one list.
 
 ## Probability notation
+
+A language model gives every possible next word a probability, and its
+formulas write probabilities like this:
 
 | You see | Say | Meaning |
 |---|---|---|
