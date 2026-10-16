@@ -42,8 +42,8 @@ the idea well; some want to rebuild it. A lesson serves both, in this order:
   holds the procedure and [`primer/ml/structured_output.py`](primer/ml/structured_output.py) the reference.
 - **Level 2: How it works, from scratch** (`## Level 2: How it works, from scratch`),
   everything after: the mechanism built in plain code, **drawn** and
-  **explained** until a reader could rebuild it from memory, climbing the
-  ladder below in every section. On the site, each formula's symbols table
+  **explained** until a reader could rebuild it from memory, in the order the
+  ladder below sets. On the site, each formula's symbols table
   and each In Python block fold into **Level 3**, and the module's code is
   Level 3 too; a switch in the lesson bar picks the depth, and the learning
   paths in [`primer/curriculum.py`](primer/curriculum.py) open each lesson at
@@ -65,8 +65,28 @@ diagram, then explain it. See [Diagrams](#diagrams).
    symbols mean.
 5. **Why it matters in practice**: where it shows up, what breaks without it.
 
-Every section of every lesson climbs the full ladder. [`primer/ml/attention.py`](primer/ml/attention.py)
-is the gold standard; every module meets it.
+**The ladder is an order, not a form to fill in.** It says what comes before
+what: a picture before a definition, numbers before symbols, the idea before
+the code. It does not say every section must have all five rungs. Applied as a
+template, it read like a machine wrote it, and the owner said so: an analogy
+opening every chapter (Goldilocks, a cake, archers, a coach and an exam in one
+lesson), a "Why it matters" closing every chapter with a superlative, and the
+same idea defined three times before the first chapter. So:
+
+- An everyday picture only where it is the clearest way in, and then carried
+  through the section, not dropped after one sentence. Most lessons need one
+  or two, not one per section.
+- "Why it matters" only when it says something the section has not; never a
+  superlative ("the single most useful", "one of the most common") without a
+  source.
+- No rung labels as decoration: write prose that moves from the picture to the
+  example to the math. Each section starts from where the last one ended.
+- Say each idea once, where the reader needs it.
+
+rumblr's `editing-a-lesson` skill holds the full list of tells and the
+editing procedure.
+[`primer/ml/attention.py`](primer/ml/attention.py) remains the reference for
+depth and decoding.
 
 **Every formula is decoded.** Directly under each `$$…$$` block comes:
 
@@ -301,7 +321,8 @@ improvising, and when a new kind of task starts repeating, write its skill.
 - Every mechanism has a mermaid diagram, the lesson has data figures, and
   each one is followed by its `**Reading it:**` explanation.
 - Every mechanism section has an `**In code:**` line, and `make sitecheck` passes.
-- Every section climbs the ladder, and every formula has its Symbols table,
-  In words line and worked numbers.
+- Every section explains in the ladder's order without filling it in as a
+  template, and every formula has its Symbols table, In words line and worked
+  numbers.
 - The docstring has every section from rule 3. Its self-test questions reach
   [`docs/SELF_TEST.md`](docs/SELF_TEST.md) through `make readme`; that file is generated.
