@@ -122,16 +122,15 @@ If you only needed to choose a loss and read its number, you are done.
 
 ## Level 2: How it works, from scratch
 
-A loss is a scorecard with one number on it. Imagine a coach who, after every
-practice, must summarise the whole team's performance in a single score so
-the players know whether they're improving. Training a model does exactly
-this: it computes the loss, then adjusts the weights to make that number
-smaller (see `primer.ml.neural_net` for the loop).
-
-What the scorecard rewards is what the model learns. Language models are
-scored on how much probability they gave the real next word; price
-predictors on how far off their numbers were; search models on whether they
-ranked the right passage above the wrong ones.
+Training repeats one step. The model makes a prediction, a loss function
+compares it with the right answer and returns one number, and the weights
+move a little to make that number smaller (`primer.ml.neural_net` walks
+through the loop). What counts as wrong depends on what is being predicted.
+A language model picks the next word from its vocabulary, so its loss looks
+at how much probability it gave the word that actually came next. A price
+predictor outputs a number, so its loss looks at how far off the number
+was. A search model matches queries with passages, so its loss looks at
+whether the right passage scored above the wrong ones.
 
 ```mermaid
 flowchart LR
@@ -143,22 +142,23 @@ flowchart LR
   CE & REG & CON --> N[One number to minimize]
 ```
 
-**Reading it:** a prediction and the right answer go into the loss function
-and one number comes out. Which branch you take depends on what the model
-predicts: a choice among classes (or the next token) uses cross-entropy, a
-number uses squared or absolute error, and "which of these belong together"
-uses a contrastive loss. Each section below climbs one branch.
+**Reading it:** a prediction and the right answer go in on the left, and
+one number comes out on the right. The branch in between depends on what
+is predicted: a choice among classes (such as the next token) uses
+cross-entropy, a number uses squared or absolute error, and a matching
+pair uses a contrastive loss.
 
-## Cross-entropy: how surprised were we by the truth?
+## Cross-entropy
 
-Picture a weather forecaster scored every evening. If they said "90% chance
-of rain" and it rained, they lose a point or two. If they said "1% chance of
-rain" and it poured, they are humiliated. Cross-entropy is that humiliation
-meter: it charges according to how little probability you gave to what
-actually happened.
+Start with the first branch, a choice among options. Picture a weather
+forecaster who gets a bill every evening, charged on the probability they
+gave to what actually happened. Say "90% chance of rain" and it rains, and
+the bill is small. Say "1% chance of rain" and it pours, and the bill is
+large. **Cross-entropy** is that bill. It looks only at the probability the
+model gave the right answer, and the less it gave, the more it pays.
 
-Worked example: the model assigned these probabilities to the correct next
-token.
+The bill is −ln p, where p is that probability. Here it is for four
+probabilities a model might give the correct next token:
 
 | Probability on the correct token | Loss (−ln p) |
 |---|---|
@@ -167,18 +167,17 @@ token.
 | 0.1 | 2.30 |
 | 0.01 | 4.61 |
 
-Being confidently wrong (1%) costs about **44×** more than being mostly
+Being confidently wrong (1%) costs about **44×** as much as being mostly
 right (90%): 4.61 / 0.105 ≈ 44.
 
 ![The loss −ln p is near zero and flat above 90% but climbs steeply to 4.61 at p = 0.01](figures/primer.ml.losses.cross_entropy.svg)
 
-**Reading it:** the horizontal axis is how much probability the model put on
-the right answer; the vertical axis is the loss it pays. Start at the right
-edge: at p = 1 the loss is 0 and the curve is nearly flat, so going from 90%
-to 99% buys little. Now slide left: the curve bends sharply upward, and at
-p = 0.01 the loss is 4.61. The red dots are the table above. The shape is the
-whole story: small, diminishing rewards for being more right, and an
-unbounded bill for being confidently wrong.
+**Reading it:** probability on the right answer runs along the bottom, and
+the loss it pays runs up the side. Start at the right edge: at p = 1 the
+loss is 0 and the curve is nearly flat, so going from 90% to 99% saves
+little. Move left and the curve turns sharply upward, reaching 4.61 at
+p = 0.01 and growing without limit as p approaches 0. The four marked dots
+are the rows of the table.
 
 The **natural logarithm** ln(p) answers "e to what power gives p?" For a
 probability between 0 and 1 the answer is negative (ln 0.5 = −0.69,
@@ -214,27 +213,30 @@ round(-math.log(p_correct), 2)  # → 0.69
 round(-math.log(0.01), 2)  # → 4.61
 ```
 
-`cross_entropy_from_prob` is this one line.
+**In code:** `cross_entropy_from_prob` is this one line.
 
-**Why it matters:** a language model predicts the next token by choosing
-among its whole vocabulary, so this *is* the pretraining loss of every LLM.
-The steep penalty for confident mistakes is what pushes models toward
-calibrated probabilities.
+A language model chooses its next token from its whole vocabulary, so
+cross-entropy on the next token is the loss it is pretrained with. The
+steep bill for confident mistakes pushes the model towards **calibrated**
+probabilities, where its stated confidence matches how often it is right.
 
-## From logits: the numerically safe way
+## Computing cross-entropy from logits
 
-A model doesn't output probabilities directly. It outputs raw scores called
-**logits**, which softmax turns into probabilities (raise *e* to each score,
-divide by the total; see `primer.ml.attention`). Computing that literally is
-like measuring everyone's height in millimetres from the centre of the
-Earth: the numbers get astronomically large and your calculator overflows.
-Measure relative to the tallest person instead, and every number stays
-small. That trick is **log-sum-exp**.
+Cross-entropy needs the probability the model gave the right answer, but a
+model does not output probabilities. It outputs raw scores called
+**logits**, one per class, and softmax turns them into probabilities: raise
+*e* to each score and divide by the total (see `primer.ml.attention`). Done
+literally, that breaks on large scores. A 64-bit floating-point number cannot hold e^1000,
+so a logit of 1000 overflows before the division happens. The fix,
+**log-sum-exp**, subtracts the largest logit from every logit first. The
+largest exponent is then e^0 = 1, nothing overflows, and the loss comes out
+the same.
 
-Worked example: logits (2, 1, 0.1), correct class 0.
+Take logits (2, 1, 0.1) with the first class (class 0) correct.
 e² + e¹ + e^0.1 = 7.389 + 2.718 + 1.105 = 11.212, ln 11.212 = 2.417, so the
-loss is 2.417 − 2 = **0.417**. And with logits (1000, 0) and class 1 correct,
-e^1000 overflows any computer, but log-sum-exp gives exactly 1000 − 0 = **1000**.
+loss is 2.417 − 2 = **0.417**. With logits (1000, 0) and the second class
+(class 1) correct, log-sum-exp gives 1000 − 0 = **1000** without ever
+computing e^1000.
 
 ```mermaid
 flowchart LR
@@ -246,13 +248,14 @@ flowchart LR
   G -.-> U[Raise the right logit,<br/>lower the others by their probability]
 ```
 
-**Reading it:** solid arrows are the forward pass, dotted arrows the backward
-pass. The logits never go through an explicit softmax on the way forward:
-the largest logit is subtracted first so no exponent can overflow, and the
-loss is "log of the total" minus "the right class's score". Coming back, the
-gradient for every class is its predicted probability, minus 1 for the
-correct class. So the right logit is pushed up by (1 − p), and each wrong
-logit is pushed down by exactly the probability it took.
+**Reading it:** solid arrows are the forward pass, which computes the loss;
+dotted arrows are the backward pass, which works out how each logit should
+move. Going forward, the logits never pass through a separate softmax: the
+largest logit is subtracted first, and the loss is the log of the total
+minus the right class's score. Coming back, each class's gradient is its
+predicted probability, minus 1 for the correct class. So the right logit is
+pushed up by 1 − p, and each wrong logit is pushed down by the probability
+it took.
 
 $$
 -\ln \text{softmax}(z)_y = \ln \sum_j e^{z_j} - z_y,
@@ -299,7 +302,7 @@ z, y = [1000.0, 0.0], 1
 log_sum_exp(z) - z[y]  # → 1000.0
 ```
 
-The gradient, which is how each logit should move:
+The gradient says how each logit should move:
 
 $$
 \frac{\partial \mathcal{L}}{\partial z} = \text{softmax}(z) - \text{onehot}(y)
@@ -333,26 +336,26 @@ onehot = [1 if j == y else 0 for j in range(len(z))]
 [round(s_j - o_j, 2) for s_j, o_j in zip(softmax, onehot)]  # → [0.25, -0.25]
 ```
 
-**In code:** `log_sum_exp` pulls the largest logit out front, `log_softmax`
-subtracts that total from every logit, and `softmax_cross_entropy` returns
-the batch's mean loss together with its softmax − onehot gradient.
+**In code:** `softmax_cross_entropy` returns a batch's mean loss and this
+gradient, computed with `log_sum_exp` and `log_softmax`.
 
-**Why it matters:** this is why every framework fuses softmax and
-cross-entropy into one operation that takes logits
-(`torch.nn.functional.cross_entropy`). Computing softmax first and then the
-log is the classic source of NaN losses.
+Deep learning frameworks therefore fuse softmax and cross-entropy into one
+operation that takes logits (`torch.nn.functional.cross_entropy`). Taking
+the softmax first and the log afterwards is a common cause of a loss that
+turns into NaN.
 
-## Perplexity: how many options is the model torn between?
+## Perplexity
 
-Imagine a game show with doors, one hiding the prize. If the model is as
-unsure as someone picking between two doors at random, its perplexity is 2;
-between ten doors, 10. Perplexity converts an average loss back into that
-"number of doors".
+Training a language model averages this loss over every token of text, and
+an average of −ln p is hard to picture. **Perplexity** turns it back into a
+count. Picture a row of doors with a prize behind one. A model as unsure as
+someone choosing between two doors at random has perplexity 2; between ten
+doors, 10. Perplexity is e raised to the average loss.
 
-Worked example: a model that gives the right token 50% every time has loss
-0.69 per token and perplexity e^0.69 = 2. One that gives 10% every time has
-perplexity 10. Three confident tokens (0.9) and one disaster (0.001) give
-perplexity about 6: one bad guess drags the whole average.
+A model that gives the right token 50% every time has loss 0.69 per token
+and perplexity e^0.69 = 2. One that gives 10% every time has perplexity 10.
+Three confident tokens (0.9) and one disaster (0.001) give perplexity about
+6: one bad token outweighs three good ones.
 
 ```mermaid
 flowchart LR
@@ -362,9 +365,9 @@ flowchart LR
   EX --> D["≈ choosing between<br/>2 equally likely doors"]
 ```
 
-**Reading it:** start with the probability the model gave each correct
-token, turn each into a loss with −ln, average them, then undo the log with
-e^x. The result is back in "number of options" units.
+**Reading it:** follow the boxes left to right. Each token's probability
+becomes a loss with −ln, the losses are averaged, and e^x undoes the log.
+What comes out is a number of equally likely options.
 
 $$
 \text{PPL} = \exp\left(\frac{1}{N}\sum_{i=1}^{N} -\ln p_i\right)
@@ -402,32 +405,34 @@ round(math.exp(average), 1)  # → 2.0
 **In code:** `perplexity` averages `cross_entropy_from_prob` over the tokens
 and raises e to the result.
 
-**Why it matters:** perplexity is the standard training metric for language
-models. It's comparable only between models that use the same tokenizer on
-the same text, and it says nothing direct about whether answers are
-helpful or correct.
+Perplexity is the usual way to report a language model's loss during
+training. Two perplexities can be compared only when the models use the
+same tokenizer on the same text, and neither says directly whether the
+model's answers are helpful or correct.
 
-## Regression losses: fines for being off by an amount
+## Regression losses: MSE and MAE
 
-When the prediction is a number (a price, a temperature), think of fines for
-arriving late. **MAE** (mean absolute error) is a flat rate: every minute late
-costs the same. **MSE** (mean squared error) squares the minutes: 10 minutes
-late costs 100, not 10, so one very late arrival outweighs many slightly late
-ones.
+Cross-entropy scores a choice among options. When the prediction is a
+number, such as a price or a temperature, the loss scores how far off it
+was, and there are two common ways to charge for the distance. Think of
+fines for arriving late. **MAE** (mean absolute error) is a flat rate:
+every minute late costs the same. **MSE** (mean squared error) squares the
+minutes, so 10 minutes late costs 100, not 10, and one very late arrival
+outweighs many slightly late ones.
 
-Worked example: four predictions miss by 1 and one misses by 10.
+Say four predictions miss by 1 and one misses by 10.
 MSE = (1 + 1 + 1 + 1 + 100) / 5 = **20.8**, and the outlier is 100/104 = 96% of
 it. MAE = (1 + 1 + 1 + 1 + 10) / 5 = **2.8**, and the outlier is 10/14 = 71%.
 
 ![The squared penalty pulls away past an error of 1, and one outlier drags MSE's best constant to the mean 5.0 while MAE's stays at the median 3](figures/primer.ml.losses.mse_vs_mae.svg)
 
-**Reading it:** the left panel is the price of a single error. Near zero the
-two curves are similar, but past an error of 1 the squared penalty climbs
-away from the absolute one. The right panel asks: if the model could predict
-only one constant for the data 1, 2, 2, 3, 3, 4 plus an outlier of 20, which
-constant minimizes each loss? MSE's valley sits at the mean (5.0), dragged
-right by the outlier; MAE's valley sits at the median (3), where most of the
-data is.
+**Reading it:** the left panel is the fine for a single error. Near zero
+the two curves are close, and past an error of 1 the squared fine climbs
+away from the absolute one. The right panel asks which one constant a
+model should predict for the data 1, 2, 2, 3, 3, 4 plus an outlier of 20,
+if it may predict only one. MSE's valley sits at the mean (5.0), dragged
+right by the outlier; MAE's valley sits at the median (3), where most of
+the data is.
 
 $$
 \text{MSE} = \frac{1}{N}\sum_{i=1}^{N}(y_i - \hat{y}_i)^2, \qquad
@@ -462,33 +467,38 @@ sum((y_i - y_hat_i) ** 2 for y_i, y_hat_i in zip(y, y_hat)) / N  # → 20.8
 sum(abs(y_i - y_hat_i) for y_i, y_hat_i in zip(y, y_hat)) / N  # → 2.8
 ```
 
-**In code:** `mse` and `mae` are the two averages, and `outlier_share`
-measures how much of each total the single largest error contributes (the
-96% and 71% above).
+**In code:** `mse` and `mae` compute the two averages, and `outlier_share`
+the 96% and 71%.
 
-**Why it matters:** pick the loss whose valley is where you want your
-predictions. MSE chases outliers (its best constant is the mean); MAE
-shrugs them off (its best constant is the median). For noisy data with
-occasional wild values, MAE or a blend (Huber loss) is safer.
+So choose the loss whose valley sits where you want the predictions. MSE
+follows outliers, because its best constant is the mean. MAE resists them,
+because its best constant is the median. For noisy data with occasional
+wild values, MAE or a blend of the two (Huber loss) is the safer choice.
 
-## Contrastive loss (InfoNCE): find your partner in a crowd
+## Contrastive loss (InfoNCE)
 
-Picture a party game. Everyone arrives in pairs, gets separated, and must
-pick their partner out of the whole room. Everyone else in the room is a
-decoy. A contrastive loss scores how confidently each person picks their own
-partner over every decoy. The hardest decoy is your partner's lookalike
-twin: same topic, wrong person. That's a **hard negative**.
+The third branch is a match: which passage answers this query? A
+**contrastive loss** turns the match into a choice among options, so that
+cross-entropy can score it. Picture a party game. Guests arrive in pairs
+and are separated, and each must pick their partner out of the whole room,
+where everyone else is a decoy. The loss scores how confidently each guest
+picks their own partner over every decoy.
 
-Embedding models (and CLIP) learn this way: a query and the passage that
-answers it are "partners"; the other passages in the same batch are free
-decoys (**in-batch negatives**).
+Embedding models, such as those behind search and CLIP, learn this way. A
+query and the passage that answers it are partners, and the other passages
+in the same batch serve as decoys at no extra cost (**in-batch
+negatives**). A decoy that closely resembles the right partner, such as a
+passage on the same topic that does not answer the question, is a **hard
+negative**.
 
-Worked example: two queries and two passages, as vectors, scored with the
-**dot product** (multiply matching entries, add them up). Query 1 = (1, 0),
-query 2 = (0, 1), passage 1 = (1, 0), passage 2 = (0, 1), temperature 1.
-Query 1 scores 1 against its partner and 0 against the decoy. Its loss is
+Take two queries and two passages as vectors, scored with the **dot
+product** (multiply matching entries, add them up). Query 1 = (1, 0),
+query 2 = (0, 1), passage 1 = (1, 0), passage 2 = (0, 1). Every score is
+divided by a **temperature** before the softmax; here it is 1, and a
+smaller one makes the choice sharper. Query 1 scores 1 against its partner
+and 0 against the decoy, so its loss is
 −ln(e¹ / (e¹ + e⁰)) = ln(1 + e^−1) = **0.3133**. Swap the passages and each
-query now prefers the decoy: the loss rises to ln(1 + e¹) = **1.3133**.
+query prefers the decoy: the loss rises to ln(1 + e¹) = **1.3133**.
 
 ```mermaid
 flowchart LR
@@ -498,22 +508,22 @@ flowchart LR
   CE --> L[Pull pairs together<br/>push the rest apart]
 ```
 
-**Reading it:** a batch of queries and the passages that answer them are
-turned into vectors, then every query is scored against every passage,
-giving a square grid. Each row becomes a classification ("which of these
-passages is mine?") whose right answer is on the diagonal. Cross-entropy on
-those rows pulls each query toward its own passage and away from all the
-others at once.
+**Reading it:** every query in a batch is scored against every passage,
+which gives a square grid. Each row becomes a classification ("which of
+these passages is mine?") whose right answer is on the diagonal.
+Cross-entropy on each row pulls the query towards its own passage and away
+from all the others at once.
 
 ![Rows 0, 1 and 3 put over 0.9 on their own passage; row 2 puts 0.91 on the hard negative and only 0.07 on its own](figures/primer.ml.losses.infonce_matrix.svg)
 
-**Reading it:** rows are queries, columns are passages, and each cell is the
-probability that query i "picks" passage j. A well-trained model shows a
-bright diagonal. Look at row 2: it puts most of its probability on column 4,
-an extra mined hard negative built to resemble query 2, and only a few
-percent on its own passage (column 2). The model is fooled, and that row is
-exactly where the loss, and therefore the gradient, concentrates. Rows 0, 1
-and 3 are already confident and contribute almost nothing to learning.
+**Reading it:** rows are queries and columns are passages, both numbered
+from 0, and each cell is the probability that query i picks passage j. A
+well-trained model shows a bright diagonal, as rows 0, 1 and 3 do. Row 2
+does not: it puts most of its probability on column 4, an extra hard
+negative built to resemble query 2, and only a few percent on its own
+passage in column 2. That row is where the loss, and therefore the
+gradient, is concentrated. Rows 0, 1 and 3 are already confident and add
+almost nothing to learning.
 
 $$
 \mathcal{L}_i = -\ln \frac{\exp(q_i \cdot d_i / \tau)}{\sum_{j=1}^{N} \exp(q_i \cdot d_j / \tau)}
@@ -559,33 +569,35 @@ round(info_nce(0, tau=1.0), 4)  # → 0.3133
 print(f"{info_nce(0, tau=0.1):.6f}")  # → 0.000045
 ```
 
-It's just cross-entropy where the "classes" are the passages in the batch,
-so the gradient is the same softmax − onehot, pushed back through the dot
-products into both sets of vectors.
+Each row is a cross-entropy, so the gradient is the same softmax − onehot,
+passed back through the dot products into the query and passage vectors.
 
-**In code:** `info_nce` builds the score grid, hands it to
-`softmax_cross_entropy` with the diagonal as the right answers, and returns
-the gradients for both sets of vectors; `info_nce_gradient_check` confirms
-those gradients against small nudges of every number.
+**In code:** `info_nce` scores the grid with `softmax_cross_entropy` and
+returns the gradients for both sets of vectors; `info_nce_gradient_check`
+checks them against small nudges.
 
-**Why it matters:** this is how search and RAG embedding models are trained
-(see `primer.ml.embeddings.contrastive`). Bigger batches mean more free
-negatives. Easy negatives are already far away and contribute almost no
-gradient; hard negatives produce most of the learning signal, which is why
-mining them is the biggest lever on retrieval quality.
+Search and RAG embedding models are trained this way (see
+`primer.ml.embeddings.contrastive`). A bigger batch brings more negatives
+for free. Easy negatives are already far from the query and contribute
+almost no gradient, while hard negatives produce most of the learning
+signal, which is why retrieval training goes looking for them (**mining**
+hard negatives).
 
-## Label smoothing: never say 100%
+## Label smoothing
 
-A good forecaster never says "100% chance of rain", because the one day
-they're wrong would be infinitely embarrassing. Label smoothing teaches the
-model the same humility: instead of "the answer is class 2, with total
-certainty", the target says "class 2, with 92.5% certainty, and a sliver of
-doubt spread over everything".
+Back to cross-entropy, and to the forecaster. Cross-entropy's bill keeps
+falling as the probability on the right answer approaches 100%, so a model
+trained on it gains by pushing the right logit towards infinity. A careful
+forecaster never says "100% chance of rain". **Label smoothing** asks the
+same of a model, by changing the target instead of the loss. The target no longer
+says "the answer is this class, with total certainty" but "this class,
+with 92.5% certainty, and a little doubt spread over every class".
 
-Worked example: 4 classes, correct class 2, smoothing ε = 0.1. Take 0.9 of
-the one-hot target (0, 0, 0.9, 0) and add 0.1/4 = 0.025 to every class:
-(0.025, 0.025, 0.925, 0.025). A model that puts logit 50 on the right class
-has plain cross-entropy ≈ 0, but smoothed cross-entropy 3 × 0.025 × 50 = **3.75**.
+With 4 classes, the third one correct, and smoothing ε = 0.1: take 0.9 of
+the one-hot target, (0, 0, 0.9, 0), and add 0.1/4 = 0.025 to every class,
+giving (0.025, 0.025, 0.925, 0.025). A model that puts logit 50 on the right
+class and 0 on the others has plain cross-entropy ≈ 0, but smoothed
+cross-entropy 3 × 0.025 × 50 = **3.75**.
 
 ```mermaid
 flowchart LR
@@ -595,10 +607,10 @@ flowchart LR
   T --> CE[Cross-entropy against<br/>the soft target]
 ```
 
-**Reading it:** the hard one-hot label and a uniform distribution are
-blended with weight ε, giving a target that is still 92.5% sure but never
-100%. Training against it means the loss can never reach zero, so the model
-gains nothing by pushing its logits toward infinity.
+**Reading it:** the one-hot label and an even spread over all K classes
+are blended with weight ε, giving a target that is 92.5% sure and never
+100%. Against that target the loss can never reach zero, so pushing the
+logits towards infinity no longer pays.
 
 $$
 t = (1 - \varepsilon)\,\text{onehot}(y) + \frac{\varepsilon}{K}, \qquad
@@ -644,19 +656,21 @@ round(-sum(t_k * ls_k for t_k, ls_k in zip(t, log_softmax)), 2)  # → 3.75
 **In code:** `smoothed_targets` builds the soft target t, and
 `smoothed_cross_entropy` scores the logits against it.
 
-**Why it matters:** it curbs over-confidence and often improves calibration
-(how well the model's stated confidence matches how often it's right). It
+Label smoothing curbs over-confidence and often improves calibration. It
 was used to train the original transformer.
 
 ## In 20 seconds
 - Cross-entropy is −ln(probability on the right answer): small when
   confident and right, huge when confident and wrong.
+- Compute it from logits with log-sum-exp; its gradient is softmax − onehot.
 - Perplexity = e^(average cross-entropy): the effective number of choices
   per token.
-- Compute it from logits with log-sum-exp; its gradient is softmax − onehot.
-- MSE punishes big misses (mean); MAE is robust to outliers (median).
+- MSE punishes big misses (its best constant guess is the mean); MAE is
+  robust to outliers (its best guess is the median).
 - Contrastive (InfoNCE) loss is cross-entropy over "which passage in this
-  batch is mine?"; hard negatives drive retrieval quality.
+  batch is mine?"; hard negatives carry most of the learning signal.
+- Label smoothing trains against a target that is never 100% sure, so
+  extreme confidence stops paying.
 
 ## Self-test questions
 
