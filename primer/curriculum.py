@@ -208,7 +208,7 @@ CURRICULUM: list[Lesson] = [
     Lesson("primer.ml.big_picture", "The big picture", "What happens, end to end, when you send a prompt", "model"),
     Lesson("primer.ml.neural_net", "Neural networks", "How a neural network, a program made of simple units, learns from its mistakes", "model"),
     Lesson("primer.ml.losses", "Loss functions", "The one number training pushes down, and why choosing it is choosing the behaviour", "model"),
-    Lesson("primer.ml.optimizers", "Optimizers", "How a step is taken down the loss, and why the learning rate matters more than the rule", "model"),
+    Lesson("primer.ml.optimizers", "Optimizers", "How a neural network turns the slope of its loss into a step, and how to set the learning rate", "model"),
     Lesson("primer.ml.deep_nets", "Training deep networks", "Why deep stacks stop learning, and the fixes inside every transformer block", "model"),
     Lesson("primer.ml.attention", "Attention", "How each word looks at the others, and why the cost grows with the square of the length", "model"),
     Lesson("primer.ml.positional", "Positional information", "Why order must be added, sinusoids and RoPE", "model"),

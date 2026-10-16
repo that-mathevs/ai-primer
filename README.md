@@ -195,7 +195,7 @@ The machinery inside a language model: a neural network, the loss and the optimi
 | 1 | [The big picture](primer/ml/big_picture.py) | What happens, end to end, when you send a prompt | [page](https://rumblr.com/learn/big-picture) · [tests](tests/test_big_picture.py) |
 | 2 | [Neural networks](primer/ml/neural_net.py) | How a neural network, a program made of simple units, learns from its mistakes | [page](https://rumblr.com/learn/neural-net) · [tests](tests/test_neural_net.py) |
 | 3 | [Loss functions](primer/ml/losses.py) | The one number training pushes down, and why choosing it is choosing the behaviour | [page](https://rumblr.com/learn/losses) · [tests](tests/test_losses.py) |
-| 4 | [Optimizers](primer/ml/optimizers.py) | How a step is taken down the loss, and why the learning rate matters more than the rule | [page](https://rumblr.com/learn/optimizers) · [tests](tests/test_optimizers.py) |
+| 4 | [Optimizers](primer/ml/optimizers.py) | How a neural network turns the slope of its loss into a step, and how to set the learning rate | [page](https://rumblr.com/learn/optimizers) · [tests](tests/test_optimizers.py) |
 | 5 | [Training deep networks](primer/ml/deep_nets.py) | Why deep stacks stop learning, and the fixes inside every transformer block | [page](https://rumblr.com/learn/deep-nets) · [tests](tests/test_deep_nets.py) |
 | 6 | [Attention](primer/ml/attention.py) | How each word looks at the others, and why the cost grows with the square of the length | [page](https://rumblr.com/learn/attention) · [tests](tests/test_attention.py) |
 | 7 | [Positional information](primer/ml/positional.py) | Why order must be added, sinusoids and RoPE | [page](https://rumblr.com/learn/positional) · [tests](tests/test_positional.py) |
